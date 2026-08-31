@@ -318,3 +318,92 @@ def test_cli_exits_nonzero_when_over_the_stop_threshold(tmp_path, monkeypatch):
     )
 
     assert ci_cost_ledger.main() == 1
+
+
+# ----- incremental cache --------------------------------------------------
+
+
+def _row(run_id, conclusion="success", created="2026-08-31T00:00:00Z"):
+    return price_run(
+        _run(run_id, "CI", "main", conclusion, created),
+        [_job(["ubuntu-latest"], created, created.replace("T00:00", "T00:05"))],
+    )
+
+
+def test_finished_runs_are_cacheable_but_running_ones_are_not():
+    """Caching an in-progress run would freeze it at a partial cost forever."""
+    assert _row(1, "success").is_terminal
+    assert _row(2, "cancelled").is_terminal
+    assert not _row(3, None).is_terminal
+
+
+def test_cache_round_trips_a_row_without_losing_its_cost(tmp_path):
+    from scripts.ci_cost_ledger import load_cache, save_cache
+
+    path = tmp_path / "cache.json"
+    original = _row(7)
+    save_cache(path, [original], {"2026-08"})
+
+    restored = load_cache(path)[7]
+
+    assert restored.allowance_minutes == original.allowance_minutes
+    assert restored.conclusion == original.conclusion
+
+
+def test_cache_drops_months_outside_the_retention_window(tmp_path):
+    """Unbounded growth would eventually make the cache artifact the problem."""
+    from scripts.ci_cost_ledger import load_cache, save_cache
+
+    path = tmp_path / "cache.json"
+    save_cache(
+        path,
+        [_row(1, created="2026-08-01T00:00:00Z"), _row(2, created="2026-05-01T00:00:00Z")],
+        {"2026-08", "2026-07"},
+    )
+
+    assert set(load_cache(path)) == {1}
+
+
+def test_build_ledger_skips_the_api_for_cached_finished_runs(monkeypatch):
+    """The point of the cache: 1,000 GITHUB_TOKEN calls/hr is a real ceiling."""
+    from scripts import ci_cost_ledger
+
+    runs = [
+        _run(1, "CI", "main", "success", "2026-08-31T00:00:00Z"),
+        _run(2, "CI", "main", "success", "2026-08-31T01:00:00Z"),
+    ]
+    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: runs)
+    calls = []
+
+    def _fetch_jobs(repository, run_id, token):
+        calls.append(run_id)
+        return [_job(["ubuntu-latest"], "2026-08-31T00:00:00Z", "2026-08-31T00:05:00Z")]
+
+    monkeypatch.setattr(ci_cost_ledger, "fetch_jobs", _fetch_jobs)
+
+    rows, _, fetched = ci_cost_ledger.build_ledger(
+        "o/r", "2026-08-01", "token", 20, cache={1: _row(1)}
+    )
+
+    assert calls == [2], "run 1 was cached and must not be re-fetched"
+    assert fetched == 1
+    assert len(rows) == 2
+
+
+def test_cached_row_that_was_still_running_is_repriced(monkeypatch):
+    from scripts import ci_cost_ledger
+
+    runs = [_run(1, "CI", "main", "success", "2026-08-31T00:00:00Z")]
+    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: runs)
+    monkeypatch.setattr(
+        ci_cost_ledger,
+        "fetch_jobs",
+        lambda *a, **k: [_job(["ubuntu-latest"], "2026-08-31T00:00:00Z", "2026-08-31T00:09:00Z")],
+    )
+
+    rows, _, fetched = ci_cost_ledger.build_ledger(
+        "o/r", "2026-08-01", "token", 20, cache={1: _row(1, conclusion=None)}
+    )
+
+    assert fetched == 1
+    assert rows[0].allowance_minutes == 9
