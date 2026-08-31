@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	// Browser pane search (SCREENSHOT-SPEC 5c). Modes:
 	//   filter     - Cmd+F: client filter within this track list
 	//   find       - Cmd+F again: in-place highlight (no filter), ≥3 chars
@@ -25,6 +27,25 @@
 	} = $props();
 
 	let inputEl = $state<HTMLInputElement | null>(null);
+
+	// Local echo of what has been typed (PERF-R5 Q9).
+	//
+	// The owner now debounces the row recompute, so `value` lags the caret by
+	// up to LOCAL_FILTER_DEBOUNCE_MS. Rendering `value` directly would make the
+	// input itself feel laggy, and would leave the clear button and an Escape
+	// pressed mid-burst acting on a stale string. The draft is therefore the
+	// rendered truth for keystrokes, and snaps back whenever the OWNER moves
+	// `value` (genre chip, clear, pane switch, nav restore) - the only two
+	// writers there are.
+	// untrack: both seed from the INITIAL prop on purpose - the $effect below
+	// is what tracks it afterwards.
+	let draft = $state(untrack(() => value));
+	let ownerValue = untrack(() => value);
+	$effect(() => {
+		if (value === ownerValue) return;
+		ownerValue = value;
+		draft = value;
+	});
 
 	$effect(() => {
 		if (focusToken <= 0 || inputEl === null) return;
@@ -53,21 +74,30 @@
 	<input
 		bind:this={inputEl}
 		type="text"
-		{value}
+		value={draft}
 		{placeholder}
 		spellcheck="false"
 		autocomplete="off"
-		oninput={(e) => oninput(e.currentTarget.value)}
+		oninput={(e) => {
+			// The caret never waits: echo first, then hand the owner the
+			// keystroke it will debounce.
+			draft = e.currentTarget.value;
+			oninput(draft);
+		}}
 		onfocus={() => onfocuschange?.(true)}
 		onblur={() => onfocuschange?.(false)}
 		onkeydown={(e) => {
 			if (e.key !== 'Escape') return;
 			e.preventDefault();
 			e.stopPropagation();
+			// Escape pressed mid-burst: the owner's `value` may still be the
+			// pre-burst string, so clearing it would not move the prop and the
+			// echo would keep showing what was typed. Clear the echo here.
+			draft = '';
 			(onescapeclear ?? onclear)();
 		}}
 	/>
-	{#if value.trim() !== ''}
+	{#if draft.trim() !== ''}
 		<button
 			type="button"
 			class="clear"
@@ -75,6 +105,7 @@
 			aria-label="Clear search"
 			onclick={(e) => {
 				e.preventDefault();
+				draft = '';
 				onclear();
 			}}
 		>
