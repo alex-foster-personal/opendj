@@ -1217,6 +1217,10 @@
             "title": "Overall",
             "type": "string"
           },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
           "tables": {
             "additionalProperties": {
               "type": "string"
@@ -1227,7 +1231,8 @@
         },
         "required": [
           "tables",
-          "overall"
+          "overall",
+          "seq"
         ],
         "title": "DigestResponse",
         "type": "object"
@@ -1810,6 +1815,13 @@
           "machine": {
             "$ref": "#/components/schemas/MachineModel"
           },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
@@ -1824,6 +1836,10 @@
       },
       "HelloResponse": {
         "properties": {
+          "hub_generation": {
+            "title": "Hub Generation",
+            "type": "string"
+          },
           "hub_machine_id": {
             "title": "Hub Machine Id",
             "type": "string"
@@ -1848,7 +1864,8 @@
           "hub_machine_id",
           "schema_version",
           "seq",
-          "machines"
+          "machines",
+          "hub_generation"
         ],
         "title": "HelloResponse",
         "type": "object"
@@ -3789,6 +3806,11 @@
       },
       "PullResponse": {
         "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
           "machines": {
             "items": {
               "$ref": "#/components/schemas/MachineModel"
@@ -3806,6 +3828,11 @@
           "seq": {
             "title": "Seq",
             "type": "integer"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
           }
         },
         "required": [
@@ -3822,6 +3849,13 @@
             "minLength": 1,
             "title": "Machine Id",
             "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
           },
           "rows": {
             "items": {
@@ -5309,6 +5343,10 @@
       },
       "StatusResponse": {
         "properties": {
+          "hub_generation": {
+            "title": "Hub Generation",
+            "type": "string"
+          },
           "hub_machine_id": {
             "title": "Hub Machine Id",
             "type": "string"
@@ -5341,7 +5379,8 @@
           "schema_version",
           "seq",
           "machines",
-          "row_counts"
+          "row_counts",
+          "hub_generation"
         ],
         "title": "StatusResponse",
         "type": "object"
@@ -8286,6 +8325,7 @@
         ]
       },
       "put": {
+        "description": "Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.",
         "operationId": "put_playlist_pin_api_v1_cloudsync_playlist_pins_put",
         "requestBody": {
           "content": {
@@ -8378,6 +8418,7 @@
         ]
       },
       "put": {
+        "description": "Upsert one policy cell THROUGH the stamp chokepoint.\n\nRound 2 finding N1a: this endpoint stamped the row correctly but skipped\n``local_changelog``, so the edit was never offered to the hub and the\nmachine then failed its post-sync digest compare on ``sync_policies``\nforever. Changing one policy in the config UI stopped that machine\nsyncing anything at all.",
         "operationId": "put_policy_api_v1_cloudsync_policies_put",
         "requestBody": {
           "content": {
@@ -11005,7 +11046,7 @@
     },
     "/api/v1/sync/digest": {
       "get": {
-        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).",
+        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.",
         "operationId": "digest_api_v1_sync_digest_get",
         "responses": {
           "200": {
@@ -11069,9 +11110,21 @@
     },
     "/api/v1/sync/pull": {
       "get": {
-        "description": "Rows the hub accepted after ``since_seq``, plus the fleet registry.",
+        "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.",
         "operationId": "pull_api_v1_sync_pull_get",
         "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
           {
             "description": "last hub_changelog.seq applied",
             "in": "query",
@@ -11082,6 +11135,20 @@
               "description": "last hub_changelog.seq applied",
               "minimum": 0,
               "title": "Since Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "max changelog entries to consume in this chunk",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "description": "max changelog entries to consume in this chunk",
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
               "type": "integer"
             }
           }
@@ -11116,7 +11183,7 @@
     },
     "/api/v1/sync/push": {
       "post": {
-        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.",
+        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.\n\nThe pusher's ``machines`` snapshot is merged first, in the same\ntransaction (round 2 finding N4): a row this hub has never met is a\nFOREIGN KEY violation, and the recovery push after a hub restore is\nexactly the push most likely to carry one.",
         "operationId": "push_api_v1_sync_push_post",
         "requestBody": {
           "content": {
@@ -11160,6 +11227,20 @@
       "get": {
         "description": "Hub identity, current seq, known machines and synced row counts.",
         "operationId": "status_api_v1_sync_status_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11170,6 +11251,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Status",
