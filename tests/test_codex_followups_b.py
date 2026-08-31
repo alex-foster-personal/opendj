@@ -29,19 +29,16 @@ from apps.shared.smartlists import SmartlistRuleError
 from apps.shared.smartlists.schema import validate_rule
 from apps.tags import apply as tags_apply
 
-# Requirement IDs come from reqs.json (generated from .planning/REQUIREMENTS.md).
-# There is no ANALYSIS/TAGS/SMARTLISTS category -- the areas these findings sit
-# in are META (analysis + tag write-back) and SMART (smartlist rules).
-pytestmark = [
-    pytest.mark.requirement("META-04"),   # P06-F03 auto_cues cue labelling
-    pytest.mark.requirement("META-01"),   # P06-F02/P07 tag write-back + apply
-    pytest.mark.requirement("META-03"),   # P07-03 dedup apply pgrep gate
-    pytest.mark.requirement("SMART-01"),  # P08-04 rule-schema validation
-]
+# Requirement markers are per-test, NOT module-scoped: a module-level
+# ``pytestmark`` credits EVERY test here with EVERY id, so the traceability
+# matrix fills with false "covered by" links and an unrelated test keeps a
+# requirement looking covered. These modules bundle unrelated follow-up
+# findings, so each id sits on the test that actually exercises it.
 
 
 # -- P06-F02 --------------------------------------------------------------
 
+@pytest.mark.requirement("META-01")
 def test_p06_f02_reversal_script_is_standalone(tmp_path: Path) -> None:
     delta = wt.TagDelta(
         path=tmp_path / "track.mp3",
@@ -69,6 +66,7 @@ def test_p06_f02_reversal_script_is_standalone(tmp_path: Path) -> None:
 
 # -- P06-F03 --------------------------------------------------------------
 
+@pytest.mark.requirement("META-04")
 def test_p06_f03_break_uses_bin_adjacency(monkeypatch: pytest.MonkeyPatch) -> None:
     # 10 bins over 100 s -> 10 s/bin. Drop at t=20s (bin 2). Candidate
     # "break" cue at t=30s (bin 3, adjacent to drop_bin+1) should be
@@ -94,6 +92,7 @@ def test_p06_f03_break_uses_bin_adjacency(monkeypatch: pytest.MonkeyPatch) -> No
 
 # -- P07-03 ---------------------------------------------------------------
 
+@pytest.mark.requirement("META-01")
 def test_p07_03_tags_is_app_running_raises_when_pgrep_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -105,6 +104,7 @@ def test_p07_03_tags_is_app_running_raises_when_pgrep_missing(
         tags_apply._is_app_running("rekordbox")
 
 
+@pytest.mark.requirement("META-03")
 def test_p07_03_dedup_rekordbox_running_raises_when_pgrep_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -120,6 +120,7 @@ def test_p07_03_dedup_rekordbox_running_raises_when_pgrep_missing(
 
 # -- P08-04 ---------------------------------------------------------------
 
+@pytest.mark.requirement("SMART-01")
 def test_p08_04_between_rejects_malformed_element_types() -> None:
     rule = {
         "op": "between",
@@ -130,6 +131,7 @@ def test_p08_04_between_rejects_malformed_element_types() -> None:
         validate_rule(rule)
 
 
+@pytest.mark.requirement("SMART-01")
 def test_p08_04_in_rejects_malformed_element_types() -> None:
     rule = {
         "op": "in",
@@ -140,6 +142,7 @@ def test_p08_04_in_rejects_malformed_element_types() -> None:
         validate_rule(rule)
 
 
+@pytest.mark.requirement("SMART-01")
 def test_p08_04_between_well_formed_still_validates() -> None:
     # Sanity: the new checks must not break valid rules.
     validate_rule({"op": "between", "field": "bpm", "value": [120, 130]})

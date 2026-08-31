@@ -29,7 +29,18 @@
 		}
 	}
 
-	onMount(() => fetchPage());
+	/**
+	 * No first-run gate here any more, deliberately.
+	 *
+	 * It used to live on this page, which meant the ask only existed on one
+	 * route and only over an empty table. It is now ONE gate in the root
+	 * layout, raising the setup overlay over the performance view -- see
+	 * raiseSetupOnFirstRun in src/routes/+layout.svelte. A second copy here
+	 * would be a second decision about the same thing.
+	 */
+	onMount(() => {
+		void fetchPage();
+	});
 
 	let filterTimer: ReturnType<typeof setTimeout> | null = null;
 	function onFilterChange(): void {

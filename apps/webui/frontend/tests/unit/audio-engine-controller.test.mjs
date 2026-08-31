@@ -1060,7 +1060,7 @@ test('stale output observations and late old revisions never rewind presented st
 
 test('transport scheduling horizon is strictly future and latency-aware', () => {
 	assert.ok(Math.abs(audio.safeTransportScheduleTime(10, 0.2, 0.1) - 10.3) < 1e-12);
-	assert.throws(() => audio.safeTransportScheduleTime(10, -0.1), /latency/i);
+	assert.throws(() => audio.safeTransportScheduleTime(10, -0.1), /processorLeadSec/);
 	assert.equal(
 		audio.supersedingScheduleTime(10.5, 10.2, 10.3),
 		10.5,

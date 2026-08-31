@@ -231,6 +231,8 @@ class JobsStore {
 	drawerOpen = $state(false);
 
 	#detachers: Unsubscribe[] = [];
+	/** How many components currently want the live subscription. See attach. */
+	#holders = 0;
 
 	/** Replace the list from the server. A failure leaves the previous rows
 	 * on screen: a transient 500 must not look like "all your jobs vanished".
@@ -270,8 +272,17 @@ class JobsStore {
 	 * Wire the store to the bus and do the first fetch. Returns a detach
 	 * function; calling it twice is harmless.
 	 *
-	 * Idempotent: attaching twice would otherwise double every upsert and
-	 * fire two refetches per resync.
+	 * REFERENCE COUNTED, because more than one component now wants live jobs
+	 * and they come and go independently: the drawer only while it is open,
+	 * the TopBar's stems bar for the whole session. The single subscription is
+	 * still created once (attaching twice would double every upsert and fire
+	 * two refetches per resync), but it is torn down only when the LAST holder
+	 * lets go. Without the count, closing the drawer detached the bus out from
+	 * under the TopBar and its progress bar froze at whatever it last saw --
+	 * a bar that stops moving being strictly worse than no bar.
+	 *
+	 * Each caller's detacher is idempotent, so a component that both returns
+	 * it from an $effect and calls it on destroy still only releases once.
 	 *
 	 * A daemon with no jobs API also has no jobs.updated topic, so this
 	 * subscribes to nothing and fetches nothing: it records why and hands back
@@ -283,28 +294,44 @@ class JobsStore {
 			this.error = refusal;
 			return () => undefined;
 		}
-		if (this.#detachers.length > 0) return () => this.detach();
-		this.#detachers.push(
-			bus.subscribe(TOPIC_JOBS_UPDATED, (envelope) => {
-				const job = readJobPayload(envelope.payload);
-				if (job === null) return;
-				this.upsert(job);
-			})
-		);
-		this.#detachers.push(
-			bus.subscribeResync(() => {
-				// A gap means rows changed in ways no frame described. Refetch
-				// rather than trust what is on screen.
-				void this.hydrate();
-			})
-		);
-		void this.hydrate();
-		return () => this.detach();
+		this.#holders += 1;
+		if (this.#detachers.length === 0) {
+			this.#detachers.push(
+				bus.subscribe(TOPIC_JOBS_UPDATED, (envelope) => {
+					const job = readJobPayload(envelope.payload);
+					if (job === null) return;
+					this.upsert(job);
+				})
+			);
+			this.#detachers.push(
+				bus.subscribeResync(() => {
+					// A gap means rows changed in ways no frame described. Refetch
+					// rather than trust what is on screen.
+					void this.hydrate();
+				})
+			);
+			void this.hydrate();
+		}
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			this.release();
+		};
 	}
 
+	/** Drop one holder, tearing the subscription down at zero. */
+	release(): void {
+		if (this.#holders === 0) return;
+		this.#holders -= 1;
+		if (this.#holders === 0) this.detach();
+	}
+
+	/** Unconditional teardown, regardless of holders. Tests and shutdown. */
 	detach(): void {
 		for (const off of this.#detachers) off();
 		this.#detachers = [];
+		this.#holders = 0;
 	}
 
 	/** running -> cancelling. A refusal is the server's sentence, unedited. */

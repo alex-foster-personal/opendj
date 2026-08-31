@@ -79,6 +79,9 @@ export interface BrowserRow {
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;
+	/** Spotify-unmatched placeholder (light green row). True when the
+	 * row is a synthetic spotify-pending track or wire spotify_pending. */
+	spotify_pending?: boolean;
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;
@@ -333,6 +336,62 @@ export function canMutatePlaylist(
 		&& !pane.whole_collection;
 }
 
+// ------------------------------------------------------- boot pane selection
+
+/**
+ * The remembered identity of a pane's playlist, small enough to persist.
+ *
+ * Deliberately NOT a whole PlaylistNode: track_count and children go stale
+ * between sessions, and restoring a stale count would put a wrong number on
+ * screen before the real load lands. Only the identity survives; everything
+ * else is re-fetched.
+ */
+export interface BootPlaylistChoice {
+	playlist_id: string;
+	name: string;
+	kind: 'all_tracks' | 'playlist';
+}
+
+/** The All Tracks identity. Synthesized client-side; the API never returns it. */
+export const ALL_TRACKS_CHOICE: BootPlaylistChoice = {
+	playlist_id: 'all',
+	name: 'All Tracks',
+	kind: 'all_tracks'
+};
+
+/**
+ * What the first pane should show at boot.
+ *
+ * The pane used to boot at playlist_id=null, so every launch of /performance
+ * opened on an empty track table until a human clicked a playlist. That blank
+ * pane was indistinguishable from a broken load, which is the honest-state
+ * failure this resolves.
+ *
+ * Rules, in order:
+ * - Empty library -> null. There is nothing truthful to show, and defaulting
+ *   to All Tracks would render an empty table that looks like a failed load.
+ *   The caller keeps its explicit empty state.
+ * - A remembered playlist that still exists -> that playlist.
+ * - A remembered playlist that is gone (deleted or filtered out of the tree
+ *   since last session) -> All Tracks, never a dangling id that would load
+ *   into an error.
+ * - Nothing remembered -> All Tracks.
+ *
+ * Pure so the decision is unit-testable without a DOM or a live library.
+ */
+export function resolveBootPlaylist(args: {
+	remembered: BootPlaylistChoice | null;
+	known_playlist_ids: readonly string[];
+	all_tracks_count: number;
+}): BootPlaylistChoice | null {
+	if (!Number.isFinite(args.all_tracks_count) || args.all_tracks_count <= 0) return null;
+	const remembered = args.remembered;
+	if (remembered === null) return ALL_TRACKS_CHOICE;
+	if (remembered.kind === 'all_tracks') return ALL_TRACKS_CHOICE;
+	if (args.known_playlist_ids.includes(remembered.playlist_id)) return remembered;
+	return ALL_TRACKS_CHOICE;
+}
+
 // -------------------------------------------- client search + sort pipeline
 
 /** FR-1 hide-broken filter THEN case-insensitive substring search over
@@ -341,10 +400,15 @@ export function canMutatePlaylist(
  * Genre demos (search box / chip clicks):
  *   `genre:House`  - strict: a comma-split genre token equals the tag
  *   `genre:~House` - loose: genre field contains the tag as a substring
- * Plain queries still match across title/artist/comments/key/genre. */
+ * Plain queries still match across title/artist/comments/key/genre.
+ *
+ * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
+ * hide-broken: they are intentional unmatched placeholders, not broken links. */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
-	const base = hideBroken ? rows.filter((r) => r.file_exists) : rows;
+	const base = hideBroken
+		? rows.filter((r) => r.file_exists || r.is_streaming === true || r.spotify_pending === true)
+		: rows;
 	const raw = query.trim();
 	if (raw === '') return base;
 

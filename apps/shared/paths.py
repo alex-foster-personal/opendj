@@ -29,40 +29,48 @@ from apps.shared.platform_paths import (
 )
 
 __all__ = [
-    "HOME",
-    "PROJECT_ROOT",
+    "AUDIO_EXTENSIONS",
     "DATA_DIR",
-    "REKORDBOX_LIVE_DB",
-    "REKORDBOX_WORKING_DB",
-    "DJAY_LIVE_DB",
-    "DJAY_WORKING_DB",
-    "STATE_DIR",
-    "STATE_DB",
-    "MUSIC_ROOTS",
+    "DEDUP_ARCHIVE_ROOT",
+    "DEDUP_CLUSTERS_CSV",
     "DEDUP_DIR",
     "DEDUP_FALLBACK_DB",
-    "DEDUP_CLUSTERS_CSV",
     "DEDUP_MANUAL_REVIEW_CSV",
     "DEDUP_REWRITE_PLAN_CSV",
     "DEDUP_REWRITE_SUMMARY_MD",
-    "DEDUP_ARCHIVE_ROOT",
-    "TAGS_DIR",
+    "DJAY_LIVE_DB",
+    "DJAY_WORKING_DB",
+    "HOME",
+    "MUSIC_ROOTS",
+    "PROJECT_ROOT",
+    "REKORDBOX_LIVE_DB",
+    "REKORDBOX_PLAIN_DB",
+    "REKORDBOX_WORKING_DB",
+    "STATE_DB",
+    "STATE_DIR",
     "TAGS_BACKUPS_DIR",
-    "TAGS_UNIFIED_PREVIEW_CSV",
+    "TAGS_DIR",
     "TAGS_REVERSAL_DIR",
-    "AUDIO_EXTENSIONS",
+    "TAGS_UNIFIED_PREVIEW_CSV",
     "copy_live_dbs",
 ]
 
 # ``DATA_DIR`` is re-exported from :mod:`apps.shared.platform_paths`, which is
-# the single place ``MDT_DATA_DIR`` is honoured. Recomputing it here as
+# the single place ``MDT_DATA_DIR`` is honored. Recomputing it here as
 # ``PROJECT_ROOT / "data"`` made this module the one path family that ignored
 # that override, so a worktree backend pointed at the primary checkout's data
 # still resolved STATE_DB to its own empty ``data/``. Unset MDT_DATA_DIR keeps
 # the identical default.
 
 # ----- Rekordbox ---------------------------------------------------------
+# Byte-for-byte snapshot of the live master.db, so it is still
+# SQLCipher-encrypted and no plain sqlite3 client can read it.
 REKORDBOX_WORKING_DB: Path = DATA_DIR / "master.db.copy"
+# The decrypted working copy every reader in this repo actually consumes.
+# Static by convention: refresh means re-decrypt (see
+# ``apps.shared.rekordbox_db.ensure_plain_db``) and then
+# ``rm -rf data/state/anlz-cache/``.
+REKORDBOX_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
 
 # ----- djay Pro ----------------------------------------------------------
 DJAY_WORKING_DB: Path = DATA_DIR / "djay_MediaLibrary.db.copy"

@@ -9,8 +9,9 @@ Pipeline::
 
     data/master.db.copy  (encrypted)
         │
-        │  pyrekordbox.Rekordbox6Database.engine.raw_connection()
-        │  + ATTACH DATABASE <plain> KEY '' + sqlcipher_export('plain')
+        │  apps.shared.rekordbox_db.decrypt_to_plain() -- the one
+        │  ATTACH ... KEY '' + sqlcipher_export('plain') routine, shared
+        │  with `python -m apps.shared.state.cli ingest-rb`
         ▼
     tests/fixtures/rekordbox/_tmp_plain.db  (plain sqlite, full content)
         │
@@ -41,6 +42,8 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+from apps.shared import paths, rekordbox_db
+
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 SRC_ENCRYPTED: Path = REPO_ROOT / "data" / "master.db.copy"
 FIXTURE_DIR: Path = REPO_ROOT / "tests" / "fixtures" / "rekordbox"
@@ -68,39 +71,6 @@ TARGET_COMPOSITION = {
 def _fatal(msg: str) -> int:
     print(f"[make_rb_fixture] {msg}", file=sys.stderr)
     return 1
-
-
-# ------------------------------------------------------------------ decrypt
-
-
-def _decrypt_to_plain(src_encrypted: Path, plain_out: Path) -> None:
-    """Decrypt ``src_encrypted`` → ``plain_out`` using pyrekordbox's cached key.
-
-    Uses pyrekordbox's own raw connection (already unlocked) to ATTACH a
-    brand-new plain DB and call ``sqlcipher_export``. Faster than rebuilding
-    via ``.schema``+row copy and preserves every table exactly.
-    """
-    from pyrekordbox import Rekordbox6Database
-
-    if plain_out.exists():
-        plain_out.unlink()
-    plain_out.parent.mkdir(parents=True, exist_ok=True)
-
-    db = Rekordbox6Database(path=str(src_encrypted))
-    try:
-        con = db.engine.raw_connection()
-        cur = con.cursor()
-        # Quote literal path defensively (pyrekordbox paths shouldn't contain
-        # single quotes, but harden anyway).
-        escaped = str(plain_out).replace("'", "''")
-        cur.execute(f"ATTACH DATABASE '{escaped}' AS plain KEY ''")
-        cur.execute("SELECT sqlcipher_export('plain')")
-        cur.execute("DETACH DATABASE plain")
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
 
 
 # ------------------------------------------------------------------ selection
@@ -446,7 +416,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if not SRC_ENCRYPTED.exists():
         # Try refreshing from live.
-        from apps.shared import paths  # local import keeps script portable
         print(f"No {SRC_ENCRYPTED}; copying from live…")
         result = paths.copy_live_dbs()
         if result.get("rekordbox") is None:
@@ -459,7 +428,7 @@ def main(argv: list[str] | None = None) -> int:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[1/5] decrypting {SRC_ENCRYPTED.name} → {PLAIN_TMP.name}")
     try:
-        _decrypt_to_plain(SRC_ENCRYPTED, PLAIN_TMP)
+        rekordbox_db.decrypt_to_plain(SRC_ENCRYPTED, PLAIN_TMP)
     except Exception as exc:
         _write_readme()
         return _fatal(

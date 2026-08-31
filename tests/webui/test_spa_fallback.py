@@ -22,6 +22,11 @@ def production_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     assets_dir = build_dir / "assets"
     assets_dir.mkdir()
     (assets_dir / "app.js").write_text("window.appReady = true;", encoding="utf-8")
+    immutable_dir = build_dir / "_app" / "immutable" / "assets"
+    immutable_dir.mkdir(parents=True)
+    (immutable_dir / "x.abc123.js").write_text(
+        "window.hashedChunk = true;", encoding="utf-8",
+    )
     monkeypatch.setattr(app_module, "FRONTEND_BUILD_DIR", build_dir)
 
     app = app_module.create_app(backend=InMemoryBackend())
@@ -81,3 +86,22 @@ def test_existing_asset_is_served(production_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.text == "window.appReady = true;"
+
+
+@pytest.mark.parametrize("path", ["/", "/index.html", "/performance"])
+def test_html_entry_responses_are_not_cached(
+    production_client: TestClient, path: str,
+) -> None:
+    response = production_client.get(path)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+
+
+def test_hashed_immutable_asset_is_cached_forever(
+    production_client: TestClient,
+) -> None:
+    response = production_client.get("/_app/immutable/assets/x.abc123.js")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"

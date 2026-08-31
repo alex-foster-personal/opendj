@@ -34,6 +34,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from apps.shared.rekordbox_writeback import require_writeback_enabled
+
 from . import writer_rbox
 from .writer_rbox import PlaylistSpec, TrackUpdate
 
@@ -638,6 +640,7 @@ def _rollback_promoted_output(
 
 def apply_export(plan: ExportPlan, *, confirmation: str) -> ApplyReceipt:
     """Apply a reviewed plan and return only after mounted readback."""
+    require_writeback_enabled("module.sync.usb.pioneer.export_workflow")
     ExportPlan.from_dict(plan.to_dict())
     if confirmation != plan.plan_id:
         raise UsbExportError(

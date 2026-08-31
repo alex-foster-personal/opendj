@@ -13,6 +13,7 @@
  *     [if] any group is soloed [then] non-solo groups gain 0; mute wins
  */
 
+import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
 import {
 	StretchDeckProcessor,
 	type StretchAdapterOptions,
@@ -289,6 +290,22 @@ export class AlignedStemDeckProcessor {
 			const latencySec = latencies[0];
 			if (latencies.some((latency) => Math.abs(latency - latencySec) > 1 / alignment.sample_rate_hz)) {
 				throw new Error(`stem processor latency alignment mismatch: ${latencies.join(', ')}`);
+			}
+			// LATENCY round 2. Equal REPORTED latency is not the property the
+			// transport floor consumes: the schedule lead is derived from the ONSET
+			// RAMP, and branches that reach full level at different times are a
+			// moving comb filter on their own sum, which no amount of schedule
+			// alignment fixes. Today the lead is a pure function of the latency, so
+			// this cannot fail while the check above passes - it is here so a future
+			// ramp source (a measured ramp, or a per-branch block) cannot quietly
+			// break the invariant while the older assertion still reads green.
+			const leads = latencies.map((latency) => processorOnsetLeadSec(latency));
+			if (leads.some((lead) => Math.abs(lead - leads[0]) > 1 / alignment.sample_rate_hz)) {
+				throw new Error(
+					`stem processor onset-lead mismatch: ${leads.join(', ')}; branches with ` +
+						'different onset ramps reach full level at different times, so the summed ' +
+						'output combs on every start'
+				);
 			}
 			return {
 				processor: new AlignedStemDeckProcessor(

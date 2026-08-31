@@ -38,6 +38,9 @@ log = logging.getLogger(__name__)
 # loud 400, not a job that sits queued forever.
 WorkerArgv = Callable[[dict[str, Any]], Sequence[str]]
 ReconcileHook = Callable[[dict[str, Any]], str]
+# (job row, the whole parsed progress line) -> None. See
+# register_progress_observer.
+ProgressObserver = Callable[[dict[str, Any], dict[str, Any]], None]
 
 RECONCILE_RESULTS: frozenset[str] = frozenset(
     {"succeeded", "failed", "cancelled", "unknown"}
@@ -45,6 +48,7 @@ RECONCILE_RESULTS: frozenset[str] = frozenset(
 
 _WORKERS: dict[str, WorkerArgv] = {}
 _RECONCILERS: dict[str, ReconcileHook] = {}
+_OBSERVERS: dict[str, ProgressObserver] = {}
 
 _TAIL_LINES: int = 20
 
@@ -94,6 +98,44 @@ def register_worker(kind: str, builder: WorkerArgv) -> None:
 def unregister_worker(kind: str) -> None:
     _WORKERS.pop(kind, None)
     _RECONCILERS.pop(kind, None)
+    _OBSERVERS.pop(kind, None)
+
+
+def register_progress_observer(kind: str, hook: ProgressObserver) -> None:
+    """Let a kind react, in the engine process, to its own progress lines.
+
+    A worker is a SUBPROCESS. ``events.publish`` reaches the WS hub through a
+    process-local slot, so a worker cannot emit a domain event however much it
+    would like to -- the only channel it has is its stdout progress line.
+
+    This is the other end of that channel. A batch kind whose items land one
+    at a time (stems separating ten tracks) needs to say "track 7 is on disk
+    NOW", not just "70%", and ``jobs.updated`` alone cannot carry that: the
+    job row has no per-item slot. The observer sees the WHOLE parsed line, so
+    a kind can put its own keys alongside ``progress`` and turn them into the
+    domain event its readers already subscribe to.
+
+    Deliberately NOT a general hook on the job row: it fires per progress
+    line, in the runner's event loop, so it must stay cheap and must not
+    block. An observer that raises is logged and swallowed -- a kind's
+    bookkeeping is not permitted to fail the job whose work already
+    succeeded.
+    """
+    _OBSERVERS[kind] = hook
+
+
+def observe_progress(job: dict[str, Any], line: dict[str, Any]) -> None:
+    hook = _OBSERVERS.get(job["kind"])
+    if hook is None:
+        return
+    try:
+        hook(job, line)
+    except Exception:  # a side channel must never fail the job
+        log.exception(
+            "progress observer for kind %r raised on job %s",
+            job["kind"],
+            job["id"],
+        )
 
 
 def known_kinds() -> tuple[str, ...]:
@@ -557,13 +599,18 @@ class JobRunner:
                 continue
             tail.append(line)
             try:
-                progress, message = _parse_progress(line)
+                progress, message, parsed = _parse_progress(line)
             except WorkerProtocolError as exc:
                 return str(exc)
-            self.store.set_progress(job_id, progress, message)
+            # The observer runs AFTER the write, on the row the write
+            # produced, so a kind that turns a progress line into a domain
+            # event can never announce something the store has not recorded.
+            observe_progress(
+                self.store.set_progress(job_id, progress, message), parsed
+            )
 
 
-def _parse_progress(line: str) -> tuple[float, str | None]:
+def _parse_progress(line: str) -> tuple[float, str | None, dict[str, Any]]:
     try:
         parsed = json.loads(line)
     except json.JSONDecodeError as exc:
@@ -586,7 +633,9 @@ def _parse_progress(line: str) -> tuple[float, str | None]:
         raise WorkerProtocolError(
             f"worker 'message' is {message!r}, expected a string"
         )
-    return float(raw_progress), message
+    # The whole object comes back, not just the two contract keys: a kind's
+    # own keys ride alongside them and are handed to its progress observer.
+    return float(raw_progress), message, parsed
 
 
 async def _collect(
@@ -624,12 +673,15 @@ __all__ = [
     "ORPHANED_WORKER_ERROR",
     "RECONCILE_RESULTS",
     "JobRunner",
+    "ProgressObserver",
     "ReconcileHook",
     "UnknownJobKind",
     "WorkerArgv",
     "WorkerProtocolError",
     "known_kinds",
+    "observe_progress",
     "reconcile",
+    "register_progress_observer",
     "register_reconcile",
     "register_worker",
     "resolve_and_reenqueue",

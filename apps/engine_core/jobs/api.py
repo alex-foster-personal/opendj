@@ -98,9 +98,18 @@ def list_kinds() -> JobKindsOut:
 
 @router.post("", response_model=JobOut, status_code=status.HTTP_201_CREATED)
 def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
+    # ValueError alongside UnknownJobKind: a registered builder rejecting its
+    # payload is the same class of caller error as naming a kind that does
+    # not exist, and letting it out as a 500 told an agent to retry a request
+    # that will never succeed.
     try:
         worker_argv(body.kind, body.payload)
-    except UnknownJobKind as exc:
+    except (UnknownJobKind, ValueError) as exc:
+        # The kind knows the shape of its own payload and this one is wrong.
+        # That is the caller's mistake, so it is a 400 carrying the kind's own
+        # sentence -- not a 500, which reads as "the engine broke" and sends
+        # the caller looking in entirely the wrong place. The refusal lands
+        # BEFORE the insert, so a bad payload never becomes a queued row.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc

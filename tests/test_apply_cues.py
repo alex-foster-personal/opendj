@@ -17,7 +17,9 @@ import pytest
 from apps.sync.apply_cues import dry_run, live_run, main
 from apps.sync.safety import SafetyAbort
 
-pytestmark = pytest.mark.requirement("SYNC-04")
+# Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
+# import gate ON (root conftest reads the marker). Never a real rb target.
+pytestmark = [pytest.mark.requirement("SYNC-04"), pytest.mark.rekordbox_writeback]
 
 
 def _make_diff(tmp_path: Path, rows: list[dict]) -> Path:

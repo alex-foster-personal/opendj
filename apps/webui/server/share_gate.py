@@ -5,7 +5,8 @@ loopback / Tailscale. This module does not invent users.
 
 When ``MUSIC_DJ_SHARE_HOST`` matches the request Host (or X-Forwarded-Host):
 
-- optional ``MUSIC_DJ_SHARE_TOKEN`` must be presented
+- Cloudflare Access identity headers must be present (the default), or a
+  legacy ``MUSIC_DJ_SHARE_TOKEN`` must be presented when explicitly selected
 - writes are refused when ``MUSIC_DJ_SHARE_READ_ONLY=1`` (the default)
 
 Loopback and any other Host stay full-access so agents and ``just run``
@@ -16,16 +17,21 @@ from __future__ import annotations
 
 import hmac
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 SHARE_HOST_ENV = "MUSIC_DJ_SHARE_HOST"
+SHARE_AUTH_ENV = "MUSIC_DJ_SHARE_AUTH"
 SHARE_TOKEN_ENV = "MUSIC_DJ_SHARE_TOKEN"
 SHARE_READ_ONLY_ENV = "MUSIC_DJ_SHARE_READ_ONLY"
 SHARE_COOKIE = "mdj_share"
+AUTH_CLOUDFLARE_ACCESS = "cloudflare-access"
+AUTH_TOKEN = "token"
+ACCESS_EMAIL_HEADER = "cf-access-authenticated-user-email"
+ACCESS_JWT_HEADER = "cf-access-jwt-assertion"
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 EXEMPT_SUFFIXES = (
     "/health",
@@ -38,24 +44,53 @@ EXEMPT_SUFFIXES = (
 
 
 @dataclass(frozen=True)
+class ShareConfig:
+    host: str = ""
+    auth: str = AUTH_CLOUDFLARE_ACCESS
+    token: str = ""
+    read_only: bool = True
+
+    @classmethod
+    def from_environ(cls, environ: Mapping[str, str] = os.environ) -> ShareConfig:
+        host = environ.get(SHARE_HOST_ENV, "").strip().lower()
+        token = environ.get(SHARE_TOKEN_ENV, "").strip()
+        default_auth = AUTH_TOKEN if token else AUTH_CLOUDFLARE_ACCESS
+        auth = environ.get(SHARE_AUTH_ENV, default_auth).strip().lower()
+        raw_read_only = environ.get(SHARE_READ_ONLY_ENV, "1").strip().lower()
+        config = cls(
+            host=host,
+            auth=auth,
+            token=token,
+            read_only=raw_read_only not in {"0", "false", "no", "off"},
+        )
+        config.validate()
+        return config
+
+    def validate(self) -> None:
+        if not self.host:
+            return
+        if self.auth not in {AUTH_CLOUDFLARE_ACCESS, AUTH_TOKEN}:
+            raise ValueError(
+                f"{SHARE_AUTH_ENV} must be {AUTH_CLOUDFLARE_ACCESS!r} or "
+                f"{AUTH_TOKEN!r}"
+            )
+        if self.auth == AUTH_TOKEN and not self.token:
+            raise ValueError(
+                f"{SHARE_TOKEN_ENV} is required when {SHARE_AUTH_ENV}={AUTH_TOKEN}"
+            )
+
+
+@dataclass(frozen=True)
 class ShareDecision:
     audience: str  # local | share
     read_only: bool
     authorized: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
-def share_host() -> str:
-    return os.environ.get(SHARE_HOST_ENV, "").strip().lower()
-
-
-def share_token() -> str:
-    return os.environ.get(SHARE_TOKEN_ENV, "").strip()
-
-
-def share_read_only() -> bool:
-    raw = os.environ.get(SHARE_READ_ONLY_ENV, "1").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
+def configured_share(request: Request) -> ShareConfig:
+    config = getattr(request.app.state, "share_config", None)
+    return config if isinstance(config, ShareConfig) else ShareConfig.from_environ()
 
 
 def request_host(request: Request) -> str:
@@ -77,14 +112,22 @@ def presented_token(request: Request) -> str:
     return (request.query_params.get("share") or "").strip()
 
 
-def decide(request: Request) -> ShareDecision:
-    configured = share_host()
+def decide(request: Request, config: ShareConfig | None = None) -> ShareDecision:
+    configured = config or configured_share(request)
     host = request_host(request)
-    if not configured or host != configured:
+    if not configured.host or host != configured.host:
         return ShareDecision(audience="local", read_only=False, authorized=True)
-    token = share_token()
-    got = presented_token(request)
-    if token and not hmac.compare_digest(got, token):
+    if configured.auth == AUTH_CLOUDFLARE_ACCESS:
+        email = request.headers.get(ACCESS_EMAIL_HEADER, "").strip()
+        assertion = request.headers.get(ACCESS_JWT_HEADER, "").strip()
+        if not email or not assertion:
+            return ShareDecision(
+                audience="share",
+                read_only=True,
+                authorized=False,
+                error="Cloudflare Access identity is missing",
+            )
+    elif not hmac.compare_digest(presented_token(request), configured.token):
         return ShareDecision(
             audience="share",
             read_only=True,
@@ -93,7 +136,7 @@ def decide(request: Request) -> ShareDecision:
         )
     return ShareDecision(
         audience="share",
-        read_only=share_read_only(),
+        read_only=configured.read_only,
         authorized=True,
     )
 
@@ -103,10 +146,14 @@ def is_exempt(path: str) -> bool:
 
 
 async def share_gate_middleware(request: Request, call_next) -> Response:
-    decision = decide(request)
+    config = configured_share(request)
+    decision = decide(request, config)
     request.state.share_audience = decision.audience
     request.state.share_read_only = decision.read_only
-    if is_exempt(request.url.path):
+    # The token session route and legacy health/docs exemptions predate Access.
+    # Access mode guards every public-host request; cloudflared independently
+    # verifies the JWT signature and audience before forwarding to loopback.
+    if config.auth == AUTH_TOKEN and is_exempt(request.url.path):
         return await call_next(request)
     if not decision.authorized:
         return JSONResponse(

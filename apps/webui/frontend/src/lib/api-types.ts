@@ -191,6 +191,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assistant/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assistant Chat
+         * @description Stream one completion from OpenRouter, or explain why there is none.
+         *
+         *     The upstream status is checked BEFORE the response starts, so a refusal
+         *     arrives as a real HTTP error with a code rather than as a 200 whose body
+         *     turns out to be empty.
+         */
+        post: operations["assistant_chat_api_v1_assistant_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant Status
+         * @description Whether a chat can work at all, and which model would answer it.
+         */
+        get: operations["assistant_status_api_v1_assistant_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -235,6 +279,23 @@ export interface paths {
         };
         /** Get Ratings File */
         get: operations["get_ratings_file_api_v1_bench_ratings__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Build Info */
+        get: operations["build_info_api_v1_build_info_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -393,6 +454,92 @@ export interface paths {
         get: operations["engine_health_api_v1_health_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_v1_ingest_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_v1_ingest_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Coverage */
+        get: operations["get_coverage_api_v1_ingest_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Refresh */
+        post: operations["start_refresh_api_v1_ingest_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/refresh/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Refresh Status */
+        get: operations["refresh_status_api_v1_ingest_refresh_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload */
+        post: operations["upload_api_v1_ingest_upload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -815,6 +962,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rekordbox/writeback-gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Writeback Gate */
+        get: operations["read_writeback_gate_api_v1_rekordbox_writeback_gate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/relocate/candidates/{stable_id}": {
         parameters: {
             query?: never;
@@ -911,6 +1075,195 @@ export interface paths {
         put?: never;
         /** Ai Search */
         post: operations["ai_search_api_v1_settings_ai_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/detect/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detect Folder
+         * @description Look inside a candidate folder WITHOUT importing it.
+         *
+         *     This is the no-rekordbox branch's version of the detect step. The count
+         *     it returns is only meaningful when ``denied`` is false: macOS answers a
+         *     blocked listing with an empty one, so "0 audio files" from a denied
+         *     folder would be a fabrication.
+         */
+        get: operations["detect_folder_api_v1_setup_detect_folder_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/detect/rekordbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detect Rekordbox Endpoint
+         * @description Report the rekordbox install WITHOUT opening or copying anything.
+         */
+        get: operations["detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss
+         * @description Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.
+         */
+        post: operations["dismiss_api_v1_setup_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Import
+         * @description Queue the import as a job, so progress streams over the events bus.
+         *
+         *     Refuses BEFORE enqueueing on anything detection can already see: a job
+         *     that is certain to fail is worse than a 409, because it turns a clear
+         *     refusal into a failed row somebody has to go and read.
+         */
+        post: operations["start_import_api_v1_setup_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/import/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Folder Import
+         * @description Queue a folder import: tags only, no analysis, and it says so.
+         *
+         *     Its own endpoint rather than a mode flag on /import, because its
+         *     refusals are different ones: a folder can be absent, unreadable, or
+         *     genuinely empty, and none of those is a rekordbox problem.
+         */
+        post: operations["start_folder_import_api_v1_setup_import_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permissions
+         * @description Can this process read the folders the music lives in?
+         *
+         *     Reported, never refused on. macOS answers a blocked listing with an
+         *     EMPTY one rather than an error, which is how a library with 40,000
+         *     tracks in it becomes a library with none and nobody is told. Every
+         *     count this API reports afterwards has to be read against the ``denied``
+         *     list here: zero files in a folder we were not allowed to open is not
+         *     zero files.
+         */
+        get: operations["permissions_api_v1_setup_permissions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Status
+         * @description Is this a first run? Counts come from state.db, not from memory.
+         */
+        get: operations["setup_status_api_v1_setup_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/stems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stems Availability
+         * @description Can a library-wide stems pass be started from setup?
+         *
+         *     ANSWERED FROM EVIDENCE, never from a constant. The verdict is whether
+         *     this engine actually has a worker registered for ``stems.separate``: a
+         *     legacy boot, or a chassis whose composition root never wired the kind,
+         *     genuinely cannot run one and says so in the tester's own words.
+         *
+         *     The tier ladder is real either way. An unavailable rung carries the
+         *     reason it is unavailable, so the wizard renders true choices rather
+         *     than a placeholder list.
+         */
+        get: operations["stems_availability_api_v1_setup_stems_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1103,6 +1456,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stems Plan */
+        get: operations["get_stems_plan_api_v1_stems_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/tiers": {
         parameters: {
             query?: never;
@@ -1114,6 +1484,46 @@ export interface paths {
         get: operations["list_tiers_api_v1_stems_tiers_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/telemetry/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Clients
+         * @description Every client seen since engine boot, plus the one-glance summary.
+         */
+        get: operations["list_clients_api_v1_telemetry_clients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/telemetry/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Heartbeat
+         * @description Upsert one client's liveness. Server-stamped; the client sends no time.
+         */
+        post: operations["record_heartbeat_api_v1_telemetry_heartbeat_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1532,6 +1942,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccessProbeOut
+         * @description One folder, and whether this process can actually read it.
+         *
+         *     ``exists`` true with ``readable`` false and ``denied`` true is the macOS
+         *     TCC case: the folder is there and full of music, and the listing is
+         *     refused, so anything that counted files inside it would report zero.
+         */
+        AccessProbeOut: {
+            /** Denied */
+            denied: boolean;
+            /** Detail */
+            detail: string;
+            /** Exists */
+            exists: boolean;
+            /** Path */
+            path: string;
+            /** Readable */
+            readable: boolean;
+        };
         /** AiApplyIn */
         AiApplyIn: {
             /** Instruction */
@@ -1607,6 +2037,19 @@ export interface components {
             /** Confirmation */
             confirmation: string;
             plan: components["schemas"]["PlanModel"];
+        };
+        /**
+         * AssistantStatusOut
+         * @description Enough for the sidebar to render an honest panel without a request.
+         *
+         *     Firing a chat to discover there is no key would cost a round trip and
+         *     show the user a failed message they did not send.
+         */
+        AssistantStatusOut: {
+            /** Configured */
+            configured: boolean;
+            /** Model */
+            model: string;
         };
         /**
          * AutoCueOut
@@ -1702,6 +2145,18 @@ export interface components {
              */
             severity: "warning" | "error";
         };
+        /** Body_upload_api_v1_ingest_upload_post */
+        Body_upload_api_v1_ingest_upload_post: {
+            /** Batch */
+            batch: string;
+            /** Files */
+            files: string[];
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
         /** BrokenTrackList */
         BrokenTrackList: {
             /** Total */
@@ -1754,6 +2209,49 @@ export interface components {
             /** Vendor Id */
             vendor_id: string | null;
         };
+        /**
+         * BuildInfoOut
+         * @description The identity contract the UI and any agent read.
+         *
+         *     ``built_at_kind`` exists because the two sources measure different
+         *     moments: a payload knows when it was packaged, a checkout only knows when
+         *     HEAD was committed. Labelling which one is on screen costs one field and
+         *     removes a whole class of "why does this say yesterday" confusion.
+         */
+        BuildInfoOut: {
+            /** App Version */
+            app_version?: string | null;
+            /**
+             * Built At Kind
+             * @enum {string}
+             */
+            built_at_kind: "payload-build" | "head-commit";
+            /** Built At Utc */
+            built_at_utc: string;
+            /** Bundle Identifier */
+            bundle_identifier?: string | null;
+            /** Engine Version */
+            engine_version: string;
+            /** Git Branch */
+            git_branch: string;
+            /** Git Dirty */
+            git_dirty: boolean;
+            /** Git Sha */
+            git_sha: string;
+            /** Git Sha Full */
+            git_sha_full: string;
+            /** Lane Label */
+            lane_label?: string | null;
+            /** Manifest Path */
+            manifest_path?: string | null;
+            /** Product Name */
+            product_name?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "payload" | "repo";
+        };
         /** BulkEditIn */
         BulkEditIn: {
             /** Expected Etags */
@@ -1784,6 +2282,27 @@ export interface components {
             etag: string;
             /** Stable Id */
             stable_id: string;
+        };
+        /**
+         * ChatIn
+         * @description A whole conversation, resent every turn -- the engine stores none of it.
+         */
+        ChatIn: {
+            /** Messages */
+            messages: components["schemas"]["ChatMessage"][];
+        };
+        /**
+         * ChatMessage
+         * @description One turn. Same three roles OpenRouter accepts, no tool calls.
+         */
+        ChatMessage: {
+            /** Content */
+            content: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "system" | "user" | "assistant";
         };
         /** ClientErrorIn */
         ClientErrorIn: {
@@ -1857,6 +2376,40 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
+        /** ClientOut */
+        ClientOut: {
+            /** App Version */
+            app_version: string;
+            /** Client Id */
+            client_id: string;
+            /**
+             * In Use
+             * @description Open AND the page is visible on screen.
+             */
+            in_use: boolean;
+            /**
+             * Is Open
+             * @description Checked in within the in-use window.
+             */
+            is_open: boolean;
+            /**
+             * Last Seen At
+             * @description Server wall-clock time of the last heartbeat.
+             */
+            last_seen_at: string;
+            /** Page Visible */
+            page_visible: boolean;
+            /**
+             * Seconds Since Seen
+             * @description Server monotonic seconds since it checked in.
+             */
+            seconds_since_seen: number;
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "desktop-shell" | "browser";
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -1882,6 +2435,22 @@ export interface components {
             /** Revision */
             revision: string;
         };
+        /** ConfigIn */
+        ConfigIn: {
+            /** Enabled */
+            enabled: {
+                [key: string]: boolean;
+            };
+        };
+        /** ConfigOut */
+        ConfigOut: {
+            /** Path */
+            path: string;
+            /** Steps */
+            steps: {
+                [key: string]: unknown;
+            }[];
+        };
         /** CopilotTrackOut */
         CopilotTrackOut: {
             /** Artist */
@@ -1896,6 +2465,21 @@ export interface components {
             stable_id: string;
             /** Title */
             title: string | null;
+        };
+        /** CoverageOut */
+        CoverageOut: {
+            /** Generated At */
+            generated_at: number;
+            /** Missing */
+            missing: {
+                [key: string]: number;
+            };
+            /** On Disk */
+            on_disk: number;
+            /** Total Tracks */
+            total_tracks: number;
+            /** Unreachable */
+            unreachable: number;
         };
         /** DecisionIn */
         DecisionIn: {
@@ -2011,6 +2595,20 @@ export interface components {
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
         };
+        /**
+         * FileProbeOut
+         * @description One real path and whether it is actually there.
+         */
+        FileProbeOut: {
+            /** Exists */
+            exists: boolean;
+            /** Modified At */
+            modified_at?: string | null;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes?: number | null;
+        };
         /** FindReplaceApplyIn */
         FindReplaceApplyIn: {
             /**
@@ -2111,6 +2709,94 @@ export interface components {
             /** Would Change */
             would_change: boolean;
         };
+        /**
+         * FolderImportIn
+         * @description Point at one or more folders of audio files. No rekordbox involved.
+         */
+        FolderImportIn: {
+            /**
+             * Folders
+             * @description absolute paths to walk; at least one
+             */
+            folders: string[];
+            /**
+             * Limit
+             * @description import at most N files
+             */
+            limit?: number | null;
+        };
+        /**
+         * FolderLastImportOut
+         * @description What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.
+         *
+         *     A different model rather than optional fields on the rekordbox one,
+         *     because the two describe different work: there is no decrypt here, no
+         *     playlists, and -- the field that matters --
+         *     ``tracks_without_analysis``, which equals the tracks written.
+         */
+        FolderLastImportOut: {
+            /**
+             * Analysis Available
+             * @default false
+             */
+            analysis_available: boolean;
+            /** Analysis Detail */
+            analysis_detail: string;
+            /** Files Dataless */
+            files_dataless: number;
+            /** Files Seen */
+            files_seen: number;
+            /** Files Without Tags */
+            files_without_tags: number;
+            /** Finished At */
+            finished_at: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "folder";
+            /** Roots */
+            roots?: string[];
+            /** Started At */
+            started_at: string;
+            /** Tracks */
+            tracks: number;
+            /** Tracks Without Analysis */
+            tracks_without_analysis: number;
+            /** Tracks Written */
+            tracks_written: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+        };
+        /**
+         * FolderScanOut
+         * @description What a candidate folder actually holds, before anything is imported.
+         *
+         *     ``audio_files`` counts what could be READ. When ``denied`` is true that
+         *     number is not a count of the folder, it is a count of nothing, and
+         *     ``detail`` says so -- which is the difference between "this folder is
+         *     empty" and "macOS would not let me look".
+         */
+        FolderScanOut: {
+            /** Audio Files */
+            audio_files: number;
+            /** Denied */
+            denied: boolean;
+            /** Detail */
+            detail: string;
+            /** Exists */
+            exists: boolean;
+            /** How To Grant */
+            how_to_grant: string;
+            /** Icloud Placeholders */
+            icloud_placeholders: number;
+            /** Path */
+            path: string;
+            /** Readable */
+            readable: boolean;
+            /** Sample */
+            sample?: string[];
+        };
         /** GenerateIn */
         GenerateIn: {
             /** Stable Id */
@@ -2174,6 +2860,20 @@ export interface components {
             requested: string;
             /** Selected */
             selected: string;
+        };
+        /** HeartbeatIn */
+        HeartbeatIn: {
+            /** App Version */
+            app_version: string;
+            /** Client Id */
+            client_id: string;
+            /** Page Visible */
+            page_visible: boolean;
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "desktop-shell" | "browser";
         };
         /** HotCueMutationOut */
         HotCueMutationOut: {
@@ -2284,6 +2984,47 @@ export interface components {
              * @default web_ui
              */
             labeler: string;
+        };
+        /**
+         * LastImportOut
+         * @description What the previous rekordbox import did. Mirrors ``ImportOutcome``.
+         *
+         *     Typed rather than a free-form object: a caller reading a track count off
+         *     an untyped dict has no contract, and the wizard's "done" screen is built
+         *     entirely out of these numbers.
+         */
+        LastImportOut: {
+            /** Analyses Expected */
+            analyses_expected: number;
+            /** Analyses Linked */
+            analyses_linked: number;
+            /** Finished At */
+            finished_at: string;
+            /** Ingested From */
+            ingested_from: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rekordbox";
+            /** Playlists */
+            playlists: number;
+            /** Rekordbox Tracks */
+            rekordbox_tracks: number;
+            /** Rekordbox Was Running */
+            rekordbox_was_running: boolean;
+            /** Share Root */
+            share_root: string;
+            /** Source */
+            source: string;
+            /** Source Was Encrypted */
+            source_was_encrypted: boolean;
+            /** Started At */
+            started_at: string;
+            /** Tracks */
+            tracks: number;
+            /** Unreadable Music Roots */
+            unreadable_music_roots?: string[];
         };
         /** MemberOut */
         MemberOut: {
@@ -2475,6 +3216,23 @@ export interface components {
             updated_at: string;
         };
         /**
+         * PassiveActivityOut
+         * @description Backstop signal: ordinary traffic classified by User-Agent.
+         *
+         *     Telemetry and health paths are excluded, so an agent polling this
+         *     endpoint cannot manufacture the activity it is asking about.
+         */
+        PassiveActivityOut: {
+            /** By Surface */
+            by_surface: {
+                [key: string]: components["schemas"]["SurfaceActivityOut"];
+            };
+            /** Last Request At */
+            last_request_at: string | null;
+            /** Seconds Since Last Request */
+            seconds_since_last_request: number | null;
+        };
+        /**
          * PendingTrackOut
          * @description One persisted, unmatched Spotify playlist entry.
          */
@@ -2505,6 +3263,20 @@ export interface components {
             suggested_sources: components["schemas"]["SuggestedSourcesOut"];
             /** Title */
             title: string;
+        };
+        /**
+         * PermissionsOut
+         * @description The folder-access answer, and what to do about a refusal.
+         */
+        PermissionsOut: {
+            /** All Readable */
+            all_readable: boolean;
+            /** Denied */
+            denied?: string[];
+            /** How To Grant */
+            how_to_grant: string;
+            /** Roots */
+            roots?: components["schemas"]["AccessProbeOut"][];
         };
         /** PlanModel */
         PlanModel: {
@@ -3005,6 +3777,62 @@ export interface components {
             /** Session Id */
             session_id: string | null;
         };
+        /** RefreshIn */
+        RefreshIn: {
+            /** Batch Dir */
+            batch_dir?: string | null;
+        };
+        /** RefreshStatusOut */
+        RefreshStatusOut: {
+            /** Current Step */
+            current_step: string | null;
+            /** Error */
+            error: string | null;
+            /** Finished At */
+            finished_at: number | null;
+            /** Log Tail */
+            log_tail: string[];
+            /** Phase */
+            phase: string;
+            /** Recently Done Ids */
+            recently_done_ids: string[];
+            /** Running */
+            running: boolean;
+            /** Started At */
+            started_at: number | null;
+            /** Step Done */
+            step_done: number;
+            /** Step Total */
+            step_total: number;
+            /** Steps */
+            steps: string[];
+            /** Steps Completed */
+            steps_completed: string[];
+        };
+        /**
+         * RekordboxDetectionOut
+         * @description The 'detect rekordbox' step, reported without touching the install.
+         */
+        RekordboxDetectionOut: {
+            /** Blockers */
+            blockers?: string[];
+            /** Import Source */
+            import_source?: string | null;
+            /** Import Source Encrypted */
+            import_source_encrypted?: boolean | null;
+            /** Installed */
+            installed: boolean;
+            /** Key Available */
+            key_available: boolean;
+            /** Key Detail */
+            key_detail: string;
+            live_db: components["schemas"]["FileProbeOut"];
+            plain_copy: components["schemas"]["FileProbeOut"];
+            /** Rekordbox Running */
+            rekordbox_running: boolean;
+            share_dir: components["schemas"]["FileProbeOut"];
+            working_copy: components["schemas"]["FileProbeOut"];
+        };
         /** RelocateApplyIn */
         RelocateApplyIn: {
             /**
@@ -3112,6 +3940,11 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Rating */
             rating: number | null;
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
             /** Stable Id */
             stable_id: string;
             /** Stems */
@@ -3161,6 +3994,65 @@ export interface components {
         SettingsOut: {
             /** Groups */
             groups: components["schemas"]["SettingsGroup"][];
+        };
+        /** SetupDismissIn */
+        SetupDismissIn: {
+            /**
+             * Dismissed
+             * @default true
+             */
+            dismissed: boolean;
+        };
+        /**
+         * SetupImportIn
+         * @description Import options. Both are the same knobs the CLI exposes.
+         */
+        SetupImportIn: {
+            /**
+             * Limit
+             * @description ingest at most N tracks (smoke-test aid)
+             */
+            limit?: number | null;
+            /**
+             * Refresh Decrypt
+             * @description re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt
+             * @default false
+             */
+            refresh_decrypt: boolean;
+            /**
+             * Source
+             * @description explicit rekordbox database to read; omit to auto-detect
+             */
+            source?: string | null;
+        };
+        /**
+         * SetupStatusOut
+         * @description Everything the wizard needs to decide whether to show itself.
+         */
+        SetupStatusOut: {
+            /** Data Dir */
+            data_dir: string;
+            /** Dev Mode */
+            dev_mode: boolean;
+            /** Dismissed */
+            dismissed: boolean;
+            /** Folder Stages */
+            folder_stages: string[];
+            /** Last Import */
+            last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
+            /** Library Empty */
+            library_empty: boolean;
+            permissions: components["schemas"]["PermissionsOut"];
+            /** Playlists */
+            playlists: number;
+            rekordbox: components["schemas"]["RekordboxDetectionOut"];
+            /** Should Show Wizard */
+            should_show_wizard: boolean;
+            /** Stages */
+            stages: string[];
+            state_db: components["schemas"]["FileProbeOut"];
+            /** Tracks */
+            tracks: number;
         };
         /**
          * SmartlistConflictBody
@@ -3301,6 +4193,101 @@ export interface components {
             /** Media Type */
             media_type: string;
         };
+        /**
+         * StemTierOut
+         * @description One real separation rung, straight out of apps.stems.tiers.
+         */
+        StemTierOut: {
+            /** Availability */
+            availability: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Unavailable Because */
+            unavailable_because: string;
+            /** Where */
+            where: string;
+        };
+        /**
+         * StemsPlanOut
+         * @description What separating this library at this tier would take.
+         */
+        StemsPlanOut: {
+            /**
+             * Estimate Seconds
+             * @description wall-clock floor for the pending batch, GPU side only
+             */
+            estimate_seconds: number;
+            /**
+             * Estimate Usd
+             * @description GPU cost of the pending batch
+             */
+            estimate_usd: number;
+            /**
+             * Pending
+             * @description audio on disk, no bundle yet: the work
+             */
+            pending: number;
+            /**
+             * Ready
+             * @description already has a stem bundle on disk
+             */
+            ready: number;
+            /** Tier */
+            tier: string;
+            /** Tier Name */
+            tier_name: string;
+            /**
+             * Total
+             * @description library rows carrying a file path
+             */
+            total: number;
+            /**
+             * Transport
+             * @description how this build reaches a GPU: relay or direct
+             */
+            transport: string;
+            /**
+             * Transport Refusal
+             * @description why a run cannot start on this build; null when it can
+             */
+            transport_refusal?: string | null;
+            /**
+             * Unavailable
+             * @description library row exists, its file does not
+             */
+            unavailable: number;
+        };
+        /**
+         * StemsSetupOut
+         * @description Whether a library-wide separation pass can be started here.
+         *
+         *     The agent-facing half of the wizard's stems step. The browser mounts
+         *     af--stems-modal's StemsPrompt component, which asks
+         *     ``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same
+         *     verdict, and is told exactly which two calls drive the flow.
+         *
+         *     ``available`` is EVIDENCE, not a constant: it reports whether the
+         *     ``stems.separate`` job kind is actually registered in this engine. The
+         *     ``tiers`` list is real data either way, never a placeholder.
+         */
+        StemsSetupOut: {
+            /** Available */
+            available: boolean;
+            /** Enqueue Endpoint */
+            enqueue_endpoint: string;
+            /** Job Kind */
+            job_kind: string;
+            /** Per Track Endpoint */
+            per_track_endpoint: string;
+            /** Plan Endpoint */
+            plan_endpoint: string;
+            /** Reason */
+            reason: string;
+            /** Tiers */
+            tiers: components["schemas"]["StemTierOut"][];
+        };
         /** SuggestNextIn */
         SuggestNextIn: {
             /**
@@ -3374,6 +4361,13 @@ export interface components {
             stable_id: string;
             /** Title */
             title: string | null;
+        };
+        /** SurfaceActivityOut */
+        SurfaceActivityOut: {
+            /** Last Request At */
+            last_request_at: string | null;
+            /** Seconds Since Request */
+            seconds_since_request: number | null;
         };
         /**
          * TierEstimateOut
@@ -3616,6 +4610,11 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Rating */
             rating: number | null;
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
             /** Stable Id */
             stable_id: string;
             /** Stems */
@@ -3681,6 +4680,50 @@ export interface components {
             hide_todo_settings?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /** UploadFileResult */
+        UploadFileResult: {
+            /** Duplicate Of */
+            duplicate_of: {
+                [key: string]: unknown;
+            } | null;
+            /** Duration S */
+            duration_s: number | null;
+            /** Filename */
+            filename: string;
+            /** Fingerprint Method */
+            fingerprint_method: string;
+            /** Skipped Duplicate */
+            skipped_duplicate: boolean;
+            /** Staged Path */
+            staged_path: string | null;
+        };
+        /** UploadOut */
+        UploadOut: {
+            /** Batch */
+            batch: string;
+            /** Dest Dir */
+            dest_dir: string;
+            /** Results */
+            results: components["schemas"]["UploadFileResult"][];
+        };
+        /** UsageClientsOut */
+        UsageClientsOut: {
+            /** Clients */
+            clients: components["schemas"]["ClientOut"][];
+            /** In Use Window Seconds */
+            in_use_window_seconds: number;
+            passive_activity: components["schemas"]["PassiveActivityOut"];
+            summary: components["schemas"]["UsageSummaryOut"];
+        };
+        /** UsageSummaryOut */
+        UsageSummaryOut: {
+            /** Any Client In Use */
+            any_client_in_use: boolean;
+            /** Any Client Open */
+            any_client_open: boolean;
+            /** Desktop Shell Open */
+            desktop_shell_open: boolean;
         };
         /** UsbVolumeOut */
         UsbVolumeOut: {
@@ -3835,6 +4878,17 @@ export interface components {
             /** Transcript */
             transcript: string;
         };
+        /** WriteSurfaceOut */
+        WriteSurfaceOut: {
+            /** Entrypoint */
+            entrypoint: string;
+            /** Kind */
+            kind: string;
+            /** Surface Id */
+            surface_id: string;
+            /** Target */
+            target: string;
+        };
         /** WritebackApplyIn */
         WritebackApplyIn: {
             /**
@@ -3898,6 +4952,21 @@ export interface components {
             playlist_id: string;
             /** Vendors */
             vendors: components["schemas"]["VendorCapabilityOut"][];
+        };
+        /** WritebackGateOut */
+        WritebackGateOut: {
+            /** Code */
+            code: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Env Var */
+            env_var: string;
+            /** Message */
+            message: string;
+            /** Surfaces */
+            surfaces: components["schemas"]["WriteSurfaceOut"][];
+            /** Ui Title */
+            ui_title: string;
         };
         /** WritebackPlanOut */
         WritebackPlanOut: {
@@ -4350,6 +5419,73 @@ export interface operations {
             };
         };
     };
+    assistant_chat_api_v1_assistant_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatIn"];
+            };
+        };
+        responses: {
+            /** @description The completion, streamed as plain UTF-8 text. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": unknown;
+                };
+            };
+            /** @description No OPENROUTER_API_KEY is configured. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description OpenRouter refused or could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assistant_status_api_v1_assistant_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
     get_kpi_ledger_api_v1_bench_kpi_get: {
         parameters: {
             query?: never;
@@ -4455,6 +5591,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    build_info_api_v1_build_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildInfoOut"];
+                };
+            };
+            /** @description this build cannot state its own identity */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4766,6 +5929,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EngineHealthOut"];
+                };
+            };
+        };
+    };
+    get_config_api_v1_ingest_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigOut"];
+                };
+            };
+        };
+    };
+    put_config_api_v1_ingest_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_coverage_api_v1_ingest_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+        };
+    };
+    start_refresh_api_v1_ingest_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_status_api_v1_ingest_refresh_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+        };
+    };
+    upload_api_v1_ingest_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_api_v1_ingest_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5709,6 +7031,26 @@ export interface operations {
             };
         };
     };
+    read_writeback_gate_api_v1_rekordbox_writeback_gate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WritebackGateOut"];
+                };
+            };
+        };
+    };
     get_candidates_api_v1_relocate_candidates__stable_id__get: {
         parameters: {
             query?: {
@@ -5896,6 +7238,231 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detect_folder_api_v1_setup_detect_folder_get: {
+        parameters: {
+            query: {
+                /** @description absolute folder path to inspect */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RekordboxDetectionOut"];
+                };
+            };
+        };
+    };
+    dismiss_api_v1_setup_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupDismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description this build cannot state its own identity, so the wizard gate cannot be decided */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_import_api_v1_setup_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupImportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_folder_import_api_v1_setup_import_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderImportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    permissions_api_v1_setup_permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionsOut"];
+                };
+            };
+        };
+    };
+    setup_status_api_v1_setup_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOut"];
+                };
+            };
+            /** @description this build cannot state its own identity, so the wizard gate cannot be decided */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stems_availability_api_v1_setup_stems_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemsSetupOut"];
                 };
             };
         };
@@ -6248,6 +7815,38 @@ export interface operations {
             };
         };
     };
+    get_stems_plan_api_v1_stems_plan_get: {
+        parameters: {
+            query?: {
+                /** @description Modal rung: S, M or L */
+                tier?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemsPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_tiers_api_v1_stems_tiers_get: {
         parameters: {
             query?: never;
@@ -6264,6 +7863,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TierOut"][];
+                };
+            };
+        };
+    };
+    list_clients_api_v1_telemetry_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageClientsOut"];
+                };
+            };
+        };
+    };
+    record_heartbeat_api_v1_telemetry_heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeartbeatIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

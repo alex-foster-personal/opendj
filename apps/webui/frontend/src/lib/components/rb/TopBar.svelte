@@ -30,6 +30,7 @@
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
+	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
@@ -39,6 +40,7 @@
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -185,6 +187,11 @@
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
 >	<!-- left: live audio health + prefetch count, then mode dropdown -->
 	<PerfMeters />
+
+	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
+	     while no stems job is active, so it costs no space the rest of the
+	     time; clicking it opens the JOBS drawer for the per-job detail. -->
+	<StemsProgress />
 
 	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
 		PERFORMANCE
@@ -422,12 +429,8 @@
 		</svg>
 	</button>
 
-	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="refresh">
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<path d="M9.8 6 a3.8 3.8 0 1 1 -1.1 -2.7" fill="none" stroke="currentColor" stroke-width="1.2" />
-			<path d="M9.9 0.8 L9.9 3.6 L7.1 3.6 Z" fill="currentColor" />
-		</svg>
-	</button>
+	<!-- refresh analysis: REAL -> /api/v1/ingest refresh job (was inert chrome) -->
+	<RefreshAnalysisButton />
 
 	<!-- master volume: REAL -> engine master GainNode -->
 	<div
@@ -786,52 +789,5 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
-	}
-
-	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
-	 * amber pulse = permission prompt pending, green = mapped device up. */
-	.midi-label {
-		background: transparent;
-		border: none;
-		padding: 0;
-		font-family: var(--rb-font);
-		font-size: var(--rb-fs-label);
-		letter-spacing: 0.08em;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.midi-label.st-grey {
-		color: var(--rb-text-dim);
-		opacity: 0.6;
-	}
-	.midi-label.st-grey:hover {
-		opacity: 1;
-	}
-	.midi-label.st-green {
-		color: var(--rb-green);
-		opacity: 1;
-	}
-	.midi-label.st-red {
-		color: var(--rb-red);
-		opacity: 1;
-	}
-	.midi-glyph {
-		margin-left: 3px;
-		font-size: 10px;
-		font-weight: 700;
-	}
-	.midi-label.st-amber {
-		color: var(--rb-orange);
-		opacity: 1;
-		animation: midi-pulse 1s ease-in-out infinite;
-	}
-	@keyframes midi-pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.35;
-		}
 	}
 </style>

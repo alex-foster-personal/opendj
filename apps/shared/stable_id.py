@@ -16,6 +16,9 @@ Also offers two tiny convenience wrappers:
 """
 from __future__ import annotations
 
+import re
+from typing import Final
+
 from apps.shared.state.ids import (
     ISRC_PATTERN,
     Tier,
@@ -65,9 +68,32 @@ def stable_id_str(
     return digest
 
 
+def is_safe_stable_id_segment(stable_id: str) -> bool:
+    """Is this id safe to use as ONE path segment under an artifact root?
+
+    Every artifact store here is a directory per stable_id, so an id that is
+    ``..``, absolute, or carries a separator selects a directory nobody meant
+    to name. This is the single definition of "safe" for that question.
+
+    It lives in ``apps.shared`` rather than beside any one store because more
+    than one package needs it and ``apps.shared`` is the only package they can
+    all import without a cycle. A PREDICATE, not a raiser: each caller owns
+    the error type its own layer reports (an HTTP refusal, an artifact error,
+    a payload error), and none of them should have to import another's.
+    """
+    return bool(_SAFE_SEGMENT_RE.fullmatch(stable_id)) and stable_id not in {
+        ".",
+        "..",
+    }
+
+
+_SAFE_SEGMENT_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
 __all__ = [
     "ISRC_PATTERN",
     "Tier",
+    "is_safe_stable_id_segment",
     "normalise_isrc",
     "stable_id",
     "stable_id_for",

@@ -9,6 +9,10 @@
 		type BrokenTrack,
 		type RelocateCandidate
 	} from '$lib/reconcile-api';
+	import {
+		rekordboxWriteback,
+		rekordboxWritebackRefusal
+	} from '$lib/rb/rekordbox-writeback.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let broken = $state<BrokenTrack[]>([]);
@@ -19,6 +23,12 @@
 	let candidateVendorId = $state<string | null>(null);
 	let candidatesLoading = $state(false);
 	let applying = $state<string | null>(null);
+
+	// Relocate apply patches djmdContent.FolderPath on the LIVE rekordbox
+	// database, so it is inert whenever the daemon is in one-way import mode.
+	// ONE function gates the request and supplies the tooltip, so the disabled
+	// button can never disagree with the reason it is disabled.
+	const writebackRefusal = $derived(rekordboxWritebackRefusal());
 
 	async function load(): Promise<void> {
 		loading = true;
@@ -56,6 +66,7 @@
 	}
 
 	async function relocate(track: BrokenTrack, candidate: RelocateCandidate): Promise<void> {
+		if (writebackRefusal !== null) return;
 		applying = track.stable_id;
 		try {
 			if (!candidateOriginalPath) {
@@ -85,7 +96,10 @@
 		}
 	}
 
-	onMount(load);
+	onMount(() => {
+		void rekordboxWriteback.probe();
+		void load();
+	});
 </script>
 
 <h2>Missing tracks</h2>
@@ -140,7 +154,8 @@
 													: ''})
 											</span>
 											<button
-												disabled={applying === track.stable_id}
+												disabled={applying === track.stable_id || writebackRefusal !== null}
+												title={writebackRefusal ?? 'Point this track at the chosen file'}
 												onclick={() => relocate(track, cand)}
 											>
 												{applying === track.stable_id ? 'Applying...' : 'Use this file'}

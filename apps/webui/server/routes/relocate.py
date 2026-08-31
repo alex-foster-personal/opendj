@@ -64,6 +64,7 @@ from apps.reconcile import locate
 from apps.shared import audio_files, fs_residency, paths
 from apps.shared.events import publish
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from .. import rb_vendor
 from ..backend import StateBackend, Track
@@ -426,6 +427,7 @@ def _write_rekordbox_folder_path(
     install -- so the apply is deferred to a local verify pass rather than
     pretending to have succeeded.
     """
+    require_writeback_enabled("module.relocate.write_folder_path")
     if not paths.REKORDBOX_LIVE_DB.exists():
         raise HTTPException(status_code=503, detail={
             "code": "REKORDBOX_DB_UNAVAILABLE",
@@ -532,6 +534,7 @@ def apply_relocate(
     if_match: Optional[str] = Header(None, alias="If-Match"),
     backend: StateBackend = Depends(get_write_state),
 ):
+    require_writeback_enabled("http.relocate.apply")
     if not body.confirm:
         raise HTTPException(status_code=422, detail={
             "code": "CONFIRM_REQUIRED",

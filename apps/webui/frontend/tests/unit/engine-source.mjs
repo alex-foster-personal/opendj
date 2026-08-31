@@ -33,10 +33,29 @@ import { fileURLToPath } from "node:url";
 const SRC = fileURLToPath(new URL("../../src", import.meta.url));
 
 /**
- * Every file that together holds what used to be audio-engine.svelte.ts.
- * Seeded with today's single path; T4 appends `lib/player/*` entries.
+ * Every file that together holds the engine's source-text surface.
+ *
+ * audio-engine.svelte.ts is now largely a barrel: it re-exports each module
+ * below, so a guard reading only the barrel reads `export ... from` lines and
+ * none of the arithmetic it means to pin.
+ *
+ * Six arrived as T4 extractions (S1 constants + camelot, S2 transport math,
+ * S3 presentation, S4 rune stores). master-mute.svelte.ts is listed for the
+ * same reason but arrived differently: it was written as a feature rather than
+ * moved out of the engine, and the barrel re-exports it. Membership is decided
+ * by "is this text reachable as engine surface today", not by how the file was
+ * born, because the guards read text and do not care.
  */
-export const ENGINE_SOURCE_PATHS = ["lib/rb/audio-engine.svelte.ts"];
+export const ENGINE_SOURCE_PATHS = [
+  "lib/rb/audio-engine.svelte.ts",
+  "lib/player/constants.ts",
+  "lib/player/key/camelot.ts",
+  "lib/player/master-mute.svelte.ts",
+  "lib/player/state.svelte.ts",
+  "lib/player/transport/loops.ts",
+  "lib/player/transport/presentation.ts",
+  "lib/player/transport/schedule-math.ts",
+];
 
 //-----------------------------------------------------------------------------
 // reading

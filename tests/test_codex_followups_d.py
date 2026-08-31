@@ -28,15 +28,11 @@ from apps.dj_copilot.session_context import (
     load_session_context,
 )
 
-pytestmark = [
-    pytest.mark.requirement("AI-01"),
-    # VOICE-02 does not exist: .planning/phases/14-voice-commands/14-CONTEXT.md
-    # reserves "VOICE-02+" for future backlog items. The shipped requirement
-    # this CLI-flag test defends is VOICE-01.
-    pytest.mark.requirement("VOICE-01"),
-    pytest.mark.requirement("OPEN-03c"),
-    pytest.mark.requirement("LAUNCH-02"),
-]
+# Requirement markers are per-test, NOT module-scoped: a module-level
+# ``pytestmark`` credits EVERY test here with EVERY id, so the traceability
+# matrix fills with false "covered by" links and an unrelated test keeps a
+# requirement looking covered. These modules bundle unrelated follow-up
+# findings, so each id sits on the test that actually exercises it.
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # -- P13-F02 --------------------------------------------------------------
 
 
+@pytest.mark.requirement("AI-01")
 def test_p13_f02_explicit_source_preserved_on_empty() -> None:
     ctx = load_session_context(source="phase12", conn=None)
     assert ctx.recent == []
@@ -53,6 +50,7 @@ def test_p13_f02_explicit_source_preserved_on_empty() -> None:
     )
 
 
+@pytest.mark.requirement("AI-01")
 def test_p13_f02_auto_still_falls_through_to_empty() -> None:
     ctx = load_session_context(source="auto", conn=None)
     assert ctx.source == "empty"
@@ -61,6 +59,10 @@ def test_p13_f02_auto_still_falls_through_to_empty() -> None:
 # -- P14-F03 --------------------------------------------------------------
 
 
+# VOICE-02 does not exist: .planning/phases/14-voice-commands/14-CONTEXT.md
+# reserves "VOICE-02+" for future backlog items. The shipped requirement
+# this CLI-flag test defends is VOICE-01.
+@pytest.mark.requirement("VOICE-01")
 def test_p14_f03_run_honours_enable_destructive_and_dry_bus(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -122,6 +124,7 @@ def stub_serato_adapter(monkeypatch: pytest.MonkeyPatch):
     return _install
 
 
+@pytest.mark.requirement("OPEN-03c")
 def test_p16_f03_conformance_loader_only_swallows_module_not_found(
     stub_serato_adapter,
 ) -> None:
@@ -142,6 +145,7 @@ def test_p16_f03_conformance_loader_only_swallows_module_not_found(
 # -- P17-02 / P17-03 / F18-03: Rust + TS source probes --------------------
 
 
+@pytest.mark.requirement("LAUNCH-02")
 def test_p17_02_frecency_decay_uses_max_timestamp() -> None:
     text = (
         REPO_ROOT / "apps/launcher/src-tauri/src/commands/frecency.rs"
@@ -157,6 +161,7 @@ def test_p17_02_frecency_decay_uses_max_timestamp() -> None:
     assert "p.max(d)" in live
 
 
+@pytest.mark.requirement("LAUNCH-02")
 def test_p17_03_use_search_logs_backend_failures() -> None:
     text = (
         REPO_ROOT / "apps/launcher/src/hooks/useSearch.ts"
@@ -166,6 +171,7 @@ def test_p17_03_use_search_logs_backend_failures() -> None:
     )
 
 
+@pytest.mark.requirement("LAUNCH-02")
 def test_f18_03_rb_unknown_defaults_to_clipboard() -> None:
     text = (
         REPO_ROOT / "apps/launcher/drag-core/src/drag/rekordbox.rs"

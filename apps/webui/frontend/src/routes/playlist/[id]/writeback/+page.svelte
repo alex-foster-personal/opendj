@@ -15,6 +15,10 @@
 	} from '$lib/rb/api-writeback';
 	import { RbApiError } from '$lib/rb/api-rb';
 	import {
+		rekordboxWriteback,
+		rekordboxWritebackRefusal
+	} from '$lib/rb/rekordbox-writeback.svelte';
+	import {
 		canRollbackWriteback,
 		planMatchesSelection,
 		WritebackRequestGate,
@@ -35,9 +39,22 @@
 	let loading = $state(false);
 	const requestGate = new WritebackRequestGate();
 
+	// One-way import mode: APPLY writes the LIVE rekordbox master.db, so it is
+	// inert while the daemon's gate is off. djay is a different vendor and a
+	// different decision, so it is NOT gated here -- the refusal is scoped to
+	// the selected vendor, exactly like the server's.
+	//
+	// ROLLBACK IS DELIBERATELY LEFT ENABLED. It only appears after an apply
+	// already landed, and taking away the undo for a bad write is worse for
+	// the user's data than the write itself. The server agrees: that surface
+	// is mapped gated=False.
+	const gateRefusal = $derived(rekordboxWritebackRefusal());
+	const writebackRefusal = $derived(selectedVendor === 'rekordbox' ? gateRefusal : null);
+
 	onMount(() => {
 		playlistId = $page.params.id ?? '';
 		if (!playlistId) throw new Error('playlist route param "id" missing');
+		void rekordboxWriteback.probe();
 		void refreshCapabilities();
 		return () => requestGate.invalidate();
 	});
@@ -133,6 +150,7 @@
 	}
 
 	async function onApply(): Promise<void> {
+		if (writebackRefusal !== null) return;
 		const selected = selection();
 		const activePlan = plan;
 		if (selected === null || !confirmed || activePlan === null || !planMatchesSelection(activePlan, selected)) {
@@ -156,6 +174,8 @@
 	}
 
 	async function onRollback(): Promise<void> {
+		// No gate check here on purpose: undo stays reachable in one-way import
+		// mode. The evidence check below is what keeps it honest.
 		const selected = selection();
 		const activePlan = plan;
 		const activeResult = applyResult;
@@ -184,6 +204,6 @@
 {#if error}<p class="warn">{error}</p>{/if}
 {#if capabilities}<div class="vendor-picker">{#each capabilities as cap (cap.vendor)}<label><input type="radio" name="vendor" value={cap.vendor} disabled={!cap.available || loading} checked={selectedVendor === cap.vendor} onchange={() => changeVendor(cap.vendor)} /> {cap.vendor}{#if !cap.available}<span class="reason"> ({cap.reason})</span>{/if}</label>{/each}</div>{/if}
 {#if selectedVendor}<label>Vendor playlist <select bind:value={targetId} disabled={loading} onchange={changeTarget}><option value="">Choose an exact vendor playlist</option>{#each targets as target (target.playlist_id)}<option value={target.playlist_id}>{target.name} ({target.playlist_id})</option>{/each}</select></label>{/if}
-{#if loading}<p>Working...</p>{:else if plan}<h3>Plan: {plan.target_name} -&gt; {plan.vendor}</h3><p>Target ID: <code>{plan.target_id}</code></p><p>Plan token: <code>{plan.plan_token}</code></p>{#if plan.is_noop}<p>No changes -- target already matches.</p>{:else if writebackPlanMutation(plan) === 'reorder'}<p class="warn">Membership is unchanged, but this live write will reorder the native playlist to the exact source order.</p>{:else}<p>Add {plan.added.length}, remove {plan.removed.length}.</p>{/if}{#if plan.unresolved.length}<p class="warn">Unmapped tracks block this apply: {plan.unresolved.join(', ')}</p>{/if}<label><input type="checkbox" bind:checked={confirmed} disabled={loading} /> I confirm this exact native playlist and revision</label><button onclick={onApply} disabled={loading || !confirmed || plan.is_noop || plan.unresolved.length > 0}>Apply to {plan.vendor}</button>{/if}
-{#if applyResult}<h3>Result</h3>{#if applyResult.applied}<p>Applied: +{applyResult.added.length} / -{applyResult.removed.length}; backup: <code>{applyResult.backup_id}</code></p><label><input type="checkbox" bind:checked={rollbackConfirmed} disabled={loading} /> I confirm rollback of this exact native playlist</label><button onclick={onRollback} disabled={loading || !rollbackConfirmed}>Rollback this write</button>{:else}<p class="warn">Not applied: {applyResult.error}</p>{/if}{/if}
+{#if loading}<p>Working...</p>{:else if plan}<h3>Plan: {plan.target_name} -&gt; {plan.vendor}</h3><p>Target ID: <code>{plan.target_id}</code></p><p>Plan token: <code>{plan.plan_token}</code></p>{#if plan.is_noop}<p>No changes -- target already matches.</p>{:else if writebackPlanMutation(plan) === 'reorder'}<p class="warn">Membership is unchanged, but this live write will reorder the native playlist to the exact source order.</p>{:else}<p>Add {plan.added.length}, remove {plan.removed.length}.</p>{/if}{#if plan.unresolved.length}<p class="warn">Unmapped tracks block this apply: {plan.unresolved.join(', ')}</p>{/if}<label><input type="checkbox" bind:checked={confirmed} disabled={loading} /> I confirm this exact native playlist and revision</label><button onclick={onApply} disabled={loading || !confirmed || plan.is_noop || plan.unresolved.length > 0 || writebackRefusal !== null} title={writebackRefusal ?? `Write this membership to ${plan.vendor}`}>Apply to {plan.vendor}</button>{#if writebackRefusal}<p class="warn">{writebackRefusal}</p>{/if}{/if}
+{#if applyResult}<h3>Result</h3>{#if applyResult.applied}<p>Applied: +{applyResult.added.length} / -{applyResult.removed.length}; backup: <code>{applyResult.backup_id}</code></p><label><input type="checkbox" bind:checked={rollbackConfirmed} disabled={loading} /> I confirm rollback of this exact native playlist</label><button onclick={onRollback} disabled={loading || !rollbackConfirmed} title="Restore the native playlist from the backup. Undo stays available in one-way import mode.">Rollback this write</button>{:else}<p class="warn">Not applied: {applyResult.error}</p>{/if}{/if}
 <style>.vendor-picker { display:flex; gap:1rem; margin-bottom:1rem; }.reason { color:var(--muted); }.warn { color:var(--error, #c0392b); } select { margin-left:.5rem; }</style>

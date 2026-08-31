@@ -34,6 +34,8 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.build_info import add_build_info_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
@@ -43,13 +45,21 @@ from apps.engine_core.config import (
 )
 from apps.engine_core.contract import compute_contract_rev
 from apps.engine_core.jobs.api import router as jobs_router
-from apps.engine_core.jobs.runner import JobRunner
+from apps.engine_core.jobs.runner import (
+    JobRunner,
+    register_progress_observer,
+    register_reconcile,
+    register_worker,
+)
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
+from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
+from apps.stems import job as stems_job
+from apps.stems.api import router as stems_plan_router
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server.app import FRONTEND_BUILD_DIR, _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
@@ -104,8 +114,29 @@ def create_app(
             [job["id"] for job in recovered],
         )
     runner = JobRunner(store)
+    # The chassis ships zero kinds; each kind opts in here. Registration is
+    # process-global and idempotent, and it must happen before the jobs router
+    # can be reached, or an enqueue for a real kind would 400 as unknown.
+    _register_job_kinds()
     app.include_router(jobs_router, prefix=API_PREFIX)
+    # Engine-only: the plan describes a run only an engine can start.
+    app.include_router(stems_plan_router, prefix=API_PREFIX)
+    # Importing the setup router is also what REGISTERS its job kind, so the
+    # order matters: the jobs surface must be able to build a worker for
+    # setup.import-rekordbox before anything can enqueue one.
+    app.include_router(setup_router, prefix=API_PREFIX)
+    # The sidebar assistant that keeps the user company while that import
+    # runs. Stateless and dependency-free -- it reads its key and model off
+    # the environment, so it needs nothing from app.state.
+    app.include_router(assistant_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
+    # Identity before the SPA mount, like every other route: a Mount at "/"
+    # swallows anything registered after it. platform_paths.PROJECT_ROOT is
+    # the checkout root in a dev boot and the payload's app/ dir in a bundled
+    # one, which is exactly the distinction the resolver switches on.
+    add_build_info_route(
+        app, environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
+    )
 
     _drop_root_placeholder(app)
     _mount_spa(app)
@@ -122,6 +153,24 @@ def create_app(
 
     _wrap_lifespan(app, cfg=cfg, hub=hub, store=store, runner=runner, lock=lock)
     return app
+
+
+# ----- job kinds ---------------------------------------------------------
+def _register_job_kinds() -> None:
+    """Wire every domain's job kind into the chassis registry.
+
+    THE COMPOSITION ROOT, and the only place that knows both halves. The
+    chassis ships zero kinds and a domain package must not import the chassis
+    (that is a package cycle the architecture gate fails on), so the wiring
+    lands here, where the engine already depends on both by definition.
+
+    Idempotent: the registries are plain dicts keyed by kind, so a second
+    create_app in the same process (every test module that builds an app)
+    rebinds the same functions rather than accumulating them.
+    """
+    register_worker(stems_job.JOB_KIND, stems_job.build_argv)
+    register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
+    register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
 
 
 # ----- legacy composition ------------------------------------------------
@@ -151,6 +200,12 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         port=cfg.port,
         stem_roots=stems.roots,
         mount_frontend=False,
+        # Browser diagnostics belong to THIS engine's data dir. The legacy
+        # default is a process-global path under $HOME, which left an engine
+        # started with --data-dir writing outside its own sandbox and two
+        # parallel lanes appending to one another's log.
+        client_error_log_dir=cfg.logs_dir,
+        client_event_log_dir=cfg.logs_dir,
     )
 
 
