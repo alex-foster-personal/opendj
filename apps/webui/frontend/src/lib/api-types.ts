@@ -2574,7 +2574,7 @@ export interface components {
         /** CommentOut */
         CommentOut: {
             /** Anchor */
-            anchor?: string | null;
+            anchor: string | null;
             build: components["schemas"]["BuildStampOut"];
             /** Created At */
             created_at: string;
@@ -2953,11 +2953,11 @@ export interface components {
         };
         /** GeneralNoteOut */
         GeneralNoteOut: {
-            build?: components["schemas"]["BuildStampOut"] | null;
+            build: components["schemas"]["BuildStampOut"] | null;
             /** Text */
             text: string;
             /** Updated At */
-            updated_at?: string | null;
+            updated_at: string | null;
         };
         /** GeneralNotePutIn */
         GeneralNotePutIn: {
@@ -4618,29 +4618,27 @@ export interface components {
             /** Todos */
             todos: components["schemas"]["TodoOut"][];
         };
-        /** TodoOut */
+        /**
+         * TodoOut
+         * @description Response model: every field required, so the generated client types
+         *     say what the server always sends (no `possibly undefined` on the UI).
+         */
         TodoOut: {
             build: components["schemas"]["BuildStampOut"];
             /** Chosen Option */
-            chosen_option?: string | null;
+            chosen_option: string | null;
             /** Created At */
             created_at: string;
             /** Detail */
-            detail?: string | null;
-            /**
-             * Done
-             * @default false
-             */
+            detail: string | null;
+            /** Done */
             done: boolean;
-            /**
-             * Feedback
-             * @default
-             */
+            /** Feedback */
             feedback: string;
             /** Id */
             id: string;
             /** Options */
-            options?: string[];
+            options: string[];
             /** Title */
             title: string;
             /** Updated At */

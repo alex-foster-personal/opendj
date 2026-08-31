@@ -79,15 +79,18 @@ class BuildStampOut(BaseModel):
 
 
 class TodoOut(BaseModel):
+    """Response model: every field required, so the generated client types
+    say what the server always sends (no `possibly undefined` on the UI)."""
+
     model_config = ConfigDict(frozen=True)
 
     id: str
     title: str
-    detail: str | None = None
-    options: list[str] = Field(default_factory=list)
-    done: bool = False
-    chosen_option: str | None = None
-    feedback: str = ""
+    detail: str | None
+    options: list[str]
+    done: bool
+    chosen_option: str | None
+    feedback: str
     created_at: str
     updated_at: str
     build: BuildStampOut
@@ -124,7 +127,7 @@ class CommentOut(BaseModel):
     id: str
     x_pct: float
     y_pct: float
-    anchor: str | None = None
+    anchor: str | None
     page: str
     text: str
     created_at: str
@@ -151,8 +154,8 @@ class GeneralNoteOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     text: str
-    updated_at: str | None = None
-    build: BuildStampOut | None = None
+    updated_at: str | None
+    build: BuildStampOut | None
 
 
 class GeneralNotePutIn(BaseModel):
@@ -282,6 +285,9 @@ def create_todo(body: TodoCreateIn, request: Request) -> TodoOut:
         title=body.title,
         detail=body.detail,
         options=body.options,
+        done=False,
+        chosen_option=None,
+        feedback="",
         created_at=now,
         updated_at=now,
         build=_build_stamp(request),

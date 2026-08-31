@@ -1516,6 +1516,7 @@
           "id",
           "x_pct",
           "y_pct",
+          "anchor",
           "page",
           "text",
           "created_at",
@@ -2409,7 +2410,9 @@
           }
         },
         "required": [
-          "text"
+          "text",
+          "updated_at",
+          "build"
         ],
         "title": "GeneralNoteOut",
         "type": "object"
@@ -6916,6 +6919,7 @@
         "type": "object"
       },
       "TodoOut": {
+        "description": "Response model: every field required, so the generated client types\nsay what the server always sends (no `possibly undefined` on the UI).",
         "properties": {
           "build": {
             "$ref": "#/components/schemas/BuildStampOut"
@@ -6947,12 +6951,10 @@
             "title": "Detail"
           },
           "done": {
-            "default": false,
             "title": "Done",
             "type": "boolean"
           },
           "feedback": {
-            "default": "",
             "title": "Feedback",
             "type": "string"
           },
@@ -6979,6 +6981,11 @@
         "required": [
           "id",
           "title",
+          "detail",
+          "options",
+          "done",
+          "chosen_option",
+          "feedback",
           "created_at",
           "updated_at",
           "build"
