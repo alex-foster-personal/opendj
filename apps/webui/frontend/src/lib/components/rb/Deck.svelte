@@ -25,6 +25,7 @@
 	import { hasRealBeatGrid } from '$lib/player/grid-features';
 	import {
 		performanceCommandStatus,
+		dismissPerformanceDeckError,
 		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
@@ -419,7 +420,15 @@
 
 	{#if controlError !== null}
 		<div class="deck-error" role="alert" data-performance-error={deckId} title={controlError}>
-			{controlError}
+			<span class="deck-error-text">{controlError}</span>
+			<button
+				type="button"
+				class="deck-error-dismiss"
+				data-performance-error-dismiss={deckId}
+				title="Dismiss this deck error"
+				aria-label={`Dismiss deck ${deckId} error`}
+				onclick={() => dismissPerformanceDeckError(deckId)}>x</button
+			>
 		</div>
 	{/if}
 
@@ -557,7 +566,33 @@
 		align-self: stretch;
 		display: flex;
 	}
+	.deck-error-text {
+		flex: 1 1 auto;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.deck-error-dismiss {
+		flex: 0 0 auto;
+		margin-left: 6px;
+		padding: 0 4px;
+		border: 1px solid var(--rb-red);
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		line-height: 1.2;
+		cursor: pointer;
+	}
+
+	.deck-error-dismiss:hover {
+		background: var(--rb-red);
+		color: #fff;
+	}
+
 	.deck-error {
+		display: flex;
+		align-items: center;
 		position: absolute;
 		z-index: 4;
 		left: 8px;
