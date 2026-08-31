@@ -299,9 +299,18 @@ pub(crate) fn file_path_to_rb_location(path: &str) -> String {
     if path.starts_with("file://") {
         return path.to_string();
     }
-    let mut out = String::with_capacity(path.len() + 16);
+    let normalized = path.replace('\\', "/");
+    let has_windows_drive = normalized.as_bytes().get(1) == Some(&b':')
+        && normalized
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphabetic);
+    let mut out = String::with_capacity(normalized.len() + 17);
     out.push_str("file://localhost");
-    for &b in path.as_bytes() {
+    if has_windows_drive {
+        out.push('/');
+    }
+    for &b in normalized.as_bytes() {
         if is_rb_location_unreserved(b) {
             out.push(b as char);
         } else {
@@ -317,7 +326,8 @@ pub(crate) fn file_path_to_rb_location(path: &str) -> String {
 }
 
 /// Bytes that are safe to leave literal inside a Rekordbox Location URL.
-/// Equivalent to RFC 3986 `unreserved` plus `/` (path separators stay raw).
+/// Equivalent to RFC 3986 `unreserved` plus `/` and `:` (path separators and
+/// Windows drive separators stay raw).
 #[inline]
 fn is_rb_location_unreserved(b: u8) -> bool {
     matches!(
@@ -326,6 +336,7 @@ fn is_rb_location_unreserved(b: u8) -> bool {
             | b'a'..=b'z'
             | b'0'..=b'9'
             | b'/'
+            | b':'
             | b'-'
             | b'.'
             | b'_'
@@ -514,6 +525,14 @@ mod rekordbox_tests {
         let encoded = file_path_to_rb_location("/Users/dj/Music/x y/z.mp3");
         assert!(encoded.contains("/Users/dj/Music/x%20y/z.mp3"));
         assert!(!encoded.contains("%2F"), "/ should not be escaped: {}", encoded);
+    }
+
+    #[test]
+    fn file_path_to_rb_location_normalizes_windows_drive_paths() {
+        assert_eq!(
+            file_path_to_rb_location(r"C:\Users\dj\Music\My Track.mp3"),
+            "file://localhost/C:/Users/dj/Music/My%20Track.mp3"
+        );
     }
 
     #[test]
