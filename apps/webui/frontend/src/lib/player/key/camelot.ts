@@ -16,8 +16,11 @@ export function masterTempoSemitones(tempoRatio: number, enabled: boolean): numb
 }
 
 /** Parsed, canonical Camelot key. `root` is a chromatic pitch class where C
- * is 0. Only numbered Camelot notation is accepted, never a guessed musical
- * key label. */
+ * is 0. Numbered Camelot notation ("8A") and standard musical notation
+ * ("Gm", "F#", "Ab major") both parse. Musical notation is TABLE-DRIVEN, never
+ * guessed: a recognized spelling maps to exactly one pitch class and one
+ * wheel, and an unrecognized one returns null so the caller still fails at its
+ * own operation boundary. */
 export interface CamelotKey {
 	number: number;
 	mode: 'A' | 'B';
@@ -35,15 +38,104 @@ function _pitchClass(semitones: number): number {
 	return ((semitones % 12) + 12) % 12;
 }
 
-/** Return null for non-Camelot metadata so callers can fail explicitly at
- * their operation boundary rather than inventing a harmonic relationship. */
+/** Note letter -> chromatic pitch class, C = 0. */
+const NOTE_PITCH_CLASSES: Readonly<Record<string, number>> = {
+	C: 0,
+	D: 2,
+	E: 4,
+	F: 5,
+	G: 7,
+	A: 9,
+	B: 11
+};
+
+/** Accidental glyph -> semitone offset. ASCII and Unicode spellings both turn
+ * up in real rekordbox / Mixed In Key / Serato metadata. */
+const ACCIDENTAL_OFFSETS: Readonly<Record<string, number>> = {
+	'': 0,
+	'#': 1,
+	'\u266f': 1,
+	b: -1,
+	'\u266d': -1
+};
+
+/**
+ * Mode spelling -> Camelot wheel (A = minor, B = major).
+ *
+ * Case is significant for the one-letter forms and only for those: bare `m` is
+ * minor, bare `M` is major, the lead-sheet convention every vendor writing
+ * one-letter modes follows. Word forms are uppercased before lookup because
+ * "Minor"/"minor"/"MINOR" carry no competing meaning.
+ *
+ * An empty mode resolves to major. That is notation rather than a hidden
+ * default: "F#" denotes F# major in every source this metadata arrives from.
+ */
+const ONE_LETTER_MODES: Readonly<Record<string, CamelotKey['mode']>> = {
+	'': 'B',
+	m: 'A',
+	M: 'B'
+};
+const WORD_MODES: Readonly<Record<string, CamelotKey['mode']>> = {
+	MIN: 'A',
+	MINOR: 'A',
+	MAJ: 'B',
+	MAJOR: 'B'
+};
+
+/** `8A` / `12b`. Camelot notation always leads with the wheel number, so it
+ * can never collide with the note-letter grammar below. */
+const _CAMELOT_RE = /^(1[0-2]|[1-9])([ab])$/i;
+/** `Gm`, `F#`, `Bbm`, `Ab major`, `C# minor`. The only separator allowed
+ * between the note and a spelled-out mode is whitespace. */
+const _MUSICAL_RE = /^([A-Ga-g])([#b\u266f\u266d]?)\s*([A-Za-z]*)$/;
+
+/** Wheel position for a pitch class. Each wheel lists all 12 pitch classes
+ * exactly once, so this is total; a miss means CAMELOT_ROOTS itself was edited
+ * into an invalid state, which must be loud rather than quietly yield a wrong
+ * harmonic relationship. */
+function _camelotFromRoot(root: number, mode: CamelotKey['mode']): CamelotKey {
+	const number = CAMELOT_ROOTS[mode].indexOf(root) + 1;
+	if (number === 0) {
+		throw new Error(`Camelot ${mode} wheel has no entry for pitch class ${root}`);
+	}
+	return { number, mode, root };
+}
+
+/** Resolve a musical-notation mode token, or null when the token is not a
+ * spelling these tables know. Never guesses - an unknown token rejects the
+ * whole key. */
+function _modeFromToken(token: string): CamelotKey['mode'] | null {
+	if (token.length <= 1) return ONE_LETTER_MODES[token] ?? null;
+	return WORD_MODES[token.toUpperCase()] ?? null;
+}
+
+/**
+ * Parse a track key into canonical Camelot form.
+ *
+ * Accepts numbered Camelot ("8A", "12b") and standard musical notation
+ * ("Gm" -> 6A, "F#" -> 2B, "Ab major" -> 4B, "Bbm" -> 3A). Returns null for
+ * metadata in neither notation, so callers can fail explicitly at their own
+ * operation boundary rather than inventing a harmonic relationship.
+ */
 export function parseCamelotKey(value: string | null): CamelotKey | null {
 	if (typeof value !== 'string') return null;
-	const match = /^(1[0-2]|[1-9])([ab])$/i.exec(value.trim());
-	if (match === null) return null;
-	const number = Number(match[1]);
-	const mode = match[2].toUpperCase() as CamelotKey['mode'];
-	return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
+	const text = value.trim();
+
+	const camelot = _CAMELOT_RE.exec(text);
+	if (camelot !== null) {
+		const number = Number(camelot[1]);
+		const mode = camelot[2].toUpperCase() as CamelotKey['mode'];
+		return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
+	}
+
+	const musical = _MUSICAL_RE.exec(text);
+	if (musical === null) return null;
+	const mode = _modeFromToken(musical[3]);
+	if (mode === null) return null;
+	const base = NOTE_PITCH_CLASSES[musical[1].toUpperCase()];
+	const accidental = ACCIDENTAL_OFFSETS[musical[2]];
+	if (base === undefined || accidental === undefined) return null;
+	return _camelotFromRoot(_pitchClass(base + accidental), mode);
 }
 
 /** Exported (name kept) for the call sites that used it while it was file-scoped. */
