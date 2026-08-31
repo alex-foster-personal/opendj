@@ -21,6 +21,16 @@ export default defineConfig(({ command, mode }) => {
 	return {
 		envDir: REPOSITORY_ROOT,
 		plugins: [sveltekit()],
+		build: {
+			// AudioWorklet modules must stay REAL FILES. Anything under the
+			// default 4096-byte inline limit is emitted as a `data:` URI, and
+			// `audioWorklet.addModule()` fetches a module script: a data: URI
+			// gives it an opaque origin, which browsers refuse. The xrun sentinel
+			// is ~3.5KB, i.e. exactly in the range where it would silently become
+			// a URI that fails to load in the packaged app and nowhere else.
+			assetsInlineLimit: (filePath: string) =>
+				filePath.endsWith('-processor.js') ? false : undefined
+		},
 		optimizeDeps: {
 			// Prebundling rewrites Signalsmith's self-stringifying AudioWorklet
 			// module and causes processor creation to time out.

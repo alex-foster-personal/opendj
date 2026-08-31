@@ -219,10 +219,3 @@ export function quickDrawCommand(id: QuickDrawActionId, deck: DeckId): Performan
 	}
 	return cmd;
 }
-
-export function quickDrawBuild(
-	id: QuickDrawActionId,
-	ctx: QuickDrawCtx
-): PerformanceCommand | null {
-	return QUICK_DRAW_ACTIONS[id].build(ctx);
-}

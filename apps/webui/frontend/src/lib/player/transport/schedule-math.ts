@@ -219,6 +219,21 @@ export function safeTransportScheduleTime(
  * the offset with the processor's share removed - read as a large negative and
  * quietly pass a `<= 30ms` ceiling while meaning nothing. Both are logged, so
  * the gap between them is exactly the dead weight round 2 removed.
+ *
+ * PERF-R4 / Q1 adds the half this row could never see. Every number above is
+ * measured from `contextTimeSec`, which is read INSIDE the engine's serialized
+ * schedule body - downstream of the command scheduler's scope wait, the context
+ * resume, and the deck's own schedule tail. `pressToScheduleMs` is the ms from
+ * the operator's input stamp to that read, so `input_to_audible_ms` is the
+ * whole S2 budget rather than its cheap tail. It is OPTIONAL because most
+ * schedules have no press behind them (beat-sync follower alignment, autoplay,
+ * slip resume); those rows must not be quoted as if a human had pressed
+ * something, so the two keys are absent rather than zero.
+ *
+ * `input_to_audible_ms` is a MODEL of the audible instant, not a measurement of
+ * one: it stops at the scheduled context time and deliberately excludes
+ * `base_latency_ms` and `output_latency_ms`, which travel with the sample so a
+ * consumer can add the device floor back when comparing across machines.
  */
 export function scheduleOffsetStages(input: {
 	contextTimeSec: number;
@@ -229,10 +244,23 @@ export function scheduleOffsetStages(input: {
 	baseLatencySec: number;
 	outputLatencySec: number;
 	active: boolean;
+	/** Q1: ms from the input stamp to the `contextTimeSec` read. */
+	pressToScheduleMs?: number;
 }): Record<string, number> {
 	for (const [name, value] of Object.entries(input)) {
-		if (name === 'active') continue;
+		if (name === 'active' || name === 'pressToScheduleMs') continue;
 		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
+	}
+	const pressToScheduleMs = input.pressToScheduleMs;
+	if (pressToScheduleMs !== undefined) {
+		if (!Number.isFinite(pressToScheduleMs) || pressToScheduleMs < 0) {
+			throw new RangeError(
+				`pressToScheduleMs must be finite and non-negative, got ${pressToScheduleMs}: a ` +
+					'schedule cannot reach the audio clock before the input that asked for it, so ' +
+					'a negative delta means the stamp came from a different clock epoch and the ' +
+					'number would understate the P0 budget it gates'
+			);
+		}
 	}
 	if (typeof input.active !== 'boolean') {
 		throw new TypeError(`active must be boolean, got ${String(input.active)}`);
@@ -274,7 +302,16 @@ export function scheduleOffsetStages(input: {
 		processor_latency_ms: round(input.processorLatencySec * 1000),
 		base_latency_ms: round(input.baseLatencySec * 1000),
 		output_latency_ms: round(input.outputLatencySec * 1000),
-		active: input.active ? 1 : 0
+		active: input.active ? 1 : 0,
+		// Q1, appended so the ratchet keys keep their place in the `[perf]` line.
+		...(pressToScheduleMs === undefined
+			? {}
+			: {
+					// The invisible half: input stamp -> the currentTime read above.
+					press_to_schedule_ms: round(pressToScheduleMs),
+					// The S2 number. Both halves or it measures the wrong thing.
+					input_to_audible_ms: round(pressToScheduleMs + scheduledOffsetMs)
+				})
 	};
 }
 
