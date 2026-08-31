@@ -189,6 +189,8 @@ export interface PerformanceBrowserIpc {
 	dispatch(message: unknown, pressT0Ms?: number): Promise<PerformanceState>;
 	query(): PerformanceState;
 	capture(deck: unknown): DeckAudioSnapshot;
+	/** Agent-native twin of the deck error banner's dismiss control. */
+	dismissDeckError(deck: unknown): PerformanceState;
 }
 
 export const performanceCommandStatus: {
@@ -808,6 +810,22 @@ function _persistCommandError(deck: DeckId | null, error: unknown): void {
 	pushToast(`Performance command failed - ${messageText}`, 'error');
 }
 
+/**
+ * Clear the visible error on one deck.
+ *
+ * The banner used to be clearable only as a side effect of the next command
+ * that happened to touch the same deck, so an error from a step nothing would
+ * retry (AutoPlay's master handover) stuck to the deck for the rest of the
+ * set with no way to get rid of it. Operator-driven dismissal is the fix; the
+ * underlying condition is unchanged and will re-report if it recurs.
+ */
+export function dismissPerformanceDeckError(deck: DeckId): void {
+	performanceCommandStatus.deck_errors[deck] = null;
+	const st = getDeckState(deck);
+	st.sync_error = null;
+	st.processor_error = null;
+}
+
 function _resetCommandStatus(): void {
 	performanceCommandStatus.last_error = null;
 	performanceCommandStatus.active = 0;
@@ -1182,6 +1200,11 @@ export function installPerformanceBrowserIpc(): () => void {
 		capture: (deck: unknown) => {
 			_assertCommandSession(commandGeneration);
 			return _captureUnknown(deck);
+		},
+		dismissDeckError: (deck: unknown) => {
+			_assertCommandSession(commandGeneration);
+			dismissPerformanceDeckError(_deck(deck));
+			return queryPerformanceState();
 		}
 	});
 	window.musicDjToolsPerformance = ipc;

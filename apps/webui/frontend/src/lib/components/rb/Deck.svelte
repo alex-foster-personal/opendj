@@ -25,6 +25,7 @@
 	import { hasRealBeatGrid } from '$lib/player/grid-features';
 	import {
 		performanceCommandStatus,
+		dismissPerformanceDeckError,
 		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
@@ -47,6 +48,7 @@
 	import JogDial from './deck/JogDial.svelte';
 	import LoopCluster from './deck/LoopCluster.svelte';
 	import PitchFader from './deck/PitchFader.svelte';
+	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
@@ -418,9 +420,11 @@
 	/>
 
 	{#if controlError !== null}
-		<div class="deck-error" role="alert" data-performance-error={deckId} title={controlError}>
-			{controlError}
-		</div>
+		<DeckErrorBanner
+			{deckId}
+			error={controlError}
+			onDismiss={() => dismissPerformanceDeckError(deckId)}
+		/>
 	{/if}
 
 	{#if deck.last_load_latency_ms !== null}
@@ -556,20 +560,5 @@
 		min-width: 0;
 		align-self: stretch;
 		display: flex;
-	}
-	.deck-error {
-		position: absolute;
-		z-index: 4;
-		left: 8px;
-		right: 8px;
-		bottom: 3px;
-		padding: 2px 5px;
-		border: 1px solid var(--rb-red);
-		background: rgba(30, 5, 5, 0.94);
-		color: #ff8e87;
-		font-size: var(--rb-fs-label);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 </style>

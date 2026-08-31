@@ -1,23 +1,32 @@
 /**
  * /performance auto-play controller (v1 hard-cut).
  *
- * When prefs.auto_play_enabled: as the master (or playing) deck enters the
- * remaining-time window, load the next playlist track onto a free or stopped
- * follower and start it via performance-ipc. Default pick: earliest un-played
- * membership row with Camelot key +-1 and BPM inside Beat Sync pitch bounds
- * (optional maximize-reach / Warnsdorff slack). Optional enforce_play_order
- * walks strict playlist order after current.
+ * When prefs.auto_play_enabled: as the MASTER deck (never a non-master playing
+ * deck - see pickSourceDeck) enters the remaining-time window, load the next
+ * playlist track onto a free or stopped follower and start it via
+ * performance-ipc. Default pick: earliest un-played membership row with
+ * Camelot key +-1 and BPM inside Beat Sync pitch bounds (optional
+ * maximize-reach / Warnsdorff slack). Optional enforce_play_order walks strict
+ * playlist order after current.
+ *
+ * The full scenario matrix this controller implements lives at the top of
+ * auto-play.ts. Read it before changing anything here.
+ *
  * Beat Sync is requested only when a real BAR/BEAT phase-lock plan succeeds;
  * otherwise follower Beat Sync is explicitly disabled and play continues
  * free-tempo (see .planning/beat-sync-phase-lock-explainer-SA.md).
  *
  * Failed handoffs quarantine the candidate and re-arm (bounded) so ghost
- * tracks / mapping 404s cannot permanently disarm AutoPlay for the source.
+ * tracks / mapping 404s cannot permanently disarm AutoPlay for the source -
+ * but ONLY while nothing has landed on the follower deck (matrix rows 16/17).
  */
 import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
+	autoPlayExcludedIds,
 	decideAutoPlayBeatSync,
+	decideMasterPromotion,
+	handoffFailureIsRetryable,
 	formatAutoPlaySyncSkipToast,
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
@@ -28,7 +37,9 @@ import {
 	shouldTriggerAutoPlay,
 	simulateAutoPlayChain,
 	tempoBoundsFromPitchRange,
-	type AutoPlayDeckSnap
+	type AutoPlayDeckSnap,
+	type AutoPlayHandoffPhase,
+	type AutoPlayMasterPromotion
 } from '$lib/rb/auto-play';
 import {
 	computeFollowerSyncPlan,
@@ -57,6 +68,28 @@ let _unplayableIds = new Set<string>();
 let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
+/**
+ * Every stable_id AutoPlay has DECIDED to load this session (matrix row 14).
+ * Recorded before dispatch, never rolled back, and deliberately NOT cleared by
+ * _syncPlayedSet: this is the guarantee that AutoPlay cannot put one track on
+ * two decks. The deck scan alone cannot provide it - it only sees where a
+ * track is right now, so it misses one that was loaded and then unloaded, or
+ * one whose load has not published its stable_id yet.
+ */
+let _claimedIds = new Set<string>();
+/** Deferred master promotion, retried until the follower is audible (row 18). */
+let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;
+let _promoting = false;
+
+/** Carries how far a handoff got, so the caller knows if a retry is legal. */
+class AutoPlayHandoffError extends Error {
+	readonly phase: AutoPlayHandoffPhase;
+	constructor(phase: AutoPlayHandoffPhase, cause: unknown) {
+		super(cause instanceof Error ? cause.message : String(cause), { cause });
+		this.name = 'AutoPlayHandoffError';
+		this.phase = phase;
+	}
+}
 
 /** Read-only charted AutoPlay order for the open playlist (library column). */
 export const autoPlayOrder = $state<{
@@ -115,18 +148,20 @@ function _snaps(): AutoPlayDeckSnap[] {
 }
 
 function _excludeIds(sourceId: DeckId, snaps: readonly AutoPlayDeckSnap[]): Set<string> {
-	const out = new Set<string>();
-	for (const d of snaps) {
-		if (d.id === sourceId) continue;
-		if (d.stable_id !== null) out.add(d.stable_id);
-	}
-	for (const id of _unplayableIds) out.add(id);
-	return out;
+	return autoPlayExcludedIds({
+		decks: snaps,
+		source_deck: sourceId,
+		claimed_ids: _claimedIds,
+		unplayable_ids: _unplayableIds
+	});
 }
 
 function _syncPlayedSet(): void {
 	const epoch = getAutoPlayFeedEpoch();
 	if (epoch !== _playedFeedEpoch) {
+		// Played history and quarantine are playlist-scoped, so a membership
+		// change retires them. _claimedIds is NOT retired: a track AutoPlay
+		// already put on a deck must stay unpickable regardless of the feed.
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_playedFeedEpoch = epoch;
@@ -211,35 +246,103 @@ async function _applyBeatSyncDecision(
 	}
 }
 
+/**
+ * Load + start the follower, then hand it the master role.
+ *
+ * Two phases, split at the moment the track lands on the deck (matrix rows
+ * 16/17). Everything before is retryable with a different candidate; nothing
+ * after is, because the operator now has a loaded deck and a second load would
+ * be exactly the duplicate this module exists to prevent.
+ */
 async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: string): Promise<void> {
-	const occupied = deckStates[follower].stable_id;
-	if (occupied !== null && occupied !== nextId) {
-		await dispatchPerformanceCommand({ type: 'unload', deck: follower });
+	try {
+		const occupied = deckStates[follower].stable_id;
+		if (occupied !== null && occupied !== nextId) {
+			await dispatchPerformanceCommand({ type: 'unload', deck: follower });
+		}
+		if (deckStates[follower].stable_id !== nextId) {
+			await dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId });
+		}
+	} catch (error: unknown) {
+		throw new AutoPlayHandoffError('load', error);
 	}
-	if (deckStates[follower].stable_id !== nextId) {
-		await dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId });
+	// ---- commit point: nextId is on deck `follower` from here down ----
+	try {
+		await _applyBeatSyncDecision(source, follower);
+		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
+	} catch (error: unknown) {
+		throw new AutoPlayHandoffError('commit', error);
 	}
-	await _applyBeatSyncDecision(source, follower);
-	await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
 	// pickSourceDeck only ever arms off the master, so AutoPlay must move
-	// master to the deck it just started - otherwise the next tick still
-	// sees the (now trailing/finished) old master as source and stalls.
-	await dispatchPerformanceCommand({ type: 'master', deck: follower });
-	if (source.stable_id !== null) _playedIds.add(source.stable_id);
-	_playedIds.add(nextId);
+	// master to the deck it just started - otherwise the next tick still sees
+	// the (now trailing/finished) old master as source and stalls.
+	//
+	// Deferred, not awaited here (row 18): `play` only SCHEDULES the transport,
+	// while `audible` is published later by the presented-transport
+	// observation. Asking for master in this microtask therefore hit
+	// "setDeckMaster: cannot select paused deck N while decks [...] are audible
+	// or scheduled to play" on nearly every handoff - the outgoing master is
+	// audible by definition at handoff time. _promoteMaster retries once the
+	// follower is actually presenting audio.
+	_pendingMaster = { deck: follower, stable_id: nextId };
+}
+
+/** Idempotent, single-shot per pending promotion; safe to call every tick. */
+async function _promoteMaster(): Promise<void> {
+	if (_promoting) return;
+	const pending = _pendingMaster;
+	if (pending === null) return;
+	const snap = _snaps().find((d) => d.id === pending.deck) ?? null;
+	const decision: AutoPlayMasterPromotion = decideMasterPromotion({
+		pending_deck: pending.deck,
+		pending_stable_id: pending.stable_id,
+		deck: snap,
+		audible: deckStates[pending.deck].audible
+	});
+	if (decision === 'wait') return;
+	if (decision === 'drop') {
+		_pendingMaster = null;
+		return;
+	}
+	if (decision === 'promote') {
+		_pendingMaster = null;
+		_promoting = true;
+		try {
+			await dispatchPerformanceCommand({ type: 'master', deck: pending.deck });
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`auto-play: deck ${pending.deck} master handover refused: ${message}`, 'error');
+		} finally {
+			_promoting = false;
+		}
+		return;
+	}
+	const _exhaustive: never = decision;
+	throw new Error(`unhandled master promotion decision: ${String(_exhaustive)}`);
 }
 
 async function _tick(): Promise<void> {
-	if (!uiPrefs.auto_play_enabled || _inFlight) {
-		if (!uiPrefs.auto_play_enabled) _publishOrder([]);
+	if (!uiPrefs.auto_play_enabled) {
+		_publishOrder([]);
+		_pendingMaster = null;
 		return;
 	}
+	// Row 18: runs on every poll, including while a handoff is in flight.
+	await _promoteMaster();
+	if (_inFlight) return;
 
 	const snaps = _snaps();
 	const source = pickSourceDeck(snaps);
 	if (source === null || source.stable_id === null) {
-		_triggeredFor = null;
-		_waitingFollowerFor = null;
+		// Row 1, but NOT while a promotion is still settling: between the old
+		// master being demoted and the new one being flagged there is a poll or
+		// two with no master at all. Disarming there would let the outgoing
+		// track - still inside its window - arm a second time and hand off
+		// again. Only a genuine idle state clears the arm.
+		if (_pendingMaster === null) {
+			_triggeredFor = null;
+			_waitingFollowerFor = null;
+		}
 		_publishOrder([]);
 		return;
 	}
@@ -314,13 +417,35 @@ async function _tick(): Promise<void> {
 		return;
 	}
 
+	// Row 4/c: arm and claim BEFORE dispatching anything. Both are one-way for
+	// the life of this source track. Recording them only on success is what let
+	// a late failure roll the trigger back and load a second track.
 	_inFlight = true;
 	_triggeredFor = source.stable_id;
+	_claimedIds.add(nextId);
+	_playedIds.add(source.stable_id);
+	_playedIds.add(nextId);
 	try {
 		await _handoff(source, follower, nextId);
 		_attemptsFor = { source: '', count: 0 };
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
+		// An unclassified throw is treated as committed. That is the safe
+		// direction: a wrong 'load' guess would re-arm and load a second track,
+		// which is the live bug. A wrong 'commit' guess only forgoes a retry.
+		const phase: AutoPlayHandoffPhase =
+			error instanceof AutoPlayHandoffError ? error.phase : 'commit';
+		if (!handoffFailureIsRetryable(phase)) {
+			// Row 17: nextId IS on the follower. Do not quarantine it, do not
+			// re-arm - _triggeredFor stays pinned to this source track.
+			pushToast(
+				`auto-play: deck ${follower} loaded ${nextId.slice(0, 12)}... but the handoff ` +
+					`did not finish: ${message}`,
+				'error'
+			);
+			return;
+		}
+		// Row 16: nothing landed on the deck; quarantine and try another pick.
 		_unplayableIds.add(nextId);
 		if (_attemptsFor.source !== source.stable_id) {
 			_attemptsFor = { source: source.stable_id, count: 0 };
@@ -356,6 +481,9 @@ export function installAutoPlay(): () => void {
 		_inFlight = false;
 		_triggeredFor = null;
 		_waitingFollowerFor = null;
+		_pendingMaster = null;
+		_promoting = false;
+		_claimedIds = new Set();
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', count: 0 };
