@@ -9,6 +9,20 @@
  * same amount every time, and trackpad deltaY magnitudes vary wildly
  * between devices and momentum phases.
  *
+ * INPUT-KIND SENSITIVITY (the maintainer, Mon 31 Aug 2026, in-app review notes)
+ * Because the handler is direction-only, one wheel EVENT moves a control by
+ * one full step. That is correct for a notched mouse wheel, which emits one
+ * event per physical detent. A macOS trackpad two-finger scroll emits a dense
+ * burst of high-frequency events for a single finger movement, so the same
+ * gesture walked the control several steps and read as hypersensitive. He
+ * reported it first for the dials (14:50Z) and then for the channel level
+ * faders (15:10Z), asking for a GLOBAL adjustment rather than a per-control
+ * tweak, with trackpads scaled separately from mice.
+ *
+ * The fix is therefore applied HERE, in the one action every control already
+ * uses, by scaling the step by a per-input-kind factor. Direction-only
+ * semantics are preserved: deltaY magnitude is still never read as a value.
+ *
  * Requirements:
  *   ✔︎ Scrolling a control changes it without scrolling the page.
  *     [if] the pointer is over a dial and the wheel turns [then] the value
@@ -19,7 +33,23 @@
  *   ✔︎ Inert / read-only controls ignore the wheel entirely.
  *     [if] a control passes disabled [then] no set() call is made and the
  *       page scroll is left alone
+ *   ✔︎ A trackpad gesture moves a control by about as much as the equivalent
+ *     mouse gesture, on every wheel-adjustable control at once.
+ *     [if] a trackpad burst of WHEEL_TRACKPAD_EVENTS_PER_DETENT events and a
+ *       single mouse detent are dispatched at the same control [then] the two
+ *       totals agree to within a rounding epsilon ⛔️
+ *     [if] a control is added with use:wheelAdjust and no sensitivity code of
+ *       its own [then] it still gets the trackpad scaling ⛔️
+ *   ✔︎ The factors are configurable at runtime and persist across reloads.
+ *     [if] setWheelSensitivity runs and the page reloads [then] the new factor
+ *       is still in force ⛔️
+ *     [if] a stored blob is malformed [then] it throws loudly rather than
+ *       silently resetting to the default ⛔️
  */
+
+//-----------------------------------------------------------------------------
+// config
+//-----------------------------------------------------------------------------
 
 /** Per-control-type wheel step, in 0..1 control units. */
 export const WHEEL_STEP = {
@@ -32,6 +62,209 @@ export const WHEEL_STEP = {
 	/** Pitch fader: 0.01 of full travel = 0.16% at +-8, 0.32% at +-16. */
 	pitch: 0.01
 } as const;
+
+/** Wheel input device classes. See detectWheelInputKind for how they differ. */
+export type WheelInputKind = 'mouse' | 'trackpad';
+
+/**
+ * Per-input-kind multiplier applied to EVERY control's wheel step. This is the
+ * single global sensitivity knob: change a number here and all dials, faders,
+ * the crossfader, the pitch faders and the headphone controls follow.
+ *
+ * mouse = 1 is the reference: one detent, one full step, unchanged behavior.
+ *
+ * trackpad = 1/3 comes from the maintainer's own calibration on the Air, Mon 31 Aug 2026:
+ * "currently should be I think 3x less sensitive for trackpads". It is his
+ * measured feel rather than a derived constant, which is why it lives here as
+ * a one-line change instead of being buried in the handler.
+ */
+export const WHEEL_SENSITIVITY: Readonly<Record<WheelInputKind, number>> = {
+	mouse: 1,
+	trackpad: 1 / 3
+};
+
+/**
+ * Trackpad wheel events that make up one mouse detent's worth of travel, i.e.
+ * the reciprocal of WHEEL_SENSITIVITY.trackpad. Declared so the equivalence
+ * test states the gesture it is comparing instead of hard-coding a bare 3.
+ */
+export const WHEEL_TRACKPAD_EVENTS_PER_DETENT = Math.round(1 / WHEEL_SENSITIVITY.trackpad);
+
+/** Upper sanity bound for a configured factor. A typo like 300 would make
+ * every control unusable in one scroll, so it throws instead. */
+export const WHEEL_SENSITIVITY_MAX = 4;
+
+/**
+ * Legacy WHEEL_DELTA quantum. Quantized ("notched") wheel devices report
+ * wheelDeltaY in integer multiples of this; high-precision devices do not.
+ */
+export const WHEEL_DELTA_QUANTUM = 120;
+
+/** WheelEvent.DOM_DELTA_PIXEL. Spelled out because synthetic events in tests
+ * do not carry the WheelEvent statics. */
+export const WHEEL_DELTA_MODE_PIXEL = 0;
+
+const SENSITIVITY_STORAGE_KEY = 'mdt.rb.wheel-sensitivity.v1';
+
+//-----------------------------------------------------------------------------
+// input-kind detection
+//-----------------------------------------------------------------------------
+
+/**
+ * Classify one wheel event as coming from a notched mouse wheel or a
+ * high-precision trackpad.
+ *
+ * There is no standard flag for this: w3c/uievents#337 is the open request for
+ * one, and browsers ship no isTrackpad property. The two signals below are the
+ * established discriminators, and are used in the order that keeps each
+ * browser on the signal that is actually reliable there.
+ *
+ * 1. deltaMode. Firefox reports DOM_DELTA_LINE for a notched wheel (it scrolls
+ *    by lines) and DOM_DELTA_PIXEL for a trackpad. So a non-pixel deltaMode is
+ *    an unambiguous mouse. Chromium and WebKit report PIXEL for BOTH devices on
+ *    macOS, which is why deltaMode alone cannot carry the decision there.
+ *
+ * 2. wheelDeltaY quantization. Quantized devices (conventional mouse wheels
+ *    with tactile detents) report wheelDeltaY in integer multiples of 120.
+ *    High-precision devices (macOS trackpads, Magic Mouse) report values that
+ *    vary smoothly with finger travel and are almost never multiples of 120.
+ *    wheelDeltaY is non-standard and deprecated, but it is implemented across
+ *    Chromium and WebKit, which is exactly where signal 1 is unavailable.
+ *
+ * Known and accepted limits, stated rather than smoothed over:
+ * - A fast trackpad flick can land on an exact multiple of 120 and read as
+ *   mouse for that ONE event. The cost is a single coarser step inside a burst
+ *   of many, and the next event re-classifies correctly. Suppressing it would
+ *   need cross-event history, which trades a rare visible glitch for a stateful
+ *   heuristic that is wrong in more situations.
+ * - macOS momentum (inertia) events after the fingers lift are, per Chromium
+ *   issue 40704952, indistinguishable from user-initiated ones. They are
+ *   correctly classified as trackpad and scaled with everything else, but they
+ *   are not filtered out, because no reliable signal exists to filter them by.
+ */
+export function detectWheelInputKind(event: WheelEvent): WheelInputKind {
+	if (event.deltaMode !== WHEEL_DELTA_MODE_PIXEL) return 'mouse';
+	const quantized = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
+	// Pixel deltaMode with no wheelDeltaY at all is Firefox's trackpad: signal 1
+	// already ruled out its notched wheel, so this is a classification, not a
+	// fallback standing in for a failed detection.
+	if (typeof quantized !== 'number' || quantized === 0) return 'trackpad';
+	return Math.abs(quantized) % WHEEL_DELTA_QUANTUM === 0 ? 'mouse' : 'trackpad';
+}
+
+//-----------------------------------------------------------------------------
+// sensitivity state
+//-----------------------------------------------------------------------------
+
+function _storage(): Storage | null {
+	return typeof window === 'undefined' ? null : window.localStorage;
+}
+
+function _assertFactor(kind: WheelInputKind, factor: number): void {
+	if (typeof factor !== 'number' || !Number.isFinite(factor) || factor <= 0) {
+		throw new RangeError(
+			`wheel sensitivity for '${kind}' must be a positive finite number, got ${factor}`
+		);
+	}
+	if (factor > WHEEL_SENSITIVITY_MAX) {
+		throw new RangeError(
+			`wheel sensitivity for '${kind}' must be <= ${WHEEL_SENSITIVITY_MAX}, got ${factor}`
+		);
+	}
+}
+
+/**
+ * A MISSING key is the real first-run state and yields WHEEL_SENSITIVITY; a
+ * PRESENT but malformed blob throws loudly rather than silently resetting, so a
+ * corrupted value cannot masquerade as "he never configured it". Same policy as
+ * rb/prefs.svelte.ts.
+ */
+function _loadSensitivity(): Record<WheelInputKind, number> {
+	const storage = _storage();
+	if (storage === null) return { ...WHEEL_SENSITIVITY };
+	const raw = storage.getItem(SENSITIVITY_STORAGE_KEY);
+	if (raw === null) return { ...WHEEL_SENSITIVITY };
+	const parsed = JSON.parse(raw) as Partial<Record<WheelInputKind, number>>;
+	if (parsed === null || typeof parsed !== 'object') {
+		throw new Error(
+			`${SENSITIVITY_STORAGE_KEY}: malformed blob (must be an object) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const next = { ...WHEEL_SENSITIVITY } as Record<WheelInputKind, number>;
+	for (const kind of ['mouse', 'trackpad'] as const) {
+		const value = parsed[kind];
+		if (value === undefined) continue;
+		try {
+			_assertFactor(kind, value);
+		} catch (cause) {
+			throw new Error(
+				`${SENSITIVITY_STORAGE_KEY}: malformed blob (${(cause as Error).message}) - ` +
+					'clear the localStorage key to recover'
+			);
+		}
+		next[kind] = value;
+	}
+	return next;
+}
+
+let _sensitivity: Record<WheelInputKind, number> = _loadSensitivity();
+
+function _persistSensitivity(): void {
+	_storage()?.setItem(SENSITIVITY_STORAGE_KEY, JSON.stringify(_sensitivity));
+}
+
+/** Current factors. Copy, so callers cannot mutate the live config in place. */
+export function wheelSensitivity(): Record<WheelInputKind, number> {
+	return { ..._sensitivity };
+}
+
+/** Set one input kind's factor and persist it. Throws on a value outside
+ * (0, WHEEL_SENSITIVITY_MAX]. */
+export function setWheelSensitivity(kind: WheelInputKind, factor: number): void {
+	if (kind !== 'mouse' && kind !== 'trackpad') {
+		throw new TypeError(`wheel sensitivity kind must be 'mouse'|'trackpad', got ${kind}`);
+	}
+	_assertFactor(kind, factor);
+	_sensitivity[kind] = factor;
+	_persistSensitivity();
+}
+
+/** Drop any configured override and go back to WHEEL_SENSITIVITY. */
+export function resetWheelSensitivity(): void {
+	_sensitivity = { ...WHEEL_SENSITIVITY };
+	_storage()?.removeItem(SENSITIVITY_STORAGE_KEY);
+}
+
+/**
+ * Agent-native parity (house rule: every UI-reachable behavior gets a non-UI
+ * path). `window.__mdtWheelSensitivity` lets a headless agent read and drive
+ * the same factors from outside the ES module scope, matching the existing
+ * `__mdtMasterMute` / `__mdtPerfLog` bridges.
+ */
+export function installWheelSensitivityGlobal(): void {
+	if (typeof window === 'undefined') return;
+	const w = window as Window & {
+		__mdtWheelSensitivity?: {
+			get: () => Record<WheelInputKind, number>;
+			set: (kind: WheelInputKind, factor: number) => void;
+			reset: () => void;
+			defaults: () => Record<WheelInputKind, number>;
+		};
+	};
+	w.__mdtWheelSensitivity = {
+		get: () => wheelSensitivity(),
+		set: (kind, factor) => setWheelSensitivity(kind, factor),
+		reset: () => resetWheelSensitivity(),
+		defaults: () => ({ ...WHEEL_SENSITIVITY })
+	};
+}
+
+installWheelSensitivityGlobal();
+
+//-----------------------------------------------------------------------------
+// action
+//-----------------------------------------------------------------------------
 
 export interface WheelAdjustParams {
 	/** Value change per wheel notch, in 0..1 units. Must be finite and > 0. */
@@ -65,6 +298,12 @@ export function wheelDirection(event: WheelEvent): -1 | 0 | 1 {
 	return 0;
 }
 
+/** A control's declared step scaled for the device that produced the event.
+ * Pure, so the scaling is testable without a DOM. */
+export function scaledWheelStep(step: number, kind: WheelInputKind): number {
+	return step * _sensitivity[kind];
+}
+
 export function wheelAdjust(node: Element, params: WheelAdjustParams) {
 	_assertParams(params);
 	let current = params;
@@ -75,7 +314,8 @@ export function wheelAdjust(node: Element, params: WheelAdjustParams) {
 		if (direction === 0) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const next = _clamp01(current.get() + direction * current.step);
+		const step = scaledWheelStep(current.step, detectWheelInputKind(event));
+		const next = _clamp01(current.get() + direction * step);
 		current.set(next);
 	}
 
