@@ -56,6 +56,9 @@ interface CanvasInkMeasurement {
 const API_BASE = (process.env.SAVEPOINT_SMOKE_API_BASE ?? '').replace(/\/$/, '');
 if (API_BASE === '') throw new Error('SAVEPOINT_SMOKE_API_BASE is required');
 
+/** Set by playwright.savepoint.config.ts from the ENGINE_CMD it actually booted. */
+const ENGINE_SERVES_BUILD_INFO = process.env.SAVEPOINT_SMOKE_ENGINE_SERVES_BUILD_INFO === '1';
+
 const DECK: DeckId = 1;
 /** Quiet enough that a headed re-run is not a jump scare; still audible. */
 const SMOKE_MASTER_VOLUME = 0.1;
@@ -77,12 +80,18 @@ const FADER_KEY_STEP = 0.02;
  *   always unavailable when the gate runs from a worktree. The UI renders the
  *   honest "smartlists unavailable" row rather than faking a list.
  * - favicon: not served by the dev server.
+ * - build-info 404: ONLY under a daemon that never claimed to serve the route.
+ *   The legacy webui server predates it; build-identity.ts asks every backend
+ *   anyway and renders the 404 as a named fault, so there the 404 is correct
+ *   behaviour. Gated on ENGINE_SERVES_BUILD_INFO so a MISSING build-info under
+ *   apps.engine_core, the engine that does owe one, still fails this gate.
  */
 const EXPECTED_RESOURCE_FAILURES: readonly RegExp[] = [
 	/\/api\/v1\/tracks\/[^/]+\/artwork(\?|$)/,
 	/\/api\/v1\/tracks\/[^/]+\/stems(\?|$)/,
 	/\/api\/v1\/smartlists(\?|$)/,
-	/favicon/
+	/favicon/,
+	...(ENGINE_SERVES_BUILD_INFO ? [] : [/\/api\/v1\/build-info(\?|$)/])
 ];
 
 function _isExpectedFailure(url: string): boolean {
