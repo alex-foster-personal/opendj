@@ -4,13 +4,14 @@
  * When prefs.auto_play_enabled: as the MASTER deck (never a non-master playing
  * deck - see pickSourceDeck) enters the remaining-time window, load the next
  * playlist track onto a free or stopped follower and start it via
- * performance-ipc.
+ * performance-ipc. Default pick: earliest un-played membership row with
+ * Camelot key +-1 and BPM inside Beat Sync pitch bounds (optional
+ * maximize-reach / Warnsdorff slack). Optional enforce_play_order walks strict
+ * playlist order after current.
  *
  * The full scenario matrix this controller implements lives at the top of
- * auto-play.ts. Read it before changing anything here. Default pick: earliest un-played
- * membership row with Camelot key +-1 and BPM inside Beat Sync pitch bounds
- * (optional maximize-reach / Warnsdorff slack). Optional enforce_play_order
- * walks strict playlist order after current.
+ * auto-play.ts. Read it before changing anything here.
+ *
  * Beat Sync is requested only when a real BAR/BEAT phase-lock plan succeeds;
  * otherwise follower Beat Sync is explicitly disabled and play continues
  * free-tempo (see .planning/beat-sync-phase-lock-explainer-SA.md).
