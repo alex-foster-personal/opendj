@@ -7,6 +7,7 @@
  *
  * Ownership (conflict-free by design):
  *   - this file + ddj-flx10.ts: FLX10 unit
+ *   - ddj-400.ts: DDJ-400 unit (owns its DDJ400_MAP export)
  *   - reloop-mixtour.ts: Mixtour unit (owns its RELOOP_MIXTOUR_MAP export)
  *
  * Requirements (mini-PRD):
@@ -23,10 +24,11 @@
 
 import type { DeviceMap } from '$lib/rb/midi/midi-types';
 import { registerDeviceMap } from '$lib/rb/midi/webmidi.svelte';
+import { DDJ400_MAP } from './ddj-400';
 import { FLX10_MAP } from './ddj-flx10';
 import { RELOOP_MIXTOUR_MAP } from './reloop-mixtour';
 
-export const DEVICE_MAP_REGISTRY: readonly DeviceMap[] = [FLX10_MAP, RELOOP_MIXTOUR_MAP];
+export const DEVICE_MAP_REGISTRY: readonly DeviceMap[] = [FLX10_MAP, DDJ400_MAP, RELOOP_MIXTOUR_MAP];
 
 let _registered = false;
 

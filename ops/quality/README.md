@@ -54,9 +54,10 @@ from `REPORT_ONLY` in `scripts/quality_gate.py` -- do not just delete the entry.
 
 ## Allowances raised by hand, and why
 
-Two entries in `baseline.json` are above where they stood on Sun 17 Aug 2026.
-Both were raised deliberately in one diff, and both are debts with a named
-owner rather than a number that drifted.
+Four entries in `baseline.json` are above where they once stood. All were
+raised deliberately, each in the diff that caused it, and each is a debt with a
+named owner rather than a number that drifted. The two `crate_sync.py` rows
+date from Sun 17 Aug 2026; the two frontend rows from Sat 29 Aug 2026.
 
 CI was fail-open between the default-branch rename and PR #464, so the
 `fix(agentbox)` crate-reconcile train (`6287d7c1`, `58dbfc13`, `bfa33dec`,
@@ -80,6 +81,28 @@ lifting the manifest fetch out of `_rsync_manifest_from_host`. Doing that takes
 `ruff.complexity` back to 140 and `complexity.blocks_over_limit` to 142, and
 both should be re-recorded the moment it lands. Do not raise either number
 again without adding a row above.
+
+### Sat 29 Aug 2026: the cost of a fourth hand-written device map
+
+Adding `src/lib/rb/midi/maps/ddj-400.ts` (PR #508, the DDJ-400 map rescue)
+moved two frontend numbers. Both are the per-device TypeScript map file itself,
+not anything the map does.
+
+| metric | was | now | what is in the gap |
+| ------ | --- | --- | ------------------ |
+| `frontend.max_fan_in` | 52 | 53 | One more importer of `src/lib/rb/types.ts`. Every device map imports `DeckId` and `HotCueSlot` from it, so each new controller costs exactly +1 here. |
+| `duplication.percent` | 0.29 | 0.32 | Two 41-line jscpd clones between `maps/ddj-400.ts` and `maps/ddj-flx10.ts` (at `:96 <-> :100` and `:136 <-> :138`). They are the shared per-deck binding-builder scaffolding every Pioneer map repeats: same `_deckCh` / `_note` / per-deck array shape, different wire numbers and different PDF citations. jscpd normalizes literals, so the differing numbers do not break the match. |
+
+Refactoring the scaffolding into a shared helper would have meant editing the
+hardware-verified FLX10 map inside a rescue PR whose whole value is that each
+file is a self-contained, citable transcription of a vendor PDF. That trade was
+not worth making for 0.03%.
+
+Paying this down is not a refactor of these two files, it is the runtime device
+document in `specs/controller-onboarding.md` section 3.1. Once a controller is
+JSON data plus provenance rather than a fourth copy of the same builder, both
+numbers fall and neither grows again per device. Re-record them the moment that
+lands, and do not raise either again without adding a row above.
 
 ## What each evaluator answers
 
