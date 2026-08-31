@@ -338,8 +338,10 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
                 hub_machine_id = _hub_identity(request, conn)
                 engine.merge_machines(
                     conn,
-                    [protocol.MachineRow.from_wire(payload.machine.model_dump())]
-                    + _to_machines(payload.machines),
+                    [
+                        protocol.MachineRow.from_wire(payload.machine.model_dump()),
+                        *_to_machines(payload.machines),
+                    ],
                 )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
