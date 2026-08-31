@@ -26,6 +26,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   ends somewhere a fast one does not
 // - if the global wheel is not bound, or ignores the selection, then "you still
 //   have scroll wheel control attached" is gone
+// - if the global wheel stops scaling by input kind then the shift-selected
+//   dial is hypersensitive on a trackpad while every use:wheelAdjust control
+//   is calm, i.e. the "global" sensitivity fix has a hole in it
 // - if horizontal drag is not much less sensitive than vertical then fine adjust
 //   is impossible
 // - if Knob.svelte stops importing knob-control then the module is dead code
@@ -34,6 +37,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const MIXER = fileURLToPath(new URL('../../src/lib/components/rb/mixer', import.meta.url));
 
 let knobs;
+/** wheel-adjust, for WHEEL_TRACKPAD_EVENTS_PER_DETENT only. */
+let wheel;
 /** Registered fake dials by id, each holding a real settable value. */
 let dials;
 let wheelHandler;
@@ -49,12 +54,23 @@ class FakeHTMLElement {
 before(async () => {
 	// The module binds a window wheel listener on the first registerKnob().
 	const listeners = new Map();
+	const store = new Map();
 	globalThis.window = {
 		addEventListener: (type, fn) => listeners.set(type, fn),
-		removeEventListener: (type) => listeners.delete(type)
+		removeEventListener: (type) => listeners.delete(type),
+		// knob-control now pulls in wheel-adjust for the trackpad scaling, and
+		// that module reads its persisted factors at import time.
+		localStorage: {
+			getItem: (key) => (store.has(key) ? store.get(key) : null),
+			setItem: (key, value) => store.set(key, String(value)),
+			removeItem: (key) => store.delete(key)
+		}
 	};
 	globalThis.HTMLElement = FakeHTMLElement;
 	knobs = await loadTypeScriptModule('src/lib/rb/knob-control.svelte.ts');
+	// Read-only: this is a SEPARATE module instance from the copy esbuild
+	// bundled into knob-control, so only its constants are meaningful here.
+	wheel = await loadTypeScriptModule('src/lib/rb/wheel-adjust.ts');
 	globalThis.__listeners = listeners;
 });
 
@@ -80,17 +96,28 @@ function addDial(id, value) {
 
 const valueOf = (id) => dials.get(id).value;
 
-/** A wheel event as the window listener sees it. */
-function wheelEvent(deltaY, target = null) {
+/** A wheel event as the window listener sees it. Defaults to a notched mouse
+ * wheel: pixel deltaMode with wheelDeltaY quantized to a multiple of 120. That
+ * is the device this listener always implicitly assumed, so every assertion
+ * below that predates the trackpad scaling still describes a mouse. */
+function wheelEvent(deltaY, target = null, { wheelDeltaY } = {}) {
 	let prevented = false;
 	return {
 		deltaY,
 		target,
+		deltaMode: 0,
+		wheelDeltaY: wheelDeltaY ?? (deltaY > 0 ? -120 : 120),
 		preventDefault: () => {
 			prevented = true;
 		},
 		wasPrevented: () => prevented
 	};
+}
+
+/** One event out of a macOS trackpad two-finger burst: a small delta and a
+ * wheelDeltaY that is NOT a multiple of 120. */
+function trackpadTick(direction = 1, pixels = 2) {
+	return wheelEvent(-pixels * direction, null, { wheelDeltaY: pixels * 1.2 * direction });
 }
 
 // ============================================ the stagger, in isolated maths
@@ -245,6 +272,42 @@ test('the global wheel is direction-only, never magnitude-scaled', () => {
 		valueOf(a),
 		small,
 		'a trackpad momentum burst slammed the control - the step is magnitude-scaled'
+	);
+});
+
+test('a trackpad burst on the page-level wheel travels like one mouse detent', () => {
+	const a = addDial('1:low', 0.5);
+	knobs.shiftClickKnob(a);
+
+	wheelHandler(wheelEvent(-100, new FakeHTMLElement('DIV')));
+	const mouseTravel = valueOf(a) - 0.5;
+
+	dials.set(a, { value: 0.5 });
+	for (let i = 0; i < wheel.WHEEL_TRACKPAD_EVENTS_PER_DETENT; i += 1) {
+		wheelHandler(trackpadTick(1));
+	}
+	const trackpadTravel = valueOf(a) - 0.5;
+
+	assert.ok(mouseTravel > 0, `the mouse detent moved nothing (${mouseTravel})`);
+	assert.ok(
+		Math.abs(trackpadTravel - mouseTravel) < 1e-12,
+		`trackpad burst moved ${trackpadTravel}, mouse detent moved ${mouseTravel} - the ` +
+			'page-level wheel bypasses the global trackpad scaling'
+	);
+});
+
+test('one trackpad tick moves the selected dial less than one mouse detent', () => {
+	const a = addDial('1:low', 0.5);
+	knobs.shiftClickKnob(a);
+
+	wheelHandler(trackpadTick(1));
+	const oneTick = valueOf(a) - 0.5;
+
+	assert.ok(oneTick > 0, 'the trackpad tick did not move the dial at all');
+	assert.ok(
+		oneTick < knobs.KNOB_CFG.scrollStep,
+		`one trackpad tick moved ${oneTick}, a full step is ${knobs.KNOB_CFG.scrollStep} - ` +
+			'the page-level wheel is still taking a whole step per trackpad event'
 	);
 });
 
