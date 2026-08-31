@@ -38,6 +38,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# macho_files / macho_count. Shared with scripts/sign_macos_developer_id.sh so
+# the two signing paths cannot disagree about which files are Mach-O.
+# shellcheck source=scripts/lib/macho.sh
+. "$REPO_ROOT/scripts/lib/macho.sh"
+
 TAURI_DIR="apps/desktop/src-tauri"
 CONF="$TAURI_DIR/tauri.conf.json"
 BUILD_DIR="$TAURI_DIR/target/appstore"
@@ -350,7 +355,7 @@ check_payload() {
     local macho_count
     macho_count="$(find "$payload" -type f \( -name '*.so' -o -name '*.dylib' \) 2>/dev/null | wc -l | tr -d ' ')"
     ok "payload staged, $macho_count Mach-O libraries to sign inside-out"
-    if [ "$macho_count" -gt 0 ]; then
+    if [ "$signed_count" -gt 0 ]; then
         echo "          Signed individually by --build, deepest first, WITHOUT --deep."
         echo "          --deep would overwrite each one with the parent's entitlements,"
         echo "          handing a full sandbox profile to a Python interpreter."
@@ -426,21 +431,52 @@ build() {
     ok "embedded the provisioning profile"
 
     section "signing inside-out"
-    # Deepest paths first so that every nested Mach-O is sealed BEFORE the
-    # bundle that contains it. Signing outside-in invalidates the outer
-    # signature the moment an inner one is written.
-    find "$app/Contents/Resources/payload" -type f \( -name '*.so' -o -name '*.dylib' \) -print0 2>/dev/null \
-        | xargs -0 -I {} codesign --force --timestamp --options runtime \
-            --sign "$MDT_MAS_APP_CERT" \
-            --entitlements "$BUILD_DIR/Entitlements.inherit.plist" {}
+    # The payload first, the bundle that contains it LAST. Signing outside-in
+    # invalidates the outer signature the moment an inner one is written.
+    # Within the payload the order does not matter: these are standalone
+    # Mach-O files, not nested bundles, so none carries an enclosing signature
+    # for another to invalidate.
+    local payload signed_count
+    payload="$app/Contents/Resources/payload"
+    [ -d "$payload" ] || { echo "[ERROR] the built app carries no payload at $payload; the engine is missing, not merely unsigned." >&2; exit 1; }
 
-    if [ -f "$app/Contents/Resources/payload/bin/opendj-engine" ]; then
+    # Mach-O by CONTENT, never by extension. The predicate this replaced was
+    # -name '*.so' -o -name '*.dylib', which skipped the single binary that
+    # matters most: the bundled CPython at runtime/bin/python3.N. It carries
+    # no extension, and it is the process the launcher execs, so it is the
+    # binary the inherited sandbox actually has to land on.
+    signed_count="$(macho_count "$payload")"
+    [ "$signed_count" -gt 0 ] || { echo "[ERROR] found no Mach-O files under $payload; the payload carries a whole CPython runtime, so an empty scan means the scan is broken, not that the payload is clean." >&2; exit 1; }
+    macho_files "$payload" | xargs -0 -n 1 \
         codesign --force --timestamp --options runtime \
             --sign "$MDT_MAS_APP_CERT" \
-            --entitlements "$BUILD_DIR/Entitlements.inherit.plist" \
-            "$app/Contents/Resources/payload/bin/opendj-engine"
-        ok "signed the engine launcher with inherited sandbox"
-    fi
+            --entitlements "$BUILD_DIR/Entitlements.inherit.plist"
+    ok "signed $signed_count Mach-O files in the payload with the inherited sandbox"
+
+    # Assert the interpreter by NAME, not by count. A count cannot tell 90
+    # signed dylibs from 90 signed dylibs plus an unsigned interpreter, which
+    # is exactly the shape of the bug this replaced. The pattern matches the
+    # versioned real file (python3.11, python3.14); bin/python3 itself is a
+    # symlink and macho_files skips symlinks on purpose.
+    macho_files "$payload" | tr '\0' '\n' | grep -q '/runtime/bin/python3' || {
+        echo "[ERROR] the signed set contains no runtime/bin/python3*; the launcher execs that interpreter, so an unsigned one is an App Store rejection." >&2
+        exit 1
+    }
+    ok "the bundled interpreter is in the signed set"
+
+    # bin/opendj-engine is deliberately NOT signed on its own. It is a POSIX
+    # shell script (LAUNCHER_TEMPLATE in scripts/build_engine_payload.py opens
+    # with #!/bin/sh), so it has no load commands to seal and codesign would
+    # only hang a detached signature off an extended attribute. Two things
+    # already cover it: the outer bundle's CodeResources seals it as a
+    # resource, and the inherited-sandbox entitlement lands where it takes
+    # effect, on the interpreter it execs. Its ABSENCE is still fatal, so that
+    # is checked rather than silently skipped.
+    [ -f "$payload/bin/opendj-engine" ] || {
+        echo "[ERROR] the payload has no engine launcher at bin/opendj-engine; the desktop shell has nothing to exec." >&2
+        exit 1
+    }
+    ok "engine launcher present (a shell script; the interpreter it execs is signed above)"
 
     # The outer bundle LAST, and never with --deep.
     codesign --force --timestamp --options runtime \

@@ -10,14 +10,15 @@
 #
 # WHY A SEPARATE SCRIPT RATHER THAN INLINE `just` LINES. Tauri's bundler signs
 # the .app it produces, but the app carries a whole relocatable CPython under
-# Contents/Resources/payload (90 .so/.dylib files plus the interpreter). The
-# bundler does not walk into a resource directory, so those Mach-O files would
-# reach the notary service unsigned and the submission would come back
-# Invalid. Signing them has to happen while the payload is still a staging
-# directory, BEFORE `cargo tauri build` seals it into the bundle -- a
-# different point in the recipe from every other signing step. Splitting the
-# stages into subcommands is what lets the justfile call each one where it
-# belongs, and lets them be tested individually without a build.
+# Contents/Resources/payload: dozens of extension modules and shared libraries
+# plus the extensionless interpreter itself, all of them Mach-O and none of
+# them findable by extension alone. The bundler does not walk into a resource
+# directory, so those Mach-O files would reach the notary service unsigned and
+# the submission would come back Invalid. Signing them has to happen while the
+# payload is still a staging directory, BEFORE `cargo tauri build` seals it
+# into the bundle -- a different point in the recipe from every other step.
+# Splitting the stages into subcommands is what lets the justfile call each
+# one where it belongs, and lets them be tested individually without a build.
 #
 # USAGE
 #   sign_macos_developer_id.sh payload <staged-payload-dir>
@@ -50,6 +51,11 @@
 
 set -euo pipefail
 
+# macho_files / macho_count. Shared with scripts/ship_appstore.sh so the two
+# signing paths cannot disagree about which files are Mach-O.
+# shellcheck source=scripts/lib/macho.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/macho.sh"
+
 #----- helpers ------------------------------------------------------------
 
 die() {
@@ -71,21 +77,6 @@ _require_notary_profile() {
 
 _require_tool() {
     command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH; this step needs the Xcode command line tools"
-}
-
-# Emit every Mach-O file under a directory, NUL separated. Candidates are
-# narrowed by extension or executable bit first so `file` is not run over
-# several thousand .py files, then confirmed with `file` so that static
-# archives (.a, reported as "current ar archive") and shell scripts with the
-# executable bit set are not handed to codesign, which would reject them.
-_macho_files() {
-    local root="$1"
-    find "$root" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) -print0 |
-        while IFS= read -r -d '' f; do
-            case "$(file -b "$f" 2>/dev/null)" in
-            Mach-O*) printf '%s\0' "$f" ;;
-            esac
-        done
 }
 
 #----- payload ------------------------------------------------------------
@@ -113,12 +104,12 @@ cmd_payload() {
     [ -d "$payload" ] || die "no staged payload directory at $payload"
 
     local count started elapsed
-    count=$(_macho_files "$payload" | tr -dc '\0' | wc -c | tr -d ' ')
+    count=$(macho_count "$payload")
     [ "$count" -gt 0 ] || die "found no Mach-O files under $payload; the payload should carry a CPython runtime, so an empty scan means the payload is not staged"
 
     echo "[INFO] signing $count Mach-O files in the payload with the hardened runtime"
     started=$(date +%s)
-    _macho_files "$payload" | xargs -0 -P 4 -n 1 \
+    macho_files "$payload" | xargs -0 -P 4 -n 1 \
         codesign --force --timestamp --options runtime \
         --sign "$MDT_MACOS_SIGNING_IDENTITY" ||
         die "codesign failed inside the payload; the outer bundle would have been sealed around an unsigned Mach-O"
