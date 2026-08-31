@@ -73,6 +73,7 @@
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import { deckLoadFailureContext } from '$lib/rb/deck-load-failure-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import {
 	fetchAnlz,
@@ -3109,7 +3110,12 @@ class RbAudioEngine implements AudioEngine {
 			const msg =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
-			pushToast(`Deck ${deck} load failed - ${msg}`, 'error', undefined, exc);
+			// The stages above are the only record of WHERE this load died, and
+			// until now they stopped at the client-side perf ring - which the next
+			// fader drag used to wipe. Riding the toast's own error report is what
+			// carries them to the server log, without a second report per failure.
+			const failureContext = deckLoadFailureContext(deck, stages);
+			pushToast(`Deck ${deck} load failed - ${msg}`, 'error', undefined, exc, failureContext);
 			recordPerfEvent('deck-load-fail', msg, deck);
 			throw exc;
 		}
