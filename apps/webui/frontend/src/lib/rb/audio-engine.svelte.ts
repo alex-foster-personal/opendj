@@ -131,8 +131,6 @@ import type {
 	DeckId,
 	DeckState,
 	EqBand,
-	HeadphoneOutputDevice,
-	HeadphoneState,
 	HotCue,
 	HotCueSlot,
 	LoopState,
@@ -154,7 +152,6 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
-	HEADPHONE_OPERATION_TIMEOUT_MS,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -178,6 +175,14 @@ import {
 	isMasterMuted,
 	setMasterMuted
 } from '$lib/player/master-mute.svelte';
+import {
+	acquireHeadphoneOutput as acquireMonitorOutput,
+	applyHeadphoneMix,
+	disposeHeadphoneMonitor,
+	ensureHeadphoneGraph,
+	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	selectHeadphoneOutput as selectMonitorOutput
+} from '$lib/player/headphones';
 import {
 	_assertKeyShift,
 	camelotKeysAreCompatible,
@@ -263,6 +268,10 @@ export {
 	supersedingScheduleTime
 };
 export { pausedSeekClock };
+// The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
+// its device boundary and its algebra. Deliberately NOT re-exported here: no
+// module in src ever reached its pure surface through this barrel, and a
+// pass-through export would leave the coupling the extraction just removed.
 export {
 	acknowledgePresentedTransportSchedule,
 	createPresentedTransportTimeline,
@@ -426,17 +435,6 @@ let _masterGain: GainNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
-interface _HeadphoneNodes {
-	cueSum: GainNode;
-	masterMonitor: GainNode;
-	cueMix: GainNode;
-	masterMix: GainNode;
-	level: GainNode;
-	destination: MediaStreamAudioDestinationNode;
-	element: HTMLAudioElement;
-}
-let _headphoneNodes: _HeadphoneNodes | null = null;
-let _headphoneGeneration = 0;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _rt: Record<DeckId, _DeckRuntime> = {
@@ -578,224 +576,6 @@ function _setParam(param: AudioParam, value: number): void {
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
 }
 
-/** Equal-power CUE/MASTER gains, where 0 is full cue and 1 is full master. */
-export function headphoneMixGains(mix: number): { cue: number; master: number } {
-	_assertUnit('headphone mix', mix);
-	if (mix === 0) return { cue: 1, master: 0 };
-	if (mix === 1) return { cue: 0, master: 1 };
-	return {
-		cue: Math.cos((mix * Math.PI) / 2),
-		master: Math.sin((mix * Math.PI) / 2)
-	};
-}
-
-export function assertHeadphoneOutputSelection(
-	deviceId: string,
-	outputs: readonly HeadphoneOutputDevice[]
-): void {
-	if (typeof deviceId !== 'string' || deviceId.trim() === '') {
-		throw new TypeError('headphone output device id must be a non-empty string');
-	}
-	if (!outputs.some((output) => output.id === deviceId)) {
-		throw new RangeError(`headphone output ${deviceId} is not an enumerated headphone output`);
-	}
-}
-
-/** Merge a browser-authorized output into the serializable read model. */
-export function mergeHeadphoneOutput(
-	outputs: readonly HeadphoneOutputDevice[],
-	device: Pick<MediaDeviceInfo, 'deviceId' | 'label'>
-): HeadphoneOutputDevice[] {
-	if (typeof device.deviceId !== 'string' || device.deviceId.trim() === '') {
-		throw new TypeError('acquired headphone output device id must be a non-empty string');
-	}
-	if (typeof device.label !== 'string') {
-		throw new TypeError('acquired headphone output label must be a string');
-	}
-	const next = { id: device.deviceId, label: device.label };
-	return outputs.some((output) => output.id === next.id)
-		? outputs.map((output) => (output.id === next.id ? next : { ...output }))
-		: [...outputs.map((output) => ({ ...output })), next];
-}
-
-/** Browsers may rotate opaque output IDs when device permission changes. An
- * unenumerated sink is no longer trustworthy, so stop reporting it as live. */
-export function reconcileHeadphoneOutputRefresh(
-	active: boolean,
-	selectedOutputDeviceId: string | null,
-	outputs: readonly HeadphoneOutputDevice[]
-): { active: boolean; selected_output_device_id: string | null } {
-	if (typeof active !== 'boolean') throw new TypeError('headphone active state must be boolean');
-	if (selectedOutputDeviceId !== null && typeof selectedOutputDeviceId !== 'string') {
-		throw new TypeError('selected headphone output device id must be a string or null');
-	}
-	if (selectedOutputDeviceId === null || outputs.some((output) => output.id === selectedOutputDeviceId)) {
-		return { active, selected_output_device_id: selectedOutputDeviceId };
-	}
-	return { active: false, selected_output_device_id: null };
-}
-
-export function headphoneSelectionStages(): readonly string[] {
-	return ['setSinkId', 'attachStream', 'play', 'publish'];
-}
-
-export function headphoneReselectionStages(): readonly string[] {
-	return [
-		'createCandidate',
-		'setSinkId',
-		'attachStream',
-		'play',
-		'replaceAndPublish',
-		'detachPrevious'
-	];
-}
-
-export function headphoneReselectionResult(candidateAccepted: boolean): {
-	replaceCurrentElement: boolean;
-	publishSelection: boolean;
-	detachPrevious: boolean;
-} {
-	if (typeof candidateAccepted !== 'boolean') {
-		throw new TypeError('headphone candidate acceptance must be boolean');
-	}
-	return candidateAccepted
-		? { replaceCurrentElement: true, publishSelection: true, detachPrevious: true }
-		: { replaceCurrentElement: false, publishSelection: false, detachPrevious: false };
-}
-
-export function headphoneOwnershipIsCurrent(
-	operationGeneration: number,
-	currentGeneration: number,
-	nodesOwned: boolean
-): boolean {
-	return (
-		Number.isInteger(operationGeneration) &&
-		Number.isInteger(currentGeneration) &&
-		operationGeneration === currentGeneration &&
-		nodesOwned
-	);
-}
-
-export function assertHeadphoneOwnership(
-	operationGeneration: number,
-	currentGeneration: number,
-	nodesOwned: boolean
-): void {
-	if (!headphoneOwnershipIsCurrent(operationGeneration, currentGeneration, nodesOwned)) {
-		throw new Error('stale headphone operation cannot publish state after disposal');
-	}
-}
-
-export async function withHeadphoneOperationTimeout<T>(
-	operation: string,
-	promise: Promise<T>,
-	timeoutMs = HEADPHONE_OPERATION_TIMEOUT_MS
-): Promise<T> {
-	if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-		throw new RangeError(`headphone ${operation} timeout must be a positive integer, got ${timeoutMs}`);
-	}
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-	const timeout = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => reject(new Error(`headphone ${operation} timed out after ${timeoutMs}ms`)), timeoutMs);
-	});
-	try {
-		return await Promise.race([promise, timeout]);
-	} finally {
-		if (timeoutId !== null) clearTimeout(timeoutId);
-	}
-}
-
-function _applyHeadphoneMix(): void {
-	const nodes = _headphoneNodes;
-	if (nodes === null) return;
-	const gains = headphoneMixGains(mixerState.headphones.mix);
-	_setParam(nodes.cueMix.gain, gains.cue);
-	_setParam(nodes.masterMix.gain, gains.master);
-	_setParam(nodes.level.gain, mixerState.headphones.level);
-}
-
-function _headphoneError(operation: string, error: unknown): Error {
-	const message = error instanceof Error ? error.message : String(error);
-	mixerState.headphones.error = `${operation}: ${message}`;
-	return new Error(mixerState.headphones.error, { cause: error });
-}
-
-function _assertCurrentHeadphoneOperation(generation: number, nodes: _HeadphoneNodes | null): void {
-	assertHeadphoneOwnership(generation, _headphoneGeneration, nodes === null || nodes === _headphoneNodes);
-}
-
-function _requireHeadphoneDeviceApi(): MediaDevices {
-	if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'navigator.mediaDevices is unavailable');
-	}
-	if (typeof navigator.mediaDevices.enumerateDevices !== 'function') {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'enumerateDevices is unavailable');
-	}
-	if (typeof HTMLMediaElement === 'undefined' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'HTMLMediaElement.setSinkId is unavailable');
-	}
-	mixerState.headphones.supported = true;
-	return navigator.mediaDevices;
-}
-
-interface _OutputSelectableMediaDevices extends MediaDevices {
-	selectAudioOutput(): Promise<MediaDeviceInfo>;
-}
-
-function _requireHeadphoneOutputAcquisitionApi(): _OutputSelectableMediaDevices {
-	const mediaDevices = _requireHeadphoneDeviceApi();
-	if (typeof (mediaDevices as Partial<_OutputSelectableMediaDevices>).selectAudioOutput !== 'function') {
-		throw _headphoneError(
-			'headphone output acquisition unsupported',
-			'navigator.mediaDevices.selectAudioOutput is unavailable'
-		);
-	}
-	return mediaDevices as _OutputSelectableMediaDevices;
-}
-
-function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _HeadphoneNodes {
-	if (_headphoneNodes !== null) return _headphoneNodes;
-	const cueSum = context.createGain();
-	const masterMonitor = context.createGain();
-	const cueMix = context.createGain();
-	const masterMix = context.createGain();
-	const level = context.createGain();
-	const destination = context.createMediaStreamDestination();
-	const element = _createDetachedHeadphoneElement();
-	cueSum.connect(cueMix);
-	masterGain.connect(masterMonitor);
-	masterMonitor.connect(masterMix);
-	cueMix.connect(level);
-	masterMix.connect(level);
-	level.connect(destination);
-	_headphoneNodes = { cueSum, masterMonitor, cueMix, masterMix, level, destination, element };
-	_applyHeadphoneMix();
-	return _headphoneNodes;
-}
-
-function _createDetachedHeadphoneElement(): HTMLAudioElement {
-	return new Audio();
-}
-
-function _detachHeadphoneElement(element: HTMLAudioElement): void {
-	element.pause();
-	element.srcObject = null;
-}
-
-function _disposeHeadphoneGraph(): void {
-	const nodes = _headphoneNodes;
-	_headphoneNodes = null;
-	if (nodes === null) return;
-	for (const node of [nodes.cueSum, nodes.masterMonitor, nodes.cueMix, nodes.masterMix, nodes.level, nodes.destination]) {
-		node.disconnect();
-	}
-	_detachHeadphoneElement(nodes.element);
-	for (const track of nodes.destination.stream.getTracks()) track.stop();
-}
-
 // -------------------------------------------- external mixer routing
 // Opt-in via URL query `?extroute=1:1,2:7` -- comma-separated `deck:usbLeft`
 // pairs, where usbLeft is the 1-based LEFT channel of a stereo pair on the
@@ -874,7 +654,7 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.channelInterpretation = 'discrete';
 		_externalMerger.connect(_masterMuteGain);
 	}
-	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
+	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -2912,6 +2692,18 @@ async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promi
 	}
 }
 
+/**
+ * The monitor's tap into the engine graph, handed to the headphone module as a
+ * thunk. Resolved lazily on purpose: a headphone selection must still build the
+ * graph at the point INSIDE its try block where it always did, so a graph-build
+ * failure is still reported as `headphone output selection failed`.
+ */
+function _monitorSource(): { context: AudioContext; masterGain: GainNode } {
+	const context = _ensureGraph();
+	if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
+	return { context, masterGain: _masterGain };
+}
+
 // ------------------------------------------------------------- the engine
 
 /** Singleton Web Audio engine implementing the AudioEngine contract, plus
@@ -2936,8 +2728,7 @@ class RbAudioEngine implements AudioEngine {
 				nodes.push(...Object.values(rt.nodes).filter((node): node is AudioNode => node !== null));
 			}
 		}
-		_headphoneGeneration += 1;
-		_disposeHeadphoneGraph();
+		disposeHeadphoneMonitor();
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		const closing = disposeAudioResources({
@@ -3989,97 +3780,27 @@ class RbAudioEngine implements AudioEngine {
 	setHeadphoneMix(value: number): void {
 		_assertUnit('setHeadphoneMix value', value);
 		mixerState.headphones.mix = value;
-		if (_headphoneNodes !== null) _applyHeadphoneMix();
+		applyHeadphoneMix();
 	}
 
 	setHeadphoneLevel(value: number): void {
 		_assertUnit('setHeadphoneLevel value', value);
 		mixerState.headphones.level = value;
-		if (_headphoneNodes !== null) _applyHeadphoneMix();
+		applyHeadphoneMix();
 	}
 
 	async refreshHeadphoneOutputs(): Promise<void> {
-		const generation = _headphoneGeneration;
-		let devices: MediaDeviceInfo[];
-		try {
-			devices = await withHeadphoneOperationTimeout(
-				'enumerateDevices',
-				_requireHeadphoneDeviceApi().enumerateDevices()
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-		} catch (error) {
-			_assertCurrentHeadphoneOperation(generation, null);
-			throw _headphoneError('headphone output enumeration failed', error);
-		}
-		mixerState.headphones.outputs = devices
-			.filter((device) => device.kind === 'audiooutput')
-			.map((device) => ({ id: device.deviceId, label: device.label }));
-		const reconciled = reconcileHeadphoneOutputRefresh(
-			mixerState.headphones.active,
-			mixerState.headphones.selected_output_device_id,
-			mixerState.headphones.outputs
-		);
-		if (reconciled.selected_output_device_id === null && mixerState.headphones.selected_output_device_id !== null) {
-			const currentElement = _headphoneNodes?.element;
-			if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
-		}
-		mixerState.headphones.active = reconciled.active;
-		mixerState.headphones.selected_output_device_id = reconciled.selected_output_device_id;
-		mixerState.headphones.error = null;
+		return refreshMonitorOutputs();
 	}
 
 	/** Must be called from a visible user gesture so the browser can open its
 	 * output chooser. This never requests microphone capture. */
 	async acquireHeadphoneOutput(): Promise<void> {
-		const generation = _headphoneGeneration;
-		try {
-			const device = await withHeadphoneOperationTimeout(
-				'selectAudioOutput',
-				_requireHeadphoneOutputAcquisitionApi().selectAudioOutput()
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-			mixerState.headphones.outputs = mergeHeadphoneOutput(mixerState.headphones.outputs, device);
-			await this.selectHeadphoneOutput(device.deviceId);
-			_assertCurrentHeadphoneOperation(generation, null);
-		} catch (error) {
-			_assertCurrentHeadphoneOperation(generation, null);
-			throw _headphoneError('headphone output acquisition failed', error);
-		}
+		return acquireMonitorOutput(_monitorSource);
 	}
 
 	async selectHeadphoneOutput(deviceId: string): Promise<void> {
-		const generation = _headphoneGeneration;
-		let nodes: _HeadphoneNodes | null = null;
-		let candidate: HTMLAudioElement | null = null;
-		try {
-			_requireHeadphoneDeviceApi();
-			assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
-			const context = _ensureGraph();
-			if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
-			nodes = _ensureHeadphoneGraph(context, _masterGain);
-			candidate = _createDetachedHeadphoneElement();
-			await withHeadphoneOperationTimeout('setSinkId', candidate.setSinkId(deviceId));
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			candidate.srcObject = nodes.destination.stream;
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			await withHeadphoneOperationTimeout('play', candidate.play());
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			const transaction = headphoneReselectionResult(true);
-			const previous = nodes.element;
-			if (!transaction.replaceCurrentElement || !transaction.publishSelection || !transaction.detachPrevious) {
-				throw new Error('accepted headphone candidate did not produce a complete replacement transaction');
-			}
-			nodes.element = candidate;
-			mixerState.headphones.selected_output_device_id = deviceId;
-			mixerState.headphones.active = true;
-			mixerState.headphones.error = null;
-			_detachHeadphoneElement(previous);
-			candidate = null;
-		} catch (error) {
-			if (candidate !== null) _detachHeadphoneElement(candidate);
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			throw _headphoneError('headphone output selection failed', error);
-		}
+		return selectMonitorOutput(deviceId, _monitorSource);
 	}
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */

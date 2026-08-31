@@ -71,6 +71,7 @@ export const ENGINE_SOURCE_PATHS = [
   "lib/rb/audio-context-instrumentation.ts",
   "lib/rb/press-stamp.ts",
   "lib/player/constants.ts",
+  "lib/player/headphones.ts",
   "lib/player/key/camelot.ts",
   "lib/player/master-mute.svelte.ts",
   "lib/player/state.svelte.ts",
