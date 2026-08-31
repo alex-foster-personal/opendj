@@ -420,6 +420,16 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # row -- a vendor database this module owns outright, not our synced
     # state.db. Same {tbl} target on two lines (ContentID and ID cascades).
     ("apps/reconcile/remove_track.py", "dynamic:tbl"),
+    # apps/shared/state/normalize_locations.py collapses an NFD/NFC duplicate
+    # pair (round 3 finding R3) exactly the way engine._drop_superseded
+    # collapses a natural-key duplicate: the loser is hard-deleted because the
+    # partial UNIQUE index cannot hold a tombstone and its NFC replacement at
+    # once, and the survivor's changelog entry carries the collapse to peers.
+    # This IS an allowlisted vacuum path (ADR 08 point 5). LOCATIONS_TABLE is
+    # the track_locations delete; changelog prunes its dangling entries in the
+    # two (non-synced) changelog tables.
+    ("apps/shared/state/normalize_locations.py", "dynamic:LOCATIONS_TABLE"),
+    ("apps/shared/state/normalize_locations.py", "dynamic:changelog"),
 })
 
 
