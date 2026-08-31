@@ -277,9 +277,15 @@ export type StemLayout = 'demucs4' | 'roformer2';
 
 /** Serializable stem graph capability and control read model. `ready` means
  * every part of the bundle's OWN layout decoded and aligned -- four parts for
- * demucs4, two for roformer2. */
+ * demucs4, two for roformer2.
+ *
+ * `loading` is the SECONDARY-load state: the deck is playable on its mix
+ * buffer and the stem bundle is still being probed/fetched/decoded off the
+ * critical path. It is deliberately NOT merged into `unavailable`, because a
+ * reader has to be able to tell "no bundle exists" (settled, no spinner, no
+ * retry) from "not here yet" (in flight, spinner, controls will arrive). */
 export interface StemDeckState {
-	status: 'unavailable' | 'ready' | 'error';
+	status: 'unavailable' | 'loading' | 'ready' | 'error';
 	source: 'demucs' | 'roformer' | null;
 	model: string | null;
 	layout: StemLayout | null;

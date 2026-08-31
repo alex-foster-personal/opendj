@@ -100,6 +100,24 @@ export function unavailableStemDeckState(error: string | null = null): StemDeckS
 	};
 }
 
+/** Secondary stem load is in flight; the deck is ALREADY playable on its mix
+ * buffer. Distinct from `unavailable` on purpose: `unavailable` is a settled
+ * answer (this track has no bundle), `loading` is "not settled yet", and only
+ * the second one justifies an on-deck spinner. Controls stay empty so a stem
+ * button cannot be armed against a processor that has not arrived. */
+export function loadingStemDeckState(): StemDeckState {
+	return {
+		status: 'loading',
+		source: null,
+		model: null,
+		layout: null,
+		available_controls: [],
+		alignment: null,
+		controls: createDefaultStemControls(),
+		error: null
+	};
+}
+
 export function readyStemDeckState(
 	identity: StemArtifactIdentity,
 	alignment: StemAlignment
