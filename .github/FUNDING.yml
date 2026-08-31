@@ -15,10 +15,16 @@
 # a name on a page, never a product benefit (FUND-03). Money that grants
 # features goes through a paid plan, where the tax treatment is already right.
 #
-# BEFORE THIS SHIPS: the ko_fi handle below must actually be claimed and
-# GitHub Sponsors must be enabled on the account, or the Sponsor button leads
-# somewhere dead. Neither could be verified from here (ko-fi.com blocks
-# programmatic probes with a 403).
-
+# ko_fi is COMMENTED OUT until the handle is actually claimed, and that is a
+# safety decision rather than tidiness. ko-fi.com answers 403 to any
+# programmatic probe -- an existing handle and a nonexistent one are
+# indistinguishable from here -- so shipping `ko_fi: opendj` unverified risks
+# pointing a live Sponsor button at a STRANGER'S tip jar and sending them
+# money meant for this project. Claim ko-fi.com/opendj, then uncomment.
+#
+# github: below needs Sponsors enabled on the account to render at all. It
+# carries no such risk (the handle is unambiguously ours and the failure mode
+# is a button that does not appear), so it ships enabled.
+#
+# ko_fi: opendj
 github: [maintainer]
-ko_fi: opendj
