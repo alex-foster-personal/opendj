@@ -38,6 +38,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/deck-observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Deck Observation Status
+         * @description Why a row did or did not appear: per-deck dwell against the threshold.
+         */
+        get: operations["api_deck_observation_status_api_sets_deck_observations_get"];
+        put?: never;
+        /**
+         * Api Submit Deck Observations
+         * @description Ingest Open DJ deck-state snapshots into the live recording.
+         *
+         *     The browser posts here on a timer; any agent can post the same
+         *     payload, which is what keeps this flow drivable without a UI.
+         *     Bad snapshots are rejected 422 rather than dropped, because a
+         *     silently discarded observation is an under-counted set.
+         */
+        post: operations["api_submit_deck_observations_api_sets_deck_observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/recorder": {
         parameters: {
             query?: never;
@@ -3008,6 +3037,25 @@ export interface components {
             /** Survivor */
             survivor: string;
         };
+        /**
+         * DeckObservationsRequest
+         * @description A batch of Open DJ deck-state snapshots, oldest first.
+         *
+         *     Snapshots stay untyped here on purpose. Pydantic would happily
+         *     coerce the string "false" into ``False`` and 0 into ``0.0``, which
+         *     is exactly the quiet reinterpretation this pipeline must not do, so
+         *     validation belongs to :func:`~apps.sets.sources.opendj_wire.parse_snapshot`
+         *     alone rather than being split across two disagreeing contracts.
+         *
+         *     The cap is ten minutes of a 1 s cadence: enough for a tab that was
+         *     backgrounded to flush its buffer, small enough to bound one request.
+         */
+        DeckObservationsRequest: {
+            /** Snapshots */
+            snapshots: {
+                [key: string]: unknown;
+            }[];
+        };
         /** DeckPerformanceSample */
         DeckPerformanceSample: {
             /** Audible */
@@ -4393,7 +4441,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             /** Sources */
-            sources?: ("djay_monitor" | "rb_history")[];
+            sources?: ("djay_monitor" | "rb_history" | "opendj_decks")[];
         };
         /** RecorderStatus */
         RecorderStatus: {
@@ -5770,6 +5818,8 @@ export interface operations {
             query?: {
                 share_state?: ("private" | "shared_local" | "shared_cloud") | null;
                 limit?: number;
+                /** @description Read-time 'counts as played' filter, in seconds of audible playback. Only applies to rows that recorded a dwell (Open DJ's own decks). 0 counts every play. */
+                min_audible_s?: number;
             };
             header?: never;
             path?: never;
@@ -5815,6 +5865,63 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_deck_observation_status_api_sets_deck_observations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    api_submit_deck_observations_api_sets_deck_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeckObservationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

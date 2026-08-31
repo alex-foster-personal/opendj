@@ -30,6 +30,23 @@ _EVENT_COLUMNS = frozenset(
 )
 
 
+#: Default read-time dwell filter, in seconds of audible playback.
+#:
+#: Applies ONLY to rows that carry an ``audible_s`` value, which today
+#: means the Open DJ own-deck source. Rows from ``rb_history`` and
+#: ``djay_monitor`` carry no dwell -- their upstream app already decided
+#: what earned a history row -- so they are never filtered here.
+#:
+#: 60s comes from docs/product/set-dwell-threshold-analysis.md, which
+#: measured 3678 real dwell gaps and found NO trough: the populations a
+#: threshold would separate are not separated in the data. 60s is where
+#: the flat sub-60s shelf gives way to the mix mode, and it sits below
+#: p10 (77s). It is a shoulder, not a calibrated constant, which is
+#: exactly why it lives here as an adjustable read-time default rather
+#: than as a capture-time gate that would destroy the evidence.
+DEFAULT_MIN_AUDIBLE_S: float = 60.0
+
+
 class AnalyticsSchemaError(RuntimeError):
     """The configured event store cannot satisfy the analytics contract."""
 
@@ -89,6 +106,32 @@ def _parse_timestamp(value: str, context: str) -> datetime:
         raise AnalyticsSchemaError(f"invalid {context} timestamp: {exc}") from exc
 
 
+def _event_audible_s(value_json: str | None) -> float | None:
+    """Audible dwell recorded on this play row, or None if it carries none.
+
+    None is NOT zero. A row without ``audible_s`` came from a source whose
+    upstream app already made the played/not-played call (rekordbox
+    HISTORY, djay history), so the read-time dwell filter must let it
+    through untouched rather than treat a missing value as "never heard".
+    """
+    if value_json is None:
+        return None
+    try:
+        value = json.loads(value_json)
+    except json.JSONDecodeError as exc:
+        raise AnalyticsSchemaError(f"invalid set_events value_json: {exc}") from exc
+    if not isinstance(value, dict):
+        raise AnalyticsSchemaError("set_events value_json must decode to an object")
+    audible = value.get("audible_s")
+    if audible is None:
+        return None
+    if isinstance(audible, bool) or not isinstance(audible, (int, float)):
+        raise AnalyticsSchemaError(
+            f"set_events audible_s must be a number or null, got {audible!r}"
+        )
+    return float(audible)
+
+
 def _event_metadata(value_json: str | None) -> tuple[str | None, str | None]:
     if value_json is None:
         return None, None
@@ -113,16 +156,26 @@ def query_play_analytics(
     share_state: ShareState | None = None,
     limit: int = 50,
     events_table: EventsTable = "events",
+    min_audible_s: float = DEFAULT_MIN_AUDIBLE_S,
 ) -> dict[str, Any]:
     """Return one deterministic, JSON-ready analytics read model.
 
     ``limit`` bounds both recent-session rows and top-track rows. Summary totals
     always cover the complete population selected by ``share_state``.
+
+    ``min_audible_s`` is the read-time "counts as played" filter. It drops
+    play rows whose recorded ``audible_s`` falls below it, and leaves rows
+    carrying no dwell untouched. Pass ``0.0`` to count every recorded play.
+    This is deliberately a read-time knob: the underlying rows are written
+    regardless, so changing it re-derives the tracklist of a set recorded
+    months ago instead of silently having discarded it at capture.
     """
     if share_state is not None and share_state not in _SHARE_STATES:
         raise ValueError(f"unsupported share_state: {share_state!r}")
     if not 1 <= limit <= 200:
         raise ValueError("limit must be between 1 and 200")
+    if min_audible_s < 0:
+        raise ValueError("min_audible_s must not be negative")
     if events_table not in {"events", "set_events"}:
         raise ValueError(f"unsupported events_table: {events_table!r}")
 
@@ -151,6 +204,9 @@ def query_play_analytics(
             session_id: set() for session_id in session_ids
         }
         track_counts: Counter[str] = Counter()
+        # Surfaced in the payload so a thin tracklist is visibly the filter's
+        # doing and not a lost recording.
+        filtered_short = 0
         track_latest: dict[str, tuple[str, str | None, str | None, int, datetime]] = {}
 
         if session_ids:
@@ -167,6 +223,10 @@ def query_play_analytics(
                 session_ids,
             ).fetchall()
             for row in play_rows:
+                audible_s = _event_audible_s(row["value_json"])
+                if audible_s is not None and audible_s < min_audible_s:
+                    filtered_short += 1
+                    continue
                 session_id = str(row["session_id"])
                 stable_id = str(row["track_stable_id"])
                 wall_clock = str(row["wall_clock"])
@@ -226,12 +286,17 @@ def query_play_analytics(
         ]
         return {
             "schema_version": 1,
-            "filters": {"share_state": share_state, "limit": limit},
+            "filters": {
+                "share_state": share_state,
+                "limit": limit,
+                "min_audible_s": min_audible_s,
+            },
             "summary": {
                 "sessions": len(session_rows),
                 "plays": sum(track_counts.values()),
                 "unique_tracks": len(track_counts),
                 "completed_duration_s": completed_duration_s,
+                "plays_below_min_audible": filtered_short,
             },
             "sessions": sessions[:limit],
             "top_tracks": top_tracks,
