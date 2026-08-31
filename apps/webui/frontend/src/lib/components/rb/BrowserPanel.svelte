@@ -78,6 +78,7 @@
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import { setAutoPlayTrackFeed } from '$lib/rb/auto-play';
+	import { pickDoubleClickDeck } from '$lib/rb/double-click-deck-pick';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
@@ -1189,27 +1190,45 @@
 	/** Monotonic load counter - double-click prefers least-recent in the pair. */
 	let deckLoadSeq = $state({ 1: 0, 2: 0, 3: 0, 4: 0 });
 	let deckLoadTick = 0;
+	/** Last deck a plain (non-replace) double-click targeted; cmd/ctrl+dblclick reuses it. */
+	let lastDoubleClickDeck = $state<DeckId | null>(null);
 
 	/**
-	 * Smart-load target: CH1/CH2 by default (least-recent).
-	 * Shift: CH3/CH4 only if empty or stopped (empty preferred); null if both playing.
+	 * Reserve a deck slot the instant it is chosen, synchronously, before
+	 * the (async) load command even starts. Regression Mon 17 Aug 2026: the
+	 * old code bumped deckLoadSeq only after the load command resolved, so
+	 * double-clicking two tracks in quick succession (before the first
+	 * load's await settled) had both clicks read the same stale deckLoadSeq
+	 * and pick the SAME deck - the second track silently replaced the first
+	 * instead of landing on the other deck.
 	 */
-	function pickDoubleDeck(_row: LoadableRow, opts: { shift?: boolean } = {}): DeckId | null {
-		if (opts.shift !== true) {
-			return deckLoadSeq[1] <= deckLoadSeq[2] ? 1 : 2;
-		}
-		const pair: Array<3 | 4> = [3, 4];
-		const empty = pair.filter((d) => decks[d].stable_id === null);
-		const stopped = pair.filter((d) => decks[d].stable_id !== null && !decks[d].playing);
-		const candidates = empty.length > 0 ? empty : stopped;
-		if (candidates.length === 0) {
-			pushToast('shift+dblclick: CH3 and CH4 are both playing - pause or unload one first', 'error');
+	function _reserveDeckSlot(deck: DeckId): void {
+		deckLoadTick += 1;
+		deckLoadSeq = { ...deckLoadSeq, [deck]: deckLoadTick };
+	}
+
+	/** Wires the pure picker (double-click-deck-pick.ts) to live deck state. */
+	function pickDoubleDeck(
+		_row: LoadableRow,
+		opts: { shift?: boolean; replace?: boolean } = {}
+	): DeckId | null {
+		const result = pickDoubleClickDeck({
+			shift: opts.shift === true,
+			replace: opts.replace === true,
+			deckLoadSeq,
+			lastDoubleClickDeck,
+			pair: {
+				3: { stable_id: decks[3].stable_id, playing: decks[3].playing },
+				4: { stable_id: decks[4].stable_id, playing: decks[4].playing }
+			}
+		});
+		if (result.deck === null) {
+			if (result.error !== null) pushToast(result.error, 'error');
 			return null;
 		}
-		if (candidates.length === 1) return candidates[0];
-		return deckLoadSeq[candidates[0]] <= deckLoadSeq[candidates[1]]
-			? candidates[0]
-			: candidates[1];
+		_reserveDeckSlot(result.deck);
+		if (opts.replace !== true) lastDoubleClickDeck = result.deck;
+		return result.deck;
 	}
 
 	function previewSeek(row: LoadableRow, ratio: number): void {
