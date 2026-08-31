@@ -37,6 +37,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.feature_flags.profiles import profile_path, selected_profile
+
 #: Where the file lives inside the data dir, unless the env var overrides it.
 FLAGS_FILENAME: str = "feature-flags.json"
 
@@ -80,8 +82,9 @@ FLAGS: tuple[FlagDef, ...] = (
         owner="maintainer",
         note=(
             "USB export and drive discovery. ON everywhere except the Mac App "
-            "Store build, which ships feature-flags.appstore.json turning it "
-            "off: a sandboxed process cannot list /Volumes at all, so the "
+            "Store build, which selects the 'appstore' profile (see "
+            "apps/feature_flags/profiles/) turning it off: a sandboxed "
+            "process cannot list /Volumes at all, so the "
             "feature cannot work there and must not appear to. Turning the "
             "flag off is what makes the store build a CONFIG of this build "
             "rather than a fork of it. See SAND-02 in "
@@ -97,10 +100,21 @@ class FlagFileError(RuntimeError):
 
 
 def flags_path(data_dir: Path | str) -> Path:
-    """Where flags are read from. The env var wins, explicitly."""
+    """Where flags are read from, most specific source first.
+
+    1. ``MDT_FEATURE_FLAGS_FILE``  an explicit path, for a lane or a test
+    2. ``MDT_BUILD_PROFILE``      a named profile shipped in-repo
+    3. ``<data-dir>/feature-flags.json``  the user's own overrides
+
+    2 beats 3 on purpose: a packaged store build must not be re-enabled by a
+    file dropped into the data dir. See apps/feature_flags/profiles.py.
+    """
     override = os.environ.get(FLAGS_FILE_ENV, "").strip()
     if override:
         return Path(override)
+    profile = profile_path(selected_profile())
+    if profile is not None:
+        return profile
     return Path(data_dir) / FLAGS_FILENAME
 
 

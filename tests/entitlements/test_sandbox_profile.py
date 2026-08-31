@@ -15,17 +15,18 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
+from apps.feature_flags import profiles
 from apps.feature_flags.store import FLAGS
 from apps.shared import sandbox
 
-STORE_PROFILE = (
-    Path(__file__).resolve().parents[2]
-    / "apps/desktop/src-tauri/feature-flags.appstore.json"
-)
+# Resolved through the profile registry, not by path: the file moved once
+# already (out of the Tauri dir into apps/feature_flags/profiles/) and a
+# hardcoded path made three tests fail for a reason unrelated to what they
+# test.
+STORE_PROFILE = profiles.profile_path("appstore")
 
 
 def test_detection_uses_the_process_not_a_build_flag() -> None:
@@ -67,7 +68,7 @@ def test_the_shipped_store_profile_only_sets_real_flags() -> None:
     profile = json.loads(STORE_PROFILE.read_text())
     unknown = sorted(set(profile) - declared)
     assert not unknown, (
-        f"feature-flags.appstore.json sets undeclared flag(s): {unknown}. The "
+        f"the appstore profile sets undeclared flag(s): {unknown}. The "
         "flag store raises FlagFileError on an undeclared key, so this would "
         "stop the store build from starting at all."
     )

@@ -29,6 +29,12 @@ from apps.engine_core.config import (
     prepare_layout,
 )
 from apps.engine_core.lock import EngineLock, EngineLockError
+from apps.feature_flags.profiles import (
+    BUILD_PROFILE_ENV,
+    UnknownProfileError,
+    available_profiles,
+    profile_path,
+)
 
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
@@ -54,18 +60,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="single-worker by design; anything else is refused",
     )
     serve.add_argument("--log-level", default="info")
+    serve.add_argument(
+        "--build-profile",
+        default=None,
+        help=(
+            "named feature-flag profile for this boot, e.g. 'appstore'. "
+            f"One of: {', '.join(available_profiles())}. Sets "
+            f"{BUILD_PROFILE_ENV} for the process; an explicit "
+            "MDT_FEATURE_FLAGS_FILE still wins. An unknown name is refused, "
+            "never defaulted to the full build."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _apply_build_profile(args.build_profile)
         cfg = build_config(args.data_dir, args.host, args.port)
         _preflight(cfg, workers=args.workers)
     except EngineBootError as exc:
         print(f"[ERROR] engine refused to boot: {exc}", file=sys.stderr)
         return EXIT_REFUSED
     return _serve(cfg, log_level=args.log_level)
+
+
+def _apply_build_profile(name: str | None) -> None:
+    """Publish ``--build-profile`` to the environment, validating it first.
+
+    Set as an env var rather than threaded through EngineConfig because the
+    flag store is read at import-adjacent startup by ``create_app`` and by any
+    subprocess this boot spawns, and one env var reaches all of them. Validated
+    HERE so a typo dies at argument parsing with the list of real profiles,
+    rather than at flag-load time inside the app factory.
+    """
+    if name is None:
+        return
+    try:
+        profile_path(name)
+    except UnknownProfileError as exc:
+        raise EngineBootError(str(exc)) from exc
+    os.environ[BUILD_PROFILE_ENV] = name
 
 
 def _preflight(cfg: EngineConfig, *, workers: int) -> None:
