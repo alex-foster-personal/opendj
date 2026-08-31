@@ -48,13 +48,26 @@ Acceptance criteria, one test each:
 - if a push carrying a row for a machine the hub has not met is refused, the
   fleet snapshot is not travelling with the push and hub restore wedges the
   recovery it is supposed to be (round 2 N4/A4) -- broken.
+- if a collision on the SECOND partial UNIQUE index 409s instead of
+  resolving, natural-key resolution still picks one index and hopes
+  (round 2 N5) -- broken.
+- if a hard-deleted hub row makes every spoke's pull 409 forever, one manual
+  DELETE still takes the fleet offline (round 2 4a blast radius) -- broken.
+- if a changelog prune makes a spoke re-offer its library, restore detection
+  is still reading MAX(seq) rather than the generation token (round 2 N6)
+  -- broken.
+- if a third machine's push, or a local write, DURING the round trip raises
+  SyncDigestMismatch, the corruption alarm fires on ordinary concurrency
+  (round 2 6b/N7) -- broken. And if a real divergence stops raising, the
+  settling round has become a repair pass -- also broken.
 """
 from __future__ import annotations
 
 import sqlite3
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -1020,6 +1033,158 @@ def test_a_differently_spelled_equal_instant_does_not_win(
         assert _track_title(hub_conn, "trk-1") == "stored"
     finally:
         hub_conn.close()
+
+
+# ----- 6b / N7: the digest compare is fenced ---------------------------------
+
+
+class _InterceptingTransport:
+    """A transport that runs ``during`` once, before a chosen request.
+
+    The only way to land a write "in the gap" deterministically. It does not
+    fake anything about the protocol: the wrapped transport is the real one,
+    and the callback drives real code against the real DBs.
+    """
+
+    def __init__(
+        self,
+        inner: _TestClientTransport,
+        *,
+        before: str,
+        during: Callable[[], None],
+    ) -> None:
+        self._inner = inner
+        self._before = before
+        self._during = during
+        self.fired = False
+
+    def _maybe_fire(self, path: str) -> None:
+        if self.fired or not path.endswith(self._before):
+            return
+        self.fired = True
+        self._during()
+
+    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        self._maybe_fire(path)
+        return self._inner.post(path, payload)
+
+    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+        self._maybe_fire(path)
+        return self._inner.get(path, params)
+
+
+def test_a_third_machine_pushing_in_the_gap_is_not_a_divergence(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, spoke_b: Path
+) -> None:
+    """6b's sketch: A did nothing wrong and halted anyway.
+
+    Round 2 observed ``f6b A FAILED despite doing nothing wrong:
+    SyncDigestMismatch: tables ['tracks'] differ``. Only the intra-snapshot
+    half of ADR 08 point 6b was done; the digest still answered as of
+    request time with no way for the spoke to tell "someone else pushed"
+    from "we have diverged". It reports its seq now, and the spoke settles
+    with one more round.
+    """
+    _seed_common_track((spoke_a,), "trk-a")
+    _sync(spoke_a, hub, "spoke-a")
+
+    conn_b = _open(spoke_b)
+    try:
+        _insert_track(conn_b, "trk-b", title="from B", updated_at=_T2, origin=_DEV_B)
+    finally:
+        conn_b.close()
+
+    intercepted = _InterceptingTransport(
+        hub,
+        before="/digest",
+        during=lambda: _sync(spoke_b, hub, "spoke-b"),
+    )
+    result = client.run_sync(
+        spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a"
+    )
+
+    assert intercepted.fired, "the third machine never pushed; probe is void"
+    assert result.rounds == 2, "the spoke did not settle before judging"
+    conn_a = _open(spoke_a)
+    try:
+        assert _track_title(conn_a, "trk-b") == "from B", (
+            "the settling round did not pull what the third machine pushed"
+        )
+    finally:
+        conn_a.close()
+
+
+def test_a_local_write_during_the_round_trip_is_not_a_divergence(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """N7's sketch: the daemon serves the webui throughout a sync.
+
+    Round 2 observed ``n2b mid-sync write -> post-sync digest mismatch ...
+    tables ['tracks'] differ`` followed by ``next sync pushed=1 accepted=1``:
+    no row was lost, but an ordinary concurrent edit raised the one alarm
+    ADR 04 c6 reserves for corruption, and then cleared itself.
+    """
+    _seed_common_track((spoke_a,), "trk-1")
+    _sync(spoke_a, hub, "spoke-a")
+
+    def _write_mid_sync() -> None:
+        conn = _open(spoke_a)
+        try:
+            _insert_track(
+                conn, "trk-mid", title="typed mid-sync", updated_at=_T2, origin=_DEV_A
+            )
+        finally:
+            conn.close()
+
+    # Before the PULL: the push has already fenced at the old local seq, so
+    # this write is exactly the one the daemon takes from the webui while a
+    # sync is in flight.
+    intercepted = _InterceptingTransport(hub, before="/pull", during=_write_mid_sync)
+    result = client.run_sync(
+        spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a"
+    )
+
+    assert intercepted.fired, "the mid-sync write never happened; probe is void"
+    assert result.rounds == 2
+    assert result.accepted >= 1, "the settling round did not offer the new row"
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert _track_title(hub_conn, "trk-mid") == "typed mid-sync"
+    finally:
+        hub_conn.close()
+
+
+def test_a_real_divergence_still_raises_after_settling(
+    hub: _TestClientTransport, spoke_a: Path
+) -> None:
+    """The settle must not become a repair pass that hides a real bug.
+
+    A raw write that bypasses the stamp helper is invisible to the fence
+    (ADR 08 consequence 2), so nothing about it settles: the digest has to
+    keep saying so.
+    """
+    _seed_common_track((spoke_a,), "trk-1")
+    _sync(spoke_a, hub, "spoke-a")
+
+    def _bypass_the_writer() -> None:
+        conn = _open(spoke_a)
+        try:
+            conn.execute(
+                "UPDATE tracks SET title = ?, updated_at = ? WHERE stable_id = ?",
+                ("bypassed the writer", _T3, "trk-1"),
+            )
+        finally:
+            conn.close()
+
+    intercepted = _InterceptingTransport(
+        hub, before="/pull", during=_bypass_the_writer
+    )
+    with pytest.raises(client.SyncDigestMismatch) as excinfo:
+        client.run_sync(
+            spoke_a, "http://hub.invalid", transport=intercepted, name="spoke-a"
+        )
+    assert "round(s)" in str(excinfo.value)
 
 
 # ----- A3: hub restore ------------------------------------------------------

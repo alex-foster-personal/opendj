@@ -453,22 +453,41 @@ class MachineRow:
 
 @dataclass(frozen=True)
 class SyncDigest:
-    """Per-table digests plus one rollup, for the post-sync comparison."""
+    """Per-table digests plus one rollup, for the post-sync comparison.
+
+    ``seq`` is the changelog position the digest describes, read in the same
+    transaction as the hashes (round 2 finding 6b). A spoke comparing its
+    own state against a hub digest taken at a HIGHER seq than the spoke
+    pulled to is not looking at divergence -- it is looking at a third
+    machine's push that landed in the gap. Zero on a digest computed
+    locally, where there is no changelog to fence against.
+    """
 
     tables: dict[str, str]
     overall: str
+    seq: int = 0
 
     def to_wire(self) -> dict[str, Any]:
-        return {"tables": dict(self.tables), "overall": self.overall}
+        return {
+            "tables": dict(self.tables),
+            "overall": self.overall,
+            "seq": self.seq,
+        }
 
     @classmethod
     def from_wire(cls, payload: Mapping[str, Any]) -> SyncDigest:
         tables = payload.get("tables")
         if not isinstance(tables, dict):
             raise SyncProtocolError("digest payload lacks a 'tables' object")
+        seq = payload.get("seq", 0)
+        if not isinstance(seq, int) or isinstance(seq, bool):
+            raise SyncProtocolError(
+                f"digest payload 'seq' must be an integer, got {seq!r}"
+            )
         return cls(
             tables={str(k): str(v) for k, v in tables.items()},
             overall=_require_str(payload, "overall"),
+            seq=seq,
         )
 
     def divergent_tables(self, other: SyncDigest) -> tuple[str, ...]:
@@ -518,11 +537,16 @@ def table_digest(conn: sqlite3.Connection, table: str) -> str:
     return digest.hexdigest()
 
 
-def sync_digest(conn: sqlite3.Connection) -> SyncDigest:
-    """Digest every table in :data:`DIGEST_TABLES`, plus a rollup."""
+def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
+    """Digest every table in :data:`DIGEST_TABLES`, plus a rollup.
+
+    ``seq`` is carried through untouched: the caller reads it from the
+    changelog inside the same transaction as this call, so the digest and
+    the position it describes are one snapshot.
+    """
     tables = {name: table_digest(conn, name) for name in DIGEST_TABLES}
     overall = hashlib.sha256(canonical_bytes(tables)).hexdigest()
-    return SyncDigest(tables=tables, overall=overall)
+    return SyncDigest(tables=tables, overall=overall, seq=seq)
 
 
 # ----- small parsing helpers ----------------------------------------------

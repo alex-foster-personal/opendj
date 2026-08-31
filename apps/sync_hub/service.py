@@ -140,6 +140,11 @@ class StatusResponse(BaseModel):
 class DigestResponse(BaseModel):
     tables: dict[str, str]
     overall: str
+    #: The ``hub_changelog`` position this digest describes, read in the same
+    #: transaction as the hashes (round 2 finding 6b). A spoke whose pull
+    #: stopped below this seq knows a third machine pushed in the gap, and
+    #: that a difference here is not divergence.
+    seq: int
 
 
 # ----- wiring helpers ------------------------------------------------------
@@ -453,18 +458,25 @@ def digest(request: Request) -> DigestResponse:
     Computed inside one read transaction (ADR 08 point 6b): without it a
     table read late in the walk can include a push that landed after an
     earlier table was read, and the answer describes a hub state that never
-    existed. It still answers as of request time, so a spoke comparing
-    against its own strictly earlier commit can see a legitimate difference
-    if a third machine pushes in the gap; narrowing that window further is a
-    protocol change (a ``seq`` parameter) the ADR did not take.
+    existed.
+
+    It answers as of request time and SAYS SO: ``seq`` is the changelog
+    position of that answer, read in the same transaction (round 2 finding
+    6b). The hub cannot answer "as of seq N" -- the changelog records that a
+    row changed, never what it held, so there is no earlier state to
+    reconstruct. Reporting the position instead lets the spoke tell a third
+    machine's push apart from a real divergence, and settle by pulling
+    again rather than halting.
     """
     with _hub_conn(request) as conn:
         try:
             with _transaction(conn):
-                computed = protocol.sync_digest(conn)
+                computed = protocol.sync_digest(conn, seq=engine.current_seq(conn))
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
-        return DigestResponse(tables=computed.tables, overall=computed.overall)
+        return DigestResponse(
+            tables=computed.tables, overall=computed.overall, seq=computed.seq
+        )
 
 
 __all__ = ["router"]
