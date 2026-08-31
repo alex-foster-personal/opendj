@@ -357,15 +357,30 @@ def _skip_volume_name(name: str) -> bool:
     return lower.startswith("com.apple.")
 
 
+# diskutil talks to diskarbitrationd and can block behind a spinning-up or
+# slow-to-answer device. 2.0s was too tight to be a fault signal: on a loaded
+# machine (a full test suite, a build) it timed out on the healthy internal
+# disk, turned the whole route into a 503, and made
+# tests/webui/test_usb_volumes.py::test_get_volumes_ok flaky. Measured 1 in 5
+# failures locally under load, Mon 31 Aug 2026. 10s is still bounded, so a
+# genuinely wedged diskutil is still reported rather than hanging the request.
+_DISKUTIL_TIMEOUT_S: float = 10.0
+
+
 def _diskutil_info(mount: Path, diskutil_command: str) -> DiskutilInfo:
     try:
         proc = subprocess.run(
             [diskutil_command, "info", "-plist", str(mount)],
             check=False,
             capture_output=True,
-            timeout=2.0,
+            timeout=_DISKUTIL_TIMEOUT_S,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired as exc:
+        # Distinguished from a hard failure on purpose: "diskutil did not
+        # answer in 10s" and "diskutil returned an error" are different
+        # faults, and collapsing them cost a debugging session here.
+        raise UsbDiscoveryUnavailable("diskutil_timed_out") from exc
+    except OSError as exc:
         raise UsbDiscoveryUnavailable("diskutil_query_failed") from exc
     if proc.returncode != 0 or not proc.stdout:
         raise UsbDiscoveryUnavailable("diskutil_query_failed")
