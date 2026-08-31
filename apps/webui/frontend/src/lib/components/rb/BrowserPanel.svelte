@@ -59,12 +59,10 @@
 		DEFAULT_PLAYLIST_NAME,
 		clearPlaylistCreateGrace,
 		collectBlankPlaylistDeletes,
-		markPlaylistCreateGrace
-	} from '$lib/rb/playlist-blank';
-	import {
 		createPlaylist,
 		deletePlaylist,
 		getPlaylistTracksEtag,
+		markPlaylistCreateGrace,
 		PlaylistConflictError,
 		renamePlaylist,
 		replacePlaylistTracks

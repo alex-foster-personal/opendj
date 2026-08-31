@@ -12,7 +12,8 @@ let markPlaylistCreateGrace;
 let _resetCreateGraceForTests;
 
 before(async () => {
-	const mod = await loadTypeScriptModule('src/lib/rb/playlist-blank.ts');
+	// Blank-playlist policy lives in the playlist write lane (playlist-write.ts).
+	const mod = await loadTypeScriptModule('src/lib/rb/playlist-write.ts');
 	DEFAULT_PLAYLIST_NAME = mod.DEFAULT_PLAYLIST_NAME;
 	BLANK_PLAYLIST_GRACE_MS = mod.BLANK_PLAYLIST_GRACE_MS;
 	isBlankPlaylist = mod.isBlankPlaylist;
