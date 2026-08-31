@@ -9,12 +9,19 @@ import json
 import pytest
 
 from scripts.ci_cost_ledger import (
+    Coverage,
     allowance_multiplier,
     group,
     month_to_date,
     price_run,
     render_report,
 )
+
+
+def _full(rows):
+    """Coverage meaning: everything in the window was priced."""
+    n = len(rows)
+    return Coverage(priced=n, listed=n, server_total=n, api_calls=0, api_budget_hit=False)
 
 
 def _run(run_id, workflow, branch, conclusion, created, *, event="push", updated=None):
@@ -142,7 +149,7 @@ def test_many_individually_cheap_runs_still_trip_the_budget():
         allowance_limit=3000,
         warn_pct=70,
         stop_pct=90,
-        truncated=False,
+        coverage=_full(rows),
     )
 
     assert summary["allowance_used"] == 4000
@@ -159,7 +166,7 @@ def test_state_is_ok_warn_stop_at_the_configured_thresholds():
             allowance_limit=3000,
             warn_pct=70,
             stop_pct=90,
-            truncated=False,
+            coverage=_full(rows),
         )
         assert summary["state"] == expected, f"{minutes} runs -> {summary}"
 
@@ -174,7 +181,7 @@ def test_previous_months_do_not_count_against_this_month():
         allowance_limit=3000,
         warn_pct=70,
         stop_pct=90,
-        truncated=False,
+        coverage=_full(rows),
     )
 
     assert summary["allowance_used"] == 0
@@ -193,14 +200,20 @@ def test_cancelled_runs_are_counted_as_wasted_spend():
         allowance_limit=3000,
         warn_pct=70,
         stop_pct=90,
-        truncated=False,
+        coverage=_full([row]),
     )
 
     assert row.is_waste
     assert summary["wasted_minutes"] == 3
 
 
-def test_truncated_window_is_flagged_so_a_floor_is_not_read_as_a_total():
+def test_incomplete_coverage_is_flagged_so_a_floor_is_not_read_as_a_total():
+    """The 31 Aug 2026 bug: 1,000 of 1,855 runs priced, reported as the total.
+
+    GitHub caps a `created=`-filtered listing at 1,000 rows but still reports
+    the true total_count. Inferring truncation from the page walk therefore
+    said 'complete' while half the month was missing.
+    """
     rows = _month_of_runs(count=1, minutes_each=1)
 
     report, summary = render_report(
@@ -210,11 +223,68 @@ def test_truncated_window_is_flagged_so_a_floor_is_not_read_as_a_total():
         allowance_limit=3000,
         warn_pct=70,
         stop_pct=90,
-        truncated=True,
+        coverage=Coverage(
+            priced=1000, listed=1000, server_total=1855, api_calls=1000, api_budget_hit=False
+        ),
     )
 
-    assert summary["truncated"] is True
-    assert "Window truncated" in report
+    assert summary["complete"] is False
+    assert summary["coverage_pct"] == 53.9
+    assert "855 of 1855 runs were not priced" in report
+    assert "FLOOR" in report
+
+
+def test_complete_coverage_carries_no_floor_warning():
+    rows = _month_of_runs(count=2, minutes_each=1)
+
+    report, summary = render_report(
+        rows,
+        repository="o/r",
+        month="2026-08",
+        allowance_limit=3000,
+        warn_pct=70,
+        stop_pct=90,
+        coverage=_full(rows),
+    )
+
+    assert summary["complete"] is True
+    assert "FLOOR" not in report
+
+
+def test_api_call_budget_stops_before_the_token_ceiling(monkeypatch):
+    """GITHUB_TOKEN allows 1,000 requests/hour/repo; marching past it fails."""
+    from scripts import ci_cost_ledger
+
+    runs = [_run(i, "CI", "main", "success", "2026-08-31T00:00:00Z") for i in range(1, 51)]
+    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: (runs, len(runs)))
+    monkeypatch.setattr(
+        ci_cost_ledger,
+        "fetch_jobs",
+        lambda *a, **k: [_job(["ubuntu-latest"], "2026-08-31T00:00:00Z", "2026-08-31T00:01:00Z")],
+    )
+
+    _, cov = ci_cost_ledger.build_ledger(
+        "o/r", "2026-08-01", "token", 20, cache=None, max_api_calls=10
+    )
+
+    assert cov.api_calls == 10
+    assert cov.api_budget_hit is True
+    assert cov.is_complete is False
+
+
+def test_fetch_runs_trusts_the_server_total_over_the_page_walk(monkeypatch):
+    from scripts import ci_cost_ledger
+
+    pages = [
+        {"total_count": 1855, "workflow_runs": [{"id": i} for i in range(100)]},
+        {"total_count": 1855, "workflow_runs": [{"id": i} for i in range(100, 150)]},
+    ]
+    monkeypatch.setattr(ci_cost_ledger, "_get", lambda *a, **k: pages.pop(0))
+
+    runs, total = ci_cost_ledger.fetch_runs("o/r", "2026-08-01", "t", 20)
+
+    assert len(runs) == 150
+    assert total == 1855, "the server's count, not the number of rows walked"
 
 
 def test_grouping_ranks_the_biggest_spender_first():
@@ -372,7 +442,7 @@ def test_build_ledger_skips_the_api_for_cached_finished_runs(monkeypatch):
         _run(1, "CI", "main", "success", "2026-08-31T00:00:00Z"),
         _run(2, "CI", "main", "success", "2026-08-31T01:00:00Z"),
     ]
-    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: runs)
+    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: (runs, len(runs)))
     calls = []
 
     def _fetch_jobs(repository, run_id, token):
@@ -381,9 +451,8 @@ def test_build_ledger_skips_the_api_for_cached_finished_runs(monkeypatch):
 
     monkeypatch.setattr(ci_cost_ledger, "fetch_jobs", _fetch_jobs)
 
-    rows, _, fetched = ci_cost_ledger.build_ledger(
-        "o/r", "2026-08-01", "token", 20, cache={1: _row(1)}
-    )
+    rows, cov = ci_cost_ledger.build_ledger("o/r", "2026-08-01", "token", 20, cache={1: _row(1)})
+    fetched = cov.api_calls
 
     assert calls == [2], "run 1 was cached and must not be re-fetched"
     assert fetched == 1
@@ -394,16 +463,36 @@ def test_cached_row_that_was_still_running_is_repriced(monkeypatch):
     from scripts import ci_cost_ledger
 
     runs = [_run(1, "CI", "main", "success", "2026-08-31T00:00:00Z")]
-    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: runs)
+    monkeypatch.setattr(ci_cost_ledger, "fetch_runs", lambda *a, **k: (runs, len(runs)))
     monkeypatch.setattr(
         ci_cost_ledger,
         "fetch_jobs",
         lambda *a, **k: [_job(["ubuntu-latest"], "2026-08-31T00:00:00Z", "2026-08-31T00:09:00Z")],
     )
 
-    rows, _, fetched = ci_cost_ledger.build_ledger(
+    rows, cov = ci_cost_ledger.build_ledger(
         "o/r", "2026-08-01", "token", 20, cache={1: _row(1, conclusion=None)}
     )
+    fetched = cov.api_calls
 
     assert fetched == 1
     assert rows[0].allowance_minutes == 9
+
+
+def test_empty_overflow_page_does_not_clobber_the_total(monkeypatch):
+    """GitHub returns total_count: 0 on the page past the 1,000-row wall.
+
+    Assigning the latest value zeroed the real total on the last iteration,
+    which made the coverage line read "120 of 0 runs priced (100%)".
+    """
+    from scripts import ci_cost_ledger
+
+    pages = [
+        {"total_count": 1862, "workflow_runs": [{"id": i} for i in range(100)]},
+        {"total_count": 0, "workflow_runs": []},
+    ]
+    monkeypatch.setattr(ci_cost_ledger, "_get", lambda *a, **k: pages.pop(0))
+
+    _, total = ci_cost_ledger.fetch_runs("o/r", "2026-08-01", "t", 20)
+
+    assert total == 1862
