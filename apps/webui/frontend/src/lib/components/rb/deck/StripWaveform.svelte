@@ -1,15 +1,20 @@
 <script lang="ts">
 	// Strip overview waveform (~20px, SCREENSHOT-SPEC 3): native 400-point
 	// PWAV preview bands from /anlz, position marker from the engine clock,
-	// cue letters + memory markers, loop in/out time chips, click-to-seek.
+	// cue letters + memory markers, the ENGAGED loop band, stored-loop in/out
+	// time chips, click-to-seek.
+	// The engaged-loop band and the stored-loop chips are different things:
+	// the chips come from hot-cue rows saved in rekordbox, the band is the
+	// loop the engine is running right now. Only the chips existed until
+	// DECKUX-04, so a live loop showed on the wavestack row and nowhere else.
 	// No analysis -> explicit 'NO ANALYSIS' state; empty deck -> blank strip.
-	// Never synthesised waveforms (COMPONENT-MAP 1.3).
+	// Never synthesized waveforms (COMPONENT-MAP 1.3).
 	// Vocal blue bars (SPIKE-B1): 2px-ish top layer, drawn ONLY for real
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
-	import type { AnlzWaveformBands, DeckState, HotCueSlot } from '$lib/rb/types';
-	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
+	import type { DeckState, HotCueSlot } from '$lib/rb/types';
+	import { drawStripWaveform } from './strip-waveform-render';
 
 	let {
 		deck,
@@ -79,60 +84,21 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
-	function _bar(ctx: CanvasRenderingContext2D, x: number, w: number, v: number, colour: string): void {
-		const h = Math.max(0, Math.min(1, v)) * H;
-		ctx.fillStyle = colour;
-		ctx.fillRect(x, H - h, w, h);
-	}
-
-	function _drawPreview(ctx: CanvasRenderingContext2D, bands: AnlzWaveformBands, kind: 'tri' | 'mono'): void {
-		ctx.clearRect(0, 0, W, H);
-		const n = bands.length;
-		if (n === 0) return;
-		const w = W / n;
-		for (let i = 0; i < n; i++) {
-			const x = i * w;
-			if (kind === 'tri') {
-				// Palette per SCREENSHOT-SPEC 6: lows orange, mids blue, highs white.
-				_bar(ctx, x, w, bands.low[i], '#e8a13a');
-				_bar(ctx, x, w, bands.mid[i], 'rgba(61, 125, 217, 0.85)');
-				_bar(ctx, x, w, bands.high[i], 'rgba(207, 224, 242, 0.9)');
-			} else {
-				// mono = heights only; single colour, never synthesised bands.
-				const v = Math.max(bands.low[i], bands.mid[i], bands.high[i]);
-				_bar(ctx, x, w, v, '#3d7dd9');
-			}
-		}
-	}
-
-	function _drawVocalBars(ctx: CanvasRenderingContext2D, v: Vocals): void {
-		// rekordbox + demucs render identically; barless states draw nothing
-		if (v.status !== 'rekordbox' && v.status !== 'demucs') return;
-		const dur = deck.duration_ms;
-		if (dur === null || dur === 0) return; // cannot place bars without a duration
-		ctx.fillStyle = VOCAL_BLUE;
-		for (const region of v.regions) {
-			const x0 = Math.max(0, ((region.start_s * 1000) / dur) * W);
-			const x1 = Math.min(W, ((region.end_s * 1000) / dur) * W);
-			if (x1 <= x0) continue;
-			ctx.globalAlpha = vocalAlpha(region.intensity);
-			// 4 canvas px on the 40px backing = ~2 CSS px at --rb-strip-h 20px.
-			ctx.fillRect(x0, 0, x1 - x0, 4);
-		}
-		ctx.globalAlpha = 1;
-	}
-
+	// Every value read here is a tracked dependency, so the strip repaints
+	// when the engaged loop changes - not only when the analysis arrives.
 	$effect(() => {
 		const c = canvas;
 		if (c === undefined) return;
 		const ctx = c.getContext('2d');
 		if (ctx === null) throw new Error('StripWaveform: canvas 2d context unavailable');
-		if (deck.anlz === null) {
-			ctx.clearRect(0, 0, W, H);
-			return;
-		}
-		_drawPreview(ctx, deck.anlz.waveform.preview, deck.anlz.waveform.kind);
-		if (vocals !== null) _drawVocalBars(ctx, vocals);
+		drawStripWaveform(ctx, {
+			widthPx: W,
+			heightPx: H,
+			durationMs: deck.duration_ms,
+			waveform: deck.anlz === null ? null : deck.anlz.waveform,
+			vocals,
+			loop: deck.loop
+		});
 	});
 
 	$effect(() => {

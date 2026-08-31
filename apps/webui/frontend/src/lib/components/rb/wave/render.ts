@@ -20,7 +20,7 @@ import type {
 	AnlzWaveform,
 	LoopState
 } from '$lib/rb/types';
-import { visibleBeatLines } from './wave-math';
+import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines } from './wave-math';
 
 /** Vocal-region bar colour (SPIKE-B1 blue bars). A literal on purpose:
  * theme.css belongs to the shared theme unit and the canvas painters
@@ -30,6 +30,22 @@ export const VOCAL_BLUE = '#4fb2ff';
 
 /** Height of the vocal bar layer in CSS px ('2px-ish' per requirement). */
 export const VOCAL_BAR_PX = 2;
+
+/** Engaged-loop band colour, as bare `r, g, b` so callers can pick an alpha.
+ * Shared by every waveform surface so one loop reads the same on the
+ * wavestack row and on the deck's overview strip (DECKUX-04). */
+export const LOOP_ORANGE_RGB = '232, 161, 58';
+
+/** Translucent body of the loop band; the waveform stays readable under it. */
+export const LOOP_FILL_ALPHA = 0.42;
+
+/** Near-solid in/out edges so the loop boundaries are unambiguous. */
+export const LOOP_EDGE_ALPHA = 0.95;
+
+/** Widest in/out edge in surface px. Narrow bands get proportionally
+ * thinner edges (see drawLoopRegion) so a short loop stays a band, not
+ * two overlapping edges. */
+const LOOP_EDGE_MAX_PX = 3;
 
 /** PVDI region intensity (1..4, max-in-run per SPIKE-B1) -> bar opacity,
  * ramp 0.5 -> 1.0 so stronger vocal passages read stronger. Real data
@@ -198,7 +214,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 
 	if (frame.anlz !== null && durS > 0) {
 		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
-		_drawLoopRegion(ctx, frame.loop, tLeft, pxPerS, w, h);
+		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		_drawCues(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
@@ -334,26 +350,32 @@ function _drawCues(
 	}
 }
 
-/** Semi-transparent orange band over an engaged loop (Rekordbox parity). */
-function _drawLoopRegion(
+/**
+ * Semi-transparent orange band over an engaged loop (Rekordbox parity).
+ *
+ * Surface-agnostic on purpose: `toPx` maps a track time in ms to this
+ * surface's x, so the wavestack row (scrolling 24s window) and the deck
+ * overview strip (whole track) share one painter and one visual language.
+ * A no-op when no loop is engaged, so callers never need their own guard.
+ */
+export function drawLoopRegion(
 	ctx: CanvasRenderingContext2D,
 	loop: LoopState | null,
-	tLeft: number,
-	pxPerS: number,
-	w: number,
-	h: number
+	toPx: (ms: number) => number,
+	widthPx: number,
+	heightPx: number
 ): void {
-	if (loop === null || !loop.engaged) return;
-	const x0 = (loop.in_ms / 1000 - tLeft) * pxPerS;
-	const x1 = (loop.out_ms / 1000 - tLeft) * pxPerS;
-	const left = Math.max(0, Math.min(w, x0));
-	const right = Math.max(0, Math.min(w, x1));
-	if (right <= left) return;
-	ctx.fillStyle = 'rgba(232, 161, 58, 0.42)';
-	ctx.fillRect(left, 0, right - left, h);
-	ctx.fillStyle = 'rgba(232, 161, 58, 0.95)';
-	ctx.fillRect(left, 0, 3, h);
-	ctx.fillRect(Math.max(left, right - 3), 0, 3, h);
+	const band = loopBandPx(loop, toPx, widthPx, LOOP_MIN_BAND_PX);
+	if (band === null) return;
+	const { left, right } = band;
+	ctx.fillStyle = `rgba(${LOOP_ORANGE_RGB}, ${LOOP_FILL_ALPHA})`;
+	ctx.fillRect(left, 0, right - left, heightPx);
+	// Edges never exceed half the band, so a narrow loop reads as one solid
+	// tick rather than two edges overlapping into a wider band than it is.
+	const edge = Math.max(1, Math.min(LOOP_EDGE_MAX_PX, (right - left) / 2));
+	ctx.fillStyle = `rgba(${LOOP_ORANGE_RGB}, ${LOOP_EDGE_ALPHA})`;
+	ctx.fillRect(left, 0, edge, heightPx);
+	ctx.fillRect(right - edge, 0, edge, heightPx);
 }
 
 function _drawPhrases(
