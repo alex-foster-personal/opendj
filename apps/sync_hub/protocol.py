@@ -99,11 +99,14 @@ SPEC_BY_TABLE: dict[str, TableSpec] = {spec.name: spec for spec in SYNC_TABLES}
 # makes round 1 finding 1 (a UNIQUE violation the push could never retry past)
 # unreachable rather than merely unlikely.
 #
-# Order matters: the first tuple whose columns are ALL non-NULL is the one in
-# force, mirroring the ``WHERE file_path IS NOT NULL`` / ``WHERE remote_url IS
-# NOT NULL`` partial indexes. SQLite treats NULLs as distinct in a UNIQUE
-# index, so a NULL anywhere in the tuple means no constraint applies and there
-# is nothing to resolve against.
+# EVERY tuple whose columns are all non-NULL is in force at once, mirroring
+# the ``WHERE file_path IS NOT NULL`` / ``WHERE remote_url IS NOT NULL``
+# partial indexes: a row carrying both columns is subject to both indexes.
+# SQLite treats NULLs as distinct in a UNIQUE index, so a NULL anywhere in a
+# tuple means that index does not apply and there is nothing to resolve
+# against for it. Round 2 finding N5: resolving against the FIRST applicable
+# tuple only left the other index unresolved, and its violation was round 1
+# finding 1's exact shape one index over -- a 409 that re-fired forever.
 NATURAL_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
     "track_locations": (
         ("stable_id", "machine_id", "kind", "file_path"),
@@ -233,19 +236,26 @@ def canonical_values(table: str, values: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def natural_key(
+def natural_keys(
     table: str, values: Mapping[str, Any]
-) -> tuple[tuple[str, Any], ...] | None:
-    """The (column, value) pairs identifying this row logically, or None.
+) -> tuple[tuple[tuple[str, Any], ...], ...]:
+    """Every (column, value) tuple that logically identifies this row.
 
-    None means the table has no natural key beyond its primary key, or that
-    a NULL in the key tuple leaves every partial UNIQUE index inapplicable.
-    See :data:`NATURAL_KEYS`.
+    One entry per partial UNIQUE index whose columns are all non-NULL on
+    this row, in :data:`NATURAL_KEYS` order. Empty means the table has no
+    natural key beyond its primary key, or that a NULL leaves every index
+    inapplicable.
+
+    All of them, not the first (round 2 finding N5): a ``track_locations``
+    row carrying both ``file_path`` and ``remote_url`` is subject to both
+    indexes at once, and resolving only the first left the second to fail as
+    an unrecoverable ``UNIQUE constraint failed`` inside the apply.
     """
-    for columns in NATURAL_KEYS.get(table, ()):
-        if all(values.get(column) is not None for column in columns):
-            return tuple((column, values[column]) for column in columns)
-    return None
+    return tuple(
+        tuple((column, values[column]) for column in columns)
+        for columns in NATURAL_KEYS.get(table, ())
+        if all(values.get(column) is not None for column in columns)
+    )
 
 
 def encode_row_pk(values: Sequence[Any]) -> str:
@@ -557,7 +567,7 @@ __all__ = [
     "decode_row_pk",
     "encode_row_pk",
     "lww_key",
-    "natural_key",
+    "natural_keys",
     "nfc",
     "pk_columns",
     "sync_digest",

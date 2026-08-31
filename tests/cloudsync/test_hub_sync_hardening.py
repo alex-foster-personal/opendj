@@ -547,6 +547,170 @@ def test_restore_recovery_carrying_a_peers_location_rows_lands(
         hub_conn.close()
 
 
+# ----- N5: every partial UNIQUE index is a resolution target -----------------
+
+
+def _location_values(
+    *,
+    location_id: str,
+    stable_id: str,
+    machine_id: str,
+    file_path: str | None,
+    remote_url: str | None,
+    updated_at: str,
+    origin: str,
+) -> dict[str, object]:
+    """A complete ``track_locations`` row as the wire carries it."""
+    return {
+        "location_id": location_id,
+        "stable_id": stable_id,
+        "machine_id": machine_id,
+        "kind": "local",
+        "role": "alternate",
+        "file_path": file_path,
+        "remote_url": remote_url,
+        "venue_key": None,
+        "venue_rank": None,
+        "available": 0,
+        "probed_at": None,
+        "content_hash": None,
+        "created_at": _T0,
+        "updated_at": updated_at,
+        "origin_device_id": origin,
+        "deleted_at": None,
+    }
+
+
+def test_a_collision_on_the_url_index_resolves_instead_of_409ing(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """N5's sketch: the collision is on the SECOND partial UNIQUE index.
+
+    ``NATURAL_KEYS`` lists the ``file_path`` tuple first and round 2 resolved
+    against the first all-non-NULL tuple only, so a row carrying both columns
+    resolved on ``file_path`` while ``idx_track_locations_url`` was still
+    enforced. Round 2 observed ``f3 attempt 0: HTTP 409 SYNC_APPLY ... UNIQUE
+    constraint failed`` and an identical attempt 1 -- round 1 finding 1's
+    exact shape, one index over.
+    """
+    _seed_common_track((spoke_a,), "trk-1")
+    result = _sync(spoke_a, hub, "spoke-a")
+
+    def _push(values: dict[str, object]) -> dict[str, object]:
+        return hub.post(
+            f"{client.API_PREFIX}/push",
+            {
+                "machine_id": result.machine_id,
+                "schema_version": state_schema.SCHEMA_VERSION,
+                "rows": [
+                    {
+                        "table": "track_locations",
+                        "pk": [values["location_id"]],
+                        "values": values,
+                    }
+                ],
+            },
+        )
+
+    seeded = _location_values(
+        location_id="b" * 32,
+        stable_id="trk-1",
+        machine_id=result.machine_id,
+        file_path="/Music/a.mp3",
+        remote_url="r2://audio/trk-1",
+        updated_at=_T1,
+        origin=result.machine_id,
+    )
+    assert _push(seeded)["accepted"] == 1
+
+    # Same logical remote copy, re-minted id, and the file moved -- so the
+    # path index does NOT collide and only the url index does.
+    moved = _location_values(
+        location_id="c" * 32,
+        stable_id="trk-1",
+        machine_id=result.machine_id,
+        file_path="/Music/moved.mp3",
+        remote_url="r2://audio/trk-1",
+        updated_at=_T2,
+        origin=result.machine_id,
+    )
+    assert _push(moved)["accepted"] == 1, "the url-index collision was not resolved"
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert [row[0] for row in _locations(hub_conn)] == ["c" * 32]
+        assert protocol.encode_row_pk(("b" * 32,)) not in _changelog_pks(
+            hub_conn, "track_locations"
+        ), "the superseded row still has a changelog entry; every pull 409s"
+    finally:
+        hub_conn.close()
+
+
+def test_a_row_losing_to_one_of_two_duplicates_is_rejected_whole(
+    spoke_a: Path,
+) -> None:
+    """Two indexes, two different local rows, one incoming row.
+
+    The incoming row must beat BOTH to land: dropping the one it beat while
+    losing to the other would delete a row nothing replaces.
+    """
+    conn = _open(spoke_a)
+    try:
+        machine = sync_stamp.ensure_local_machine(conn)
+        _insert_track(conn, "trk-1", title="t", updated_at=_T0, origin=_DEV_A)
+        for location_id, path, url, stamp in (
+            ("a" * 32, "/Music/a.mp3", "r2://audio/old", _T1),
+            ("b" * 32, "/Music/b.mp3", "r2://audio/new", _T3),
+        ):
+            values = _location_values(
+                location_id=location_id,
+                stable_id="trk-1",
+                machine_id=machine,
+                file_path=path,
+                remote_url=url,
+                updated_at=stamp,
+                origin=_DEV_A,
+            )
+            engine.spoke_apply(
+                conn,
+                [
+                    protocol.RowChange(
+                        table="track_locations",
+                        pk=(location_id,),
+                        values=dict(values),
+                    )
+                ],
+            )
+        assert len(_locations(conn)) == 2
+
+        # Collides with 'a' on the path index (and outranks it) and with 'b'
+        # on the url index (and loses to it).
+        contested = _location_values(
+            location_id="d" * 32,
+            stable_id="trk-1",
+            machine_id=machine,
+            file_path="/Music/a.mp3",
+            remote_url="r2://audio/new",
+            updated_at=_T2,
+            origin=_DEV_A,
+        )
+        applied = engine.spoke_apply(
+            conn,
+            [
+                protocol.RowChange(
+                    table="track_locations", pk=("d" * 32,), values=dict(contested)
+                )
+            ],
+        )
+        assert applied.rejected == 1
+        assert [row[0] for row in _locations(conn)] == ["a" * 32, "b" * 32], (
+            "a row that lost on one index still dropped the duplicate it beat "
+            "on the other"
+        )
+    finally:
+        conn.close()
+
+
 # ----- finding 3: the push fence -------------------------------------------
 
 

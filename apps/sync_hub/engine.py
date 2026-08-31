@@ -423,28 +423,59 @@ def _stored_sort_key(
     )
 
 
-def _natural_conflict_pk(
+def _natural_conflict_pks(
     conn: sqlite3.Connection, spec: TableSpec, change: RowChange
-) -> tuple[str, ...] | None:
-    """Primary key of a DIFFERENT local row holding this row's natural key.
+) -> tuple[tuple[str, ...], ...]:
+    """Primary keys of DIFFERENT local rows holding this row's natural keys.
 
-    None when the table has no natural key, when nothing local holds it, or
+    Empty when the table has no natural key, when nothing local holds one, or
     when the row that holds it IS this row. Anything else is the round 1
     finding 1 shape: one logical row, two ``location_id`` values, and a
     partial UNIQUE index that will not let both exist.
+
+    One lookup per applicable index, not one for the first of them (round 2
+    finding N5). A row carrying both ``file_path`` and ``remote_url`` can
+    collide with one local row on the path index and a DIFFERENT local row
+    on the url index; resolving the first and inserting left the second to
+    raise ``UNIQUE constraint failed`` from inside the apply, which is a 409
+    no retry could ever get past.
     """
-    key = protocol.natural_key(change.table, change.values)
-    if key is None:
-        return None
-    predicate = " AND ".join(f"{column} = ?" for column, _ in key)
-    row = conn.execute(
-        f"SELECT {', '.join(spec.pk)} FROM {change.table} WHERE {predicate}",
-        tuple(value for _, value in key),
-    ).fetchone()
-    if row is None:
-        return None
-    found = tuple(str(value) for value in row)
-    return None if found == change.pk else found
+    found: list[tuple[str, ...]] = []
+    for key in protocol.natural_keys(change.table, change.values):
+        predicate = " AND ".join(f"{column} = ?" for column, _ in key)
+        row = conn.execute(
+            f"SELECT {', '.join(spec.pk)} FROM {change.table} WHERE {predicate}",
+            tuple(value for _, value in key),
+        ).fetchone()
+        if row is None:
+            continue
+        conflict = tuple(str(value) for value in row)
+        if conflict != change.pk and conflict not in found:
+            found.append(conflict)
+    return tuple(found)
+
+
+def _duplicate_sort_key(
+    conn: sqlite3.Connection,
+    spec: TableSpec,
+    change: RowChange,
+    conflict_pk: Sequence[str],
+) -> tuple[str, str]:
+    """Sort key of the local duplicate at ``conflict_pk``. Never None.
+
+    A row that holds another row's natural key but carries no sort key was
+    written by something that bypassed the sync columns entirely. The merge
+    cannot order it against anything, and guessing is how a real edit gets
+    overwritten by a row nothing can date.
+    """
+    stored = _stored_sort_key(conn, spec, conflict_pk)
+    if stored is None:
+        raise SyncApplyError(
+            f"{change.table}: row {list(conflict_pk)} holds the natural key of "
+            f"{list(change.pk)} but has no sort key; the table was written by "
+            f"something that bypassed the sync columns."
+        )
+    return stored
 
 
 def _duplicate_incoming_wins(
@@ -589,24 +620,26 @@ def _apply(
         if spec is None:
             raise SyncApplyError(f"{change.table!r} is not in the sync set")
         columns, values = _checked_values(conn, change.table, spec, change)
-        conflict_pk = _natural_conflict_pk(conn, spec, change)
-        if conflict_pk is None:
+        conflict_pks = _natural_conflict_pks(conn, spec, change)
+        if not conflict_pks:
             stored = _stored_sort_key(conn, spec, change.pk)
             if stored is not None and change.sort_key <= stored:
                 rejected += 1
                 continue
         else:
-            duplicate = _stored_sort_key(conn, spec, conflict_pk)
-            if duplicate is None:
-                raise SyncApplyError(
-                    f"{change.table}: row {list(conflict_pk)} holds the natural "
-                    f"key of {list(change.pk)} but has no sort key; the table "
-                    f"was written by something that bypassed the sync columns."
+            # The incoming row has to beat EVERY duplicate it collides with;
+            # losing to one of them means the row it lost to is the survivor
+            # and this one is the stale copy.
+            if not all(
+                _duplicate_incoming_wins(
+                    change, _duplicate_sort_key(conn, spec, change, pk), pk
                 )
-            if not _duplicate_incoming_wins(change, duplicate, conflict_pk):
+                for pk in conflict_pks
+            ):
                 rejected += 1
                 continue
-            _drop_superseded(conn, spec, conflict_pk)
+            for conflict_pk in conflict_pks:
+                _drop_superseded(conn, spec, conflict_pk)
         _upsert(conn, change.table, spec, columns, values)
         if change.table == "playlists" and change.members is not None:
             _replace_members(conn, change.pk[0], change.members)
