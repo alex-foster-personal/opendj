@@ -47,7 +47,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.cloud import hydration
-from apps.shared.state import locations as state_locations
 from apps.shared.state import machine_identity as mid
 from apps.shared.state import sync_stamp
 from apps.shared.state.events import FakeEventBus
@@ -546,89 +545,8 @@ def test_an_unchanged_write_logs_nothing(
     ).fetchone()[0] == settled
 
 
-# ----- (4) per-machine locations ------------------------------------------
-
-
-def test_locations_reads_are_scoped_to_the_writing_machine(
-    state_conn: sqlite3.Connection, tmp_path: Path,
-) -> None:
-    """Round 1 finding 7a: another machine's file is not availability here."""
-    _exercise_state_writer(state_conn, tmp_path)
-    mine = sync_stamp.ensure_local_machine(state_conn)
-
-    state_conn.execute(
-        "INSERT INTO machines(machine_id, name, platform, is_hub, first_seen, "
-        "last_seen) VALUES ('m-silver', 'silver', 'macos', 0, ?, ?)",
-        (_TS, _TS),
-    )
-    state_conn.execute(
-        "INSERT INTO track_locations(location_id, stable_id, machine_id, kind, "
-        "file_path, created_at, updated_at, origin_device_id) "
-        "VALUES ('deadbeef', ?, 'm-silver', 'local', "
-        "'/Users/dev/Music/only-on-silver.aiff', ?, ?, 'm-silver')",
-        (SID, _TS, _TS),
-    )
-
-    local = state_locations.list_locations(state_conn, SID)
-    assert local, "the local machine's own rows must still be visible"
-    assert {loc.machine_id for loc in local} == {mine}
-    assert all(
-        loc.file_path != "/Users/dev/Music/only-on-silver.aiff"
-        for loc in local
-    )
-
-    paths = state_locations.list_location_paths(state_conn, [SID])
-    assert "/Users/dev/Music/only-on-silver.aiff" not in paths[SID]
-
-    # The fleet view is still reachable, but only by asking for it.
-    remote = state_locations.list_locations(
-        state_conn, SID, machine_id="m-silver",
-    )
-    assert [loc.file_path for loc in remote] == [
-        "/Users/dev/Music/only-on-silver.aiff"
-    ]
-
-
-def test_reprobing_a_location_reuses_its_location_id(
-    state_conn: sqlite3.Connection, tmp_path: Path,
-) -> None:
-    """Round 1 finding 1: a second id for one logical row wedges the push."""
-    audio = tmp_path / "reprobe.flac"
-    audio.write_bytes(b"fLaC-not-a-real-frame-but-a-real-file")
-    writer = StateWriter(state_conn, FakeEventBus(), actor="tripwire")
-    try:
-        writer.upsert_track(
-            stable_id=SID, stable_id_tier="inferred", title="T",
-            artists=[], album=None, isrc=None, duration_ms=None, file_path=None,
-        )
-        first = writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=str(audio),
-        )
-        second = writer.upsert_track_location(
-            stable_id=SID, kind="local", file_path=str(audio),
-        )
-    finally:
-        writer.close()
-    assert isinstance(first, str) and len(first) == 32
-    assert first == second
-    assert state_conn.execute(
-        "SELECT COUNT(*) FROM track_locations WHERE stable_id = ?", (SID,),
-    ).fetchone()[0] == 1
-
-
-# ----- (5) the swept list cannot silently shrink --------------------------
-
-
-def test_the_swept_table_list_matches_the_protocol() -> None:
-    """The sweep is the digest set, exactly. No exclusions, ever.
-
-    Round 2 finding N1's root cause was this assertion's previous form, which
-    PINNED an exclusion: ``sync_policies`` and ``playlist_pins`` were declared
-    out of scope "by ownership", so the tripwire was blind to the CLOUDSYNC
-    feature's own UI writing them unstamped. Ownership is not a reason a table
-    can wedge the fleet less. If a new table joins the digest, it joins the
-    sweep, and the exercise above must grow a writer for it -- the
-    ``populated`` assertions fail loudly until it does.
-    """
-    assert set(SYNCED_TABLES) == set(hub_protocol.DIGEST_TABLES)
-    assert len(SYNCED_TABLES) == len(hub_protocol.DIGEST_TABLES)
+# ----- (4) per-machine locations, (5) the swept list ------------------------
+#
+# Moved to test_writer_sync_stamps_locations.py (round 4 quality-gate
+# file_size ratchet: this file crossed 600 lines). It imports
+# _exercise_state_writer and the shared constants back from this module.

@@ -40,10 +40,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
-from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, protocol, service
-from apps.webui.server.app import create_app
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
@@ -551,92 +549,11 @@ def test_null_updated_at_sorts_as_epoch() -> None:
     assert legacy < real
 
 
-def test_status_and_digest_endpoints_answer(
-    hub: _TestClientTransport, spoke_a: Path
-) -> None:
-    """Agent parity: the hub's read surface works without a spoke driving it."""
-    _seed_common_track((spoke_a,), "trk-1")
-    result = _sync(spoke_a, hub, "spoke-a")
-
-    status = hub.get(
-        f"{client.API_PREFIX}/status", {"machine_id": result.machine_id}
-    )
-    assert status["seq"] >= 1
-    assert status["row_counts"]["tracks"] == 1
-    assert {machine["name"] for machine in status["machines"]} >= {"hub", "spoke-a"}
-
-    digest = protocol.SyncDigest.from_wire(
-        hub.get(f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id})
-    )
-    assert set(digest.tables) == set(protocol.DIGEST_TABLES)
-    assert len(digest.overall) == 64
-
-
-def test_every_lww_table_carries_the_sync_trio(spoke_a: Path) -> None:
-    """Tripwire: a table joins the sync set only with the v6 sync columns.
-
-    Without this, adding a table to ``SYNC_TABLES`` that lacks
-    ``updated_at`` / ``origin_device_id`` / ``deleted_at`` would make every
-    one of its rows look epoch-old and silently lose every conflict.
-    """
-    conn = _open(spoke_a)
-    try:
-        for spec in protocol.SYNC_TABLES:
-            columns = set(protocol.table_columns(conn, spec.name))
-            missing = [c for c in protocol.SYNC_COLUMNS if c not in columns]
-            assert not missing, f"{spec.name} lacks {missing}"
-            assert set(spec.pk) <= columns, spec.name
-        membership = set(protocol.table_columns(conn, protocol.MEMBERSHIP_TABLE))
-        assert set(protocol.SYNC_COLUMNS) <= membership
-    finally:
-        conn.close()
-
-
-def test_push_from_an_unregistered_machine_is_refused(
-    hub: _TestClientTransport,
-) -> None:
-    """A pusher that skipped ``hello`` gets a 409, not an anonymous write."""
-    with pytest.raises(client.SyncTransportError) as excinfo:
-        hub.post(
-            f"{client.API_PREFIX}/push",
-            {
-                "machine_id": "deadbeef" * 4,
-                "schema_version": state_schema.SCHEMA_VERSION,
-                "rows": [],
-            },
-        )
-    assert "SYNC_UNKNOWN_MACHINE" in str(excinfo.value)
-
-
-def test_a_peer_on_another_schema_version_is_refused(
-    hub: _TestClientTransport,
-) -> None:
-    """Version skew fails at the handshake, not halfway through a row."""
-    with pytest.raises(client.SyncTransportError) as excinfo:
-        hub.post(
-            f"{client.API_PREFIX}/hello",
-            {
-                "machine": {
-                    "machine_id": "cafe" * 8,
-                    "name": "future-spoke",
-                    "platform": "linux",
-                    "is_hub": False,
-                    "data_root": "/tmp/future",
-                    "first_seen": _T0,
-                    "last_seen": _T0,
-                },
-                "schema_version": state_schema.SCHEMA_VERSION + 1,
-            },
-        )
-    assert "SYNC_SCHEMA_VERSION" in str(excinfo.value)
-
-
-def test_webui_app_exposes_the_sync_router() -> None:
-    """The one-line wire-up in app.py actually mounts the endpoints."""
-    app = create_app(mount_frontend=False, enable_cors=False)
-    paths = {getattr(route, "path", "") for route in app.routes}
-    assert f"{client.API_PREFIX}/hello" in paths
-    assert f"{client.API_PREFIX}/push" in paths
-    assert f"{client.API_PREFIX}/pull" in paths
-    assert f"{client.API_PREFIX}/status" in paths
-    assert f"{client.API_PREFIX}/digest" in paths
+#
+# test_status_and_digest_endpoints_answer, test_every_lww_table_carries_the_
+# sync_trio, test_push_from_an_unregistered_machine_is_refused,
+# test_a_peer_on_another_schema_version_is_refused and
+# test_webui_app_exposes_the_sync_router moved to
+# tests/cloudsync/test_hub_sync_protocol.py (round 4 quality-gate file_size
+# ratchet: this file crossed 600 lines). They import their fixtures and
+# helpers back from this module.
