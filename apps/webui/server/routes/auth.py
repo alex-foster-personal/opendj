@@ -17,7 +17,6 @@ and a browser restart because it lives in ``data/state/state.db``.
 from __future__ import annotations
 
 import os
-from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -101,7 +100,7 @@ def _validate_loopback_origin(origin: str) -> str:
     return f"http://{parsed.hostname}{port}"
 
 
-def _resolve_origin(request: Request, requested: Optional[str]) -> str:
+def _resolve_origin(request: Request, requested: str | None) -> str:
     """Pick the browser origin this sign-in belongs to.
 
     Precedence, explicit rather than implied:
@@ -139,7 +138,7 @@ def _resolve_origin(request: Request, requested: Optional[str]) -> str:
 class LoginIn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    origin: Optional[str] = None
+    origin: str | None = None
     """Loopback origin the browser is on, e.g. http://127.0.0.1:9418.
     Omit when calling from the SPA -- the Origin header covers it."""
 
@@ -157,12 +156,12 @@ class MeOut(BaseModel):
 
     google_sub: str
     email: str
-    name: Optional[str]
-    avatar_url: Optional[str]
+    name: str | None
+    avatar_url: str | None
     created_at: str
 
     @classmethod
-    def of(cls, user: SessionUser) -> "MeOut":
+    def of(cls, user: SessionUser) -> MeOut:
         return cls(
             google_sub=user.google_sub, email=user.email, name=user.name,
             avatar_url=user.avatar_url, created_at=user.created_at,
@@ -249,7 +248,7 @@ def whoami(request: Request) -> MeOut:
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(request: Request, response: Response) -> Response:
+def logout(request: Request) -> Response:
     """Drop the session server-side and clear the cookie.
 
     Idempotent: signing out when already signed out is a 204, not an error.

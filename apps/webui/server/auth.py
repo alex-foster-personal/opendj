@@ -32,9 +32,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from apps.shared.state import db as state_db
 
@@ -114,7 +114,7 @@ class GoogleOAuthConfig:
     client_secret: str
 
     @classmethod
-    def from_env(cls, env: dict[str, str]) -> "GoogleOAuthConfig":
+    def from_env(cls, env: dict[str, str]) -> GoogleOAuthConfig:
         """Build from ``env``; raise :class:`AuthConfigError` if unset.
 
         Fails fast and loudly: the message is the full provisioning runbook
@@ -132,7 +132,7 @@ class GoogleOAuthConfig:
         return cls(client_id=client_id, client_secret=client_secret)
 
 
-def _first_present(env: dict[str, str], names: tuple[str, ...]) -> Optional[str]:
+def _first_present(env: dict[str, str], names: tuple[str, ...]) -> str | None:
     for name in names:
         value = env.get(name, "").strip()
         if value:
@@ -248,9 +248,9 @@ class GoogleIdentity:
 
     google_sub: str
     email: str
-    name: Optional[str]
-    avatar_url: Optional[str]
-    refresh_token: Optional[str]
+    name: str | None
+    avatar_url: str | None
+    refresh_token: str | None
     access_token: str
     access_expires_at: str
 
@@ -319,7 +319,7 @@ def identity_from_token_response(body: dict[str, Any]) -> GoogleIdentity:
         raise AuthFlowError("Google token response carried no access_token")
     expires_in = int(body.get("expires_in", 0))
     access_expires_at = _iso(
-        datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        datetime.now(UTC) + timedelta(seconds=expires_in)
     )
     return GoogleIdentity(
         google_sub=str(google_sub),
@@ -366,8 +366,8 @@ class SessionUser:
 
     google_sub: str
     email: str
-    name: Optional[str]
-    avatar_url: Optional[str]
+    name: str | None
+    avatar_url: str | None
     created_at: str
 
 
@@ -377,7 +377,7 @@ def hash_session_token(token: str) -> str:
 
 
 def _iso(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).isoformat()
+    return moment.astimezone(UTC).isoformat()
 
 
 class SessionStore:
@@ -406,7 +406,7 @@ class SessionStore:
         The raw token is returned exactly once, to be planted in the
         browser cookie. Only its hash is stored.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         now_iso = _iso(now)
         token = secrets.token_urlsafe(32)
         conn = self._connect()
@@ -451,7 +451,7 @@ class SessionStore:
             conn.close()
         return token
 
-    def resolve(self, token: str) -> Optional[SessionUser]:
+    def resolve(self, token: str) -> SessionUser | None:
         """Return the user behind ``token``, or None if it is not valid.
 
         Touches ``last_seen_at`` on success. An expired row is deleted
@@ -459,7 +459,7 @@ class SessionStore:
         sessions.
         """
         token_hash = hash_session_token(token)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         conn = self._connect()
         try:
             row = conn.execute(

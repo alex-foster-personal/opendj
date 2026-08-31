@@ -161,11 +161,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "whoami":
         return _cmd_whoami(db_path)
-    elif args.command == "sessions":
+    if args.command == "sessions":
         return _cmd_sessions(db_path)
-    elif args.command == "logout-all":
+    if args.command == "logout-all":
         return _cmd_logout_all(db_path)
-    elif args.command == "login":
+    if args.command == "login":
         return _cmd_login(args.origin)
     raise AssertionError(f"unhandled command {args.command!r}")
 

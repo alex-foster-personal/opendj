@@ -235,6 +235,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finish Login
+         * @description Google's loopback redirect target. Plants the cookie, returns to the SPA.
+         */
+        get: operations["finish_login_api_v1_auth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Login
+         * @description Begin sign-in: mint CSRF state + PKCE and return the consent URL.
+         *
+         *     The caller (browser or agent) is responsible for actually visiting
+         *     ``authorization_url``. Nothing is persisted until the callback lands.
+         */
+        post: operations["start_login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Drop the session server-side and clear the cookie.
+         *
+         *     Idempotent: signing out when already signed out is a 204, not an error.
+         */
+        post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whoami
+         * @description The signed-in user, or 401. The bauble polls this on mount.
+         */
+        get: operations["whoami_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -3026,6 +3111,33 @@ export interface components {
             /** Unreadable Music Roots */
             unreadable_music_roots?: string[];
         };
+        /** LoginIn */
+        LoginIn: {
+            /** Origin */
+            origin?: string | null;
+        };
+        /** LoginOut */
+        LoginOut: {
+            /** Authorization Url */
+            authorization_url: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /** State */
+            state: string;
+        };
+        /** MeOut */
+        MeOut: {
+            /** Avatar Url */
+            avatar_url: string | null;
+            /** Created At */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Google Sub */
+            google_sub: string;
+            /** Name */
+            name: string | null;
+        };
         /** MemberOut */
         MemberOut: {
             /** Artist */
@@ -5482,6 +5594,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    finish_login_api_v1_auth_callback_get: {
+        parameters: {
+            query?: {
+                state?: string;
+                code?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    whoami_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
                 };
             };
         };
