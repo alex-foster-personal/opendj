@@ -45,6 +45,7 @@ from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import feedback as feedback_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -290,6 +291,7 @@ def create_app(
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
+    app.include_router(feedback_routes.router, prefix=api_prefix)
     app.include_router(share_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)

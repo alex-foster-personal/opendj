@@ -277,6 +277,46 @@
         "title": "ApplyRequest",
         "type": "object"
       },
+      "ArchiveOut": {
+        "properties": {
+          "archived_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived To"
+          },
+          "comments_archived": {
+            "title": "Comments Archived",
+            "type": "integer"
+          },
+          "general_archived": {
+            "title": "General Archived",
+            "type": "boolean"
+          },
+          "todo_feedback_archived": {
+            "title": "Todo Feedback Archived",
+            "type": "integer"
+          },
+          "todos_archived": {
+            "title": "Todos Archived",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "archived_to",
+          "todos_archived",
+          "todo_feedback_archived",
+          "comments_archived",
+          "general_archived"
+        ],
+        "title": "ArchiveOut",
+        "type": "object"
+      },
       "AssistantStatusOut": {
         "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
         "properties": {
@@ -779,6 +819,57 @@
           "built_at_kind"
         ],
         "title": "BuildInfoOut",
+        "type": "object"
+      },
+      "BuildStampOut": {
+        "description": "Provenance of the build that recorded a piece of feedback.\n\nExactly one of the two shapes: a resolved (git_sha, built_at_utc, source)\ntriple, or an explicit error naming why resolution failed. Never blank.",
+        "properties": {
+          "built_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Built At Utc"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "BuildStampOut",
         "type": "object"
       },
       "BulkEditIn": {
@@ -1317,6 +1408,120 @@
           "revision"
         ],
         "title": "ClustersOut",
+        "type": "object"
+      },
+      "CommentCreateIn": {
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "page": {
+            "minLength": 1,
+            "title": "Page",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "x_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "X Pct",
+            "type": "number"
+          },
+          "y_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Y Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x_pct",
+          "y_pct",
+          "page",
+          "text"
+        ],
+        "title": "CommentCreateIn",
+        "type": "object"
+      },
+      "CommentListOut": {
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "title": "Comments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "title": "CommentListOut",
+        "type": "object"
+      },
+      "CommentOut": {
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "build": {
+            "$ref": "#/components/schemas/BuildStampOut"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "page": {
+            "title": "Page",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "x_pct": {
+            "title": "X Pct",
+            "type": "number"
+          },
+          "y_pct": {
+            "title": "Y Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "x_pct",
+          "y_pct",
+          "page",
+          "text",
+          "created_at",
+          "build"
+        ],
+        "title": "CommentOut",
         "type": "object"
       },
       "ConfigIn": {
@@ -2173,6 +2378,53 @@
           "how_to_grant"
         ],
         "title": "FolderScanOut",
+        "type": "object"
+      },
+      "GeneralNoteOut": {
+        "properties": {
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildStampOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "GeneralNoteOut",
+        "type": "object"
+      },
+      "GeneralNotePutIn": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "GeneralNotePutIn",
         "type": "object"
       },
       "GenerateIn": {
@@ -6615,6 +6867,201 @@
         "title": "TierOut",
         "type": "object"
       },
+      "TodoCreateIn": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TodoCreateIn",
+        "type": "object"
+      },
+      "TodoListOut": {
+        "properties": {
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/TodoOut"
+            },
+            "title": "Todos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "todos"
+        ],
+        "title": "TodoListOut",
+        "type": "object"
+      },
+      "TodoOut": {
+        "properties": {
+          "build": {
+            "$ref": "#/components/schemas/BuildStampOut"
+          },
+          "chosen_option": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen Option"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "done": {
+            "default": false,
+            "title": "Done",
+            "type": "boolean"
+          },
+          "feedback": {
+            "default": "",
+            "title": "Feedback",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "created_at",
+          "updated_at",
+          "build"
+        ],
+        "title": "TodoOut",
+        "type": "object"
+      },
+      "TodoPatchIn": {
+        "properties": {
+          "chosen_option": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen Option"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "TodoPatchIn",
+        "type": "object"
+      },
       "TrackListItemOut": {
         "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.\nvocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).\nstems: demucs bundle summary for the browser Stems column (V/I/D), or\n``{status: none}`` when no local bundle exists.",
         "properties": {
@@ -9338,6 +9785,259 @@
         "summary": "Post Dedup Decision",
         "tags": [
           "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/feedback/archive": {
+      "post": {
+        "operationId": "archive_feedback_api_v1_feedback_archive_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Archive Feedback",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/comments": {
+      "get": {
+        "operationId": "list_comments_api_v1_feedback_comments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Comments",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "create_comment_api_v1_feedback_comments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Comment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/general": {
+      "get": {
+        "operationId": "get_general_api_v1_feedback_general_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get General",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "put": {
+        "operationId": "put_general_api_v1_feedback_general_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneralNotePutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put General",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/todos": {
+      "get": {
+        "operationId": "list_todos_api_v1_feedback_todos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Todos",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "create_todo_api_v1_feedback_todos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Todo",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/todos/{todo_id}": {
+      "patch": {
+        "operationId": "patch_todo_api_v1_feedback_todos__todo_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "todo_id",
+            "required": true,
+            "schema": {
+              "title": "Todo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Todo",
+        "tags": [
+          "feedback"
         ]
       }
     },
