@@ -180,6 +180,19 @@ pnpm tauri dev
 
 - Hotkey: `Alt+Space` (fallback `Ctrl+Cmd+Space`). Type 2+ characters to filter. Drag a row onto djay Pro's Deck A / B to load.
 
+## Building the dmg
+
+Prerequisites for `just dmg` (first successful end-to-end build in PR #510, Fri 28-Sat 29 Aug 2026). The recipe stages the engine payload, bundles the Tauri shell, then mounts and verifies the artifact in one pass; any missing piece exits non-zero.
+
+- cargo >= 1.85. The crate graph pulls edition2024 crates; `rustup update stable`.
+- tauri-cli ^2: `cargo install tauri-cli --locked --version '^2'`.
+- A uv-resolved repo venv. Its interpreter version drives the staged runtime (3.11 and 3.14 are proven; the runtime prune list has been glob-based since #510, so it follows whatever minor is staged).
+- SPA pre-built: `pnpm build` in `apps/webui/frontend`. The payload builder fails loudly on a missing or stale build; it never rebuilds the SPA behind your back.
+- Clean working tree. Release builds are cut from clean trees only; any dirty file aborts.
+- Lane label: plain `just dmg` builds the real product (Open DJ). A lane build requires double intent: `MDT_LANE_LABEL=X` in the env AND `just dmg X` together (OPS-08; a lone env var or a lone recipe arg is refused).
+- arm64 only (v1 decision). The artifact does not run on Intel Macs.
+- Unsigned until `MDT_MACOS_SIGNING_IDENTITY` (Developer ID) plus `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` (an `xcrun notarytool store-credentials` profile) are set in the env. Until then a downloaded image arrives quarantined; testers must run `xattr -dr com.apple.quarantine "/Applications/Open DJ.app"` after copying.
+
 ## Safety rail updates in the v1.0 ship window
 
 Three rail-2 and rail-6 tightenings landed just before the v1.0 ship
