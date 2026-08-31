@@ -439,13 +439,14 @@ def test_the_dmg_recipe_stamps_the_shell_from_the_payload_manifest() -> None:
     assert '[ "$shipped_sha" = "$OPENDJ_BUILD_GIT_SHA" ]' in recipe
 
 
-@pytest.mark.requirement("INSTALL-06")
-def test_the_dmg_recipe_refuses_an_unset_lane_label() -> None:
-    """An unlabelled bundled build would share the plain app's library."""
+@pytest.mark.requirement("OPS-08")
+def test_the_dmg_recipe_accepts_an_unset_lane_label() -> None:
+    """OPS-08: unset builds the plain Open DJ; the old refusal is gone.
+
+    The label guard used to protect two bake-off lanes from sharing one
+    library. With the bake-off over, an unset label IS the product build,
+    so the recipe must neither refuse it nor default it to a lane.
+    """
     recipe = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
-    assert 'if [ -z "$label" ]; then' in recipe
-    assert "MDT_LANE_LABEL is unset" in recipe
-    # And it must refuse BEFORE spending a payload build or a cargo build.
-    assert recipe.index("MDT_LANE_LABEL is unset") < recipe.index(
-        "scripts.build_engine_payload"
-    )
+    assert "MDT_LANE_LABEL is unset" not in recipe
+    assert 'label="${MDT_LANE_LABEL:-}"' in recipe  # override survives

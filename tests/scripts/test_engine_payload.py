@@ -45,29 +45,28 @@ from scripts.build_engine_payload import (
     skip_output_tree,
     sole_stretch_asset,
 )
-from scripts.desktop_lane_config import LaneLabelError, require_label
+from scripts.desktop_lane_config import LaneLabelError, validate_label
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 
-# ----- lane label is a build input, not a default ------------------------
-@pytest.mark.requirement("INSTALL-06")
+# ----- lane label: optional since OPS-08, unsafe still refused -----------
+@pytest.mark.requirement("OPS-08")
 @pytest.mark.parametrize("raw", [None, "", "   "])
-def test_absent_lane_label_stops_the_build(raw: str | None) -> None:
-    with pytest.raises(LaneLabelError) as excinfo:
-        require_label(raw)
-    assert "MDT_LANE_LABEL" in str(excinfo.value)
+def test_absent_lane_label_builds_the_plain_product(raw: str | None) -> None:
+    """The bake-off is over: unset means Open DJ / com.opendj.desktop."""
+    assert validate_label(raw) is None
 
 
 @pytest.mark.requirement("INSTALL-06")
 def test_a_present_label_is_returned_unchanged() -> None:
-    assert require_label("  B  ") == "B"
+    assert validate_label("  B  ") == "B"
 
 
 @pytest.mark.requirement("INSTALL-06")
 def test_an_unsafe_label_is_still_refused_not_defaulted() -> None:
     with pytest.raises(LaneLabelError):
-        require_label("lane b")
+        validate_label("lane b")
 
 
 # ----- SPA freshness -----------------------------------------------------
