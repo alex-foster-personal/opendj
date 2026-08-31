@@ -179,6 +179,7 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.usb_simulation_enabled = usb_volumes_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.client_error_log_dir = (
         client_error_log_dir
@@ -316,6 +317,10 @@ def create_app(
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(usb_volumes_routes.router, prefix=api_prefix)
+    if app.state.usb_simulation_enabled:
+        # Test/dev only (MDT_USB_SIMULATION=1): production apps never mount
+        # the simulated-volume POST, so fake volumes cannot be injected.
+        app.include_router(usb_volumes_routes.simulation_router, prefix=api_prefix)
     app.include_router(telemetry_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)

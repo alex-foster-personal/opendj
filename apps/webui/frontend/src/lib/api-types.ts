@@ -1995,11 +1995,7 @@ export interface paths {
         /** Get Usb Volumes */
         get: operations["get_usb_volumes_api_v1_usb_volumes_get"];
         put?: never;
-        /**
-         * Post Usb Volume
-         * @description Inject or update a simulated volume (manual test without a stick).
-         */
-        post: operations["post_usb_volume_api_v1_usb_volumes_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4964,6 +4960,20 @@ export interface components {
             /** Desktop Shell Open */
             desktop_shell_open: boolean;
         };
+        /** UsbCapabilityDetail */
+        UsbCapabilityDetail: {
+            /**
+             * Code
+             * @constant
+             */
+            code: "usb_volume_discovery_unavailable";
+            /** Reason */
+            reason: string;
+        };
+        /** UsbCapabilityErrorOut */
+        UsbCapabilityErrorOut: {
+            detail: components["schemas"]["UsbCapabilityDetail"];
+        };
         /** UsbVolumeOut */
         UsbVolumeOut: {
             /** Hide Reason */
@@ -5003,46 +5013,6 @@ export interface components {
              * @default false
              */
             simulated: boolean;
-        };
-        /**
-         * UsbVolumePost
-         * @description DEV / simulate: inject a fake present volume (never touches disk).
-         */
-        UsbVolumePost: {
-            /** Id */
-            id?: string | null;
-            /**
-             * Kind
-             * @default music
-             * @enum {string}
-             */
-            kind: "rekordbox" | "djay" | "music" | "unknown";
-            /**
-             * Mount Path
-             * @default /Volumes/FAKE-USB
-             */
-            mount_path: string | null;
-            /**
-             * Name
-             * @default FAKE USB
-             */
-            name: string;
-            /**
-             * Present
-             * @default true
-             */
-            present: boolean;
-            /**
-             * Protocol
-             * @default USB
-             */
-            protocol: string | null;
-            /**
-             * Role
-             * @default usb_stick
-             * @enum {string}
-             */
-            role: "usb_stick" | "mounted_drive" | "disk_image" | "other";
         };
         /** UsbVolumesOut */
         UsbVolumesOut: {
@@ -9129,37 +9099,13 @@ export interface operations {
                     "application/json": components["schemas"]["UsbVolumesOut"];
                 };
             };
-        };
-    };
-    post_usb_volume_api_v1_usb_volumes_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UsbVolumePost"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
+            /** @description USB volume discovery is unavailable on this host. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UsbVolumesOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"];
                 };
             };
         };
@@ -9173,13 +9119,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Server-sent USB volume discovery events. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/event-stream": string;
+                };
+            };
+            /** @description USB volume discovery is unavailable on this host. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"];
                 };
             };
         };
