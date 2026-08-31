@@ -17,6 +17,19 @@ Contract under test: ``specs/design_decision_08.md`` point 5, answering round
   across the webui backend, ``PlaylistStore``, and the other list/get paths
   audited in this round (see the lane's final report for the full list).
 
+Round 3 addendum (.planning/cloudsync-round2-adversarial.md Part 3 item 8):
+round 2 fixed 12 of 19 files that read ``tracks``/``playlists`` without a
+``deleted_at`` filter and left five outstanding --
+``apps/smartlists/evaluator.py``, ``apps/stems/cli.py``,
+``apps/vocals/cli.py``, ``apps/webui/crate_sync.py``, and
+``apps/shared/state/ingest/rekordbox.py``. Those five are covered below, plus
+a track-level mirror of the playlist reactivation test: nothing currently
+tombstones a live ``tracks`` row (the finding is defense-in-depth for when
+track-level delete lands per design_decision_08.md point 8), but
+``StateWriter.upsert_track`` must not silently refresh a tombstoned row's
+data while leaving it dead -- the same trap ``insert_playlist`` already
+closed.
+
 Acceptance criteria, one test each:
 - if deleting a playlist through the real webui write path (``PlaylistStore``,
   the same call ``DELETE /playlists/{id}`` makes) leaves no row behind, the
@@ -45,8 +58,14 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
+from apps.shared.state.sync_stamp import encode_row_pk
 from apps.shared.state.writer import StateWriter
+from apps.smartlists.evaluator import evaluate
+from apps.stems.cli import _duration_from_state, resolve_audio_path
 from apps.sync_hub import client, service
+from apps.vocals.cli import Ctx as VocalsCtx
+from apps.vocals.cli import load_tracks as vocals_load_tracks
+from apps.webui import crate_sync
 from apps.webui.server.backend import NotFoundError
 from apps.webui.server.playlist_store import PlaylistStore
 from apps.webui.server.sqlite_backend import SqliteBackend
@@ -463,3 +482,237 @@ def test_no_hard_delete_on_a_synced_table_outside_the_allowlist() -> None:
         f"allowlisted hard delete(s) no longer found in source: "
         f"{sorted(stale)}. Remove them from _ALLOWED_HARD_DELETES."
     )
+
+
+# ----- round 3: 4b's five remaining readers -------------------------------
+#
+# .planning/cloudsync-round2-adversarial.md Part 3 item 8. Nothing currently
+# tombstones a live ``tracks`` row (see the module docstring's round 3
+# addendum), so each test below stamps ``deleted_at`` directly with raw SQL
+# to simulate the future track-delete path these readers must already be
+# honest against.
+
+_EPOCH_LATER = "2026-08-31T12:00:00.000000+00:00"
+
+
+def _seed_track_with_file(
+    conn: sqlite3.Connection, stable_id: str, *, file_path: str | None
+) -> None:
+    writer = StateWriter(conn, FakeEventBus(), actor="test")
+    try:
+        writer.upsert_track(
+            stable_id=stable_id, stable_id_tier="inferred", title="T",
+            artists=["A"], album=None, isrc=None, duration_ms=222_000,
+            file_path=file_path,
+        )
+    finally:
+        writer.close()
+
+
+def _tombstone_track(conn: sqlite3.Connection, stable_id: str) -> None:
+    conn.execute(
+        "UPDATE tracks SET deleted_at = ? WHERE stable_id = ?",
+        (_EPOCH_LATER, stable_id),
+    )
+
+
+def test_deleted_track_hidden_from_smartlist_evaluator(
+    state_db_path: Path,
+) -> None:
+    """``apps/smartlists/evaluator.py`` must not resurface a tombstoned
+    track in a smartlist -- round 2 left it unfiltered.
+    """
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _seed_track_with_file(conn, "live-1", file_path="/music/live.mp3")
+        _seed_track_with_file(conn, "dead-1", file_path="/music/dead.mp3")
+        _tombstone_track(conn, "dead-1")
+
+        rule = {"field": "added_date", "op": ">=", "value": "2000-01-01T00:00:00+00:00"}
+        result = evaluate(rule, conn)
+        assert result == ["live-1"], (
+            f"evaluate() returned {result!r} -- a tombstoned track is still "
+            "visible to the smartlist compiler"
+        )
+    finally:
+        conn.close()
+
+
+def test_deleted_track_hidden_from_stems_cli_lookups(
+    state_db_path: Path, tmp_path: Path
+) -> None:
+    """``apps/stems/cli.py``'s ``resolve_audio_path``/``_duration_from_state``
+    must refuse a tombstoned stable_id the same way they refuse an unknown
+    one -- round 2 left both unfiltered.
+    """
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+    audio = tmp_path / "dead.mp3"
+    audio.write_bytes(b"audio-bytes")
+
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    try:
+        _seed_track_with_file(conn, "dead-1", file_path=str(audio))
+        _tombstone_track(conn, "dead-1")
+    finally:
+        conn.close()
+
+    with pytest.raises(FileNotFoundError, match="dead-1"):
+        resolve_audio_path(data_dir, "dead-1")
+    with pytest.raises(SystemExit, match="dead-1"):
+        _duration_from_state(data_dir, "dead-1")
+
+
+def test_deleted_track_hidden_from_vocals_load_tracks(
+    tmp_path: Path,
+) -> None:
+    """``apps/vocals/cli.py``'s ``load_tracks`` must exclude a tombstoned
+    track from the trickle queue -- round 2 left it unfiltered.
+    """
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    try:
+        for sid, vendor_id in (("live-1", "v-live"), ("dead-1", "v-dead")):
+            _seed_track_with_file(conn, sid, file_path=None)
+            writer = StateWriter(conn, FakeEventBus(), actor="test")
+            try:
+                writer.set_vendor_id(sid, "rekordbox", vendor_id)
+            finally:
+                writer.close()
+        _tombstone_track(conn, "dead-1")
+    finally:
+        conn.close()
+
+    master = sqlite3.connect(data_dir / "master.plain.db")
+    try:
+        master.execute(
+            "CREATE TABLE djmdContent (ID TEXT, Title TEXT, Length INTEGER, "
+            "FolderPath TEXT, AnalysisDataPath TEXT, rb_local_deleted INTEGER)"
+        )
+        master.executemany(
+            "INSERT INTO djmdContent VALUES (?, ?, ?, ?, ?, 0)",
+            [
+                ("v-live", "Live", 200_000, None, None),
+                ("v-dead", "Dead", 200_000, None, None),
+            ],
+        )
+        master.commit()
+    finally:
+        master.close()
+
+    tracks = vocals_load_tracks(VocalsCtx(data_dir=data_dir), None)
+    ids = {t.stable_id for t in tracks}
+    assert ids == {"live-1"}, (
+        f"load_tracks returned {ids!r} -- a tombstoned track is still "
+        "queued for vocal extraction"
+    )
+
+
+def test_deleted_track_hidden_from_crate_sync_collect_plan(
+    tmp_path: Path,
+) -> None:
+    """``apps/webui/crate_sync.py``'s ``collect_plan`` must not copy a
+    tombstoned track's audio onto the replica crate -- round 2 left the
+    unscoped ``FROM tracks`` read unfiltered.
+    """
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+    source_root = tmp_path / "owner"
+    crate_root = tmp_path / "crate"
+    live_audio = source_root / "live.mp3"
+    dead_audio = source_root / "dead.mp3"
+    source_root.mkdir()
+    live_audio.write_bytes(b"live-bytes")
+    dead_audio.write_bytes(b"dead-bytes")
+
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    try:
+        _seed_track_with_file(conn, "live-1", file_path=str(live_audio))
+        _seed_track_with_file(conn, "dead-1", file_path=str(dead_audio))
+        _tombstone_track(conn, "dead-1")
+    finally:
+        conn.close()
+
+    plan = crate_sync.collect_plan(
+        state_db=data_dir / "state" / "state.db",
+        master_db=None,
+        crate_root=crate_root,
+        user_maps=((str(source_root), str(crate_root / "mapped")),),
+    )
+    synced_ids = {sid for f in plan.files for sid in f.stable_ids}
+    assert synced_ids == {"live-1"}, (
+        f"collect_plan staged {synced_ids!r} -- a tombstoned track is still "
+        "planned for the replica crate"
+    )
+
+
+def test_upsert_track_reactivates_a_tombstoned_row(
+    state_db_path: Path,
+) -> None:
+    """The chokepoint mirror of ``test_reinsert_after_delete_clears_the_
+    tombstone`` above, for tracks: ``apps/shared/state/ingest/rekordbox.py``
+    calls ``upsert_track`` on every scan regardless of whether the stable_id
+    already exists. If a re-ingest silently refreshed a tombstoned row's data
+    while leaving ``deleted_at`` set, the row would carry a fresh
+    ``updated_at`` and a fresh ``local_changelog`` entry while remaining
+    permanently invisible to every deleted_at-filtered reader -- a stamped,
+    synced, undead row. Reactivation must clear the tombstone instead, the
+    same way ``insert_playlist`` already does.
+    """
+    conn = state_db.open_rw(state_db_path)
+    try:
+        writer = StateWriter(conn, FakeEventBus(), actor="test")
+        try:
+            writer.upsert_track(
+                stable_id="trk-1", stable_id_tier="inferred", title="Loft",
+                artists=["A"], album=None, isrc=None, duration_ms=222_000,
+                file_path="/music/loft.mp3",
+            )
+        finally:
+            writer.close()
+
+        _tombstone_track(conn, "trk-1")
+        tombstoned = conn.execute(
+            "SELECT deleted_at FROM tracks WHERE stable_id = ?", ("trk-1",),
+        ).fetchone()
+        assert tombstoned is not None and tombstoned[0] is not None
+
+        # A re-ingest replays the identical row -- same title, same fields.
+        # This must still count as a change: the row is coming back from
+        # the dead even though nothing about its displayed content differs,
+        # exactly as insert_playlist's own reactivation test asserts.
+        writer = StateWriter(conn, FakeEventBus(), actor="test")
+        try:
+            changed = writer.upsert_track(
+                stable_id="trk-1", stable_id_tier="inferred", title="Loft",
+                artists=["A"], album=None, isrc=None, duration_ms=222_000,
+                file_path="/music/loft.mp3",
+            )
+        finally:
+            writer.close()
+        assert changed is True, (
+            "reactivating a tombstoned track with unchanged data must "
+            "still be reported as a change"
+        )
+
+        reactivated = conn.execute(
+            "SELECT deleted_at FROM tracks WHERE stable_id = ?", ("trk-1",),
+        ).fetchone()
+        assert reactivated is not None and reactivated[0] is None, (
+            "the tombstone survived the re-ingest -- the track is "
+            "permanently invisible even though the vendor scan still has it"
+        )
+
+        changelog_count = conn.execute(
+            "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'tracks' "
+            "AND row_pk = ?",
+            (encode_row_pk(("trk-1",)),),
+        ).fetchone()[0]
+        assert changelog_count >= 2, (
+            "the reactivation was not logged to local_changelog -- it will "
+            "not sync (ADR 08 point 2)"
+        )
+    finally:
+        conn.close()

@@ -279,7 +279,15 @@ class StateWriter:
     ) -> bool:
         """Insert/update ``tracks``. Returns True on change, False on no-op.
 
-        A byte-equal repeat is a no-op (no history, no event).
+        A byte-equal repeat is a no-op (no history, no event) -- unless the
+        row is tombstoned, in which case it is reactivated the same way
+        ``insert_playlist`` reactivates a playlist: a stable_id is
+        deterministic, so a re-ingest (round 2 finding 4b,
+        apps/shared/state/ingest/rekordbox.py) can land on a row this
+        machine previously soft-deleted. Reactivation clears ``deleted_at``
+        and is stamped through ``sync_stamp`` like any other write, so the
+        undelete itself propagates instead of leaving a tombstoned row
+        silently refreshed underneath its own dead marker.
         """
         artists_json = json.dumps(
             list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
@@ -288,7 +296,7 @@ class StateWriter:
         with self._tx() as conn:
             existing = conn.execute(
                 "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                "duration_ms, file_path, content_hash FROM tracks "
+                "duration_ms, file_path, content_hash, deleted_at FROM tracks "
                 "WHERE stable_id = ?",
                 (stable_id,),
             ).fetchone()
@@ -302,7 +310,12 @@ class StateWriter:
                 file_path,
                 content_hash,
             )
-            if existing is not None and tuple(existing) == new_row:
+            existing_deleted_at = existing[-1] if existing is not None else None
+            if (
+                existing is not None
+                and tuple(existing[:-1]) == new_row
+                and existing_deleted_at is None
+            ):
                 return False
             stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
             if existing is None:
@@ -328,13 +341,15 @@ class StateWriter:
                 )
                 kind = "track.insert"
             else:
+                reactivated = existing_deleted_at is not None
                 conn.execute(
                     "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
                     "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, "
-                    "updated_at=?, origin_device_id=? WHERE stable_id=?",
+                    "updated_at=?, origin_device_id=?, deleted_at=NULL "
+                    "WHERE stable_id=?",
                     (*new_row, stamp.updated_at, stamp.origin_device_id, stable_id),
                 )
-                kind = "track.update"
+                kind = "track.undelete" if reactivated else "track.update"
             ev = self._append_event(
                 kind=kind,
                 stable_id=stable_id,

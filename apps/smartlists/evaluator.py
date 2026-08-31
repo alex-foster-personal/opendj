@@ -214,7 +214,13 @@ def evaluate(
     else:
         select = "SELECT tracks.stable_id "
 
-    sql = select + "FROM tracks WHERE " + where_sql + " ORDER BY " + order_sql
+    # ADR 08 point 5 / round 2 finding 4b: a tombstoned track must not
+    # surface in a smartlist. Filtered in-query rather than by the caller
+    # so every consumer of evaluate() gets the honest set for free.
+    sql = (
+        select + "FROM tracks WHERE tracks.deleted_at IS NULL AND ("
+        + where_sql + ") ORDER BY " + order_sql
+    )
     if limit is not None:
         sql += f" LIMIT {int(limit)}"
 

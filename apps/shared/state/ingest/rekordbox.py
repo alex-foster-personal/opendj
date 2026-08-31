@@ -411,7 +411,8 @@ def _write_csv_artefact(
             "t.artists_json, t.isrc, t.duration_ms, t.file_path "
             "FROM tracks t "
             "LEFT JOIN track_vendor_ids v "
-            "ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox'"
+            "ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox' "
+            "WHERE t.deleted_at IS NULL"
         ):
             w.writerow(row)
     return out_path

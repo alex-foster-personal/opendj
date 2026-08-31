@@ -210,14 +210,16 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
     try:
         if playlist is not None:
             pl_rows = state.execute(
-                "SELECT playlist_id, name FROM playlists WHERE name = ?",
+                "SELECT playlist_id, name FROM playlists "
+                "WHERE name = ? AND deleted_at IS NULL",
                 (playlist,),
             ).fetchall()
             if not pl_rows:
                 names = [
                     r[0]
                     for r in state.execute(
-                        "SELECT DISTINCT name FROM playlists ORDER BY name"
+                        "SELECT DISTINCT name FROM playlists "
+                        "WHERE deleted_at IS NULL ORDER BY name"
                     ).fetchall()
                 ]
                 raise SystemExit(
@@ -232,15 +234,18 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
                     r[0]
                     for r in state.execute(
                         "SELECT DISTINCT stable_id FROM playlist_memberships "
-                        f"WHERE playlist_id IN ({marks})",
+                        f"WHERE playlist_id IN ({marks}) AND deleted_at IS NULL",
                         chunk,
                     ).fetchall()
                 )
+        # ADR 08 point 5 / round 2 finding 4b: a tombstoned track must not
+        # enter the vocals trickle queue.
         mappings = state.execute(
             "SELECT t.stable_id, v.vendor_id, COALESCE(t.title, '') "
             "FROM tracks t "
             "JOIN track_vendor_ids v "
-            "  ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox'"
+            "  ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox' "
+            "WHERE t.deleted_at IS NULL"
         ).fetchall()
     finally:
         state.close()
@@ -370,7 +375,8 @@ def best_playlist_rank(
         rows = state.execute(
             "SELECT m.playlist_id, p.name, m.stable_id "
             "FROM playlist_memberships m "
-            "JOIN playlists p ON p.playlist_id = m.playlist_id"
+            "JOIN playlists p ON p.playlist_id = m.playlist_id "
+            "WHERE m.deleted_at IS NULL AND p.deleted_at IS NULL"
         ).fetchall()
     finally:
         state.close()
