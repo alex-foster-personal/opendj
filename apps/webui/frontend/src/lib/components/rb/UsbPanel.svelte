@@ -10,20 +10,17 @@
 		foldedAway,
 		presentNonForgotten,
 		setForgotten,
-		simulateUsbVolume,
 		usbRowKindLabel,
 		usbRowReasonTag,
 		usbTracker,
 		type UsbVolumeKnown
 	} from '$lib/rb/usb-tracker.svelte';
-	import { pushToast } from '$lib/stores.svelte';
 
 	let foldedOpen = $state(false);
 	let promptName = $state('');
 	let draftYours = $state<boolean | null>(null);
 	let draftMusic = $state<boolean | null>(null);
 	let draftForget = $state(false);
-	let busySim = $state(false);
 
 	const open = $derived(usbTracker.panelOpen);
 	const active = $derived(presentNonForgotten());
@@ -204,28 +201,6 @@
 		</details>
 
 		<footer class="usb-foot">
-			<button
-				type="button"
-				class="usb-sim"
-				disabled={busySim}
-				title="DEV: POST a fake volume via /api/v1/usb/volumes (no real stick needed)"
-				onclick={async () => {
-					busySim = true;
-					try {
-						await simulateUsbVolume({
-							name: `FAKE ${new Date().toLocaleTimeString()}`,
-							kind: 'music'
-						});
-						pushToast('Simulated USB volume posted', 'info');
-					} catch (exc) {
-						pushToast(exc instanceof Error ? exc.message : String(exc), 'error');
-					} finally {
-						busySim = false;
-					}
-				}}
-			>
-				{busySim ? '…' : 'Simulate USB'}
-			</button>
 			<span class="usb-hint" title="GitHub #328 - first-pass detect only">#328 read-only</span>
 		</footer>
 	</aside>
@@ -309,7 +284,6 @@
 	.usb-row button,
 	.usb-forget,
 	.usb-confirm,
-	.usb-sim,
 	.usb-mini,
 	.usb-undo {
 		padding: 4px 8px;
@@ -404,9 +378,5 @@
 	.usb-hint {
 		font-size: 10px;
 		color: var(--rb-text-dim);
-	}
-	.usb-sim:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 </style>
