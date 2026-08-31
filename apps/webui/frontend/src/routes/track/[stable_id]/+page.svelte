@@ -7,7 +7,7 @@
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
-	import { fetchRbMeta } from '$lib/rb/api-rb';
+	import { fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
 	import type { TrackQuality } from '$lib/rb/types';
 
 	let track = $state<Track | null>(null);
@@ -25,7 +25,16 @@
 		const res = await getTrack(stable);
 		track = res.track;
 		etag = res.etag;
-		quality = (await fetchRbMeta(stable)).quality;
+		try {
+			quality = (await fetchRbMeta(stable)).quality;
+		} catch (exc) {
+			// Since #505 rb-meta answers 200 for a locally imported track, so a
+			// 404 here means an unknown stable_id. Kept as a guard rather than
+			// removed: an unhandled rejection in onMount is not how that should
+			// surface. The badge stays absent (never a guessed rung); anything
+			// else is a real failure and still rejects onMount's promise.
+			if (!(exc instanceof RbApiError) || exc.status !== 404) throw exc;
+		}
 	}
 
 	async function applyPatch(patch: Record<string, unknown>): Promise<void> {

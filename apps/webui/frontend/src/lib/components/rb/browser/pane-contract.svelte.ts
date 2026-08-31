@@ -90,8 +90,15 @@ export interface BrowserRow {
 	vocals: Vocals;
 	/** Inline demucs stem summary (V/I/D); null only for synthetic rows. */
 	stems: StemSummary | null;
+	/** Whether this track has a live rekordbox mapping (inline on every
+	 * row, contract 1/4). False is a real library state - locally imported
+	 * or djay-only - and gates the lazy fetch below off entirely: since
+	 * #505 rb-meta would answer 200, but with nothing the row does not
+	 * already carry, so rb_meta stays null and no request is made. */
+	has_rb_mapping: boolean;
 	/** Lazy rb-meta (artwork_available + genre/streaming fallback);
-	 * null until the row first scrolls into view. */
+	 * null until the row first scrolls into view, and permanently null when
+	 * has_rb_mapping is false. */
 	rb_meta: RbMeta | null;
 	/** Flipped true by the IntersectionObserver on first visibility -
 	 * gates the one-time canvas draw (SPIKE-A2). */

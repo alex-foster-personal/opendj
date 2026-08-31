@@ -4453,6 +4453,8 @@ export interface components {
             file_exists: boolean;
             /** Genre */
             genre: string | null;
+            /** Has Rb Mapping */
+            has_rb_mapping: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */
@@ -5036,6 +5038,9 @@ export interface components {
          *     vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
          *     stems: demucs bundle summary for the browser Stems column (V/I/D), or
          *     ``{status: none}`` when no local bundle exists.
+         *     has_rb_mapping: whether GET /tracks/{sid}/rb-meta can resolve this row.
+         *     False for a locally imported or djay-only track, whose rb-meta 404s BY
+         *     CONTRACT; the browser skips the per-row fetch rather than provoke it.
          */
         TrackListItemOut: {
             /** Album */
@@ -5052,6 +5057,8 @@ export interface components {
             file_exists: boolean;
             /** File Path */
             file_path?: string | null;
+            /** Has Rb Mapping */
+            has_rb_mapping: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
@@ -5180,6 +5187,8 @@ export interface components {
             file_exists: boolean;
             /** Genre */
             genre: string | null;
+            /** Has Rb Mapping */
+            has_rb_mapping: boolean;
             /** Is Streaming */
             is_streaming: boolean;
             /** Key */

@@ -152,18 +152,16 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 
 test.describe('setup entry points', () => {
 	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
-		// GET /tracks/{sid}/rb-meta answers 404 BY CONTRACT for a track with no
-		// rekordbox vendor mapping (this suite's whole library: locally imported
-		// fixtures), and BrowserPanel handles that status explicitly. WebKit
-		// still logs every 404 response as a console error the page cannot
-		// suppress, so that one handled resource log is filtered here the same
-		// way favicon noise is. Anything else stays a failure.
+		// No rb-meta allowlist here on purpose. This suite's library is entirely
+		// locally imported, so every listing row reports has_rb_mapping false and
+		// the browser issues no rb-meta request at all. The 404 that used to be
+		// filtered out here is doubly gone: #505 made the endpoint answer 200 for
+		// such a track, and the flag stops the request being made. A /rb-meta
+		// console error reappearing is a real regression the gate should catch.
 		const errors: string[] = [];
 		page.on('console', (msg) => {
 			if (msg.type() !== 'error') return;
-			const url = msg.location()?.url ?? '';
-			if (msg.text().includes('404') && url.includes('/rb-meta')) return;
-			errors.push(`${msg.text()} [${url}]`);
+			errors.push(`${msg.text()} [${msg.location()?.url ?? ''}]`);
 		});
 
 		await gotoShellReady(page, '/');

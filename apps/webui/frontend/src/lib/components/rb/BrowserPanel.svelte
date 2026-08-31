@@ -975,7 +975,11 @@
 	}
 
 	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
-		if (typeof wire.stable_id !== 'string' || typeof wire.file_exists !== 'boolean') {
+		if (
+			typeof wire.stable_id !== 'string' ||
+			typeof wire.file_exists !== 'boolean' ||
+			typeof wire.has_rb_mapping !== 'boolean'
+		) {
 			throw new Error(
 				`hydrated playlist row ${order} malformed - backend contract point 4 not met`
 			);
@@ -1001,6 +1005,7 @@
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
 			vocals: parseVocals(wire.vocals),
 			stems: parseStemSummary(wire.stems),
+			has_rb_mapping: wire.has_rb_mapping,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1038,6 +1043,7 @@
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
 			vocals: parseVocals(track.vocals),
 			stems: parseStemSummary(track.stems),
+			has_rb_mapping: track.has_rb_mapping,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1083,6 +1089,14 @@
 	}
 
 	async function _hydrateRowMeta(row: BrowserRow): Promise<void> {
+		// Without a rekordbox mapping there is nothing here worth a round-trip.
+		// Since #505 rb-meta answers 200 for such a track, but every field in
+		// that payload is a known constant (vendor local, vendor_id null,
+		// artwork/analysis false, cue_count 0, genre null) except quality and
+		// file_exists, which THIS ROW already carries inline from the listing.
+		// So the request could only tell us what we know. Skipping it also
+		// keeps a locally imported library off one fetch per visible row.
+		if (!row.has_rb_mapping) return;
 		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {

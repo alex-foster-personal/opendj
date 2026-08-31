@@ -118,6 +118,7 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
+                has_rb_mapping=row["has_rb_mapping"],
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)
