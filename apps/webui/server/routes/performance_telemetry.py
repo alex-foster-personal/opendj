@@ -24,6 +24,16 @@ DEFAULT_PROCESS_LOG_DIRS = (
 )
 MAX_PROCESS_RECORD_BYTES = 512 * 1024
 FRESH_PROCESS_SAMPLE_SECONDS = 45.0
+# Allowlist, not a denylist: the probe record carries command lines and PIDs,
+# and only these four aggregate numbers are safe to hand back to the browser.
+SAFE_TOTAL_KEYS = frozenset(
+    {
+        "physical_footprint_mb",
+        "summed_lifetime_peak_mb",
+        "cpu_percent",
+        "process_count",
+    }
+)
 
 
 class DeckPerformanceSample(BaseModel):
@@ -137,6 +147,41 @@ def _timestamp_age_seconds(value: object) -> float | None:
     return max(0.0, (datetime.now(UTC) - parsed).total_seconds())
 
 
+def _footprint_by_role(processes: object) -> dict[str, float]:
+    """Per-role megabytes only: the command strings never leave the probe log."""
+
+    by_role: dict[str, float] = {}
+    if not isinstance(processes, list):
+        return by_role
+    for process in processes:
+        if not isinstance(process, dict):
+            continue
+        role = process.get("role")
+        footprint = process.get("physical_footprint_mb")
+        if isinstance(role, str) and isinstance(footprint, (int, float)):
+            by_role[role] = round(by_role.get(role, 0.0) + float(footprint), 1)
+    return by_role
+
+
+def _safe_totals(totals: object) -> dict[str, float]:
+    """Allowlisted numeric totals, so a probe schema change cannot widen this."""
+
+    if not isinstance(totals, dict):
+        return {}
+    return {
+        key: value
+        for key, value in totals.items()
+        if key in SAFE_TOTAL_KEYS and isinstance(value, (int, float))
+    }
+
+
+def _kernel_pressure_level(machine: object) -> int | None:
+    if not isinstance(machine, dict):
+        return None
+    level = machine.get("kernel_memory_pressure_level")
+    return level if isinstance(level, int) else None
+
+
 @router.get("/processes")
 def latest_process_telemetry(request: Request) -> dict[str, object]:
     """Return a privacy-reduced Activity Monitor-style app breakdown."""
@@ -152,43 +197,12 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
             "reason": "native process probe has not written a sample",
         }
     age = _timestamp_age_seconds(record.get("timestamp"))
-    processes = record.get("processes")
-    by_role: dict[str, float] = {}
-    if isinstance(processes, list):
-        for process in processes:
-            if not isinstance(process, dict):
-                continue
-            role = process.get("role")
-            footprint = process.get("physical_footprint_mb")
-            if isinstance(role, str) and isinstance(footprint, (int, float)):
-                by_role[role] = round(by_role.get(role, 0.0) + float(footprint), 1)
-    totals = record.get("totals")
-    safe_totals = {
-        key: value
-        for key, value in (totals.items() if isinstance(totals, dict) else [])
-        if key
-        in {
-            "physical_footprint_mb",
-            "summed_lifetime_peak_mb",
-            "cpu_percent",
-            "process_count",
-        }
-        and isinstance(value, (int, float))
-    }
-    machine = record.get("machine")
-    pressure_level = (
-        machine.get("kernel_memory_pressure_level")
-        if isinstance(machine, dict)
-        else None
-    )
     return {
         "available": True,
         "timestamp": record.get("timestamp"),
         "age_seconds": None if age is None else round(age, 3),
         "stale": age is None or age > FRESH_PROCESS_SAMPLE_SECONDS,
-        "totals": safe_totals,
-        "by_role_mb": by_role,
-        "kernel_memory_pressure_level": (
-            pressure_level if isinstance(pressure_level, int) else None
-        ),
+        "totals": _safe_totals(record.get("totals")),
+        "by_role_mb": _footprint_by_role(record.get("processes")),
+        "kernel_memory_pressure_level": _kernel_pressure_level(record.get("machine")),
     }

@@ -1034,6 +1034,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/telemetry/client-samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture Client Performance
+         * @description Persist one compact semantic sample without blocking the audio path.
+         */
+        post: operations["capture_client_performance_api_v1_performance_telemetry_client_samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/telemetry/processes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Process Telemetry
+         * @description Return a privacy-reduced Activity Monitor-style app breakdown.
+         */
+        get: operations["latest_process_telemetry_api_v1_performance_telemetry_processes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/play-it/{playlist_id}/solve": {
         parameters: {
             query?: never;
@@ -2769,6 +2809,49 @@ export interface components {
              */
             surface: "desktop-shell" | "browser";
         };
+        /** ClientPerformanceSampleIn */
+        ClientPerformanceSampleIn: {
+            /** Anlz Entry Count */
+            anlz_entry_count: number;
+            /** Anlz Estimated Mb */
+            anlz_estimated_mb: number;
+            /** Audio Health Hz */
+            audio_health_hz?: number | null;
+            /**
+             * Audio Health Level
+             * @enum {string}
+             */
+            audio_health_level: "idle" | "ok" | "warn" | "crit";
+            /** Client Sample Id */
+            client_sample_id: string;
+            /** Client Session Id */
+            client_session_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /** Decks */
+            decks: components["schemas"]["DeckPerformanceSample"][];
+            /** Js Heap Mb */
+            js_heap_mb?: number | null;
+            /** Page Uptime Ms */
+            page_uptime_ms: number;
+            /** Pcm Estimated Mb */
+            pcm_estimated_mb: number;
+            /** Perf Event Count */
+            perf_event_count: number;
+            /** Prefetch Count */
+            prefetch_count: number;
+            /** Prefetch Mb */
+            prefetch_mb: number;
+            /** Route */
+            route: string;
+        };
+        /** ClientPerformanceSampleOut */
+        ClientPerformanceSampleOut: {
+            /** Event Id */
+            event_id: string;
+            /** Stored */
+            stored: boolean;
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -2924,6 +3007,35 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** DeckPerformanceSample */
+        DeckPerformanceSample: {
+            /** Audible */
+            audible: boolean;
+            /**
+             * Deck Id
+             * @enum {integer}
+             */
+            deck_id: 1 | 2 | 3 | 4;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Last Load Latency Ms */
+            last_load_latency_ms?: number | null;
+            /** Playing */
+            playing: boolean;
+            /** Processor Error */
+            processor_error?: string | null;
+            /** Stable Id */
+            stable_id?: string | null;
+            /**
+             * Stem Status
+             * @enum {string}
+             */
+            stem_status: "unavailable" | "ready" | "error";
+            /** Sync Error */
+            sync_error?: string | null;
+            /** Transport Pending */
+            transport_pending: boolean;
         };
         /**
          * EngineHealthOut
@@ -7513,6 +7625,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_client_performance_api_v1_performance_telemetry_client_samples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientPerformanceSampleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientPerformanceSampleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_process_telemetry_api_v1_performance_telemetry_processes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
