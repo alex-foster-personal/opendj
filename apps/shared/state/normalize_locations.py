@@ -330,8 +330,8 @@ def main(argv: list[str] | None = None) -> int:
 
 __all__ = [
     "CHANGELOG_TABLES",
-    "Collapse",
     "LOCATIONS_TABLE",
+    "Collapse",
     "LocationRow",
     "apply_collapses",
     "main",
