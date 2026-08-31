@@ -117,6 +117,10 @@ class PullResponse(BaseModel):
     #: client loops on it rather than inferring "done" from an empty page:
     #: dedup means a chunk can legitimately return fewer rows than entries.
     has_more: bool = False
+    #: Changelog entries in this chunk whose row is gone from the hub
+    #: (round 2 finding 4a). Non-zero means something hard-deleted a synced
+    #: row on the hub; the pull still serves everything else.
+    skipped: int = 0
 
 
 class StatusResponse(BaseModel):
@@ -382,6 +386,7 @@ def pull(
             seq=batch.seq,
             machines=_machine_models(conn),
             has_more=batch.has_more,
+            skipped=batch.skipped,
         )
 
 

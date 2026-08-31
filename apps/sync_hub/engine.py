@@ -34,6 +34,7 @@ Four behaviours that look surprising until you know why:
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ from apps.sync_hub.protocol import (
     RowChange,
     TableSpec,
 )
+
+log = logging.getLogger(__name__)
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 
@@ -295,7 +298,7 @@ def _changelog_rows(
     entries: Sequence[tuple[Any, Any, Any]],
     *,
     changelog: str,
-) -> list[RowChange]:
+) -> tuple[list[RowChange], int]:
     """Read the current state of every row named by ``entries``.
 
     A changelog records THAT a row changed, not what it looked like, so each
@@ -314,6 +317,9 @@ def _changelog_rows(
     Rows are returned in ``_APPLY_ORDER`` (parents before children), which
     the batching in :mod:`apps.sync_hub.client` depends on: a chunk boundary
     must never put a child row in an earlier request than its parent.
+
+    Returns the rows and the number of entries SKIPPED because the row they
+    name no longer exists (round 2 finding 4a; see the comment at the skip).
     """
     latest: dict[tuple[str, str], int] = {}
     for seq, table_name, row_pk in entries:
@@ -332,6 +338,7 @@ def _changelog_rows(
         latest[(table, key)] = int(seq)
 
     changes: list[RowChange] = []
+    skipped = 0
     for table_name, row_pk in latest:
         spec = SPEC_BY_TABLE.get(table_name)
         if spec is None:
@@ -347,14 +354,27 @@ def _changelog_rows(
             tuple(pk),
         ).fetchone()
         if row is None:
-            raise SyncApplyError(
-                f"{changelog} points at {table_name} row {row_pk} which no "
-                f"longer exists. Deletes in the sync set are soft (ADR 04 c4); "
-                f"something hard-deleted a synced row."
+            # Round 2 finding 4a's blast radius. Raising here answered EVERY
+            # pull with a 409 for as long as the entry existed, so one manual
+            # DELETE on the hub took the whole fleet offline with no repair
+            # path. The entry is bookkeeping and the row it names is gone;
+            # there is nothing to serialize and nothing a peer could do with
+            # it. Skip it, loudly. A soft delete is NOT this case: a
+            # tombstoned row still exists and still travels.
+            skipped += 1
+            log.error(
+                "%s points at %s row %s which no longer exists; skipping the "
+                "entry. Deletes in the sync set are soft (ADR 04 c4), so "
+                "something hard-deleted a synced row -- that row will not "
+                "reach any peer and the digest will say so.",
+                changelog,
+                table_name,
+                row_pk,
             )
+            continue
         changes.append(_row_change(conn, table_name, columns, spec, row))
     changes.sort(key=lambda change: (_APPLY_ORDER[change.table], change.pk))
-    return changes
+    return changes, skipped
 
 
 def spoke_push(
@@ -389,7 +409,10 @@ def spoke_push(
         f"WHERE seq > ? AND seq <= ? ORDER BY seq",
         (watermark.last_push_seq, top),
     ).fetchall()
-    return _changelog_rows(conn, entries, changelog=LOCAL_CHANGELOG_TABLE)
+    changes, _skipped = _changelog_rows(
+        conn, entries, changelog=LOCAL_CHANGELOG_TABLE
+    )
+    return changes
 
 
 # ----- apply ---------------------------------------------------------------
@@ -690,11 +713,17 @@ def spoke_apply(
 @dataclass(frozen=True)
 class ChangeBatch:
     """Rows a spoke should apply, the seq that consumed them, and whether
-    the hub still holds entries above that seq."""
+    the hub still holds entries above that seq.
+
+    ``skipped`` counts entries whose row is gone from the hub (round 2
+    finding 4a). Reported rather than inferred so an operator sees the number
+    without reading the hub's log.
+    """
 
     rows: list[RowChange]
     seq: int
     has_more: bool = False
+    skipped: int = 0
 
 
 def hub_changes_since(
@@ -723,10 +752,12 @@ def hub_changes_since(
     remaining = conn.execute(
         f"SELECT 1 FROM {HUB_CHANGELOG_TABLE} WHERE seq > ? LIMIT 1", (max_seq,)
     ).fetchone()
+    rows, skipped = _changelog_rows(conn, entries, changelog=HUB_CHANGELOG_TABLE)
     return ChangeBatch(
-        rows=_changelog_rows(conn, entries, changelog=HUB_CHANGELOG_TABLE),
+        rows=rows,
         seq=max_seq,
         has_more=remaining is not None,
+        skipped=skipped,
     )
 
 

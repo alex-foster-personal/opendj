@@ -837,6 +837,80 @@ def test_a_membership_write_is_offered_as_its_playlist_row(
         conn_b.close()
 
 
+# ----- 4a blast radius: a changelog entry whose row is gone -----------------
+
+
+def test_a_hard_deleted_hub_row_does_not_take_every_pull_offline(
+    hub: _TestClientTransport,
+    hub_dir: Path,
+    spoke_a: Path,
+    spoke_b: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The r1 probe: one manual DELETE on the hub, every spoke bricked.
+
+    Round 2 observed ``r1 attempt 0/1: HTTP 409 "hub_changelog points at
+    tracks row [\\"trk-1\\"] which no longer exists"`` -- the same 409 on
+    every retry, for every spoke, with no repair path. The entry is
+    bookkeeping and the row it names is gone, so there is nothing to
+    serialize: the pull skips it, says how many it skipped, and shouts in
+    the hub's log.
+    """
+    _seed_common_track((spoke_a,), "trk-gone")
+    conn_a = _open(spoke_a)
+    try:
+        _insert_track(conn_a, "trk-kept", title="kept", updated_at=_T1, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+
+    hub_conn = _open(hub_dir)
+    try:
+        # Not a tombstone: a hard DELETE, which ADR 04 c4 forbids and round 1
+        # finding 4a found in shipped UI code.
+        hub_conn.execute("DELETE FROM tracks WHERE stable_id = 'trk-gone'")
+    finally:
+        hub_conn.close()
+
+    with caplog.at_level("ERROR", logger="apps.sync_hub.engine"):
+        received = _sync(spoke_b, hub, "spoke-b")
+    assert received.applied >= 1, "the surviving rows did not reach B"
+    assert any(
+        "which no longer exists" in record.getMessage() for record in caplog.records
+    ), "the hub dropped an entry silently"
+
+    conn_b = _open(spoke_b)
+    try:
+        assert _track_title(conn_b, "trk-kept") == "kept"
+        assert _track_title(conn_b, "trk-gone") is None
+    finally:
+        conn_b.close()
+
+    # And it stays serviceable: a second spoke, and a second sync, both work.
+    assert _sync(spoke_b, hub, "spoke-b").pulled >= 0
+
+
+def test_the_pull_reports_how_many_entries_it_skipped(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """``skipped`` is observed on the wire, not inferred from a log line."""
+    _seed_common_track((spoke_a,), "trk-gone")
+    result = _sync(spoke_a, hub, "spoke-a")
+
+    hub_conn = _open(hub_dir)
+    try:
+        hub_conn.execute("DELETE FROM tracks WHERE stable_id = 'trk-gone'")
+    finally:
+        hub_conn.close()
+
+    payload = hub.get(
+        f"{client.API_PREFIX}/pull",
+        {"machine_id": result.machine_id, "since_seq": "0"},
+    )
+    assert payload["skipped"] == 1
+    assert payload["rows"] == []
+
+
 # ----- finding 2: timestamp normalization ----------------------------------
 
 
