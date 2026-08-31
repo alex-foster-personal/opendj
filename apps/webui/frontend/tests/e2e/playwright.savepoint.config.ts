@@ -49,10 +49,28 @@ const engineCmd = (
 	.replaceAll('{port}', String(api.port))
 	.replaceAll('{data_dir}', dataDir);
 
+/**
+ * Which daemon is booting, as far as GET /api/v1/build-info is concerned.
+ *
+ * Only the rebuilt engine serves that route (apps/engine_core/build_info.py).
+ * The legacy webui server predates it and answers 404. The frontend asks for
+ * it on every page (lib/rb/build-identity.ts) and renders the 404 as a named
+ * "this daemon predates the build stamp" fault, deliberately and with no
+ * fallback -- so under the legacy engine that 404 is correct behaviour, not a
+ * regression. The smoke's blanket "no failed requests" gate counted it as a
+ * problem anyway, which left this gate red on pristine main for every caller.
+ *
+ * A flag rather than a blanket exemption in the spec, because the engine that
+ * DOES owe a build identity must still fail the gate when it stops serving
+ * one. Consumed by EXPECTED_RESOURCE_FAILURES in savepoint-smoke.spec.ts.
+ */
+const engineServesBuildInfo = engineCmd.includes('apps.engine_core');
+
 // Playwright re-evaluates this config inside every worker, so exporting the
 // resolved origins here is what makes them visible to the spec itself.
 process.env.SAVEPOINT_SMOKE_BASE_URL = frontend.origin;
 process.env.SAVEPOINT_SMOKE_API_BASE = api.origin;
+process.env.SAVEPOINT_SMOKE_ENGINE_SERVES_BUILD_INFO = engineServesBuildInfo ? '1' : '';
 
 export default defineConfig({
 	testDir: '.',
