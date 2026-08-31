@@ -60,6 +60,16 @@ export const STRETCH_COMMAND_TIMEOUT_MS = 5_000;
  * (bass and tonal stability). That trade is gated on the cross-lane quality
  * methodology, not on this file.
  *
+ * GATE EVALUATED Tue 1 Sep 2026, and 30 was REFUSED. Against the committed
+ * 162-cell table (`ops/quality/stretch/report.md`) `blockMs 30` is worse than
+ * baseline on all three ranking metrics and at all nine conditions: mean LSD
+ * 3.06 -> 4.30dB, worst 5.03 -> 5.74dB, and unity LSD (the one disqualifier
+ * with a stated definition, D1) 1.94 -> 3.97dB. No joint threshold exists yet
+ * (D2-D7 read DEFINITIONS UNAVAILABLE), so the gate cannot be passed, only
+ * asserted. `blockMs 60` is the surviving candidate at a 31.4ms floor for
+ * +0.19dB mean LSD, still gated on a joint D1 threshold and the maintainer's blind A/B.
+ * Full evaluation: `.planning/latency-round2-design.md` appendix E.
+ *
  * THREE rules if it is ever flipped:
  *  1. GLOBAL ONLY. Every deck and every stem branch must get the same block, or
  *     participants have different onset ramps and a beat-sync group's first
