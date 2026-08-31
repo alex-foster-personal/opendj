@@ -289,24 +289,29 @@ def test_publish_queue_is_bounded_so_ram_cannot_run_away(
 
 # ----- bifrost2 listing parsers ------------------------------------------------
 
-_LISTING = """ Volume in drive D is Data
- Directory of D:\\asset-store\\stems\\htdemucs-ov0.1\\abc123
-
-24/07/2026  10:08    <DIR>          .
-24/07/2026  10:08    <DIR>          ..
-24/07/2026  10:08        74,182,344 vocals.flac
-24/07/2026  10:08         1,204 manifest.json
-               2 File(s)     74,183,548 bytes
+# bifrost2's SSH shell is MSYS2/MinGW64 bash, not Windows cmd. This fixture
+# used to hold a cmd `dir` table, which the remote never actually emits, so
+# both parsers were being proved against a format that cannot occur -- and the
+# asset-store layer was inert in production while these tests passed. Captured
+# from `ls -la --time-style=long-iso` on bifrost2, Sun 31 Aug 2026.
+_LISTING = """total 72452
+drwxr-xr-x 1 steve 197121        0 2026-07-24 10:08 .
+drwxr-xr-x 1 steve 197121        0 2026-07-24 10:08 ..
+-rw-r--r-- 1 steve 197121 74182344 2026-07-24 10:08 vocals.flac
+-rw-r--r-- 1 steve 197121     1204 2026-07-24 10:08 manifest.json
 """
 
 
-def test_remote_sizes_reads_comma_grouped_bytes() -> None:
+def test_remote_sizes_reads_the_byte_column() -> None:
     sizes = remote_sizes(_LISTING)
     assert sizes == {"vocals.flac": 74_182_344, "manifest.json": 1_204}
 
 
 def test_remote_dirs_drops_dot_entries() -> None:
-    listing = _LISTING.replace("74,182,344 vocals.flac", "<DIR>          bundle1")
+    listing = _LISTING.replace(
+        "-rw-r--r-- 1 steve 197121 74182344 2026-07-24 10:08 vocals.flac",
+        "drwxr-xr-x 1 steve 197121        0 2026-07-24 10:08 bundle1",
+    )
     assert remote_dirs(listing) == {"bundle1"}
 
 
