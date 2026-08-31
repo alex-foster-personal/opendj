@@ -45,8 +45,10 @@
 	const PANEL_W = 272;
 	const PANEL_H = 300;
 
-	let panelPos: PanelPos = $state({ x: 0, y: 0 });
-	let panelPosRestored = $state(false);
+	/** Null until the panel first opens: the position must be computed against
+	 * a LIVE viewport. Computing it at mount clamps to {0,0} when the tab
+	 * mounts hidden or before layout (innerWidth reads 0). */
+	let panelPos: PanelPos | null = $state(null);
 	let dragging = false;
 	let dragOffset: PanelPos = { x: 0, y: 0 };
 
@@ -76,21 +78,24 @@
 	onMount(() => {
 		pathname = window.location.pathname;
 		void hydrateFeedback();
-		const stored = _readStoredPos();
-		panelPos =
-			stored ??
-			clampPanelPos(
-				{ x: window.innerWidth / 2 - PANEL_W / 2, y: 34 },
-				{ w: PANEL_W, h: PANEL_H },
-				{ w: window.innerWidth, h: window.innerHeight }
-			);
-		panelPosRestored = true;
 		const flush = () => flushFeedbackSaves();
 		window.addEventListener('pagehide', flush);
 		return () => {
 			flushFeedbackSaves();
 			window.removeEventListener('pagehide', flush);
 		};
+	});
+
+	// Position the panel the first time it opens, against the live viewport.
+	$effect(() => {
+		if (!feedbackState.panelOpen || panelPos !== null) return;
+		panelPos =
+			_readStoredPos() ??
+			clampPanelPos(
+				{ x: window.innerWidth / 2 - PANEL_W / 2, y: 34 },
+				{ w: PANEL_W, h: PANEL_H },
+				{ w: window.innerWidth, h: window.innerHeight }
+			);
 	});
 
 	function _readStoredPos(): PanelPos | null {
@@ -108,6 +113,7 @@
 	}
 
 	function _persistPos(): void {
+		if (panelPos === null) return;
 		try {
 			window.localStorage.setItem(PANEL_POS_KEY, serializePanelPos(panelPos));
 		} catch {
@@ -117,6 +123,7 @@
 
 	// ----- panel drag -----------------------------------------------------
 	function handleDragDown(e: PointerEvent): void {
+		if (panelPos === null) return;
 		dragging = true;
 		dragOffset = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -292,7 +299,7 @@
 {/if}
 
 <!-- the review-todo panel -->
-{#if feedbackState.panelOpen && panelPosRestored}
+{#if feedbackState.panelOpen && panelPos !== null}
 	<div
 		class="fb-panel"
 		style={`left:${panelPos.x}px;top:${panelPos.y}px;width:${PANEL_W}px`}
