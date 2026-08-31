@@ -360,6 +360,7 @@ class SqliteBackend:
                     "SELECT stable_id, title, artists_json, album, "
                     "       duration_ms, file_path, created_at, updated_at "
                     "FROM tracks "
+                    "WHERE deleted_at IS NULL "
                     "ORDER BY stable_id"
                 )
             )
@@ -720,7 +721,8 @@ class SqliteBackend:
                 conn.execute("BEGIN IMMEDIATE")
                 rows = list(conn.execute(
                     "SELECT stable_id, title, artists_json, album, duration_ms, "
-                    "file_path, created_at, updated_at FROM tracks ORDER BY stable_id",
+                    "file_path, created_at, updated_at FROM tracks "
+                    "WHERE deleted_at IS NULL ORDER BY stable_id",
                 ))
                 fields_by_id = _fetch_fields(conn, [row["stable_id"] for row in rows])
                 tracks = [

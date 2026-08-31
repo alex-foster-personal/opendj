@@ -140,17 +140,17 @@ def test_load_local_tracks_from_sqlite(tmp_path) -> None:
             stable_id TEXT PRIMARY KEY, stable_id_tier TEXT, title TEXT,
             artists_json TEXT, album TEXT, isrc TEXT, duration_ms INTEGER,
             file_path TEXT, content_hash TEXT,
-            created_at TEXT, updated_at TEXT
+            created_at TEXT, updated_at TEXT, deleted_at TEXT
         )"""
     )
     conn.execute(
-        "INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         ("s1", "isrc", "Hello", json.dumps(["A", "B"]), "Alb", "USABC2500001",
-         200000, "/x.mp3", None, "2026-01-01", "2026-01-01"),
+         200000, "/x.mp3", None, "2026-01-01", "2026-01-01", None),
     )
     conn.execute(
-        "INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        ("s2", "inferred", "Bad", "{not json", "", None, 1000, None, None, "x", "x"),
+        "INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("s2", "inferred", "Bad", "{not json", "", None, 1000, None, None, "x", "x", None),
     )
     conn.commit()
 

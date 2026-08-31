@@ -48,6 +48,7 @@ Acceptance criteria, one test each:
 """
 from __future__ import annotations
 
+import ast
 import re
 import sqlite3
 from pathlib import Path
@@ -56,16 +57,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.reconcile.match import load_track_rows
+from apps.reconcile.reacquire import load_playlist_memberships
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.sync_stamp import encode_row_pk
 from apps.shared.state.writer import StateWriter
 from apps.smartlists.evaluator import evaluate
+from apps.spotify.matcher_adapter import load_local_tracks
 from apps.stems.cli import _duration_from_state, resolve_audio_path
 from apps.sync_hub import client, service
 from apps.vocals.cli import Ctx as VocalsCtx
 from apps.vocals.cli import load_tracks as vocals_load_tracks
 from apps.webui import crate_sync
+from apps.webui.server import search_index
 from apps.webui.server.backend import NotFoundError
 from apps.webui.server.playlist_store import PlaylistStore
 from apps.webui.server.sqlite_backend import SqliteBackend
@@ -726,3 +731,310 @@ def test_upsert_track_reactivates_a_tombstoned_row(
         )
     finally:
         conn.close()
+
+
+# ----- round 4 (R5): every SELECT of a synced table is deleted_at-honest ----
+#
+# .planning/cloudsync-round3-adversarial.md finding R5 and Part 3 item 4. The
+# round 3 fixes closed five named readers; the round 2 review found the tail by
+# grepping "FROM tracks with no deleted_at anywhere". This guard makes that a
+# permanent, structural check across ALL eight synced tables: a file that reads
+# a synced table must filter deleted_at on a read of that table, OR carry a
+# reviewed exemption below. It is the read-side twin of
+# test_no_hard_delete_on_a_synced_table_outside_the_allowlist.
+
+
+def _sql_text(node: ast.AST) -> str | None:
+    """The literal SQL a string node carries, or None if it is not one.
+
+    Adjacent string literals Python already merged into one ``Constant``.
+    An f-string (``JoinedStr``) has its literal parts kept and every
+    ``{placeholder}`` replaced by a marker that cannot read as a table name --
+    so a dynamic ``FROM {spec.name}`` is invisible to the FROM regex, which is
+    correct: the sync engine reads synced tables dynamically and MUST see
+    tombstones. String ``+`` concatenation of two literals is folded too.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+            else:
+                parts.append(" {} ")
+        return "".join(parts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _sql_text(node.left), _sql_text(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _iter_sql_strings(tree: ast.AST) -> list[str]:
+    """Every top-level SQL string in ``tree`` (nested parts not double-counted)."""
+    out: list[str] = []
+
+    def visit(node: ast.AST) -> None:
+        text = _sql_text(node)
+        if text is not None:
+            out.append(text)
+            return  # a string node: do not descend into its own parts
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    visit(tree)
+    return out
+
+
+_FROM_RE = re.compile(r'\bFROM\s+"?(\w+)"?')
+
+# The subset of _SYNCED_TABLES whose ROWS are the user-visible or sync-visible
+# ENTITIES a listing can resurface once tombstoned: a track, a playlist, a
+# playlist membership. These are the tables a soft-delete is actually stamped
+# onto today (playlists + memberships via StateWriter.delete_playlist; tracks
+# via the future track-delete path that round 3 already fixed readers against
+# defensively). The other synced tables (track_vendor_ids, track_fields,
+# track_locations, sync_policies, playlist_pins) carry a deleted_at column --
+# v6 added it uniformly -- but nothing stamps it INDEPENDENTLY of a parent
+# entity, and every read of them is a per-entity join scoped by an
+# already-filtered parent, so a listing-resurfacing bug is not reachable
+# through them. When one of those tables gains its own tombstoning, add it
+# here and re-triage its readers.
+_ENTITY_TABLES: frozenset[str] = frozenset({
+    "tracks", "playlists", "playlist_memberships",
+})
+
+
+def _synced_reads(sql_strings: list[str]) -> tuple[set[str], set[str]]:
+    """(entity tables read, entity tables read WITH a deleted_at filter).
+
+    A "read" is a SELECT that names an entity table after FROM. ``deleted_at``
+    anywhere in the same statement string counts as filtering every entity
+    table that statement reads -- coarse per-statement, but rolled up
+    per-(file, table): a file passes for table T when SOME read of T filters
+    deleted_at, so a legitimate PK-exact lookup (``WHERE stable_id = ?``)
+    alongside a filtered listing does not each need its own exemption. It is
+    an UNFILTERED listing with no filtered sibling read that trips this.
+    """
+    read: set[str] = set()
+    filtered: set[str] = set()
+    for sql in sql_strings:
+        if "SELECT" not in sql.upper():
+            continue
+        tables = {t for t in _FROM_RE.findall(sql) if t in _ENTITY_TABLES}
+        if not tables:
+            continue
+        read |= tables
+        if "deleted_at" in sql:
+            filtered |= tables
+    return read, filtered
+
+
+# (relative file, entity table) reads left unfiltered on purpose. Every entry
+# is a read that does NOT (and need not) filter deleted_at, with the reason.
+# This is the read-side counterpart to _ALLOWED_HARD_DELETES; keep it narrow
+# and keep the reasons honest. Writers (StateWriter, the Spotify importer, the
+# rekordbox ingest) are NOT here: their entity reads already carry
+# ``deleted_at`` -- they read it to reactivate a tombstone -- so they pass the
+# guard on their own rather than needing an exemption.
+_ALLOWED_UNFILTERED_READS: frozenset[tuple[str, str]] = frozenset({
+    # PK-exact lookups for an already-resolved id, not listings. A caller that
+    # already holds a stable_id got it from a filtered listing; re-filtering
+    # here would only turn a tombstoned-but-referenced row into a confusing
+    # "not found" instead of a clear tombstone.
+    #   hydration: SELECT content_hash FROM tracks WHERE stable_id = ?
+    #   (its listing reads DO filter deleted_at; only this PK lookup does not).
+    ("apps/cloud/hydration.py", "tracks"),
+    #   locations.pick_playable: SELECT duration_ms, file_path FROM tracks
+    #   WHERE stable_id = ? -- a per-track fetch for the audio picker.
+    ("apps/shared/state/locations.py", "tracks"),
+    #   provenance: SELECT ... FROM tracks WHERE stable_id = ? for a join key
+    #   (round 3 R5 judged this one safe explicitly).
+    ("apps/shared/state/provenance.py", "tracks"),
+
+    # Migration / DDL SQL. The v4->v6 rebuild and its INSERT ... SELECT copies
+    # predate deleted_at semantics and MUST carry every row across the rebuild;
+    # filtering would drop tombstones the fleet still needs to converge on.
+    ("apps/shared/state/schema.py", "tracks"),
+    ("apps/engine_core/store/schema.py", "tracks"),
+
+    # The launcher DB is a DERIVED copy, not state.db. bootstrap_db.py projects
+    # state.db INTO the launcher's own sqlite file and already applies
+    # WHERE deleted_at IS NULL at that boundary (bootstrap_db.py ~line 283, a
+    # dynamic where_sql the AST cannot see as a literal). latency_check.py then
+    # reads that already-filtered launcher table, whose FTS mirror does not even
+    # carry a deleted_at column. One hop removed from the synced table.
+    ("apps/launcher/scripts/bootstrap_db.py", "tracks"),
+    ("apps/launcher/scripts/latency_check.py", "tracks"),
+
+    # play_orders reads memberships for ONE already-resolved playlist ordered by
+    # position (SELECT stable_id, position FROM playlist_memberships WHERE
+    # playlist_id = ?). Membership rows are only ever tombstoned as a set when
+    # their whole playlist is deleted (StateWriter edits via hard REPLACE), and
+    # a deleted playlist's play order is not requested. When membership-level
+    # tombstoning firms up (design_decision_08.md point 8b, open), the owner
+    # should add the filter; flagged in the round 4 lane report.
+    ("apps/shared/play_orders/store.py", "playlist_memberships"),
+})
+
+
+def test_every_synced_table_read_filters_deleted_at_or_is_allowlisted() -> None:
+    """Round 4 R5: the read-side guard. A file that SELECTs a synced table
+    must filter ``deleted_at`` on a read of that table, or carry a reviewed
+    exemption in ``_ALLOWED_UNFILTERED_READS``. This is what stops 4b's tail
+    from silently regrowing a listing that resurfaces a tombstoned row.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    unexpected: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for path in _apps_py_files(repo_root):
+        rel = path.relative_to(repo_root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        read, filtered = _synced_reads(_iter_sql_strings(tree))
+        for table in read - filtered:
+            seen.add((rel, table))
+            if (rel, table) not in _ALLOWED_UNFILTERED_READS:
+                unexpected.append((rel, table))
+
+    assert not unexpected, (
+        "synced-table read with no deleted_at filter and no exemption: "
+        f"{sorted(unexpected)}. Add `WHERE deleted_at IS NULL` to the read "
+        "(see apps/webui/server/search_index.py), or -- only if the read must "
+        "see tombstones (a writer, the sync layer, an admin dump, a derived "
+        "DB) -- add it to _ALLOWED_UNFILTERED_READS with the reason."
+    )
+
+    # Keep the exemption list honest: an entry no longer matched by any real
+    # read is stale and must be pruned, exactly like _ALLOWED_HARD_DELETES.
+    stale = _ALLOWED_UNFILTERED_READS - seen
+    assert not stale, (
+        f"allowlisted unfiltered read(s) no longer found in source: "
+        f"{sorted(stale)}. Remove them from _ALLOWED_UNFILTERED_READS."
+    )
+
+
+# ----- round 4 (R5): the four readers named in finding R5, behaviorally -----
+#
+# The structural guard above proves the SQL filters; these prove the behavior.
+# Finding R5's reproduction was user-visible: `webui search hits=['trk-live',
+# 'trk-dead']` -- a track soft-deleted on one machine, searchable on every
+# other machine's webui. Each test below tombstones a row and asserts the
+# reader no longer surfaces it.
+
+
+def _seed_titled_track(
+    conn: sqlite3.Connection, stable_id: str, title: str, *, isrc: str | None = None
+) -> None:
+    writer = StateWriter(conn, FakeEventBus(), actor="test")
+    try:
+        writer.upsert_track(
+            stable_id=stable_id, stable_id_tier="inferred", title=title,
+            artists=["A"], album=None, isrc=isrc, duration_ms=222_000,
+            file_path=None,
+        )
+    finally:
+        writer.close()
+
+
+def test_deleted_track_hidden_from_webui_search(state_db_path: Path) -> None:
+    """apps/webui/server/search_index.py -- the R5 reproduction verbatim: a
+    tombstoned track must not appear in the FTS search results the webui
+    serves on every machine.
+    """
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _seed_titled_track(conn, "trk-live", "Anthem Live")
+        _seed_titled_track(conn, "trk-dead", "Anthem Dead")
+        _tombstone_track(conn, "trk-dead")
+    finally:
+        conn.close()
+
+    hits, total = search_index.search(state_db_path, "anthem", limit=10)
+    ids = {stable_id for stable_id, _ctx in hits}
+    assert ids == {"trk-live"}, (
+        f"search returned {ids!r} -- a tombstoned track is still searchable "
+        "(finding R5's exact reproduction)"
+    )
+    assert total == 1
+
+
+def test_deleted_track_hidden_from_spotify_matcher_targets(
+    state_db_path: Path,
+) -> None:
+    """apps/spotify/matcher_adapter.py -- a Spotify import must not match
+    against a tombstoned local track.
+    """
+    conn = state_db.open_rw(state_db_path)
+    try:
+        _seed_titled_track(conn, "trk-live", "Live", isrc="USxx11111111")
+        _seed_titled_track(conn, "trk-dead", "Dead", isrc="USxx22222222")
+        _tombstone_track(conn, "trk-dead")
+        targets = load_local_tracks(conn)
+    finally:
+        conn.close()
+    ids = {t.stable_id for t in targets}
+    assert ids == {"trk-live"}, (
+        f"load_local_tracks returned {ids!r} -- a tombstoned track is still a "
+        "match target for the Spotify importer"
+    )
+
+
+def test_deleted_track_hidden_from_reconcile_load_track_rows(
+    tmp_path: Path,
+) -> None:
+    """apps/reconcile/match.py -- the link-repair classifier must not bucket a
+    tombstoned track (it would land in a relink plan or a reacquire worklist).
+    """
+    db_path = tmp_path / "state" / "state.db"
+    db_path.parent.mkdir(parents=True)
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_titled_track(conn, "trk-live", "Live")
+        _seed_titled_track(conn, "trk-dead", "Dead")
+        _tombstone_track(conn, "trk-dead")
+    finally:
+        conn.close()
+
+    rows = load_track_rows(db_path, rb_db=None)
+    ids = {row.stable_id for row in rows}
+    assert ids == {"trk-live"}, (
+        f"load_track_rows returned {ids!r} -- a tombstoned track is still "
+        "classified for link repair"
+    )
+
+
+def test_deleted_playlist_hidden_from_reacquire_memberships(
+    tmp_path: Path,
+) -> None:
+    """apps/reconcile/reacquire.py -- a tombstoned playlist must not lend its
+    name to a track's want-count in the reacquisition worklist.
+    """
+    db_path = tmp_path / "state" / "state.db"
+    db_path.parent.mkdir(parents=True)
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_titled_track(conn, "trk-1", "Wanted")
+        writer = StateWriter(conn, FakeEventBus(), actor="test")
+        try:
+            writer.insert_playlist(
+                playlist_id="pl-live", name="Live List",
+                vendor="webui", vendor_pl_id="pl-live",
+            )
+            writer.set_playlist_memberships("pl-live", ["trk-1"])
+            writer.insert_playlist(
+                playlist_id="pl-dead", name="Dead List",
+                vendor="webui", vendor_pl_id="pl-dead",
+            )
+            writer.set_playlist_memberships("pl-dead", ["trk-1"])
+            assert writer.delete_playlist("pl-dead") is True
+        finally:
+            writer.close()
+    finally:
+        conn.close()
+
+    memberships = load_playlist_memberships(db_path)
+    assert memberships.get("trk-1") == ["Live List"], (
+        f"reacquire saw {memberships.get('trk-1')!r} -- a tombstoned playlist "
+        "still inflates the want-count"
+    )

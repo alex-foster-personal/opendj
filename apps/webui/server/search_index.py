@@ -135,7 +135,8 @@ def _read_source(
     state.row_factory = sqlite3.Row
     try:
         tracks = state.execute(
-            "SELECT stable_id, title, artists_json FROM tracks"
+            "SELECT stable_id, title, artists_json FROM tracks "
+            "WHERE deleted_at IS NULL"
         ).fetchall()
         eav: dict[str, dict[str, str]] = {}
         placeholders = ",".join("?" * len(_EAV_FIELDS))

@@ -249,7 +249,8 @@ def load_local_tracks(conn: sqlite3.Connection) -> list[LocalTrack]:
     import json as _json
 
     rows = conn.execute(
-        "SELECT stable_id, isrc, title, artists_json, duration_ms FROM tracks"
+        "SELECT stable_id, isrc, title, artists_json, duration_ms FROM tracks "
+        "WHERE deleted_at IS NULL"
     ).fetchall()
     out: list[LocalTrack] = []
     for stable_id, isrc, title, artists_json, duration_ms in rows:
