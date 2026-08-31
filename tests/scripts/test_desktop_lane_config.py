@@ -342,17 +342,19 @@ def test_notary_profile_without_a_signing_identity_is_refused() -> None:
     just = shutil.which("just")
     if just is None:
         pytest.skip("just is not installed")
+    # Scrub any ambient MDT_LANE_LABEL: this test targets the notary/signing
+    # guard, not OPS-09's lane double-intent gate, and must not depend on
+    # the invoking shell being free of a stray lane label.
+    env = {k: v for k, v in os.environ.items() if k != "MDT_LANE_LABEL"}
+    env["MDT_MACOS_NOTARY_KEYCHAIN_PROFILE"] = "some-profile"
+    env["MDT_MACOS_SIGNING_IDENTITY"] = ""
     result = subprocess.run(
         [just, "dmg"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
-        env={
-            **os.environ,
-            "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE": "some-profile",
-            "MDT_MACOS_SIGNING_IDENTITY": "",
-        },
+        env=env,
     )
     assert result.returncode != 0
     combined = result.stdout + result.stderr
