@@ -1,0 +1,71 @@
+"""The App Store build is a CONFIG of this build, and these pin what that means.
+
+  [if] sandbox detection reads a build constant instead of the process
+       container, a mis-packaged lane gets the wrong behaviour
+       -> test_detection_uses_the_process_not_a_build_flag
+  [if] /Volumes enumeration returns empty instead of refusing when sandboxed,
+       a user is told every external drive is offline
+       -> test_volume_scan_refuses_rather_than_returning_empty
+  [if] the shipped store flag file names a flag nobody declared, the engine
+       refuses to boot -> test_the_shipped_store_profile_only_sets_real_flags
+  [if] usb.export stops defaulting on, every non-store build loses USB
+       -> test_usb_export_is_on_by_default
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from apps.feature_flags.store import FLAGS
+from apps.shared import sandbox
+
+STORE_PROFILE = (
+    Path(__file__).resolve().parents[2]
+    / "apps/desktop/src-tauri/feature-flags.appstore.json"
+)
+
+
+def test_detection_uses_the_process_not_a_build_flag() -> None:
+    assert sandbox.is_sandboxed({"HOME": "/Users/dj"}) is False
+    assert sandbox.is_sandboxed({"APP_SANDBOX_CONTAINER_ID": "com.opendj.desktop"})
+    assert sandbox.is_sandboxed(
+        {"HOME": "/Users/dj/Library/Containers/com.opendj.desktop/Data"}
+    )
+
+
+def test_volume_scan_refuses_rather_than_returning_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point of SAND-02: silence is the bug, not the blocked read."""
+    from apps.reconcile import match
+
+    monkeypatch.setattr(sandbox, "is_sandboxed", lambda *a, **k: True)
+    monkeypatch.setattr(match, "refuse_if_sandboxed", sandbox.refuse_if_sandboxed)
+    with pytest.raises(sandbox.SandboxRefusal, match="App Store build"):
+        match.mounted_volume_names()
+
+
+def test_the_shipped_store_profile_only_sets_real_flags() -> None:
+    """An undeclared key in the file makes the engine refuse to boot."""
+    declared = {flag.flag_id for flag in FLAGS}
+    profile = json.loads(STORE_PROFILE.read_text())
+    unknown = sorted(set(profile) - declared)
+    assert not unknown, (
+        f"feature-flags.appstore.json sets undeclared flag(s): {unknown}. The "
+        "flag store raises FlagFileError on an undeclared key, so this would "
+        "stop the store build from starting at all."
+    )
+    assert all(isinstance(v, bool) for v in profile.values())
+
+
+def test_the_store_profile_turns_usb_export_off() -> None:
+    assert json.loads(STORE_PROFILE.read_text())["usb.export"] is False
+
+
+def test_usb_export_is_on_by_default() -> None:
+    """Off in the store build only. Every other build keeps USB."""
+    usb = next(f for f in FLAGS if f.flag_id == "usb.export")
+    assert usb.default is True
