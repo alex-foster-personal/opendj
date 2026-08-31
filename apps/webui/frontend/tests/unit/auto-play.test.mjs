@@ -3,9 +3,13 @@ import { before, describe, it } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
+/** The chain/pick algebra lives in its own module; auto-play.ts re-exports only
+ * the part with static importers, so reach internals are read from the owner. */
+let chain;
 
 before(async () => {
 	mod = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
+	chain = await loadTypeScriptModule('src/lib/rb/auto-play-chain.ts');
 });
 
 function deck(partial) {
@@ -393,7 +397,7 @@ describe('auto-play maximize reach (slack path)', () => {
 	});
 
 	it('over budget falls back to greedy earliest with fell_back', () => {
-		const { pickNextMaximizingReach, AUTO_PLAY_REACH_MAX_STEPS } = mod;
+		const { pickNextMaximizingReach, AUTO_PLAY_REACH_MAX_STEPS } = chain;
 		assert.equal(AUTO_PLAY_REACH_MAX_STEPS >= 50_000, true);
 		const many = [row('a', '8A', 120), row('b', '8A', 121), row('c', '8A', 119)];
 		const pick = pickNextMaximizingReach({
