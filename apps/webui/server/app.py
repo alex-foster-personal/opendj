@@ -39,6 +39,7 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
 )
 from .routes import analysis as analysis_routes
+from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -311,6 +312,7 @@ def create_app(
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
+    app.include_router(auth_routes.router, prefix=api_prefix)
     app.include_router(ingest_routes.router, prefix=api_prefix)
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)

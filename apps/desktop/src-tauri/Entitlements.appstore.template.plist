@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE, not a usable plist. scripts/ship_appstore.sh renders it with the
+  real team id and bundle identifier, because codesign does NOT expand
+  variables the way Xcode does: handing this file to codesign verbatim signs
+  the literal string "$TEAM_ID" into the binary and the App Store rejects it.
+
+  These are the entitlements for the MAIN app only. The bundled engine
+  (Contents/Resources/payload/bin/opendj-engine and every Mach-O under it) is
+  signed with Entitlements.appstore.inherit.template.plist instead: a child of
+  a sandboxed app inherits the parent's container and MUST carry
+  com.apple.security.inherit and NOTHING else.
+
+  Every key below is here because something in this app stops working without
+  it. Do not add a key speculatively: App Review asks what each one is for,
+  and an unused entitlement is a rejection with no upside.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Mandatory for the Mac App Store. Nothing else on this list matters
+         until this is true, and everything else on this list exists to buy
+         back a capability this key takes away. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Both required by App Store Connect, both team-specific, which is the
+         entire reason this file is a template. -->
+    <key>com.apple.application-identifier</key>
+    <string>$TEAM_ID.$BUNDLE_ID</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>$TEAM_ID</string>
+
+    <!-- The shell spawns the engine on 127.0.0.1 and then talks to it, so it
+         is both server and client of its own loopback socket. Sandboxed apps
+         may bind loopback with network.server; without it the engine fails to
+         bind and the window opens on nothing. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- The ONLY way a sandboxed build reaches a music library, a rekordbox
+         database or a USB export: the user picks it in an open panel and the
+         app holds a security-scoped bookmark afterwards. app-scope bookmarks
+         are what make that grant survive a relaunch. Neither key grants
+         anything on its own; see the SANDBOX REACHABILITY section of
+         .agents/skills/ship-appstore/SKILL.md for the code that must change
+         before these are any use. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+</dict>
+</plist>
