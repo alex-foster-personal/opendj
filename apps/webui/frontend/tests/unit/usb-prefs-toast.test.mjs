@@ -98,16 +98,29 @@ test('pushToast honours a caller-supplied dismiss delay', async () => {
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts');
 	assert.equal(stores.TOAST_DEFAULT_MS, 5000);
 
-	const delays = [];
+	// pushToast also records the toast into the perf-event ring, and that ring
+	// arms its own coalesced localStorage flush on a timer. The flush is not a
+	// dismiss timer, so it is filtered out by callback identity rather than
+	// allowed to masquerade as a caller-supplied delay: a dismissal is an
+	// anonymous arrow, the flush is the named flushPerfEventLog.
+	const timers = [];
 	const realSetTimeout = globalThis.setTimeout;
 	globalThis.setTimeout = (fn, ms) => {
-		delays.push(ms);
+		timers.push({ name: fn.name, ms });
 		return 0;
 	};
 	try {
 		stores.pushToast('default delay', 'info');
 		stores.pushToast('usb detected', 'info', 1200);
-		assert.deepEqual(delays, [5000, 1200]);
+		assert.deepEqual(
+			timers.filter((timer) => timer.name === '').map((timer) => timer.ms),
+			[5000, 1200]
+		);
+		assert.ok(
+			timers.some((timer) => timer.name.startsWith('flushPerfEventLog')),
+			'if the toast stops reaching the perf ring then a dismissed toast leaves no ' +
+				'trace behind, which is why recordPerfEvent sits in pushToast at all'
+		);
 	} finally {
 		globalThis.setTimeout = realSetTimeout;
 	}

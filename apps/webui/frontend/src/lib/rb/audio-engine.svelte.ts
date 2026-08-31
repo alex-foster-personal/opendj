@@ -73,6 +73,7 @@
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import {
 	fetchAnlz,
@@ -3109,8 +3110,7 @@ class RbAudioEngine implements AudioEngine {
 			const msg =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
-			pushToast(`Deck ${deck} load failed - ${msg}`, 'error', undefined, exc);
-			recordPerfEvent('deck-load-fail', msg, deck);
+			reportDeckLoadFailure(deck, msg, exc, stages);
 			throw exc;
 		}
 		if (

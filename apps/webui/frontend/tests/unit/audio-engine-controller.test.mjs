@@ -1342,8 +1342,13 @@ test('load-state invariant rejects playable-looking ghost decks', () => {
 test('analysis retrieval failure rejects before an unusable deck candidate can publish', async () => {
 	const originalFetch = globalThis.fetch;
 	const originalSetTimeout = globalThis.setTimeout;
+	// Two timers are legitimate on this path: the toast expiry, and the perf
+	// ring's coalesced localStorage flush, which replaced the synchronous
+	// stringify + setItem that used to run per recorded row. Collected rather
+	// than asserted inline so a stray timer names itself in the diff.
+	const timerDelays = [];
 	globalThis.setTimeout = (_callback, delay) => {
-		assert.equal(delay, 5_000, 'only the toast expiry timer is expected');
+		timerDelays.push(delay);
 		return 0;
 	};
 	globalThis.fetch = async (input) => {
@@ -1395,6 +1400,13 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 		assert.equal(audio.getDeckState(1).stable_id, null);
 		assert.equal(audio.getDeckState(1).anlz, null);
 		assert.match(audio.deckLoadErrors[1], /ANALYSIS_NOT_FOUND/);
+		assert.ok(timerDelays.includes(5_000), 'the failure toast must still be raised');
+		assert.deepEqual(
+			timerDelays.filter((delay) => delay !== 5_000 && delay !== 250),
+			[],
+			'only the toast expiry and the perf ring flush may schedule work on the ' +
+				'load-failure path; anything else is a stray timer on a failing load'
+		);
 	} finally {
 		globalThis.fetch = originalFetch;
 		globalThis.setTimeout = originalSetTimeout;
