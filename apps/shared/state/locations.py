@@ -49,6 +49,10 @@ class LocationError(ValueError):
 
 @dataclass(frozen=True)
 class TrackLocation:
+    # Machine-local sqlite rowid, stable only within this DB file. Schema v6
+    # replaced the old INTEGER AUTOINCREMENT key with ``location_id`` (uuid4
+    # hex) because integer keys collide across machines; that is the key hub
+    # sync uses. Nothing here needs a durable key, so it stays on the rowid.
     id: int
     stable_id: str
     kind: Kind
@@ -134,9 +138,9 @@ def list_locations(conn: sqlite3.Connection, stable_id: str) -> list[TrackLocati
     if not locations_table_ready(conn):
         return []
     rows = conn.execute(
-        "SELECT id, stable_id, kind, role, file_path, remote_url, "
+        "SELECT rowid, stable_id, kind, role, file_path, remote_url, "
         "venue_key, venue_rank, available, probed_at, content_hash "
-        "FROM track_locations WHERE stable_id = ? ORDER BY id",
+        "FROM track_locations WHERE stable_id = ? ORDER BY rowid",
         (stable_id,),
     ).fetchall()
     return [_row_to_location(row) for row in rows]
@@ -206,7 +210,7 @@ def upsert_location(
         return int(cur.lastrowid)
     conn.execute(
         "UPDATE track_locations SET role=?, venue_key=?, venue_rank=?, "
-        "available=?, probed_at=?, content_hash=?, updated_at=? WHERE id=?",
+        "available=?, probed_at=?, content_hash=?, updated_at=? WHERE rowid=?",
         (
             role,
             venue_key,
@@ -328,13 +332,13 @@ def _find_existing(
 ) -> Optional[int]:
     if file_path:
         row = conn.execute(
-            "SELECT id FROM track_locations "
+            "SELECT rowid FROM track_locations "
             "WHERE stable_id=? AND kind=? AND file_path=?",
             (stable_id, kind, file_path),
         ).fetchone()
         return int(row[0]) if row else None
     row = conn.execute(
-        "SELECT id FROM track_locations "
+        "SELECT rowid FROM track_locations "
         "WHERE stable_id=? AND kind=? AND remote_url=?",
         (stable_id, kind, remote_url),
     ).fetchone()
