@@ -15,6 +15,10 @@
  *     [if] a panel dragged past the right edge restores off-screen [then ⛔️] broken
  *   ✔︎ 🎯 parsePanelPos: only a finite {x, y} round-trips; garbage reads null.
  *     [if] localStorage junk crashes the panel mount [then ⛔️] broken
+ *   ✔︎ 🎯 startsPanelDrag: a pointerdown on a control inside the drag handle
+ *     suppresses the drag, so pointer capture cannot swallow that click.
+ *     [if] the close X inside the header starts a drag [then ⛔️] broken
+ *     [if] bare header chrome stops dragging the panel [then ⛔️] broken
  *   ✔︎ 🎯 makeDebounce: trailing-edge save; flush() forces the pending write.
  *     [if] two keystrokes inside the window issue two saves [then ⛔️] broken
  *     [if] flush() drops a pending value [then ⛔️] broken
@@ -65,6 +69,49 @@ export function parsePanelPos(raw: string | null): PanelPos | null {
 
 export function serializePanelPos(pos: PanelPos): string {
   return JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) });
+}
+
+// ----- panel drag suppression --------------------------------------------
+/** Tags inside the drag handle that own their own click and must keep it. */
+const DRAG_BLOCKING_TAGS = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
+
+/** Defensive bound on the ancestor walk. The handle is a handful of nodes up,
+ * so this only exists so a malformed chain cannot spin forever. */
+const DRAG_WALK_LIMIT = 16;
+
+/** The shape startsPanelDrag needs off a pointer event: DOM-free so node:test
+ * can drive it with plain objects. */
+export interface DragNode {
+  tagName?: string;
+  parentElement?: DragNode | null;
+}
+
+/**
+ * True when a pointerdown on `target` may begin dragging the panel by `handle`.
+ *
+ * The close X sits INSIDE the drag handle, so its pointerdown bubbles to the
+ * header. Beginning a drag there calls setPointerCapture on the header, and
+ * pointer capture retargets the derived pointerup and click to the capture
+ * element - so the button's own onclick never fires and the X looks dead.
+ * Measured in Chrome, Mon 31 Aug 2026: pointerdown on BUTTON.fb-mini, then
+ * pointerup and click both on DIV.fb-panel-head.
+ *
+ * Controls between `target` and `handle` therefore suppress the drag and keep
+ * their click. The walk STOPS at the handle: the handle itself sits inside a
+ * topbar full of buttons, and walking past it would let an unrelated ancestor
+ * control kill dragging entirely.
+ */
+export function startsPanelDrag(
+  target: DragNode | null,
+  handle: DragNode | null,
+): boolean {
+  let node: DragNode | null | undefined = target;
+  for (let hops = 0; node && hops < DRAG_WALK_LIMIT; hops += 1) {
+    if (node === handle) return true;
+    if (DRAG_BLOCKING_TAGS.has((node.tagName ?? "").toUpperCase())) return false;
+    node = node.parentElement;
+  }
+  return true;
 }
 
 // ----- debounced auto-save ------------------------------------------------

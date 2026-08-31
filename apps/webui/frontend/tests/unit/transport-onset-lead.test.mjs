@@ -342,7 +342,8 @@ test('the instrument is fed BOTH the lead charged and the self-report', () => {
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined
 ): Promise<number> {`);
 	assert.ok(
 		body.includes('const processorLeadSec = _transportLeadSec(deck);'),

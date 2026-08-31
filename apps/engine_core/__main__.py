@@ -14,6 +14,7 @@ is bound.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -81,6 +82,39 @@ def _preflight(cfg: EngineConfig, *, workers: int) -> None:
     prepare_layout(cfg)
 
 
+def _telemetry_decision():
+    """Ask the build what it is, then decide whether to report errors.
+
+    This glue lives here rather than in apps.shared.telemetry because that
+    module has to stay a leaf: apps.engine_core imports apps.webui, and
+    apps.webui imports the telemetry module, so a build_info import from
+    inside it would close a cycle.
+
+    A build that cannot describe itself is treated as a checkout rather than
+    as a fault. Telemetry is the diagnostic, not the product, so it declines
+    to report rather than taking the boot down with it -- and a checkout
+    defaults OFF, so declining is also the quiet, safe direction.
+    """
+    from apps.engine_core.build_info import (
+        BuildInfoUnavailable,
+        resolve_build_info,
+    )
+    from apps.shared import platform_paths
+    from apps.shared.telemetry import decide_telemetry
+
+    try:
+        info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
+        source, release = info.source, info.git_sha_full
+    except BuildInfoUnavailable as exc:
+        print(
+            f"[WARN] build identity unavailable ({exc}); telemetry treats this "
+            "as a checkout and will not tag a release",
+            file=sys.stderr,
+        )
+        source, release = None, None
+    return decide_telemetry(os.environ, build_source=source, release=release)
+
+
 def _serve(cfg: EngineConfig, *, log_level: str) -> int:
     lock = EngineLock(cfg.lock_path)
     try:
@@ -94,6 +128,19 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
         import uvicorn
 
         from apps.engine_core.app import create_app
+        from apps.shared.telemetry import TelemetryConfigError, init_telemetry
+
+        # BEFORE create_app, not after: the Sentry FastAPI integration wraps
+        # route handlers as they are registered, so a later init would leave
+        # every route already built and silently uninstrumented.
+        try:
+            init_telemetry(_telemetry_decision())
+        except TelemetryConfigError as exc:
+            # Asked for by name and undeliverable. Refusing here is the whole
+            # point: booting anyway would mean the errors somebody is waiting
+            # on never arrive and nothing ever says so.
+            print(f"[ERROR] telemetry refused to start: {exc}", file=sys.stderr)
+            return EXIT_REFUSED
 
         app = create_app(cfg, lock=lock)
         print(

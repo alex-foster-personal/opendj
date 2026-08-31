@@ -38,6 +38,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/deck-observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Deck Observation Status
+         * @description Why a row did or did not appear: per-deck dwell against the threshold.
+         */
+        get: operations["api_deck_observation_status_api_sets_deck_observations_get"];
+        put?: never;
+        /**
+         * Api Submit Deck Observations
+         * @description Ingest Open DJ deck-state snapshots into the live recording.
+         *
+         *     The browser posts here on a timer; any agent can post the same
+         *     payload, which is what keeps this flow drivable without a UI.
+         *     Bad snapshots are rejected 422 rather than dropped, because a
+         *     silently discarded observation is an under-counted set.
+         */
+        post: operations["api_submit_deck_observations_api_sets_deck_observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/recorder": {
         parameters: {
             query?: never;
@@ -1029,6 +1058,46 @@ export interface paths {
         post?: never;
         /** Delete Pairing */
         delete: operations["delete_pairing_api_v1_pairings__pairing_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/telemetry/client-samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture Client Performance
+         * @description Persist one compact semantic sample without blocking the audio path.
+         */
+        post: operations["capture_client_performance_api_v1_performance_telemetry_client_samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/telemetry/processes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Process Telemetry
+         * @description Return a privacy-reduced Activity Monitor-style app breakdown.
+         */
+        get: operations["latest_process_telemetry_api_v1_performance_telemetry_processes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2769,6 +2838,49 @@ export interface components {
              */
             surface: "desktop-shell" | "browser";
         };
+        /** ClientPerformanceSampleIn */
+        ClientPerformanceSampleIn: {
+            /** Anlz Entry Count */
+            anlz_entry_count: number;
+            /** Anlz Estimated Mb */
+            anlz_estimated_mb: number;
+            /** Audio Health Hz */
+            audio_health_hz?: number | null;
+            /**
+             * Audio Health Level
+             * @enum {string}
+             */
+            audio_health_level: "idle" | "ok" | "warn" | "crit";
+            /** Client Sample Id */
+            client_sample_id: string;
+            /** Client Session Id */
+            client_session_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /** Decks */
+            decks: components["schemas"]["DeckPerformanceSample"][];
+            /** Js Heap Mb */
+            js_heap_mb?: number | null;
+            /** Page Uptime Ms */
+            page_uptime_ms: number;
+            /** Pcm Estimated Mb */
+            pcm_estimated_mb: number;
+            /** Perf Event Count */
+            perf_event_count: number;
+            /** Prefetch Count */
+            prefetch_count: number;
+            /** Prefetch Mb */
+            prefetch_mb: number;
+            /** Route */
+            route: string;
+        };
+        /** ClientPerformanceSampleOut */
+        ClientPerformanceSampleOut: {
+            /** Event Id */
+            event_id: string;
+            /** Stored */
+            stored: boolean;
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -2924,6 +3036,54 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /**
+         * DeckObservationsRequest
+         * @description A batch of Open DJ deck-state snapshots, oldest first.
+         *
+         *     Snapshots stay untyped here on purpose. Pydantic would happily
+         *     coerce the string "false" into ``False`` and 0 into ``0.0``, which
+         *     is exactly the quiet reinterpretation this pipeline must not do, so
+         *     validation belongs to :func:`~apps.sets.sources.opendj_wire.parse_snapshot`
+         *     alone rather than being split across two disagreeing contracts.
+         *
+         *     The cap is ten minutes of a 1 s cadence: enough for a tab that was
+         *     backgrounded to flush its buffer, small enough to bound one request.
+         */
+        DeckObservationsRequest: {
+            /** Snapshots */
+            snapshots: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** DeckPerformanceSample */
+        DeckPerformanceSample: {
+            /** Audible */
+            audible: boolean;
+            /**
+             * Deck Id
+             * @enum {integer}
+             */
+            deck_id: 1 | 2 | 3 | 4;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Last Load Latency Ms */
+            last_load_latency_ms?: number | null;
+            /** Playing */
+            playing: boolean;
+            /** Processor Error */
+            processor_error?: string | null;
+            /** Stable Id */
+            stable_id?: string | null;
+            /**
+             * Stem Status
+             * @enum {string}
+             */
+            stem_status: "unavailable" | "ready" | "error";
+            /** Sync Error */
+            sync_error?: string | null;
+            /** Transport Pending */
+            transport_pending: boolean;
         };
         /**
          * EngineHealthOut
@@ -4281,7 +4441,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             /** Sources */
-            sources?: ("djay_monitor" | "rb_history")[];
+            sources?: ("djay_monitor" | "rb_history" | "opendj_decks")[];
         };
         /** RecorderStatus */
         RecorderStatus: {
@@ -5658,6 +5818,8 @@ export interface operations {
             query?: {
                 share_state?: ("private" | "shared_local" | "shared_cloud") | null;
                 limit?: number;
+                /** @description Read-time 'counts as played' filter, in seconds of audible playback. Only applies to rows that recorded a dwell (Open DJ's own decks). 0 counts every play. */
+                min_audible_s?: number;
             };
             header?: never;
             path?: never;
@@ -5703,6 +5865,63 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_deck_observation_status_api_sets_deck_observations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    api_submit_deck_observations_api_sets_deck_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeckObservationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7531,6 +7750,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_client_performance_api_v1_performance_telemetry_client_samples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientPerformanceSampleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientPerformanceSampleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_process_telemetry_api_v1_performance_telemetry_processes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

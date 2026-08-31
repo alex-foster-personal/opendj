@@ -1,0 +1,203 @@
+"""Real HTTP/filesystem coverage for bounded performance telemetry.
+
+The log directories are injected by writing ``app.state`` after construction
+rather than through ``create_app`` keyword arguments. ``app.py`` is a hotspot
+file that several parallel branches edit, so this port touches exactly two
+lines of it (the import and the ``include_router``); the route already reads
+both directories through ``getattr(request.app.state, ...)`` with its own
+module-level default, so nothing here is a hidden fallback.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from apps.shared import private_files
+from apps.webui.server.app import create_app
+from apps.webui.server.backend import InMemoryBackend
+
+
+def _app(
+    *,
+    performance_log_dir: Path | None = None,
+    performance_process_log_dirs: tuple[Path, ...] | None = None,
+) -> FastAPI:
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+    )
+    if performance_log_dir is not None:
+        app.state.performance_log_dir = performance_log_dir
+    if performance_process_log_dirs is not None:
+        app.state.performance_process_log_dirs = performance_process_log_dirs
+    return app
+
+
+def _captured_client_sample() -> dict[str, object]:
+    """Sanitized shape captured from the real /performance read model."""
+
+    return {
+        "client_sample_id": "client-sample-air-001",
+        "client_session_id": "desktop-shell-air-001",
+        "client_timestamp": "2026-08-21T20:08:05.220Z",
+        "route": "/performance",
+        "page_uptime_ms": 9_248_000,
+        "js_heap_mb": None,
+        "pcm_estimated_mb": 250,
+        "anlz_estimated_mb": 19,
+        "anlz_entry_count": 6,
+        "prefetch_mb": 21,
+        "prefetch_count": 3,
+        "audio_health_hz": None,
+        "audio_health_level": "idle",
+        "perf_event_count": 20,
+        "decks": [
+            {
+                "deck_id": deck_id,
+                "stable_id": f"captured-stable-id-{deck_id}",
+                "duration_ms": 240_000,
+                "playing": False,
+                "audible": False,
+                "transport_pending": False,
+                "stem_status": "unavailable",
+                "last_load_latency_ms": 569 if deck_id == 2 else None,
+                "sync_error": None,
+                "processor_error": None,
+            }
+            for deck_id in (1, 2, 3, 4)
+        ],
+    }
+
+
+def _captured_process_record() -> dict[str, object]:
+    """Sanitized subset of the Air record written by the native probe."""
+
+    return {
+        "schema_version": 1,
+        "kind": "sample",
+        "timestamp": "2026-08-21T20:08:05.220Z",
+        "totals": {
+            "physical_footprint_mb": 1677.7,
+            "summed_lifetime_peak_mb": 2224.9,
+            "cpu_percent": 1.28,
+            "process_count": 5,
+        },
+        "processes": [
+            {"role": role, "physical_footprint_mb": mb, "command": "private path"}
+            for role, mb in (
+                ("desktop-shell", 31.9),
+                ("python-engine", 151.4),
+                ("webkit-gpu", 98.1),
+                ("webkit-networking", 13.4),
+                ("webkit-webcontent", 1382.9),
+            )
+        ],
+    }
+
+
+def test_client_sample_writes_private_bounded_record(tmp_path: Path) -> None:
+    with TestClient(_app(performance_log_dir=tmp_path)) as client:
+        response = client.post(
+            "/api/v1/performance/telemetry/client-samples",
+            json=_captured_client_sample(),
+        )
+
+    assert response.status_code == 202
+    assert response.json()["stored"] is True
+    paths = list(tmp_path.glob("webui-performance-*.log"))
+    assert len(paths) == 1
+    assert private_files.is_owner_only(paths[0])
+    record = json.loads(paths[0].read_text(encoding="utf-8"))
+    assert record["kind"] == "client-performance-sample"
+    assert record["pcm_estimated_mb"] == 250
+    assert record["decks"][1]["last_load_latency_ms"] == 569
+    assert record["received_at"].endswith("Z")
+
+
+def test_client_sample_refuses_payloads_outside_the_declared_bounds(tmp_path: Path) -> None:
+    """Every bound the model declares must reject, and reject before writing."""
+
+    wrong_deck_count = _captured_client_sample()
+    wrong_deck_count["decks"] = wrong_deck_count["decks"][:3]  # type: ignore[index]
+
+    negative_memory = _captured_client_sample()
+    negative_memory["pcm_estimated_mb"] = -1
+
+    unknown_health_level = _captured_client_sample()
+    unknown_health_level["audio_health_level"] = "catastrophic"
+
+    oversized_error = _captured_client_sample()
+    oversized_error["decks"][0]["sync_error"] = "x" * 2049  # type: ignore[index]
+
+    with TestClient(_app(performance_log_dir=tmp_path)) as client:
+        for payload in (
+            wrong_deck_count,
+            negative_memory,
+            unknown_health_level,
+            oversized_error,
+        ):
+            response = client.post(
+                "/api/v1/performance/telemetry/client-samples", json=payload
+            )
+            assert response.status_code == 422, payload
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_process_endpoint_reduces_real_probe_record_to_roles(tmp_path: Path) -> None:
+    process_log = tmp_path / "opendj-performance-2026-08-21.jsonl"
+    process_log.write_text(
+        json.dumps(_captured_process_record()) + "\n", encoding="utf-8"
+    )
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        response = client.get("/api/v1/performance/telemetry/processes")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["totals"]["physical_footprint_mb"] == 1677.7
+    assert body["by_role_mb"]["webkit-webcontent"] == 1382.9
+    assert "command" not in json.dumps(body)
+    assert body["stale"] is True
+
+
+def test_process_endpoint_reads_the_last_sample_past_probe_error_lines(
+    tmp_path: Path,
+) -> None:
+    """A KeepAlive probe interleaves error records; the read must skip them."""
+
+    older = _captured_process_record()
+    older["timestamp"] = "2026-08-21T19:00:00.000Z"
+    older["totals"] = {**older["totals"], "physical_footprint_mb": 900.0}  # type: ignore[dict-item]
+    newer = _captured_process_record()
+    lines = [
+        json.dumps(older),
+        json.dumps(newer),
+        json.dumps({"schema_version": 1, "kind": "probe-error", "error": "boom"}),
+        "{ not json at all",
+    ]
+    (tmp_path / "opendj-performance-2026-08-21.jsonl").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        response = client.get("/api/v1/performance/telemetry/processes")
+
+    body = response.json()
+    assert body["available"] is True
+    assert body["totals"]["physical_footprint_mb"] == 1677.7
+
+
+def test_process_endpoint_is_explicit_when_native_probe_is_absent(tmp_path: Path) -> None:
+    with TestClient(_app(performance_process_log_dirs=(tmp_path,))) as client:
+        response = client.get("/api/v1/performance/telemetry/processes")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "available": False,
+        "reason": "native process probe has not written a sample",
+    }

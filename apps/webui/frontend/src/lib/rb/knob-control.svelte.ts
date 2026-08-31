@@ -6,6 +6,8 @@
  * not select. Alt/Option+click two knobs to link (turn one down => other up).
  */
 
+import { detectWheelInputKind, scaledWheelStep } from './wheel-adjust';
+
 // ----- central sensitivity (tweak here; not buried in components) -----
 
 export const KNOB_CFG = {
@@ -13,7 +15,8 @@ export const KNOB_CFG = {
 	dragVerticalPx: 120,
 	/** Horizontal drag pixels for a full 0..1 sweep (much larger = fine adjust). */
 	dragHorizontalPx: 520,
-	/** Wheel deltaY scale -> knob units (hover or selected). */
+	/** Wheel deltaY scale -> knob units (hover or selected). Scaled per input
+	 * kind by WHEEL_SENSITIVITY, so a trackpad burst is not 3 steps a flick. */
 	scrollStep: 0.028,
 	/** Arrow-key nudge. */
 	keyStep: 0.02,
@@ -230,7 +233,12 @@ function _onWindowWheel(e: WheelEvent): void {
 	e.preventDefault();
 	const dir = e.deltaY > 0 ? -1 : e.deltaY < 0 ? 1 : 0;
 	if (dir === 0) return;
-	nudgeKnob(id, dir * KNOB_CFG.scrollStep);
+	// This listener is the one wheel-adjustable path that does NOT run through
+	// use:wheelAdjust, so the trackpad scaling has to be applied explicitly here
+	// or the shift-selected dial stays hypersensitive while every other control
+	// is calm. Same seam, same constant.
+	const step = scaledWheelStep(KNOB_CFG.scrollStep, detectWheelInputKind(e));
+	nudgeKnob(id, dir * step);
 }
 
 function _ensureGlobalWheel(): void {

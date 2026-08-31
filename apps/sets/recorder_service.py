@@ -120,6 +120,29 @@ class RecorderService:
                 "recoverable": False,
             }
 
+    def active_source(self, name: str) -> Any:
+        """Return the named source attached to the owned recorder.
+
+        Raises :class:`RecorderConflict` when nothing is recording, or
+        when the live session did not enable this source. Both are the
+        caller's problem to fix, so neither is papered over with a
+        silently-discarded no-op.
+        """
+        with self._lock:
+            if self._recorder is None:
+                raise RecorderConflict(
+                    f"no HTTP-owned recorder is active; start one with "
+                    f"sources including {name!r} before sending observations"
+                )
+            source = self._recorder._sources.get(name)
+            if source is None:
+                raise RecorderConflict(
+                    f"session {self._recorder.session_id} is recording without "
+                    f"the {name!r} source; its enabled sources are "
+                    f"{sorted(self._recorder._sources)}"
+                )
+            return source
+
     def stop(self, session_id: str) -> dict[str, Any]:
         with self._lock:
             if self._recorder is None:

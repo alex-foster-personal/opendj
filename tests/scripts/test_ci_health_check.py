@@ -16,7 +16,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from scripts import ci_health_check as mod
-from scripts.ci_health_core import EXIT_ITERATION_SPEED
+
+# EXCLUDED_RUN_EVENTS, the actions/runs page parse and the timestamp parse live in
+# ci_health_core: both the checker (page 1) and the metrics catch-up (paged) read that
+# listing, so the checker no longer owns them.
+from scripts.ci_health_core import (
+    EXCLUDED_RUN_EVENTS,
+    EXIT_ITERATION_SPEED,
+    _parse_github_timestamp,
+)
 
 NOW = datetime(2026, 8, 19, 20, 0, 0, tzinfo=UTC)
 
@@ -233,7 +241,7 @@ def test_dynamic_events_are_excluded_from_the_run_pool():
     """If 'dynamic' dependency-graph runs were counted
     then they would mask the billing signature, or broken.
     """
-    assert "dynamic" in mod.EXCLUDED_RUN_EVENTS
+    assert "dynamic" in EXCLUDED_RUN_EVENTS
 
 
 def test_verdict_line_uses_house_output_tokens():
@@ -257,7 +265,7 @@ def test_malformed_timestamps_fail_loudly(field, value):
     then raise, never coerce to a default, or broken.
     """
     with pytest.raises(mod.PreconditionError) as excinfo:
-        mod._parse_github_timestamp(value, field, 123)
+        _parse_github_timestamp(value, field, 123)
     assert field in str(excinfo.value)
 
 

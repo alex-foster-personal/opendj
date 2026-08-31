@@ -104,7 +104,44 @@ pnpm test:e2e
 Run against a running dev daemon + SvelteKit dev server. CI skips if no
 headless Chromium is available.
 
-## Bundle budget
+## Bundle budgets
 
-`scripts/check-bundle-size.sh` enforces a 250 KB total-gzipped budget on
-the library page chunks; wire it into CI post-build.
+`scripts/check-bundle-size.sh` runs post-build in CI and enforces one gzip
+budget per SURFACE, measured from the real module graph. Measurements are JS
+under `build/_app/immutable/` (CSS is emitted as an asset, not a chunk, and is
+outside these budgets):
+
+| budget        | limit   | measured on `c3cf9329` | what it covers                                      |
+| ------------- | ------- | ---------------------- | --------------------------------------------------- |
+| `library`     | 256,000 | 93,011 (36.3%)         | the initial load of `/`                              |
+| `performance` | 203,776 | 193,544 (95.0%)        | `/performance` and its children, lazily loaded       |
+| `other-lazy`  | 63,488  | 60,160 (94.8%)         | every other route, plus deferred app-shell chunks    |
+
+A surface is the STATIC import closure of its roots. SvelteKit code-splits at
+every dynamic import, so a dynamic import is a budget boundary: weight behind
+one is not charged to a page that never takes that branch. A file reachable from
+several surfaces is charged to the first that reaches it, in the order above, so
+nothing is double counted.
+
+Two properties matter more than the numbers:
+
+- **Nothing is unmeasured.** Every `.js` emitted under `_app/immutable/` must
+  land in exactly one budget. A chunk that no surface reaches and no surface
+  names FAILS the run. AudioWorklet processors are fetched by URL rather than
+  imported, so they are charged to the surface whose code names them.
+- **Every budget is proven to fail.** `tests/unit/bundle-budget.test.mjs`
+  constructs a build state that trips each budget in turn, plus the
+  unattributed-chunk case, against a synthetic build tree in a temp dir. No
+  `pnpm build` needed; it runs in `pnpm test:unit`.
+
+The `library` figure of 256,000 is unchanged from the gate's introduction. The
+other two are ratchets at their measured value plus 5%, rounded up to the next
+KiB. `other-lazy` in particular is tight by construction (about 3 KB of
+headroom across 16 routes); widen it deliberately if ordinary feature work trips
+it, and record the new derivation in `scripts/bundle-budget.mjs`.
+
+Machine-readable totals (still exits non-zero if a budget is breached):
+
+```bash
+pnpm build && bash scripts/check-bundle-size.sh --json
+```

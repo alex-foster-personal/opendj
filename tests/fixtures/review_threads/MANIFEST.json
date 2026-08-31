@@ -1,0 +1,28 @@
+{
+ "description": "Trust anchor for the review-thread captures. Each file is a verbatim GraphQL reviewThreads response from maintainer/music-dj-tools, captured Mon 31 Aug 2026. Thread objects are byte-identical to what the API returned; the only edits were selecting a subset of threads and dropping the pageInfo cursor. Tests verify these checksums BEFORE parsing, so an accidental edit fails loudly instead of silently becoming the authoritative capture.",
+ "captured": "Mon 31 Aug 2026",
+ "captured_utc": "2026-08-31T15:00:00Z",
+ "endpoint": "https://api.github.com/graphql",
+ "repository": "maintainer/music-dj-tools",
+ "regenerate": "Re-capture from the API with scripts/review_thread_triage.py's _THREADS_QUERY and recompute this manifest. Never hand-edit a payload.",
+ "files": {
+  "pr-492.json": {
+   "sha256": "e738b61f2f3185f20b2aedb3b9c7a044cb27f094fefbc2fca9046309289f6b61",
+   "bytes": 16502,
+   "source_pr": 492,
+   "threads": 7
+  },
+  "pr-515.json": {
+   "sha256": "fbee94bc7034f753e01b1d84bca2c85f0f6f181426bdd64e7b7fdcb887762b0b",
+   "bytes": 15148,
+   "source_pr": 515,
+   "threads": 10
+  },
+  "pr-576.json": {
+   "sha256": "8e8e13fc35983cb2d6a2cb853d94ee7ef07c8be3e964e82745cb8091ffde4074",
+   "bytes": 4334,
+   "source_pr": 576,
+   "threads": 3
+  }
+ }
+}

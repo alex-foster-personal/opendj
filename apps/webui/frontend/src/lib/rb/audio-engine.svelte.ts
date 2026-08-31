@@ -73,7 +73,14 @@
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
-import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
+import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import {
+	armXrunSentinel,
+	disarmContextInstrumentation,
+	stampContextDeviceFloors
+} from '$lib/rb/audio-context-instrumentation';
+import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
 import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
@@ -124,8 +131,6 @@ import type {
 	DeckId,
 	DeckState,
 	EqBand,
-	HeadphoneOutputDevice,
-	HeadphoneState,
 	HotCue,
 	HotCueSlot,
 	LoopState,
@@ -147,7 +152,6 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
-	HEADPHONE_OPERATION_TIMEOUT_MS,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -171,6 +175,14 @@ import {
 	isMasterMuted,
 	setMasterMuted
 } from '$lib/player/master-mute.svelte';
+import {
+	acquireHeadphoneOutput as acquireMonitorOutput,
+	applyHeadphoneMix,
+	disposeHeadphoneMonitor,
+	ensureHeadphoneGraph,
+	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	selectHeadphoneOutput as selectMonitorOutput
+} from '$lib/player/headphones';
 import {
 	_assertKeyShift,
 	camelotKeysAreCompatible,
@@ -256,6 +268,10 @@ export {
 	supersedingScheduleTime
 };
 export { pausedSeekClock };
+// The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
+// its device boundary and its algebra. Deliberately NOT re-exported here: no
+// module in src ever reached its pure surface through this barrel, and a
+// pass-through export would leave the coupling the extraction just removed.
 export {
 	acknowledgePresentedTransportSchedule,
 	createPresentedTransportTimeline,
@@ -415,25 +431,10 @@ function _emptyRuntime(): _DeckRuntime {
 }
 
 let _ctx: AudioContext | null = null;
-/** LATENCY-03: has the authoritative (running-context) device-floor row been
- * emitted for the CURRENT context? Reset with the context, never sticky across
- * one, or a rebuilt graph would keep quoting the previous device's floors. */
-let _runningContextFloorsStamped = false;
 let _masterGain: GainNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
-interface _HeadphoneNodes {
-	cueSum: GainNode;
-	masterMonitor: GainNode;
-	cueMix: GainNode;
-	masterMix: GainNode;
-	level: GainNode;
-	destination: MediaStreamAudioDestinationNode;
-	element: HTMLAudioElement;
-}
-let _headphoneNodes: _HeadphoneNodes | null = null;
-let _headphoneGeneration = 0;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _rt: Record<DeckId, _DeckRuntime> = {
@@ -575,224 +576,6 @@ function _setParam(param: AudioParam, value: number): void {
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
 }
 
-/** Equal-power CUE/MASTER gains, where 0 is full cue and 1 is full master. */
-export function headphoneMixGains(mix: number): { cue: number; master: number } {
-	_assertUnit('headphone mix', mix);
-	if (mix === 0) return { cue: 1, master: 0 };
-	if (mix === 1) return { cue: 0, master: 1 };
-	return {
-		cue: Math.cos((mix * Math.PI) / 2),
-		master: Math.sin((mix * Math.PI) / 2)
-	};
-}
-
-export function assertHeadphoneOutputSelection(
-	deviceId: string,
-	outputs: readonly HeadphoneOutputDevice[]
-): void {
-	if (typeof deviceId !== 'string' || deviceId.trim() === '') {
-		throw new TypeError('headphone output device id must be a non-empty string');
-	}
-	if (!outputs.some((output) => output.id === deviceId)) {
-		throw new RangeError(`headphone output ${deviceId} is not an enumerated headphone output`);
-	}
-}
-
-/** Merge a browser-authorized output into the serializable read model. */
-export function mergeHeadphoneOutput(
-	outputs: readonly HeadphoneOutputDevice[],
-	device: Pick<MediaDeviceInfo, 'deviceId' | 'label'>
-): HeadphoneOutputDevice[] {
-	if (typeof device.deviceId !== 'string' || device.deviceId.trim() === '') {
-		throw new TypeError('acquired headphone output device id must be a non-empty string');
-	}
-	if (typeof device.label !== 'string') {
-		throw new TypeError('acquired headphone output label must be a string');
-	}
-	const next = { id: device.deviceId, label: device.label };
-	return outputs.some((output) => output.id === next.id)
-		? outputs.map((output) => (output.id === next.id ? next : { ...output }))
-		: [...outputs.map((output) => ({ ...output })), next];
-}
-
-/** Browsers may rotate opaque output IDs when device permission changes. An
- * unenumerated sink is no longer trustworthy, so stop reporting it as live. */
-export function reconcileHeadphoneOutputRefresh(
-	active: boolean,
-	selectedOutputDeviceId: string | null,
-	outputs: readonly HeadphoneOutputDevice[]
-): { active: boolean; selected_output_device_id: string | null } {
-	if (typeof active !== 'boolean') throw new TypeError('headphone active state must be boolean');
-	if (selectedOutputDeviceId !== null && typeof selectedOutputDeviceId !== 'string') {
-		throw new TypeError('selected headphone output device id must be a string or null');
-	}
-	if (selectedOutputDeviceId === null || outputs.some((output) => output.id === selectedOutputDeviceId)) {
-		return { active, selected_output_device_id: selectedOutputDeviceId };
-	}
-	return { active: false, selected_output_device_id: null };
-}
-
-export function headphoneSelectionStages(): readonly string[] {
-	return ['setSinkId', 'attachStream', 'play', 'publish'];
-}
-
-export function headphoneReselectionStages(): readonly string[] {
-	return [
-		'createCandidate',
-		'setSinkId',
-		'attachStream',
-		'play',
-		'replaceAndPublish',
-		'detachPrevious'
-	];
-}
-
-export function headphoneReselectionResult(candidateAccepted: boolean): {
-	replaceCurrentElement: boolean;
-	publishSelection: boolean;
-	detachPrevious: boolean;
-} {
-	if (typeof candidateAccepted !== 'boolean') {
-		throw new TypeError('headphone candidate acceptance must be boolean');
-	}
-	return candidateAccepted
-		? { replaceCurrentElement: true, publishSelection: true, detachPrevious: true }
-		: { replaceCurrentElement: false, publishSelection: false, detachPrevious: false };
-}
-
-export function headphoneOwnershipIsCurrent(
-	operationGeneration: number,
-	currentGeneration: number,
-	nodesOwned: boolean
-): boolean {
-	return (
-		Number.isInteger(operationGeneration) &&
-		Number.isInteger(currentGeneration) &&
-		operationGeneration === currentGeneration &&
-		nodesOwned
-	);
-}
-
-export function assertHeadphoneOwnership(
-	operationGeneration: number,
-	currentGeneration: number,
-	nodesOwned: boolean
-): void {
-	if (!headphoneOwnershipIsCurrent(operationGeneration, currentGeneration, nodesOwned)) {
-		throw new Error('stale headphone operation cannot publish state after disposal');
-	}
-}
-
-export async function withHeadphoneOperationTimeout<T>(
-	operation: string,
-	promise: Promise<T>,
-	timeoutMs = HEADPHONE_OPERATION_TIMEOUT_MS
-): Promise<T> {
-	if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-		throw new RangeError(`headphone ${operation} timeout must be a positive integer, got ${timeoutMs}`);
-	}
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-	const timeout = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => reject(new Error(`headphone ${operation} timed out after ${timeoutMs}ms`)), timeoutMs);
-	});
-	try {
-		return await Promise.race([promise, timeout]);
-	} finally {
-		if (timeoutId !== null) clearTimeout(timeoutId);
-	}
-}
-
-function _applyHeadphoneMix(): void {
-	const nodes = _headphoneNodes;
-	if (nodes === null) return;
-	const gains = headphoneMixGains(mixerState.headphones.mix);
-	_setParam(nodes.cueMix.gain, gains.cue);
-	_setParam(nodes.masterMix.gain, gains.master);
-	_setParam(nodes.level.gain, mixerState.headphones.level);
-}
-
-function _headphoneError(operation: string, error: unknown): Error {
-	const message = error instanceof Error ? error.message : String(error);
-	mixerState.headphones.error = `${operation}: ${message}`;
-	return new Error(mixerState.headphones.error, { cause: error });
-}
-
-function _assertCurrentHeadphoneOperation(generation: number, nodes: _HeadphoneNodes | null): void {
-	assertHeadphoneOwnership(generation, _headphoneGeneration, nodes === null || nodes === _headphoneNodes);
-}
-
-function _requireHeadphoneDeviceApi(): MediaDevices {
-	if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'navigator.mediaDevices is unavailable');
-	}
-	if (typeof navigator.mediaDevices.enumerateDevices !== 'function') {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'enumerateDevices is unavailable');
-	}
-	if (typeof HTMLMediaElement === 'undefined' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
-		mixerState.headphones.supported = false;
-		throw _headphoneError('headphone output unsupported', 'HTMLMediaElement.setSinkId is unavailable');
-	}
-	mixerState.headphones.supported = true;
-	return navigator.mediaDevices;
-}
-
-interface _OutputSelectableMediaDevices extends MediaDevices {
-	selectAudioOutput(): Promise<MediaDeviceInfo>;
-}
-
-function _requireHeadphoneOutputAcquisitionApi(): _OutputSelectableMediaDevices {
-	const mediaDevices = _requireHeadphoneDeviceApi();
-	if (typeof (mediaDevices as Partial<_OutputSelectableMediaDevices>).selectAudioOutput !== 'function') {
-		throw _headphoneError(
-			'headphone output acquisition unsupported',
-			'navigator.mediaDevices.selectAudioOutput is unavailable'
-		);
-	}
-	return mediaDevices as _OutputSelectableMediaDevices;
-}
-
-function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _HeadphoneNodes {
-	if (_headphoneNodes !== null) return _headphoneNodes;
-	const cueSum = context.createGain();
-	const masterMonitor = context.createGain();
-	const cueMix = context.createGain();
-	const masterMix = context.createGain();
-	const level = context.createGain();
-	const destination = context.createMediaStreamDestination();
-	const element = _createDetachedHeadphoneElement();
-	cueSum.connect(cueMix);
-	masterGain.connect(masterMonitor);
-	masterMonitor.connect(masterMix);
-	cueMix.connect(level);
-	masterMix.connect(level);
-	level.connect(destination);
-	_headphoneNodes = { cueSum, masterMonitor, cueMix, masterMix, level, destination, element };
-	_applyHeadphoneMix();
-	return _headphoneNodes;
-}
-
-function _createDetachedHeadphoneElement(): HTMLAudioElement {
-	return new Audio();
-}
-
-function _detachHeadphoneElement(element: HTMLAudioElement): void {
-	element.pause();
-	element.srcObject = null;
-}
-
-function _disposeHeadphoneGraph(): void {
-	const nodes = _headphoneNodes;
-	_headphoneNodes = null;
-	if (nodes === null) return;
-	for (const node of [nodes.cueSum, nodes.masterMonitor, nodes.cueMix, nodes.masterMix, nodes.level, nodes.destination]) {
-		node.disconnect();
-	}
-	_detachHeadphoneElement(nodes.element);
-	for (const track of nodes.destination.stream.getTracks()) track.stop();
-}
-
 // -------------------------------------------- external mixer routing
 // Opt-in via URL query `?extroute=1:1,2:7` -- comma-separated `deck:usbLeft`
 // pairs, where usbLeft is the 1-based LEFT channel of a stereo pair on the
@@ -821,37 +604,6 @@ function _parseExternalRouting(): Map<DeckId, number> | null {
 	return routing;
 }
 
-/**
- * LATENCY-03: stamp this machine's device floors onto the perf ring, so a
- * `scheduled_offset_ms` read later is never compared across machines by
- * accident.
- *
- * Emitted TWICE, because the build-time reading is not trustworthy on its own:
- * `AudioContext.outputLatency` reads 0.00 while the context is SUSPENDED, and a
- * context is suspended at construction until a user gesture resumes it.
- * Verified: a freshly built, not-yet-resumed context reports
- * `baseLatency=5.80ms outputLatency=0.00ms state=suspended`, i.e. the row
- * silently under-reports the device floor by the whole 32ms output term. So the
- * build stamp is kept (it is the only reading available if the context never
- * runs) and a second, authoritative stamp is taken on the FIRST observation of
- * a running context. `context_running` says which is which.
- *
- * Per-schedule rows are unaffected: they already read both floors live at emit
- * time and carry their own copies. This is the one-time row only.
- */
-function _stampContextDeviceFloors(ctx: AudioContext): void {
-	const running = ctx.state === 'running';
-	if (running && _runningContextFloorsStamped) return;
-	if (running) _runningContextFloorsStamped = true;
-	recordPerfTiming('audio-context', {
-		sample_rate_hz: ctx.sampleRate,
-		base_latency_ms: Math.round(ctx.baseLatency * 1e6) / 1000,
-		output_latency_ms: Math.round(ctx.outputLatency * 1e6) / 1000,
-		// 0 means outputLatency above may be a suspended-context zero, not a floor.
-		context_running: running ? 1 : 0
-	});
-}
-
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -860,14 +612,13 @@ function _ensureGraph(): AudioContext {
 	// Construction options travel through ONE named constant so a future
 	// user-facing buffer/latency setting has a single place to write to.
 	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
-	_runningContextFloorsStamped = false;
-	_stampContextDeviceFloors(_ctx);
+	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
 	// suspended is re-stamped here the moment it runs, whichever path resumed it.
 	const stampedContext = _ctx;
 	stampedContext.addEventListener('statechange', () => {
-		if (stampedContext.state === 'running') _stampContextDeviceFloors(stampedContext);
+		if (stampedContext.state === 'running') stampContextDeviceFloors(stampedContext);
 	});
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
@@ -903,7 +654,7 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.channelInterpretation = 'discrete';
 		_externalMerger.connect(_masterMuteGain);
 	}
-	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
+	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -952,6 +703,7 @@ function _ensureGraph(): AudioContext {
 		}
 		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
 	}
+	armXrunSentinel(_ctx);
 	return _ctx;
 }
 
@@ -1674,6 +1426,20 @@ export function stretchScheduleChange(
 	};
 }
 
+/** Q1: `_scheduleDeck` from a press path - the stamp rides, nothing else moves.
+ * `keep` = the tempo/loop/key arguments a press never overrides, so each one
+ * stays the deck's standing intent. */
+function _schedulePress(
+	deck: DeckId,
+	when: number,
+	inputSec: number | ((effectiveWhen: number) => number),
+	active: boolean,
+	pressT0Ms: number | undefined
+): Promise<number> {
+	const keep = undefined;
+	return _scheduleDeck(deck, when, inputSec, active, keep, keep, keep, keep, pressT0Ms);
+}
+
 async function _scheduleDeck(
 	deck: DeckId,
 	when: number,
@@ -1682,7 +1448,8 @@ async function _scheduleDeck(
 	tempoRatio?: number,
 	masterTempoEnabled?: boolean,
 	loop?: LoopState | null,
-	keyShiftSemitones?: number
+	keyShiftSemitones?: number,
+	pressT0Ms?: number
 ): Promise<number> {
 	const rt = _rt[deck];
 	const expectedLoadToken = rt.loadToken;
@@ -1717,7 +1484,8 @@ async function _scheduleDeck(
 			tempoRatio,
 			masterTempoEnabled,
 			loop,
-			keyShiftSemitones
+			keyShiftSemitones,
+			pressT0Ms
 		);
 	} catch (error) {
 		// Reconcile the optimistic write to the STANDING intent, not to the value
@@ -1781,7 +1549,8 @@ async function _scheduleDeckSerial(
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined
 ): Promise<number> {
 	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
 	_commitPendingIfDue(deck);
@@ -1789,6 +1558,9 @@ async function _scheduleDeckSerial(
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
 	const scheduleContextTime = _ctx.currentTime;
+	// Q1: the SAME clock read the row reports, so both halves of
+	// input_to_audible_ms meet at one instant instead of overlapping.
+	const pressToScheduleMs = measurePressToScheduleMs(pressT0Ms, deck);
 	const processorLeadSec = _transportLeadSec(deck);
 	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, processorLeadSec);
 	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
@@ -1811,7 +1583,8 @@ async function _scheduleDeckSerial(
 		processorLatencySec: rt.latencySec,
 		baseLatencySec: _ctx.baseLatency,
 		outputLatencySec: _ctx.outputLatency,
-		active
+		active,
+		pressToScheduleMs
 	});
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =
@@ -2212,6 +1985,31 @@ function _tempoAt(deck: DeckId, contextTime: number): number {
 	return _controlSegmentAt(_rt[deck], contextTime).tempoRatio;
 }
 
+/**
+ * Transport position read from the AUDIO CLOCK rather than the rAF-published
+ * mirror in `deckStates[deck].position_ms`.
+ *
+ * That mirror only advances inside `_tick`, which runs on requestAnimationFrame
+ * and which the browser stops entirely while the tab is in the background. Any
+ * decision that must keep being made while the user is on another tab has to
+ * read the clock directly, or it silently stalls: the mirror freezes at
+ * whatever it last published, so derived remaining-time never enters its
+ * trigger window and nothing ever fires. AutoPlay's end-of-track handoff is
+ * exactly that shape, and stopped the set dead at the current track whenever
+ * the user tabbed away.
+ *
+ * This is a READ for decisions only. `_currentPosSec` stays unpublished to
+ * DeckState while audio is active, per its own contract: the UI must keep
+ * showing the PRESENTED position, which trails this one by output latency.
+ * A paused deck has no running clock, so its published cursor is the truth -
+ * the same split `_scheduleSeek` already makes.
+ */
+export function deckAudioClockPositionMs(deck: DeckId): number {
+	const st = deckStates[deck];
+	if (!st.playing) return st.position_ms;
+	return _currentPosSec(deck) * 1000;
+}
+
 /** Render/control-clock position in seconds, with manual loop wrap. This is
  * never published directly to DeckState while audio is active. */
 function _currentPosSec(deck: DeckId): number {
@@ -2399,7 +2197,7 @@ async function _resumeContext(): Promise<AudioContext> {
 	}
 	// Belt for the statechange listener: whichever fires first, the authoritative
 	// device-floor row is emitted exactly once (the helper is idempotent).
-	_stampContextDeviceFloors(ctx);
+	stampContextDeviceFloors(ctx);
 	return ctx;
 }
 
@@ -2408,11 +2206,32 @@ export interface ContextTimeSource {
 	readonly state: string;
 }
 
+/**
+ * The two time primitives the context-time wait below is built on: the
+ * millisecond reading it measures stall progress against, and the sleep it
+ * parks on between polls. They are injectable for one reason - the wait's
+ * contract is "give up within `stallTimeoutMs` of the last observed
+ * progress", and that is a statement about scheduling arithmetic, not about
+ * how punctually a loaded machine delivers a timer callback. A test that
+ * drives a virtual clock checks the arithmetic; a test that times real
+ * `setTimeout` calls checks the host's spare CPU.
+ */
+export interface ContextWaitClock {
+	nowMs(): number;
+	sleep(ms: number): Promise<void>;
+}
+
+export const REAL_CONTEXT_WAIT_CLOCK: ContextWaitClock = {
+	nowMs: () => Date.now(),
+	sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+};
+
 export async function waitForAdvancingContextTime(
 	ctx: ContextTimeSource,
 	targetContextTime: number,
 	stillCurrent: () => boolean = () => true,
-	stallTimeoutMs: number = CONTEXT_WAIT_STALL_TIMEOUT_MS
+	stallTimeoutMs: number = CONTEXT_WAIT_STALL_TIMEOUT_MS,
+	clock: ContextWaitClock = REAL_CONTEXT_WAIT_CLOCK
 ): Promise<void> {
 	if (!Number.isFinite(targetContextTime) || targetContextTime < 0) {
 		throw new RangeError(
@@ -2429,7 +2248,7 @@ export async function waitForAdvancingContextTime(
 		);
 	}
 	let lastContextTime = initialContextTime;
-	let lastProgressAtMs = Date.now();
+	let lastProgressAtMs = clock.nowMs();
 	while (ctx.currentTime < targetContextTime) {
 		if (!stillCurrent()) throw new Error('context-time wait state changed before target');
 		if (ctx.state !== 'running') {
@@ -2443,9 +2262,9 @@ export async function waitForAdvancingContextTime(
 		}
 		if (contextTime > lastContextTime) {
 			lastContextTime = contextTime;
-			lastProgressAtMs = Date.now();
+			lastProgressAtMs = clock.nowMs();
 		}
-		const stallRemainingMs = stallTimeoutMs - (Date.now() - lastProgressAtMs);
+		const stallRemainingMs = stallTimeoutMs - (clock.nowMs() - lastProgressAtMs);
 		if (stallRemainingMs <= 0) {
 			throw new Error(
 				`AudioContext time stalled before target ${targetContextTime} at ${contextTime}`
@@ -2456,7 +2275,7 @@ export async function waitForAdvancingContextTime(
 			1,
 			Math.ceil(Math.min(CONTEXT_WAIT_POLL_MS, contextRemainingMs, stallRemainingMs))
 		);
-		await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+		await clock.sleep(delayMs);
 	}
 }
 
@@ -2919,6 +2738,18 @@ async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promi
 	}
 }
 
+/**
+ * The monitor's tap into the engine graph, handed to the headphone module as a
+ * thunk. Resolved lazily on purpose: a headphone selection must still build the
+ * graph at the point INSIDE its try block where it always did, so a graph-build
+ * failure is still reported as `headphone output selection failed`.
+ */
+function _monitorSource(): { context: AudioContext; masterGain: GainNode } {
+	const context = _ensureGraph();
+	if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
+	return { context, masterGain: _masterGain };
+}
+
 // ------------------------------------------------------------- the engine
 
 /** Singleton Web Audio engine implementing the AudioEngine contract, plus
@@ -2943,8 +2774,8 @@ class RbAudioEngine implements AudioEngine {
 				nodes.push(...Object.values(rt.nodes).filter((node): node is AudioNode => node !== null));
 			}
 		}
-		_headphoneGeneration += 1;
-		_disposeHeadphoneGraph();
+		disposeHeadphoneMonitor();
+		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
@@ -3102,15 +2933,14 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordPerfTiming('deck-load-fail', stages, deck);
+			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			const msg =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
-			pushToast(`Deck ${deck} load failed - ${msg}`, 'error', undefined, exc);
-			recordPerfEvent('deck-load-fail', msg, deck);
+			reportDeckLoadFailure(deck, msg, exc, stages);
 			throw exc;
 		}
 		if (
@@ -3201,7 +3031,7 @@ class RbAudioEngine implements AudioEngine {
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.last_load_stages = { ...stages };
-		recordPerfTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck);
+		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
 	}
 
 	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR
@@ -3220,7 +3050,8 @@ class RbAudioEngine implements AudioEngine {
 		st.loop = _displayLoopFrom(fresh.cues);
 	}
 
-	async play(deck: DeckId): Promise<void> {
+	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
+	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state
 		// NOT st.beat_sync_enabled: the flag defaults ON, and a track with no
@@ -3261,7 +3092,7 @@ class RbAudioEngine implements AudioEngine {
 			// ramp rather than the processor's self-report (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			try {
-				await _scheduleDeck(deck, when, startSec, true);
+				await _schedulePress(deck, when, startSec, true, pressT0Ms);
 				_assignMaster(deck);
 				st.sync_error = null;
 			} catch (error) {
@@ -3274,7 +3105,7 @@ class RbAudioEngine implements AudioEngine {
 			// in play, so this is plain transport (LATENCY-01), led by the onset
 			// ramp (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
-			await _scheduleDeck(deck, when, startSec, true);
+			await _schedulePress(deck, when, startSec, true, pressT0Ms);
 			st.sync_error = null;
 		} else {
 			// This deck is joining from silence (guarded by the desiredActive
@@ -3284,7 +3115,8 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
-	async pause(deck: DeckId): Promise<void> {
+	/** Q1: see `play` for the `pressT0Ms` contract. */
+	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'pause');
 		if (!rt.desiredActive) return; // already paused is a valid state
 		if (_ctx === null) throw new Error('pause: audio graph not initialised');
@@ -3293,11 +3125,12 @@ class RbAudioEngine implements AudioEngine {
 		// stopped is the worst failure this transport has.
 		const pauseBeats = _quantizeGrid(st);
 		const when = _futureScheduleTime(deck);
-		const positionSec = await _scheduleDeck(
+		const positionSec = await _schedulePress(
 			deck,
 			when,
 			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-			false
+			false,
+			pressT0Ms
 		);
 		const cueMs = pauseBeats !== null
 			? quantizedPositionMs(pauseBeats, positionSec * 1000, true)
@@ -3395,13 +3228,16 @@ class RbAudioEngine implements AudioEngine {
 
 	/** The physical CUE button. Playing: return to the cue point and pause.
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
-	 * set the cue at the current position. */
-	async pressCue(deck: DeckId): Promise<void> {
+	 * set the cue at the current position.
+	 *
+	 * Q1: see `play` for the stamp. Only the playing branch schedules; the paused
+	 * branches are pure state writes, and the seek branch is Q1's follow-up. */
+	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pressCue');
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
 			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
-			await _scheduleDeck(deck, _futureScheduleTime(deck), target / 1000, false);
+			await _schedulePress(deck, _futureScheduleTime(deck), target / 1000, false, pressT0Ms);
 			return;
 		}
 		if (st.cue_ms === null) {
@@ -3990,97 +3826,27 @@ class RbAudioEngine implements AudioEngine {
 	setHeadphoneMix(value: number): void {
 		_assertUnit('setHeadphoneMix value', value);
 		mixerState.headphones.mix = value;
-		if (_headphoneNodes !== null) _applyHeadphoneMix();
+		applyHeadphoneMix();
 	}
 
 	setHeadphoneLevel(value: number): void {
 		_assertUnit('setHeadphoneLevel value', value);
 		mixerState.headphones.level = value;
-		if (_headphoneNodes !== null) _applyHeadphoneMix();
+		applyHeadphoneMix();
 	}
 
 	async refreshHeadphoneOutputs(): Promise<void> {
-		const generation = _headphoneGeneration;
-		let devices: MediaDeviceInfo[];
-		try {
-			devices = await withHeadphoneOperationTimeout(
-				'enumerateDevices',
-				_requireHeadphoneDeviceApi().enumerateDevices()
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-		} catch (error) {
-			_assertCurrentHeadphoneOperation(generation, null);
-			throw _headphoneError('headphone output enumeration failed', error);
-		}
-		mixerState.headphones.outputs = devices
-			.filter((device) => device.kind === 'audiooutput')
-			.map((device) => ({ id: device.deviceId, label: device.label }));
-		const reconciled = reconcileHeadphoneOutputRefresh(
-			mixerState.headphones.active,
-			mixerState.headphones.selected_output_device_id,
-			mixerState.headphones.outputs
-		);
-		if (reconciled.selected_output_device_id === null && mixerState.headphones.selected_output_device_id !== null) {
-			const currentElement = _headphoneNodes?.element;
-			if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
-		}
-		mixerState.headphones.active = reconciled.active;
-		mixerState.headphones.selected_output_device_id = reconciled.selected_output_device_id;
-		mixerState.headphones.error = null;
+		return refreshMonitorOutputs();
 	}
 
 	/** Must be called from a visible user gesture so the browser can open its
 	 * output chooser. This never requests microphone capture. */
 	async acquireHeadphoneOutput(): Promise<void> {
-		const generation = _headphoneGeneration;
-		try {
-			const device = await withHeadphoneOperationTimeout(
-				'selectAudioOutput',
-				_requireHeadphoneOutputAcquisitionApi().selectAudioOutput()
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-			mixerState.headphones.outputs = mergeHeadphoneOutput(mixerState.headphones.outputs, device);
-			await this.selectHeadphoneOutput(device.deviceId);
-			_assertCurrentHeadphoneOperation(generation, null);
-		} catch (error) {
-			_assertCurrentHeadphoneOperation(generation, null);
-			throw _headphoneError('headphone output acquisition failed', error);
-		}
+		return acquireMonitorOutput(_monitorSource);
 	}
 
 	async selectHeadphoneOutput(deviceId: string): Promise<void> {
-		const generation = _headphoneGeneration;
-		let nodes: _HeadphoneNodes | null = null;
-		let candidate: HTMLAudioElement | null = null;
-		try {
-			_requireHeadphoneDeviceApi();
-			assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
-			const context = _ensureGraph();
-			if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
-			nodes = _ensureHeadphoneGraph(context, _masterGain);
-			candidate = _createDetachedHeadphoneElement();
-			await withHeadphoneOperationTimeout('setSinkId', candidate.setSinkId(deviceId));
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			candidate.srcObject = nodes.destination.stream;
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			await withHeadphoneOperationTimeout('play', candidate.play());
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			const transaction = headphoneReselectionResult(true);
-			const previous = nodes.element;
-			if (!transaction.replaceCurrentElement || !transaction.publishSelection || !transaction.detachPrevious) {
-				throw new Error('accepted headphone candidate did not produce a complete replacement transaction');
-			}
-			nodes.element = candidate;
-			mixerState.headphones.selected_output_device_id = deviceId;
-			mixerState.headphones.active = true;
-			mixerState.headphones.error = null;
-			_detachHeadphoneElement(previous);
-			candidate = null;
-		} catch (error) {
-			if (candidate !== null) _detachHeadphoneElement(candidate);
-			_assertCurrentHeadphoneOperation(generation, nodes);
-			throw _headphoneError('headphone output selection failed', error);
-		}
+		return selectMonitorOutput(deviceId, _monitorSource);
 	}
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */

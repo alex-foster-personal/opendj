@@ -23,6 +23,9 @@ Target discovery (documented per the FB-06 brief):
 
 - Local dev daemons: $MUSIC_DJ_BACKEND_PORT (this worktree's claimed port,
   from .env) and the default 8585, health-checked before use.
+- Ad hoc audition servers: every 127.0.0.1 listener, filtered to those that
+  actually answer /api/v1/feedback/todos. Agents open these on arbitrary
+  ports to put a build in front of the maintainer, so his feedback lands there.
 - Installed apps (local Mac AND silver over ssh): the ship-dmg probe, reused
   verbatim from .agents/skills/ship-dmg/scripts/ship_dmg.sh - pgrep the
   bundled engine python, then lsof its listening TCP port. The engine binds
@@ -95,6 +98,36 @@ class Target:
         return json.loads(out.stdout)
 
 
+# Ad hoc audition servers: agents spin these up on arbitrary local ports to
+# put a build in front of the maintainer, and that is exactly where he leaves review
+# feedback. Discovery previously covered only the .env port, 8585 and the
+# installed app, so a pin left on an audition port sat unharvested (his
+# 15:07Z /performance pin on port 8693, found an hour late on Mon 31 Aug
+# 2026). Every 127.0.0.1 listener is a candidate; _serves_feedback filters.
+LOCAL_LISTENER_PROBE: str = (
+    "lsof -nP -iTCP@127.0.0.1 -sTCP:LISTEN -Fn 2>/dev/null | "
+    'sed -n "s/^n.*:\\([0-9][0-9]*\\)$/\\1/p" | sort -u'
+)
+
+
+def _local_listening_ports() -> list[int]:
+    """Every port bound on 127.0.0.1 right now, ascending. Empty on failure."""
+    try:
+        out = subprocess.run(
+            ["bash", "-c", LOCAL_LISTENER_PROBE],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_S,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        print(f"[WARN] local listener scan failed: {exc}")
+        return []
+    return sorted(
+        {int(line) for line in out.stdout.split() if re.fullmatch(r"\d+", line)}
+    )
+
+
 def _probe_installed_port(ssh_host: str | None) -> int | None:
     argv = (
         ["bash", "-c", PORT_PROBE]
@@ -112,14 +145,23 @@ def _probe_installed_port(ssh_host: str | None) -> int | None:
     return int(port) if re.fullmatch(r"\d+", port) else None
 
 
-def _serves_feedback(target: Target) -> bool:
+def _serves_feedback(target: Target, quiet: bool = False) -> bool:
+    """Does this target answer the feedback API?
+
+    quiet=True is for SPECULATIVE probes of scanned ports, where most
+    listeners are unrelated local services (databases, proxies, other apps)
+    and a warning per miss would be noise that trains the reader to ignore
+    warnings. Configured targets stay loud: a dev port or an explicit --url
+    that does not answer is a real problem worth surfacing.
+    """
     try:
         target.request("GET", "/api/v1/feedback/todos")
     except Exception as exc:
-        print(
-            f"[WARN] {target.machine} {target.base} has no reachable "
-            f"feedback API: {exc}"
-        )
+        if not quiet:
+            print(
+                f"[WARN] {target.machine} {target.base} has no reachable "
+                f"feedback API: {exc}"
+            )
         return False
     else:
         return True
@@ -147,6 +189,18 @@ def _discover(extra_urls: list[str], skip_silver: bool) -> list[Target]:
                 ssh_host=None,
             )
         )
+
+    for port in _local_listening_ports():
+        if port in seen_ports:
+            continue
+        seen_ports.add(port)
+        scanned = Target(
+            machine=f"{local}-audition",
+            base=f"http://127.0.0.1:{port}",
+            ssh_host=None,
+        )
+        if _serves_feedback(scanned, quiet=True):
+            candidates.append(scanned)
 
     candidates.extend(
         Target(machine=f"{local}-url", base=url.rstrip("/"), ssh_host=None)

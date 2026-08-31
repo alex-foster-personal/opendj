@@ -11,6 +11,8 @@ from typing import Literal, Optional, Union
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, field_validator
 
+from apps.shared.telemetry import capture_browser_error
+
 from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 
 router = APIRouter(prefix="/client-errors", tags=["client-errors"])
@@ -83,4 +85,21 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
             path,
             summary,
         )
+    # Forward to Sentry AFTER the local log is written. The daily log is the
+    # record that must not be lost; telemetry is remote aggregation on top of
+    # it, and it is a no-op whenever telemetry is off (every dev checkout).
+    # The browser does not report to Sentry itself -- see capture_browser_error
+    # for why the engine owns this -- so this call is the only path a client
+    # error has to an issue.
+    capture_browser_error(
+        message=payload.message,
+        name=payload.name,
+        stack=payload.stack,
+        url=payload.url,
+        user_agent=payload.user_agent,
+        context={"kind": payload.kind, "client_event_id": payload.client_event_id,
+                 "secure_context": payload.secure_context,
+                 "audio_worklet_available": payload.audio_worklet_available,
+                 **payload.context},
+    )
     return ClientErrorOut(event_id=event_id, stored=stored)

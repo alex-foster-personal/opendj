@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.opendj.performance-probe</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>diag="$HOME/Library/Application Support/OpenDJ Diagnostics"; cd "$diag/bin" &amp;&amp; exec /usr/bin/python3 -m opendj_diagnostics.opendj_performance_probe --interval 15 --deep-every 300 --output-dir "$diag/performance" &gt;/dev/null 2&gt;&gt;"$diag/probe-stderr.log"</string>
+	</array>
+	<!-- launchd does not expand $HOME in StandardOutPath/StandardErrorPath, so
+	     the redirection happens in the shell that already has it. stdout is one
+	     JSON summary line per 15s sample and is discarded, because it would grow
+	     unbounded beside the capped JSONL; stderr is kept, because a KeepAlive
+	     job that crash-loops with no stderr is undiagnosable.
+
+	     The probe is a PACKAGE, not one script: the modules import each other
+	     relatively, so it is launched with -m from the directory that holds
+	     opendj_diagnostics/ ("cd" is what puts that directory on sys.path, and
+	     it is the installed copy under Application Support, never the repo). -->
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>10</integer>
+	<key>ThrottleInterval</key>
+	<integer>15</integer>
+</dict>
+</plist>

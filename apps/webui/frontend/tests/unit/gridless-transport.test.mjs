@@ -128,9 +128,9 @@ test('an empty deck is not blamed on the grid: nothing is loaded to analyse yet'
 //-----------------------------------------------------------------------------
 
 const TRANSPORT_ANCHORS = [
-	'	async play(deck: DeckId): Promise<void> {',
-	'	async pause(deck: DeckId): Promise<void> {',
-	'	async pressCue(deck: DeckId): Promise<void> {',
+	'	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {',
+	'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
+	'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {',
 	'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 ];
@@ -148,8 +148,8 @@ test('no transport method can refuse a deck for want of a beat grid', () => {
 
 test('every transport quantize site reads the grid through the never-throwing helper', () => {
 	for (const anchor of [
-		'	async pause(deck: DeckId): Promise<void> {',
-		'	async pressCue(deck: DeckId): Promise<void> {',
+		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
+		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {',
 		'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 	]) {
@@ -192,7 +192,7 @@ test('saving a hot cue asks for a USABLE grid, not merely a non-empty one', () =
 });
 
 test('play decides sync from the effective flag, not the raw one', () => {
-	const body = engineBlockAfter('	async play(deck: DeckId): Promise<void> {');
+	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {');
 	assert.ok(
 		body.includes('effectiveBeatSync('),
 		'if play reads st.beat_sync_enabled directly then a gridless deck with the default ' +
@@ -392,7 +392,7 @@ test('a gridded deck still snaps to the exact PQTZ beat, ties going earlier', ()
 });
 
 test('pause still stores a snapped cue when the deck does have a grid', () => {
-	const body = engineBlockAfter('	async pause(deck: DeckId): Promise<void> {');
+	const body = engineBlockAfter('	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {');
 	assert.ok(
 		body.includes('quantizedPositionMs('),
 		'if pause stops snapping then a gridded deck lost rekordbox parity on the memory cue'

@@ -31,6 +31,23 @@ import { fileURLToPath } from "node:url";
  */
 
 const SRC = fileURLToPath(new URL("../../src", import.meta.url));
+const FRONTEND_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+
+/**
+ * One frontend source file as text, LF-normalized, refusing to return an empty
+ * one: a source-text guard pointed at '' asserts nothing while reporting green.
+ */
+export function readFrontendSource(relativePath) {
+  const text = readFileSync(`${FRONTEND_ROOT}/${relativePath}`, "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  assert.ok(
+    text.trim().length > 0,
+    `if ${relativePath} reads empty this guard asserts nothing`,
+  );
+  return text;
+}
 
 /**
  * Every file that together holds the engine's source-text surface.
@@ -40,7 +57,10 @@ const SRC = fileURLToPath(new URL("../../src", import.meta.url));
  * none of the arithmetic it means to pin.
  *
  * Six arrived as T4 extractions (S1 constants + camelot, S2 transport math,
- * S3 presentation, S4 rune stores). master-mute.svelte.ts is listed for the
+ * S3 presentation, S4 rune stores). Two more arrived as PERF-R4 instrumentation
+ * extractions under convention D5: audio-context-instrumentation.ts (the
+ * device-floor stamp and the xrun sentinel arming) and press-stamp.ts (the
+ * press-to-schedule delta). master-mute.svelte.ts is listed for the
  * same reason but arrived differently: it was written as a feature rather than
  * moved out of the engine, and the barrel re-exports it. Membership is decided
  * by "is this text reachable as engine surface today", not by how the file was
@@ -48,7 +68,10 @@ const SRC = fileURLToPath(new URL("../../src", import.meta.url));
  */
 export const ENGINE_SOURCE_PATHS = [
   "lib/rb/audio-engine.svelte.ts",
+  "lib/rb/audio-context-instrumentation.ts",
+  "lib/rb/press-stamp.ts",
   "lib/player/constants.ts",
+  "lib/player/headphones.ts",
   "lib/player/key/camelot.ts",
   "lib/player/master-mute.svelte.ts",
   "lib/player/state.svelte.ts",
