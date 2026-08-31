@@ -77,7 +77,7 @@
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
-	import { setAutoPlayTrackFeed } from '$lib/rb/auto-play';
+	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
 	import { pickDoubleClickDeck } from '$lib/rb/double-click-deck-pick';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
@@ -1187,17 +1187,34 @@
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
 
-	// Feed AutoPlay: open playlist membership with key/BPM + disk truth.
-	// Include broken rows so pick can skip them; never invent file_exists.
+	/** Holds the order AutoPlay walks, frozen at the moment it was switched
+	 * on (see createAutoPlayFeedSnapshot in auto-play.ts for the maintainer's rule). */
+	const autoPlayFeed = createAutoPlayFeedSnapshot();
+
+	// Feed AutoPlay from the SORTED, filtered view the user is actually looking
+	// at - not pane.rows, which is raw stored membership and ignored the sort
+	// outright.
+	//
+	// This means the view's own filters govern what AutoPlay can reach, which
+	// is the point: with 'Hide broken links' ON, broken rows are not on screen
+	// and are not candidates either. With it OFF they are fed through carrying
+	// file_exists: false, and pick skips them and still reports the
+	// missing-audio case. file_exists is never invented in either direction.
+	//
+	// The snapshot decides WHEN this may change: on activation it takes the
+	// current view, and while AutoPlay runs it publishes nothing, so re-sorting
+	// mid-set cannot re-order a set in flight.
 	$effect(() => {
-		setAutoPlayTrackFeed(
-			pane.rows.map((r) => ({
+		const decision = autoPlayFeed.step(
+			uiPrefs.auto_play_enabled,
+			visibleRows.map((r) => ({
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
 				file_exists: r.file_exists
 			}))
 		);
+		if (decision.publish !== null) setAutoPlayTrackFeed(decision.publish);
 	});
 
 	/** Monotonic load counter - double-click prefers least-recent in the pair. */

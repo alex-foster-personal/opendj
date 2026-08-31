@@ -277,15 +277,19 @@
 
 	<div class="spacer"></div>
 
+	<!-- review/feedback widget: chevron + comment pin on the LEFT-hand side of
+	     the vibe meter (FB-07, superseding the right-hand placement shipped in
+	     #523); REAL -> /api/v1/feedback, inert when the daemon does not serve
+	     it (FB-01..FB-04). Both this and the vibe meter are absolutely
+	     centred, so DOM order does not place them - the .fb-cluster anchor
+	     does. It reads first here so focus and screen-reader order match what
+	     is on screen. -->
+	<FeedbackWidget />
+
 	<!-- dead-center vibe meter: mouse movement tops it up; history in localStorage -->
 	<div class="vibe-slot">
 		<VibeMeter />
 	</div>
-
-	<!-- review/feedback widget: chevron + comment pin beside the vibe meter
-	     (FB-01..FB-04); REAL -> /api/v1/feedback, inert when the daemon
-	     does not serve it -->
-	<FeedbackWidget />
 
 	<!-- right cluster -->
 	<button
