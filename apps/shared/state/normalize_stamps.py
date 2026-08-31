@@ -58,9 +58,12 @@ Reason = Literal["naive-assumed-utc", "unparseable-to-floor"]
 #: The lowest stamp that can be STORED. See the module docstring: this is
 #: deliberately not ``sync_stamp.EPOCH``, which is year zero and therefore
 #: unrepresentable and unparseable -- writing that would recreate the brick.
-FLOOR_STAMP: str = sync_stamp.canonical_from(
-    datetime.min.replace(tzinfo=UTC)
-)
+# Literal, NOT sync_stamp.canonical_from(datetime.min): strftime("%Y") does not
+# zero-pad years < 1000 on glibc (Linux/CI, Python 3.11), yielding "1-01-01..."
+# which datetime.fromisoformat then rejects, so the repair would write an
+# unparseable replacement and never converge. The literal is a valid ISO8601
+# year-one stamp that parse_canonical accepts on every platform.
+FLOOR_STAMP: str = "0001-01-01T00:00:00.000000+00:00"
 
 #: Every table/column pair whose value the sync protocol orders or hashes.
 #: Mirrors ``apps.sync_hub.protocol.DIGEST_TABLES`` x its timestamp columns,
