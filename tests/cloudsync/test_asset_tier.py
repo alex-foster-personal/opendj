@@ -35,6 +35,8 @@ import pytest
 
 from apps.cloud import asset_store, hydration
 from apps.cloud.config import CloudConfig, MissingEnvError
+from apps.shared.state import locations as state_locations
+from apps.shared.state import sync_stamp
 
 from .conftest import InMemoryAssetS3
 
@@ -905,3 +907,164 @@ def test_produced_asset_becomes_a_cache_hit_on_the_next_read(
     assert source.origin == "cache"
     assert source.content_hash == _sha(body)
     assert source.path is not None and source.path.read_bytes() == body
+
+
+# --- round 2 finding N1b: hydration must stamp, log and stay in its lane ---
+
+
+def _changelog(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
+    return [
+        (str(r[0]), str(r[1]), str(r[2]))
+        for r in conn.execute(
+            "SELECT table_name, row_pk, origin_device_id FROM local_changelog "
+            "ORDER BY seq"
+        )
+    ]
+
+
+def test_a_hydrated_remote_row_is_visible_to_the_machine_that_hydrated_it(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    fake_s3: InMemoryAssetS3,
+    tmp_path: Path,
+):
+    """Round 2 finding N1b, reproduced as a permanent regression.
+
+    The row used to be written with machine_id NULL, so it was invisible to
+    every machine-scoped read:
+
+      [observed] b2 hydrated row: ('9bd3fb3b...', None, 'assets/audio/ab/...')
+      [observed] b2 locations.list_locations sees: 0 rows
+
+    A track the daemon had just hydrated from R2 did not register as present
+    on the machine that hydrated it, and only the next open_rw backfill
+    rescued it -- which a long-lived daemon never performs.
+    """
+    _seed_track(conn, "t1")
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "pinned", asset_kind="stem_bundle")
+
+    hydration.apply_policy_after_produce(
+        conn,
+        fake_s3,
+        cfg,
+        stable_id="t1",
+        machine_id="m1",
+        local_path=_write(tmp_path / "out" / "bundle.zip", b"produced stems"),
+        asset_kind="stem_bundle",
+    )
+
+    rows = state_locations.list_locations(conn, "t1", machine_id="m1")
+    assert [loc.kind for loc in rows] == ["remote"]
+    assert rows[0].machine_id == "m1"
+    assert rows[0].available is True
+    assert len(rows[0].location_id) == 32, "a uuid4 hex key, not a rowid"
+
+
+def test_hydration_writes_reach_the_push_fence(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    fake_s3: InMemoryAssetS3,
+    tmp_path: Path,
+):
+    """[observed] b2 local_changelog entries: 0 -- so the hub never saw it."""
+    _seed_track(conn, "t1")
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "cached", asset_kind="stem_bundle")
+    produced = _write(tmp_path / "out" / "bundle.zip", b"produced stems")
+    _seed_local_location(conn, "t1", produced, machine_id="m1")
+
+    hydration.apply_policy_after_produce(
+        conn,
+        fake_s3,
+        cfg,
+        stable_id="t1",
+        machine_id="m1",
+        local_path=produced,
+        asset_kind="stem_bundle",
+        cache_dir=tmp_path / "cache",
+    )
+
+    entries = _changelog(conn)
+    assert entries, (
+        "a track_locations write with no local_changelog entry is never "
+        "offered to the hub, and the machine then fails its digest compare"
+    )
+    assert {table for table, _pk, _origin in entries} == {"track_locations"}
+    assert {origin for _t, _pk, origin in entries} == {"m1"}
+
+    logged_pks = {pk for _t, pk, _o in entries}
+    stored_pks = {
+        sync_stamp.encode_row_pk((str(row[0]),))
+        for row in conn.execute("SELECT location_id FROM track_locations")
+    }
+    assert stored_pks - logged_pks == set(), (
+        "every location row hydration touched must be named by the changelog"
+    )
+
+
+def test_marking_a_local_copy_gone_does_not_touch_another_machines_row(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    fake_s3: InMemoryAssetS3,
+    tmp_path: Path,
+):
+    """ADR 08 point 1, running backwards.
+
+    The unscoped UPDATE this replaces flipped every machine's row for the
+    same path to unavailable on the strength of a file deleted HERE. Two
+    machines sharing a path is the normal case for a fleet on one NAS.
+    """
+    produced = _write(tmp_path / "out" / "bundle.zip", b"produced stems")
+    _seed_track(conn, "t1")
+    _seed_machine(conn, "m1")
+    _seed_machine(conn, "m2")
+    _seed_policy(conn, "m1", "stream", asset_kind="stem_bundle")
+    _seed_local_location(conn, "t1", produced, machine_id="m1")
+    _seed_local_location(conn, "t1", produced, machine_id="m2")
+
+    hydration.apply_policy_after_produce(
+        conn,
+        fake_s3,
+        cfg,
+        stable_id="t1",
+        machine_id="m1",
+        local_path=produced,
+        asset_kind="stem_bundle",
+    )
+
+    availability = dict(
+        conn.execute(
+            "SELECT machine_id, available FROM track_locations "
+            "WHERE kind = 'local' AND stable_id = 't1'"
+        ).fetchall()
+    )
+    assert availability == {"m1": 0, "m2": 1}, (
+        "deleting a file here says nothing about another machine's disk"
+    )
+
+
+def test_re_pushing_the_same_object_reuses_its_location_row(
+    conn: sqlite3.Connection,
+    cfg: CloudConfig,
+    fake_s3: InMemoryAssetS3,
+    tmp_path: Path,
+):
+    """Round 1 finding 1's shape: a second id for one logical row wedges the
+    push with a UNIQUE violation the hub can never retry past."""
+    _seed_track(conn, "t1")
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "pinned", asset_kind="stem_bundle")
+    for _attempt in range(2):
+        hydration.apply_policy_after_produce(
+            conn,
+            fake_s3,
+            cfg,
+            stable_id="t1",
+            machine_id="m1",
+            local_path=_write(tmp_path / "out" / "bundle.zip", b"produced stems"),
+            asset_kind="stem_bundle",
+        )
+    assert conn.execute(
+        "SELECT COUNT(*) FROM track_locations WHERE kind = 'remote'"
+    ).fetchone()[0] == 1
