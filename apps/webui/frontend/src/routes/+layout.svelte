@@ -74,6 +74,7 @@
 			<a href="/performance">Performance</a>
 			<a href="/play-analytics">Play analytics</a>
 			<a href="/sets">Sessions / REC</a>
+			<a href="/cloudsync">CloudSync</a>
 			<!-- Ledger route: legacy-daemon only, so the link says so rather than
 			     leading to a page that can only apologise. -->
 			<a
