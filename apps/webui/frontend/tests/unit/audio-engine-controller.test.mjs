@@ -10,6 +10,7 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 1.553 }
 ];
 let audio;
+let headphones;
 let computeFollowerSyncPlan;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
@@ -23,6 +24,7 @@ before(async () => {
 	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts', {
 		viteApiBase: API_BASE
 	});
+	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
 });
 
@@ -169,23 +171,23 @@ test('Master Tempo preserves pitch while the disabled mode follows playback rate
 });
 
 test('headphone cue/master mix uses equal-power gains and validates serializable output state', () => {
-	assert.deepEqual(audio.headphoneMixGains(0), { cue: 1, master: 0 });
-	assert.deepEqual(audio.headphoneMixGains(1), { cue: 0, master: 1 });
-	const center = audio.headphoneMixGains(0.5);
+	assert.deepEqual(headphones.headphoneMixGains(0), { cue: 1, master: 0 });
+	assert.deepEqual(headphones.headphoneMixGains(1), { cue: 0, master: 1 });
+	const center = headphones.headphoneMixGains(0.5);
 	assert.ok(Math.abs(center.cue - Math.SQRT1_2) < 1e-12);
 	assert.ok(Math.abs(center.master - Math.SQRT1_2) < 1e-12);
-	assert.throws(() => audio.headphoneMixGains(1.1), /within 0\.\.1/i);
+	assert.throws(() => headphones.headphoneMixGains(1.1), /within 0\.\.1/i);
 	assert.doesNotThrow(() =>
-		audio.assertHeadphoneOutputSelection('usb-headphones', [
+		headphones.assertHeadphoneOutputSelection('usb-headphones', [
 			{ id: 'usb-headphones', label: 'USB Headphones' }
 		])
 	);
 	assert.throws(
-		() => audio.assertHeadphoneOutputSelection('missing', [{ id: 'usb-headphones', label: '' }]),
+		() => headphones.assertHeadphoneOutputSelection('missing', [{ id: 'usb-headphones', label: '' }]),
 		/enumerated headphone output/i
 	);
 	assert.deepEqual(
-		audio.mergeHeadphoneOutput([{ id: 'default', label: 'Default' }], {
+		headphones.mergeHeadphoneOutput([{ id: 'default', label: 'Default' }], {
 			deviceId: 'usb-headphones',
 			label: 'USB Headphones'
 		}),
@@ -195,7 +197,7 @@ test('headphone cue/master mix uses equal-power gains and validates serializable
 		]
 	);
 	assert.deepEqual(
-		audio.mergeHeadphoneOutput([{ id: 'usb-headphones', label: '' }], {
+		headphones.mergeHeadphoneOutput([{ id: 'usb-headphones', label: '' }], {
 			deviceId: 'usb-headphones',
 			label: 'USB Headphones'
 		}),
@@ -205,7 +207,7 @@ test('headphone cue/master mix uses equal-power gains and validates serializable
 
 test('headphone output refresh fails closed when browser device IDs rotate', () => {
 	assert.deepEqual(
-		audio.reconcileHeadphoneOutputRefresh(
+		headphones.reconcileHeadphoneOutputRefresh(
 			true,
 			'rotated-device-id',
 			[{ id: 'current-device-id', label: 'USB Headphones' }]
@@ -213,7 +215,7 @@ test('headphone output refresh fails closed when browser device IDs rotate', () 
 		{ active: false, selected_output_device_id: null }
 	);
 	assert.deepEqual(
-		audio.reconcileHeadphoneOutputRefresh(
+		headphones.reconcileHeadphoneOutputRefresh(
 			true,
 			'current-device-id',
 			[{ id: 'current-device-id', label: 'USB Headphones' }]
@@ -223,23 +225,23 @@ test('headphone output refresh fails closed when browser device IDs rotate', () 
 });
 
 test('headphone selection declares sink, stream attach, play, then publish and rejects stale ownership', async () => {
-	assert.deepEqual(audio.headphoneSelectionStages(), ['setSinkId', 'attachStream', 'play', 'publish']);
-	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, true), true);
-	assert.equal(audio.headphoneOwnershipIsCurrent(4, 5, true), false);
-	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, false), false);
-	assert.throws(() => audio.assertHeadphoneOwnership(4, 5, true), /stale headphone operation/i);
+	assert.deepEqual(headphones.headphoneSelectionStages(), ['setSinkId', 'attachStream', 'play', 'publish']);
+	assert.equal(headphones.headphoneOwnershipIsCurrent(4, 4, true), true);
+	assert.equal(headphones.headphoneOwnershipIsCurrent(4, 5, true), false);
+	assert.equal(headphones.headphoneOwnershipIsCurrent(4, 4, false), false);
+	assert.throws(() => headphones.assertHeadphoneOwnership(4, 5, true), /stale headphone operation/i);
 	await assert.rejects(
-		audio.withHeadphoneOperationTimeout('enumerateDevices', new Promise(() => {}), 1),
+		headphones.withHeadphoneOperationTimeout('enumerateDevices', new Promise(() => {}), 1),
 		/enumerateDevices timed out/i
 	);
 	assert.equal(
-		await audio.withHeadphoneOperationTimeout('setSinkId', Promise.resolve('accepted'), 20),
+		await headphones.withHeadphoneOperationTimeout('setSinkId', Promise.resolve('accepted'), 20),
 		'accepted'
 	);
 });
 
 test('headphone reselection keeps the previous monitor until a candidate commits', () => {
-	assert.deepEqual(audio.headphoneReselectionStages(), [
+	assert.deepEqual(headphones.headphoneReselectionStages(), [
 		'createCandidate',
 		'setSinkId',
 		'attachStream',
@@ -247,12 +249,12 @@ test('headphone reselection keeps the previous monitor until a candidate commits
 		'replaceAndPublish',
 		'detachPrevious'
 	]);
-	assert.deepEqual(audio.headphoneReselectionResult(false), {
+	assert.deepEqual(headphones.headphoneReselectionResult(false), {
 		replaceCurrentElement: false,
 		publishSelection: false,
 		detachPrevious: false
 	});
-	assert.deepEqual(audio.headphoneReselectionResult(true), {
+	assert.deepEqual(headphones.headphoneReselectionResult(true), {
 		replaceCurrentElement: true,
 		publishSelection: true,
 		detachPrevious: true
@@ -1342,8 +1344,13 @@ test('load-state invariant rejects playable-looking ghost decks', () => {
 test('analysis retrieval failure rejects before an unusable deck candidate can publish', async () => {
 	const originalFetch = globalThis.fetch;
 	const originalSetTimeout = globalThis.setTimeout;
+	// Two timers are legitimate on this path: the toast expiry, and the perf
+	// ring's coalesced localStorage flush, which replaced the synchronous
+	// stringify + setItem that used to run per recorded row. Collected rather
+	// than asserted inline so a stray timer names itself in the diff.
+	const timerDelays = [];
 	globalThis.setTimeout = (_callback, delay) => {
-		assert.equal(delay, 5_000, 'only the toast expiry timer is expected');
+		timerDelays.push(delay);
 		return 0;
 	};
 	globalThis.fetch = async (input) => {
@@ -1395,6 +1402,13 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 		assert.equal(audio.getDeckState(1).stable_id, null);
 		assert.equal(audio.getDeckState(1).anlz, null);
 		assert.match(audio.deckLoadErrors[1], /ANALYSIS_NOT_FOUND/);
+		assert.ok(timerDelays.includes(5_000), 'the failure toast must still be raised');
+		assert.deepEqual(
+			timerDelays.filter((delay) => delay !== 5_000 && delay !== 250),
+			[],
+			'only the toast expiry and the perf ring flush may schedule work on the ' +
+				'load-failure path; anything else is a stray timer on a failing load'
+		);
 	} finally {
 		globalThis.fetch = originalFetch;
 		globalThis.setTimeout = originalSetTimeout;

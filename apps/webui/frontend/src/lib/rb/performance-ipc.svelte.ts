@@ -177,7 +177,16 @@ export interface PerformancePresetTransactionDriver {
 
 export interface PerformanceBrowserIpc {
 	readonly version: 1;
-	dispatch(message: unknown): Promise<PerformanceState>;
+	/**
+	 * Q1 agent-native parity: `pressT0Ms` is the same optional input stamp the
+	 * UI boundary takes, on the `performance.now()` epoch. A browser agent
+	 * driving a transport command passes its own stamp and gets the same
+	 * `press_to_schedule_ms` / `input_to_audible_ms` stages a human press
+	 * produces; omitting it (autoplay, preset restore, any command with no
+	 * input behind it) leaves those stages off the row rather than reporting a
+	 * press that never happened.
+	 */
+	dispatch(message: unknown, pressT0Ms?: number): Promise<PerformanceState>;
 	query(): PerformanceState;
 	capture(deck: unknown): DeckAudioSnapshot;
 }
@@ -309,6 +318,23 @@ function _revision(name: string, value: unknown): string {
 		throw new TypeError(`${name} must be a non-empty revision`);
 	}
 	return value;
+}
+
+/**
+ * Q1: the press stamp crosses the browser IPC boundary like any other input,
+ * so it gets the same fail-fast validation every command field gets. A string
+ * or a NaN here would silently disable the two press stages on a row that
+ * still looks complete, which is worse than a rejected command.
+ */
+function _validatedPressStamp(pressT0Ms: unknown): number | undefined {
+	if (pressT0Ms === undefined) return undefined;
+	if (typeof pressT0Ms !== 'number' || !Number.isFinite(pressT0Ms) || pressT0Ms < 0) {
+		throw new TypeError(
+			`press stamp must be a finite non-negative performance.now() reading, got ` +
+				`${String(pressT0Ms)}`
+		);
+	}
+	return pressT0Ms;
 }
 
 function _parseCommand(message: unknown): PerformanceCommand {
@@ -657,7 +683,14 @@ function _errorMessage(error: unknown): string {
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-async function _execute(command: PerformanceCommand): Promise<void> {
+/**
+ * Q1 / S2: `pressT0Ms` is the input stamp on the `performance.now()` epoch, cut
+ * at the UI boundary BEFORE the command can queue. It travels as an argument
+ * rather than as a command field on purpose: `PerformanceCommand` is the
+ * validated IPC wire shape (`_exactKeys` rejects unknown fields), and an
+ * instrument has no business widening a public protocol.
+ */
+async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	if (command.type === 'load') {
 		await engine.load(command.deck, command.stable_id);
 		hotCueReversals[command.deck] = null;
@@ -666,11 +699,11 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 	} else if (command.type === 'play') {
-		if (command.playing) await engine.play(command.deck);
-		else await engine.pause(command.deck);
+		if (command.playing) await engine.play(command.deck, pressT0Ms);
+		else await engine.pause(command.deck, pressT0Ms);
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'cue') {
-		await engine.pressCue(command.deck);
+		await engine.pressCue(command.deck, pressT0Ms);
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'seek') {
 		await engine.quantizedSeek(command.deck, command.position_ms);
@@ -997,7 +1030,8 @@ export function abortPreparedPerformancePreset(id: string, reason: string): void
 
 async function _dispatchUnknown(
 	message: unknown,
-	commandGeneration: number
+	commandGeneration: number,
+	pressT0Ms?: number
 ): Promise<PerformanceState> {
 	_assertCommandSession(commandGeneration);
 	let command: PerformanceCommand;
@@ -1023,7 +1057,7 @@ async function _dispatchUnknown(
 		try {
 			const acquired = _commandScheduler.runImmediatelyIfIdle('headphone', async () => {
 				_assertCommandSession(commandGeneration);
-				await _execute(command);
+				await _execute(command, pressT0Ms);
 			});
 			await acquired;
 			_assertCommandSession(commandGeneration);
@@ -1040,7 +1074,7 @@ async function _dispatchUnknown(
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
 			_assertCommandSession(commandGeneration);
-			await _execute(command);
+			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
@@ -1060,7 +1094,9 @@ async function _dispatchUnknown(
 		performanceCommandStatus.last_error = null;
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
-			await _execute(command);
+			// Q1: this body starts only AFTER the scope wait above, which is
+			// exactly the gap press_to_schedule_ms exists to expose.
+			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
@@ -1083,16 +1119,28 @@ async function _dispatchUnknown(
 }
 
 export async function dispatchPerformanceCommand(
-	command: PerformanceCommand
+	command: PerformanceCommand,
+	pressT0Ms?: number
 ): Promise<PerformanceState> {
-	return _dispatchUnknown(command, _currentCommandSession());
+	return _dispatchUnknown(command, _currentCommandSession(), pressT0Ms);
 }
 
-/** UI event boundary: await the same fail-fast dispatcher, then consume the
- * rejection only after it has been persisted in visible reactive state. */
-export async function runPerformanceCommandFromUi(command: PerformanceCommand): Promise<void> {
+/**
+ * UI event boundary: await the same fail-fast dispatcher, then consume the
+ * rejection only after it has been persisted in visible reactive state.
+ *
+ * Q1 / S2: this is where the press clock starts. The default is taken on ENTRY,
+ * before `_dispatchUnknown` can park the command behind another scope's tail,
+ * so `press_to_schedule_ms` contains that wait rather than starting after it.
+ * A caller holding the originating DOM event should pass `event.timeStamp`,
+ * which is already on the `performance.now()` epoch and is earlier still.
+ */
+export async function runPerformanceCommandFromUi(
+	command: PerformanceCommand,
+	pressT0Ms: number = performance.now()
+): Promise<void> {
 	try {
-		await dispatchPerformanceCommand(command);
+		await dispatchPerformanceCommand(command, pressT0Ms);
 	} catch {
 		// The dispatcher already populated the deck alert and toast.
 	}
@@ -1125,7 +1173,8 @@ export function installPerformanceBrowserIpc(): () => void {
 	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
 		version: 1 as const,
-		dispatch: (message: unknown) => _dispatchUnknown(message, commandGeneration),
+		dispatch: (message: unknown, pressT0Ms?: number) =>
+			_dispatchUnknown(message, commandGeneration, _validatedPressStamp(pressT0Ms)),
 		query: () => {
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();

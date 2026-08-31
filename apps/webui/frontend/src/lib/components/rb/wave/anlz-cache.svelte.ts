@@ -11,6 +11,7 @@
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
 import { fetchAnlz, RbApiError } from '$lib/rb/api-rb';
+import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import type { AnlzData } from '$lib/rb/types';
 
 export type AnlzEntry =
@@ -21,15 +22,23 @@ export type AnlzEntry =
 const _cache = $state<Record<string, AnlzEntry>>({});
 
 /** Kick off the /anlz fetch for a track unless already cached/in-flight.
- * MUTATES rune state - call from $effect, never from $derived. */
+ * MUTATES rune state - call from $effect, never from $derived.
+ *
+ * Timed on the MISS path only (PERF-R5 Q9): a cache hit returns above without
+ * doing work, so including it would drag the sampled figure toward zero and
+ * hide the cold fetch this warm-up exists to pay for. Sampled 1 in 5 because
+ * arrow-key row selection fires this in bursts. */
 export function ensureAnlz(stable_id: string): void {
 	if (_cache[stable_id] !== undefined) return;
 	_cache[stable_id] = { status: 'loading' };
+	const startedAt = performance.now();
 	void fetchAnlz(stable_id).then(
 		(data: AnlzData) => {
 			_cache[stable_id] = { status: 'ready', data };
+			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
 		},
 		(err: unknown) => {
+			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
 			if (err instanceof RbApiError) {
 				// Explicit backend state (e.g. ANALYSIS_NOT_FOUND, 0.1% of tracks).
 				_cache[stable_id] = { status: 'error', code: err.code };

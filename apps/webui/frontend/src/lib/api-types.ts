@@ -491,6 +491,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/machines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Machines */
+        get: operations["list_machines_api_v1_cloudsync_machines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Overview */
+        get: operations["get_overview_api_v1_cloudsync_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/playlist-pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Playlist Pins */
+        get: operations["list_playlist_pins_api_v1_cloudsync_playlist_pins_get"];
+        /**
+         * Put Playlist Pin
+         * @description Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.
+         */
+        put: operations["put_playlist_pin_api_v1_cloudsync_playlist_pins_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Policies */
+        get: operations["list_policies_api_v1_cloudsync_policies_get"];
+        /**
+         * Put Policy
+         * @description Upsert one policy cell THROUGH the stamp chokepoint.
+         *
+         *     Round 2 finding N1a: this endpoint stamped the row correctly but skipped
+         *     ``local_changelog``, so the edit was never offered to the hub and the
+         *     machine then failed its post-sync digest compare on ``sync_policies``
+         *     forever. Changing one policy in the config UI stopped that machine
+         *     syncing anything at all.
+         */
+        put: operations["put_policy_api_v1_cloudsync_policies_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/suggest-next": {
         parameters: {
             query?: never;
@@ -1029,6 +1111,46 @@ export interface paths {
         post?: never;
         /** Delete Pairing */
         delete: operations["delete_pairing_api_v1_pairings__pairing_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/telemetry/client-samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture Client Performance
+         * @description Persist one compact semantic sample without blocking the audio path.
+         */
+        post: operations["capture_client_performance_api_v1_performance_telemetry_client_samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/telemetry/processes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Process Telemetry
+         * @description Return a privacy-reduced Activity Monitor-style app breakdown.
+         */
+        get: operations["latest_process_telemetry_api_v1_performance_telemetry_processes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1778,6 +1900,134 @@ export interface paths {
         };
         /** List Tiers */
         get: operations["list_tiers_api_v1_stems_tiers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Digest
+         * @description Per-table digests over the sync set, tombstones included (ADR 04 c6).
+         *
+         *     Computed inside one read transaction (ADR 08 point 6b): without it a
+         *     table read late in the walk can include a push that landed after an
+         *     earlier table was read, and the answer describes a hub state that never
+         *     existed.
+         *
+         *     It answers as of request time and SAYS SO: ``seq`` is the changelog
+         *     position of that answer, read in the same transaction (round 2 finding
+         *     6b). The hub cannot answer "as of seq N" -- the changelog records that a
+         *     row changed, never what it held, so there is no earlier state to
+         *     reconstruct. Reporting the position instead lets the spoke tell a third
+         *     machine's push apart from a real divergence, and settle by pulling
+         *     again rather than halting.
+         *
+         *     Requires registration like every other endpoint (round 1 finding 7b,
+         *     closed everywhere except here until round 3 finding R8): unlike
+         *     ``/pull``, this answer carries no per-row data, but it does carry the
+         *     hub's live changelog position, which an unregistered caller had no
+         *     business reading either.
+         */
+        get: operations["digest_api_v1_sync_digest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/hello": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hello
+         * @description Register a spoke in ``machines`` and report the hub's id and seq.
+         */
+        post: operations["hello_api_v1_sync_hello_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pull
+         * @description One chunk of the rows the hub accepted after ``since_seq``.
+         *
+         *     Chunked because a first sync of a real library is megabytes of JSON held
+         *     twice in memory on both sides (round 1 finding A2). ``has_more`` tells
+         *     the client to come back with the ``seq`` this response reports.
+         */
+        get: operations["pull_api_v1_sync_pull_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Push
+         * @description Merge offered rows under last-writer-wins; append to ``hub_changelog``.
+         *
+         *     The pusher's ``machines`` snapshot is merged first, in the same
+         *     transaction (round 2 finding N4): a row this hub has never met is a
+         *     FOREIGN KEY violation, and the recovery push after a hub restore is
+         *     exactly the push most likely to carry one.
+         */
+        post: operations["push_api_v1_sync_push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status
+         * @description Hub identity, current seq, known machines and synced row counts.
+         */
+        get: operations["status_api_v1_sync_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2769,6 +3019,49 @@ export interface components {
              */
             surface: "desktop-shell" | "browser";
         };
+        /** ClientPerformanceSampleIn */
+        ClientPerformanceSampleIn: {
+            /** Anlz Entry Count */
+            anlz_entry_count: number;
+            /** Anlz Estimated Mb */
+            anlz_estimated_mb: number;
+            /** Audio Health Hz */
+            audio_health_hz?: number | null;
+            /**
+             * Audio Health Level
+             * @enum {string}
+             */
+            audio_health_level: "idle" | "ok" | "warn" | "crit";
+            /** Client Sample Id */
+            client_sample_id: string;
+            /** Client Session Id */
+            client_session_id: string;
+            /** Client Timestamp */
+            client_timestamp: string;
+            /** Decks */
+            decks: components["schemas"]["DeckPerformanceSample"][];
+            /** Js Heap Mb */
+            js_heap_mb?: number | null;
+            /** Page Uptime Ms */
+            page_uptime_ms: number;
+            /** Pcm Estimated Mb */
+            pcm_estimated_mb: number;
+            /** Perf Event Count */
+            perf_event_count: number;
+            /** Prefetch Count */
+            prefetch_count: number;
+            /** Prefetch Mb */
+            prefetch_mb: number;
+            /** Route */
+            route: string;
+        };
+        /** ClientPerformanceSampleOut */
+        ClientPerformanceSampleOut: {
+            /** Event Id */
+            event_id: string;
+            /** Stored */
+            stored: boolean;
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -2924,6 +3217,46 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** DeckPerformanceSample */
+        DeckPerformanceSample: {
+            /** Audible */
+            audible: boolean;
+            /**
+             * Deck Id
+             * @enum {integer}
+             */
+            deck_id: 1 | 2 | 3 | 4;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Last Load Latency Ms */
+            last_load_latency_ms?: number | null;
+            /** Playing */
+            playing: boolean;
+            /** Processor Error */
+            processor_error?: string | null;
+            /** Stable Id */
+            stable_id?: string | null;
+            /**
+             * Stem Status
+             * @enum {string}
+             */
+            stem_status: "unavailable" | "ready" | "error";
+            /** Sync Error */
+            sync_error?: string | null;
+            /** Transport Pending */
+            transport_pending: boolean;
+        };
+        /** DigestResponse */
+        DigestResponse: {
+            /** Overall */
+            overall: string;
+            /** Seq */
+            seq: number;
+            /** Tables */
+            tables: {
+                [key: string]: string;
+            };
         };
         /**
          * EngineHealthOut
@@ -3333,6 +3666,27 @@ export interface components {
              */
             surface: "desktop-shell" | "browser";
         };
+        /** HelloRequest */
+        HelloRequest: {
+            machine: components["schemas"]["MachineModel"];
+            /** Machines */
+            machines?: components["schemas"]["MachineModel"][];
+            /** Schema Version */
+            schema_version: number;
+        };
+        /** HelloResponse */
+        HelloResponse: {
+            /** Hub Generation */
+            hub_generation: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["MachineModel"][];
+            /** Schema Version */
+            schema_version: number;
+            /** Seq */
+            seq: number;
+        };
         /** HotCueMutationOut */
         HotCueMutationOut: {
             cue: components["schemas"]["AnlzCueOut"] | null;
@@ -3512,6 +3866,66 @@ export interface components {
             /** State */
             state: string;
         };
+        /**
+         * MachineModel
+         * @description One ``machines`` row on the wire.
+         */
+        MachineModel: {
+            /** Data Root */
+            data_root?: string | null;
+            /** First Seen */
+            first_seen: string;
+            /**
+             * Is Hub
+             * @default false
+             */
+            is_hub: boolean;
+            /** Last Seen */
+            last_seen: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Platform */
+            platform: string;
+        };
+        /** MachineOut */
+        MachineOut: {
+            /** Data Root */
+            data_root?: string | null;
+            /** First Seen */
+            first_seen: string;
+            /** Is Hub */
+            is_hub: boolean;
+            /** Last Seen */
+            last_seen: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "macos" | "windows" | "linux";
+        };
+        /** MachineOverview */
+        MachineOverview: {
+            /** Cached Tracks */
+            cached_tracks: number;
+            /** Last Sync At */
+            last_sync_at?: string | null;
+            /** Machine Id */
+            machine_id: string;
+            /** Name */
+            name: string;
+            /** Pinned Tracks */
+            pinned_tracks: number;
+            /** Stream Tracks */
+            stream_tracks: number;
+            /** Unhydrated Pinned Count */
+            unhydrated_pinned_count: number;
+        };
         /** MeOut */
         MeOut: {
             /** Avatar Url */
@@ -3667,6 +4081,13 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /** OverviewOut */
+        OverviewOut: {
+            /** Machines */
+            machines: components["schemas"]["MachineOverview"][];
+            /** Total Tracks */
+            total_tracks: number;
         };
         /** PairingCreate */
         PairingCreate: {
@@ -3980,6 +4401,36 @@ export interface components {
             /** Track Ids */
             track_ids?: number[];
         };
+        /** PlaylistPinOut */
+        PlaylistPinOut: {
+            /** Machine Id */
+            machine_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "pinned" | "cached" | "stream" | "excluded";
+            /** Origin Device Id */
+            origin_device_id?: string | null;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Playlist Name */
+            playlist_name?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** PlaylistPinPut */
+        PlaylistPinPut: {
+            /** Machine Id */
+            machine_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "pinned" | "cached" | "stream" | "excluded";
+            /** Playlist Id */
+            playlist_id: string;
+        };
         /** PlaylistRenameIn */
         PlaylistRenameIn: {
             /**
@@ -4034,6 +4485,45 @@ export interface components {
             source: string;
             /** Value */
             value: unknown;
+        };
+        /** PullResponse */
+        PullResponse: {
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+            /** Machines */
+            machines: components["schemas"]["MachineModel"][];
+            /** Rows */
+            rows: components["schemas"]["RowModel"][];
+            /** Seq */
+            seq: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
+        };
+        /** PushRequest */
+        PushRequest: {
+            /** Machine Id */
+            machine_id: string;
+            /** Machines */
+            machines?: components["schemas"]["MachineModel"][];
+            /** Rows */
+            rows: components["schemas"]["RowModel"][];
+            /** Schema Version */
+            schema_version: number;
+        };
+        /** PushResponse */
+        PushResponse: {
+            /** Accepted */
+            accepted: number;
+            /** Rejected */
+            rejected: number;
+            /** Seq */
+            seq: number;
         };
         /**
          * QualityOut
@@ -4435,6 +4925,24 @@ export interface components {
             triple_validated: boolean;
         };
         /**
+         * RowModel
+         * @description One offered row. ``members`` is set only on a ``playlists`` row.
+         */
+        RowModel: {
+            /** Members */
+            members?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Pk */
+            pk: string[];
+            /** Table */
+            table: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * SearchHit
          * @description One hydrated result row + the FTS match excerpt.
          */
@@ -4683,6 +5191,23 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** StatusResponse */
+        StatusResponse: {
+            /** Hub Generation */
+            hub_generation: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machines */
+            machines: components["schemas"]["MachineModel"][];
+            /** Row Counts */
+            row_counts: {
+                [key: string]: number;
+            };
+            /** Schema Version */
+            schema_version: number;
+            /** Seq */
+            seq: number;
+        };
         /**
          * StemManifestOut
          * @description Frontend manifest projected from a stricter durable artifact manifest.
@@ -4901,6 +5426,44 @@ export interface components {
             last_request_at: string | null;
             /** Seconds Since Request */
             seconds_since_request: number | null;
+        };
+        /** SyncPolicyOut */
+        SyncPolicyOut: {
+            /**
+             * Asset Kind
+             * @enum {string}
+             */
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            /** Cache Budget Mb */
+            cache_budget_mb?: number | null;
+            /** Machine Id */
+            machine_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "pinned" | "cached" | "stream" | "excluded";
+            /** Origin Device Id */
+            origin_device_id?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** SyncPolicyPut */
+        SyncPolicyPut: {
+            /**
+             * Asset Kind
+             * @enum {string}
+             */
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            /** Cache Budget Mb */
+            cache_budget_mb?: number | null;
+            /** Machine Id */
+            machine_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "pinned" | "cached" | "stream" | "excluded";
         };
         /**
          * TierEstimateOut
@@ -6467,6 +7030,174 @@ export interface operations {
             };
         };
     };
+    list_machines_api_v1_cloudsync_machines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MachineOut"][];
+                };
+            };
+        };
+    };
+    get_overview_api_v1_cloudsync_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewOut"];
+                };
+            };
+        };
+    };
+    list_playlist_pins_api_v1_cloudsync_playlist_pins_get: {
+        parameters: {
+            query?: {
+                machine_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistPinOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_playlist_pin_api_v1_cloudsync_playlist_pins_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistPinPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistPinOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_policies_api_v1_cloudsync_policies_get: {
+        parameters: {
+            query?: {
+                machine_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncPolicyOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_policy_api_v1_cloudsync_policies_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncPolicyPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncPolicyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     suggest_next_route_api_v1_copilot_suggest_next_post: {
         parameters: {
             query?: never;
@@ -7531,6 +8262,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_client_performance_api_v1_performance_telemetry_client_samples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientPerformanceSampleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientPerformanceSampleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_process_telemetry_api_v1_performance_telemetry_processes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -8895,6 +9681,172 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TierOut"][];
+                };
+            };
+        };
+    };
+    digest_api_v1_sync_digest_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hello_api_v1_sync_hello_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HelloRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelloResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pull_api_v1_sync_pull_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                /** @description last hub_changelog.seq applied */
+                since_seq?: number;
+                /** @description max changelog entries to consume in this chunk */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PullResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    push_api_v1_sync_push_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_v1_sync_status_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

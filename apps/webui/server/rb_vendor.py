@@ -71,8 +71,6 @@ from apps.shared.platform_paths import resolve_library_path
 
 # ANLZ decode, caches, cue reads and the browser read model (C2-C9).
 from apps.webui.server.rb_vendor_pkg.anlz import (
-    _PREVIEW_CACHE,
-    _PREVIEW_LOCK,
     _PREVIEW_SOURCES,
     _PVDI_FIXED_HEADER,
     _PVDI_HOP,
@@ -83,19 +81,14 @@ from apps.webui.server.rb_vendor_pkg.anlz import (
     VOCAL_INTENSITY_MIN,
     VOCAL_MERGE_GAP_S,
     VOCAL_MIN_REGION_S,
-    _bands_payload,
-    _bands_payload_python,
     _beatgrid_payload,
-    _downsample_max,
     _first_tags,
     _iter_pmai_sections,
-    _mono_bands,
     _peak_downsample_cols,
     _phrases_payload,
     _read_pwav_mono,
     _read_pwv4_mono,
     _read_pwv6_tri,
-    _tri_bands,
     _vocal_regions,
     build_anlz_payload,
     demucs_vocals_payload,
@@ -120,6 +113,10 @@ from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
     cached_beatgrid_issue,
 )
 from apps.webui.server.rb_vendor_pkg.db import count_cues, fetch_cues, playlist_order_index
+from apps.webui.server.rb_vendor_pkg.row_hydration_cache import (
+    _PREVIEW_CACHE,
+    _VOCALS_CACHE,
+)
 from apps.webui.server.rb_vendor_pkg.track_rows import (
     build_track_rows,
     bulk_availability,
@@ -127,6 +124,13 @@ from apps.webui.server.rb_vendor_pkg.track_rows import (
     bulk_file_size,
     bulk_quality,
     bulk_rb_meta,
+)
+from apps.webui.server.rb_vendor_pkg.waveform_bands import (
+    _bands_payload,
+    _bands_payload_python,
+    _downsample_max,
+    _mono_bands,
+    _tri_bands,
 )
 from apps.webui.server.rb_vendor_pkg.waveform_native import (
     _WAVEFORM_BACKEND_REQUEST,
@@ -230,13 +234,13 @@ __all__ = [
     "VOCAL_MERGE_GAP_S",
     "VOCAL_MIN_REGION_S",
     "_PREVIEW_CACHE",
-    "_PREVIEW_LOCK",
     "_PREVIEW_SOURCES",
     "_PVDI_FIXED_HEADER",
     "_PVDI_HOP",
     "_PVDI_RATE",
     "_PWAV_HEIGHT_MASK",
     "_PWV4_LUMINANCE_BYTE",
+    "_VOCALS_CACHE",
     "_WAVEFORM_BACKEND_REQUEST",
     "_WAVEFORM_NATIVE",
     "_WAVEFORM_NATIVE_IMPORT_ERROR",

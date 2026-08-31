@@ -337,10 +337,6 @@ function _todo(
 	};
 }
 
-export function settingById(id: string): SettingDef | undefined {
-	return SETTINGS_CATALOG.find((s) => s.id === id);
-}
-
 export function groupLabel(id: SettingGroupId): string {
 	return SETTING_GROUPS.find((g) => g.id === id)?.label ?? id;
 }

@@ -1441,6 +1441,147 @@
         "title": "ClientOut",
         "type": "object"
       },
+      "ClientPerformanceSampleIn": {
+        "properties": {
+          "anlz_entry_count": {
+            "minimum": 0.0,
+            "title": "Anlz Entry Count",
+            "type": "integer"
+          },
+          "anlz_estimated_mb": {
+            "minimum": 0.0,
+            "title": "Anlz Estimated Mb",
+            "type": "number"
+          },
+          "audio_health_hz": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Health Hz"
+          },
+          "audio_health_level": {
+            "enum": [
+              "idle",
+              "ok",
+              "warn",
+              "crit"
+            ],
+            "title": "Audio Health Level",
+            "type": "string"
+          },
+          "client_sample_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Sample Id",
+            "type": "string"
+          },
+          "client_session_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Session Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/DeckPerformanceSample"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Decks",
+            "type": "array"
+          },
+          "js_heap_mb": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Js Heap Mb"
+          },
+          "page_uptime_ms": {
+            "minimum": 0.0,
+            "title": "Page Uptime Ms",
+            "type": "number"
+          },
+          "pcm_estimated_mb": {
+            "minimum": 0.0,
+            "title": "Pcm Estimated Mb",
+            "type": "number"
+          },
+          "perf_event_count": {
+            "minimum": 0.0,
+            "title": "Perf Event Count",
+            "type": "integer"
+          },
+          "prefetch_count": {
+            "minimum": 0.0,
+            "title": "Prefetch Count",
+            "type": "integer"
+          },
+          "prefetch_mb": {
+            "minimum": 0.0,
+            "title": "Prefetch Mb",
+            "type": "number"
+          },
+          "route": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_sample_id",
+          "client_session_id",
+          "client_timestamp",
+          "route",
+          "page_uptime_ms",
+          "pcm_estimated_mb",
+          "anlz_estimated_mb",
+          "anlz_entry_count",
+          "prefetch_mb",
+          "prefetch_count",
+          "audio_health_level",
+          "perf_event_count",
+          "decks"
+        ],
+        "title": "ClientPerformanceSampleIn",
+        "type": "object"
+      },
+      "ClientPerformanceSampleOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "stored"
+        ],
+        "title": "ClientPerformanceSampleOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -1901,6 +2042,110 @@
           "revision"
         ],
         "title": "DecisionRecordOut",
+        "type": "object"
+      },
+      "DeckPerformanceSample": {
+        "properties": {
+          "audible": {
+            "title": "Audible",
+            "type": "boolean"
+          },
+          "deck_id": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "last_load_latency_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Load Latency Ms"
+          },
+          "playing": {
+            "title": "Playing",
+            "type": "boolean"
+          },
+          "processor_error": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processor Error"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          },
+          "stem_status": {
+            "enum": [
+              "unavailable",
+              "ready",
+              "error"
+            ],
+            "title": "Stem Status",
+            "type": "string"
+          },
+          "sync_error": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Error"
+          },
+          "transport_pending": {
+            "title": "Transport Pending",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deck_id",
+          "playing",
+          "audible",
+          "transport_pending",
+          "stem_status"
+        ],
+        "title": "DeckPerformanceSample",
         "type": "object"
       },
       "DigestResponse": {
@@ -12548,6 +12793,72 @@
         "summary": "Delete Pairing",
         "tags": [
           "pairings"
+        ]
+      }
+    },
+    "/api/v1/performance/telemetry/client-samples": {
+      "post": {
+        "description": "Persist one compact semantic sample without blocking the audio path.",
+        "operationId": "capture_client_performance_api_v1_performance_telemetry_client_samples_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientPerformanceSampleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientPerformanceSampleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Client Performance",
+        "tags": [
+          "performance-telemetry"
+        ]
+      }
+    },
+    "/api/v1/performance/telemetry/processes": {
+      "get": {
+        "description": "Return a privacy-reduced Activity Monitor-style app breakdown.",
+        "operationId": "latest_process_telemetry_api_v1_performance_telemetry_processes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Latest Process Telemetry Api V1 Performance Telemetry Processes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Latest Process Telemetry",
+        "tags": [
+          "performance-telemetry"
         ]
       }
     },

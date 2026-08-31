@@ -25,6 +25,7 @@ import type {
 	SignalsmithStretchNode,
 	SignalsmithStretchSchedule
 } from 'signalsmith-stretch';
+import { recordWorkletAck } from '$lib/rb/worklet-ack-stats';
 import stretchWorkletModuleUrl from '../../../node_modules/signalsmith-stretch/SignalsmithStretch.mjs?url';
 
 // The package's default worklet bootstrap Function.toString()s its own bundled
@@ -139,11 +140,22 @@ export class StretchCommandGate {
 		if (this.#terminalError !== null) throw this.#terminalError;
 	}
 
+	/**
+	 * Q2: this is the ONE choke point every worklet MessagePort round trip
+	 * passes through, so it is where the ack distribution is measured. Both
+	 * exits record: a timeout that never reached the window would leave the
+	 * distribution blind to the exact cliff it exists to watch approaching.
+	 * The recording itself is an aggregate write - no ring row per command.
+	 */
 	async run<T>(operation: string, command: () => Promise<T>, timeoutMs?: number): Promise<T> {
 		this.assertOperational();
+		const startedMs = performance.now();
 		try {
-			return await withStretchCommandTimeout(command(), operation, timeoutMs);
+			const acknowledged = await withStretchCommandTimeout(command(), operation, timeoutMs);
+			recordWorkletAck(operation, performance.now() - startedMs, true);
+			return acknowledged;
 		} catch (error) {
+			recordWorkletAck(operation, performance.now() - startedMs, false);
 			this.poison(error instanceof Error ? error : new Error(String(error)));
 			throw error;
 		}
@@ -353,11 +365,23 @@ export class StretchDeckProcessor {
 		if (context.audioWorklet === undefined) {
 			throw new StretchProcessorError('AudioWorklet is unavailable; Signalsmith cannot start');
 		}
-		const node = await withStretchCommandTimeout(
-			createSignalsmithStretch(context, STRETCH_NODE_OPTIONS),
-			'processor creation',
-			STRETCH_CREATE_TIMEOUT_MS
-		);
+		// Q2: creation is the one worklet round trip that bypasses
+		// StretchCommandGate.run, and it is both the slowest (a measured ~1.35s
+		// across four serialized stem creates) and the owner of the separate
+		// 15000ms cliff. Timed here so it is not the single unmeasured command.
+		const createStartedMs = performance.now();
+		let node: SignalsmithStretchNode;
+		try {
+			node = await withStretchCommandTimeout(
+				createSignalsmithStretch(context, STRETCH_NODE_OPTIONS),
+				'processor creation',
+				STRETCH_CREATE_TIMEOUT_MS
+			);
+		} catch (error) {
+			recordWorkletAck('processor creation', performance.now() - createStartedMs, false);
+			throw error;
+		}
+		recordWorkletAck('processor creation', performance.now() - createStartedMs, true);
 		const processor = new StretchDeckProcessor(context, node, options);
 		// STEP 2, off by default. Deliberately here and nowhere else: this is the
 		// only moment a processor exists with no audio loaded and nothing

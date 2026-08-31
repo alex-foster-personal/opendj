@@ -9,6 +9,9 @@ Regression one-liners:
   - if region intensity isn't the max PVDI value in the merged run then broken
   - if read_pvdi accepts a mutated fixed header instead of raising then broken
   - if vocals_payload doesn't return exactly the three contract states then broken
+  - if a warm vocals_for_content row re-reads the .2EX then broken
+  - if a re-analyzed .2EX (new mtime) keeps serving the old regions then broken
+  - if mutating a returned vocals payload poisons the next caller then broken
   - if _peak_downsample_cols isn't a per-bucket max (transient-preserving) then broken
   - if keep_by_availability doesn't map all/true/false explicitly then broken
   - if a crash mid anlz-cache write can leave truncated JSON behind then broken
@@ -17,6 +20,7 @@ Regression one-liners:
 from __future__ import annotations
 
 import json
+import os
 import struct
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -129,6 +133,108 @@ def test_vocals_payload_three_states(tmp_path: Path) -> None:
     assert payload["regions"] == [
         {"start_s": 0.0, "end_s": pytest.approx(10.0, abs=0.1), "intensity": 3}
     ]
+
+
+# ----- vocals row-hydration cache ------------------------------------------------
+#
+# build_track_rows calls vocals_for_content once per row, and the All Tracks
+# pane re-walks the whole library every LIBRARY_FALLBACK_POLL_MS. Without a
+# cache that is one full .2EX read plus a PVDI section walk per row per poll.
+
+
+def _count_2ex_reads(monkeypatch: pytest.MonkeyPatch, target: Path) -> list[int]:
+    """Count ``read_bytes`` calls against ``target`` in a one-slot list."""
+    calls = [0]
+    real_read_bytes = Path.read_bytes
+
+    def counting_read_bytes(self: Path) -> bytes:
+        if self == target:
+            calls[0] += 1
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
+    return calls
+
+
+def _content_for_2ex(monkeypatch: pytest.MonkeyPatch, twoex: Path) -> rb_vendor.RbContent:
+    """An RbContent whose AnalysisDataPath resolves to ``twoex``'s sibling.
+
+    ``folder_path`` is None on purpose: that short-circuits the demucs
+    fallback, so the only filesystem work left is the PVDI read under test.
+    """
+    from apps.adapters.rekordbox import paths as rb_paths
+    from apps.shared import platform_paths as pp
+
+    monkeypatch.setattr(
+        rb_paths,
+        "resolve_asset_path",
+        lambda original: pp.MappedPath(
+            original=original,
+            resolved=twoex.with_suffix(".DAT"),
+            mapped=True,
+            reason="test",
+        ),
+    )
+    monkeypatch.setattr(
+        rb_paths,
+        "_asset_sibling",
+        lambda _mapped, candidate: pp.MappedPath(
+            original=str(candidate), resolved=candidate, mapped=True, reason="test"
+        ),
+    )
+    return rb_vendor.RbContent(
+        stable_id="track-vocals",
+        vendor_id="vendor-1",
+        folder_path=None,
+        image_path=None,
+        analysis_data_path="ANLZ0000.DAT",
+        length_s=None,
+        comment=None,
+        genre=None,
+    )
+
+
+def test_vocals_for_content_reuses_cache_until_mtime_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    twoex = tmp_path / "ANLZ0000.2EX"
+    twoex.write_bytes(_synthetic_2ex(bytes([3] * _frames(10.0))))
+    content = _content_for_2ex(monkeypatch, twoex)
+    rb_vendor._VOCALS_CACHE.clear()
+    reads = _count_2ex_reads(monkeypatch, twoex)
+
+    cold = rb_vendor.vocals_for_content(content)
+    assert cold["status"] == "rekordbox"
+    assert reads[0] == 1, "the cold row must read the .2EX exactly once"
+
+    warm = rb_vendor.vocals_for_content(content)
+    assert warm == cold
+    assert reads[0] == 1, "a warm row must serve from cache, not re-read the .2EX"
+
+    # Re-analysis rewrites the .2EX: a new mtime must invalidate the entry.
+    twoex.write_bytes(_synthetic_2ex(bytes(_frames(30.0))))
+    stamp = twoex.stat().st_mtime + 10
+    os.utime(twoex, (stamp, stamp))
+    reanalyzed = rb_vendor.vocals_for_content(content)
+    assert reanalyzed["status"] == "no_vocals", "new mtime must force a re-read"
+    assert reads[0] == 2
+
+
+def test_vocals_payload_cache_hands_out_isolated_payloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller mutating its row payload must not poison the next caller."""
+    twoex = tmp_path / "ANLZ0000.2EX"
+    twoex.write_bytes(_synthetic_2ex(bytes([3] * _frames(10.0))))
+    rb_vendor._VOCALS_CACHE.clear()
+
+    first = rb_vendor.vocals_payload(twoex)
+    first["regions"][0]["intensity"] = 99
+    first["status"] = "mutated"
+
+    second = rb_vendor.vocals_payload(twoex)
+    assert second["status"] == "rekordbox"
+    assert second["regions"][0]["intensity"] == 3
 
 
 # ----- _peak_downsample_cols -----------------------------------------------------
