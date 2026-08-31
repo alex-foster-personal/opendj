@@ -233,11 +233,11 @@ test('flx10PadColorVelocity stays inside the 1-127 colour range', () => {
 
 // ---------------------------------------------------------------- registry
 
-test('registry holds both maps and registerAllDeviceMaps is idempotent', () => {
+test('registry holds every map and registerAllDeviceMaps is idempotent', () => {
 	webmidi._resetMidiForTests();
 	registry._resetMapsRegistryForTests();
-	const vendors = registry.DEVICE_MAP_REGISTRY.map((m) => m.vendor);
-	assert.deepEqual(vendors, ['Pioneer DJ', 'Reloop']);
+	const names = registry.DEVICE_MAP_REGISTRY.map((m) => m.nameMatch);
+	assert.deepEqual(names, ['DDJ-FLX10', 'DDJ-400', 'Mixtour']);
 	registry.registerAllDeviceMaps();
 	registry.registerAllDeviceMaps(); // second call must no-op, not throw
 	webmidi._resetMidiForTests();

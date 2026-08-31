@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the BUNDLED ENGINE and every Mach-O underneath it: the
+  relocatable CPython in Contents/Resources/payload/runtime, its extension
+  modules in payload/pylib, and the payload/bin/opendj-engine launcher.
+
+  ONE KEY, DELIBERATELY. com.apple.security.inherit means "take the parent's
+  sandbox exactly", and macOS enforces that a binary carrying it may carry no
+  other entitlement. Adding network.server here (the tempting mistake, since
+  the engine is the process that actually binds the port) makes the signature
+  invalid rather than more permissive: the child gets the parent's network
+  entitlement through inheritance already.
+
+  WHY THIS FILE EXISTS AT ALL, rather than signing the whole bundle in one
+  pass: codesign's "deep" flag walks into Resources and re-signs the payload
+  with the PARENT's entitlements, which would hand a full sandbox profile to a
+  Python interpreter. Apple documents that flag as unsuitable for signing an
+  app for distribution, and this is the concrete reason here. Sign inside-out
+  instead, and never pass it. scripts/ship_appstore.sh does exactly that.
+
+  (Note for editors: XML forbids a double hyphen inside a comment, so the
+  flag is named in prose above rather than written out. A literal one here
+  makes this file unparseable, which the signing step reports only as a
+  confusing codesign failure.)
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.inherit</key>
+    <true/>
+</dict>
+</plist>

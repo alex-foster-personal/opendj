@@ -191,6 +191,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Account
+         * @description Identity, plan, and the full local-storage disclosure.
+         *
+         *     Answers signed OUT too, with ``user: null``: what is stored and what is
+         *     gated are questions somebody is entitled to ask BEFORE handing over an
+         *     identity, and refusing to answer until they sign in would be a strange
+         *     reading of a privacy disclosure.
+         */
+        get: operations["read_account_api_v1_account_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Account
+         * @description Erase the user row and, by FK cascade, every session it owns.
+         *
+         *     The deletion half of https://open-dj.com/privacy (ACCT-03). The session
+         *     cookie is cleared on the way out, because leaving the browser holding a
+         *     token for a row that no longer exists would leave the UI showing a signed
+         *     in state that resolves to nobody.
+         */
+        delete: operations["delete_account_api_v1_account_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/quality-ratchet": {
         parameters: {
             query?: never;
@@ -244,6 +278,91 @@ export interface paths {
          * @description Whether a chat can work at all, and which model would answer it.
          */
         get: operations["assistant_status_api_v1_assistant_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finish Login
+         * @description Google's loopback redirect target. Plants the cookie, returns to the SPA.
+         */
+        get: operations["finish_login_api_v1_auth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Login
+         * @description Begin sign-in: mint CSRF state + PKCE and return the consent URL.
+         *
+         *     The caller (browser or agent) is responsible for actually visiting
+         *     ``authorization_url``. Nothing is persisted until the callback lands.
+         */
+        post: operations["start_login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Drop the session server-side and clear the cookie.
+         *
+         *     Idempotent: signing out when already signed out is a 204, not an error.
+         */
+        post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whoami
+         * @description The signed-in user, or 401. The bauble polls this on mount.
+         */
+        get: operations["whoami_api_v1_auth_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -426,6 +545,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/entitlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Entitlements
+         * @description The plan, the refusal shape, and every gateable feature.
+         *
+         *     ``features`` is empty while the catalog is, and that is the honest answer
+         *     rather than a missing one: openDJ has no paid features, so there is
+         *     nothing an account could fail to be entitled to.
+         */
+        get: operations["read_entitlements_api_v1_entitlements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/entitlements/{feature_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Entitlement
+         * @description May this account use one feature?
+         *
+         *     An id the catalog does not know is answered, not 404'd: while no provider
+         *     is configured everything is entitled (ENT-04), and a 404 here would let a
+         *     caller mistake "we have never heard of that" for "you may not".
+         */
+        get: operations["read_entitlement_api_v1_entitlements__feature_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/archive": {
         parameters: {
             query?: never;
@@ -542,6 +709,30 @@ export interface paths {
         put?: never;
         /** Preview */
         post: operations["preview_api_v1_find_replace_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Flags
+         * @description The declared flags, as resolved once at engine boot.
+         *
+         *     A separate surface from /entitlements on purpose (FLAG-01): these are
+         *     engineering-owned code-path toggles, not anything an account is entitled
+         *     to, and folding them into one response is the first step toward one store.
+         */
+        get: operations["read_flags_api_v1_flags_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1995,11 +2186,7 @@ export interface paths {
         /** Get Usb Volumes */
         get: operations["get_usb_volumes_api_v1_usb_volumes_get"];
         put?: never;
-        /**
-         * Post Usb Volume
-         * @description Inject or update a simulated volume (manual test without a stick).
-         */
-        post: operations["post_usb_volume_api_v1_usb_volumes_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2066,6 +2253,43 @@ export interface components {
             path: string;
             /** Readable */
             readable: boolean;
+        };
+        /** AccountDeleteOut */
+        AccountDeleteOut: {
+            /** Deleted */
+            deleted: boolean;
+            /** Google Sub */
+            google_sub: string;
+            /** Message */
+            message: string;
+        };
+        /** AccountOut */
+        AccountOut: {
+            /** Authorisation Enforced */
+            authorisation_enforced: boolean;
+            /** Authorisation Note */
+            authorisation_note: string;
+            /** Local Data */
+            local_data: components["schemas"]["LocalDataOut"][];
+            plan: components["schemas"]["PlanOut"];
+            /** Privacy Policy Url */
+            privacy_policy_url: string;
+            /** Signed In */
+            signed_in: boolean;
+            user: components["schemas"]["AccountUserOut"] | null;
+        };
+        /** AccountUserOut */
+        AccountUserOut: {
+            /** Avatar Url */
+            avatar_url: string | null;
+            /** Created At */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Google Sub */
+            google_sub: string;
+            /** Name */
+            name: string | null;
         };
         /** AiApplyIn */
         AiApplyIn: {
@@ -2726,6 +2950,15 @@ export interface components {
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
         };
+        /** EntitlementsOut */
+        EntitlementsOut: {
+            /** Features */
+            features: components["schemas"]["FeatureEntitlementOut"][];
+            plan: components["schemas"]["PlanOut"];
+            /** Provider */
+            provider: string | null;
+            refusal: components["schemas"]["RefusalOut"];
+        };
         /** ErrorBody */
         ErrorBody: {
             /** Details */
@@ -2765,6 +2998,21 @@ export interface components {
             beat_count: number;
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
+        };
+        /** FeatureEntitlementOut */
+        FeatureEntitlementOut: {
+            /** Entitled */
+            entitled: boolean;
+            /** Feature Id */
+            feature_id: string;
+            /** Label */
+            label: string;
+            /** Note */
+            note: string;
+            /** Quota */
+            quota: number | null;
+            /** Server Side */
+            server_side: boolean;
         };
         /**
          * FileProbeOut
@@ -2879,6 +3127,32 @@ export interface components {
             stable_id: string;
             /** Would Change */
             would_change: boolean;
+        };
+        /** FlagOut */
+        FlagOut: {
+            /** Default */
+            default: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Flag Id */
+            flag_id: string;
+            /** Note */
+            note: string;
+            /** Overridden */
+            overridden: boolean;
+            /** Owner */
+            owner: string;
+            /** Retire By */
+            retire_by: string;
+        };
+        /** FlagsOut */
+        FlagsOut: {
+            /** File Present */
+            file_present: boolean;
+            /** Flags */
+            flags: components["schemas"]["FlagOut"][];
+            /** Path */
+            path: string;
         };
         /**
          * FolderImportIn
@@ -3210,6 +3484,47 @@ export interface components {
             /** Unreadable Music Roots */
             unreadable_music_roots?: string[];
         };
+        /**
+         * LocalDataOut
+         * @description One store on this machine that holds something about the account.
+         */
+        LocalDataOut: {
+            /** Contents */
+            contents: string;
+            /** Delete With */
+            delete_with: string;
+            /** Label */
+            label: string;
+            /** Location */
+            location: string;
+        };
+        /** LoginIn */
+        LoginIn: {
+            /** Origin */
+            origin?: string | null;
+        };
+        /** LoginOut */
+        LoginOut: {
+            /** Authorization Url */
+            authorization_url: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+            /** State */
+            state: string;
+        };
+        /** MeOut */
+        MeOut: {
+            /** Avatar Url */
+            avatar_url: string | null;
+            /** Created At */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Google Sub */
+            google_sub: string;
+            /** Name */
+            name: string | null;
+        };
         /** MemberOut */
         MemberOut: {
             /** Artist */
@@ -3488,6 +3803,17 @@ export interface components {
             volume_label: string;
             /** Volume Uuid */
             volume_uuid: string;
+        };
+        /** PlanOut */
+        PlanOut: {
+            /** Label */
+            label: string;
+            /** Note */
+            note: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Provider */
+            provider: string | null;
         };
         /** PlanRequest */
         PlanRequest: {
@@ -3992,6 +4318,18 @@ export interface components {
             steps: string[];
             /** Steps Completed */
             steps_completed: string[];
+        };
+        /**
+         * RefusalOut
+         * @description The one refusal shape, so a control and its tooltip cannot disagree.
+         */
+        RefusalOut: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Ui Title */
+            ui_title: string;
         };
         /**
          * RekordboxDetectionOut
@@ -4964,6 +5302,20 @@ export interface components {
             /** Desktop Shell Open */
             desktop_shell_open: boolean;
         };
+        /** UsbCapabilityDetail */
+        UsbCapabilityDetail: {
+            /**
+             * Code
+             * @constant
+             */
+            code: "usb_volume_discovery_unavailable";
+            /** Reason */
+            reason: string;
+        };
+        /** UsbCapabilityErrorOut */
+        UsbCapabilityErrorOut: {
+            detail: components["schemas"]["UsbCapabilityDetail"];
+        };
         /** UsbVolumeOut */
         UsbVolumeOut: {
             /** Hide Reason */
@@ -5003,46 +5355,6 @@ export interface components {
              * @default false
              */
             simulated: boolean;
-        };
-        /**
-         * UsbVolumePost
-         * @description DEV / simulate: inject a fake present volume (never touches disk).
-         */
-        UsbVolumePost: {
-            /** Id */
-            id?: string | null;
-            /**
-             * Kind
-             * @default music
-             * @enum {string}
-             */
-            kind: "rekordbox" | "djay" | "music" | "unknown";
-            /**
-             * Mount Path
-             * @default /Volumes/FAKE-USB
-             */
-            mount_path: string | null;
-            /**
-             * Name
-             * @default FAKE USB
-             */
-            name: string;
-            /**
-             * Present
-             * @default true
-             */
-            present: boolean;
-            /**
-             * Protocol
-             * @default USB
-             */
-            protocol: string | null;
-            /**
-             * Role
-             * @default usb_stick
-             * @enum {string}
-             */
-            role: "usb_stick" | "mounted_drive" | "disk_image" | "other";
         };
         /** UsbVolumesOut */
         UsbVolumesOut: {
@@ -5658,6 +5970,58 @@ export interface operations {
             };
         };
     };
+    read_account_api_v1_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+        };
+    };
+    delete_account_api_v1_account_delete: {
+        parameters: {
+            query?: {
+                /** @description Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE. */
+                confirm?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeleteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_quality_ratchet_api_v1_admin_quality_ratchet_get: {
         parameters: {
             query?: never;
@@ -5743,6 +6107,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantStatusOut"];
+                };
+            };
+        };
+    };
+    finish_login_api_v1_auth_callback_get: {
+        parameters: {
+            query?: {
+                state?: string;
+                code?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    whoami_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
                 };
             };
         };
@@ -6108,6 +6576,57 @@ export interface operations {
             };
         };
     };
+    read_entitlements_api_v1_entitlements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntitlementsOut"];
+                };
+            };
+        };
+    };
+    read_entitlement_api_v1_entitlements__feature_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feature_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureEntitlementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     archive_feedback_api_v1_feedback_archive_post: {
         parameters: {
             query?: never;
@@ -6384,6 +6903,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_flags_api_v1_flags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagsOut"];
                 };
             };
         };
@@ -9129,37 +9668,13 @@ export interface operations {
                     "application/json": components["schemas"]["UsbVolumesOut"];
                 };
             };
-        };
-    };
-    post_usb_volume_api_v1_usb_volumes_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UsbVolumePost"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
+            /** @description USB volume discovery is unavailable on this host. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UsbVolumesOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"];
                 };
             };
         };
@@ -9173,13 +9688,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Server-sent USB volume discovery events. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/event-stream": string;
+                };
+            };
+            /** @description USB volume discovery is unavailable on this host. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"];
                 };
             };
         };

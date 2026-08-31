@@ -39,6 +39,7 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
 )
 from .routes import analysis as analysis_routes
+from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -77,6 +78,7 @@ from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
+from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import voice_probe as voice_probe_routes
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
@@ -179,6 +181,7 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.client_error_log_dir = (
         client_error_log_dir
@@ -307,6 +310,7 @@ def create_app(
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
+    app.include_router(auth_routes.router, prefix=api_prefix)
     app.include_router(ingest_routes.router, prefix=api_prefix)
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
@@ -316,6 +320,10 @@ def create_app(
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(usb_volumes_routes.router, prefix=api_prefix)
+    if app.state.usb_simulation_enabled:
+        # Test/dev only (MDT_USB_SIMULATION=1): production apps never mount
+        # the simulated-volume POST, so fake volumes cannot be injected.
+        app.include_router(usb_volumes_sim_routes.router, prefix=api_prefix)
     app.include_router(telemetry_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)

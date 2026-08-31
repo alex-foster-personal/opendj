@@ -34,6 +34,11 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.engine_core.account.api import (
+    account_router,
+    entitlements_router,
+    flags_router,
+)
 from apps.engine_core.assistant.api import router as assistant_router
 from apps.engine_core.build_info import add_build_info_route
 from apps.engine_core.config import (
@@ -55,6 +60,7 @@ from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
+from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
@@ -129,6 +135,14 @@ def create_app(
     # runs. Stateless and dependency-free -- it reads its key and model off
     # the environment, so it needs nothing from app.state.
     app.include_router(assistant_router, prefix=API_PREFIX)
+    # The commercial seam: account management, the entitlement resolver, and
+    # the feature-flag file. All three ship inert -- there are no paid
+    # features and no declared flags -- but they are registered here so the
+    # committed OpenAPI contract carries them and an agent can drive the same
+    # surfaces the account panel does.
+    app.include_router(entitlements_router, prefix=API_PREFIX)
+    app.include_router(flags_router, prefix=API_PREFIX)
+    app.include_router(account_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
     # Identity before the SPA mount, like every other route: a Mount at "/"
     # swallows anything registered after it. platform_paths.PROJECT_ROOT is
@@ -150,6 +164,11 @@ def create_app(
     app.state.jobs_store = store
     app.state.jobs_runner = runner
     app.state.event_hub = hub
+    # FLAG-03: read at STARTUP, from a local file, with no network. Resolving
+    # per request would turn a deploy-time decision into a runtime one and let
+    # a half-written file change behaviour mid-request. A malformed file
+    # raises here and stops the boot rather than degrading into defaults.
+    app.state.feature_flags = load_flags(cfg.data_dir)
 
     _wrap_lifespan(app, cfg=cfg, hub=hub, store=store, runner=runner, lock=lock)
     return app
