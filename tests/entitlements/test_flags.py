@@ -88,11 +88,26 @@ def test_flags_and_entitlements_share_no_module_and_no_file(
 
 
 # ----- the shipped state --------------------------------------------------
-def test_production_declares_no_flags_yet() -> None:
-    # Not a placeholder assertion: shipping a fabricated flag so the mechanism
-    # "does something" is the mocked state the house rules ban. Delete this
-    # line when the first REAL flag is declared.
-    assert FLAGS == ()
+def test_every_declared_flag_is_real_and_accountable() -> None:
+    """Replaces the old ``FLAGS == ()`` assertion, per its own instruction.
+
+    The first real flag is `usb.export`, declared because the App Store build
+    genuinely cannot list /Volumes (SAND-02). That is a real code path with a
+    real reason, not a fabricated flag to make the mechanism look used, which
+    is what the previous assertion existed to prevent. The guard that replaces
+    it keeps the same intent: every flag must be attributable and temporary.
+    """
+    assert FLAGS, "the registry lost its flags; usb.export should be declared"
+    seen: set[str] = set()
+    for flag in FLAGS:
+        assert flag.flag_id not in seen, f"duplicate flag id {flag.flag_id}"
+        seen.add(flag.flag_id)
+        assert flag.owner, f"{flag.flag_id} has no owner"
+        assert flag.retire_by, f"{flag.flag_id} has no retire_by date"
+        assert len(flag.note) > 40, (
+            f"{flag.flag_id} needs a note saying WHY it exists and what turns "
+            "it off; a flag without one outlives everyone who understood it"
+        )
 
 
 def test_missing_file_means_every_flag_at_its_default(tmp_path: Path) -> None:

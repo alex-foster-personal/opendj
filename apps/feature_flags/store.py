@@ -73,7 +73,23 @@ class FlagState:
 
 
 #: Every declared flag. Empty on purpose; see the module docstring.
-FLAGS: tuple[FlagDef, ...] = ()
+FLAGS: tuple[FlagDef, ...] = (
+    FlagDef(
+        flag_id="usb.export",
+        default=True,
+        owner="maintainer",
+        note=(
+            "USB export and drive discovery. ON everywhere except the Mac App "
+            "Store build, which ships feature-flags.appstore.json turning it "
+            "off: a sandboxed process cannot list /Volumes at all, so the "
+            "feature cannot work there and must not appear to. Turning the "
+            "flag off is what makes the store build a CONFIG of this build "
+            "rather than a fork of it. See SAND-02 in "
+            "specs/appstore-sandbox-remediation.md."
+        ),
+        retire_by="2027-03-01",
+    ),
+)
 
 
 class FlagFileError(RuntimeError):
