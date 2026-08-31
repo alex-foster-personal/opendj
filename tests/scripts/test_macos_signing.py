@@ -168,7 +168,19 @@ def test_an_unknown_stage_is_refused() -> None:
     assert "unknown subcommand" in result.stdout + result.stderr
 
 
+# The cases below reach past the environment guards into codesign itself, so
+# they need the real macOS toolchain. The fast lane runs on ubuntu-latest,
+# where they would assert on a "codesign not found" message and fail for a
+# reason that has nothing to do with the behavior under test. Everything above
+# this line is pure shell and runs everywhere.
+needs_codesign = pytest.mark.skipif(
+    shutil.which("codesign") is None,
+    reason="needs the macOS codesign toolchain",
+)
+
+
 @pytest.mark.requirement("INSTALL-04")
+@needs_codesign
 def test_an_empty_payload_scan_is_refused(tmp_path: Path) -> None:
     """A payload with no Mach-O files is not "nothing to do", it is a staging bug.
 
@@ -181,6 +193,7 @@ def test_an_empty_payload_scan_is_refused(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("INSTALL-04")
+@needs_codesign
 def test_a_codesign_failure_is_never_reported_as_success(tmp_path: Path) -> None:
     """The load-bearing case: codesign fails, so the stage must fail.
 

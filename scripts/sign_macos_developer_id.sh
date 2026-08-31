@@ -192,10 +192,19 @@ cmd_dmg() {
 
 # Submit, wait, staple, and prove the staple took.
 #
-# THE TRAP THIS CLOSES: `notarytool submit --wait` exits 0 when the submission
-# completes, INCLUDING when it completes with status Invalid. Trusting its
-# exit code alone ships un-notarized images that report success. The status
-# line is parsed and Accepted is required.
+# WHY THE STATUS LINE IS PARSED. `notarytool submit --wait` is reported to
+# exit 0 whenever the submission COMPLETES, including when it completes with
+# status Invalid. This is not a silent-success hole on its own: `stapler
+# staple` fails when no ticket was issued, and under `set -e` that aborts.
+# What the parse buys is the failure landing at the right step with a message
+# naming the real problem, rather than surfacing later as a confusing stapler
+# error about a missing ticket.
+#
+# UNTESTED ASSUMPTION, stated rather than hidden: no Developer ID certificate
+# exists on this machine, so this function has never run. The exit-code
+# behavior above is from Apple's documented contract, not from observation.
+# Parsing defensively is the right call precisely because it cannot be
+# verified here.
 cmd_notarize() {
     local dmg="${1:-}"
     [ -n "$dmg" ] || die "usage: $0 notarize <dmg>"
