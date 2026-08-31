@@ -2,32 +2,74 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>webview-mcp trace</title>
+<title>af-review-mcp trace</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; background: #101214; color: #d7dbe0; font: 13px/1.4 -apple-system, sans-serif; display: grid; grid-template-rows: 42px 1fr; grid-template-columns: 1fr 320px; height: 100vh; }
-  #bar { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #16191d; border-bottom: 1px solid #24282e; }
-  #bar button { background: #24282e; color: #d7dbe0; border: 1px solid #333a42; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
-  #scrub { flex: 1; }
-  #wrap { overflow: auto; display: grid; place-items: center; background: #0a0b0c; }
+  #bar { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #16191d; border-bottom: 1px solid #24282e; position: relative; z-index: 20; }
+  #bar button, #bar .btn { background: #24282e; color: #d7dbe0; border: 1px solid #333a42; border-radius: 4px; padding: 4px 12px; cursor: pointer; font: inherit; }
+  #bar button:disabled, #bar .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  #brand { font-weight: 600; letter-spacing: 0.02em; color: #8fd0ff; }
+  #track { flex: 1; position: relative; display: flex; align-items: center; height: 20px; min-width: 120px; }
+  #scrub { width: 100%; margin: 0; position: relative; z-index: 1; }
+  #loopspan { position: absolute; top: 1px; bottom: 1px; left: 0; width: 0; background: rgba(255,216,143,0.22); border-left: 2px solid #ffd88f; border-right: 2px solid #ffd88f; border-radius: 2px; pointer-events: none; display: none; z-index: 0; }
+  #wrap { overflow: auto; display: grid; place-items: center; background: #0a0b0c; position: relative; }
+  #keys { position: fixed; left: 10px; bottom: 8px; font: 11px/1.5 ui-monospace, monospace; color: #59616e; pointer-events: none; white-space: pre; z-index: 5; }
+  #keys b { color: #7b8494; font-weight: 600; }
   canvas { max-width: 100%; height: auto; box-shadow: 0 0 24px #000; }
   #list { margin: 0; padding: 8px; overflow-y: auto; background: #14161a; border-left: 1px solid #24282e; list-style: none; }
   #list li { padding: 4px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #list li.now { background: #2a3f5c; }
+  #list li.looping { background: #3a3420; outline: 1px solid #ffd88f; }
   #list .t { color: #7b8494; margin-right: 6px; }
   .tool-act { color: #ff8f8f; } .tool-navigate { color: #8fd0ff; } .tool-ui_tree { color: #b9ff8f; }
   .tool-screenshot { color: #ffd88f; } .tool-app_state { color: #d88fff; }
+  #runs { position: relative; flex: 0 0 auto; }
+  #runs-toggle { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #runs-panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; width: min(520px, 70vw); max-height: min(70vh, 520px);
+    background: #1a1e24; border: 1px solid #333a42; border-radius: 6px; box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+    padding: 10px; z-index: 30; flex-direction: column; gap: 8px;
+  }
+  #runs.open #runs-panel { display: flex; }
+  #runs-filter {
+    width: 100%; box-sizing: border-box; background: #101214; color: #d7dbe0; border: 1px solid #333a42;
+    border-radius: 4px; padding: 6px 8px; font: 12px/1.3 ui-monospace, monospace;
+  }
+  #runs-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; max-height: 440px; }
+  #runs-list li {
+    padding: 8px 10px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
+    display: grid; gap: 2px; margin-bottom: 4px;
+  }
+  #runs-list li:hover { background: #24282e; }
+  #runs-list li.active { background: #2a3f5c; border-color: #3d5f8a; }
+  #runs-list .r-path { font: 12px/1.3 ui-monospace, monospace; color: #e6ebf0; word-break: break-all; }
+  #runs-list .r-meta { color: #8b93a0; font-size: 11px; }
+  #runs-list .r-empty { color: #7b8494; padding: 12px; cursor: default; }
+  #runs.static #runs-toggle { cursor: not-allowed; }
+  #clear-loop { display: none; }
+  #clear-loop.visible { display: inline-block; }
 </style>
 </head>
 <body>
 <div id="bar">
-  <button id="play">Play</button>
-  <select id="speed"><option value="1">1x</option><option value="2" selected>2x</option><option value="4">4x</option></select>
-  <input type="range" id="scrub" min="0" max="1000" value="0">
-  <span id="label"></span>
+  <div id="runs" class="static" title="not implemented in static export">
+    <button type="button" id="runs-toggle" disabled aria-haspopup="listbox" aria-expanded="false">Run history</button>
+    <div id="runs-panel" role="listbox" aria-label="session run history">
+      <input id="runs-filter" type="search" placeholder="filter path, branch, timestamp, test..." autocomplete="off" disabled>
+      <ul id="runs-list"></ul>
+    </div>
+  </div>
+  <span id="brand" title="af-review-mcp: visual replay of one webview-mcp session trace">af-review-mcp</span>
+  <button type="button" id="play">Play</button>
+  <button type="button" id="clear-loop" title="exit stage loop and return to normal playback">Clear loop</button>
+  <select id="speed" title="playback speed multiplier applied to the recorded timeline"><option value="1">1x</option><option value="2" selected>2x</option><option value="4">4x</option></select>
+  <div id="track"><div id="loopspan" title="looped stage span on the recorded timeline"></div><input type="range" id="scrub" min="0" max="1000" value="0" title="playhead position across the whole recorded timeline"></div>
+  <span id="label" title="playhead time / total recorded duration, in seconds"></span>
 </div>
 <div id="wrap"><canvas id="cv" width="1456" height="900"></canvas></div>
 <ol id="list"></ol>
+<div id="keys"><b>space</b> play/pause   <b>r</b> restart   <b>&larr; &rarr;</b> step stage   <b>home</b> jump to start   <b>esc</b> clear loop</div>
 <script>
 const EVENTS = /*__EVENTS__*/[];
 const MOVE_MS = 700, CLICK_MS = 350, REST_MS = 500, TRAIL_MS = 1400;
@@ -76,72 +118,415 @@ function cursorAt(time, cv) {
 // ----- render -----
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 let playing = false, clock = 0, lastTick = 0;
+// loopBounds: null = normal playback; otherwise { i, start, end } for one stage segment
+let loopBounds = null;
+
 function draw(time) {
   const im = baseFrameAt(time);
   if (im && im.complete && im.naturalWidth) {
-    if (cv.width !== im.naturalWidth) { cv.width = im.naturalWidth; cv.height = im.naturalHeight; }
+    if (cv.width !== im.naturalWidth || cv.height !== im.naturalHeight) { cv.width = im.naturalWidth; cv.height = im.naturalHeight; }
     ctx.drawImage(im, 0, 0);
-  } else { ctx.fillStyle = '#181a1e'; ctx.fillRect(0, 0, cv.width, cv.height); }
-
-  // fading red trail: sample recent cursor positions
-  ctx.lineWidth = 2; ctx.lineCap = 'round';
-  let prev = null;
-  for (let dt = TRAIL_MS; dt >= 0; dt -= 25) {
-    const pt = cursorAt(time - dt, cv);
-    if (prev) {
-      ctx.strokeStyle = 'rgba(255,45,45,' + (0.85 * (1 - dt / TRAIL_MS)).toFixed(3) + ')';
-      ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
-    }
-    prev = pt;
+  } else {
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, cv.width, cv.height);
   }
-  // cursor dot
+  // trail + cursor for clicky segments
+  const trail = [];
+  for (let dt = TRAIL_MS; dt >= 0; dt -= 40) {
+    const t = time - dt;
+    if (t < 0) continue;
+    trail.push({ p: cursorAt(t, cv), a: 1 - dt / TRAIL_MS });
+  }
+  for (let i = 1; i < trail.length; i++) {
+    const a = trail[i - 1], b = trail[i];
+    ctx.strokeStyle = `rgba(255,70,70,${0.15 + 0.55 * b.a})`;
+    ctx.lineWidth = 2 + 3 * b.a;
+    ctx.beginPath(); ctx.moveTo(a.p.x, a.p.y); ctx.lineTo(b.p.x, b.p.y); ctx.stroke();
+  }
   const cur = cursorAt(time, cv);
-  ctx.fillStyle = '#ff2d2d'; ctx.beginPath(); ctx.arc(cur.x, cur.y, 5, 0, 7); ctx.fill();
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-
-  // click ripple + captions for the active segment
+  // click flash
   const seg = segs.find((s) => time >= s.start && time < s.start + s.dur);
-  if (seg) {
-    if (seg.e.rect && time > seg.start + MOVE_MS) {
-      const p = (time - seg.start - MOVE_MS) / CLICK_MS, k = scaleFor(seg.e, cv);
-      const tx = (seg.e.rect.x + seg.e.rect.w / 2) * k, ty = (seg.e.rect.y + seg.e.rect.h / 2) * k;
-      ctx.strokeStyle = 'rgba(255,45,45,' + (1 - p).toFixed(3) + ')'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(tx, ty, 6 + p * 26, 0, 7); ctx.stroke();
+  if (seg && seg.e.rect) {
+    const local = time - seg.start;
+    if (local >= MOVE_MS && local < MOVE_MS + CLICK_MS) {
+      const k = scaleFor(seg.e, cv);
+      const r = seg.e.rect;
+      const pulse = 1 - (local - MOVE_MS) / CLICK_MS;
+      ctx.strokeStyle = `rgba(255,220,80,${0.3 + 0.7 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(r.x * k - 4, r.y * k - 4, r.w * k + 8, r.h * k + 8);
+      ctx.beginPath();
+      ctx.arc(cur.x, cur.y, 18 * pulse + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,80,80,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
     }
+  }
+  // cursor head
+  ctx.beginPath(); ctx.arc(cur.x, cur.y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff4444'; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  // caption
+  if (seg && seg.e.caption) {
     const caption = seg.e.caption;
-    if (caption) {
-      ctx.font = '16px monospace';
-      const w = ctx.measureText(caption).width + 24;
-      ctx.fillStyle = 'rgba(10,10,12,0.85)'; ctx.fillRect(cv.width / 2 - w / 2, cv.height - 54, w, 34);
-      ctx.fillStyle = '#ffd88f'; ctx.fillText(caption, cv.width / 2 - w / 2 + 12, cv.height - 31);
-    }
-    for (const li of listEl.children) li.classList.toggle('now', Number(li.dataset.i) === segs.indexOf(seg));
+    ctx.font = '16px monospace';
+    const w = ctx.measureText(caption).width + 24;
+    ctx.fillStyle = 'rgba(10,10,12,0.85)'; ctx.fillRect(cv.width / 2 - w / 2, cv.height - 54, w, 34);
+    ctx.fillStyle = '#ffd88f'; ctx.fillText(caption, cv.width / 2 - w / 2 + 12, cv.height - 31);
+  }
+  for (const li of listEl.children) {
+    const idx = Number(li.dataset.i);
+    li.classList.toggle('now', idx === segs.indexOf(seg));
+    li.classList.toggle('looping', !!(loopBounds && loopBounds.i === idx));
   }
   label.textContent = (time / 1000).toFixed(1) + 's / ' + (TOTAL / 1000).toFixed(1) + 's';
   scrub.value = String(Math.round((time / TOTAL) * 1000));
+  updateLoopSpan();
+}
+
+function updateLoopSpan() {
+  if (!loopBounds) {
+    loopspan.style.display = 'none';
+    clearLoopBtn.classList.remove('visible');
+    return;
+  }
+  const left = (loopBounds.start / TOTAL) * 100;
+  const width = Math.max(((loopBounds.end - loopBounds.start) / TOTAL) * 100, 0.4);
+  loopspan.style.display = 'block';
+  loopspan.style.left = left + '%';
+  loopspan.style.width = width + '%';
+  clearLoopBtn.classList.add('visible');
 }
 
 // ----- controls -----
 const playBtn = document.getElementById('play'), speedEl = document.getElementById('speed');
 const scrub = document.getElementById('scrub'), label = document.getElementById('label');
 const listEl = document.getElementById('list');
+const loopspan = document.getElementById('loopspan');
+const clearLoopBtn = document.getElementById('clear-loop');
+const runsRoot = document.getElementById('runs');
+const runsToggle = document.getElementById('runs-toggle');
+const runsPanel = document.getElementById('runs-panel');
+const runsFilter = document.getElementById('runs-filter');
+const runsList = document.getElementById('runs-list');
+
 EVENTS.forEach((e, i) => {
   const li = document.createElement('li');
   li.dataset.i = String(i);
   li.innerHTML = '<span class="t">' + ((segs[i].start) / 1000).toFixed(1) + 's</span><span class="tool-' + e.tool + '">' + e.tool + '</span> ' + (e.detail || '');
-  li.onclick = () => { clock = segs[i].start; draw(clock); };
+  li.title = 'loop-play this stage (click again to clear loop)';
+  li.onclick = () => toggleStageLoop(i);
   listEl.appendChild(li);
 });
-playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? 'Pause' : 'Play'; lastTick = performance.now(); if (playing) requestAnimationFrame(tick); };
-scrub.oninput = () => { clock = (Number(scrub.value) / 1000) * TOTAL; draw(clock); };
+
+// AT_END_EPSILON_MS: the tick clamps to exactly TOTAL, but a scrub drag can land a
+// hair short; treat that as "at the end" so play restarts instead of doing nothing.
+const AT_END_EPSILON_MS = 1;
+function atEnd() {
+  if (loopBounds) return false;
+  return clock >= TOTAL - AT_END_EPSILON_MS;
+}
+function setPlaying(next) {
+  playing = !!next;
+  playBtn.textContent = playing ? 'Pause' : 'Play';
+  if (!playing) return;
+  if (atEnd()) clock = 0; // replay from the start rather than sitting dead at the end
+  if (loopBounds && (clock < loopBounds.start || clock >= loopBounds.end - AT_END_EPSILON_MS)) {
+    clock = loopBounds.start;
+  }
+  lastTick = performance.now();
+  requestAnimationFrame(tick);
+}
+function togglePlay() { setPlaying(!playing); }
+function clearLoop() {
+  if (!loopBounds) return;
+  loopBounds = null;
+  updateLoopSpan();
+  draw(clock);
+}
+function restart() {
+  clearLoop();
+  clock = 0;
+  draw(clock);
+  setPlaying(true);
+}
+function stepStage(delta) {
+  if (!segs.length) return;
+  setPlaying(false);
+  const i = segs.findIndex((s) => clock >= s.start && clock < s.start + s.dur);
+  const from = i === -1 ? (clock >= TOTAL ? segs.length - 1 : 0) : i;
+  const next = Math.min(Math.max(from + delta, 0), segs.length - 1);
+  clock = segs[next].start;
+  draw(clock);
+}
+function setStageLoop(i) {
+  if (!segs[i]) return;
+  const s = segs[i];
+  loopBounds = { i, start: s.start, end: s.start + s.dur };
+  clock = s.start;
+  draw(clock);
+  setPlaying(true);
+}
+function toggleStageLoop(i) {
+  if (loopBounds && loopBounds.i === i) {
+    clearLoop();
+    setPlaying(false);
+    return;
+  }
+  setStageLoop(i);
+}
+
+playBtn.onclick = togglePlay;
+clearLoopBtn.onclick = () => { clearLoop(); setPlaying(false); };
+scrub.oninput = () => {
+  clock = (Number(scrub.value) / 1000) * TOTAL;
+  if (loopBounds) {
+    if (clock < loopBounds.start) clock = loopBounds.start;
+    if (clock >= loopBounds.end) clock = Math.max(loopBounds.start, loopBounds.end - 1);
+  }
+  draw(clock);
+};
+
+// ----- keyboard shortcuts (listed bottom-left in #keys; keep both in sync) -----
+function typingInField(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'INPUT') return el.type !== 'range';
+  return el.isContentEditable === true;
+}
+document.addEventListener('keydown', (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (typingInField(ev.target)) return;
+  if (ev.code === 'Space') { ev.preventDefault(); togglePlay(); }
+  else if (ev.key === 'r' || ev.key === 'R') { ev.preventDefault(); restart(); }
+  else if (ev.key === 'ArrowRight') { ev.preventDefault(); stepStage(1); }
+  else if (ev.key === 'ArrowLeft') { ev.preventDefault(); stepStage(-1); }
+  else if (ev.key === 'Home') { ev.preventDefault(); setPlaying(false); clock = loopBounds ? loopBounds.start : 0; draw(clock); }
+  else if (ev.key === 'Escape') {
+    if (runsRoot.classList.contains('open')) { closeRuns(); return; }
+    if (loopBounds) { ev.preventDefault(); clearLoop(); setPlaying(false); }
+  }
+});
+
 function tick(now) {
   if (!playing) return;
   clock += (now - lastTick) * Number(speedEl.value);
   lastTick = now;
-  if (clock >= TOTAL) { clock = TOTAL; playing = false; playBtn.textContent = 'Play'; }
+  if (loopBounds) {
+    if (clock >= loopBounds.end) {
+      // wrap inside the stage loop without pausing
+      const span = Math.max(loopBounds.end - loopBounds.start, 1);
+      clock = loopBounds.start + ((clock - loopBounds.start) % span);
+    }
+  } else if (clock >= TOTAL) {
+    clock = TOTAL;
+    playing = false;
+    playBtn.textContent = 'Play';
+  }
   draw(clock);
   if (playing) requestAnimationFrame(tick);
 }
+
+// ----- run history (served mode only; grounded in webview-mcp index.jsonl + meta.json) -----
+// webview-mcp writes:
+//   TRACE_ROOT/index.jsonl  lines: { kind:"start", dir, started }
+//   TRACE_ROOT/<session>/meta.json: { session, started_epoch_ms, pid, ...optional }
+//   TRACE_ROOT/<session>/trace.html + frames/
+// Static single-file export has no sibling index: control stays inert with tooltip.
+let runEntries = [];
+let runsEnabled = false;
+
+function closeRuns() {
+  runsRoot.classList.remove('open');
+  runsToggle.setAttribute('aria-expanded', 'false');
+}
+function openRuns() {
+  if (!runsEnabled) return;
+  runsRoot.classList.add('open');
+  runsToggle.setAttribute('aria-expanded', 'true');
+  runsFilter.focus();
+}
+function toggleRuns() {
+  if (!runsEnabled) return;
+  if (runsRoot.classList.contains('open')) closeRuns();
+  else openRuns();
+}
+
+function basenamePath(p) {
+  if (!p) return '';
+  const parts = String(p).replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts[parts.length - 1] || p;
+}
+
+function currentSessionKey() {
+  try {
+    const path = decodeURIComponent(location.pathname || '');
+    const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
+    // .../<session>/trace.html -> session folder name
+    if (parts.length >= 2 && /trace\.html$/i.test(parts[parts.length - 1])) {
+      return parts[parts.length - 2];
+    }
+  } catch (_) { /* ignore */ }
+  return '';
+}
+
+function runHrefForDir(dir, indexBaseUrl) {
+  // Prefer same-origin relative navigation under the served TRACE_ROOT.
+  const name = basenamePath(dir);
+  if (!name) return null;
+  try {
+    // indexBaseUrl is the directory URL that contained index.jsonl
+    return new URL(name + '/trace.html', indexBaseUrl).href;
+  } catch (_) {
+    return name + '/trace.html';
+  }
+}
+
+function renderRuns() {
+  const q = (runsFilter.value || '').trim().toLowerCase();
+  runsList.innerHTML = '';
+  const cur = currentSessionKey();
+  const matched = runEntries.filter((r) => !q || r.haystack.includes(q));
+  if (!matched.length) {
+    const li = document.createElement('li');
+    li.className = 'r-empty';
+    li.textContent = runEntries.length ? 'No runs match this filter.' : 'No runs listed in index.jsonl.';
+    runsList.appendChild(li);
+    return;
+  }
+  for (const r of matched) {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    if (r.name && r.name === cur) li.classList.add('active');
+    const pathLine = document.createElement('div');
+    pathLine.className = 'r-path';
+    pathLine.textContent = r.dir || r.name || '(unknown path)';
+    const metaLine = document.createElement('div');
+    metaLine.className = 'r-meta';
+    const bits = [];
+    if (r.started) bits.push(r.started);
+    if (r.branch) bits.push('branch ' + r.branch);
+    if (r.test_name) bits.push('test ' + r.test_name);
+    if (r.pid != null) bits.push('pid ' + r.pid);
+    metaLine.textContent = bits.join('  |  ') || 'no extra meta';
+    li.appendChild(pathLine);
+    li.appendChild(metaLine);
+    li.title = [r.dir, r.started, r.branch, r.test_name].filter(Boolean).join('\n');
+    if (r.href) {
+      li.onclick = () => { location.href = r.href; };
+    } else {
+      li.style.cursor = 'default';
+    }
+    runsList.appendChild(li);
+  }
+}
+
+async function fetchText(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.text();
+}
+
+async function tryLoadJson(url) {
+  try {
+    const text = await fetchText(url);
+    return JSON.parse(text);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function enrichRun(entry, indexBaseUrl) {
+  const name = basenamePath(entry.dir);
+  entry.name = name;
+  entry.href = runHrefForDir(entry.dir, indexBaseUrl);
+  // meta.json lives beside trace.html in the session dir
+  let meta = null;
+  try {
+    meta = await tryLoadJson(new URL(name + '/meta.json', indexBaseUrl).href);
+  } catch (_) { meta = null; }
+  if (meta && typeof meta === 'object') {
+    if (meta.branch) entry.branch = String(meta.branch);
+    if (meta.test_name) entry.test_name = String(meta.test_name);
+    if (meta.testName) entry.test_name = String(meta.testName);
+    if (meta.pid != null) entry.pid = meta.pid;
+    if (meta.started_epoch_ms && !entry.started) {
+      try { entry.started = new Date(meta.started_epoch_ms).toISOString(); } catch (_) { /* ignore */ }
+    }
+    if (meta.session && !entry.dir) entry.dir = String(meta.session);
+  }
+  entry.haystack = [entry.dir, entry.name, entry.started, entry.branch, entry.test_name, entry.pid]
+    .filter((v) => v != null && v !== '')
+    .join(' ')
+    .toLowerCase();
+  return entry;
+}
+
+async function loadRunHistory() {
+  // file: and lone static export cannot list sibling sessions honestly
+  if (location.protocol === 'file:') return false;
+  const pageUrl = location.href;
+  // Candidate locations for index.jsonl relative to this trace.html, matching
+  // webview-mcp layout: TRACE_ROOT/index.jsonl next to session directories.
+  const candidates = [];
+  try {
+    candidates.push(new URL('../index.jsonl', pageUrl));
+    candidates.push(new URL('./index.jsonl', pageUrl));
+  } catch (_) { /* ignore */ }
+
+  for (const indexUrl of candidates) {
+    let text;
+    try { text = await fetchText(indexUrl.href); }
+    catch (_) { continue; }
+    const indexBaseUrl = new URL('.', indexUrl.href);
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const parsed = [];
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (!obj || typeof obj !== 'object') continue;
+        // Accept the real start records; ignore unknown kinds without inventing rows.
+        if (obj.kind && obj.kind !== 'start') continue;
+        if (!obj.dir && !obj.session) continue;
+        parsed.push({
+          dir: String(obj.dir || obj.session || ''),
+          started: obj.started ? String(obj.started) : '',
+          branch: obj.branch ? String(obj.branch) : '',
+          test_name: obj.test_name ? String(obj.test_name) : (obj.testName ? String(obj.testName) : ''),
+          pid: obj.pid,
+          haystack: ''
+        });
+      } catch (_) { /* skip bad line */ }
+    }
+    if (!parsed.length) continue;
+    // Newest first when timestamps exist
+    parsed.sort((a, b) => String(b.started).localeCompare(String(a.started)));
+    runEntries = await Promise.all(parsed.map((e) => enrichRun(e, indexBaseUrl)));
+    return true;
+  }
+  return false;
+}
+
+function enableRunsUi() {
+  runsEnabled = true;
+  runsRoot.classList.remove('static');
+  runsRoot.removeAttribute('title');
+  runsToggle.disabled = false;
+  runsToggle.title = 'switch between webview-mcp session traces from index.jsonl';
+  runsFilter.disabled = false;
+  runsToggle.textContent = 'Runs (' + runEntries.length + ')';
+  runsToggle.onclick = (ev) => { ev.stopPropagation(); toggleRuns(); };
+  runsFilter.oninput = () => renderRuns();
+  runsPanel.addEventListener('click', (ev) => ev.stopPropagation());
+  document.addEventListener('click', () => closeRuns());
+  renderRuns();
+}
+
+loadRunHistory().then((ok) => {
+  if (ok) enableRunsUi();
+  // else: remains inert with tooltip "not implemented in static export"
+}).catch(() => { /* stay inert */ });
+
 setTimeout(() => draw(0), 300);
 </script>
 </body>
