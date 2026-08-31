@@ -5277,7 +5277,7 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nartwork/analysis False, no cues, no genre) while ``folder_path``,\n``file_exists`` and ``quality`` still carry the state layer's own disk\ntruth. See :func:`_local_rb_meta`.",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
@@ -5361,12 +5361,23 @@
             "type": "string"
           },
           "vendor": {
+            "enum": [
+              "rekordbox",
+              "local"
+            ],
             "title": "Vendor",
             "type": "string"
           },
           "vendor_id": {
-            "title": "Vendor Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
           }
         },
         "required": [

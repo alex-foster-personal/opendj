@@ -223,6 +223,32 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
     return path, media_type
 
 
+def local_track_row(stable_id: str) -> tuple[str | None, int | None]:
+    """``(file_path, duration_ms)`` from state.db for a track with NO rekordbox
+    vendor mapping.
+
+    A locally imported file has a real ``tracks`` row but no djmdContent row,
+    so every rekordbox-sourced field (artwork, ANLZ, cues, genre) is absent by
+    definition. These two columns are the only honest inputs left for the
+    disk-truth flags a browser row still needs, and they are the SAME columns
+    :func:`~apps.webui.server.rb_vendor_pkg.track_rows.bulk_availability` falls
+    back to for unmapped rows -- so a listing row and its rb-meta can never
+    disagree. An unknown stable_id still 404s loudly.
+    """
+    state = _open_ro(config.STATE_DB, "STATE_DB")
+    try:
+        row = state.execute(
+            "SELECT file_path, duration_ms FROM tracks WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()
+    finally:
+        state.close()
+    if row is None:
+        raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
+    file_path, duration_ms = row
+    return (file_path or None, int(duration_ms) if duration_ms is not None else None)
+
+
 def resolve_playable_audio(
     stable_id: str, *, share: bool = False
 ) -> track_locations.PickedAudio:
@@ -384,6 +410,7 @@ __all__ = [
     "empty_hot_cue_slots",
     "is_streaming_path",
     "local_audio_file",
+    "local_track_row",
     "resolve_asset_path",
     "resolve_content",
     "resolve_playable_audio",

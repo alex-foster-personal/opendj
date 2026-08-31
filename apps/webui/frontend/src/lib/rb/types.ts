@@ -177,18 +177,21 @@ export interface BeatgridIssue {
 export interface RbMeta {
 	/** 40-hex stable id. */
 	stable_id: string;
-	/** Always 'rekordbox' at v1. */
-	vendor: string;
-	/** djmdContent.ID in the decrypted master.plain.db. */
-	vendor_id: string;
+	/** 'rekordbox' when the track has a vendor mapping, 'local' for a
+	 * locally imported file (no djmdContent row): every rekordbox-sourced
+	 * field below is then empty, never synthesised. */
+	vendor: 'rekordbox' | 'local';
+	/** djmdContent.ID in the decrypted master.plain.db; null when local. */
+	vendor_id: string | null;
 	/** True when the resolved FolderPath exists on disk. False for the 74%
 	 * dead-path rows - a REAL library state the browser must show. */
 	file_exists: boolean;
 	/** True when FolderPath is a tidal:/soundcloud:/spotify: URI (cloud icon,
 	 * load action inert). */
 	is_streaming: boolean;
-	/** Resolved absolute path or streaming URI. */
-	folder_path: string;
+	/** Resolved absolute path or streaming URI (the state layer's own
+	 * file_path when vendor is 'local'); null when the track has none. */
+	folder_path: string | null;
 	/** Genre column value from djmdContent join; null when unset. */
 	genre: string | null;
 	/** True when artwork files exist - lets the browser skip doomed fetches. */

@@ -4176,6 +4176,12 @@ export interface components {
         /**
          * RbMetaOut
          * @description COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).
+         *
+         *     ``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the
+         *     rekordbox-sourced fields are then honestly empty (``vendor_id`` None,
+         *     artwork/analysis False, no cues, no genre) while ``folder_path``,
+         *     ``file_exists`` and ``quality`` still carry the state layer's own disk
+         *     truth. See :func:`_local_rb_meta`.
          */
         RbMetaOut: {
             /** Analysis Available */
@@ -4200,10 +4206,13 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Stable Id */
             stable_id: string;
-            /** Vendor */
-            vendor: string;
+            /**
+             * Vendor
+             * @enum {string}
+             */
+            vendor: "rekordbox" | "local";
             /** Vendor Id */
-            vendor_id: string;
+            vendor_id: string | null;
         };
         /** ReadbackModel */
         ReadbackModel: {
