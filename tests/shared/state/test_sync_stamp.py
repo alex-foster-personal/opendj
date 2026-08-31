@@ -317,6 +317,35 @@ def test_the_wire_boundary_still_refuses_what_storage_tolerates() -> None:
         sync_stamp.parse_canonical("2024-11-01T12:00:00")
 
 
+def test_r4_local_read_coalesces_but_the_same_value_off_the_wire_is_rejected() -> None:
+    """Round 3/4 finding R4, the whole contract in one place.
+
+    A locally-stored unorderable stamp must not brick a read: it coalesces to
+    the comparison sentinel. The BYTE-IDENTICAL value arriving off the wire is
+    still rejected. And the sentinel it coalesces to is itself unparseable, so
+    it can only ever be compared, never stored back -- which is why the repair
+    (:mod:`apps.shared.state.normalize_stamps`) writes ``FLOOR_STAMP``, a
+    parseable year-one stamp, rather than :data:`sync_stamp.EPOCH`.
+    """
+    legacy = "2024-11-01 12:00:00"  # SQLite CURRENT_TIMESTAMP spelling
+
+    # Local read: survivable, sorts where a NULL stamp sorts.
+    assert sync_stamp.coalesce_stored_stamp(legacy) == sync_stamp.EPOCH
+
+    # Same value off the wire: refused.
+    with pytest.raises(sync_stamp.SyncStampError):
+        sync_stamp.parse_canonical(legacy)
+
+    # The sentinel is a comparison value only: it does not round-trip through
+    # the wire parser, so nothing may store it back onto a row.
+    with pytest.raises(sync_stamp.SyncStampError):
+        sync_stamp.parse_canonical(sync_stamp.EPOCH)
+    from apps.shared.state import normalize_stamps
+
+    assert normalize_stamps.FLOOR_STAMP != sync_stamp.EPOCH
+    assert sync_stamp.parse_canonical(normalize_stamps.FLOOR_STAMP)
+
+
 def _legacy_location(
     conn: sqlite3.Connection, location_id: str, stable_id: str, *, updated_at: str
 ) -> None:
