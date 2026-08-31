@@ -4,10 +4,10 @@
 
 GET  /api/v1/usb/volumes          - list present volumes (throttled scan)
 GET  /api/v1/usb/volumes/events   - SSE keepalive that refreshes while watched
-POST /api/v1/usb/volumes          - simulated volume injection, mounted ONLY
-                                    when MDT_USB_SIMULATION=1 (tests / dev
-                                    without a stick); production never serves
-                                    or merges simulated volumes.
+
+The simulated-volume POST lives in usb_volumes_sim and is mounted ONLY when
+MDT_USB_SIMULATION=1; listings here merge simulated rows only under that
+gate, so production never serves or merges simulated volumes.
 
 Never writes to a USB mount. Discovery fails explicitly without macOS diskutil.
 """
@@ -28,14 +28,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/usb", tags=["usb"])
-simulation_router = APIRouter(prefix="/usb", tags=["usb"])
 
 VolumeKind = Literal["rekordbox", "djay", "music", "unknown"]
 VolumeRole = Literal["usb_stick", "mounted_drive", "disk_image", "other"]
@@ -44,25 +43,7 @@ _AUDIO_EXTS = frozenset(
     {".mp3", ".m4a", ".flac", ".wav", ".aiff", ".aif", ".aac", ".ogg", ".alac"}
 )
 _MIN_SCAN_INTERVAL_S = 5.0
-_MAX_SIMULATED_VOLUMES = 16
-_SIMULATED_ID_PREFIX = "sim:"
-_SIMULATION_ENV = "MDT_USB_SIMULATION"
 _VOLUMES_ROOT = Path("/Volumes")
-
-
-def simulation_enabled() -> bool:
-    """Explicit opt-in gate for the simulated-volume surface.
-
-    Unset / "0" = disabled (production default). "1" = enabled (tests / dev
-    without a stick). Anything else fails fast: a typo must never silently
-    disable or enable a test-only surface.
-    """
-    raw = os.environ.get(_SIMULATION_ENV, "0")
-    if raw in ("", "0"):
-        return False
-    if raw == "1":
-        return True
-    raise ValueError(f"{_SIMULATION_ENV} must be unset, '0' or '1'; got {raw!r}")
 
 
 class UsbDiscoveryUnavailable(RuntimeError):
@@ -458,36 +439,6 @@ class UsbVolumesOut(BaseModel):
     watching: bool
 
 
-class UsbVolumePost(BaseModel):
-    """DEV / simulate: inject a fake present volume (never touches disk)."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: str | None = None
-    name: str = "FAKE USB"
-    mount_path: str | None = "/Volumes/FAKE-USB"
-    kind: VolumeKind = "music"
-    present: bool = True
-    role: VolumeRole = "usb_stick"
-    protocol: str | None = "USB"
-
-    @field_validator("id")
-    @classmethod
-    def _validate_simulated_id(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        suffix = value.removeprefix(_SIMULATED_ID_PREFIX)
-        if (
-            not value.startswith(_SIMULATED_ID_PREFIX)
-            or not suffix.strip()
-            or value != value.strip()
-        ):
-            raise ValueError(
-                "simulated volume id must use the reserved 'sim:' namespace"
-            )
-        return value
-
-
 class UsbCapabilityDetail(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -550,49 +501,6 @@ def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
         )
     except UsbDiscoveryUnavailable as exc:
         return _capability_response(exc)
-    return UsbVolumesOut(
-        volumes=[_to_out(v) for v in vols],
-        scanned_at=time.time(),
-        watching=_someone_watching(),
-    )
-
-
-@simulation_router.post("/volumes", response_model=UsbVolumesOut)
-def post_usb_volume(body: UsbVolumePost) -> UsbVolumesOut:
-    """Inject or update bounded simulated state without touching a stick."""
-    _touch_client()
-    generated_suffix = "-".join(body.name.strip().lower().split()) or "unnamed"
-    vol_id = body.id or f"{_SIMULATED_ID_PREFIX}{generated_suffix}"
-    reason = hide_reason_for(body.role, protocol=body.protocol, name=body.name)
-    if any(volume.id == vol_id for volume in _cached):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "usb_simulation_id_collision",
-                "reason": "real_volume_id_reserved",
-            },
-        )
-    with _FAKES_LOCK:
-        if vol_id not in _fakes and len(_fakes) >= _MAX_SIMULATED_VOLUMES:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "usb_simulation_capacity_exceeded",
-                    "reason": "simulated_volume_limit_reached",
-                },
-            )
-        _fakes[vol_id] = UsbVolume(
-            id=vol_id,
-            name=body.name,
-            mount_path=body.mount_path,
-            kind=body.kind,
-            present=body.present,
-            simulated=True,
-            role=body.role,
-            protocol=body.protocol,
-            hide_reason=reason,
-        )
-    vols = _with_simulations(_cached)
     return UsbVolumesOut(
         volumes=[_to_out(v) for v in vols],
         scanned_at=time.time(),

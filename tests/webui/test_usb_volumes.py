@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes import usb_volumes as usb_mod
+from apps.webui.server.routes import usb_volumes_sim as sim_mod
 from apps.webui.server.routes.usb_volumes import (
     classify_mount,
     classify_role,
@@ -137,13 +138,13 @@ def test_simulation_gate_off_values(
     raw: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MDT_USB_SIMULATION", raw)
-    assert usb_mod.simulation_enabled() is False
+    assert sim_mod.simulation_enabled() is False
 
 
 def test_simulation_gate_rejects_typos(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MDT_USB_SIMULATION", "true")
     with pytest.raises(ValueError, match="MDT_USB_SIMULATION"):
-        usb_mod.simulation_enabled()
+        sim_mod.simulation_enabled()
 
 
 def test_gated_app_registers_simulation_and_read_only_usb_contracts(
@@ -219,7 +220,7 @@ def test_usb_event_stream_is_declared_in_live_openapi(client: TestClient) -> Non
 
 
 def test_simulated_volume_state_has_a_hard_capacity(client: TestClient) -> None:
-    for index in range(usb_mod._MAX_SIMULATED_VOLUMES):
+    for index in range(sim_mod._MAX_SIMULATED_VOLUMES):
         response = client.post(
             "/api/v1/usb/volumes",
             json={"id": f"sim:{index}", "name": f"Fixture {index}"},
