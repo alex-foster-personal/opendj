@@ -38,7 +38,8 @@ import {
 	simulateAutoPlayChain,
 	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap,
-	type AutoPlayHandoffPhase
+	type AutoPlayHandoffPhase,
+	type AutoPlayMasterPromotion
 } from '$lib/rb/auto-play';
 import {
 	computeFollowerSyncPlan,
@@ -292,7 +293,7 @@ async function _promoteMaster(): Promise<void> {
 	const pending = _pendingMaster;
 	if (pending === null) return;
 	const snap = _snaps().find((d) => d.id === pending.deck) ?? null;
-	const decision = decideMasterPromotion({
+	const decision: AutoPlayMasterPromotion = decideMasterPromotion({
 		pending_deck: pending.deck,
 		pending_stable_id: pending.stable_id,
 		deck: snap,

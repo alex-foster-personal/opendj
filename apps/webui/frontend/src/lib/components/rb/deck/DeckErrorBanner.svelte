@@ -8,10 +8,14 @@
 	it re-reports if it recurs.
 -->
 <script lang="ts">
-	import { dismissPerformanceDeckError } from '$lib/rb/performance-ipc.svelte';
-	import type { DeckId } from '$lib/rb/types';
-
-	let { deckId, error }: { deckId: DeckId; error: string } = $props();
+	// Presentational: the parent owns both the deck identity and the dismiss
+	// action. `deckId` is a plain number here because it is only stamped into
+	// the test hook and the label; Deck.svelte keeps the typed DeckId.
+	let {
+		deckId,
+		error,
+		onDismiss
+	}: { deckId: number; error: string; onDismiss: () => void } = $props();
 </script>
 
 <div class="deck-error" role="alert" data-performance-error={deckId} title={error}>
@@ -22,7 +26,7 @@
 		data-performance-error-dismiss={deckId}
 		title="Dismiss this deck error"
 		aria-label={`Dismiss deck ${deckId} error`}
-		onclick={() => dismissPerformanceDeckError(deckId)}>x</button
+		onclick={onDismiss}>x</button
 	>
 </div>
 

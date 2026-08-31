@@ -25,6 +25,7 @@
 	import { hasRealBeatGrid } from '$lib/player/grid-features';
 	import {
 		performanceCommandStatus,
+		dismissPerformanceDeckError,
 		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
@@ -419,7 +420,11 @@
 	/>
 
 	{#if controlError !== null}
-		<DeckErrorBanner {deckId} error={controlError} />
+		<DeckErrorBanner
+			{deckId}
+			error={controlError}
+			onDismiss={() => dismissPerformanceDeckError(deckId)}
+		/>
 	{/if}
 
 	{#if deck.last_load_latency_ms !== null}
