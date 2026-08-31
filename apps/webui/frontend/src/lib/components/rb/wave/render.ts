@@ -20,7 +20,7 @@ import type {
 	AnlzWaveform,
 	LoopState
 } from '$lib/rb/types';
-import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines } from './wave-math';
+import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
 
 /** Vocal-region bar colour (SPIKE-B1 blue bars). A literal on purpose:
  * theme.css belongs to the shared theme unit and the canvas painters
@@ -360,7 +360,7 @@ function _drawCues(
  */
 export function drawLoopRegion(
 	ctx: CanvasRenderingContext2D,
-	loop: LoopState | null,
+	loop: LoopBandSource | null,
 	toPx: (ms: number) => number,
 	widthPx: number,
 	heightPx: number

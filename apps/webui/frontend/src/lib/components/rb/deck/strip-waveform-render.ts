@@ -11,9 +11,17 @@
  * synthesized; vocal bars paint only for a real PVDI/demucs region; the loop
  * band paints only for an engaged loop the engine actually reports.
  */
-import { type Vocals } from '$lib/rb/api-rb';
-import type { AnlzWaveform, AnlzWaveformBands, LoopState } from '$lib/rb/types';
 import { drawLoopRegion, VOCAL_BLUE, vocalAlpha } from '../wave/render';
+import type { LoopBandSource } from '../wave/wave-math';
+
+// This module is PRESENTATIONAL: it names the shapes it paints instead of
+// importing `$lib/rb/types` or `$lib/rb/api-rb`. Two reasons, in order:
+// a painter that depends only on the numbers it draws can be unit-tested
+// without the API contract behind it, and `types.ts` is the most-imported
+// module in the frontend, so every avoidable edge into it is worth not adding
+// (scripts/quality_gate.py tracks this as frontend.max_fan_in).
+// These are structural subsets of AnlzWaveform / AnlzWaveformBands / Vocals,
+// so callers keep passing the real objects with no conversion.
 
 /** Band colors per SCREENSHOT-SPEC 6: lows orange, mids blue, highs white. */
 const BAND_LOW = '#e8a13a';
@@ -26,6 +34,34 @@ const BAND_MONO = '#3d7dd9';
  * backing height reads as the ~2 CSS px the strip is scaled down to. */
 const VOCAL_BAR_BACKING_PX = 4;
 
+/** Same-length normalized 0..1 energy arrays, one per frequency band. */
+export interface StripBands {
+	length: number;
+	low: readonly number[];
+	mid: readonly number[];
+	high: readonly number[];
+}
+
+/** Only the preview strip is drawn here; the detail array is the wavestack's. */
+export interface StripWaveformBands {
+	kind: 'tri' | 'mono';
+	preview: StripBands;
+}
+
+/** One PVDI/demucs vocal region, in track seconds. */
+export interface StripVocalRegion {
+	start_s: number;
+	end_s: number;
+	intensity: number;
+}
+
+/** Vocal detection result. The two barless states carry no regions to paint. */
+export type StripVocals =
+	| { status: 'rekordbox'; regions: readonly StripVocalRegion[] }
+	| { status: 'demucs'; regions: readonly StripVocalRegion[] }
+	| { status: 'no_vocals'; regions: readonly StripVocalRegion[] }
+	| { status: 'not_analyzed' };
+
 /** One frame of the deck overview strip, in backing-canvas pixels. */
 export interface StripFrame {
 	/** Backing canvas width (CSS scales it to the deck's strip width). */
@@ -35,11 +71,11 @@ export interface StripFrame {
 	/** Track length; null on an empty deck. Every x mapping needs it. */
 	durationMs: number | null;
 	/** Analysis waveform; null when the track has no analysis. */
-	waveform: AnlzWaveform | null;
+	waveform: StripWaveformBands | null;
 	/** Validated vocals of the loaded analysis; null when absent. */
-	vocals: Vocals | null;
+	vocals: StripVocals | null;
 	/** Engaged loop reported by the engine; null when no loop is running. */
-	loop: LoopState | null;
+	loop: LoopBandSource | null;
 }
 
 /**
@@ -81,7 +117,7 @@ function _bar(
 
 function _drawPreview(
 	ctx: CanvasRenderingContext2D,
-	bands: AnlzWaveformBands,
+	bands: StripBands,
 	kind: 'tri' | 'mono',
 	widthPx: number,
 	heightPx: number
@@ -105,7 +141,7 @@ function _drawPreview(
 
 function _drawVocalBars(
 	ctx: CanvasRenderingContext2D,
-	vocals: Vocals,
+	vocals: StripVocals,
 	durationMs: number,
 	widthPx: number
 ): void {

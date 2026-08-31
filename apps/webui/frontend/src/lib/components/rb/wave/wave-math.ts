@@ -2,7 +2,7 @@
  * Pure time/beat math for the wavestack rows (build unit: wavestack).
  * No runes, no DOM - unit-testable helpers only.
  */
-import type { AnlzBeat, AnlzData, LoopState } from '$lib/rb/types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/types';
 
 /** Index of the FIRST beat with t >= tSec (== beats.length when none).
  * beats MUST be ordered by t (contract: AnlzBeatgrid.beats is ordered). */
@@ -160,6 +160,21 @@ export interface LoopBandPx {
 }
 
 /**
+ * The only three fields the band geometry reads from a loop.
+ *
+ * Narrower than `LoopState` on purpose. Stating it structurally lets the
+ * painters that draw this band stay presentational modules which never import
+ * the API contract, so a surface can be unit-tested without dragging the whole
+ * deck type surface behind it. `LoopState` satisfies this shape, so every
+ * existing caller keeps passing one unchanged.
+ */
+export interface LoopBandSource {
+	in_ms: number;
+	out_ms: number;
+	engaged: boolean;
+}
+
+/**
  * Minimum drawn width of a loop band, in surface pixels.
  *
  * The overview strip squeezes a whole track into a few hundred pixels, so a
@@ -183,7 +198,7 @@ export const LOOP_MIN_BAND_PX = 2;
  * entirely outside this surface.
  */
 export function loopBandPx(
-	loop: LoopState | null,
+	loop: LoopBandSource | null,
 	toPx: (ms: number) => number,
 	widthPx: number,
 	minWidthPx: number = LOOP_MIN_BAND_PX
