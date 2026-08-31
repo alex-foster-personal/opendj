@@ -2,7 +2,7 @@
 	/**
 	 * In-app review/feedback widget (FB-01..FB-04): the topbar cluster.
 	 *
-	 * A down-chevron beside the vibe meter toggles the compact, draggable
+	 * A down-chevron left of the vibe meter toggles the compact, draggable
 	 * review-todo panel (FeedbackPanel.svelte); a comment icon arms one-shot
 	 * comment-anywhere pin placement. Everything the user does here lands on
 	 * /api/v1/feedback immediately (debounced for text) - the same endpoints
@@ -196,9 +196,15 @@
 <FeedbackPanel />
 
 <style>
+	/* FB-07: left of the vibe meter, which is itself pinned dead-centre. The
+	   RIGHT edge is anchored (not the left) so the cluster grows leftwards and
+	   its gap to the meter stays fixed when the open-todo count appears or
+	   disappears and changes the cluster's width. 92px is the meter's
+	   half-width plus a small gap, mirroring the offset this used to sit at on
+	   the other side. */
 	.fb-cluster {
 		position: absolute;
-		left: calc(50% + 92px);
+		right: calc(50% + 92px);
 		top: 50%;
 		transform: translateY(-50%);
 		display: inline-flex;
