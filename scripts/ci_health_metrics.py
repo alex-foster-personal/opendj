@@ -67,6 +67,9 @@ MINI-PRD
          [if] the backlog is deeper than JOB_FETCH_MAX_PAGES pages
               [then] the bounded window is still recorded AND the permanent gap is named
               in the log and in --json, never silently dropped and never fatal (*)
+         [if] a busy prior day fills the created lookback past the page bound but every
+              run newer than the watermark was fetched
+              [then] no gap is claimed - lookback overlap is not lost data (*)
          [if] a `source: ci` record carries an unparseable ts
               [then] raise PreconditionError naming it, never guess a watermark (*)
          [if] a local `just` record is newer than every ci record
@@ -244,7 +247,9 @@ def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | N
     )
     fetched: list[Run] = []
     note: str | None = None
+    raw_seen = 0
     total_count = 0
+    page_runs: list[Run] = []
     for page in range(1, JOB_FETCH_MAX_PAGES + 1):
         body = _completed_runs_page(
             _gh_api_json(
@@ -253,19 +258,27 @@ def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | N
             )
         )
         total_count = int(body.get("total_count", 0))
-        fetched.extend(_parse_completed_runs(body))
+        raw_seen += len(body["workflow_runs"])
+        page_runs = _parse_completed_runs(body)
+        fetched.extend(page_runs)
         if len(body["workflow_runs"]) < RUN_FETCH_COUNT:
             break
     else:
-        # Exhausting the bound is only a gap when the listing held MORE than the bound: a
-        # backlog of exactly JOB_FETCH_MAX_PAGES full pages was fetched in full, and a note
-        # claiming a hole of zero runs would be a false alarm in the log.
-        shortfall = total_count - JOB_FETCH_MAX_PAGES * RUN_FETCH_COUNT
-        if shortfall > 0:
+        # Exhausting the bound is only a gap when BOTH hold: the listing held more runs
+        # than were fetched (exactly JOB_FETCH_MAX_PAGES full pages is complete, not a
+        # hole), AND the deepest page still contained a run at or after the watermark.
+        # total_count alone cannot size a gap: the created lookback sweeps in the
+        # already-recorded prior day, so a busy yesterday can fill the window past the
+        # bound while every run newer than the watermark sat on the early pages. The
+        # listing is ordered newest-created first, so a deepest page with nothing at or
+        # after the watermark means the remainder is lookback overlap, not lost data.
+        remainder = total_count - raw_seen
+        if remainder > 0 and any(run.updated_at >= watermark for run in page_runs):
             note = (
-                f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound with {total_count} runs "
-                f"matching the window; job durations for the oldest {shortfall} were not "
-                "recorded and will not be revisited"
+                f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound while still finding "
+                f"runs newer than the watermark; {remainder} more runs matched the "
+                "created window beyond the bound, and any of them newer than the "
+                "watermark are permanently unrecorded"
             )
     return [run for run in fetched if run.updated_at >= watermark], note
 
