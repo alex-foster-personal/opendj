@@ -58,7 +58,7 @@ from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.b2listing import remote_dirs, remote_sizes
-from scripts.b2store import Store
+from scripts.b2store import RemotePathMissing, Store
 
 R2_ENV_KEYS: tuple[str, str, str] = (
     "R2_ACCOUNT_ID",
@@ -136,14 +136,12 @@ def archived_ids(store: Store, preset: str) -> set[str]:
     bundles the SSH handshakes would cost more than the transfers.
 
     A missing directory means nothing archived yet, which is a normal first
-    run, not an error - hence the narrow catch on that one message.
+    run, not an error - hence the narrow catch on that one condition.
     """
     try:
         listing = store.ls(f"{STEMS_REMOTE_ROOT}/{preset}")
-    except RuntimeError as exc:
-        if "File Not Found" in str(exc) or "cannot find" in str(exc).lower():
-            return set()
-        raise
+    except RemotePathMissing:
+        return set()
     return remote_dirs(listing)
 
 
