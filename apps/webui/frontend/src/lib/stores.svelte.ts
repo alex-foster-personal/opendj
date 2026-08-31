@@ -3,6 +3,7 @@
  */
 import { getHealth, type HealthOut } from './api';
 import { reportClientError, type ClientErrorContext } from './client-error-reporting';
+import { recordPerfEvent } from './rb/perf-event-log';
 
 export type Toast = { id: number; message: string; kind: 'info' | 'error' };
 
@@ -13,6 +14,12 @@ export const toasts = $state<Toast[]>([]);
 export const TOAST_DEFAULT_MS = 5000;
 
 /**
+ * Every toast outlives its own on-screen dismissal in the perf-event-log
+ * ring (localStorage + console) - toasts vanish after TOAST_DEFAULT_MS with
+ * no other trace, which is exactly what made the "why didn't AutoPlay fire"
+ * investigation on Mon 17 Aug 2026 into log archaeology instead of a lookup.
+ * One chokepoint here covers every current and future pushToast call site.
+ *
  * `context` rides the error report this toast already sends. An error toast is
  * the client's only route to the server-side client-error log, so a caller that
  * measured WHY it is raising the toast (deck load stage timings, say) attaches
@@ -37,6 +44,7 @@ export function pushToast(
 	// actually due to expire.
 	const id = ++_toastSeq;
 	toasts.push({ id, message, kind });
+	recordPerfEvent(`toast-${kind}`, message, null, kind === 'error' ? 'error' : 'info');
 	if (kind === 'error') {
 		// The caller's context is spread last so it can name its own `source`,
 		// which is what keeps a deck-load failure filterable in the JSONL

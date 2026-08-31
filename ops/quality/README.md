@@ -54,19 +54,21 @@ from `REPORT_ONLY` in `scripts/quality_gate.py` -- do not just delete the entry.
 
 ## Allowances raised by hand, and why
 
-Two entries in `baseline.json` are above where they stood on Sun 17 Aug 2026.
-Both were raised deliberately in one diff, and both are debts with a named
-owner rather than a number that drifted.
+Six entries in `baseline.json` are above where they once stood. All were
+raised deliberately, each in the diff that caused it, and each is a debt with a
+named owner rather than a number that drifted. The two `crate_sync.py` rows
+date from Sun 17 Aug 2026; two frontend rows from Sat 29 Aug 2026, and two more
+from Mon 31 Aug 2026.
 
 CI was fail-open between the default-branch rename and PR #464, so the
 `fix(agentbox)` crate-reconcile train (`6287d7c1`, `58dbfc13`, `bfa33dec`,
 `5dc2664c`) landed nine new complexity findings unmeasured. Five of them are
 paid back in the same PR as this note. These two are not:
 
-| metric | was | now | what is in the gap |
-| ------ | --- | --- | ------------------ |
-| `ruff.complexity` | 140 | 144 | `apps/webui/crate_sync.py::_run`, which `6287d7c1`, `58dbfc13` and `5dc2664c` grew until it tripped four rules at once: C901 (18 > 12), PLR0911 (9 returns > 8), PLR0912 (18 branches > 15), PLR0915 (96 statements > 60). |
-| `complexity.blocks_over_limit` | 142 | 143 | `apps/webui/crate_sync.py::_rsync_manifest_from_host`, added by `6287d7c1` over the mccabe limit of 12. |
+| metric                         | was | now | what is in the gap                                                                                                                                                                                                         |
+| ------------------------------ | --- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ruff.complexity`              | 140 | 144 | `apps/webui/crate_sync.py::_run`, which `6287d7c1`, `58dbfc13` and `5dc2664c` grew until it tripped four rules at once: C901 (18 > 12), PLR0911 (9 returns > 8), PLR0912 (18 branches > 15), PLR0915 (96 statements > 60). |
+| `complexity.blocks_over_limit` | 142 | 143 | `apps/webui/crate_sync.py::_rsync_manifest_from_host`, added by `6287d7c1` over the mccabe limit of 12.                                                                                                                    |
 
 Both live in `apps/webui/crate_sync.py`, which was under concurrent edit by the
 Windows parity lane when this was recovered, so refactoring it here would have
@@ -81,16 +83,66 @@ lifting the manifest fetch out of `_rsync_manifest_from_host`. Doing that takes
 both should be re-recorded the moment it lands. Do not raise either number
 again without adding a row above.
 
+### Sat 29 Aug 2026: the cost of a fourth hand-written device map
+
+Adding `src/lib/rb/midi/maps/ddj-400.ts` (PR #508, the DDJ-400 map rescue)
+moved two frontend numbers. Both are the per-device TypeScript map file itself,
+not anything the map does.
+
+| metric                | was  | now  | what is in the gap                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------- | ---- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend.max_fan_in` | 52   | 53   | One more importer of `src/lib/rb/types.ts`. Every device map imports `DeckId` and `HotCueSlot` from it, so each new controller costs exactly +1 here.                                                                                                                                                                                                                                    |
+| `duplication.percent` | 0.29 | 0.32 | Two 41-line jscpd clones between `maps/ddj-400.ts` and `maps/ddj-flx10.ts` (at `:96 <-> :100` and `:136 <-> :138`). They are the shared per-deck binding-builder scaffolding every Pioneer map repeats: same `_deckCh` / `_note` / per-deck array shape, different wire numbers and different PDF citations. jscpd normalizes literals, so the differing numbers do not break the match. |
+
+Refactoring the scaffolding into a shared helper would have meant editing the
+hardware-verified FLX10 map inside a rescue PR whose whole value is that each
+file is a self-contained, citable transcription of a vendor PDF. That trade was
+not worth making for 0.03%.
+
+Paying this down is not a refactor of these two files, it is the runtime device
+document in `specs/controller-onboarding.md` section 3.1. Once a controller is
+JSON data plus provenance rather than a fourth copy of the same builder, both
+numbers fall and neither grows again per device. Re-record them the moment that
+lands, and do not raise either again without adding a row above.
+
+### Mon 31 Aug 2026: extracting a picker out of BrowserPanel
+
+PR #559 rescues a Mon 17 Aug 2026 fix for a double-click load race that had
+lived only on the Air. The fix pulls the deck-target picker out of
+`BrowserPanel.svelte` into a pure `src/lib/rb/double-click-deck-pick.ts` so the
+race is testable without a component harness, and it arrives with a 112-line
+unit test. Both numbers moved because of the extraction itself, not because of
+anything the picker does.
+
+| metric                 | was | now | what is in the gap                                                                                                                                                  |
+| ---------------------- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend.max_fan_in`  | 53  | 54  | One more importer of `src/lib/rb/types.ts`. The new module takes `DeckId` from it, the same +1 every device map costs (see the row above).                          |
+| `frontend.max_fan_out` | 34  | 35  | One more import in `src/lib/components/rb/BrowserPanel.svelte`, already the worst offender: `import { pickDoubleClickDeck } from '$lib/rb/double-click-deck-pick'`. |
+
+Worth naming plainly: this pair of metrics scored a decoupling as a
+regression. The extraction moved 20 lines of untested inline logic into a pure
+module with tests, so the component got smaller and easier to change, and the
+counters went up because the file count went up. The alternative that keeps
+both numbers flat is leaving the picker inline and untestable, which is the
+worse tree.
+
+Paying this down is the same work already named above: `max_fan_in` is a
+property of `types.ts` being a barrel that every deck-aware module imports, and
+falls when that is split by concern rather than by being a single types file.
+`max_fan_out` falls when `BrowserPanel.svelte` (4000+ lines, the standing
+hotspot) is decomposed. Neither is a job for a rescue PR. Do not raise either
+again without adding a row here.
+
 ## What each evaluator answers
 
-| evaluator | tool | the question it answers |
-| --------- | ---- | ----------------------- |
-| `ruff` | ruff (pinned) | How much lint debt, split by *intent*: complexity, coupling, safety, correctness, style. A rising `ruff.safety` means new blind excepts, which is the fail-fast house rule breaking. |
-| `complexity` | radon | Worst cyclomatic block, how many blocks exceed the mccabe limit, how many files sit below maintainability rank A. |
-| `arch` | import-linter + grimp | Do the layering contracts hold, and how many top-level packages import each other in a cycle. |
-| `deps` | deptry | Imports with no declaration, declarations nothing imports, and imports that only work because something else happened to pull the library in. |
-| `frontend` | knip + a local import graph | Import cycles across `.ts` **and** `.svelte`, worst fan-in and fan-out, orphaned modules, unreferenced exports and packages. |
-| `size` | local + jscpd | Longest file per language, count over the review threshold, percentage of duplicated lines. |
+| evaluator    | tool                        | the question it answers                                                                                                                                                              |
+| ------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ruff`       | ruff (pinned)               | How much lint debt, split by _intent_: complexity, coupling, safety, correctness, style. A rising `ruff.safety` means new blind excepts, which is the fail-fast house rule breaking. |
+| `complexity` | radon                       | Worst cyclomatic block, how many blocks exceed the mccabe limit, how many files sit below maintainability rank A.                                                                    |
+| `arch`       | import-linter + grimp       | Do the layering contracts hold, and how many top-level packages import each other in a cycle.                                                                                        |
+| `deps`       | deptry                      | Imports with no declaration, declarations nothing imports, and imports that only work because something else happened to pull the library in.                                        |
+| `frontend`   | knip + a local import graph | Import cycles across `.ts` **and** `.svelte`, worst fan-in and fan-out, orphaned modules, unreferenced exports and packages.                                                         |
+| `size`       | local + jscpd               | Longest file per language, count over the review threshold, percentage of duplicated lines.                                                                                          |
 
 Plus a **hotspot** table in the report: git churn multiplied by file size over
 90 days, never gated. A 2000-line file nobody touches is not urgent; a
@@ -155,6 +207,6 @@ Highest-value targets, in the order they are worth doing:
    scikit-learn and librosa happen to pull them in, and break the day any of
    those repins or vendors.
 6. **`Actuator.execute_action` at cyclomatic complexity 44** and `usb
-   preflight` at 41, against a limit of 12. Two files sit at maintainability
+preflight` at 41, against a limit of 12. Two files sit at maintainability
    rank C: `apps/webui/crate_sync.py` (MI 5.0) and `apps/vocals/cli.py`
    (MI 6.1), on a scale where anything under 20 is hard to change safely.

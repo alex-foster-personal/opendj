@@ -1,4 +1,4 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check
+.PHONY: test cov reqs reqs-check fixture vocal-kpi-live-check ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -54,6 +54,14 @@ reqs-check:
 
 fixture:
 	$(PY) -m scripts.make_rb_fixture --force
+
+# Explicit machine-local acceptance gate. This is intentionally not a
+# dependency of any portable release gate: portable tests use the committed
+# sanitized fixture in tests/fixtures/vocal-kpi/, while this command validates
+# and prints the current real cache.
+VOCAL_CACHE_DIR ?= data/state/vocal-cache
+vocal-kpi-live-check:
+	uv run scripts/bench/kpi_derive.py --cache-dir "$(VOCAL_CACHE_DIR)" --window latest --json
 
 # CI composite: canonical ordering = reqs-check first (fast fail on drift),
 # then tests + coverage.

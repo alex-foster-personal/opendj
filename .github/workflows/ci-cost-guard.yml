@@ -2,7 +2,15 @@ name: CI Cost Guard
 
 on:
   workflow_run:
-    workflows: [CI, Build docs, Release Check, Windows Parity (on-demand), Full CI (on-demand)]
+    workflows:
+      [
+        CI,
+        Build docs,
+        Release Check,
+        Windows Parity (on-demand),
+        Full CI (on-demand),
+        macOS Packaging,
+      ]
     types: [completed]
 
 # workflow_run executes this file from the default branch. Never check out or
@@ -24,7 +32,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Calculate gross runner cost
         id: guard

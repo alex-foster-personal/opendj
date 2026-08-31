@@ -284,8 +284,15 @@
 		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick. */
 		onloadrow: (row: BrowserRow, deck: DeckId | null, opts?: { play?: boolean }) => void;
-		/** Preferred deck for double-click load+play. Shift → CH3/CH4 when free/stopped. */
-		onpickdoubledeck?: (row: BrowserRow, opts?: { shift?: boolean }) => DeckId | null;
+		/**
+		 * Preferred deck for double-click load+play. Shift -> CH3/CH4 when
+		 * free/stopped. Cmd/Ctrl -> replace whatever deck the last plain
+		 * double-click targeted, instead of advancing to the next deck.
+		 */
+		onpickdoubledeck?: (
+			row: BrowserRow,
+			opts?: { shift?: boolean; replace?: boolean }
+		) => DeckId | null;
 		/** Preview strip click: 0..1 ratio along the track. */
 		onpreviewseek?: (row: BrowserRow, ratio: number) => void;
 		onrate: (row: BrowserRow, next: number) => void;
@@ -374,7 +381,11 @@
 		if (genreWindowOpen()) return;
 		const target = event.target as HTMLElement | null;
 		if (target === null || target.closest(LOAD_DBLCLICK_SEL) === null) return;
-		const deck = onpickdoubledeck?.(row, { shift: event.shiftKey }) ?? (event.shiftKey ? null : 1);
+		const deck =
+			onpickdoubledeck?.(row, {
+				shift: event.shiftKey,
+				replace: event.metaKey || event.ctrlKey
+			}) ?? (event.shiftKey ? null : 1);
 		if (deck === null) return;
 		// Missing key = ask; false = skip (remembered "do this every time").
 		if (uiPrefs.confirm.dblclick_load_play === false) {
