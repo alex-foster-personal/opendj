@@ -74,6 +74,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { installXrunSentinel, installXrunSessionGlobal } from '$lib/rb/xrun-sentinel';
 import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
@@ -852,6 +853,26 @@ function _stampContextDeviceFloors(ctx: AudioContext): void {
 	});
 }
 
+/**
+ * S1 / Q2: arm the audio-thread glitch detector for this context.
+ *
+ * Fire-and-forget because `addModule` is async and the graph build is not: the
+ * decks must not wait on an instrument. Every failure path is RECORDED rather
+ * than swallowed - a sentinel that quietly failed to load would leave the app
+ * reporting zero xruns forever, which is indistinguishable from a healthy
+ * machine and is the worst possible failure for a counter whose entire job is
+ * to say "this one is not healthy". Audio is never blocked either way.
+ */
+function _armXrunSentinel(ctx: AudioContext): void {
+	installXrunSessionGlobal();
+	void installXrunSentinel(ctx).catch((error: unknown) => {
+		recordPerfEvent(
+			'xrun-sentinel-failed',
+			`the xrun sentinel did not start, so this session counts no glitches: ${String(error)}`
+		);
+	});
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -952,6 +973,7 @@ function _ensureGraph(): AudioContext {
 		}
 		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
 	}
+	_armXrunSentinel(_ctx);
 	return _ctx;
 }
 
