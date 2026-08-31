@@ -8415,6 +8415,37 @@
         "title": "UsageSummaryOut",
         "type": "object"
       },
+      "UsbCapabilityDetail": {
+        "properties": {
+          "code": {
+            "const": "usb_volume_discovery_unavailable",
+            "title": "Code",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "reason"
+        ],
+        "title": "UsbCapabilityDetail",
+        "type": "object"
+      },
+      "UsbCapabilityErrorOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UsbCapabilityDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbCapabilityErrorOut",
+        "type": "object"
+      },
       "UsbVolumeOut": {
         "properties": {
           "hide_reason": {
@@ -8501,80 +8532,6 @@
           "name"
         ],
         "title": "UsbVolumeOut",
-        "type": "object"
-      },
-      "UsbVolumePost": {
-        "description": "DEV / simulate: inject a fake present volume (never touches disk).",
-        "properties": {
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "kind": {
-            "default": "music",
-            "enum": [
-              "rekordbox",
-              "djay",
-              "music",
-              "unknown"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "mount_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "/Volumes/FAKE-USB",
-            "title": "Mount Path"
-          },
-          "name": {
-            "default": "FAKE USB",
-            "title": "Name",
-            "type": "string"
-          },
-          "present": {
-            "default": true,
-            "title": "Present",
-            "type": "boolean"
-          },
-          "protocol": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "USB",
-            "title": "Protocol"
-          },
-          "role": {
-            "default": "usb_stick",
-            "enum": [
-              "usb_stick",
-              "mounted_drive",
-              "disk_image",
-              "other"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "title": "UsbVolumePost",
         "type": "object"
       },
       "UsbVolumesOut": {
@@ -14991,49 +14948,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                }
+              }
+            },
+            "description": "USB volume discovery is unavailable on this host."
           }
         },
         "summary": "Get Usb Volumes",
-        "tags": [
-          "usb"
-        ]
-      },
-      "post": {
-        "description": "Inject or update a simulated volume (manual test without a stick).",
-        "operationId": "post_usb_volume_api_v1_usb_volumes_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UsbVolumePost"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UsbVolumesOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Post Usb Volume",
         "tags": [
           "usb"
         ]
@@ -15046,11 +14973,23 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Server-sent USB volume discovery events."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                }
+              }
+            },
+            "description": "USB volume discovery is unavailable on this host."
           }
         },
         "summary": "Usb Volume Events",

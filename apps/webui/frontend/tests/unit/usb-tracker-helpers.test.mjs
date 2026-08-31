@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -9,6 +10,20 @@ before(async () => {
 });
 
 describe('usb tracker helpers (#328)', () => {
+	it('keeps the fake-volume simulator out of the shipped UI and client API', () => {
+		const panel = readFileSync(
+			new URL('../../src/lib/components/rb/UsbPanel.svelte', import.meta.url),
+			'utf8'
+		);
+		const tracker = readFileSync(
+			new URL('../../src/lib/rb/usb-tracker.svelte.ts', import.meta.url),
+			'utf8'
+		);
+
+		assert.doesNotMatch(panel, /Simulate USB|simulateUsbVolume/);
+		assert.doesNotMatch(tracker, /simulateUsbVolume|api\.POST/);
+	});
+
 	it('keeps non-music present volumes out of the active list (no double list)', () => {
 		const music = {
 			id: 'vol:1',
