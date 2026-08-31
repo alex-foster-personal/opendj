@@ -1,23 +1,30 @@
 """Operator actions on a sync hub or spoke, as functions and as a CLI.
 
+    uv run python -m apps.sync_hub sync         --data-dir DIR --hub URL [--name N]
     uv run python -m apps.sync_hub generation   --data-dir DIR
     uv run python -m apps.sync_hub rotate       --data-dir DIR
     uv run python -m apps.sync_hub prune        --data-dir DIR [--changelog T]
                                                 [--keep-days N] [--keep-rows N]
 
-Two operations, both from round 2 finding N6:
+Four operations:
 
-* **prune** bounds a changelog that had no retention at all -- one row per
-  synced-table write, forever. It only ever drops entries that a NEWER entry
-  for the same row supersedes, so the pull loses no coverage and ``MAX(seq)``
-  cannot move.
+* **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
+  Nothing outside pytest called ``run_sync`` before -- the whole spoke
+  protocol, and the retention prune it depends on, was library code with no
+  operator or agent entry point. This is the agent-native-parity twin of the
+  ``/cloudsync`` UI's own sync button.
+* **prune** bounds a changelog that had no retention at all (round 2 finding
+  N6) -- one row per synced-table write, forever. It only ever drops entries
+  that a NEWER entry for the same row supersedes, so the pull loses no
+  coverage and ``MAX(seq)`` cannot move.
 * **rotate** re-mints this hub's generation token by hand, for the restore
   case the anchor cannot see on its own: a whole-machine restore rolls the
   data dir back too, so the anchor agrees with the DB and nothing looks
   wrong. Every spoke then re-offers its library once.
+* **generation** prints the current token.
 
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
-rule); these two have no UI yet, and this is the twin they will match.
+rule); these are the twin the sync surface will match.
 """
 from __future__ import annotations
 
@@ -31,6 +38,25 @@ from apps.sync_hub import client, engine, generation
 
 def _open(data_dir: Path) -> sqlite3.Connection:
     return state_db.open_rw(client.state_db_path(data_dir))
+
+
+def sync(
+    data_dir: Path,
+    hub_url: str,
+    *,
+    name: str | None = None,
+    transport: client.HubTransport | None = None,
+) -> client.SyncResult:
+    """Run one spoke round trip against ``hub_url``. The spoke's operator entry.
+
+    ``transport`` is here for the tests that drive the real router in-process;
+    the CLI never passes it, so an operator always talks real HTTP. Any of
+    ``run_sync``'s declared failures (see its docstring) propagate out
+    unchanged -- fail fast, no repair.
+    """
+    return client.run_sync(
+        Path(data_dir), hub_url, transport=transport, name=name
+    )
 
 
 def prune(
@@ -89,6 +115,18 @@ def _parser() -> argparse.ArgumentParser:
         help="the data dir holding state/state.db and machine-id",
     )
 
+    sync_command = subcommands.add_parser(
+        "sync", parents=[common], help="run one spoke round trip against a hub"
+    )
+    sync_command.add_argument(
+        "--hub", required=True, help="the hub base URL, e.g. http://hub.tailnet:8686"
+    )
+    sync_command.add_argument(
+        "--name",
+        default=None,
+        help="this machine's display name; defaults to the hostname",
+    )
+
     subcommands.add_parser(
         "generation", parents=[common], help="print this hub's generation token"
     )
@@ -115,7 +153,17 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
     args = _parser().parse_args(argv)
-    if args.command == "generation":
+    if args.command == "sync":
+        result = sync(args.data_dir, args.hub, name=args.name)
+        restored = ", hub restore detected" if result.hub_restore_detected else ""
+        print(
+            f"synced against hub {result.hub_machine_id}: pushed "
+            f"{result.pushed} (accepted {result.accepted}, rejected "
+            f"{result.rejected}), pulled {result.pulled} (applied "
+            f"{result.applied}), {result.rounds} round(s), hub seq "
+            f"{result.hub_seq}{restored}"
+        )
+    elif args.command == "generation":
         print(show_generation(args.data_dir))
     elif args.command == "rotate":
         print(rotate(args.data_dir))
@@ -132,4 +180,4 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["main", "prune", "rotate", "show_generation"]
+__all__ = ["main", "prune", "rotate", "show_generation", "sync"]

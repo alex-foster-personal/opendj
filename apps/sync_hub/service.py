@@ -336,12 +336,16 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
         try:
             with _transaction(conn):
                 hub_machine_id = _hub_identity(request, conn)
+                # The spoke authored this snapshot, so it may refresh its OWN
+                # row (payload.machine) and only teach the hub about the rest
+                # of its fleet -- never rewrite a peer's row (round 3 R1).
                 engine.merge_machines(
                     conn,
                     [
                         protocol.MachineRow.from_wire(payload.machine.model_dump()),
                         *_to_machines(payload.machines),
                     ],
+                    caller_id=payload.machine.machine_id,
                 )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
@@ -375,7 +379,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         _require_registered(conn, payload.machine_id)
         try:
             with _transaction(conn):
-                engine.merge_machines(conn, fleet)
+                engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
                 result = engine.hub_apply(conn, changes)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
@@ -431,9 +435,15 @@ def status(
 ) -> StatusResponse:
     """Hub identity, current seq, known machines and synced row counts."""
     with _hub_conn(request) as conn:
+        # Refuse BEFORE the hub identity write (round 3 finding R8): the old
+        # order registered the hub's own machines row in a transaction that
+        # committed regardless of whether the CALLER turned out to be
+        # unregistered, so a refused status call still had a write side
+        # effect. ``_require_registered`` only reads, so this costs nothing
+        # on the accepted path and nothing happens at all on the refused one.
+        _require_registered(conn, machine_id)
         with _transaction(conn):
             hub_machine_id = _hub_identity(request, conn)
-        _require_registered(conn, machine_id)
         # One read transaction so the counts, the seq and the fleet all
         # describe the same instant rather than three consecutive ones.
         with _transaction(conn):
