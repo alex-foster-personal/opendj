@@ -70,7 +70,7 @@ export function visibleBeatLines(
  * cue/phrase). Target picking, in priority order over REAL data only:
  *   1. earliest upcoming cue (memory / hot cue / loop-in), else
  *   2. earliest upcoming phrase boundary, else
- *   3. the end of the beatgrid (last analysed beat).
+ *   3. the end of the beatgrid (last analyzed beat).
  * Most library tracks carry zero djmdCue rows, so without the phrase and
  * end-of-grid fallbacks the counter would almost never render - rekordbox
  * shows it whenever a beatgrid exists. Returns null only when the track
@@ -151,4 +151,72 @@ export function followerSyncPlayheadTone(args: {
 	if (!phaseOk || !numberOk) return 'drift';
 	if (f.n === 1 && m.n === 1) return 'bar1';
 	return 'synced';
+}
+
+/** Clamped pixel span of an engaged loop on ONE waveform surface. */
+export interface LoopBandPx {
+	left: number;
+	right: number;
+}
+
+/**
+ * The only three fields the band geometry reads from a loop.
+ *
+ * Narrower than `LoopState` on purpose. Stating it structurally lets the
+ * painters that draw this band stay presentational modules which never import
+ * the API contract, so a surface can be unit-tested without dragging the whole
+ * deck type surface behind it. `LoopState` satisfies this shape, so every
+ * existing caller keeps passing one unchanged.
+ */
+export interface LoopBandSource {
+	in_ms: number;
+	out_ms: number;
+	engaged: boolean;
+}
+
+/**
+ * Minimum drawn width of a loop band, in surface pixels.
+ *
+ * The overview strip squeezes a whole track into a few hundred pixels, so a
+ * short loop can round away to nothing. This widens the DRAWN band only, never
+ * the loop itself, and only when the true span would otherwise be invisible.
+ */
+export const LOOP_MIN_BAND_PX = 2;
+
+/**
+ * Project an engaged loop into one surface's visible pixel range.
+ *
+ * Each waveform surface maps track time to x differently (the wavestack row
+ * scrolls a 24s window; the overview strip spans the whole track), so the
+ * caller supplies `toPx`. What must NOT vary between surfaces is the decision
+ * itself, which is why the engaged check, the clamp and the minimum width all
+ * live here: a surface that reimplements them and forgets one is exactly the
+ * defect this helper exists to prevent (DECKUX-04 - the loop painted on the
+ * wavestack row and was invisible on the deck's own overview strip).
+ *
+ * Returns null when nothing is engaged, the span is empty, or the loop lies
+ * entirely outside this surface.
+ */
+export function loopBandPx(
+	loop: LoopBandSource | null,
+	toPx: (ms: number) => number,
+	widthPx: number,
+	minWidthPx: number = LOOP_MIN_BAND_PX
+): LoopBandPx | null {
+	if (loop === null || !loop.engaged) return null;
+	if (!(loop.out_ms > loop.in_ms)) return null;
+	const x0 = toPx(loop.in_ms);
+	const x1 = toPx(loop.out_ms);
+	if (!Number.isFinite(x0) || !Number.isFinite(x1)) {
+		throw new RangeError(`loopBandPx: toPx must return finite px, got ${x0}..${x1}`);
+	}
+	if (x1 <= 0 || x0 >= widthPx) return null; // wholly off this surface
+	let left = Math.max(0, Math.min(widthPx, x0));
+	let right = Math.max(0, Math.min(widthPx, x1));
+	if (right - left < minWidthPx) {
+		right = Math.min(widthPx, left + minWidthPx);
+		left = Math.max(0, right - minWidthPx);
+	}
+	if (right <= left) return null;
+	return { left, right };
 }
