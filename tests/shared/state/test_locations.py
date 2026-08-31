@@ -1,6 +1,7 @@
 """track_locations picker: local>remote, works>broken, venue window."""
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -141,3 +142,88 @@ def test_fresh_db_migrates_locations_table(state_db_path: Path) -> None:
         assert locations.locations_table_ready(conn)
     finally:
         conn.close()
+
+
+# ----- round 2 finding N2: one file, two Unicode spellings ------------------
+
+
+def test_two_unicode_spellings_of_one_path_are_one_row(
+    state_conn, tmp_path: Path
+) -> None:
+    """Round 2 finding N2, reproduced as a permanent regression.
+
+    macOS hands back NFD from the filesystem, rekordbox and the Windows/Linux
+    machines hand back NFC. Before the storage-boundary normalization those
+    were two ``track_locations`` rows on ONE machine, and the partial UNIQUE
+    index agreed because they are different bytes. Both canonicalized to the
+    same NFC bytes on the wire, so the hub collapsed them to one and pruned
+    the loser; the spoke kept two:
+
+      [observed] n4a spoke rows for ONE file: 2
+      [observed] n4a sync -> SyncDigestMismatch: tables ['track_locations']
+      [observed] n4a hub rows: 1
+
+    Permanent, three retries, no repair path.
+    """
+    nfc_name = unicodedata.normalize("NFC", "café-résumé.flac")
+    nfd_name = unicodedata.normalize("NFD", nfc_name)
+    assert nfc_name != nfd_name, "the two spellings must differ as bytes"
+    nfd_path = str(tmp_path / nfd_name)
+    nfc_path = str(tmp_path / nfc_name)
+
+    writer = _init_track(state_conn)
+    try:
+        first = writer.upsert_track_location(
+            stable_id=SID, kind="local", file_path=nfd_path,
+        )
+        second = writer.upsert_track_location(
+            stable_id=SID, kind="local", file_path=nfc_path,
+        )
+    finally:
+        writer.close()
+
+    assert first == second, (
+        "the NFC spelling must resolve to the row the NFD spelling created, "
+        "not mint a second location_id"
+    )
+    rows = state_conn.execute(
+        "SELECT file_path FROM track_locations WHERE stable_id = ?", (SID,)
+    ).fetchall()
+    assert len(rows) == 1, (
+        f"one file, {len(rows)} rows: the hub will collapse them and this "
+        f"machine will fail its digest compare on track_locations forever"
+    )
+    assert rows[0][0] == nfc_path, "storage settles on the NFC spelling"
+
+
+def test_a_remote_url_is_normalized_at_the_storage_boundary(
+    state_conn, tmp_path: Path
+) -> None:
+    """Same root as N2, one column over. The wire NFC-normalizes every non-pk
+    string, so storage that does not would disagree with the digest."""
+    nfc_url = unicodedata.normalize("NFC", "https://example/café.flac")
+    nfd_url = unicodedata.normalize("NFD", nfc_url)
+    writer = _init_track(state_conn)
+    try:
+        first = writer.upsert_track_location(
+            stable_id=SID, kind="remote", remote_url=nfd_url,
+        )
+        second = writer.upsert_track_location(
+            stable_id=SID, kind="remote", remote_url=nfc_url,
+        )
+    finally:
+        writer.close()
+    assert first == second
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM track_locations WHERE stable_id = ? "
+        "AND kind = 'remote'",
+        (SID,),
+    ).fetchone()[0] == 1
+
+
+def test_normalize_stored_text_is_idempotent_and_passes_none_through() -> None:
+    nfd = unicodedata.normalize("NFD", "café")
+    once = locations.normalize_stored_text(nfd)
+    assert once == unicodedata.normalize("NFC", "café")
+    assert locations.normalize_stored_text(once) == once
+    assert locations.normalize_stored_text(None) is None

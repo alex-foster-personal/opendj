@@ -261,3 +261,201 @@ def test_changelog_seq_is_the_push_fence(state_conn: sqlite3.Connection) -> None
         "SELECT row_pk FROM local_changelog WHERE seq > 3"
     ).fetchall()
     assert [row[0] for row in above_floor] == [sync_stamp.encode_row_pk(("skewed",))]
+
+
+# ----- (7) round 2 finding N3: a stored stamp must not brick the machine ----
+
+
+def test_epoch_matches_the_protocol_sentinel() -> None:
+    """Two definitions of "loses every conflict" must be one value.
+
+    ``apps.shared`` cannot import ``apps.sync_hub``, so the sentinel is
+    duplicated. Duplicated is fine; drifted is a spoke and a hub disagreeing
+    about which row is older.
+    """
+    assert sync_stamp.EPOCH == hub_protocol.EPOCH
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        None,
+        "2024-11-01T12:00:00",          # naive ISO8601
+        "2024-11-01 12:00:00",          # SQLite CURRENT_TIMESTAMP spelling
+        "not a timestamp at all",
+        "",
+    ],
+)
+def test_an_unorderable_stored_stamp_reads_as_epoch(stored: str | None) -> None:
+    """Round 2 finding N3b.
+
+    One such value anywhere in the library used to abort ``spoke_push``
+    before a single row was offered, on every sync, forever, with no repair
+    path. It now sorts exactly where a NULL stamp has always sorted.
+    """
+    assert sync_stamp.coalesce_stored_stamp(stored) == sync_stamp.EPOCH
+
+
+def test_coalesce_leaves_an_orderable_stamp_alone() -> None:
+    """Tolerating a broken value must not mean discarding a good one."""
+    assert (
+        sync_stamp.coalesce_stored_stamp("2026-08-30T10:00:00Z")
+        == "2026-08-30T10:00:00.000000+00:00"
+    )
+    canonical = sync_stamp.canonical_now()
+    assert sync_stamp.coalesce_stored_stamp(canonical) == canonical
+
+
+def test_the_wire_boundary_still_refuses_what_storage_tolerates() -> None:
+    """The asymmetry is the design, not an oversight.
+
+    A legacy row on this machine is a fact to survive. The identical value
+    arriving from a peer is a protocol violation to report -- storing it
+    would put a row nothing can order into the sync set.
+    """
+    with pytest.raises(sync_stamp.SyncStampError):
+        sync_stamp.parse_canonical("2024-11-01T12:00:00")
+
+
+def _legacy_location(
+    conn: sqlite3.Connection, location_id: str, stable_id: str, *, updated_at: str
+) -> None:
+    """A v5-era location row: no machine_id, whatever stamp it carried."""
+    conn.execute(
+        "INSERT INTO track_locations(location_id, stable_id, kind, file_path, "
+        "created_at, updated_at) VALUES (?, ?, 'local', ?, ?, ?)",
+        (location_id, stable_id, f"/Music/{location_id}.mp3", updated_at, updated_at),
+    )
+
+
+def _seed_track(conn: sqlite3.Connection, stable_id: str) -> None:
+    conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, title, created_at, "
+        "updated_at) VALUES (?, 'inferred', 'legacy', ?, ?)",
+        (stable_id, "2024-11-01T12:00:00+00:00", "2024-11-01T12:00:00+00:00"),
+    )
+
+
+def test_the_backfill_survives_a_legacy_naive_stamp(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """Round 2 finding N3a/N3b together, as the probe hit them.
+
+    The observed failure was:
+
+      [observed] f1 first open -> SyncStampError: '2024-11-01T12:00:00' has
+                                  no UTC offset
+      [observed] f1 second open OK; rows(claimed?) = all three
+      [observed] f1 local_changelog track_locations entries = 2 of 3
+
+    All three rows claimed, two logged, and because the retry predicate is
+    ``machine_id IS NULL`` the second open was a silent no-op reporting
+    success over the gap. The unlogged row was invisible to the push fence
+    forever.
+    """
+    _seed_track(state_conn, "e" * 40)
+    _legacy_location(state_conn, "good", "e" * 40, updated_at="2024-11-01T12:00:00+00:00")
+    _legacy_location(state_conn, "bad", "e" * 40, updated_at="2024-11-01T12:00:00")
+    _legacy_location(state_conn, "also", "e" * 40, updated_at="2024-11-01 12:00:00")
+
+    claimed = sync_stamp.backfill_local_machine_id(state_conn)
+    assert claimed == 3
+
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM track_locations WHERE machine_id IS NULL"
+    ).fetchone()[0] == 0, "a claimed row with no machine_id is invisible locally"
+
+    logged = state_conn.execute(
+        "SELECT row_pk, updated_at FROM local_changelog "
+        "WHERE table_name = 'track_locations' ORDER BY seq"
+    ).fetchall()
+    assert len(logged) == 3, (
+        "every claimed row must be logged or the push fence never offers it"
+    )
+    by_pk = {row[0]: row[1] for row in logged}
+    assert by_pk[sync_stamp.encode_row_pk(("bad",))] == sync_stamp.EPOCH
+    assert by_pk[sync_stamp.encode_row_pk(("also",))] == sync_stamp.EPOCH
+    assert by_pk[sync_stamp.encode_row_pk(("good",))] == (
+        "2024-11-01T12:00:00.000000+00:00"
+    )
+
+
+def test_a_failed_backfill_claims_nothing_and_the_retry_retries(
+    state_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round 2 finding N3a: half a claim is worse than no claim.
+
+    The failure is injected at the changelog append, which is exactly where
+    the round 2 probe's ``to_canonical`` raised: after the row UPDATE had
+    already committed on an autocommit connection.
+    """
+    _seed_track(state_conn, "f" * 40)
+    for index in range(3):
+        _legacy_location(
+            state_conn, f"loc-{index}", "f" * 40,
+            updated_at="2024-11-01T12:00:00+00:00",
+        )
+
+    calls = {"n": 0}
+    real_encode = sync_stamp.encode_row_pk
+
+    def _explode_on_the_second_row(values):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated failure mid-backfill")
+        return real_encode(values)
+
+    monkeypatch.setattr(sync_stamp, "encode_row_pk", _explode_on_the_second_row)
+    with pytest.raises(RuntimeError, match="simulated failure"):
+        sync_stamp.backfill_local_machine_id(state_conn)
+
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM track_locations WHERE machine_id IS NULL"
+    ).fetchone()[0] == 3, (
+        "a failed backfill must claim NOTHING; a partial claim makes the "
+        "retry a no-op and strands the unlogged rows forever"
+    )
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM local_changelog"
+    ).fetchone()[0] == 0
+
+    monkeypatch.setattr(sync_stamp, "encode_row_pk", real_encode)
+    assert sync_stamp.backfill_local_machine_id(state_conn) == 3
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'track_locations'"
+    ).fetchone()[0] == 3
+
+
+def test_stamped_transaction_rolls_back_a_partial_unit(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """The row and its changelog entry commit together, or neither does."""
+    _seed_track(state_conn, "g" * 40)
+    with pytest.raises(RuntimeError, match="boom"):
+        with sync_stamp.stamped_transaction(state_conn):
+            sync_stamp.stamp_and_log(
+                state_conn, "tracks", ("g" * 40,), "machine-a",
+            )
+            raise RuntimeError("boom")
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM local_changelog"
+    ).fetchone()[0] == 0
+    assert not state_conn.in_transaction
+
+
+def test_stamped_transaction_nests_without_committing_its_caller(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """A writer already in a transaction keeps ONE unit, not two."""
+    _seed_track(state_conn, "h" * 40)
+    state_conn.execute("BEGIN IMMEDIATE")
+    sync_stamp.stamp_and_log(state_conn, "tracks", ("outer",), "machine-a")
+    with sync_stamp.stamped_transaction(state_conn):
+        sync_stamp.stamp_and_log(state_conn, "tracks", ("inner",), "machine-a")
+    assert state_conn.in_transaction, (
+        "a nested unit must not commit the caller's open transaction"
+    )
+    state_conn.execute("ROLLBACK")
+    assert state_conn.execute(
+        "SELECT COUNT(*) FROM local_changelog"
+    ).fetchone()[0] == 0

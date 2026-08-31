@@ -18,10 +18,17 @@ Two repairs, and the difference between them matters:
   printed per row rather than applied by a library call: SQLite's
   ``CURRENT_TIMESTAMP`` is UTC, and every in-repo writer has always emitted
   UTC, so UTC is the only reading with evidence behind it.
-* ``unparseable-to-epoch`` -- the value is not a timestamp at all. Nothing can
-  recover an instant from it, so it is written as the EPOCH sentinel it
-  already reads as, making the row's loss of every conflict visible in the
-  data instead of implied by a rejector.
+* ``unparseable-to-floor`` -- the value is not a timestamp at all. Nothing can
+  recover an instant from it, so it is written as :data:`FLOOR_STAMP`, the
+  lowest timestamp that can actually be stored, making the row's loss of
+  every conflict visible in the data instead of implied by a rejector.
+
+  Note that :data:`FLOOR_STAMP` is NOT ``sync_stamp.EPOCH``.
+  ``EPOCH`` is year zero, which ``datetime`` cannot represent, so it is a
+  comparison sentinel and nothing else: a row that literally STORED it would
+  be refused by ``protocol.canonical_timestamp`` on every read -- the exact
+  brick this pass exists to clear. ``FLOOR_STAMP`` is year one, which sorts
+  above the sentinel and below every real stamp, and parses.
 
 What this does NOT touch: a value that parses and carries an offset, even in
 a non-canonical spelling (``...Z``, second precision, ``+01:00``). Those are
@@ -46,7 +53,14 @@ from typing import Literal
 from . import db as state_db
 from . import sync_stamp
 
-Reason = Literal["naive-assumed-utc", "unparseable-to-epoch"]
+Reason = Literal["naive-assumed-utc", "unparseable-to-floor"]
+
+#: The lowest stamp that can be STORED. See the module docstring: this is
+#: deliberately not ``sync_stamp.EPOCH``, which is year zero and therefore
+#: unrepresentable and unparseable -- writing that would recreate the brick.
+FLOOR_STAMP: str = sync_stamp.canonical_from(
+    datetime.min.replace(tzinfo=UTC)
+)
 
 #: Every table/column pair whose value the sync protocol orders or hashes.
 #: Mirrors ``apps.sync_hub.protocol.DIGEST_TABLES`` x its timestamp columns,
@@ -99,7 +113,7 @@ def _repair_for(value: str) -> tuple[str, Reason]:
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
-        return sync_stamp.EPOCH, "unparseable-to-epoch"
+        return FLOOR_STAMP, "unparseable-to-floor"
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return (
             sync_stamp.canonical_from(parsed.replace(tzinfo=UTC)),
@@ -222,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 __all__ = [
+    "FLOOR_STAMP",
     "STAMP_COLUMNS",
     "Repair",
     "apply_repairs",
