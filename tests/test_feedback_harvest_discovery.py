@@ -46,7 +46,7 @@ fh = _load_harvester()
 class _FeedbackHandler(BaseHTTPRequestHandler):
     """Answers the feedback API and nothing else, like a real engine."""
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+    def do_GET(self) -> None:
         if self.path == "/api/v1/feedback/todos":
             body = b'{"todos": []}'
             self.send_response(200)
@@ -64,7 +64,7 @@ class _FeedbackHandler(BaseHTTPRequestHandler):
 class _SilentHandler(BaseHTTPRequestHandler):
     """A local service that is not an Open DJ engine."""
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+    def do_GET(self) -> None:
         self.send_error(404)
 
     def log_message(self, *args: object) -> None:
