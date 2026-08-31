@@ -1168,7 +1168,41 @@ test('KEY nudge keeps an acknowledged pending stop on the scheduled output path'
 	);
 });
 
+/**
+ * A clock whose only motion comes from the wait's own `sleep` calls, so
+ * virtual time advances by exactly the delays the wait schedules and by
+ * nothing else. The bounded-interval assertions below then measure the wait's
+ * scheduling arithmetic rather than how punctually a loaded machine delivers
+ * a `setTimeout` callback: the real 20ms poll was measured overshooting to
+ * 395ms in a full-file run on a saturated host, which is a fact about the
+ * host, not about the code under test.
+ *
+ * `sleepBudget` is the fail-fast fuse. Virtual sleeps cost no real time, so a
+ * wait that has lost its give-up condition would spin forever instead of
+ * failing; the budget turns that into a named error.
+ */
+function virtualContextWaitClock({ sleepBudget = 4096 } = {}) {
+	let nowMs = 0;
+	let sleeps = 0;
+	return {
+		nowMs: () => nowMs,
+		sleep: async (ms) => {
+			sleeps += 1;
+			if (sleeps > sleepBudget) {
+				throw new Error(
+					`virtual clock exhausted after ${sleepBudget} sleeps; the wait never gave up`
+				);
+			}
+			nowMs += ms;
+		},
+		elapsedMs: () => nowMs,
+		sleepCount: () => sleeps
+	};
+}
+
 test('context-time waits reject suspended, stale, and stalled clocks within a bounded interval', async () => {
+	// The default clock is the real one, and these three reject before any
+	// sleep, so they exercise it end to end without waiting on a timer.
 	await assert.rejects(
 		audio.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
 		/not running/i
@@ -1186,23 +1220,42 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 		),
 		/state changed/i
 	);
-	const startedAt = Date.now();
+	// The one part of the real clock the rejections above cannot reach.
+	assert.ok(Number.isFinite(audio.REAL_CONTEXT_WAIT_CLOCK.nowMs()));
+	await audio.REAL_CONTEXT_WAIT_CLOCK.sleep(1);
+
+	// A context whose time never moves: the wait must give up inside its stall
+	// timeout instead of polling all the way to the target.
+	const stalled = virtualContextWaitClock();
 	await assert.rejects(
 		audio.waitForAdvancingContextTime(
 			{ currentTime: 0, state: 'running' },
 			1,
 			() => true,
-			20
+			20,
+			stalled
 		),
 		/stalled/i
 	);
-	assert.ok(Date.now() - startedAt < 250, 'stalled context wait exceeded its bounded interval');
+	assert.ok(
+		stalled.elapsedMs() <= 20,
+		`stalled context wait exceeded its bounded interval: waited ${stalled.elapsedMs()}ms ` +
+			'against a 20ms stall timeout'
+	);
+	assert.ok(stalled.sleepCount() > 0, 'the stalled wait must poll at least once before giving up');
 
-	const advancing = { currentTime: 0, state: 'running' };
-	setTimeout(() => {
-		advancing.currentTime = 1;
-	}, 5);
-	await audio.waitForAdvancingContextTime(advancing, 1, () => true, 100);
+	// A context that advances with the clock: every poll sees progress, so the
+	// wait rides out ten stall timeouts' worth of time and resolves at the
+	// target rather than declaring a stall.
+	const advancing = virtualContextWaitClock();
+	const advancingContext = {
+		get currentTime() {
+			return advancing.elapsedMs() / 1000;
+		},
+		state: 'running'
+	};
+	await audio.waitForAdvancingContextTime(advancingContext, 1, () => true, 100, advancing);
+	assert.equal(advancing.elapsedMs(), 1000, 'the wait must stop at the target, not past it');
 });
 
 test('deck transport clock exposes the paused cursor and revision diagnostics', () => {
