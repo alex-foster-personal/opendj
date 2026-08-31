@@ -257,12 +257,16 @@ def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | N
         if len(body["workflow_runs"]) < RUN_FETCH_COUNT:
             break
     else:
-        shortfall = max(total_count - JOB_FETCH_MAX_PAGES * RUN_FETCH_COUNT, 0)
-        note = (
-            f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound with {total_count} runs "
-            f"matching the window; job durations for the oldest {shortfall} were not "
-            "recorded and will not be revisited"
-        )
+        # Exhausting the bound is only a gap when the listing held MORE than the bound: a
+        # backlog of exactly JOB_FETCH_MAX_PAGES full pages was fetched in full, and a note
+        # claiming a hole of zero runs would be a false alarm in the log.
+        shortfall = total_count - JOB_FETCH_MAX_PAGES * RUN_FETCH_COUNT
+        if shortfall > 0:
+            note = (
+                f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound with {total_count} runs "
+                f"matching the window; job durations for the oldest {shortfall} were not "
+                "recorded and will not be revisited"
+            )
     return [run for run in fetched if run.updated_at >= watermark], note
 
 

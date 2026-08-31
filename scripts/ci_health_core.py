@@ -43,7 +43,7 @@ STALENESS_REMEDIATION = (
     f"-> https://github.com/{REPO}/settings/actions"
 )
 
-# GitHub synthesises 'dynamic' runs for Dependency Graph and Copilot submissions. They do
+# GitHub synthesizes 'dynamic' runs for Dependency Graph and Copilot submissions. They do
 # not consume Actions runners and they succeed even while every real workflow is refused,
 # so leaving them in would mask the exact billing signature R1 exists to catch.
 EXCLUDED_RUN_EVENTS = ("dynamic",)

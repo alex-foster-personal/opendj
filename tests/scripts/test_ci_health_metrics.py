@@ -585,6 +585,22 @@ def test_truncation_is_loud_but_never_fatal(monkeypatch):
     assert mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)]).note is not None
 
 
+def test_backlog_of_exactly_the_page_bound_is_complete_not_a_gap(monkeypatch):
+    """If exhausting the page bound alone fired the gap note
+    then a backlog of exactly JOB_FETCH_MAX_PAGES full pages would claim a hole of zero
+    runs in the log, or broken.
+    """
+    pages = [_full_page(30_000 + page * 1000) for page in range(mod.JOB_FETCH_MAX_PAGES)]
+    # total_count defaults to exactly the fetched count: nothing was left behind.
+    fake = _FakeGh(pages)
+    monkeypatch.setattr(mod, "_gh_api_json", fake)
+
+    outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
+
+    assert len(outcome.jobs) == mod.JOB_FETCH_MAX_PAGES * mod.RUN_FETCH_COUNT
+    assert outcome.note is None
+
+
 def test_boundary_run_is_refetched_and_deduped_by_job_id(monkeypatch, tmp_path):
     """If the inclusive watermark boundary double-recorded its own run
     then the median would describe the polling cadence, not the build, or broken.
