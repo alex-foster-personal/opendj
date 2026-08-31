@@ -301,11 +301,25 @@ def write_playlist_and_pending(
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(playlist_id) DO UPDATE SET
               name = excluded.name,
-              updated_at = excluded.updated_at
+              updated_at = excluded.updated_at,
+              deleted_at = NULL
             """,
             (playlist_id, playlist.name, VENDOR, playlist.id, now, revision),
         )
-
+        # deleted_at = NULL on conflict (ADR 08 point 5): playlist_id is
+        # deterministic (f"spotify:{vendor_pl_id}"), so a re-import can land
+        # on a row this machine soft-deleted locally. Without clearing the
+        # tombstone here the playlist would re-import silently invisible
+        # forever -- see apps.shared.state.writer.StateWriter.insert_playlist
+        # for the same reactivation, which this writer bypasses (Phase 9
+        # predates the shared chokepoint; see the round 2 hardening notes).
+        #
+        # The membership replace below is the established whole-playlist
+        # pattern (matches StateWriter.set_playlist_memberships and
+        # apps.sync_hub.engine._replace_members): every position is
+        # overwritten on every import, so there is no independent "this one
+        # membership row was removed" event to tombstone -- the fresh INSERT
+        # below is what makes the current state correct either way.
         conn.execute(
             "DELETE FROM playlist_memberships WHERE playlist_id = ?",
             (playlist_id,),
