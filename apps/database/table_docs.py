@@ -71,6 +71,20 @@ TABLE_DOCS: dict[str, str] = {
         "and an autoincrement key collides the instant two machines each "
         "mint a row 1 (design_decision_05.md, section 3)."
     ),
+    "users": (
+        "One Google account that has signed in to the webui, keyed on the "
+        "OIDC 'sub' claim rather than email -- an email can be reassigned, "
+        "a sub cannot. Sign-in is identity only, never authorization: the "
+        "app behaves identically whether or not anyone is signed in "
+        "(migration v6 comment, apps/shared/state/schema.py)."
+    ),
+    "auth_sessions": (
+        "One browser session for one user. Stores the sha256 of the "
+        "bearer session token, never the token itself, so a stolen "
+        "database cannot be replayed as a live cookie; also holds the "
+        "Google refresh/access token pair server-side so the browser "
+        "never sees a Google credential. Cascades on user delete."
+    ),
     "machines": (
         "Fleet registry: one row per machine that has ever synced. Part of "
         "the synced set itself (design_decision_04.md SYNC SET v1) so any "

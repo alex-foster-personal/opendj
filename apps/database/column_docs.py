@@ -279,6 +279,37 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
             "DDL."
         ),
     },
+    "users": {
+        "google_sub": (
+            "Primary key. Google's OIDC 'sub' claim -- the only "
+            "identifier Google guarantees is stable and never reused, "
+            "unlike email."
+        ),
+        "email": "Google account email at last sign-in. UNIQUE, but not the key -- see google_sub.",
+        "name": "Google profile display name, or NULL if Google did not return one.",
+        "avatar_url": "Google profile picture URL, or NULL if Google did not return one.",
+        "created_at": "RFC 3339 UTC timestamp of this account's first sign-in.",
+        "updated_at": "RFC 3339 UTC timestamp of the most recent profile refresh.",
+    },
+    "auth_sessions": {
+        "session_token_sha256": (
+            "Primary key. sha256 hex digest of the bearer session token "
+            "the browser holds; the raw token itself is never stored, so "
+            "a stolen database cannot be replayed as a live cookie."
+        ),
+        "google_sub": "FK -> users(google_sub), ON DELETE CASCADE.",
+        "refresh_token": (
+            "The Google OAuth refresh token that produced this session. "
+            "Stays server-side and is never exposed over the API."
+        ),
+        "access_token": "The current Google OAuth access token, if one is cached.",
+        "access_expires_at": (
+            "RFC 3339 UTC expiry of access_token, or NULL if none is cached."
+        ),
+        "created_at": "RFC 3339 UTC timestamp this session was created (sign-in time).",
+        "last_seen_at": "RFC 3339 UTC timestamp of this session's most recent authenticated request.",
+        "expires_at": "RFC 3339 UTC timestamp this session stops being valid, regardless of activity.",
+    },
     "machines": {
         "machine_id": (
             "Primary key. uuid4 hex minted once at first run and stored "
