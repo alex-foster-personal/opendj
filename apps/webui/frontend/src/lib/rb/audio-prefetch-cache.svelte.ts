@@ -22,6 +22,7 @@
  * decoded-buffer LRU, HTTP audio cache) are documented on the perf issue.
  */
 import { audioUrl } from '$lib/rb/api-rb';
+import { recordAudioPrefetchSampled } from '$lib/rb/library-perf';
 
 /** Soft cap on how many full files stay warm. 4 ~= one browse-ahead. */
 export const MAX_AUDIO_PREFETCH_TRACKS = 4;
@@ -127,10 +128,16 @@ async function _pump(): Promise<void> {
 			_controller = ac;
 			_inflightSid = sid;
 			_entries[sid] = { status: 'loading' };
+			const startedAt = performance.now();
 			try {
 				const bytes = await _fetchBytes(sid, ac.signal);
 				if (ac.signal.aborted) continue;
 				_insertReady(sid, bytes);
+				// Sampled 1 in 5 (PERF-R5 Q9): row selection fires this in
+				// bursts, and an unsampled emitter would flush the 40-row perf
+				// ring on one sweep down a playlist. Aborted and failed fetches
+				// are NOT timed - neither one measures a completed warm.
+				recordAudioPrefetchSampled(performance.now() - startedAt, bytes.byteLength);
 			} catch (err: unknown) {
 				const aborted =
 					(err instanceof DOMException && err.name === 'AbortError') ||

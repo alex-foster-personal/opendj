@@ -8,7 +8,7 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import { api, unwrap } from '$lib/api/client';
 	import {
@@ -40,6 +40,13 @@
 	import { resolveRowVocals } from '$lib/rb/row-vocals';
 	import { coalesce } from '$lib/rb/coalesce';
 	import {
+		createFilterDebounce,
+		recordCollectionSearchTiming,
+		recordFilterTiming,
+		recordLibraryLoadTiming
+	} from '$lib/rb/library-perf';
+	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
+	import {
 		ANALYSIS_COLORS,
 		jobProgress
 	} from '$lib/rb/job-progress.svelte';
@@ -52,12 +59,10 @@
 		DEFAULT_PLAYLIST_NAME,
 		clearPlaylistCreateGrace,
 		collectBlankPlaylistDeletes,
-		markPlaylistCreateGrace
-	} from '$lib/rb/playlist-blank';
-	import {
 		createPlaylist,
 		deletePlaylist,
 		getPlaylistTracksEtag,
+		markPlaylistCreateGrace,
 		PlaylistConflictError,
 		renamePlaylist,
 		replacePlaylistTracks
@@ -298,7 +303,7 @@
 		return rows.filter((r) => isAppropriateNext(r, ref));
 	}
 
-	const visibleRows = $derived.by(() => {
+	function _computeVisibleRows(): BrowserRow[] {
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
 			return _applyNextOnly(
@@ -313,6 +318,23 @@
 			return _applyNextOnly(sortRows(pane.search_results, pane.sort_key, pane.sort_dir));
 		}
 		return _applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links));
+	}
+
+	/** Wall time of the LAST filter+sort pass (PERF-R5 Q9).
+	 * Deliberately a plain `let`, not $state: it is written from inside the
+	 * $derived below, and a rune write there would re-dirty the very derived
+	 * that produced it. */
+	let _lastVisibleComputeMs = 0;
+
+	const visibleRows = $derived.by(() => {
+		// This pass is filterRows + sortRows over the WHOLE pane array - up to
+		// ~8k rows on All Tracks, plus an O(n log n) sort when a column sort is
+		// active. Timing it is the only way the filter debounce below can be
+		// shown to be worth having.
+		const startedAt = performance.now();
+		const rows = _computeVisibleRows();
+		_lastVisibleComputeMs = performance.now() - startedAt;
+		return rows;
 	});
 	// Read contract handed to TrackTable (getters stay reactive through
 	// visibleRows/pane). The virtualization lane replaces THIS provider,
@@ -365,7 +387,9 @@
 			spotifySelectedId = url.searchParams.get('playlist');
 		}
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
-			if (request.revision > 0) panes[activePane].search = request.query;
+			// Programmatic, so it must beat (and cancel) any keystroke burst
+			// still waiting to settle.
+			if (request.revision > 0) _setSearchNow(request.query);
 		});
 		const onKey = (e: KeyboardEvent): void => {
 			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
@@ -653,7 +677,7 @@
 				const node = _nodeForNav(snap);
 				if (node !== null) await _loadPane(p, node);
 			}
-			p.setSearch(snap.search);
+			_setSearchNow(snap.search);
 			if (snap.selected_id !== null) p.select(snap.selected_id, false);
 			else {
 				p.selected_id = null;
@@ -1057,9 +1081,18 @@
 		// server-default 'all': FR-1 hiding is client-side so the toggle
 		// flips instantly on loaded panes; the API filter exists for agent
 		// parity, not for this UI path.
+		// One ring row per completed walk (PERF-R5 Q9). Both the user-initiated
+		// load and the background refresh land here, and both are the same
+		// ~8k-row cost, so this is the one place that needs the clock.
+		const startedAt = performance.now();
 		const items = await fetchAllPages((cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }));
+		const rows = items.map((t, i) => _rowFromListWire(t, i + 1));
+		recordLibraryLoadTiming('all-tracks', {
+			fetchMs: performance.now() - startedAt,
+			rows: rows.length
+		});
 		return {
-			rows: items.map((t, i) => _rowFromListWire(t, i + 1)),
+			rows,
 			truncated: false,
 			// All Tracks is not a single playlist row - no membership etag.
 			etag: ''
@@ -1073,8 +1106,13 @@
 		// (add-remove-reorder-tracks: required If-Match for the write side's
 		// PUT .../tracks) in one request. Never client-slice membership:
 		// TrackTable's DOM virtualization keeps rendering cheap instead.
+		const startedAt = performance.now();
 		const { detail, etag } = await getPlaylistTracksEtag(id);
 		const rows = detail.tracks.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
+		recordLibraryLoadTiming('playlist', {
+			fetchMs: performance.now() - startedAt,
+			rows: rows.length
+		});
 		return { rows, truncated: false, etag };
 	}
 
@@ -1375,18 +1413,66 @@
 		ensureAudioPrefetch(row.stable_id);
 	}
 
+	/**
+	 * Trailing-edge debounce for the LOCAL filter, one per pane (PERF-R5 Q9).
+	 *
+	 * `pane.search` feeds the visibleRows $derived, so writing it per keystroke
+	 * ran filterRows + sortRows over the whole pane array once per character.
+	 * The keystroke itself still lands instantly - SearchBox echoes its own
+	 * draft - only the recompute waits for the burst to settle.
+	 */
+	const _filterDebounces: Record<number, FilterDebounce> = {};
+
+	function _filterDebounceFor(paneIndex: number): FilterDebounce {
+		const existing = _filterDebounces[paneIndex];
+		if (existing !== undefined) return existing;
+		const created = createFilterDebounce((settle) => void _applyFilter(paneIndex, settle));
+		_filterDebounces[paneIndex] = created;
+		return created;
+	}
+
+	async function _applyFilter(paneIndex: number, settle: FilterSettle): Promise<void> {
+		const p = panes[paneIndex];
+		p.setSearch(settle.query);
+		// Only the ACTIVE pane owns the visibleRows derived, so a burst that
+		// settles after a pane switch still applies its query but has no
+		// recompute of its own to report.
+		if (paneIndex !== activePane) return;
+		// Wait for the flush so the number below is the pass the user actually
+		// waited on, rather than a second pass run purely to measure the first.
+		await tick();
+		recordFilterTiming({
+			keystrokes: settle.keystrokes,
+			coalescedMs: settle.coalescedMs,
+			computeMs: _lastVisibleComputeMs,
+			rowsIn: wholeCollectionActive ? p.search_results.length : p.rows.length,
+			rowsOut: visibleRows.length
+		});
+	}
+
 	function setSearch(next: string): void {
-		panes[activePane].setSearch(next);
+		const paneIndex = activePane;
+		_filterDebounceFor(paneIndex).push(next);
 		if (searchMode === 'find') return;
-		if (!panes[activePane].whole_collection) return;
+		if (!panes[paneIndex].whole_collection) return;
 		// Genre chip filters stay client-side (filterRows), never FTS.
 		if (/^genre:/i.test(next.trim())) return;
-		const paneIndex = activePane;
+		// The FTS debounce is longer than the local one, so `pane.search` has
+		// always settled by the time this fires and its staleness guard still
+		// compares against the query the user actually typed.
 		clearTimeout(_searchDebounce[paneIndex]);
 		_searchDebounce[paneIndex] = setTimeout(
 			() => void _searchWholeCollection(panes[paneIndex], next),
 			SEARCH_DEBOUNCE_MS
 		);
+	}
+
+	/** Programmatic search write (genre chip, clear, restore). Immediate, and
+	 * cancels any pending keystroke settle so a superseded burst cannot land
+	 * on top of what was just clicked. */
+	function _setSearchNow(next: string): void {
+		_filterDebounceFor(activePane).cancel();
+		panes[activePane].setSearch(next);
 	}
 
 	function _captureSearchReturn(): void {
@@ -1416,6 +1502,9 @@
 		searchFocused = false;
 		const p = panes[activePane];
 		p.setWholeCollection(false);
+		// Drop a burst still waiting to settle - it would otherwise repaint the
+		// query the user just cleared, 80 ms after the pane returned.
+		_filterDebounceFor(activePane).cancel();
 		p.setSearch('');
 		genreFilterUntil = 0;
 		if (snap === null) return;
@@ -1438,16 +1527,18 @@
 		}
 	}
 
-	/** Genre chip → search box (`genre:` / `genre:~` / clear / undo). */
+	/** Genre chip → search box (`genre:` / `genre:~` / clear / undo).
+	 * A chip click is one discrete gesture, not a burst, so it writes through
+	 * _setSearchNow rather than paying the keystroke debounce. */
 	function genreFilter(mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string): void {
 		const p = panes[activePane];
 		if (mode === 'clear') {
-			setSearch('');
+			_setSearchNow('');
 			genreFilterUntil = 0;
 			return;
 		}
 		if (mode === 'undo') {
-			setSearch(genreFilterPrior);
+			_setSearchNow(genreFilterPrior);
 			genreFilterUntil = 0;
 			return;
 		}
@@ -1457,12 +1548,12 @@
 		const cur = p.search.trim();
 		// Same tag again clears (way back without needing triple / 20s window).
 		if (cur.toLowerCase() === next.toLowerCase()) {
-			setSearch('');
+			_setSearchNow('');
 			genreFilterUntil = 0;
 			return;
 		}
 		genreFilterPrior = cur;
-		setSearch(next);
+		_setSearchNow(next);
 		genreFilterUntil = Date.now() + GENRE_WINDOW_MS;
 	}
 
@@ -1511,11 +1602,19 @@
 			return;
 		}
 		active.searching = true;
+		const startedAt = performance.now();
 		try {
 			const results = await searchCollection({ q: trimmed, limit: MAX_SEARCH_ROWS });
 			if (!active.whole_collection || active.search.trim() !== trimmed) return;
 			active.search_results = results.items.map((hit, index) => _rowFromSearchHit(hit, index + 1));
 			active.search_total = results.total;
+			// One ring row per query that actually published results; a
+			// superseded query returned above and is not a completed search.
+			recordCollectionSearchTiming({
+				queryMs: performance.now() - startedAt,
+				hits: active.search_results.length,
+				total: results.total
+			});
 		} catch (exc) {
 			if (active.whole_collection && active.search.trim() === trimmed) {
 				active.search_results = [];
