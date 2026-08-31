@@ -3,6 +3,7 @@
  */
 import { getHealth, type HealthOut } from './api';
 import { reportClientError } from './client-error-reporting';
+import { recordPerfEvent } from './rb/perf-event-log';
 
 export type Toast = { id: number; message: string; kind: 'info' | 'error' };
 
@@ -12,6 +13,13 @@ export const toasts = $state<Toast[]>([]);
 /** Default auto-dismiss delay when a caller does not name its own. */
 export const TOAST_DEFAULT_MS = 5000;
 
+/**
+ * Every toast outlives its own on-screen dismissal in the perf-event-log
+ * ring (localStorage + console) - toasts vanish after TOAST_DEFAULT_MS with
+ * no other trace, which is exactly what made the "why didn't AutoPlay fire"
+ * investigation on Mon 17 Aug 2026 into log archaeology instead of a lookup.
+ * One chokepoint here covers every current and future pushToast call site.
+ */
 export function pushToast(
 	message: string,
 	kind: 'info' | 'error' = 'info',
@@ -28,6 +36,7 @@ export function pushToast(
 	// actually due to expire.
 	const id = ++_toastSeq;
 	toasts.push({ id, message, kind });
+	recordPerfEvent(`toast-${kind}`, message, null, kind === 'error' ? 'error' : 'info');
 	if (kind === 'error') {
 		reportClientError(cause ?? new Error(message), { source: 'toast', toast_id: id });
 	}
