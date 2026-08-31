@@ -18,11 +18,8 @@ import pytest
 
 from apps.analysis.backends import get_backend
 from apps.analysis.backends.base import TrackTooLong
-from apps.analysis.backends.librosa_madmom import (
-    LibrosaMadmomBackend,
-    _energy_from_rms_dbfs,
-    _estimate_key,
-)
+from apps.analysis.backends.librosa import _energy_from_rms_dbfs, _estimate_key
+from apps.analysis.backends.librosa_madmom import LibrosaMadmomBackend
 from apps.analysis.record import AnalysisRecord
 
 
@@ -43,6 +40,8 @@ def test_click_120_bpm(click_120_path: Path) -> None:
     assert rec.sample_rate == 44100
     assert rec.key_camelot and rec.key_openkey
     assert 1 <= rec.energy <= 10
+    assert "+madmom==" in rec.backend_version
+    assert rec.features_blob["downbeat_tracking"] is True
 
 
 @pytest.mark.requirement("META-01")

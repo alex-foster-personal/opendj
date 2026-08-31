@@ -6,7 +6,14 @@ import pytest
 from apps.shared.normalised import NormalisedCue
 from apps.sync.rb_writer import WriteReport, _kind_to_rb, _msec_to_frame
 
-pytestmark = pytest.mark.requirement("SYNC-04")
+# write_cues mutates DjmdCue on whatever handle it is handed, so it sits behind
+# the one-way rekordbox import gate. This module exercises that MECHANIC
+# against a fake db, so it runs with the gate ON (root conftest reads the
+# marker). It never touches a real rekordbox target.
+pytestmark = [
+    pytest.mark.requirement("SYNC-04"),
+    pytest.mark.rekordbox_writeback,
+]
 
 
 def test_kind_to_rb_memory():

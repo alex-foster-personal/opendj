@@ -34,7 +34,7 @@ def rgb_to_color_index(rgb: tuple[int, int, int] | None) -> int:
     for idx, pal in RB_COLOR_PALETTE.items():
         if pal is None:
             continue
-        dist = sum((a - b) ** 2 for a, b in zip(rgb, pal))
+        dist = sum((a - b) ** 2 for a, b in zip(rgb, pal, strict=True))
         if dist < best_dist:
             best_dist = dist
             best_idx = idx

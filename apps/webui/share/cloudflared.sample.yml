@@ -1,17 +1,26 @@
-# Named Cloudflare tunnel. Origin stays loopback.
-# Friends authenticate with Cloudflare Access on this hostname.
-# You keep Tailscale for admin. Do not bind the app to 0.0.0.0.
+# REVIEW TEMPLATE ONLY. Copy outside the repo before replacing placeholders.
+# Named Cloudflare tunnel. Origin stays loopback. Friends authenticate with
+# Google through Cloudflare Access. Tailscale Serve remains the admin route.
+# Do not bind the app to 0.0.0.0 and do not run this template unchanged.
 #
 #   cloudflared tunnel create music-dj-share
 #   cloudflared tunnel route dns music-dj-share odj.example.com
 #   cloudflared tunnel --config apps/webui/share/cloudflared.sample.yml run
 #
-# Then an Access application on odj.example.com with an email allowlist.
+# Create the Access application first. Its team name and immutable audience
+# tag make cloudflared validate the signed Access JWT before proxying.
 
-tunnel: music-dj-share
+tunnel: REPLACE-TUNNEL-UUID
 credentials-file: /root/.cloudflared/REPLACE-TUNNEL-ID.json
 
 ingress:
   - hostname: odj.example.com
     service: http://127.0.0.1:9400
+    originRequest:
+      httpHostHeader: odj.example.com
+      access:
+        required: true
+        teamName: REPLACE-TEAM-NAME
+        audTag:
+          - REPLACE-ACCESS-APPLICATION-AUD
   - service: http_status:404

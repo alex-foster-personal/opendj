@@ -65,7 +65,8 @@ function _stageSummary(stages: Record<string, number>): string {
 export function recordPerfEvent(
 	kind: string,
 	message: string,
-	deck: 1 | 2 | 3 | 4 | null = null
+	deck: 1 | 2 | 3 | 4 | null = null,
+	severity: 'info' | 'warn' | 'error' = 'warn'
 ): void {
 	_push({
 		t: new Date().toISOString(),
@@ -74,7 +75,7 @@ export function recordPerfEvent(
 		message
 	});
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
-	console.warn(`[perf-event] ${kind}${deckBit}: ${message}`);
+	console[severity](`[perf-event] ${kind}${deckBit}: ${message}`);
 }
 
 /** Always-on stage timing (ms). One console.info + ring entry. */

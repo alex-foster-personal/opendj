@@ -254,31 +254,6 @@ export async function refreshUsbVolumes(): Promise<void> {
 	}
 }
 
-/** DEV: POST a fake volume so you can exercise UI without a stick. */
-export async function simulateUsbVolume(opts?: {
-	name?: string;
-	kind?: UsbKind;
-}): Promise<void> {
-	try {
-		const body = await unwrap(
-			api.POST('/api/v1/usb/volumes', {
-				body: {
-					name: opts?.name ?? 'FAKE USB',
-					kind: opts?.kind ?? 'music',
-					mount_path: '/Volumes/FAKE-USB',
-					role: 'usb_stick',
-					protocol: 'USB',
-					present: true
-				}
-			})
-		);
-		_ingest(body.volumes ?? []);
-	} catch (error) {
-		if (error instanceof ApiError) throw new Error(`simulate USB HTTP ${error.status}`);
-		throw error;
-	}
-}
-
 function _ingest(remote: ApiVolume[]): void {
 	const now = Date.now();
 	const byId = new Map(usbTracker.volumes.map((v) => [v.id, v]));

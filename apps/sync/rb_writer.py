@@ -23,6 +23,7 @@ from apps.shared.rb_color_palette import rgb_to_color_index
 # tests/test_rb_writer.py, which imports the private name from here, are
 # untouched.
 from apps.shared.rb_frames import msec_to_frame as _msec_to_frame
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 if TYPE_CHECKING:
     from pyrekordbox import Rekordbox6Database
@@ -72,7 +73,15 @@ def write_cues(
     Each cue is matched to an existing ``DjmdCue`` row by position
     (±``tolerance_msec``) and kind. On verify failure the pyrekordbox
     session is rolled back (caller should catch and retry).
+
+    ONE-WAY IMPORT GATE. The target here is the ``db`` HANDLE, not a path, so
+    there is nothing outside this function to guard: hand it
+    ``open_db(REKORDBOX_LIVE_DB)`` and it mutates the real library. The guard
+    therefore lives inside the writer itself, where every present and future
+    caller must pass through it.
     """
+    require_writeback_enabled("module.sync.rb_writer.write_cues")
+
     report = WriteReport(content_id=str(content_id))
 
     try:

@@ -46,7 +46,9 @@ except ImportError:  # pragma: no cover - WIP six-rail adapter, not yet merged
     )
 from apps.sync.safety import SafetyAbort
 
-pytestmark = pytest.mark.requirement("SMART-02")
+# Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
+# import gate ON (root conftest reads the marker). Never a real rb target.
+pytestmark = [pytest.mark.requirement("SMART-02"), pytest.mark.rekordbox_writeback]
 
 
 # ---------------------------------------------------------------- state DB

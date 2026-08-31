@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 import os
 import socket
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Optional
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,7 @@ from starlette.types import Scope
 
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
+from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
@@ -32,8 +33,14 @@ from apps.webui.port_config import (
 
 from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
-from .errors import handle_backend_error, handle_conflict, handle_not_found
+from .errors import (
+    handle_backend_error,
+    handle_conflict,
+    handle_not_found,
+    handle_rekordbox_writeback_disabled,
+)
 from .routes import analysis as analysis_routes
+from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -41,8 +48,11 @@ from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import feedback as feedback_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
+from .routes import ingest as ingest_routes
+from .routes import ingest_upload as ingest_upload_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
 from .routes import play_it as play_it_routes
@@ -50,10 +60,12 @@ from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
+from .routes import quality as quality_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
+from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
@@ -63,12 +75,15 @@ from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
+from .routes import telemetry as telemetry_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
+from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import voice_probe as voice_probe_routes
-from .share_gate import share_gate_middleware, share_host
+from .share_gate import ShareConfig, share_gate_middleware
+from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
 
@@ -78,15 +93,32 @@ FRONTEND_BUILD_DIR: Path = (
 
 
 class _SpaStaticFiles(StaticFiles):
-    """Serve the SPA shell for extensionless client-side routes."""
+    """Serve the SPA shell for extensionless client-side routes.
+
+    Chrome (and WKWebView in the installed desktop app) heuristically caches
+    index.html and even hashed chunks with no Cache-Control header, so a
+    rebuilt app can keep serving a stale bundle. Vite content-hashes
+    everything under _app/immutable/, so that path is safe to cache forever;
+    the HTML entry point is never hashed, so it must always be revalidated.
+    """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code != 404 or not self._is_client_route(path):
                 raise
-            return await super().get_response("index.html", scope)
+            response = await super().get_response("index.html", scope)
+        return self._with_cache_control(path, response)
+
+    @staticmethod
+    def _with_cache_control(path: str, response: Response) -> Response:
+        normalized_path = path.replace("\\", "/").lstrip("/")
+        if normalized_path.startswith("_app/immutable/"):
+            response.headers["cache-control"] = "public, max-age=31536000, immutable"
+        elif getattr(response, "media_type", None) == "text/html":
+            response.headers["cache-control"] = "no-cache"
+        return response
 
     @staticmethod
     def _is_client_route(path: str) -> bool:
@@ -97,20 +129,22 @@ class _SpaStaticFiles(StaticFiles):
 
 def create_app(
     *,
-    backend: Optional[StateBackend] = None,
+    backend: StateBackend | None = None,
     bind_host: str = "127.0.0.1",
-    hostname: Optional[str] = None,
-    lock_status_fn: Optional[Callable[[], Any]] = None,
-    syncthing_status_fn: Optional[Callable[[], Any]] = None,
+    hostname: str | None = None,
+    lock_status_fn: Callable[[], Any] | None = None,
+    syncthing_status_fn: Callable[[], Any] | None = None,
     state_db_path: str = "data/state/state.db",
     version: str = "0.1.0",
-    port: Optional[int] = None,
-    frontend_port: Optional[int] = None,
+    port: int | None = None,
+    frontend_port: int | None = None,
     enable_cors: bool = True,
     mount_frontend: bool = True,
-    client_error_log_dir: Optional[Path] = None,
-    client_event_log_dir: Optional[Path] = None,
-    stem_roots: Optional[Sequence[Path]] = None,
+    client_error_log_dir: Path | None = None,
+    client_event_log_dir: Path | None = None,
+    stem_roots: Sequence[Path] | None = None,
+    usage_store: UsageStore | None = None,
+    share_config: ShareConfig | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -149,6 +183,8 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
+    app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.client_error_log_dir = (
         client_error_log_dir
         if client_error_log_dir is not None
@@ -161,8 +197,15 @@ def create_app(
     )
     if stem_roots is not None:
         app.state.stem_roots = tuple(Path(root) for root in stem_roots)
+    # Usage telemetry is per-process by design: "is the app open" is a
+    # question about now, so a restart honestly resets it to "nobody has
+    # checked in yet". Tests inject a store with a fake clock.
+    app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
     app.add_exception_handler(NotFoundError, handle_not_found)
+    app.add_exception_handler(
+        RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled
+    )
     app.add_exception_handler(ConflictError, handle_conflict)
     app.add_exception_handler(BackendError, handle_backend_error)
 
@@ -184,8 +227,8 @@ def create_app(
             else []
         )
         share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
-        if not share_origin and share_host():
-            share_origin = f"https://{share_host()}"
+        if not share_origin and app.state.share_config.host:
+            share_origin = f"https://{app.state.share_config.host}"
         share_origins = [share_origin] if share_origin else []
         app.add_middleware(
             CORSMiddleware,
@@ -218,6 +261,18 @@ def create_app(
     app.middleware("http")(share_gate_middleware)
 
     @app.middleware("http")
+    async def record_passive_usage(request: Request, call_next):
+        # Backstop for the heartbeat: ordinary traffic from a real webview or
+        # browser is evidence someone has the app open. The store drops
+        # telemetry/health paths and non-app user agents, so agents polling
+        # this API cannot manufacture the activity they are asking about.
+        app.state.usage_store.record_request(
+            path=request.url.path,
+            user_agent=request.headers.get("user-agent", ""),
+        )
+        return await call_next(request)
+
+    @app.middleware("http")
     async def add_bind_warning(request: Request, call_next):
         response = await call_next(request)
         if bind_host and bind_host != "127.0.0.1" and bind_host != "localhost":
@@ -242,18 +297,24 @@ def create_app(
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
+    app.include_router(feedback_routes.router, prefix=api_prefix)
     app.include_router(share_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)
     app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)
+    app.include_router(quality_routes.router, prefix=api_prefix)
     app.include_router(smartlists_routes.router, prefix=api_prefix)
     app.include_router(stems_routes.router, prefix=api_prefix)
     app.include_router(stem_tiers_routes.router, prefix=api_prefix)
     app.include_router(reconcile_routes.router, prefix=api_prefix)
+    app.include_router(rekordbox_gate_routes.router, prefix=api_prefix)
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
+    app.include_router(auth_routes.router, prefix=api_prefix)
+    app.include_router(ingest_routes.router, prefix=api_prefix)
+    app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
@@ -262,6 +323,11 @@ def create_app(
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(usb_volumes_routes.router, prefix=api_prefix)
+    if app.state.usb_simulation_enabled:
+        # Test/dev only (MDT_USB_SIMULATION=1): production apps never mount
+        # the simulated-volume POST, so fake volumes cannot be injected.
+        app.include_router(usb_volumes_sim_routes.router, prefix=api_prefix)
+    app.include_router(telemetry_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sync_hub_router, prefix=api_prefix)
     app.include_router(sets_router)
@@ -301,7 +367,7 @@ def _build_default_app() -> FastAPI:
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
-    backend: Optional[StateBackend] = None
+    backend: StateBackend | None = None
     try:
         from .sqlite_backend import make_backend
         backend = make_backend()

@@ -12,7 +12,8 @@
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
 	// Row states: yellow title+artist = loaded on a non-master deck; gold =
-	// master; faint green wash = Camelot-compatible suggested next; blue =
+	// master; faint green wash = Camelot-compatible suggested next; slightly
+	// stronger light-green = Spotify unmatched/pending placeholder; blue =
 	// selected; grayed row = audio file missing on disk (FR-1).
 	// Rows arrive via the RowProvider contract (pane-contract.svelte.ts).
 	// The provider materializes the full result set (parent no longer caps
@@ -35,7 +36,8 @@
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 	import { setConfirmPref, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
-	import { beginTrackDrag, endTrackDrag } from '$lib/rb/track-drag.svelte';
+	import { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
+	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/types';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
@@ -282,8 +284,15 @@
 		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick. */
 		onloadrow: (row: BrowserRow, deck: DeckId | null, opts?: { play?: boolean }) => void;
-		/** Preferred deck for double-click load+play. Shift → CH3/CH4 when free/stopped. */
-		onpickdoubledeck?: (row: BrowserRow, opts?: { shift?: boolean }) => DeckId | null;
+		/**
+		 * Preferred deck for double-click load+play. Shift -> CH3/CH4 when
+		 * free/stopped. Cmd/Ctrl -> replace whatever deck the last plain
+		 * double-click targeted, instead of advancing to the next deck.
+		 */
+		onpickdoubledeck?: (
+			row: BrowserRow,
+			opts?: { shift?: boolean; replace?: boolean }
+		) => DeckId | null;
 		/** Preview strip click: 0..1 ratio along the track. */
 		onpreviewseek?: (row: BrowserRow, ratio: number) => void;
 		onrate: (row: BrowserRow, next: number) => void;
@@ -372,7 +381,11 @@
 		if (genreWindowOpen()) return;
 		const target = event.target as HTMLElement | null;
 		if (target === null || target.closest(LOAD_DBLCLICK_SEL) === null) return;
-		const deck = onpickdoubledeck?.(row, { shift: event.shiftKey }) ?? (event.shiftKey ? null : 1);
+		const deck =
+			onpickdoubledeck?.(row, {
+				shift: event.shiftKey,
+				replace: event.metaKey || event.ctrlKey
+			}) ?? (event.shiftKey ? null : 1);
 		if (deck === null) return;
 		// Missing key = ask; false = skip (remembered "do this every time").
 		if (uiPrefs.confirm.dblclick_load_play === false) {
@@ -599,7 +612,6 @@
 	// Grip-initiated only (not the whole row): the row's own click/dblclick
 	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
 	// rune - it only matters for the lifetime of one drag gesture.
-	const MIME_TRACK = 'application/x-mdt-stable-id';
 	let _dragSourceOrder: number | null = null;
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
@@ -611,12 +623,23 @@
 			selectedIds.includes(row.stable_id) && selectedIds.length > 1
 				? selectedIds
 				: [row.stable_id];
-		event.dataTransfer?.setData(MIME_TRACK, ids.join(','));
+		// The MIME is still set for cross-app interop; drop targets accept on
+		// the in-app state because WKWebView hides it during dragover.
+		event.dataTransfer?.setData(TRACK_STABLE_MIME, ids.join(','));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		// Without an explicit drag image WebKit snapshots this <tr> plus every
+		// composited layer overlapping it, so the whole browser panel appears
+		// to come along for the ride.
+		installTrackDragGhost(event, {
+			title: row.title ?? row.stable_id,
+			artist: row.artist ?? '',
+			count: ids.length
+		});
 		beginTrackDrag(ids);
 	}
 
 	function onRowDragEnd(): void {
+		removeTrackDragGhost();
 		endTrackDrag();
 	}
 
@@ -701,7 +724,7 @@
 			onscrollcursor(top);
 		}}
 	>
-		<table>
+		<table data-testid="track-table">
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
 				<col style={`width:${colWidths.err}px`} />
@@ -965,11 +988,14 @@
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<tr
 						use:observeRow={row}
+						data-testid="track-row"
 						data-stable-id={row.stable_id}
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
+						class:rb-row-spotify-pending={row.spotify_pending === true ||
+							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
 						class:rb-row-master={masterStableId !== null && row.stable_id === masterStableId}
 						class:rb-row-deck-hover={hoverStableId !== null &&
@@ -978,7 +1004,10 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={!row.file_exists}
+						class:broken={!row.file_exists &&
+							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
+							row.spotify_pending !== true &&
+							!row.stable_id.startsWith('spotify-pending:')}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
@@ -1573,13 +1602,28 @@
 		}
 	}
 	/* Camelot-compatible / suggested-next: faint green (go / mixable). */
-	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master) {
+	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
+			.rb-row-spotify-pending
+		) {
 		background: color-mix(in srgb, var(--rb-green) 9%, transparent);
 	}
 	tbody tr.rb-row-key-compat:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
-		) {
+		):not(.rb-row-spotify-pending) {
 		background: color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised));
+	}
+	/* Spotify unmatched / pending acquisition: light green tint (stronger than
+	 * Camelot-compat so the missing-local rows read as intentional placeholders). */
+	tbody tr.rb-row-spotify-pending:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+			.rb-row-master
+		) {
+		background: color-mix(in srgb, var(--rb-green) 18%, transparent);
+		box-shadow: inset 3px 0 0 color-mix(in srgb, var(--rb-green) 55%, transparent);
+	}
+	tbody tr.rb-row-spotify-pending:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+			.rb-row-master
+		) {
+		background: color-mix(in srgb, var(--rb-green) 26%, var(--rb-panel-raised));
 	}
 
 	.master-fold {

@@ -30,7 +30,9 @@ from apps.sync.apply_ratings import (
 )
 from apps.sync.safety import SafetyAbort
 
-pytestmark = pytest.mark.requirement("SYNC-06")
+# Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
+# import gate ON (root conftest reads the marker). Never a real rb target.
+pytestmark = [pytest.mark.requirement("SYNC-06"), pytest.mark.rekordbox_writeback]
 
 
 def _make_diff(tmp_path: Path, rows: list[dict]) -> Path:
@@ -344,17 +346,46 @@ class TestLiveDbPathHelpers:
     otherwise to WORKING_DB copies under ``data/``.
     """
 
-    def test_rb_live_flag_returns_live_path(self) -> None:
-        assert _live_rb_db_path(True) == paths.REKORDBOX_LIVE_DB
+    # This module runs with the rekordbox writeback gate ON (see pytestmark),
+    # so the constants are REDIRECTED onto tmp_path rather than read: comparing
+    # a global to itself proved nothing anyway, while naming the real live DB
+    # inside a gate-on module is one careless edit away from opening it.
+    @staticmethod
+    def _redirect(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
+        fixtures = {
+            name: tmp_path / f"{name.lower()}.db"
+            for name in (
+                "REKORDBOX_LIVE_DB", "REKORDBOX_WORKING_DB",
+                "DJAY_LIVE_DB", "DJAY_WORKING_DB",
+            )
+        }
+        for name, target in fixtures.items():
+            monkeypatch.setattr(paths, name, target)
+        return fixtures
 
-    def test_rb_default_returns_working_copy(self) -> None:
-        assert _live_rb_db_path(False) == paths.REKORDBOX_WORKING_DB
+    def test_rb_live_flag_returns_live_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixtures = self._redirect(monkeypatch, tmp_path)
+        assert _live_rb_db_path(True) == fixtures["REKORDBOX_LIVE_DB"]
 
-    def test_djay_live_flag_returns_live_path(self) -> None:
-        assert _live_djay_db_path(True) == paths.DJAY_LIVE_DB
+    def test_rb_default_returns_working_copy(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixtures = self._redirect(monkeypatch, tmp_path)
+        assert _live_rb_db_path(False) == fixtures["REKORDBOX_WORKING_DB"]
 
-    def test_djay_default_returns_working_copy(self) -> None:
-        assert _live_djay_db_path(False) == paths.DJAY_WORKING_DB
+    def test_djay_live_flag_returns_live_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixtures = self._redirect(monkeypatch, tmp_path)
+        assert _live_djay_db_path(True) == fixtures["DJAY_LIVE_DB"]
+
+    def test_djay_default_returns_working_copy(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fixtures = self._redirect(monkeypatch, tmp_path)
+        assert _live_djay_db_path(False) == fixtures["DJAY_WORKING_DB"]
 
 
 class TestMainLiveRoutesToLiveDbPaths:

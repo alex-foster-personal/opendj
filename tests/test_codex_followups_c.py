@@ -22,14 +22,11 @@ from apps.sync.usb.diff import Plan
 from apps.sync.usb.preflight import preflight
 from apps.sync.usb.profile import load_from_string
 
-# Requirement IDs come from reqs.json. There is no SPOTIFY/USB category --
-# the Spotify importer is CAT-01, USB sync + verify is CAT-02, and the web UI
-# the toast store belongs to is CAT-05.
-pytestmark = [
-    pytest.mark.requirement("CAT-01"),  # P09-F02 Spotify writer encoding
-    pytest.mark.requirement("CAT-02"),  # P10-F03 USB preflight writer probe
-    pytest.mark.requirement("CAT-05"),  # P11-F03 web UI toast store
-]
+# Requirement markers are per-test, NOT module-scoped: a module-level
+# ``pytestmark`` credits EVERY test here with EVERY id, so the traceability
+# matrix fills with false "covered by" links and an unrelated test keeps a
+# requirement looking covered. These modules bundle unrelated follow-up
+# findings, so each id sits on the test that actually exercises it.
 
 
 _PROFILE_YAML = """\
@@ -61,6 +58,7 @@ def drive_root(tmp_path: Path) -> Path:
 # -- P09-F02 --------------------------------------------------------------
 
 
+@pytest.mark.requirement("CAT-01")
 def test_p09_f02_spotify_writers_pass_utf8(tmp_path: Path) -> None:
     """Assert the three patched writers reference ``encoding="utf-8"``."""
     repo = Path(__file__).resolve().parents[1]
@@ -89,6 +87,7 @@ def _small_plan(drive_root: Path) -> Plan:
     )
 
 
+@pytest.mark.requirement("CAT-02")
 def test_p10_f03_no_other_writer_errors_on_apply(
     monkeypatch: pytest.MonkeyPatch, fixture_profile, drive_root: Path
 ) -> None:
@@ -108,6 +107,7 @@ def test_p10_f03_no_other_writer_errors_on_apply(
     )
 
 
+@pytest.mark.requirement("CAT-02")
 def test_p10_f03_no_other_writer_warns_on_readonly(
     monkeypatch: pytest.MonkeyPatch, fixture_profile, drive_root: Path
 ) -> None:
@@ -131,6 +131,7 @@ def test_p10_f03_no_other_writer_warns_on_readonly(
 # -- P11-F03 --------------------------------------------------------------
 
 
+@pytest.mark.requirement("CAT-05")
 def test_p11_f03_toast_captures_own_id() -> None:
     """The toast store must dismiss the correct toast on overlap.
 

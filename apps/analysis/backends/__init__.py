@@ -7,6 +7,9 @@ if TYPE_CHECKING:
     from .base import AnalyzerBackend
 
 BACKENDS: dict[str, "type[AnalyzerBackend]"] = {}
+# Portable default: librosa + scipy install from PyPI wheels (`analysis`
+# extra), unlike the git-HEAD-only madmom dev backend.
+DEFAULT_BACKEND: str = "librosa"
 
 
 def register(name: str, cls: "type[AnalyzerBackend]") -> None:
@@ -19,12 +22,15 @@ def get_backend(name: str) -> "type[AnalyzerBackend]":
     if name not in BACKENDS:
         # Lazy-import each independently so a preload of one backend does
         # not block the other.
-        if name == "librosa+madmom":
+        if name == "librosa":
+            from . import librosa
+        elif name == "librosa+madmom":
             from . import librosa_madmom
         elif name == "mik":
             from . import mik
         else:
             from . import (
+                librosa,  # noqa: F401
                 librosa_madmom,  # noqa: F401
                 mik,  # noqa: F401
             )
@@ -37,4 +43,4 @@ def get_backend(name: str) -> "type[AnalyzerBackend]":
         ) from exc
 
 
-__all__ = ["BACKENDS", "register", "get_backend"]
+__all__ = ["BACKENDS", "DEFAULT_BACKEND", "register", "get_backend"]

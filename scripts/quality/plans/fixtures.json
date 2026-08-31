@@ -1,0 +1,59 @@
+{
+  "note": "Spec section 3, adopted verbatim. A missing fixture is reported MISSING, never quietly swapped. 'pitched' selects the fixtures that carry amendment 8's pitch_error_cents; the spec names F2 and F5.",
+  "fixtures": [
+    {
+      "id": "F1",
+      "material_class": "transient-heavy",
+      "stable_id": "002acb181dceb41f9efc5ceb11b1d16560918f84",
+      "offset_s": 60,
+      "duration_s": 10,
+      "bpm": 174.0,
+      "pitched": false
+    },
+    {
+      "id": "F2",
+      "material_class": "sustained / tonal",
+      "stable_id": "0017e657b28e308a6ebf7e4b703500f9d0686fed",
+      "offset_s": 120,
+      "duration_s": 10,
+      "bpm": 126.0,
+      "pitched": true
+    },
+    {
+      "id": "F3",
+      "material_class": "full mix with vocal",
+      "stable_id": "ad7bb55bdc2f4d7d5ef2f152ca2140f89fad40c9",
+      "offset_s": 90,
+      "duration_s": 10,
+      "bpm": 123.0,
+      "pitched": false
+    },
+    {
+      "id": "F4",
+      "material_class": "bass-heavy",
+      "stable_id": "daacfd89fb24c35f1c09d684b1a7d9aff67676f2",
+      "offset_s": 150,
+      "duration_s": 10,
+      "bpm": 122.0,
+      "pitched": false
+    },
+    {
+      "id": "F5",
+      "material_class": "vocal-forward pop",
+      "stable_id": "00b089ed73602cd8bfdfe5a2a392e38d5670f02c",
+      "offset_s": 45,
+      "duration_s": 10,
+      "bpm": 142.99,
+      "pitched": true
+    },
+    {
+      "id": "F6",
+      "material_class": "acoustic / broadband",
+      "stable_id": "01404696daea8af7a10c69e8979372e574003fab",
+      "offset_s": 40,
+      "duration_s": 10,
+      "bpm": 88.3,
+      "pitched": false
+    }
+  ]
+}

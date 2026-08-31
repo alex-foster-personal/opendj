@@ -1,0 +1,163 @@
+import assert from 'node:assert/strict';
+import { before, beforeEach, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+/**
+ * LATENCY-01 drag weight: queryPerformanceState() must not rebuild every deck's
+ * beatgrid on every command.
+ *
+ * It runs after EVERY command, including the null-scope continuous ones - trim,
+ * EQ, faders, crossfader - which fire once per pointermove. It rebuilt all four
+ * decks' beatgrids each time: two full array maps per deck, one allocating an
+ * object per beat. Measured 3.9ms p50 / 5.4ms worst with four decks loaded
+ * (2221 beats), i.e. 42-65% of the main thread at a 120Hz pointer rate, spent
+ * rebuilding values that only change on load. It never delayed the audio, but
+ * it is what makes a knob drag feel heavy, and it grows as decks fill.
+ *
+ * The memo is keyed by ANLZ object IDENTITY, which is safe precisely because
+ * the engine REPLACES st.anlz rather than mutating it. That makes the dangerous
+ * failure "a stale grid outlives its track", so these tests spend most of their
+ * effort on invalidation rather than on the happy path.
+ *
+ * Regression lines:
+ * - if the projection is rebuilt per query then a knob drag pays for four decks
+ *   of beatgrid allocation on every pointermove
+ * - if the memo is not invalidated when anlz changes identity then a newly
+ *   loaded deck serves the previous track's beatgrid to every IPC consumer
+ * - if one deck's projection can be served for another then decks cross-talk
+ * - if the shared arrays are not frozen then one consumer mutating a snapshot
+ *   poisons every later read
+ * - if the IPC payload shape changes then agent consumers break
+ */
+
+let ipc;
+
+/** Minimal ANLZ payload: only the beatgrid is projected into the snapshot. */
+function fakeAnlz(beats) {
+	return { beatgrid: { beats: beats.map((t, n) => ({ n, bpm: 120, t })) } };
+}
+
+before(async () => {
+	ipc = await loadTypeScriptModule('tests/unit/fixtures/perf-ipc-entry.ts');
+});
+
+beforeEach(() => {
+	for (const deck of [1, 2, 3, 4]) ipc.deckStates[deck].anlz = null;
+});
+
+//-----------------------------------------------------------------------------
+// the projection is computed once
+//-----------------------------------------------------------------------------
+
+test('repeat queries reuse the projection instead of rebuilding it', () => {
+	ipc.deckStates[1].anlz = fakeAnlz([0, 0.5, 1]);
+
+	const first = ipc.queryPerformanceState().decks[1];
+	const second = ipc.queryPerformanceState().decks[1];
+
+	assert.equal(
+		first.beatgrid,
+		second.beatgrid,
+		'if the beatgrid array is a new object every query then every pointermove is ' +
+			'paying to rebuild a value that only changes on load'
+	);
+	assert.equal(first.beatgrid_ms, second.beatgrid_ms);
+});
+
+test('the projected values are exactly what they were before the memo', () => {
+	ipc.deckStates[2].anlz = fakeAnlz([0, 0.5, 1.25]);
+	const snapshot = ipc.queryPerformanceState().decks[2];
+
+	assert.deepEqual(snapshot.beatgrid_ms, [0, 500, 1250]);
+	assert.deepEqual(snapshot.beatgrid, [
+		{ n: 0, bpm: 120, time_ms: 0 },
+		{ n: 1, bpm: 120, time_ms: 500 },
+		{ n: 2, bpm: 120, time_ms: 1250 }
+	]);
+	assert.equal(
+		JSON.stringify(snapshot.beatgrid_ms),
+		'[0,500,1250]',
+		'the IPC payload must serialize identically - agents read this shape'
+	);
+});
+
+test('an empty deck projects empty arrays, not null', () => {
+	const snapshot = ipc.queryPerformanceState().decks[3];
+	assert.deepEqual(snapshot.beatgrid, []);
+	assert.deepEqual(snapshot.beatgrid_ms, []);
+});
+
+//-----------------------------------------------------------------------------
+// invalidation: the dangerous half
+//-----------------------------------------------------------------------------
+
+test('a new ANLZ payload invalidates the memo rather than serving the old grid', () => {
+	ipc.deckStates[1].anlz = fakeAnlz([0, 0.5]);
+	assert.deepEqual(ipc.queryPerformanceState().decks[1].beatgrid_ms, [0, 500]);
+
+	// A load or a hot-cue refresh REPLACES st.anlz; identity is what changes.
+	ipc.deckStates[1].anlz = fakeAnlz([0, 0.25, 0.5, 0.75]);
+	assert.deepEqual(
+		ipc.queryPerformanceState().decks[1].beatgrid_ms,
+		[0, 250, 500, 750],
+		'if identity does not invalidate then a freshly loaded deck serves the previous ' +
+			"track's beatgrid, and every consumer draws the wrong grid"
+	);
+});
+
+test('unloading a deck clears its grid instead of leaving the last one cached', () => {
+	ipc.deckStates[4].anlz = fakeAnlz([0, 0.5]);
+	assert.equal(ipc.queryPerformanceState().decks[4].beatgrid_ms.length, 2);
+	ipc.deckStates[4].anlz = null;
+	assert.deepEqual(ipc.queryPerformanceState().decks[4].beatgrid_ms, []);
+});
+
+test('a payload with an identical shape but a new identity still invalidates', () => {
+	// Deep-equal but not identical: the memo must not be fooled into holding the
+	// old object, or a re-analysis that changes nothing visible would still leave
+	// two decks sharing one array.
+	ipc.deckStates[2].anlz = fakeAnlz([0, 0.5]);
+	const before = ipc.queryPerformanceState().decks[2].beatgrid_ms;
+	ipc.deckStates[2].anlz = fakeAnlz([0, 0.5]);
+	const after = ipc.queryPerformanceState().decks[2].beatgrid_ms;
+	assert.deepEqual([...before], [...after]);
+	assert.notEqual(before, after, 'a replaced payload must produce a replaced projection');
+});
+
+test('decks never share a projection, even with identical grids', () => {
+	ipc.deckStates[1].anlz = fakeAnlz([0, 0.5]);
+	ipc.deckStates[2].anlz = fakeAnlz([0, 0.5]);
+	const state = ipc.queryPerformanceState();
+	assert.deepEqual([...state.decks[1].beatgrid_ms], [...state.decks[2].beatgrid_ms]);
+	assert.notEqual(
+		state.decks[1].beatgrid_ms,
+		state.decks[2].beatgrid_ms,
+		'if two decks share one array then unloading one would empty the other'
+	);
+});
+
+//-----------------------------------------------------------------------------
+// a shared array must not be a poisonable one
+//-----------------------------------------------------------------------------
+
+test('the shared projection is frozen, so a consumer cannot poison later reads', () => {
+	ipc.deckStates[1].anlz = fakeAnlz([0, 0.5]);
+	const snapshot = ipc.queryPerformanceState().decks[1];
+
+	assert.ok(Object.isFrozen(snapshot.beatgrid_ms), 'the ms array must be frozen');
+	assert.ok(Object.isFrozen(snapshot.beatgrid), 'the beat row array must be frozen');
+	assert.ok(Object.isFrozen(snapshot.beatgrid[0]), 'each beat row must be frozen too');
+
+	// Before the memo these arrays were rebuilt per call, so a mutation was
+	// harmless. Now they are shared, so it must fail loudly rather than corrupt
+	// every later snapshot.
+	assert.throws(() => {
+		snapshot.beatgrid_ms[0] = -1;
+	}, TypeError);
+	assert.throws(() => {
+		snapshot.beatgrid[0].time_ms = -1;
+	}, TypeError);
+
+	assert.deepEqual(ipc.queryPerformanceState().decks[1].beatgrid_ms, [0, 500]);
+});

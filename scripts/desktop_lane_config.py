@@ -1,11 +1,13 @@
 """Derive the per-lane Tauri bundle overlay for the Open DJ desktop shell.
 
-Both bake-off lanes install their desktop build on the SAME Mac, so every
-macOS-visible name has to differ. The bundle identifier is the clash key:
-macOS derives the per-app Application Support, Caches and WebKit storage
-paths from it, so suffixing the identifier separates all of that for free.
-productName is the second key, because it names the .app on disk, the
-window, and the dmg volume.
+The bake-off is over (agentB lane landed Sat 29 Aug 2026; suffix dropped per
+OPS-08), so the DEFAULT build is the plain product: "Open DJ",
+com.opendj.desktop, and an Application Support dir of the same name. The
+lane machinery stays for future bake-offs: when two lanes install on the
+SAME Mac every macOS-visible name has to differ, and the bundle identifier
+is the clash key (macOS derives the per-app Application Support, Caches and
+WebKit storage paths from it). productName is the second key, because it
+names the .app on disk, the window, and the dmg volume.
 
 The label is NOT hardcoded anywhere in the tree. It comes from
 ``MDT_LANE_LABEL`` in the worktree's .env, the same pattern as
@@ -148,16 +150,58 @@ def _load_conf(config_path: Path) -> tuple[str, str, str]:
     return conf["productName"], conf["identifier"], conf["version"]
 
 
+def manifest_stamp(manifest_path: Path, field: str) -> str:
+    """Read ONE identity field out of a built payload's manifest.
+
+    The dmg recipe stamps the Tauri binary from the manifest the payload
+    builder just wrote, rather than running its own ``git`` call. That is the
+    whole point: two independent reads can disagree, and a shell that claims a
+    different commit from the engine it ships with is the confusion this
+    train exists to remove. Booleans are emitted as 1/0 because the value is
+    read back by ``option_env!`` in Rust, where "False" is a true-ish string.
+    """
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    identity = manifest.get("identity")
+    if not isinstance(identity, dict):
+        raise LaneLabelError(f"{manifest_path} has no identity block")
+    if field not in identity:
+        raise LaneLabelError(
+            f"{manifest_path} identity has no {field!r}; it has "
+            f"{', '.join(sorted(identity))}"
+        )
+    value = identity[field]
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if value is None:
+        raise LaneLabelError(
+            f"{manifest_path} identity.{field} is null; the payload builder "
+            "must fail rather than stamp an unknown value"
+        )
+    return str(value)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("emit", choices=["overlay", "dmg-name"])
-    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("emit", choices=["overlay", "dmg-name", "stamp"])
+    parser.add_argument("--config", default=None, type=Path)
     parser.add_argument("--label", default=None)
     parser.add_argument(
         "--built", default=None, help="the dmg Tauri produced; required for dmg-name"
     )
+    parser.add_argument(
+        "--manifest", default=None, type=Path, help="payload manifest; required for stamp"
+    )
+    parser.add_argument("--field", default=None, help="identity field; required for stamp")
     args = parser.parse_args(argv)
 
+    if args.emit == "stamp":
+        if args.manifest is None or args.field is None:
+            raise LaneLabelError("stamp needs --manifest and --field")
+        print(manifest_stamp(args.manifest, args.field))
+        return 0
+
+    if args.config is None:
+        raise LaneLabelError(f"{args.emit} needs --config")
     product_name, identifier, version = _load_conf(args.config)
     label = validate_label(args.label)
 

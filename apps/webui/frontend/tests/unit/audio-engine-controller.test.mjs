@@ -509,6 +509,33 @@ test('key shift composes with Master Tempo compensation in the native Signalsmit
 	);
 	assert.throws(() => audio.composeStretchSemitones(1, true, 1.5), /integer/i);
 	assert.throws(() => audio.composeStretchSemitones(1, true, 13), /-12\.\.12/i);
+
+	// composeStretchSemitones(1, true, n) returns exactly n for n in -12..12
+	for (let n = -12; n <= 12; n++) {
+		assert.equal(audio.composeStretchSemitones(1, true, n), n);
+	}
+
+	// composeStretchSemitones(ratio, false, n) adds 12*log2(ratio)
+	const ratio = 1.08;
+	const baseMT = 12 * Math.log2(ratio);
+	for (let n = -12; n <= 12; n++) {
+		const composed = audio.composeStretchSemitones(ratio, false, n);
+		assert.ok(Math.abs(composed - (baseMT + n)) < 1e-12);
+
+		if (n < 12) {
+			assert.ok(
+				Math.abs(
+					audio.composeStretchSemitones(ratio, false, n + 1) -
+						audio.composeStretchSemitones(ratio, false, n) -
+						1
+				) < 1e-12
+			);
+		}
+	}
+
+	// stretchScheduleChange carries that composed semitones value into the worklet change object
+	const change = audio.stretchScheduleChange(1.5, true, ratio, false, 2, null);
+	assert.ok(Math.abs(change.semitones - (baseMT + 2)) < 1e-12);
 });
 
 test('Slip hidden playhead advances linearly from its acknowledged loop schedule without wrapping', () => {
@@ -1033,7 +1060,7 @@ test('stale output observations and late old revisions never rewind presented st
 
 test('transport scheduling horizon is strictly future and latency-aware', () => {
 	assert.ok(Math.abs(audio.safeTransportScheduleTime(10, 0.2, 0.1) - 10.3) < 1e-12);
-	assert.throws(() => audio.safeTransportScheduleTime(10, -0.1), /latency/i);
+	assert.throws(() => audio.safeTransportScheduleTime(10, -0.1), /processorLeadSec/);
 	assert.equal(
 		audio.supersedingScheduleTime(10.5, 10.2, 10.3),
 		10.5,
@@ -1086,6 +1113,24 @@ test('pending pause transport mutations stay scheduled instead of touching the f
 });
 
 test('KEY nudge keeps an acknowledged pending stop on the scheduled output path', () => {
+	const playingPlan = audio.planKeyShiftMutation(
+		{
+			playing: true,
+			audible: true,
+			controlActive: true,
+			pendingScheduleCount: 0,
+			presentationPending: false,
+			scheduleIntentCount: 0
+		},
+		true,
+		1
+	);
+	assert.deepEqual(playingPlan, {
+		kind: 'scheduled',
+		active: true,
+		publishedKeyShiftSemitones: null
+	});
+
 	const pendingStop = audio.planKeyShiftMutation(
 		{
 			playing: false,

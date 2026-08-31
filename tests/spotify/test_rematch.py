@@ -217,39 +217,43 @@ def test_a_resolved_purchase_is_stamped_and_logged(state_conn: sqlite3.Connectio
             "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
         ).fetchall()
     )
-    assert logged.get("playlists") == 1
-    assert logged.get("playlist_memberships") == 1, (
+    # Two of each: the Spotify playlist AND its linked ODJ twin are both
+    # promoted and bumped (the twin is the user-facing browser playlist), so
+    # both must reach the hub. One track_vendor_ids: the resolved purchase's
+    # spotify id is linked for future de-dup.
+    assert logged.get("playlists") == 2
+    assert logged.get("playlist_memberships") == 2, (
         "a membership promotion the push fence cannot see never reaches the hub"
     )
+    assert logged.get("track_vendor_ids") == 1
 
 
-def test_a_membership_that_was_already_there_is_not_re_offered(
+def test_a_resolved_purchase_is_not_re_offered_on_a_second_rematch(
     state_conn: sqlite3.Connection,
 ):
-    """An ON CONFLICT skip changed nothing.
+    """A rematch that resolves nothing must not touch the changelog.
 
-    Logging it would re-offer an untouched row on every sync, forever, which
-    is the redundant-traffic half of the changelog-retention problem.
+    Logging an untouched row would re-offer it on every sync, forever -- the
+    redundant-traffic half of the changelog-retention problem. Idempotency
+    now rests on the pending row's status rather than an ON CONFLICT skip
+    (the synthetic placeholder is replaced in place on the first pass): once
+    resolved, the second pass finds no pending row and writes nothing.
     """
     playlist_id = _seed_unmatched_playlist(state_conn)
     _insert_track(state_conn, "s-bought", "USABC2500001", title="Hello")
-    pending = fetch_pending_tracks(state_conn, playlist_id, status="pending")
-    assert len(pending) == 1
-    state_conn.execute(
-        "INSERT INTO playlist_memberships(playlist_id, stable_id, position, "
-        "updated_at, origin_device_id) VALUES (?, 's-bought', ?, ?, 'someone')",
-        (playlist_id, pending[0].position, "2026-08-30T09:00:00.000000+00:00"),
-    )
+
+    first = rematch_playlist(state_conn, playlist_id, live=True)
+    assert first.resolved_count == 1
     state_conn.execute("DELETE FROM local_changelog")
 
-    rematch_playlist(state_conn, playlist_id, live=True)
+    second = rematch_playlist(state_conn, playlist_id, live=True)
+    assert second.resolved_count == 0
 
     logged = dict(
         state_conn.execute(
             "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
         ).fetchall()
     )
-    assert logged.get("playlist_memberships") is None
-    assert logged.get("playlists") == 1, (
-        "the playlist row still moved, and that is what carries the bundle"
+    assert logged == {}, (
+        "a rematch that resolved nothing must not re-offer any row to the hub"
     )

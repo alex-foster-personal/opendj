@@ -30,6 +30,7 @@ from .state_writer import (
     open_state_rw_with_aux,
 )
 from .url_parse import parse_playlist_identifier
+from .watched import ensure_watched_defaults, watched_ids
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -73,6 +74,16 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="Promote resolved tracks into playlist_memberships.")
     p_rm.add_argument("--i-understand-the-risks", action="store_true",
                       help="Required alongside --live.")
+
+    p_watch = sub.add_parser(
+        "watched",
+        help="list / ensure durable watched Spotify playlist URLs",
+    )
+    p_watch.add_argument(
+        "--ensure",
+        action="store_true",
+        help="Write defaults if missing (idempotent).",
+    )
 
     return parser
 
@@ -226,13 +237,33 @@ def _print_summary(run) -> None:
         ws = run.write_summary
         if ws.skipped_existing_snapshot:
             print("  state: up-to-date (snapshot unchanged); no writes performed")
+            if ws.odj_playlist_id:
+                print(f"  odj link: {ws.odj_playlist_id}")
         else:
             print(
                 f"  state: wrote playlist_id={ws.playlist_id}  "
-                f"matched={ws.matched_written}  pending={ws.pending_written}"
+                f"matched={ws.matched_written}  pending={ws.pending_written}  "
+                f"synthetic={ws.synthetic_tracks_written}  "
+                f"vendor_ids={ws.vendor_ids_set}"
             )
+            if ws.odj_playlist_id:
+                created = "created" if ws.odj_created else "linked"
+                print(f"  odj ({created}): {ws.odj_playlist_id}")
             print(f"  backup: {ws.backup_path}")
             print(f"  reversal: {ws.reversal_script_path}")
+
+
+def _cmd_watched(args: argparse.Namespace) -> int:
+    if args.ensure:
+        entries = ensure_watched_defaults()
+        print(f"[spotify] watched registry ensured ({len(entries)} playlists)")
+    else:
+        entries = ensure_watched_defaults()
+    for e in entries:
+        label = f"  ({e.label})" if e.label else ""
+        print(f"{e.id}  {e.url}{label}")
+    print(f"ids: {', '.join(watched_ids())}")
+    return EXIT_OK
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -242,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_import(args)
     if args.command == "rematch":
         return _cmd_rematch(args)
+    if args.command == "watched":
+        return _cmd_watched(args)
     parser.print_help()
     return EXIT_SAFETY
 

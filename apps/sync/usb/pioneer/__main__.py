@@ -34,9 +34,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
+
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from .reader import read_usb_export, validate_invariants
 
@@ -166,6 +169,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         return 0
 
     # Apply path: import writer + rbox lazily.
+    require_writeback_enabled("module.sync.usb.pioneer.cli_write")
     try:
         from .writer_rbox import (
             OneLibraryWriteError,
@@ -258,6 +262,10 @@ def _cmd_diff_matrix(args: argparse.Namespace) -> int:
 
 
 def _cmd_agent_export(args: argparse.Namespace) -> int:
+    # Gated whole, not just --live: this subcommand drives the REAL rekordbox
+    # GUI with synthetic clicks, and a mis-click in a dry run can still mutate
+    # the library. One-way import mode refuses to operate rekordbox at all.
+    require_writeback_enabled("module.sync.usb.pioneer.agent_export")
     # Lazy import: the agent module pulls in anthropic + Quartz which
     # are not needed for the read subcommand.
     from .agent import AgentConfig, run_export_agent
@@ -279,6 +287,16 @@ def _cmd_agent_export(args: argparse.Namespace) -> int:
     print(f"→ Mode:      {'LIVE' if args.live else 'dry-run'}", file=sys.stderr)
     print(f"→ Max steps: {cfg.max_steps}", file=sys.stderr)
 
+    # Opt-in quit-after (MDT_RB_QUIT_AFTER=1): Rekordbox idles at
+    # multi-GB RSS, so close it once the export is confirmed done.
+    # Default OFF (no hidden defaults); strict parse (fail fast).
+    quit_after_raw = os.environ.get("MDT_RB_QUIT_AFTER", "0")
+    if quit_after_raw not in {"0", "1"}:
+        raise SystemExit(
+            f"MDT_RB_QUIT_AFTER must be '0' or '1', got {quit_after_raw!r}"
+        )
+    quit_after = quit_after_raw == "1"
+
     result = run_export_agent(cfg)
 
     summary = {
@@ -293,6 +311,26 @@ def _cmd_agent_export(args: argparse.Namespace) -> int:
         "final_text": result.final_text,
         "actions": result.action_summaries,
     }
+    if quit_after:
+        if result.success:
+            from .agent_actuator import quit_app
+
+            quit_ok = quit_app("rekordbox")
+            summary["quit_after"] = quit_ok
+            print(
+                "→ Quit-after: rekordbox closed"
+                if quit_ok
+                else "→ Quit-after: [WARN] rekordbox still running after "
+                "20s (export dialog may be up) - close it manually",
+                file=sys.stderr,
+            )
+        else:
+            summary["quit_after"] = False
+            print(
+                "→ Quit-after skipped: export did not succeed, leaving "
+                "rekordbox open for inspection",
+                file=sys.stderr,
+            )
     json.dump(summary, sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
     return 0 if result.success else 1

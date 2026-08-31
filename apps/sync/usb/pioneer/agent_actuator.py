@@ -447,6 +447,64 @@ def ensure_frontmost(
     return bool(final and needle in final.lower())
 
 
+def _app_process_running(app_name: str) -> bool:  # pragma: no cover - live
+    """True iff a process named exactly ``app_name`` exists.
+
+    Uses ``pgrep -x`` (exact process-name match), never ``pgrep -f``:
+    the ``-f`` form matches this Python interpreter's own command line
+    (self-match trap) and the lingering ``rekordboxAgent`` helper.
+    """
+    cp = subprocess.run(
+        ["pgrep", "-x", app_name],
+        check=False, capture_output=True, text=True,
+    )
+    return cp.returncode == 0
+
+
+def quit_app(
+    app_name: str = "rekordbox",
+    *,
+    max_wait_s: float = 20.0,
+    poll_s: float = 0.5,
+    _quit: Any = None,
+    _running_probe: Any = None,
+) -> bool:
+    """Quit ``app_name`` via AppleScript and wait for its process to exit.
+
+    Returns True once ``pgrep -x app_name`` finds nothing (also when the
+    app was not running to begin with - idempotent). Returns False if the
+    process is still alive after ``max_wait_s``: e.g. Rekordbox raised an
+    "export in progress" prompt instead of quitting.
+
+    AppleScript ``quit`` is a normal graceful shutdown (same as Cmd-Q),
+    so Rekordbox runs its own teardown - it is not a kill and does not
+    interrupt a database write mid-flight. The companion
+    ``rekordboxAgent`` helper deliberately lingers after quit and is left
+    alone. ``_quit`` / ``_running_probe`` are test hooks.
+    """
+    running = _running_probe or (lambda: _app_process_running(app_name))
+
+    def _do_quit() -> None:
+        if _quit is not None:
+            _quit()
+            return
+        subprocess.run(  # pragma: no cover - live only
+            ["osascript", "-e", f'tell application "{app_name}" to quit'],
+            check=False, capture_output=True, text=True,
+        )
+
+    if not running():
+        return True
+    _do_quit()
+    deadline = time.monotonic() + max_wait_s
+    while time.monotonic() < deadline:
+        if not running():
+            return True
+        if poll_s > 0:
+            time.sleep(poll_s)
+    return not running()
+
+
 # --------------------------------------------------------------------------- #
 # Coordinate scaling
 # --------------------------------------------------------------------------- #

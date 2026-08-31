@@ -43,6 +43,7 @@ import type {
 	CrossfaderAssign,
 	DeckAudioSnapshot,
 	DeckId,
+	DeckState,
 	EqBand,
 	HeadphoneState,
 	HotCue,
@@ -451,8 +452,66 @@ function _parseCommand(message: unknown): PerformanceCommand {
 
 // --------------------------------------------------------------- state query
 
+interface _BeatgridProjection {
+	/** The ANLZ payload these arrays were derived from, by IDENTITY. */
+	anlz: DeckState['anlz'];
+	beatgrid: PerformanceDeckSnapshot['beatgrid'];
+	beatgrid_ms: PerformanceDeckSnapshot['beatgrid_ms'];
+}
+
+/**
+ * Per-deck memo of the beatgrid projections, keyed by ANLZ object identity.
+ *
+ * queryPerformanceState() runs after EVERY command, including the null-scope
+ * continuous ones - trim, EQ, faders, crossfader - which fire once per
+ * pointermove. It rebuilt all four decks' beatgrids each time: two full array
+ * maps per deck, one of them allocating an object per beat. Measured at 3.9ms
+ * p50 and 5.4ms worst with four decks loaded (2221 beats), i.e. 42-65% of the
+ * main thread at a 120Hz pointer rate, spent rebuilding values that only change
+ * on load. It never delayed the audio - that is a different bug, already fixed -
+ * but it is what makes a knob drag feel heavy, and it gets worse as decks fill.
+ *
+ * Identity is the right key precisely because the engine REPLACES st.anlz
+ * (`st.anlz = fresh`) rather than mutating it, so a reload or a hot-cue refresh
+ * invalidates this for free and a stale grid cannot outlive its track.
+ */
+const _beatgridProjections: Record<DeckId, _BeatgridProjection | null> = {
+	1: null,
+	2: null,
+	3: null,
+	4: null
+};
+
+/** Deep-freeze the projection. The arrays are now SHARED across every snapshot
+ * instead of rebuilt, so a consumer mutating one would poison every later read;
+ * frozen, that attempt throws in strict mode instead of corrupting the cache
+ * silently. These are immutable analysis values - nothing has cause to write
+ * them - and the IPC payload is unchanged, since it crosses the boundary by
+ * structured clone or JSON. */
+function _freezeRows<T>(rows: T[]): T[] {
+	for (const row of rows) Object.freeze(row);
+	Object.freeze(rows);
+	return rows;
+}
+
+function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjection {
+	const cached = _beatgridProjections[deckId];
+	if (cached !== null && cached.anlz === deck.anlz) return cached;
+	const beats = deck.anlz?.beatgrid.beats ?? [];
+	const fresh: _BeatgridProjection = {
+		anlz: deck.anlz,
+		beatgrid: _freezeRows(
+			beats.map((beat) => ({ n: beat.n, bpm: beat.bpm, time_ms: beat.t * 1000 }))
+		),
+		beatgrid_ms: _freezeRows(beats.map((beat) => beat.t * 1000))
+	};
+	_beatgridProjections[deckId] = fresh;
+	return fresh;
+}
+
 function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	const deck = getDeckState(deckId);
+	const beatgrid = _beatgridProjection(deckId, deck);
 	return {
 		deck_id: deckId,
 		stable_id: deck.stable_id,
@@ -495,13 +554,8 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
-		beatgrid:
-			deck.anlz?.beatgrid.beats.map((beat) => ({
-				n: beat.n,
-				bpm: beat.bpm,
-				time_ms: beat.t * 1000
-			})) ?? [],
-		beatgrid_ms: deck.anlz?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [],
+		beatgrid: beatgrid.beatgrid,
+		beatgrid_ms: beatgrid.beatgrid_ms,
 		hot_cue_slots: (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as HotCueSlot[]).map((slot) => ({
 			slot,
 			cue: deck.hot_cues.find((cue) => cue.slot === slot) ?? null,

@@ -8,8 +8,11 @@ Safety:
 
 * Always opens the RB DB read-only -- no writes possible.
 * Dry-run by default (the outer SAVEPOINT is ROLLBACK-released).
-* Default source is ``paths.REKORDBOX_WORKING_DB`` (the snapshot copy,
-  never the live DB).
+* Default source is ``paths.REKORDBOX_PLAIN_DB``, the decrypted working
+  copy. ``paths.REKORDBOX_WORKING_DB`` is a byte-for-byte snapshot of the
+  live master.db and is therefore still SQLCipher-encrypted, so the CLI
+  decrypts it into the plain copy first when that copy is missing. The
+  live DB itself is never opened.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ from typing import Any, Callable, Iterator
 
 from apps.shared import hashing
 from apps.shared import paths as shared_paths
+from apps.shared import rekordbox_db
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
@@ -441,7 +445,8 @@ def _print_summary(report: IngestReport) -> None:
 
 def _warn_if_stale(rb_path: Path) -> None:
     live = shared_paths.REKORDBOX_LIVE_DB
-    if rb_path != shared_paths.REKORDBOX_WORKING_DB or not live.exists():
+    derived = (shared_paths.REKORDBOX_WORKING_DB, shared_paths.REKORDBOX_PLAIN_DB)
+    if rb_path not in derived or not live.exists():
         return
     try:
         live_mtime = live.stat().st_mtime
@@ -456,10 +461,34 @@ def _warn_if_stale(rb_path: Path) -> None:
         )
 
 
+def _resolve_rb_path(args: argparse.Namespace) -> Path:
+    """Resolve the plain-SQLite source to ingest, decrypting if needed.
+
+    ``--rb-db`` is taken literally (it must already be plain SQLite -- this
+    is the path every test and fixture uses). Otherwise we ingest the
+    decrypted working copy ``paths.REKORDBOX_PLAIN_DB``, decrypting the
+    encrypted ``paths.REKORDBOX_WORKING_DB`` snapshot into it when it is
+    absent or ``--refresh-decrypt`` was passed.
+    """
+    if args.rb_db:
+        return Path(args.rb_db)
+
+    plain, decrypted = rekordbox_db.ensure_plain_db(refresh=args.refresh_decrypt)
+    if decrypted:
+        print(f"  decrypted {shared_paths.REKORDBOX_WORKING_DB} -> {plain}")
+    else:
+        print(f"  reusing decrypted copy at {plain}")
+    return plain
+
+
 def run_cli(args: argparse.Namespace) -> int:
     """Entry point called from ``apps.shared.state.cli ingest-rb``."""
     state_path = Path(args.db) if args.db else state_paths.STATE_DB
-    rb_path = Path(args.rb_db) if args.rb_db else shared_paths.REKORDBOX_WORKING_DB
+    try:
+        rb_path = _resolve_rb_path(args)
+    except (FileNotFoundError, rekordbox_db.RekordboxDecryptError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     if not rb_path.exists():
         print(f"error: Rekordbox DB not found at {rb_path}", file=sys.stderr)
         return 1

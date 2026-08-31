@@ -90,6 +90,12 @@ from apps.shared.platform_paths import (
     load_path_map,
     resolve_asset_path,
 )
+from apps.shared.process_groups import WorkerCleanupError as _WorkerCleanupError
+from apps.shared.process_groups import (
+    group_has_live_member,
+    signal_group,
+    wait_group_gone,
+)
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 
@@ -115,8 +121,11 @@ CATEGORY_MISSING_ANALYSIS = "missing_analysis"
 CATEGORY_TODO = "todo"
 
 
-class WorkerCleanupError(RuntimeError):
-    """The worker tree may still exist, so its claim must remain held."""
+# Raised when the worker tree may still exist, so its claim must remain held.
+# Shared with the engine reaper rather than redeclared: both terminate a
+# worker group, both must be catchable by the same `except`, and a second
+# same-named class would silently escape the other's handler.
+WorkerCleanupError = _WorkerCleanupError
 
 
 @dataclass(frozen=True)
@@ -435,16 +444,6 @@ def _worker_command(audio_path: Path) -> list[str]:
     ]
 
 
-def _posix_process_group_exists(process_group_id: int) -> bool:
-    try:
-        os.killpg(process_group_id, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
     """Terminate and reap the complete worker process group before returning."""
     if _WINDOWS:
@@ -475,30 +474,29 @@ def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
             ) from exc
         return
 
+    # Every rung below asks "is anything still RUNNING in the group", never
+    # "does the pgid still exist". They are different questions on macOS: an
+    # all-zombie group (the worker died, nobody has waited on it yet) keeps its
+    # pgid and answers killpg with EPERM. Reading that as "alive" made this
+    # function burn the full WORKER_TERMINATE_GRACE_S against a corpse and then
+    # raise, falsely reporting a worker that survived SIGKILL and stranding its
+    # claim for manual recovery. See apps/shared/process_groups.
     process_group_id = proc.pid
     try:
-        try:
-            os.killpg(process_group_id, signal.SIGTERM)
-        except ProcessLookupError:
+        if signal_group(process_group_id, signal.SIGTERM) is not None:
             proc.wait()
             return
         try:
             proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
         except subprocess.TimeoutExpired:
             pass
-        if _posix_process_group_exists(process_group_id):
-            try:
-                os.killpg(process_group_id, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        if group_has_live_member(process_group_id):
+            signal_group(process_group_id, signal.SIGKILL)
         proc.wait()
-        deadline = time.monotonic() + WORKER_TERMINATE_GRACE_S
-        while _posix_process_group_exists(process_group_id):
-            if time.monotonic() >= deadline:
-                raise WorkerCleanupError(
-                    f"vocal worker process group {process_group_id} survived SIGKILL"
-                )
-            time.sleep(0.01)
+        if not wait_group_gone(process_group_id, WORKER_TERMINATE_GRACE_S):
+            raise WorkerCleanupError(
+                f"vocal worker process group {process_group_id} survived SIGKILL"
+            )
     except WorkerCleanupError:
         raise
     except BaseException as exc:

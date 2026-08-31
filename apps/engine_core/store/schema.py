@@ -97,7 +97,7 @@ creating it from scratch. Distinct from the ``VERSION_OFFSET + n`` rows so a
 reader can tell "this file predates consolidation" from "this file was born
 consolidated"."""
 
-LEGACY_SHARED_STATE_VERSION: int = 6
+LEGACY_SHARED_STATE_VERSION: int = 7
 """Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
 
 BUSY_TIMEOUT_MS: int = 5000
@@ -227,6 +227,37 @@ _STATE_CORE: tuple[str, ...] = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_url "
     "ON track_locations(stable_id, machine_id, kind, remote_url) "
     "WHERE remote_url IS NOT NULL",
+    # Legacy v6: Google sign-in. Keyed on Google's ``sub``, the only
+    # identifier Google guarantees stable; email can change. The session
+    # token is stored as a sha256 so a leaked DB is not a bag of cookies.
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        google_sub  TEXT PRIMARY KEY,
+        email       TEXT NOT NULL,
+        name        TEXT,
+        avatar_url  TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+    """
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        session_token_sha256 TEXT PRIMARY KEY,
+        google_sub           TEXT NOT NULL
+                               REFERENCES users(google_sub) ON DELETE CASCADE,
+        refresh_token        TEXT,
+        access_token         TEXT,
+        access_expires_at    TEXT,
+        created_at           TEXT NOT NULL,
+        last_seen_at         TEXT NOT NULL,
+        expires_at           TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_sub "
+    "ON auth_sessions(google_sub)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires "
+    "ON auth_sessions(expires_at)",
 )
 
 
@@ -455,6 +486,19 @@ _SPOTIFY: tuple[str, ...] = (
     "ON pending_tracks(isrc) WHERE isrc IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_pending_tracks_status "
     "ON pending_tracks(status)",
+    """
+    CREATE TABLE IF NOT EXISTS spotify_playlist_links (
+        vendor_pl_id          TEXT PRIMARY KEY,
+        spotify_playlist_id   TEXT NOT NULL REFERENCES playlists(playlist_id)
+                                ON DELETE CASCADE,
+        odj_playlist_id       TEXT NOT NULL REFERENCES playlists(playlist_id)
+                                ON DELETE CASCADE,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_spotify_playlist_links_odj "
+    "ON spotify_playlist_links(odj_playlist_id)",
 )
 
 
@@ -697,6 +741,8 @@ TABLES: dict[str, tuple[str, ...]] = {
         "adapters",
         "events",
         "track_locations",
+        "users",
+        "auth_sessions",
     ),
     "sync_infra": (
         "machines",
@@ -709,7 +755,11 @@ TABLES: dict[str, tuple[str, ...]] = {
     "analysis": ("analysis", "analysis_events"),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
-    "spotify": ("spotify_playlist_meta", "pending_tracks"),
+    "spotify": (
+        "spotify_playlist_meta",
+        "pending_tracks",
+        "spotify_playlist_links",
+    ),
     "sets": ("sets", "set_events"),
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),

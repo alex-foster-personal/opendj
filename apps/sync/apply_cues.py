@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
 
@@ -105,6 +106,7 @@ def live_run(
     def _stub_verifier(_tid: str, _unused: object = None) -> bool:
         return True
 
+    require_writeback_enabled("module.sync.apply_cues")
     with LiveWriteSession(
         target="rekordbox",
         reason="SYNC-04 cue sync (RB side)",

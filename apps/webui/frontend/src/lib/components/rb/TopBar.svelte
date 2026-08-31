@@ -26,9 +26,12 @@
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
+	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
+	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
@@ -38,6 +41,7 @@
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -185,6 +189,11 @@
 >	<!-- left: live audio health + prefetch count, then mode dropdown -->
 	<PerfMeters />
 
+	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
+	     while no stems job is active, so it costs no space the rest of the
+	     time; clicking it opens the JOBS drawer for the per-job detail. -->
+	<StemsProgress />
+
 	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
 		PERFORMANCE
 		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
@@ -267,6 +276,15 @@
 	<button class="link-btn rb-inert" disabled title={INERT_TITLE}>LINK</button>
 
 	<div class="spacer"></div>
+
+	<!-- review/feedback widget: chevron + comment pin on the LEFT-hand side of
+	     the vibe meter (FB-07, superseding the right-hand placement shipped in
+	     #523); REAL -> /api/v1/feedback, inert when the daemon does not serve
+	     it (FB-01..FB-04). Both this and the vibe meter are absolutely
+	     centred, so DOM order does not place them - the .fb-cluster anchor
+	     does. It reads first here so focus and screen-reader order match what
+	     is on screen. -->
+	<FeedbackWidget />
 
 	<!-- dead-center vibe meter: mouse movement tops it up; history in localStorage -->
 	<div class="vibe-slot">
@@ -421,12 +439,8 @@
 		</svg>
 	</button>
 
-	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="refresh">
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<path d="M9.8 6 a3.8 3.8 0 1 1 -1.1 -2.7" fill="none" stroke="currentColor" stroke-width="1.2" />
-			<path d="M9.9 0.8 L9.9 3.6 L7.1 3.6 Z" fill="currentColor" />
-		</svg>
-	</button>
+	<!-- refresh analysis: REAL -> /api/v1/ingest refresh job (was inert chrome) -->
+	<RefreshAnalysisButton />
 
 	<!-- master volume: REAL -> engine master GainNode -->
 	<div
@@ -471,6 +485,11 @@
 
 	<!-- clock: REAL, local time HH:MM -->
 	<span class="clock">{clock}</span>
+
+	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
+	     reachable from performance mode too - the shell topbar is not
+	     rendered on this route. Sized down to fit --rb-topbar-h. -->
+	<UserBauble size={20} />
 </header>
 
 <CreatePairingSheet bind:open={pairingOpen} />
@@ -780,52 +799,5 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
-	}
-
-	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
-	 * amber pulse = permission prompt pending, green = mapped device up. */
-	.midi-label {
-		background: transparent;
-		border: none;
-		padding: 0;
-		font-family: var(--rb-font);
-		font-size: var(--rb-fs-label);
-		letter-spacing: 0.08em;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.midi-label.st-grey {
-		color: var(--rb-text-dim);
-		opacity: 0.6;
-	}
-	.midi-label.st-grey:hover {
-		opacity: 1;
-	}
-	.midi-label.st-green {
-		color: var(--rb-green);
-		opacity: 1;
-	}
-	.midi-label.st-red {
-		color: var(--rb-red);
-		opacity: 1;
-	}
-	.midi-glyph {
-		margin-left: 3px;
-		font-size: 10px;
-		font-weight: 700;
-	}
-	.midi-label.st-amber {
-		color: var(--rb-orange);
-		opacity: 1;
-		animation: midi-pulse 1s ease-in-out infinite;
-	}
-	@keyframes midi-pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.35;
-		}
 	}
 </style>

@@ -1,6 +1,161 @@
 {
   "components": {
     "schemas": {
+      "AccessProbeOut": {
+        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
+        "properties": {
+          "denied": {
+            "title": "Denied",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "readable",
+          "denied",
+          "detail"
+        ],
+        "title": "AccessProbeOut",
+        "type": "object"
+      },
+      "AccountDeleteOut": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "google_sub",
+          "message"
+        ],
+        "title": "AccountDeleteOut",
+        "type": "object"
+      },
+      "AccountOut": {
+        "properties": {
+          "authorisation_enforced": {
+            "title": "Authorisation Enforced",
+            "type": "boolean"
+          },
+          "authorisation_note": {
+            "title": "Authorisation Note",
+            "type": "string"
+          },
+          "local_data": {
+            "items": {
+              "$ref": "#/components/schemas/LocalDataOut"
+            },
+            "title": "Local Data",
+            "type": "array"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "privacy_policy_url": {
+            "title": "Privacy Policy Url",
+            "type": "string"
+          },
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user",
+          "plan",
+          "authorisation_enforced",
+          "authorisation_note",
+          "local_data",
+          "privacy_policy_url"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
+      "AccountUserOut": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "google_sub",
+          "email",
+          "name",
+          "avatar_url",
+          "created_at"
+        ],
+        "title": "AccountUserOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -243,6 +398,65 @@
         "title": "ApplyRequest",
         "type": "object"
       },
+      "ArchiveOut": {
+        "properties": {
+          "archived_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived To"
+          },
+          "comments_archived": {
+            "title": "Comments Archived",
+            "type": "integer"
+          },
+          "general_archived": {
+            "title": "General Archived",
+            "type": "boolean"
+          },
+          "todo_feedback_archived": {
+            "title": "Todo Feedback Archived",
+            "type": "integer"
+          },
+          "todos_archived": {
+            "title": "Todos Archived",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "archived_to",
+          "todos_archived",
+          "todo_feedback_archived",
+          "comments_archived",
+          "general_archived"
+        ],
+        "title": "ArchiveOut",
+        "type": "object"
+      },
+      "AssistantStatusOut": {
+        "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "model"
+        ],
+        "title": "AssistantStatusOut",
+        "type": "object"
+      },
       "AutoCueOut": {
         "description": "One PROPOSED cue. ``kind`` is intro|drop|break|outro|'' (unlabelled).",
         "properties": {
@@ -425,6 +639,33 @@
         "title": "BeatgridIssueOut",
         "type": "object"
       },
+      "Body_upload_api_v1_ingest_upload_post": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "files",
+          "batch"
+        ],
+        "title": "Body_upload_api_v1_ingest_upload_post",
+        "type": "object"
+      },
       "BrokenTrackList": {
         "properties": {
           "total": {
@@ -589,6 +830,169 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
+      "BuildInfoOut": {
+        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "built_at_kind": {
+            "enum": [
+              "payload-build",
+              "head-commit"
+            ],
+            "title": "Built At Kind",
+            "type": "string"
+          },
+          "built_at_utc": {
+            "title": "Built At Utc",
+            "type": "string"
+          },
+          "bundle_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Identifier"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "git_branch": {
+            "title": "Git Branch",
+            "type": "string"
+          },
+          "git_dirty": {
+            "title": "Git Dirty",
+            "type": "boolean"
+          },
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
+          },
+          "git_sha_full": {
+            "title": "Git Sha Full",
+            "type": "string"
+          },
+          "lane_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Label"
+          },
+          "manifest_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Path"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "source": {
+            "enum": [
+              "payload",
+              "repo"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "engine_version",
+          "git_sha",
+          "git_sha_full",
+          "git_branch",
+          "git_dirty",
+          "built_at_utc",
+          "built_at_kind"
+        ],
+        "title": "BuildInfoOut",
+        "type": "object"
+      },
+      "BuildStampOut": {
+        "description": "Provenance of the build that recorded a piece of feedback.\n\nExactly one of the two shapes: a resolved (git_sha, built_at_utc, source)\ntriple, or an explicit error naming why resolution failed. Never blank.",
+        "properties": {
+          "built_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Built At Utc"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "BuildStampOut",
+        "type": "object"
+      },
       "BulkEditIn": {
         "properties": {
           "expected_etags": {
@@ -701,6 +1105,49 @@
           "etag"
         ],
         "title": "BulkEditRowOut",
+        "type": "object"
+      },
+      "ChatIn": {
+        "description": "A whole conversation, resent every turn -- the engine stores none of it.",
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "ChatIn",
+        "type": "object"
+      },
+      "ChatMessage": {
+        "description": "One turn. Same three roles OpenRouter accepts, no tool calls.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessage",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -938,6 +1385,62 @@
         "title": "ClientEventOut",
         "type": "object"
       },
+      "ClientOut": {
+        "properties": {
+          "app_version": {
+            "title": "App Version",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "in_use": {
+            "description": "Open AND the page is visible on screen.",
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "is_open": {
+            "description": "Checked in within the in-use window.",
+            "title": "Is Open",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "description": "Server wall-clock time of the last heartbeat.",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "page_visible": {
+            "title": "Page Visible",
+            "type": "boolean"
+          },
+          "seconds_since_seen": {
+            "description": "Server monotonic seconds since it checked in.",
+            "title": "Seconds Since Seen",
+            "type": "number"
+          },
+          "surface": {
+            "enum": [
+              "desktop-shell",
+              "browser"
+            ],
+            "title": "Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "surface",
+          "page_visible",
+          "app_version",
+          "last_seen_at",
+          "seconds_since_seen",
+          "is_open",
+          "in_use"
+        ],
+        "title": "ClientOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -1028,6 +1531,159 @@
         "title": "ClustersOut",
         "type": "object"
       },
+      "CommentCreateIn": {
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "page": {
+            "minLength": 1,
+            "title": "Page",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "x_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "X Pct",
+            "type": "number"
+          },
+          "y_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Y Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x_pct",
+          "y_pct",
+          "page",
+          "text"
+        ],
+        "title": "CommentCreateIn",
+        "type": "object"
+      },
+      "CommentListOut": {
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/CommentOut"
+            },
+            "title": "Comments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "title": "CommentListOut",
+        "type": "object"
+      },
+      "CommentOut": {
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "build": {
+            "$ref": "#/components/schemas/BuildStampOut"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "page": {
+            "title": "Page",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "x_pct": {
+            "title": "X Pct",
+            "type": "number"
+          },
+          "y_pct": {
+            "title": "Y Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "x_pct",
+          "y_pct",
+          "anchor",
+          "page",
+          "text",
+          "created_at",
+          "build"
+        ],
+        "title": "CommentOut",
+        "type": "object"
+      },
+      "ConfigIn": {
+        "properties": {
+          "enabled": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Enabled",
+            "type": "object"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ConfigIn",
+        "type": "object"
+      },
+      "ConfigOut": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps",
+          "path"
+        ],
+        "title": "ConfigOut",
+        "type": "object"
+      },
       "CopilotTrackOut": {
         "properties": {
           "artist": {
@@ -1099,6 +1755,42 @@
           "energy"
         ],
         "title": "CopilotTrackOut",
+        "type": "object"
+      },
+      "CoverageOut": {
+        "properties": {
+          "generated_at": {
+            "title": "Generated At",
+            "type": "number"
+          },
+          "missing": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Missing",
+            "type": "object"
+          },
+          "on_disk": {
+            "title": "On Disk",
+            "type": "integer"
+          },
+          "total_tracks": {
+            "title": "Total Tracks",
+            "type": "integer"
+          },
+          "unreachable": {
+            "title": "Unreachable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tracks",
+          "on_disk",
+          "unreachable",
+          "missing",
+          "generated_at"
+        ],
+        "title": "CoverageOut",
         "type": "object"
       },
       "DecisionIn": {
@@ -1298,6 +1990,42 @@
         "title": "EngineHealthOut",
         "type": "object"
       },
+      "EntitlementsOut": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureEntitlementOut"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/RefusalOut"
+          }
+        },
+        "required": [
+          "provider",
+          "plan",
+          "refusal",
+          "features"
+        ],
+        "title": "EntitlementsOut",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "details": {
@@ -1393,6 +2121,92 @@
           "beats"
         ],
         "title": "FallbackBeatgridOut",
+        "type": "object"
+      },
+      "FeatureEntitlementOut": {
+        "properties": {
+          "entitled": {
+            "title": "Entitled",
+            "type": "boolean"
+          },
+          "feature_id": {
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "quota": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota"
+          },
+          "server_side": {
+            "title": "Server Side",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "feature_id",
+          "label",
+          "entitled",
+          "quota",
+          "server_side",
+          "note"
+        ],
+        "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FileProbeOut": {
+        "description": "One real path and whether it is actually there.",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "required": [
+          "path",
+          "exists"
+        ],
+        "title": "FileProbeOut",
         "type": "object"
       },
       "FindReplaceApplyIn": {
@@ -1628,6 +2442,291 @@
         "title": "FindReplaceRowOut",
         "type": "object"
       },
+      "FlagOut": {
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "flag_id": {
+            "title": "Flag Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "overridden": {
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "retire_by": {
+            "title": "Retire By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flag_id",
+          "enabled",
+          "default",
+          "overridden",
+          "owner",
+          "note",
+          "retire_by"
+        ],
+        "title": "FlagOut",
+        "type": "object"
+      },
+      "FlagsOut": {
+        "properties": {
+          "file_present": {
+            "title": "File Present",
+            "type": "boolean"
+          },
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FlagOut"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "file_present",
+          "flags"
+        ],
+        "title": "FlagsOut",
+        "type": "object"
+      },
+      "FolderImportIn": {
+        "description": "Point at one or more folders of audio files. No rekordbox involved.",
+        "properties": {
+          "folders": {
+            "description": "absolute paths to walk; at least one",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Folders",
+            "type": "array"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "import at most N files",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "FolderImportIn",
+        "type": "object"
+      },
+      "FolderLastImportOut": {
+        "description": "What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.\n\nA different model rather than optional fields on the rekordbox one,\nbecause the two describe different work: there is no decrypt here, no\nplaylists, and -- the field that matters --\n``tracks_without_analysis``, which equals the tracks written.",
+        "properties": {
+          "analysis_available": {
+            "default": false,
+            "title": "Analysis Available",
+            "type": "boolean"
+          },
+          "analysis_detail": {
+            "title": "Analysis Detail",
+            "type": "string"
+          },
+          "files_dataless": {
+            "title": "Files Dataless",
+            "type": "integer"
+          },
+          "files_seen": {
+            "title": "Files Seen",
+            "type": "integer"
+          },
+          "files_without_tags": {
+            "title": "Files Without Tags",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "folder",
+            "default": "folder",
+            "title": "Kind",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "tracks_without_analysis": {
+            "title": "Tracks Without Analysis",
+            "type": "integer"
+          },
+          "tracks_written": {
+            "title": "Tracks Written",
+            "type": "integer"
+          },
+          "unreadable_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "files_seen",
+          "files_dataless",
+          "files_without_tags",
+          "tracks",
+          "tracks_written",
+          "tracks_without_analysis",
+          "analysis_detail"
+        ],
+        "title": "FolderLastImportOut",
+        "type": "object"
+      },
+      "FolderScanOut": {
+        "description": "What a candidate folder actually holds, before anything is imported.\n\n``audio_files`` counts what could be READ. When ``denied`` is true that\nnumber is not a count of the folder, it is a count of nothing, and\n``detail`` says so -- which is the difference between \"this folder is\nempty\" and \"macOS would not let me look\".",
+        "properties": {
+          "audio_files": {
+            "title": "Audio Files",
+            "type": "integer"
+          },
+          "denied": {
+            "title": "Denied",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "how_to_grant": {
+            "title": "How To Grant",
+            "type": "string"
+          },
+          "icloud_placeholders": {
+            "title": "Icloud Placeholders",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "sample": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "readable",
+          "denied",
+          "detail",
+          "audio_files",
+          "icloud_placeholders",
+          "how_to_grant"
+        ],
+        "title": "FolderScanOut",
+        "type": "object"
+      },
+      "GeneralNoteOut": {
+        "properties": {
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildStampOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "text",
+          "updated_at",
+          "build"
+        ],
+        "title": "GeneralNoteOut",
+        "type": "object"
+      },
+      "GeneralNotePutIn": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "GeneralNotePutIn",
+        "type": "object"
+      },
       "GenerateIn": {
         "properties": {
           "stable_id": {
@@ -1808,6 +2907,42 @@
           "native_available"
         ],
         "title": "HealthWaveformMaterialization",
+        "type": "object"
+      },
+      "HeartbeatIn": {
+        "properties": {
+          "app_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "App Version",
+            "type": "string"
+          },
+          "client_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "page_visible": {
+            "title": "Page Visible",
+            "type": "boolean"
+          },
+          "surface": {
+            "enum": [
+              "desktop-shell",
+              "browser"
+            ],
+            "title": "Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "surface",
+          "page_visible",
+          "app_version"
+        ],
+        "title": "HeartbeatIn",
         "type": "object"
       },
       "HelloRequest": {
@@ -2238,6 +3373,157 @@
         "title": "LabelRequest",
         "type": "object"
       },
+      "LastImportOut": {
+        "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
+        "properties": {
+          "analyses_expected": {
+            "title": "Analyses Expected",
+            "type": "integer"
+          },
+          "analyses_linked": {
+            "title": "Analyses Linked",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "ingested_from": {
+            "title": "Ingested From",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rekordbox",
+            "default": "rekordbox",
+            "title": "Kind",
+            "type": "string"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "rekordbox_tracks": {
+            "title": "Rekordbox Tracks",
+            "type": "integer"
+          },
+          "rekordbox_was_running": {
+            "title": "Rekordbox Was Running",
+            "type": "boolean"
+          },
+          "share_root": {
+            "title": "Share Root",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_was_encrypted": {
+            "title": "Source Was Encrypted",
+            "type": "boolean"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "unreadable_music_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Music Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "source",
+          "source_was_encrypted",
+          "ingested_from",
+          "tracks",
+          "playlists",
+          "analyses_linked",
+          "analyses_expected",
+          "rekordbox_tracks",
+          "share_root",
+          "rekordbox_was_running"
+        ],
+        "title": "LastImportOut",
+        "type": "object"
+      },
+      "LocalDataOut": {
+        "description": "One store on this machine that holds something about the account.",
+        "properties": {
+          "contents": {
+            "title": "Contents",
+            "type": "string"
+          },
+          "delete_with": {
+            "title": "Delete With",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "location",
+          "contents",
+          "delete_with"
+        ],
+        "title": "LocalDataOut",
+        "type": "object"
+      },
+      "LoginIn": {
+        "properties": {
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          }
+        },
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "LoginOut": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "state",
+          "redirect_uri"
+        ],
+        "title": "LoginOut",
+        "type": "object"
+      },
       "MachineModel": {
         "description": "One ``machines`` row on the wire.",
         "properties": {
@@ -2394,6 +3680,53 @@
           "unhydrated_pinned_count"
         ],
         "title": "MachineOverview",
+        "type": "object"
+      },
+      "MeOut": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "google_sub",
+          "email",
+          "name",
+          "avatar_url",
+          "created_at"
+        ],
+        "title": "MeOut",
         "type": "object"
       },
       "MemberOut": {
@@ -2936,6 +4269,47 @@
         "title": "PairingOut",
         "type": "object"
       },
+      "PassiveActivityOut": {
+        "description": "Backstop signal: ordinary traffic classified by User-Agent.\n\nTelemetry and health paths are excluded, so an agent polling this\nendpoint cannot manufacture the activity it is asking about.",
+        "properties": {
+          "by_surface": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceActivityOut"
+            },
+            "title": "By Surface",
+            "type": "object"
+          },
+          "last_request_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Request At"
+          },
+          "seconds_since_last_request": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Last Request"
+          }
+        },
+        "required": [
+          "last_request_at",
+          "seconds_since_last_request",
+          "by_surface"
+        ],
+        "title": "PassiveActivityOut",
+        "type": "object"
+      },
       "PendingTrackOut": {
         "description": "One persisted, unmatched Spotify playlist entry.",
         "properties": {
@@ -3026,6 +4400,39 @@
         "title": "PendingTrackOut",
         "type": "object"
       },
+      "PermissionsOut": {
+        "description": "The folder-access answer, and what to do about a refusal.",
+        "properties": {
+          "all_readable": {
+            "title": "All Readable",
+            "type": "boolean"
+          },
+          "denied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Denied",
+            "type": "array"
+          },
+          "how_to_grant": {
+            "title": "How To Grant",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/AccessProbeOut"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "all_readable",
+          "how_to_grant"
+        ],
+        "title": "PermissionsOut",
+        "type": "object"
+      },
       "PlanModel": {
         "properties": {
           "authorization_id": {
@@ -3098,6 +4505,41 @@
           "track_updates"
         ],
         "title": "PlanModel",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "plan_id",
+          "label",
+          "note",
+          "provider"
+        ],
+        "title": "PlanOut",
         "type": "object"
       },
       "PlanRequest": {
@@ -4287,7 +5729,7 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nartwork/analysis False, no cues, no genre) while ``folder_path``,\n``file_exists`` and ``quality`` still carry the state layer's own disk\ntruth. See :func:`_local_rb_meta`.",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
@@ -4371,12 +5813,23 @@
             "type": "string"
           },
           "vendor": {
+            "enum": [
+              "rekordbox",
+              "local"
+            ],
             "title": "Vendor",
             "type": "string"
           },
           "vendor_id": {
-            "title": "Vendor Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
           }
         },
         "required": [
@@ -4634,6 +6087,229 @@
           "recoverable"
         ],
         "title": "RecorderStatus",
+        "type": "object"
+      },
+      "RefreshIn": {
+        "properties": {
+          "batch_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Dir"
+          }
+        },
+        "title": "RefreshIn",
+        "type": "object"
+      },
+      "RefreshStatusOut": {
+        "properties": {
+          "current_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "log_tail": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Log Tail",
+            "type": "array"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "recently_done_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recently Done Ids",
+            "type": "array"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "step_done": {
+            "title": "Step Done",
+            "type": "integer"
+          },
+          "step_total": {
+            "title": "Step Total",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "steps_completed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps Completed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "running",
+          "phase",
+          "steps",
+          "current_step",
+          "step_done",
+          "step_total",
+          "steps_completed",
+          "started_at",
+          "finished_at",
+          "error",
+          "log_tail",
+          "recently_done_ids"
+        ],
+        "title": "RefreshStatusOut",
+        "type": "object"
+      },
+      "RefusalOut": {
+        "description": "The one refusal shape, so a control and its tooltip cannot disagree.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "title": "Ui Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "ui_title"
+        ],
+        "title": "RefusalOut",
+        "type": "object"
+      },
+      "RekordboxDetectionOut": {
+        "description": "The 'detect rekordbox' step, reported without touching the install.",
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "import_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source"
+          },
+          "import_source_encrypted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source Encrypted"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "key_available": {
+            "title": "Key Available",
+            "type": "boolean"
+          },
+          "key_detail": {
+            "title": "Key Detail",
+            "type": "string"
+          },
+          "live_db": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "plain_copy": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "rekordbox_running": {
+            "title": "Rekordbox Running",
+            "type": "boolean"
+          },
+          "share_dir": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "working_copy": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          }
+        },
+        "required": [
+          "installed",
+          "live_db",
+          "share_dir",
+          "working_copy",
+          "plain_copy",
+          "key_available",
+          "key_detail",
+          "rekordbox_running"
+        ],
+        "title": "RekordboxDetectionOut",
         "type": "object"
       },
       "RelocateApplyIn": {
@@ -4932,6 +6608,10 @@
             ],
             "title": "Genre"
           },
+          "has_rb_mapping": {
+            "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -4992,6 +6672,11 @@
             ],
             "title": "Rating"
           },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
+          },
           "stable_id": {
             "title": "Stable Id",
             "type": "string"
@@ -5036,6 +6721,7 @@
           "quality",
           "vocals",
           "stems",
+          "has_rb_mapping",
           "match_context"
         ],
         "title": "SearchHit",
@@ -5145,6 +6831,152 @@
           "groups"
         ],
         "title": "SettingsOut",
+        "type": "object"
+      },
+      "SetupDismissIn": {
+        "properties": {
+          "dismissed": {
+            "default": true,
+            "title": "Dismissed",
+            "type": "boolean"
+          }
+        },
+        "title": "SetupDismissIn",
+        "type": "object"
+      },
+      "SetupImportIn": {
+        "description": "Import options. Both are the same knobs the CLI exposes.",
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ingest at most N tracks (smoke-test aid)",
+            "title": "Limit"
+          },
+          "refresh_decrypt": {
+            "default": false,
+            "description": "re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt",
+            "title": "Refresh Decrypt",
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "explicit rekordbox database to read; omit to auto-detect",
+            "title": "Source"
+          }
+        },
+        "title": "SetupImportIn",
+        "type": "object"
+      },
+      "SetupStatusOut": {
+        "description": "Everything the wizard needs to decide whether to show itself.",
+        "properties": {
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dev_mode": {
+            "title": "Dev Mode",
+            "type": "boolean"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "folder_stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Folder Stages",
+            "type": "array"
+          },
+          "last_import": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "folder": "#/components/schemas/FolderLastImportOut",
+                    "rekordbox": "#/components/schemas/LastImportOut"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LastImportOut"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FolderLastImportOut"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import"
+          },
+          "library_empty": {
+            "title": "Library Empty",
+            "type": "boolean"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/PermissionsOut"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "rekordbox": {
+            "$ref": "#/components/schemas/RekordboxDetectionOut"
+          },
+          "should_show_wizard": {
+            "title": "Should Show Wizard",
+            "type": "boolean"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "library_empty",
+          "tracks",
+          "playlists",
+          "state_db",
+          "data_dir",
+          "dismissed",
+          "should_show_wizard",
+          "dev_mode",
+          "stages",
+          "folder_stages",
+          "rekordbox",
+          "permissions"
+        ],
+        "title": "SetupStatusOut",
         "type": "object"
       },
       "SmartlistConflictBody": {
@@ -5456,6 +7288,160 @@
         "title": "StemPartOut",
         "type": "object"
       },
+      "StemTierOut": {
+        "description": "One real separation rung, straight out of apps.stems.tiers.",
+        "properties": {
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unavailable_because": {
+            "title": "Unavailable Because",
+            "type": "string"
+          },
+          "where": {
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "where",
+          "availability",
+          "unavailable_because"
+        ],
+        "title": "StemTierOut",
+        "type": "object"
+      },
+      "StemsPlanOut": {
+        "description": "What separating this library at this tier would take.",
+        "properties": {
+          "estimate_seconds": {
+            "description": "wall-clock floor for the pending batch, GPU side only",
+            "title": "Estimate Seconds",
+            "type": "number"
+          },
+          "estimate_usd": {
+            "description": "GPU cost of the pending batch",
+            "title": "Estimate Usd",
+            "type": "number"
+          },
+          "pending": {
+            "description": "audio on disk, no bundle yet: the work",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "already has a stem bundle on disk",
+            "title": "Ready",
+            "type": "integer"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "tier_name": {
+            "title": "Tier Name",
+            "type": "string"
+          },
+          "total": {
+            "description": "library rows carrying a file path",
+            "title": "Total",
+            "type": "integer"
+          },
+          "transport": {
+            "description": "how this build reaches a GPU: relay or direct",
+            "title": "Transport",
+            "type": "string"
+          },
+          "transport_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why a run cannot start on this build; null when it can",
+            "title": "Transport Refusal"
+          },
+          "unavailable": {
+            "description": "library row exists, its file does not",
+            "title": "Unavailable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tier",
+          "tier_name",
+          "total",
+          "pending",
+          "ready",
+          "unavailable",
+          "estimate_seconds",
+          "estimate_usd",
+          "transport"
+        ],
+        "title": "StemsPlanOut",
+        "type": "object"
+      },
+      "StemsSetupOut": {
+        "description": "Whether a library-wide separation pass can be started here.\n\nThe agent-facing half of the wizard's stems step. The browser mounts\naf--stems-modal's StemsPrompt component, which asks\n``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same\nverdict, and is told exactly which two calls drive the flow.\n\n``available`` is EVIDENCE, not a constant: it reports whether the\n``stems.separate`` job kind is actually registered in this engine. The\n``tiers`` list is real data either way, never a placeholder.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "enqueue_endpoint": {
+            "title": "Enqueue Endpoint",
+            "type": "string"
+          },
+          "job_kind": {
+            "title": "Job Kind",
+            "type": "string"
+          },
+          "per_track_endpoint": {
+            "title": "Per Track Endpoint",
+            "type": "string"
+          },
+          "plan_endpoint": {
+            "title": "Plan Endpoint",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/StemTierOut"
+            },
+            "title": "Tiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "reason",
+          "job_kind",
+          "plan_endpoint",
+          "enqueue_endpoint",
+          "per_track_endpoint",
+          "tiers"
+        ],
+        "title": "StemsSetupOut",
+        "type": "object"
+      },
       "SuggestNextIn": {
         "properties": {
           "explain": {
@@ -5659,6 +7645,38 @@
           "explain_text"
         ],
         "title": "SuggestionOut",
+        "type": "object"
+      },
+      "SurfaceActivityOut": {
+        "properties": {
+          "last_request_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Request At"
+          },
+          "seconds_since_request": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Request"
+          }
+        },
+        "required": [
+          "last_request_at",
+          "seconds_since_request"
+        ],
+        "title": "SurfaceActivityOut",
         "type": "object"
       },
       "SyncPolicyOut": {
@@ -5970,8 +7988,207 @@
         "title": "TierOut",
         "type": "object"
       },
+      "TodoCreateIn": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "TodoCreateIn",
+        "type": "object"
+      },
+      "TodoListOut": {
+        "properties": {
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/TodoOut"
+            },
+            "title": "Todos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "todos"
+        ],
+        "title": "TodoListOut",
+        "type": "object"
+      },
+      "TodoOut": {
+        "description": "Response model: every field required, so the generated client types\nsay what the server always sends (no `possibly undefined` on the UI).",
+        "properties": {
+          "build": {
+            "$ref": "#/components/schemas/BuildStampOut"
+          },
+          "chosen_option": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen Option"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "feedback": {
+            "title": "Feedback",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "detail",
+          "options",
+          "done",
+          "chosen_option",
+          "feedback",
+          "created_at",
+          "updated_at",
+          "build"
+        ],
+        "title": "TodoOut",
+        "type": "object"
+      },
+      "TodoPatchIn": {
+        "properties": {
+          "chosen_option": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen Option"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "TodoPatchIn",
+        "type": "object"
+      },
       "TrackListItemOut": {
-        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.\nvocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).\nstems: demucs bundle summary for the browser Stems column (V/I/D), or\n``{status: none}`` when no local bundle exists.",
+        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.\nvocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).\nstems: demucs bundle summary for the browser Stems column (V/I/D), or\n``{status: none}`` when no local bundle exists.\nhas_rb_mapping: whether GET /tracks/{sid}/rb-meta can resolve this row.\nFalse for a locally imported or djay-only track, whose rb-meta 404s BY\nCONTRACT; the browser skips the per-row fetch rather than provoke it.",
         "properties": {
           "album": {
             "anyOf": [
@@ -6035,6 +8252,10 @@
               }
             ],
             "title": "File Path"
+          },
+          "has_rb_mapping": {
+            "title": "Has Rb Mapping",
+            "type": "boolean"
           },
           "key": {
             "anyOf": [
@@ -6165,7 +8386,8 @@
           "file_exists",
           "quality",
           "vocals",
-          "stems"
+          "stems",
+          "has_rb_mapping"
         ],
         "title": "TrackListItemOut",
         "type": "object"
@@ -6446,6 +8668,10 @@
             ],
             "title": "Genre"
           },
+          "has_rb_mapping": {
+            "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
           "is_streaming": {
             "title": "Is Streaming",
             "type": "boolean"
@@ -6502,6 +8728,11 @@
             ],
             "title": "Rating"
           },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
+          },
           "stable_id": {
             "title": "Stable Id",
             "type": "string"
@@ -6545,7 +8776,8 @@
           "is_streaming",
           "quality",
           "vocals",
-          "stems"
+          "stems",
+          "has_rb_mapping"
         ],
         "title": "TrackRowOut",
         "type": "object"
@@ -6727,6 +8959,175 @@
         "title": "UiPrefsPatch",
         "type": "object"
       },
+      "UploadFileResult": {
+        "properties": {
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "fingerprint_method": {
+            "title": "Fingerprint Method",
+            "type": "string"
+          },
+          "skipped_duplicate": {
+            "title": "Skipped Duplicate",
+            "type": "boolean"
+          },
+          "staged_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staged Path"
+          }
+        },
+        "required": [
+          "filename",
+          "staged_path",
+          "skipped_duplicate",
+          "duplicate_of",
+          "duration_s",
+          "fingerprint_method"
+        ],
+        "title": "UploadFileResult",
+        "type": "object"
+      },
+      "UploadOut": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "dest_dir": {
+            "title": "Dest Dir",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/UploadFileResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch",
+          "dest_dir",
+          "results"
+        ],
+        "title": "UploadOut",
+        "type": "object"
+      },
+      "UsageClientsOut": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientOut"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "in_use_window_seconds": {
+            "title": "In Use Window Seconds",
+            "type": "number"
+          },
+          "passive_activity": {
+            "$ref": "#/components/schemas/PassiveActivityOut"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/UsageSummaryOut"
+          }
+        },
+        "required": [
+          "clients",
+          "summary",
+          "passive_activity",
+          "in_use_window_seconds"
+        ],
+        "title": "UsageClientsOut",
+        "type": "object"
+      },
+      "UsageSummaryOut": {
+        "properties": {
+          "any_client_in_use": {
+            "title": "Any Client In Use",
+            "type": "boolean"
+          },
+          "any_client_open": {
+            "title": "Any Client Open",
+            "type": "boolean"
+          },
+          "desktop_shell_open": {
+            "title": "Desktop Shell Open",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "any_client_open",
+          "any_client_in_use",
+          "desktop_shell_open"
+        ],
+        "title": "UsageSummaryOut",
+        "type": "object"
+      },
+      "UsbCapabilityDetail": {
+        "properties": {
+          "code": {
+            "const": "usb_volume_discovery_unavailable",
+            "title": "Code",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "reason"
+        ],
+        "title": "UsbCapabilityDetail",
+        "type": "object"
+      },
+      "UsbCapabilityErrorOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UsbCapabilityDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbCapabilityErrorOut",
+        "type": "object"
+      },
       "UsbVolumeOut": {
         "properties": {
           "hide_reason": {
@@ -6813,80 +9214,6 @@
           "name"
         ],
         "title": "UsbVolumeOut",
-        "type": "object"
-      },
-      "UsbVolumePost": {
-        "description": "DEV / simulate: inject a fake present volume (never touches disk).",
-        "properties": {
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "kind": {
-            "default": "music",
-            "enum": [
-              "rekordbox",
-              "djay",
-              "music",
-              "unknown"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "mount_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "/Volumes/FAKE-USB",
-            "title": "Mount Path"
-          },
-          "name": {
-            "default": "FAKE USB",
-            "title": "Name",
-            "type": "string"
-          },
-          "present": {
-            "default": true,
-            "title": "Present",
-            "type": "boolean"
-          },
-          "protocol": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "USB",
-            "title": "Protocol"
-          },
-          "role": {
-            "default": "usb_stick",
-            "enum": [
-              "usb_stick",
-              "mounted_drive",
-              "disk_image",
-              "other"
-            ],
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "title": "UsbVolumePost",
         "type": "object"
       },
       "UsbVolumesOut": {
@@ -7089,6 +9416,34 @@
         "title": "VoiceProbeResponse",
         "type": "object"
       },
+      "WriteSurfaceOut": {
+        "properties": {
+          "entrypoint": {
+            "title": "Entrypoint",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "surface_id": {
+            "title": "Surface Id",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface_id",
+          "kind",
+          "entrypoint",
+          "target"
+        ],
+        "title": "WriteSurfaceOut",
+        "type": "object"
+      },
       "WritebackApplyIn": {
         "properties": {
           "confirmed": {
@@ -7249,6 +9604,47 @@
         "title": "WritebackCapabilitiesOut",
         "type": "object"
       },
+      "WritebackGateOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env_var": {
+            "title": "Env Var",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "surfaces": {
+            "items": {
+              "$ref": "#/components/schemas/WriteSurfaceOut"
+            },
+            "title": "Surfaces",
+            "type": "array"
+          },
+          "ui_title": {
+            "title": "Ui Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "code",
+          "message",
+          "ui_title",
+          "env_var",
+          "surfaces"
+        ],
+        "title": "WritebackGateOut",
+        "type": "object"
+      },
       "WritebackPlanOut": {
         "properties": {
           "added": {
@@ -7349,6 +9745,7 @@
       "WritebackRollbackIn": {
         "properties": {
           "backup_id": {
+            "pattern": "^[0-9a-f]{32}$",
             "title": "Backup Id",
             "type": "string"
           },
@@ -7972,6 +10369,302 @@
         ]
       }
     },
+    "/api/v1/account": {
+      "delete": {
+        "description": "Erase the user row and, by FK cascade, every session it owns.\n\nThe deletion half of https://open-dj.com/privacy (ACCT-03). The session\ncookie is cleared on the way out, because leaving the browser holding a\ntoken for a row that no longer exists would leave the UI showing a signed\nin state that resolves to nobody.",
+        "operationId": "delete_account_api_v1_account_delete",
+        "parameters": [
+          {
+            "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
+              "title": "Confirm",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "account"
+        ]
+      },
+      "get": {
+        "description": "Identity, plan, and the full local-storage disclosure.\n\nAnswers signed OUT too, with ``user: null``: what is stored and what is\ngated are questions somebody is entitled to ask BEFORE handing over an\nidentity, and refusing to answer until they sign in would be a strange\nreading of a privacy disclosure.",
+        "operationId": "read_account_api_v1_account_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Account",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/admin/quality-ratchet": {
+      "get": {
+        "operationId": "get_quality_ratchet_api_v1_admin_quality_ratchet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Quality Ratchet Api V1 Admin Quality Ratchet Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Quality Ratchet",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/assistant/chat": {
+      "post": {
+        "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
+        "operationId": "assistant_chat_api_v1_assistant_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {}
+            },
+            "description": "The completion, streamed as plain UTF-8 text."
+          },
+          "409": {
+            "description": "No OPENROUTER_API_KEY is configured."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "OpenRouter refused or could not be reached."
+          }
+        },
+        "summary": "Assistant Chat",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/status": {
+      "get": {
+        "description": "Whether a chat can work at all, and which model would answer it.",
+        "operationId": "assistant_status_api_v1_assistant_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Status",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "description": "Google's loopback redirect target. Plants the cookie, returns to the SPA.",
+        "operationId": "finish_login_api_v1_auth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Begin sign-in: mint CSRF state + PKCE and return the consent URL.\n\nThe caller (browser or agent) is responsible for actually visiting\n``authorization_url``. Nothing is persisted until the callback lands.",
+        "operationId": "start_login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Drop the session server-side and clear the cookie.\n\nIdempotent: signing out when already signed out is a 204, not an error.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "operationId": "whoami_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Whoami",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -8100,6 +10793,30 @@
         "summary": "Get Ratings File",
         "tags": [
           "bench"
+        ]
+      }
+    },
+    "/api/v1/build-info": {
+      "get": {
+        "operationId": "build_info_api_v1_build_info_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildInfoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "this build cannot state its own identity"
+          }
+        },
+        "summary": "Build Info",
+        "tags": [
+          "health"
         ]
       }
     },
@@ -8625,6 +11342,324 @@
         ]
       }
     },
+    "/api/v1/entitlements": {
+      "get": {
+        "description": "The plan, the refusal shape, and every gateable feature.\n\n``features`` is empty while the catalog is, and that is the honest answer\nrather than a missing one: openDJ has no paid features, so there is\nnothing an account could fail to be entitled to.",
+        "operationId": "read_entitlements_api_v1_entitlements_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Entitlements",
+        "tags": [
+          "entitlements"
+        ]
+      }
+    },
+    "/api/v1/entitlements/{feature_id}": {
+      "get": {
+        "description": "May this account use one feature?\n\nAn id the catalog does not know is answered, not 404'd: while no provider\nis configured everything is entitled (ENT-04), and a 404 here would let a\ncaller mistake \"we have never heard of that\" for \"you may not\".",
+        "operationId": "read_entitlement_api_v1_entitlements__feature_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "title": "Feature Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureEntitlementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Entitlement",
+        "tags": [
+          "entitlements"
+        ]
+      }
+    },
+    "/api/v1/feedback/archive": {
+      "post": {
+        "operationId": "archive_feedback_api_v1_feedback_archive_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Archive Feedback",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/comments": {
+      "get": {
+        "operationId": "list_comments_api_v1_feedback_comments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Comments",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "create_comment_api_v1_feedback_comments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Comment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/general": {
+      "get": {
+        "operationId": "get_general_api_v1_feedback_general_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get General",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "put": {
+        "operationId": "put_general_api_v1_feedback_general_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneralNotePutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put General",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/todos": {
+      "get": {
+        "operationId": "list_todos_api_v1_feedback_todos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Todos",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "create_todo_api_v1_feedback_todos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Todo",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/todos/{todo_id}": {
+      "patch": {
+        "operationId": "patch_todo_api_v1_feedback_todos__todo_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "todo_id",
+            "required": true,
+            "schema": {
+              "title": "Todo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Todo",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/find-replace/apply": {
       "post": {
         "operationId": "apply_api_v1_find_replace_apply_post",
@@ -8707,6 +11742,28 @@
         ]
       }
     },
+    "/api/v1/flags": {
+      "get": {
+        "description": "The declared flags, as resolved once at engine boot.\n\nA separate surface from /entitlements on purpose (FLAG-01): these are\nengineering-owned code-path toggles, not anything an account is entitled\nto, and folding them into one response is the first step toward one store.",
+        "operationId": "read_flags_api_v1_flags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Flags",
+        "tags": [
+          "feature-flags"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "engine_health_api_v1_health_get",
@@ -8725,6 +11782,197 @@
         "summary": "Engine Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/ingest/config": {
+      "get": {
+        "operationId": "get_config_api_v1_ingest_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "ingest"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_v1_ingest_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/coverage": {
+      "get": {
+        "operationId": "get_coverage_api_v1_ingest_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coverage",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/refresh": {
+      "post": {
+        "operationId": "start_refresh_api_v1_ingest_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Refresh",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/refresh/status": {
+      "get": {
+        "operationId": "refresh_status_api_v1_ingest_refresh_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Status",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/upload": {
+      "post": {
+        "operationId": "upload_api_v1_ingest_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_api_v1_ingest_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload",
+        "tags": [
+          "ingest"
         ]
       }
     },
@@ -10163,6 +13411,27 @@
         ]
       }
     },
+    "/api/v1/rekordbox/writeback-gate": {
+      "get": {
+        "operationId": "read_writeback_gate_api_v1_rekordbox_writeback_gate_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackGateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Writeback Gate",
+        "tags": [
+          "rekordbox-gate"
+        ]
+      }
+    },
     "/api/v1/relocate/candidates/{stable_id}": {
       "get": {
         "operationId": "get_candidates_api_v1_relocate_candidates__stable_id__get",
@@ -10455,6 +13724,272 @@
         "summary": "Ai Search",
         "tags": [
           "settings-ai"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/folder": {
+      "get": {
+        "description": "Look inside a candidate folder WITHOUT importing it.\n\nThis is the no-rekordbox branch's version of the detect step. The count\nit returns is only meaningful when ``denied`` is false: macOS answers a\nblocked listing with an empty one, so \"0 audio files\" from a denied\nfolder would be a fabrication.",
+        "operationId": "detect_folder_api_v1_setup_detect_folder_get",
+        "parameters": [
+          {
+            "description": "absolute folder path to inspect",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "description": "absolute folder path to inspect",
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detect Folder",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/rekordbox": {
+      "get": {
+        "description": "Report the rekordbox install WITHOUT opening or copying anything.",
+        "operationId": "detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RekordboxDetectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Detect Rekordbox Endpoint",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/dismiss": {
+      "post": {
+        "description": "Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.",
+        "operationId": "dismiss_api_v1_setup_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupDismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
+          }
+        },
+        "summary": "Dismiss",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/import": {
+      "post": {
+        "description": "Queue the import as a job, so progress streams over the events bus.\n\nRefuses BEFORE enqueueing on anything detection can already see: a job\nthat is certain to fail is worse than a 409, because it turns a clear\nrefusal into a failed row somebody has to go and read.",
+        "operationId": "start_import_api_v1_setup_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/import/folder": {
+      "post": {
+        "description": "Queue a folder import: tags only, no analysis, and it says so.\n\nIts own endpoint rather than a mode flag on /import, because its\nrefusals are different ones: a folder can be absent, unreadable, or\ngenuinely empty, and none of those is a rekordbox problem.",
+        "operationId": "start_folder_import_api_v1_setup_import_folder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Folder Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/permissions": {
+      "get": {
+        "description": "Can this process read the folders the music lives in?\n\nReported, never refused on. macOS answers a blocked listing with an\nEMPTY one rather than an error, which is how a library with 40,000\ntracks in it becomes a library with none and nobody is told. Every\ncount this API reports afterwards has to be read against the ``denied``\nlist here: zero files in a folder we were not allowed to open is not\nzero files.",
+        "operationId": "permissions_api_v1_setup_permissions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Permissions",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/status": {
+      "get": {
+        "description": "Is this a first run? Counts come from state.db, not from memory.",
+        "operationId": "setup_status_api_v1_setup_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
+          }
+        },
+        "summary": "Setup Status",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/stems": {
+      "get": {
+        "description": "Can a library-wide stems pass be started from setup?\n\nANSWERED FROM EVIDENCE, never from a constant. The verdict is whether\nthis engine actually has a worker registered for ``stems.separate``: a\nlegacy boot, or a chassis whose composition root never wired the kind,\ngenuinely cannot run one and says so in the tester's own words.\n\nThe tier ladder is real either way. An unavailable rung carries the\nreason it is unavailable, so the wizard renders true choices rather\nthan a placeholder list.",
+        "operationId": "stems_availability_api_v1_setup_stems_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stems Availability",
+        "tags": [
+          "setup"
         ]
       }
     },
@@ -11019,6 +14554,51 @@
         ]
       }
     },
+    "/api/v1/stems/plan": {
+      "get": {
+        "operationId": "get_stems_plan_api_v1_stems_plan_get",
+        "parameters": [
+          {
+            "description": "Modal rung: S, M or L",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "default": "M",
+              "description": "Modal rung: S, M or L",
+              "title": "Tier",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stems Plan",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -11290,6 +14870,70 @@
         "summary": "Status",
         "tags": [
           "sync"
+        ]
+      }
+    },
+    "/api/v1/telemetry/clients": {
+      "get": {
+        "description": "Every client seen since engine boot, plus the one-glance summary.",
+        "operationId": "list_clients_api_v1_telemetry_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageClientsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/heartbeat": {
+      "post": {
+        "description": "Upsert one client's liveness. Server-stamped; the client sends no time.",
+        "operationId": "record_heartbeat_api_v1_telemetry_heartbeat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Heartbeat",
+        "tags": [
+          "telemetry"
         ]
       }
     },
@@ -12467,49 +16111,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                }
+              }
+            },
+            "description": "USB volume discovery is unavailable on this host."
           }
         },
         "summary": "Get Usb Volumes",
-        "tags": [
-          "usb"
-        ]
-      },
-      "post": {
-        "description": "Inject or update a simulated volume (manual test without a stick).",
-        "operationId": "post_usb_volume_api_v1_usb_volumes_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UsbVolumePost"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UsbVolumesOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Post Usb Volume",
         "tags": [
           "usb"
         ]
@@ -12522,11 +16136,23 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Server-sent USB volume discovery events."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                }
+              }
+            },
+            "description": "USB volume discovery is unavailable on this host."
           }
         },
         "summary": "Usb Volume Events",

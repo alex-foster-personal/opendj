@@ -1,0 +1,508 @@
+"""Ingestion pipeline endpoints: config, coverage, refresh job, upload+dedup.
+
+Backs two UI features and their agent-native parity:
+
+  * "Refresh analysis" TopBar button  -> GET /ingest/coverage,
+    POST /ingest/refresh, GET /ingest/refresh/status
+  * Drag-in ingest modal              -> GET/PUT /ingest/config,
+    POST /ingest/upload (moved to routes/ingest_upload.py; shared CFG here)
+
+Design constraints honoured here:
+  * Rekordbox remains the only writer of its own DB; upload stages files
+    under ``~/Music/Manual Library/_ingest/<batch>/`` and RB import stays a
+    human step (see .agents/skills/ingest-new-tracks).
+  * The refresh job shells out to the existing CLIs (apps.analysis.run,
+    apps.stems trickle, apps.vocals from-stems) rather than reimplementing
+    them - one code path per pipeline, real data only.
+  * Duplicate policy at the door: an uploaded file whose chromaprint
+    similarity to an existing library track is >= DUP_FP_THRESHOLD is NOT
+    staged (skipped with the existing stable_id reported) unless the client
+    passes ``force``. One track, one set of metadata.
+  * Fail fast: unknown step ids 422, second concurrent refresh 409, missing
+    fpcalc reports method="duration" explicitly - never silently.
+
+Requirements (mini-PRD):
+  ✔︎ ✅ GET/PUT config: persisted checkbox list driving both the modal and
+    the refresh job.
+    [if] PUT contains an unknown step id [then ⛔️] 422, nothing persisted
+    [if] config file absent [then] code DEFAULT_STEPS returned and persisted
+  ✔︎ ✅ GET coverage: per-step missing counts from real artifacts
+    (analysis table, stems bundles, vocal-cache) over on-disk tracks.
+    [if] a track's file is a broken link [then] it is excluded and counted
+    in ``unreachable`` instead of any step's missing list
+  ✔︎ ✅ POST refresh + status: background job over missing tracks for
+    enabled steps; ring-buffer log; progress per step.
+    [if] a refresh is already running [then ⛔️] 409
+    [if] a step subprocess exits non-zero [then] job phase "error" with the
+    tail of its output, later steps not run
+  ✔︎ ✅ POST upload: moved to routes/ingest_upload.py with its own mini-PRD.
+"""
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal, NoReturn
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from apps.shared import fs_residency
+from apps.shared.paths import AUDIO_EXTENSIONS, HOME, PROJECT_ROOT, STATE_DB
+from apps.shared.state.db import open_ro
+from apps.webui.server.stem_artifacts import (
+    DEFAULT_STEMS_DIR,
+    StemArtifactError,
+    StemBundleNotFoundError,
+    load_stem_bundle,
+)
+
+router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+# ----- CFG -------------------------------------------------------------------
+CONFIG_PATH: Path = STATE_DB.parent / "ingest-config.json"
+INGEST_INBOX: Path = HOME / "Music" / "Manual Library" / "_ingest"
+VOCAL_CACHE_DIR: Path = STATE_DB.parent / "vocal-cache"
+DUP_DURATION_TOLERANCE_MS: int = 1_500
+DUP_FP_THRESHOLD: float = 0.92          # matches apps.dedup.find_clusters
+DUP_MAX_FP_CANDIDATES: int = 5          # fingerprinting candidates is O(seconds) each
+ANALYSIS_CHUNK: int = 25                # progress granularity for the analysis step
+STEMS_TRICKLE_LIMIT: int = 5            # local stems are ~104MB/track; keep small
+LOG_RING: int = 400
+BATCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$")
+
+StepId = Literal["analysis", "stems", "vocals"]
+
+# Registry of pipeline steps. ``requires_rb_row`` steps need the track in
+# Rekordbox + state.db first (stems/vocals are keyed by stable_id), so the
+# drag-in modal greys them out until the batch has been imported into RB.
+STEPS: list[dict] = [
+    {
+        "id": "analysis",
+        "label": "Analysis (BPM / key / energy)",
+        "default_enabled": True,
+        "requires_rb_row": False,
+        "hint": "librosa+madmom via apps.analysis.run; idempotent per file.",
+    },
+    {
+        "id": "stems",
+        "label": f"Stems (local trickle, max {STEMS_TRICKLE_LIMIT}/run)",
+        "default_enabled": False,
+        "requires_rb_row": True,
+        "hint": "~104MB per bundle - bulk runs belong on the Modal farm.",
+    },
+    {
+        "id": "vocals",
+        "label": "Vocals (from existing stems)",
+        "default_enabled": True,
+        "requires_rb_row": True,
+        "hint": "apps.vocals from-stems --live; CPU, no demucs.",
+    },
+]
+_STEP_IDS: frozenset[str] = frozenset(s["id"] for s in STEPS)
+
+
+# ----- config ---------------------------------------------------------------
+class ConfigOut(BaseModel):
+    steps: list[dict]
+    path: str
+
+
+class ConfigIn(BaseModel):
+    enabled: dict[str, bool]
+
+
+def _load_enabled() -> dict[str, bool]:
+    if CONFIG_PATH.exists():
+        stored = json.loads(CONFIG_PATH.read_text())["enabled"]
+        unknown = set(stored) - _STEP_IDS
+        if unknown:
+            raise HTTPException(
+                500,
+                f"{CONFIG_PATH} contains unknown step ids {sorted(unknown)}; "
+                "fix or delete the file",
+            )
+        return {s["id"]: stored.get(s["id"], s["default_enabled"]) for s in STEPS}
+    return {s["id"]: s["default_enabled"] for s in STEPS}
+
+
+def _persist_enabled(enabled: dict[str, bool]) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CONFIG_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"enabled": enabled}, indent=1))
+    tmp.rename(CONFIG_PATH)
+
+
+@router.get("/config", response_model=ConfigOut)
+def get_config() -> ConfigOut:
+    enabled = _load_enabled()
+    if not CONFIG_PATH.exists():
+        _persist_enabled(enabled)
+    return ConfigOut(
+        steps=[{**s, "enabled": enabled[s["id"]]} for s in STEPS],
+        path=str(CONFIG_PATH),
+    )
+
+
+@router.put("/config", response_model=ConfigOut)
+def put_config(body: ConfigIn) -> ConfigOut:
+    unknown = set(body.enabled) - _STEP_IDS
+    if unknown:
+        raise HTTPException(422, f"unknown step ids: {sorted(unknown)}")
+    enabled = {**_load_enabled(), **body.enabled}
+    _persist_enabled(enabled)
+    return get_config()
+
+
+# ----- coverage -------------------------------------------------------------
+class CoverageOut(BaseModel):
+    total_tracks: int
+    on_disk: int
+    unreachable: int
+    missing: dict[str, int]
+    generated_at: float
+
+
+def _tracks_on_disk() -> tuple[list[tuple[str, str]], int]:
+    """(stable_id, file_path) for tracks whose file is materialised; + unreachable count."""
+    conn = open_ro()
+    try:
+        rows = conn.execute(
+            "SELECT stable_id, file_path FROM tracks "
+            "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+    ok: list[tuple[str, str]] = []
+    unreachable = 0
+    for sid, fp in rows:
+        if fp.startswith(("tidal:", "soundcloud:", "spotify:")):
+            continue
+        if fs_residency.is_materialised(Path(fp)):
+            ok.append((sid, fp))
+        else:
+            unreachable += 1
+    return ok, unreachable
+
+
+def _valid_stem_bundle_ids() -> set[str]:
+    """stable_ids with a COMPLETE stems bundle under DEFAULT_STEMS_DIR.
+
+    A directory alone is not done: an interrupted worker can leave it without
+    a manifest or with missing/corrupt stem files, and counting it as covered
+    would exclude the track from refresh targets forever. Invalid bundles
+    count as missing so refresh can repair them.
+    """
+    if not DEFAULT_STEMS_DIR.is_dir():
+        return set()
+    done: set[str] = set()
+    for p in DEFAULT_STEMS_DIR.iterdir():
+        if not p.is_dir():
+            continue
+        try:
+            load_stem_bundle(p.name, stems_dir=DEFAULT_STEMS_DIR)
+        except (StemArtifactError, StemBundleNotFoundError):
+            continue
+        done.add(p.name)
+    return done
+
+
+def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str, str]]]:
+    conn = open_ro()
+    try:
+        # apps.analysis.store creates its table on first write, so a library
+        # that has never been analysed legitimately has no ``analysis`` table:
+        # that means zero tracks analysed, not an error.
+        has_analysis = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis'"
+        ).fetchone() is not None
+        analysed = (
+            {r[0] for r in conn.execute("SELECT DISTINCT stable_id FROM analysis")}
+            if has_analysis
+            else set()
+        )
+    finally:
+        conn.close()
+    stems_done = _valid_stem_bundle_ids()
+    vocals_done = (
+        {p.stem for p in VOCAL_CACHE_DIR.glob("*.json")}
+        if VOCAL_CACHE_DIR.is_dir()
+        else set()
+    )
+    return {
+        "analysis": [(s, f) for s, f in on_disk if s not in analysed],
+        "stems": [(s, f) for s, f in on_disk if s not in stems_done],
+        "vocals": [(s, f) for s, f in on_disk if s not in vocals_done],
+    }
+
+
+@router.get("/coverage", response_model=CoverageOut)
+def get_coverage() -> CoverageOut:
+    on_disk, unreachable = _tracks_on_disk()
+    missing = _missing_by_step(on_disk)
+    conn = open_ro()
+    try:
+        total = conn.execute(
+            "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    return CoverageOut(
+        total_tracks=total,
+        on_disk=len(on_disk),
+        unreachable=unreachable,
+        missing={k: len(v) for k, v in missing.items()},
+        generated_at=time.time(),
+    )
+
+
+# ----- refresh job ----------------------------------------------------------
+@dataclass
+class _RefreshJob:
+    started_at: float
+    steps: list[str]
+    batch_dir: Path | None = None
+    phase: str = "queued"            # queued | running | done | error
+    current_step: str | None = None
+    step_done: int = 0
+    step_total: int = 0
+    steps_completed: list[str] = field(default_factory=list)
+    error: str | None = None
+    log: deque = field(default_factory=lambda: deque(maxlen=LOG_RING))
+    recently_done_ids: deque = field(default_factory=lambda: deque(maxlen=200))
+    finished_at: float | None = None
+
+
+_job_lock = threading.Lock()
+
+
+class _JOBS:
+    """One-slot registry for the running refresh job (no global statements)."""
+
+    current: _RefreshJob | None = None
+
+
+class RefreshStatusOut(BaseModel):
+    running: bool
+    phase: str
+    steps: list[str]
+    current_step: str | None
+    step_done: int
+    step_total: int
+    steps_completed: list[str]
+    started_at: float | None
+    finished_at: float | None
+    error: str | None
+    log_tail: list[str]
+    recently_done_ids: list[str]
+
+
+def _log(job: _RefreshJob, line: str) -> None:
+    job.log.append(f"[{time.strftime('%H:%M:%S')}] {line}")
+
+
+def _run_cli(job: _RefreshJob, argv: list[str]) -> None:
+    """Run a pipeline CLI, streaming stdout into the job log. Raises on rc!=0."""
+    _log(job, "$ " + " ".join(argv[-6:]))
+    proc = subprocess.Popen(
+        argv,
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        stripped = line.rstrip()
+        if stripped:
+            _log(job, stripped)
+    rc = proc.wait()
+    if rc != 0:
+        raise RuntimeError(f"{argv[2] if len(argv) > 2 else argv[0]} exited {rc}")
+
+
+def _run_analysis_chunk(job: _RefreshJob, chunk: list[tuple[str, str]]) -> None:
+    """Invoke apps.analysis.run for one chunk of (stable_id, path) targets.
+
+    Library scope hands the runner the CANONICAL state-layer stable_ids via
+    --pairs-json: with --files it derives pathid_* keys, so the row lands
+    under a key coverage never matches and the track re-analyzes on every
+    refresh. Batch scope (empty sids: freshly staged files with no tracks
+    rows yet) keeps --files, where the pathid_* placeholder is the intended
+    pre-ingest identity.
+    """
+    if all(sid for sid, _ in chunk):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".pairs.json", delete=False
+        ) as fh:
+            json.dump([[sid, f] for sid, f in chunk], fh)
+            pairs_path = fh.name
+        try:
+            _run_cli(
+                job,
+                [sys.executable, "-m", "apps.analysis.run",
+                 "--workers", str(min(2, len(chunk))),
+                 "--pairs-json", pairs_path],
+            )
+        finally:
+            Path(pairs_path).unlink(missing_ok=True)
+    else:
+        _run_cli(
+            job,
+            [sys.executable, "-m", "apps.analysis.run",
+             "--workers", str(min(2, len(chunk))),
+             "--files", *[f for _, f in chunk]],
+        )
+
+
+def _step_analysis(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    job.step_total = len(targets)
+    job.step_done = 0
+    _log(job, f"analysis: {len(targets)} tracks missing")
+    for i in range(0, len(targets), ANALYSIS_CHUNK):
+        chunk = targets[i : i + ANALYSIS_CHUNK]
+        _run_analysis_chunk(job, chunk)
+        job.step_done += len(chunk)
+        for sid, _ in chunk:
+            job.recently_done_ids.append(sid)
+
+
+def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    job.step_total = min(len(targets), STEMS_TRICKLE_LIMIT)
+    job.step_done = 0
+    _log(job, f"stems: {len(targets)} missing; trickling {job.step_total}")
+    if job.step_total:
+        _run_cli(
+            job,
+            [sys.executable, "-m", "apps.stems", "trickle", "--live",
+             "--limit", str(STEMS_TRICKLE_LIMIT)],
+        )
+        job.step_done = job.step_total
+
+
+def _step_vocals(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    job.step_total = len(targets)
+    job.step_done = 0
+    _log(job, f"vocals: {len(targets)} missing cache; from-stems backfill")
+    _run_cli(job, [sys.executable, "-m", "apps.vocals", "from-stems", "--live"])
+    job.step_done = job.step_total
+
+
+def _fail_unhandled_step_runner(
+    job: _RefreshJob, _targets: list[tuple[str, str]]
+) -> NoReturn:  # pragma: no cover - registry and worker must agree
+    raise RuntimeError(f"unhandled step {job.current_step}")
+
+
+# Exhaustiveness guard lives in the dispatch: every STEPS id needs a runner.
+_STEP_RUNNERS = {
+    "analysis": _step_analysis,
+    "stems": _step_stems,
+    "vocals": _step_vocals,
+}
+
+
+def _refresh_worker(job: _RefreshJob) -> None:
+    try:
+        job.phase = "running"
+        if job.batch_dir is not None:
+            # Batch scope: freshly staged files that have no state.db rows
+            # yet. Only path-keyed steps can run; id-keyed ones (stems,
+            # vocals) explicitly wait for the Rekordbox import.
+            staged = sorted(
+                str(p) for p in job.batch_dir.rglob("*")
+                if p.suffix.lower() in AUDIO_EXTENSIONS
+            )
+            _log(job, f"batch scope: {len(staged)} staged files in {job.batch_dir}")
+            missing = {
+                "analysis": [("", f) for f in staged],
+                "stems": [],
+                "vocals": [],
+            }
+            for skipped in ("stems", "vocals"):
+                if skipped in job.steps:
+                    _log(job, f"{skipped}: skipped for batch scope - needs the "
+                              "Rekordbox import first (id-keyed)")
+            job.steps = [s for s in job.steps if s == "analysis"]
+        else:
+            on_disk, unreachable = _tracks_on_disk()
+            missing = _missing_by_step(on_disk)
+            _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
+
+        for step in job.steps:
+            job.current_step = step
+            _STEP_RUNNERS.get(step, _fail_unhandled_step_runner)(job, missing[step])
+            job.steps_completed.append(step)
+
+        job.phase = "done"
+        _log(job, "refresh complete")
+    except Exception as exc:  # noqa: BLE001 - job boundary, surfaced via status
+        job.phase = "error"
+        job.error = str(exc)
+        _log(job, f"ERROR: {exc}")
+    finally:
+        job.current_step = None
+        job.finished_at = time.time()
+
+
+class RefreshIn(BaseModel):
+    # Optional scope: run only over freshly staged files in this dir (must
+    # live under the ingest inbox). Absent = whole-library coverage sweep.
+    batch_dir: str | None = None
+
+
+@router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
+def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
+    batch_dir: Path | None = None
+    if body is not None and body.batch_dir is not None:
+        batch_dir = Path(body.batch_dir).resolve()
+        if not batch_dir.is_dir():
+            raise HTTPException(422, f"batch_dir not found: {batch_dir}")
+        if not batch_dir.is_relative_to(INGEST_INBOX.resolve()):
+            raise HTTPException(422, f"batch_dir must live under {INGEST_INBOX}")
+    with _job_lock:
+        if _JOBS.current is not None and _JOBS.current.phase in ("queued", "running"):
+            raise HTTPException(409, "a refresh job is already running")
+        enabled = _load_enabled()
+        steps = [s["id"] for s in STEPS if enabled[s["id"]]]
+        if not steps:
+            raise HTTPException(422, "no steps enabled in ingest config")
+        _JOBS.current = _RefreshJob(
+            started_at=time.time(), steps=steps, batch_dir=batch_dir
+        )
+        threading.Thread(
+            target=_refresh_worker, args=(_JOBS.current,), daemon=True
+        ).start()
+    return refresh_status()
+
+
+@router.get("/refresh/status", response_model=RefreshStatusOut)
+def refresh_status() -> RefreshStatusOut:
+    job = _JOBS.current
+    if job is None:
+        return RefreshStatusOut(
+            running=False, phase="idle", steps=[], current_step=None,
+            step_done=0, step_total=0, steps_completed=[], started_at=None,
+            finished_at=None, error=None, log_tail=[], recently_done_ids=[],
+        )
+    return RefreshStatusOut(
+        running=job.phase in ("queued", "running"),
+        phase=job.phase,
+        steps=job.steps,
+        current_step=job.current_step,
+        step_done=job.step_done,
+        step_total=job.step_total,
+        steps_completed=job.steps_completed,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error=job.error,
+        log_tail=list(job.log)[-60:],
+        recently_done_ids=list(job.recently_done_ids),
+    )

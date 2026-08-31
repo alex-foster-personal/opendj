@@ -66,6 +66,7 @@
 		hydrateConfirmPrefsFromDisk,
 		setConfirmPref,
 		setHideBrokenLinks,
+		setLastPlaylist,
 		setLibraryDensity,
 		setNextOnlyFilter,
 		uiPrefs
@@ -73,9 +74,11 @@
 	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
-	import { setAutoPlayTrackFeed } from '$lib/rb/auto-play';
+	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
+	import { pickDoubleClickDeck } from '$lib/rb/double-click-deck-pick';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
@@ -89,6 +92,7 @@
 		filterRows,
 		makeClientRowProvider,
 		reorderPanesInPlace,
+		resolveBootPlaylist,
 		resolveNewTabIndex,
 		sortRows,
 		visibleRowsOf
@@ -478,6 +482,8 @@
 				} else {
 					_selectSpotifyPlaylist(selected, false);
 				}
+			} else {
+				await _restoreBootPane();
 			}
 		} catch (exc) {
 			playlistsError = String(exc);
@@ -485,6 +491,41 @@
 			throw exc;
 		} finally {
 			playlistsLoading = false;
+		}
+	}
+
+	/**
+	 * Open the first pane on boot instead of leaving it blank.
+	 *
+	 * /performance used to launch with playlist_id=null on every pane, so the
+	 * track table was empty until a human clicked a playlist - indistinguishable
+	 * from a load that failed. This restores the pane the user last had, falling
+	 * back to All Tracks, and deliberately does NOTHING when the library is empty:
+	 * an empty table there is the honest state, not a default worth faking.
+	 *
+	 * _navRestoring suppresses the back-stack entry, matching goBack(): booting
+	 * into a pane is not a navigation the user can go "back" from.
+	 */
+	async function _restoreBootPane(): Promise<void> {
+		const target = panes[0];
+		if (target.playlist_id !== null) return; // a deep link already claimed it
+		const choice = resolveBootPlaylist({
+			remembered: uiPrefs.last_playlist,
+			known_playlist_ids: treeNodes.map((n) => n.playlist_id),
+			all_tracks_count: allTracksCount ?? 0
+		});
+		if (choice === null) return; // empty library - keep the explicit empty state
+		_navRestoring = true;
+		try {
+			await _loadPane(target, {
+				playlist_id: choice.playlist_id,
+				name: choice.name,
+				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : 0,
+				kind: choice.kind,
+				children: []
+			});
+		} finally {
+			_navRestoring = false;
 		}
 	}
 
@@ -894,6 +935,17 @@
 	}
 
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
+		// Every route into a pane funnels through here (tree click, new tab,
+		// back-stack, post-mutation refresh), so this is the one place that
+		// needs to remember the selection for the next boot. Folders are not
+		// loadable panes, so only the two real kinds are recorded.
+		if (p === panes[0] && node.kind !== 'folder') {
+			setLastPlaylist({
+				playlist_id: node.playlist_id,
+				name: node.name,
+				kind: node.kind
+			});
+		}
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name);
@@ -923,7 +975,11 @@
 	}
 
 	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
-		if (typeof wire.stable_id !== 'string' || typeof wire.file_exists !== 'boolean') {
+		if (
+			typeof wire.stable_id !== 'string' ||
+			typeof wire.file_exists !== 'boolean' ||
+			typeof wire.has_rb_mapping !== 'boolean'
+		) {
 			throw new Error(
 				`hydrated playlist row ${order} malformed - backend contract point 4 not met`
 			);
@@ -942,11 +998,14 @@
 			genre: wire.genre,
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
+			spotify_pending:
+				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 			quality: wire.quality ?? null,
 			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
 			vocals: parseVocals(wire.vocals),
 			stems: parseStemSummary(wire.stems),
+			has_rb_mapping: wire.has_rb_mapping,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -978,11 +1037,13 @@
 			genre: null,
 			file_exists: track.file_exists,
 			is_streaming: null,
+			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
 			vocals: parseVocals(track.vocals),
 			stems: parseStemSummary(track.stems),
+			has_rb_mapping: track.has_rb_mapping,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1028,16 +1089,22 @@
 	}
 
 	async function _hydrateRowMeta(row: BrowserRow): Promise<void> {
+		// Without a rekordbox mapping there is nothing here worth a round-trip.
+		// Since #505 rb-meta answers 200 for such a track, but every field in
+		// that payload is a known constant (vendor local, vendor_id null,
+		// artwork/analysis false, cue_count 0, genre null) except quality and
+		// file_exists, which THIS ROW already carries inline from the listing.
+		// So the request could only tell us what we know. Skipping it also
+		// keeps a locally imported library off one fetch per visible row.
+		if (!row.has_rb_mapping) return;
 		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
 		} catch (exc) {
-			if (exc instanceof RbApiError && exc.status === 404) {
-				// No rekordbox vendor mapping for this track - a real library
-				// state: no meta, no artwork.
-				return;
-			}
+			// A track with no rekordbox vendor mapping is NOT an error any more:
+			// rb-meta answers 200 with the local-vendor payload. A 404 here now
+			// means an unknown stable_id, which is a real fault worth logging.
 			// Loud but non-modal: a toast per row would spam during scrolling.
 			// Transient fails leave rb_meta null; rowVisible can retry later
 			// when the row re-enters the observer (inflight cleared).
@@ -1047,7 +1114,8 @@
 		}
 	}
 
-	/** One retry on non-404 failure so a blip does not leave the row art-dead. */
+	/** One retry on non-404 failure so a blip does not leave the row art-dead.
+	 * A 404 (unknown stable_id) is terminal - retrying it just doubles the noise. */
 	async function _fetchRbMetaWithRetry(stable_id: string): Promise<RbMeta> {
 		try {
 			return await fetchRbMeta(stable_id);
@@ -1119,43 +1187,78 @@
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
 
-	// Feed AutoPlay: open playlist membership with key/BPM + disk truth.
-	// Include broken rows so pick can skip them; never invent file_exists.
+	/** Holds the order AutoPlay walks, frozen at the moment it was switched
+	 * on (see createAutoPlayFeedSnapshot in auto-play.ts for the maintainer's rule). */
+	const autoPlayFeed = createAutoPlayFeedSnapshot();
+
+	// Feed AutoPlay from the SORTED, filtered view the user is actually looking
+	// at - not pane.rows, which is raw stored membership and ignored the sort
+	// outright.
+	//
+	// This means the view's own filters govern what AutoPlay can reach, which
+	// is the point: with 'Hide broken links' ON, broken rows are not on screen
+	// and are not candidates either. With it OFF they are fed through carrying
+	// file_exists: false, and pick skips them and still reports the
+	// missing-audio case. file_exists is never invented in either direction.
+	//
+	// The snapshot decides WHEN this may change: on activation it takes the
+	// current view, and while AutoPlay runs it publishes nothing, so re-sorting
+	// mid-set cannot re-order a set in flight.
 	$effect(() => {
-		setAutoPlayTrackFeed(
-			pane.rows.map((r) => ({
+		const decision = autoPlayFeed.step(
+			uiPrefs.auto_play_enabled,
+			visibleRows.map((r) => ({
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
 				file_exists: r.file_exists
 			}))
 		);
+		if (decision.publish !== null) setAutoPlayTrackFeed(decision.publish);
 	});
 
 	/** Monotonic load counter - double-click prefers least-recent in the pair. */
 	let deckLoadSeq = $state({ 1: 0, 2: 0, 3: 0, 4: 0 });
 	let deckLoadTick = 0;
+	/** Last deck a plain (non-replace) double-click targeted; cmd/ctrl+dblclick reuses it. */
+	let lastDoubleClickDeck = $state<DeckId | null>(null);
 
 	/**
-	 * Smart-load target: CH1/CH2 by default (least-recent).
-	 * Shift: CH3/CH4 only if empty or stopped (empty preferred); null if both playing.
+	 * Reserve a deck slot the instant it is chosen, synchronously, before
+	 * the (async) load command even starts. Regression Mon 17 Aug 2026: the
+	 * old code bumped deckLoadSeq only after the load command resolved, so
+	 * double-clicking two tracks in quick succession (before the first
+	 * load's await settled) had both clicks read the same stale deckLoadSeq
+	 * and pick the SAME deck - the second track silently replaced the first
+	 * instead of landing on the other deck.
 	 */
-	function pickDoubleDeck(_row: LoadableRow, opts: { shift?: boolean } = {}): DeckId | null {
-		if (opts.shift !== true) {
-			return deckLoadSeq[1] <= deckLoadSeq[2] ? 1 : 2;
-		}
-		const pair: Array<3 | 4> = [3, 4];
-		const empty = pair.filter((d) => decks[d].stable_id === null);
-		const stopped = pair.filter((d) => decks[d].stable_id !== null && !decks[d].playing);
-		const candidates = empty.length > 0 ? empty : stopped;
-		if (candidates.length === 0) {
-			pushToast('shift+dblclick: CH3 and CH4 are both playing - pause or unload one first', 'error');
+	function _reserveDeckSlot(deck: DeckId): void {
+		deckLoadTick += 1;
+		deckLoadSeq = { ...deckLoadSeq, [deck]: deckLoadTick };
+	}
+
+	/** Wires the pure picker (double-click-deck-pick.ts) to live deck state. */
+	function pickDoubleDeck(
+		_row: LoadableRow,
+		opts: { shift?: boolean; replace?: boolean } = {}
+	): DeckId | null {
+		const result = pickDoubleClickDeck({
+			shift: opts.shift === true,
+			replace: opts.replace === true,
+			deckLoadSeq,
+			lastDoubleClickDeck,
+			pair: {
+				3: { stable_id: decks[3].stable_id, playing: decks[3].playing },
+				4: { stable_id: decks[4].stable_id, playing: decks[4].playing }
+			}
+		});
+		if (result.deck === null) {
+			if (result.error !== null) pushToast(result.error, 'error');
 			return null;
 		}
-		if (candidates.length === 1) return candidates[0];
-		return deckLoadSeq[candidates[0]] <= deckLoadSeq[candidates[1]]
-			? candidates[0]
-			: candidates[1];
+		_reserveDeckSlot(result.deck);
+		if (opts.replace !== true) lastDoubleClickDeck = result.deck;
+		return result.deck;
 	}
 
 	function previewSeek(row: LoadableRow, ratio: number): void {
@@ -1491,9 +1594,9 @@
 	}
 </script>
 
-<section class="rb-browser">
+<section class="rb-browser" data-testid="browser-panel">
 	<IconRail {source} onspotify={selectSpotifySource} />
-	<div class="tree-panel">
+	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel
 				playlists={spotifyPlaylists}
@@ -1735,6 +1838,12 @@
 				<span class="job-ribbon-label">{ribbon.label}</span>
 			</span>
 		{/if}
+		<!-- The build identity lives at the RIGHT end of this tray on
+		     /performance. It used to be position:fixed bottom-left, sitting on
+		     top of the connectivity dots. The root layout mounts it in the app
+		     shell's own tray instead, and that branch never renders for this
+		     route, so exactly one is ever on screen. -->
+		<BuildIdentity />
 		<span class="grip" aria-hidden="true">
 			<svg viewBox="0 0 12 12" width="10" height="10">
 				<path d="M11 1L1 11M11 5L5 11M11 9L9 11" stroke="currentColor" stroke-width="1" />
@@ -1947,7 +2056,10 @@
 		letter-spacing: 0.5px;
 	}
 	.grip {
-		margin-left: auto;
+		/* No auto margin: the build identity that now precedes it already
+		   carries one, and TWO auto margins split the free space between them
+		   instead of pushing the pair to the right. The chip absorbs the gap;
+		   the grip stays welded to its right, in the corner. */
 		color: var(--rb-text-dim);
 	}
 </style>

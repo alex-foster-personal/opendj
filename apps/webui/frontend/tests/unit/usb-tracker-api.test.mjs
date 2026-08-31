@@ -64,39 +64,3 @@ test('refreshUsbVolumes stores an unreachable-daemon message in lastError', asyn
 
 	assert.equal(usbTrackerApi.usbTracker.lastError, 'fetch failed');
 });
-
-test('simulateUsbVolume POSTs the exact body and maps non-2xx to simulate USB HTTP', async () => {
-	let seen;
-	let body;
-	globalThis.fetch = async (request) => {
-		seen = request;
-		body = await request.clone().json();
-		return jsonResponse({ volumes: [], scanned_at: 0, watching: false });
-	};
-
-	await usbTrackerApi.simulateUsbVolume({ name: 'FAKE USB', kind: 'music' });
-
-	assert.equal(seen.url, `${API_BASE}/api/v1/usb/volumes`);
-	assert.equal(seen.method, 'POST');
-	assert.equal(seen.headers.get('content-type'), 'application/json');
-	assert.deepEqual(body, {
-		name: 'FAKE USB',
-		kind: 'music',
-		mount_path: '/Volumes/FAKE-USB',
-		role: 'usb_stick',
-		protocol: 'USB',
-		present: true
-	});
-
-	globalThis.fetch = async () =>
-		new Response(JSON.stringify({ detail: 'nope' }), {
-			status: 422,
-			statusText: 'Unprocessable Entity',
-			headers: { 'content-type': 'application/json' }
-		});
-
-	await assert.rejects(
-		() => usbTrackerApi.simulateUsbVolume(),
-		/simulate USB HTTP 422/
-	);
-});

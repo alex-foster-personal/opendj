@@ -1,13 +1,18 @@
 """Shared-state writes for Phase 9 Spotify imports.
 
 Phase 5 state layer has ``playlists(vendor, vendor_pl_id, ...)``
-already. Phase 9 adds two additive tables (created IF NOT EXISTS at
-first call) for concepts Phase 5 doesn't own:
+already. Phase 9 adds additive tables for concepts Phase 5 doesn't
+own; their DDL, row types, and queries live in :mod:`state_aux` and
+are re-exported here so importers keep a single entry point.
 
-* ``spotify_playlist_meta`` -- per-playlist snapshot_id for idempotent
-  re-imports.
-* ``pending_tracks`` -- one row per unmatched Spotify track, with
-  suggested purchase sources (acquisition queue).
+Live writes also:
+
+* set ``track_vendor_ids`` (vendor=spotify) for matched local tracks so
+  re-imports do not duplicate identity;
+* upsert synthetic ``tracks`` rows for unmatched Spotify tracks
+  (``file_path = spotify:track:...``) and put them on both the Spotify
+  vendor playlist and the linked ODJ twin so the browser can render
+  lightly-green pending rows inline.
 
 Every live write:
     1. backup the state DB via the SQLite ``.backup`` API.
@@ -20,110 +25,57 @@ importer emits artifacts only. See CONTEXT D6.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import quote_plus
 
-from apps.shared.state import db as state_db
 from apps.shared.state import paths as state_paths
 from apps.shared.state import sync_stamp
 from apps.shared.state.writer import next_playlist_revision
 
 from .client import SpotifyPlaylist, SpotifyTrack
 from .matcher_adapter import MatchResult
+from .state_aux import (
+    AUX_MIGRATIONS,
+    ODJ_VENDOR,
+    VENDOR,
+    PendingRow,
+    PlaylistLink,
+    already_imported_snapshot,
+    ensure_aux_tables,
+    ensure_odj_link,
+    fetch_pending_tracks,
+    fetch_playlist_link,
+    link_odj_playlist,
+    mark_pending_abandoned,
+    open_state_rw_with_aux,
+)
 
 __all__ = [
     "AUX_MIGRATIONS",
-    "WriteSummary",
-    "PendingRow",
-    "ensure_aux_tables",
-    "backup_state_db",
-    "emit_reversal_script",
-    "write_playlist_and_pending",
-    "already_imported_snapshot",
-    "fetch_pending_tracks",
-    "mark_pending_abandoned",
-    "open_state_rw_with_aux",
+    "ODJ_VENDOR",
     "SUGGESTED_SOURCE_KEYS",
     "VENDOR",
+    "PendingRow",
+    "PlaylistLink",
+    "WriteSummary",
+    "already_imported_snapshot",
+    "backup_state_db",
+    "emit_reversal_script",
+    "ensure_aux_tables",
+    "ensure_odj_link",
+    "fetch_pending_tracks",
+    "fetch_playlist_link",
+    "link_odj_playlist",
+    "mark_pending_abandoned",
+    "open_state_rw_with_aux",
+    "synthetic_stable_id",
+    "write_playlist_and_pending",
 ]
-
-
-VENDOR: str = "spotify"
-
-# The two synced tables this importer writes. Named so the row write and its
-# ``local_changelog`` entry can never disagree about which table changed.
-PLAYLISTS_TABLE: str = "playlists"
-MEMBERSHIPS_TABLE: str = "playlist_memberships"
-
-
-_AUX_DDL_PLAYLIST_META = """
-CREATE TABLE IF NOT EXISTS spotify_playlist_meta (
-    playlist_id      TEXT PRIMARY KEY REFERENCES playlists(playlist_id)
-                       ON DELETE CASCADE,
-    vendor_pl_id     TEXT NOT NULL,
-    snapshot_id      TEXT NOT NULL,
-    track_count      INTEGER NOT NULL,
-    matched_count    INTEGER NOT NULL,
-    pending_count    INTEGER NOT NULL,
-    last_import_at   TEXT NOT NULL
-)
-"""
-
-_AUX_DDL_PENDING = """
-CREATE TABLE IF NOT EXISTS pending_tracks (
-    pending_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    playlist_id           TEXT NOT NULL REFERENCES playlists(playlist_id)
-                            ON DELETE CASCADE,
-    position              INTEGER NOT NULL,
-    spotify_uri           TEXT NOT NULL,
-    isrc                  TEXT,
-    title                 TEXT NOT NULL,
-    artist                TEXT NOT NULL,
-    album                 TEXT,
-    duration_ms           INTEGER,
-    suggested_sources_json TEXT NOT NULL,
-    status                TEXT NOT NULL DEFAULT 'pending'
-                            CHECK (status IN
-                             ('pending','purchased','resolved','abandoned')),
-    added_at              TEXT NOT NULL,
-    resolved_stable_id    TEXT REFERENCES tracks(stable_id) ON DELETE SET NULL,
-    resolved_at           TEXT
-)
-"""
-
-_AUX_IDX_PENDING_PLAYLIST = (
-    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_playlist "
-    "ON pending_tracks(playlist_id)"
-)
-
-_AUX_IDX_PENDING_ISRC = (
-    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_isrc "
-    "ON pending_tracks(isrc) WHERE isrc IS NOT NULL"
-)
-
-_AUX_IDX_PENDING_STATUS = (
-    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_status "
-    "ON pending_tracks(status)"
-)
-
-AUX_MIGRATIONS: tuple[str, ...] = (
-    _AUX_DDL_PLAYLIST_META,
-    _AUX_DDL_PENDING,
-    _AUX_IDX_PENDING_PLAYLIST,
-    _AUX_IDX_PENDING_ISRC,
-    _AUX_IDX_PENDING_STATUS,
-)
-
-
-def ensure_aux_tables(conn: sqlite3.Connection) -> None:
-    """Create Phase-9 tables + indexes if missing. Idempotent."""
-    for stmt in AUX_MIGRATIONS:
-        conn.execute(stmt)
 
 
 @dataclass(frozen=True)
@@ -145,6 +97,10 @@ class WriteSummary:
     matched_written: int
     pending_written: int
     skipped_existing_snapshot: bool = False
+    odj_playlist_id: str | None = None
+    odj_created: bool = False
+    vendor_ids_set: int = 0
+    synthetic_tracks_written: int = 0
 
 
 def backup_state_db(
@@ -163,7 +119,7 @@ def backup_state_db(
         else state_paths.DATA_DIR / "spotify" / "backups"
     )
     dest_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dest = dest_dir / f"state-{ts}.db"
 
     with sqlite3.connect(str(src)) as src_conn:
@@ -186,7 +142,7 @@ def emit_reversal_script(
     target = Path(state_db_path) if state_db_path else state_paths.STATE_DB
     out_root = Path(out_dir) if out_dir is not None else backup_path.parent
     out_root.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     script_path = out_root / f"reverse-{ts}.py"
 
     script = f'''"""Auto-generated reversal script for a Spotify import.
@@ -227,17 +183,131 @@ def _state_playlist_id(vendor_pl_id: str) -> str:
     return f"spotify:{vendor_pl_id}"
 
 
-def already_imported_snapshot(
+def synthetic_stable_id(spotify_uri: str) -> str:
+    """Stable id for an unmatched Spotify track (no local file yet).
+
+    Deterministic so re-imports reuse the same row and membership instead of
+    spawning duplicates. Prefix keeps these easy to grep in the DB.
+    """
+    digest = hashlib.sha1(spotify_uri.encode("utf-8")).hexdigest()
+    return f"spotify-pending:{digest}"
+
+
+def _spotify_vendor_track_id(src: SpotifyTrack) -> str | None:
+    """Canonical vendor id for track_vendor_ids (bare Spotify track id)."""
+    if src.spotify_id:
+        return src.spotify_id
+    uri = src.spotify_uri or ""
+    if uri.startswith("spotify:track:"):
+        return uri.split(":", 2)[2] or None
+    return None
+
+
+def _upsert_synthetic_track(
     conn: sqlite3.Connection,
-    vendor_pl_id: str,
-) -> str | None:
-    """Return the stored snapshot_id for this Spotify playlist, or None."""
-    ensure_aux_tables(conn)
-    row = conn.execute(
-        "SELECT snapshot_id FROM spotify_playlist_meta WHERE vendor_pl_id = ?",
-        (vendor_pl_id,),
+    src: SpotifyTrack,
+    *,
+    machine_id: str,
+    now: str,
+) -> str:
+    """Insert/update a placeholder track row for an unmatched Spotify track.
+
+    ``file_path`` is the Spotify URI so ``is_streaming_path`` marks the row
+    streaming (not broken-missing) in the browser.
+
+    ``tracks`` and ``track_vendor_ids`` are synced digest tables (ADR 08
+    point 2): this writer stamps ``updated_at`` / ``origin_device_id`` and
+    appends a ``local_changelog`` entry through
+    :func:`apps.shared.state.sync_stamp.stamp_and_log`, or the row syncs as
+    epoch-old and the push fence never offers it.
+    """
+    sid = synthetic_stable_id(src.spotify_uri)
+    artists_json = json.dumps(
+        list(src.artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
+    )
+    tier = "isrc" if src.isrc else "inferred"
+    file_path = src.spotify_uri or f"spotify:track:{src.spotify_id or sid}"
+    existing = conn.execute(
+        "SELECT stable_id FROM tracks WHERE stable_id = ?", (sid,)
     ).fetchone()
-    return row[0] if row else None
+    track_stamp = sync_stamp.stamp_and_log(conn, "tracks", (sid,), machine_id, now=now)
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO tracks
+              (stable_id, stable_id_tier, title, artists_json, album, isrc,
+               duration_ms, file_path, content_hash, created_at, updated_at,
+               origin_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            """,
+            (
+                sid,
+                tier,
+                src.title,
+                artists_json,
+                src.album or None,
+                src.isrc,
+                src.duration_ms or None,
+                file_path,
+                now,
+                track_stamp.updated_at,
+                track_stamp.origin_device_id,
+            ),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?,
+              album=?, isrc=?, duration_ms=?, file_path=?, updated_at=?,
+              origin_device_id=?, deleted_at=NULL
+            WHERE stable_id=?
+            """,
+            (
+                tier,
+                src.title,
+                artists_json,
+                src.album or None,
+                src.isrc,
+                src.duration_ms or None,
+                file_path,
+                track_stamp.updated_at,
+                track_stamp.origin_device_id,
+                sid,
+            ),
+        )
+    vendor_id = _spotify_vendor_track_id(src)
+    if vendor_id:
+        _set_track_vendor_id(conn, sid, vendor_id, machine_id=machine_id, now=now)
+    return sid
+
+
+def _set_track_vendor_id(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    vendor_id: str,
+    *,
+    machine_id: str,
+    now: str,
+) -> None:
+    """Set the Spotify vendor id for a track, stamped for sync.
+
+    ``track_vendor_ids`` is a synced digest table (ADR 08 point 2); the raw
+    ``INSERT OR REPLACE`` this replaced left ``updated_at`` /
+    ``origin_device_id`` NULL and logged nothing, so a re-import never
+    reached the hub.
+    """
+    stamp = sync_stamp.stamp_and_log(
+        conn, "track_vendor_ids", (stable_id, VENDOR), machine_id, now=now
+    )
+    conn.execute(
+        "INSERT INTO track_vendor_ids"
+        "(stable_id, vendor, vendor_id, updated_at, origin_device_id) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(stable_id, vendor) DO UPDATE SET "
+        "vendor_id=excluded.vendor_id, updated_at=excluded.updated_at, "
+        "origin_device_id=excluded.origin_device_id, deleted_at=NULL",
+        (stable_id, VENDOR, vendor_id, stamp.updated_at, stamp.origin_device_id),
+    )
 
 
 _SUGGESTED_SOURCES_TEMPLATE: tuple[tuple[str, str], ...] = (
@@ -258,127 +328,46 @@ def _suggested_sources(track: SpotifyTrack) -> dict[str, str]:
     return {name: tmpl.format(q=q) for name, tmpl in _SUGGESTED_SOURCES_TEMPLATE}
 
 
-def write_playlist_and_pending(
+@dataclass
+class _MembershipBuild:
+    """Working set produced while walking match pairs in Spotify order."""
+
+    membership: list[tuple[str, str, int]]
+    matched_rows: list[tuple[str, str, int]]
+    pending_rows: list[tuple]
+    vendor_ids_set: int
+    synthetic_tracks_written: int
+
+
+def _build_membership(
     conn: sqlite3.Connection,
-    playlist: SpotifyPlaylist,
+    playlist_id: str,
     result: MatchResult,
     *,
-    backup_path: Path,
-    reversal_script_path: Path,
-    force: bool = False,
-) -> WriteSummary:
-    """Insert / refresh playlist + memberships + pending rows.
-
-    All writes happen inside one transaction. Caller must have taken
-    the backup + written the reversal script BEFORE calling (so a
-    mid-commit crash is still recoverable) and must pass those paths
-    in as ``backup_path`` / ``reversal_script_path`` so the returned
-    :class:`WriteSummary` is self-consistent and free of sentinels.
-    """
-    ensure_aux_tables(conn)
-
-    playlist_id = _state_playlist_id(playlist.id)
-
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        # The snapshot short-circuit is an idempotency precondition, so it
-        # belongs after the writer lock. Two import processes otherwise can
-        # both observe the old snapshot and each rewrite the same playlist.
-        prior_snapshot = already_imported_snapshot(conn, playlist.id)
-        if prior_snapshot == playlist.snapshot_id and not force:
-            conn.execute("COMMIT")
-            return WriteSummary(
-                playlist_id=playlist_id,
-                vendor_pl_id=playlist.id,
-                snapshot_id=playlist.snapshot_id,
-                backup_path=backup_path,
-                reversal_script_path=reversal_script_path,
-                matched_written=0,
-                pending_written=0,
-                skipped_existing_snapshot=True,
-            )
-
-        # Round 2 finding N1c: this importer stamped neither
-        # origin_device_id nor local_changelog, so an imported playlist was
-        # never offered to the hub and every later sync failed its digest
-        # compare on ['playlist_memberships', 'playlists'] permanently. The
-        # empty tiebreak component was round 1 finding 2's second half, still
-        # live on this path. Both tables now go through the shared chokepoint.
-        machine_id = sync_stamp.ensure_local_machine(conn)
-        now = sync_stamp.canonical_now()
-        revision = next_playlist_revision(conn, playlist_id, now)
-        playlist_stamp = sync_stamp.stamp_and_log(
-            conn, PLAYLISTS_TABLE, (playlist_id,), machine_id, now=revision,
-        )
-        conn.execute(
-            """
-            INSERT INTO playlists
-              (playlist_id, name, vendor, vendor_pl_id, created_at,
-               updated_at, origin_device_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(playlist_id) DO UPDATE SET
-              name = excluded.name,
-              updated_at = excluded.updated_at,
-              origin_device_id = excluded.origin_device_id,
-              deleted_at = NULL
-            """,
-            (
-                playlist_id, playlist.name, VENDOR, playlist.id, now,
-                playlist_stamp.updated_at, playlist_stamp.origin_device_id,
-            ),
-        )
-        # deleted_at = NULL on conflict (ADR 08 point 5): playlist_id is
-        # deterministic (f"spotify:{vendor_pl_id}"), so a re-import can land
-        # on a row this machine soft-deleted locally. Without clearing the
-        # tombstone here the playlist would re-import silently invisible
-        # forever -- see apps.shared.state.writer.StateWriter.insert_playlist
-        # for the same reactivation.
-        #
-        # The membership replace below is the established whole-playlist
-        # pattern (matches StateWriter.set_playlist_memberships and
-        # apps.sync_hub.engine_apply._replace_members): every position is
-        # overwritten on every import, so there is no independent "this one
-        # membership row was removed" event to tombstone -- the fresh INSERT
-        # below is what makes the current state correct either way. The
-        # playlists stamp above is what carries the whole bundle to the hub
-        # (ADR 04 c5); the per-row stamps are what let the push fence see
-        # that this playlist changed at all.
-        conn.execute(
-            "DELETE FROM playlist_memberships WHERE playlist_id = ?",
-            (playlist_id,),
-        )
-        matched_rows = [
-            (playlist_id, pair.target.stable_id, idx)
-            for idx, pair in enumerate(result.pairs)
-            if pair.status == "matched" and pair.target is not None
-        ]
-        for member in matched_rows:
-            member_stamp = sync_stamp.stamp_and_log(
-                conn,
-                MEMBERSHIPS_TABLE,
-                (playlist_id, member[2]),
-                machine_id,
-                now=playlist_stamp.updated_at,
-            )
-            conn.execute(
-                "INSERT INTO playlist_memberships (playlist_id, stable_id, "
-                "position, updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?)",
-                (
-                    *member, member_stamp.updated_at,
-                    member_stamp.origin_device_id,
-                ),
-            )
-
-        conn.execute(
-            "DELETE FROM pending_tracks WHERE playlist_id = ? AND status = 'pending'",
-            (playlist_id,),
-        )
-        pending_rows = []
-        for idx, pair in enumerate(result.pairs):
-            if pair.status == "matched":
-                continue
+    machine_id: str,
+    now: str,
+) -> _MembershipBuild:
+    """Walk match pairs: matched local rows OR synthetic pending rows."""
+    build = _MembershipBuild([], [], [], 0, 0)
+    for idx, pair in enumerate(result.pairs):
+        if pair.status == "matched" and pair.target is not None:
+            sid = pair.target.stable_id
+            build.membership.append((playlist_id, sid, idx))
+            build.matched_rows.append((playlist_id, sid, idx))
+            vendor_id = _spotify_vendor_track_id(pair.source)
+            if vendor_id:
+                _set_track_vendor_id(
+                    conn, sid, vendor_id, machine_id=machine_id, now=now
+                )
+                build.vendor_ids_set += 1
+        else:
             src = pair.source
-            pending_rows.append(
+            sid = _upsert_synthetic_track(
+                conn, src, machine_id=machine_id, now=now
+            )
+            build.synthetic_tracks_written += 1
+            build.membership.append((playlist_id, sid, idx))
+            build.pending_rows.append(
                 (
                     playlist_id,
                     idx,
@@ -393,7 +382,174 @@ def write_playlist_and_pending(
                     now,
                 )
             )
-        if pending_rows:
+    return build
+
+
+def _mirror_membership_to_odj(
+    conn: sqlite3.Connection,
+    playlist: SpotifyPlaylist,
+    playlist_id: str,
+    membership: list[tuple[str, str, int]],
+    *,
+    machine_id: str,
+    now: str,
+) -> tuple[str, bool]:
+    """Ensure the ODJ twin exists and mirror full membership onto it.
+
+    The ODJ twin's ``playlists`` row and every ``playlist_memberships`` row
+    are synced digest tables, so each write is stamped and logged (ADR 08
+    point 2). The whole-list membership DELETE is the allowlisted local
+    full-replace (ADR 08 point 5, ``tests/cloudsync/test_soft_delete.py``):
+    the playlists stamp below carries the complete bundle to the hub.
+    """
+    link, odj_created = ensure_odj_link(
+        conn,
+        vendor_pl_id=playlist.id,
+        spotify_playlist_id=playlist_id,
+        playlist_name=playlist.name,
+        now=now,
+    )
+    odj_playlist_id = link.odj_playlist_id
+    conn.execute(
+        "DELETE FROM playlist_memberships WHERE playlist_id = ?",
+        (odj_playlist_id,),
+    )
+    for (_pl, sid, pos) in membership:
+        member_stamp = sync_stamp.stamp_and_log(
+            conn, "playlist_memberships", (odj_playlist_id, pos), machine_id, now=now
+        )
+        conn.execute(
+            "INSERT INTO playlist_memberships "
+            "(playlist_id, stable_id, position, updated_at, origin_device_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                odj_playlist_id, sid, pos,
+                member_stamp.updated_at, member_stamp.origin_device_id,
+            ),
+        )
+    odj_revision = next_playlist_revision(conn, odj_playlist_id, now)
+    odj_stamp = sync_stamp.stamp_and_log(
+        conn, "playlists", (odj_playlist_id,), machine_id, now=odj_revision
+    )
+    conn.execute(
+        "UPDATE playlists SET name = ?, updated_at = ?, origin_device_id = ?, "
+        "deleted_at = NULL WHERE playlist_id = ?",
+        (playlist.name, odj_stamp.updated_at, odj_stamp.origin_device_id, odj_playlist_id),
+    )
+    return odj_playlist_id, odj_created
+
+
+def write_playlist_and_pending(
+    conn: sqlite3.Connection,
+    playlist: SpotifyPlaylist,
+    result: MatchResult,
+    *,
+    backup_path: Path,
+    reversal_script_path: Path,
+    force: bool = False,
+    link_odj: bool = True,
+) -> WriteSummary:
+    """Insert / refresh playlist + memberships + pending + ODJ twin.
+
+    All writes happen inside one transaction. Caller must have taken
+    the backup + written the reversal script BEFORE calling (so a
+    mid-commit crash is still recoverable) and must pass those paths
+    in as ``backup_path`` / ``reversal_script_path`` so the returned
+    :class:`WriteSummary` is self-consistent and free of sentinels.
+
+    When ``link_odj`` is True (default), an unlinked Spotify playlist
+    gets a same-name ``webui`` ODJ twin and a ``spotify_playlist_links``
+    row; memberships (matched + synthetic pending) are mirrored onto the
+    ODJ playlist so the main browser shows green unmatched rows.
+    """
+    ensure_aux_tables(conn)
+
+    playlist_id = _state_playlist_id(playlist.id)
+    odj_playlist_id: str | None = None
+    odj_created = False
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # The snapshot short-circuit is an idempotency precondition, so it
+        # belongs after the writer lock. Two import processes otherwise can
+        # both observe the old snapshot and each rewrite the same playlist.
+        prior_snapshot = already_imported_snapshot(conn, playlist.id)
+        if prior_snapshot == playlist.snapshot_id and not force:
+            existing_link = fetch_playlist_link(conn, playlist.id)
+            conn.execute("COMMIT")
+            return WriteSummary(
+                playlist_id=playlist_id,
+                vendor_pl_id=playlist.id,
+                snapshot_id=playlist.snapshot_id,
+                backup_path=backup_path,
+                reversal_script_path=reversal_script_path,
+                matched_written=0,
+                pending_written=0,
+                skipped_existing_snapshot=True,
+                odj_playlist_id=(
+                    existing_link.odj_playlist_id if existing_link else None
+                ),
+            )
+
+        # Round 2 finding N1c: this importer stamped neither origin_device_id
+        # nor local_changelog, so an imported playlist (and its ODJ twin,
+        # memberships, synthetic tracks and vendor ids) never reached the hub
+        # and every later sync failed its digest compare permanently. Every
+        # synced-table write below now goes through the shared chokepoint.
+        machine_id = sync_stamp.ensure_local_machine(conn)
+        now = sync_stamp.canonical_now()
+        revision = next_playlist_revision(conn, playlist_id, now)
+        playlist_stamp = sync_stamp.stamp_and_log(
+            conn, "playlists", (playlist_id,), machine_id, now=revision
+        )
+        conn.execute(
+            """
+            INSERT INTO playlists
+              (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at,
+               origin_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(playlist_id) DO UPDATE SET
+              name = excluded.name,
+              updated_at = excluded.updated_at,
+              origin_device_id = excluded.origin_device_id,
+              deleted_at = NULL
+            """,
+            (
+                playlist_id, playlist.name, VENDOR, playlist.id, now,
+                playlist_stamp.updated_at, playlist_stamp.origin_device_id,
+            ),
+        )
+
+        build = _build_membership(
+            conn, playlist_id, result, machine_id=machine_id, now=now
+        )
+
+        # Whole-list replace (allowlisted, ADR 08 point 5): each fresh
+        # membership row is stamped and logged so the push fence sees the
+        # playlist changed at all.
+        conn.execute(
+            "DELETE FROM playlist_memberships WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        for (_pl, sid, pos) in build.membership:
+            member_stamp = sync_stamp.stamp_and_log(
+                conn, "playlist_memberships", (playlist_id, pos), machine_id,
+                now=playlist_stamp.updated_at,
+            )
+            conn.execute(
+                "INSERT INTO playlist_memberships (playlist_id, stable_id, "
+                "position, updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    playlist_id, sid, pos,
+                    member_stamp.updated_at, member_stamp.origin_device_id,
+                ),
+            )
+
+        conn.execute(
+            "DELETE FROM pending_tracks WHERE playlist_id = ? AND status = 'pending'",
+            (playlist_id,),
+        )
+        if build.pending_rows:
             conn.executemany(
                 """
                 INSERT INTO pending_tracks
@@ -401,7 +557,7 @@ def write_playlist_and_pending(
                    album, duration_ms, suggested_sources_json, status, added_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                pending_rows,
+                build.pending_rows,
             )
 
         conn.execute(
@@ -422,11 +578,17 @@ def write_playlist_and_pending(
                 playlist.id,
                 playlist.snapshot_id,
                 len(result.pairs),
-                len(matched_rows),
-                len(pending_rows),
+                len(build.matched_rows),
+                len(build.pending_rows),
                 now,
             ),
         )
+
+        if link_odj:
+            odj_playlist_id, odj_created = _mirror_membership_to_odj(
+                conn, playlist, playlist_id, build.membership,
+                machine_id=machine_id, now=now,
+            )
 
         conn.execute(
             """
@@ -455,74 +617,11 @@ def write_playlist_and_pending(
         snapshot_id=playlist.snapshot_id,
         backup_path=backup_path,
         reversal_script_path=reversal_script_path,
-        matched_written=len(matched_rows),
-        pending_written=len(pending_rows),
+        matched_written=len(build.matched_rows),
+        pending_written=len(build.pending_rows),
         skipped_existing_snapshot=False,
+        odj_playlist_id=odj_playlist_id,
+        odj_created=odj_created,
+        vendor_ids_set=build.vendor_ids_set,
+        synthetic_tracks_written=build.synthetic_tracks_written,
     )
-
-
-@dataclass(frozen=True)
-class PendingRow:
-    pending_id: int
-    playlist_id: str
-    position: int
-    spotify_uri: str
-    isrc: str | None
-    title: str
-    artist: str
-    album: str | None
-    duration_ms: int | None
-    suggested_sources_json: str
-    status: str
-    added_at: str
-    resolved_stable_id: str | None
-    resolved_at: str | None
-
-
-def fetch_pending_tracks(
-    conn: sqlite3.Connection,
-    playlist_id: str,
-    *,
-    status: str | None = "pending",
-) -> list[PendingRow]:
-    """Return pending rows for ``playlist_id`` filtered by ``status``."""
-    ensure_aux_tables(conn)
-    query = (
-        "SELECT pending_id, playlist_id, position, spotify_uri, isrc, title, "
-        "artist, album, duration_ms, suggested_sources_json, status, added_at, "
-        "resolved_stable_id, resolved_at FROM pending_tracks "
-        "WHERE playlist_id = ?"
-    )
-    params: list[object] = [playlist_id]
-    if status is not None:
-        query += " AND status = ?"
-        params.append(status)
-    query += " ORDER BY position"
-    rows = conn.execute(query, params).fetchall()
-    return [PendingRow(*r) for r in rows]
-
-
-def mark_pending_abandoned(
-    conn: sqlite3.Connection,
-    pending_ids: Iterable[int],
-) -> int:
-    """Mark pending rows as ``abandoned``. Returns row count touched."""
-    ensure_aux_tables(conn)
-    now = datetime.now(timezone.utc).isoformat()
-    ids = list(pending_ids)
-    if not ids:
-        return 0
-    placeholders = ",".join("?" for _ in ids)
-    cur = conn.execute(
-        f"UPDATE pending_tracks SET status = 'abandoned', resolved_at = ? "
-        f"WHERE pending_id IN ({placeholders}) AND status != 'abandoned'",
-        [now, *ids],
-    )
-    return cur.rowcount or 0
-
-
-def open_state_rw_with_aux(path: Path | None = None) -> sqlite3.Connection:
-    """Open the state DB rw and ensure Phase-9 aux tables exist."""
-    conn = state_db.open_rw(path)
-    ensure_aux_tables(conn)
-    return conn

@@ -72,6 +72,9 @@ class TrackListItemOut(TrackOut):
     vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
     stems: demucs bundle summary for the browser Stems column (V/I/D), or
     ``{status: none}`` when no local bundle exists.
+    has_rb_mapping: whether GET /tracks/{sid}/rb-meta can resolve this row.
+    False for a locally imported or djay-only track, whose rb-meta 404s BY
+    CONTRACT; the browser skips the per-row fetch rather than provoke it.
     """
 
     preview_b64: str | None
@@ -80,6 +83,7 @@ class TrackListItemOut(TrackOut):
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
+    has_rb_mapping: bool
 
 
 class TracksPage(BaseModel):
@@ -148,10 +152,15 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_exists: bool
     is_streaming: bool
+    # Unmatched Spotify placeholder (synthetic spotify-pending:* stable_id).
+    # Distinct from generic streaming so the browser can light-green tint.
+    spotify_pending: bool = False
     quality: QualityOut
     play_count: int = 0
     vocals: dict[str, Any]
     stems: dict[str, Any]
+    # Whether GET /tracks/{sid}/rb-meta can resolve (see TrackListItemOut).
+    has_rb_mapping: bool
 
 
 class PlaylistDetail(BaseModel):

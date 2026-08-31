@@ -19,6 +19,7 @@ Regression one-liners:
 from __future__ import annotations
 
 import multiprocessing
+import queue
 import sqlite3
 import time
 from pathlib import Path
@@ -32,6 +33,21 @@ from apps.webui.server.routes import dedup_review
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
+# Cold spawn start re-imports this module (fastapi and friends) in each child,
+# which can exceed 5s on a loaded machine. Generous deadlines keep the test
+# honest about crash-vs-slow instead of flaking on load (observed 3/9 local
+# failures, Thu 28 Aug 2026).
+LOCK_TEST_READY_DEADLINE_S = 120.0
+LOCK_TEST_JOIN_DEADLINE_S = 60.0
+
+
+def _wait_for_start_or_raise(start: Any) -> None:
+    """Fail loudly if the parent never fires the start event; no silent skew."""
+    if not start.wait(timeout=LOCK_TEST_READY_DEADLINE_S):
+        raise TimeoutError(
+            f"start event not set within {LOCK_TEST_READY_DEADLINE_S}s"
+        )
+
 
 def _hold_decision_lock(
     decisions_path: str,
@@ -42,8 +58,8 @@ def _hold_decision_lock(
     """Process target proving the decision lock serializes real writers."""
     dedup_review.DECISIONS_FILE = Path(decisions_path)
     ready.put(True)
-    start.wait(timeout=5)
     try:
+        _wait_for_start_or_raise(start)
         with dedup_review._decision_file_lock():
             entered = time.monotonic()
             time.sleep(0.15)
@@ -51,6 +67,41 @@ def _hold_decision_lock(
         result.put(("ok", entered, leaving))
     except BaseException as exc:
         result.put(("error", type(exc).__name__, str(exc)))
+
+
+def _await_children_ready(ready: Any, processes: list[Any]) -> None:
+    """Collect one readiness signal per child, distinguishing crashed from slow.
+
+    A child that dies before signaling fails the test immediately with its
+    exitcode (traceback lands in pytest's captured stderr); a slow child gets
+    the full deadline before a timeout failure names the survivors.
+    """
+    deadline = time.monotonic() + LOCK_TEST_READY_DEADLINE_S
+    signaled = 0
+    while signaled < len(processes):
+        try:
+            assert ready.get(timeout=1.0) is True
+            signaled += 1
+            continue
+        except queue.Empty:
+            pass
+        crashed = [
+            (process.pid, process.exitcode)
+            for process in processes
+            if process.exitcode not in (None, 0)
+        ]
+        if crashed:
+            raise AssertionError(
+                f"lock-test child crashed before signaling ready, "
+                f"(pid, exitcode): {crashed}; traceback is in captured stderr"
+            )
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"only {signaled}/{len(processes)} lock-test children signaled "
+                f"ready within {LOCK_TEST_READY_DEADLINE_S}s, exitcodes "
+                f"{[process.exitcode for process in processes]}; a child this "
+                f"slow is a hang, not load"
+            )
 
 
 def _seed_cluster_db(
@@ -455,14 +506,28 @@ def test_decision_file_lock_serializes_processes(tmp_path: Path) -> None:
     ]
     for process in processes:
         process.start()
-    for _ in processes:
-        assert ready.get(timeout=5) is True
-    start.set()
-    for process in processes:
-        process.join(timeout=5)
-        assert process.exitcode == 0
+    try:
+        _await_children_ready(ready, processes)
+        start.set()
+        join_deadline = time.monotonic() + LOCK_TEST_JOIN_DEADLINE_S
+        for process in processes:
+            process.join(timeout=max(0.1, join_deadline - time.monotonic()))
+            if process.exitcode is None:
+                raise AssertionError(
+                    f"lock-test child pid {process.pid} still running "
+                    f"{LOCK_TEST_JOIN_DEADLINE_S}s after start; hang, not load"
+                )
+            assert process.exitcode == 0, (
+                f"lock-test child pid {process.pid} exited "
+                f"{process.exitcode}; traceback is in captured stderr"
+            )
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=5)
 
-    intervals = [result.get(timeout=2) for _ in processes]
+    intervals = [result.get(timeout=10) for _ in processes]
     assert all(interval[0] == "ok" for interval in intervals), intervals
     first, second = sorted(intervals, key=lambda interval: interval[1])
     assert first[2] <= second[1]

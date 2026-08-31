@@ -245,12 +245,17 @@ def match_spotify_tracks(
 
 
 def load_local_tracks(conn: sqlite3.Connection) -> list[LocalTrack]:
-    """Read every row from state-layer ``tracks`` as :class:`LocalTrack`."""
+    """Read local library rows from state-layer ``tracks``.
+
+    Synthetic Spotify placeholders (``spotify-pending:*``) are excluded so
+    rematch cannot "resolve" a pending row against itself.
+    """
     import json as _json
 
     rows = conn.execute(
         "SELECT stable_id, isrc, title, artists_json, duration_ms FROM tracks "
-        "WHERE deleted_at IS NULL"
+        "WHERE deleted_at IS NULL "
+        "AND stable_id NOT LIKE 'spotify-pending:%'"
     ).fetchall()
     out: list[LocalTrack] = []
     for stable_id, isrc, title, artists_json, duration_ms in rows:

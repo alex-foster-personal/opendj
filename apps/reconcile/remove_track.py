@@ -45,6 +45,7 @@ from rich.table import Table
 from sqlalchemy import text
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 console = Console(width=120)
 
@@ -143,6 +144,14 @@ def _resolve_db_path(override: Path | None, *, live: bool) -> Path:
     * In dry-run mode (no override) we refresh the working copy from
       live and read that instead.
     """
+    if live:
+        # Gate BEFORE the override branch, not after it. ``--db`` takes any
+        # absolute path and ``_open_db`` sniffs the SQLite header and passes
+        # ``unlock=True`` for an encrypted file, so ``--live --db <the real
+        # master.db>`` is a fully working live-write lane that never mentions
+        # ``paths.REKORDBOX_LIVE_DB``. Guarding only the constant branch left
+        # that lane open while the suite stayed green.
+        require_writeback_enabled("module.reconcile.remove_track")
     if override is not None:
         return Path(override)
     if live:

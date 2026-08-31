@@ -22,6 +22,7 @@
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
+	import { hasRealBeatGrid } from '$lib/player/grid-features';
 	import {
 		performanceCommandStatus,
 		dispatchPerformanceCommand,
@@ -35,6 +36,11 @@
 		deckIdFromHoverEl
 	} from '$lib/rb/deck-hover.svelte';
 	import { formatLoadLatency } from '$lib/rb/format-load-latency';
+	import {
+		acceptTrackDragOver,
+		endTrackDrag,
+		primaryDroppedStableId
+	} from '$lib/rb/track-drag.svelte';
 	import type { DeckId, DeckState, HotCueSlot, StemControl } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
@@ -185,8 +191,12 @@
 		const revision = deck.hot_cue_revisions[slot];
 		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
 		let ms = deck.position_ms;
-		const beats = deck.anlz?.beatgrid.beats ?? [];
-		if (deck.quantize_enabled && beats.length > 0) {
+		// hasRealBeatGrid, not a bare length check: a one-beat or malformed grid
+		// passes "is it non-empty" and then throws inside quantizeToNearestBeat,
+		// refusing to save the hot cue at all. Same rule as transport - no
+		// usable grid means no snap, never a refusal.
+		const beats = deck.anlz?.beatgrid.beats;
+		if (deck.quantize_enabled && hasRealBeatGrid(beats)) {
 			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
 		}
 		try {
@@ -258,13 +268,14 @@
 		await runPerformanceCommandFromUi({ type: 'unload', deck: deckId });
 	}
 
-	const MIME_TRACK = 'application/x-mdt-stable-id';
+	// Library-row drop target. This is the ONLY track-drop path on a deck.
+	// Acceptance comes from the in-app drag state, never from
+	// dataTransfer.types: WKWebView hides custom MIME types during dragover, so
+	// a types gate stops preventDefault from running and ondrop never fires.
 	let dropHover = $state(false);
 
 	function onTrackDragOver(event: DragEvent): void {
-		if (!event.dataTransfer?.types.includes(MIME_TRACK)) return;
-		event.preventDefault();
-		event.dataTransfer.dropEffect = 'copy';
+		if (!acceptTrackDragOver(event)) return;
 		dropHover = true;
 	}
 
@@ -278,9 +289,11 @@
 
 	async function onTrackDrop(event: DragEvent): Promise<void> {
 		dropHover = false;
-		const raw = event.dataTransfer?.getData(MIME_TRACK)?.trim() ?? '';
-		const stableId = raw.split(',')[0]?.trim() ?? '';
-		if (stableId === '') return;
+		const stableId = primaryDroppedStableId(event);
+		// End here as well as on dragend: acceptance now depends on the state,
+		// so a dragend WebKit fails to deliver would leave every deck armed.
+		endTrackDrag();
+		if (stableId === null) return;
 		event.preventDefault();
 		try {
 			if (deck.stable_id !== null) {

@@ -300,12 +300,19 @@ export interface PlaylistTrackRowWire {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
+	spotify_pending?: boolean;
 	quality: TrackQuality;
 	play_count: number;
 	/** Same four-status vocals as /anlz - drives PreviewStrip blue bars. */
 	vocals: Vocals;
 	/** Demucs bundle summary for the Stems column (V/I/D). */
 	stems: StemSummary;
+	/** Whether GET /tracks/{sid}/rb-meta can resolve for this track. False
+	 * for a locally imported or djay-only track, whose rb-meta 404s BY
+	 * CONTRACT - the browser skips the lazy per-row fetch rather than
+	 * provoke a 404 the console logs unsuppressably on every visible row. */
+	has_rb_mapping: boolean;
 }
 
 export interface PlaylistDetailHydrated extends PlaylistDetail {
@@ -387,6 +394,8 @@ export type TrackListItemWire = Track & {
 	play_count: number;
 	vocals: Vocals;
 	stems: StemSummary;
+	/** See PlaylistTrackRowWire.has_rb_mapping - same flag, same purpose. */
+	has_rb_mapping: boolean;
 };
 
 export interface TracksPageHydrated {
@@ -410,6 +419,14 @@ export async function listTracksHydrated(params: {
 		if (typeof item.file_exists !== 'boolean') {
 			throw new Error(
 				`track ${String(item.stable_id)}: listing row has no file_exists - ` +
+					'backend contract point 1 not met'
+			);
+		}
+		// Loud, not falsy-defaulted: an absent flag would silently read as
+		// 'no rekordbox mapping' and strip artwork off every row.
+		if (typeof item.has_rb_mapping !== 'boolean') {
+			throw new Error(
+				`track ${String(item.stable_id)}: listing row has no has_rb_mapping - ` +
 					'backend contract point 1 not met'
 			);
 		}

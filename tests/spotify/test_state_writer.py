@@ -21,7 +21,9 @@ from apps.spotify.state_writer import (
     emit_reversal_script,
     ensure_aux_tables,
     fetch_pending_tracks,
+    fetch_playlist_link,
     mark_pending_abandoned,
+    synthetic_stable_id,
     write_playlist_and_pending,
 )
 
@@ -93,6 +95,7 @@ def test_ensure_aux_tables_idempotent(state_conn: sqlite3.Connection) -> None:
     )}
     assert "pending_tracks" in names
     assert "spotify_playlist_meta" in names
+    assert "spotify_playlist_links" in names
 
 
 @pytest.mark.requirement("CAT-01")
@@ -115,11 +118,29 @@ def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
     assert row == ("Test Playlist", "spotify", "pl123")
 
     rows = state_conn.execute(
-        "SELECT stable_id, position FROM playlist_memberships"
+        "SELECT stable_id, position FROM playlist_memberships "
+        "WHERE playlist_id = ? ORDER BY position",
+        (_state_playlist_id("pl123"),),
     ).fetchall()
     assert rows == [("s1", 0)]
 
     assert already_imported_snapshot(state_conn, "pl123") == "snap-1"
+    assert summary.odj_playlist_id is not None
+    assert summary.odj_created is True
+    link = fetch_playlist_link(state_conn, "pl123")
+    assert link is not None
+    assert link.odj_playlist_id == summary.odj_playlist_id
+    odj_rows = state_conn.execute(
+        "SELECT stable_id, position FROM playlist_memberships "
+        "WHERE playlist_id = ? ORDER BY position",
+        (summary.odj_playlist_id,),
+    ).fetchall()
+    assert odj_rows == [("s1", 0)]
+    vendor = state_conn.execute(
+        "SELECT vendor_id FROM track_vendor_ids WHERE stable_id = ? AND vendor = 'spotify'",
+        ("s1",),
+    ).fetchone()
+    assert vendor == ("t1",)
 
 
 @pytest.mark.requirement("CAT-01")
@@ -146,6 +167,27 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
         "beatport", "bandcamp", "qobuz", "apple_music", "discogs",
     }
     assert tuple(suggested) == SUGGESTED_SOURCE_KEYS
+
+    synth = synthetic_stable_id("spotify:track:t2")
+    assert summary.synthetic_tracks_written == 1
+    members = state_conn.execute(
+        "SELECT stable_id, position FROM playlist_memberships "
+        "WHERE playlist_id = ? ORDER BY position",
+        (_state_playlist_id("pl123"),),
+    ).fetchall()
+    assert members == [("s1", 0), (synth, 1)]
+    track_row = state_conn.execute(
+        "SELECT file_path, title FROM tracks WHERE stable_id = ?",
+        (synth,),
+    ).fetchone()
+    assert track_row == ("spotify:track:t2", "Mystery")
+    assert summary.odj_playlist_id is not None
+    odj_members = state_conn.execute(
+        "SELECT stable_id, position FROM playlist_memberships "
+        "WHERE playlist_id = ? ORDER BY position",
+        (summary.odj_playlist_id,),
+    ).fetchall()
+    assert odj_members == members
 
 
 @pytest.mark.requirement("CAT-01")
@@ -340,7 +382,9 @@ def test_an_imported_playlist_is_stamped_and_logged(state_conn: sqlite3.Connecti
     )
 
     counts = _changelog(state_conn)
-    assert counts.get("playlists") == 1
+    # Two playlists: the Spotify vendor playlist AND its linked ODJ twin (the
+    # user-facing browser playlist), both stamped and offered to the hub.
+    assert counts.get("playlists") == 2
     assert counts.get("playlist_memberships") == len(members)
 
 
@@ -367,4 +411,5 @@ def test_a_reimport_outranks_the_previous_import(state_conn: sqlite3.Connection)
     ).fetchone()
 
     assert (second[0], second[1]) > (first[0], first[0])
-    assert _changelog(state_conn).get("playlists") == 2
+    # Two imports x two playlists (Spotify + linked ODJ twin) = four rows.
+    assert _changelog(state_conn).get("playlists") == 4

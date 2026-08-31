@@ -1,8 +1,11 @@
-"""Migration v6 (CLOUDSYNC sync-safe schema) + machine identity.
+"""Migration v7 (CLOUDSYNC sync-safe schema) + machine identity.
 
-Contract under test: specs/design_decision_05.md.
+Contract under test: specs/design_decision_05.md. CLOUDSYNC yielded v6 to the
+Google-auth branch (users + auth_sessions) when it merged to main first, so
+this schema now lands as migration v7, one step above auth's v6. The DDL is
+unchanged; only its position in the ladder moved.
 Acceptance criteria, one assertion block each:
-- if a fresh DB opened via ``db.open_rw`` does not land on v6 with
+- if a fresh DB opened via ``db.open_rw`` does not land on v7 with
   ``PRAGMA foreign_keys`` ON, sync has no schema to run against -- broken.
 - if a v5 DB with track_locations rows loses a row, or mints a
   location_id that is not 32 lowercase hex, or drops the FK to tracks or
@@ -138,22 +141,22 @@ def _seed_v5_db(path: Path, *, locations: int) -> list[str]:
 # ----- (1) fresh DB --------------------------------------------------------
 
 
-def test_fresh_db_reaches_v6_with_foreign_keys_on(state_db_path: Path) -> None:
+def test_fresh_db_reaches_v7_with_foreign_keys_on(state_db_path: Path) -> None:
     conn = state_db.open_rw(state_db_path)
     try:
-        assert state_schema.SCHEMA_VERSION == 6
+        assert state_schema.SCHEMA_VERSION == 7
         assert len(state_schema.MIGRATIONS) == state_schema.SCHEMA_VERSION
         version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-        assert version == 6
+        assert version == 7
         assert int(conn.execute("PRAGMA foreign_keys").fetchone()[0]) == 1
         tables = _user_tables(conn)
         for expected in state_schema.TABLES:
-            assert expected in tables, f"v6 did not create {expected!r}"
+            assert expected in tables, f"the migration ladder did not create {expected!r}"
     finally:
         conn.close()
 
 
-def test_v6_adds_sync_columns_to_every_synced_table(
+def test_v7_adds_sync_columns_to_every_synced_table(
     state_conn: sqlite3.Connection,
 ) -> None:
     for table in _SYNCED_TABLES:
@@ -195,7 +198,7 @@ def test_sync_policies_reject_unknown_mode(state_conn: sqlite3.Connection) -> No
         )
 
 
-# ----- (2) v5 -> v6 round-trip on real rows --------------------------------
+# ----- (2) v5 -> v7 round-trip on real rows --------------------------------
 
 
 def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> None:
@@ -204,7 +207,7 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
 
     conn = state_db.open_rw(db_path)
     try:
-        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 6
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 7
 
         rows = conn.execute(
             "SELECT location_id, stable_id, file_path, kind, role, available, "
@@ -261,7 +264,7 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
         conn.close()
 
 
-def test_v6_indexes_lead_with_stable_id_then_machine_id(
+def test_v7_indexes_lead_with_stable_id_then_machine_id(
     state_conn: sqlite3.Connection,
 ) -> None:
     """ADR 08 point 1: machine_id joins the logical identity of a location."""
@@ -400,7 +403,8 @@ def test_opening_a_fresh_db_mints_no_identity(state_db_path: Path) -> None:
 
 
 def test_insert_without_location_id_mints_one(state_conn: sqlite3.Connection) -> None:
-    """A writer that predates v6 must not create NULL-keyed, unsyncable rows."""
+    """A writer that predates the sync migration must not create NULL-keyed,
+    unsyncable rows."""
     state_conn.execute(
         "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
         "VALUES ('t1', 'isrc', ?, ?)",
@@ -415,15 +419,15 @@ def test_insert_without_location_id_mints_one(state_conn: sqlite3.Connection) ->
     assert isinstance(key, str) and len(key) == 32
 
 
-def test_v5_to_v6_is_idempotent(tmp_path: Path) -> None:
+def test_v5_to_v7_is_idempotent(tmp_path: Path) -> None:
     db_path = tmp_path / "twice.db"
     _seed_v5_db(db_path, locations=3)
     state_db.open_rw(db_path).close()
     conn = state_db.open_rw(db_path)
     try:
-        assert state_schema.apply_migrations(conn) == 6
+        assert state_schema.apply_migrations(conn) == 7
         assert conn.execute("SELECT COUNT(*) FROM track_locations").fetchone()[0] == 3
-        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == 6
+        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == 7
     finally:
         conn.close()
 

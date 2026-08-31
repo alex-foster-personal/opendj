@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
 # ----- Path resolution (mirrors playlist_apply._live_db_path) -----------
@@ -19,7 +20,10 @@ def _live_rb_db_path(live: bool) -> Path:
     ``--live`` MUST resolve to :data:`paths.REKORDBOX_LIVE_DB`; otherwise
     we open the working copy under ``data/``.
     """
-    return paths.REKORDBOX_LIVE_DB if live else paths.REKORDBOX_WORKING_DB
+    if live:
+        require_writeback_enabled("module.sync.apply_ratings")
+        return paths.REKORDBOX_LIVE_DB
+    return paths.REKORDBOX_WORKING_DB
 
 
 def _live_djay_db_path(live: bool) -> Path:

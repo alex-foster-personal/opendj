@@ -614,7 +614,15 @@ def test_posix_escalation_failure_retains_nonexpiring_claim(
     from apps.vocals import cli as vcli
 
     class RunningProcess:
-        pid = 4343
+        # This test's premise is "SIGKILL was DENIED on a group that is still
+        # live", and cleanup now tells that apart from "denied because the
+        # group holds only corpses" -- an EPERM macOS returns for both. So the
+        # pgid has to name a genuinely live group or the denial is correctly
+        # read as benign and nothing raises. The runner's own group is the
+        # cheapest live one; os.killpg is monkeypatched for the whole call
+        # below, so no signal ever reaches it. It was a synthetic 4343, which
+        # named no group at all.
+        pid = os.getpgid(0)
 
         def wait(self, timeout: Optional[float] = None) -> int:
             if timeout is not None:

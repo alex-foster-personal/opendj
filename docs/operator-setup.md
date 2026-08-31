@@ -1,6 +1,6 @@
 # Operator Setup - music-dj-tools
 
-*The minimum you need to install on your Mac before any feature works. Each section is independent - install only what you want.*
+_The minimum you need to install on your Mac before any feature works. Each section is independent - install only what you want._
 
 ## Environment variables
 
@@ -45,8 +45,9 @@ The `--no-build-isolation` flag is required because `madmom` needs `cython` and 
 ## Feature: Analysis pipeline (Phase 6)
 
 - `brew install ffmpeg` (also used by Phase 12 set recording).
+- The default backend is `librosa`: pure PyPI wheels (librosa ISC, scipy BSD-3-Clause) via the `analysis` extra, so analysis works on a clean machine with no git builds. It does beats/BPM, onsets, key, RMS, and energy -- no downbeat tracking.
+- `librosa+madmom` is the optional dev-only learned beat/downbeat backend (`--backend librosa+madmom`). madmom is a git-HEAD install from `requirements.txt`; its code is BSD-3-Clause but its bundled pre-trained models are CC-BY-NC-SA 4.0 (non-commercial only), so it must never be an automatic fallback or part of a distributed install.
 - `numpy<2` pin in `requirements.txt` is required for `madmom` compatibility. Do not upgrade numpy separately in this venv.
-- No further host setup; librosa + madmom + scipy are pure Python wheels.
 
 ## Feature: Spotify import (Phase 9)
 
@@ -159,7 +160,7 @@ Do not put either key in a `.env` file.
 ## Feature: Open-dj adapters (Phase 15 / 16)
 
 - Nothing extra. Pure Python. `jsonschema[format]` and `rfc8785` come from `requirements.txt`.
-- Entry point: `python -m apps.open_dj ...` (see `apps/open_dj/cli.py`).
+- Entry point: `python -m apps.open_dj.cli ...` (see `apps/open_dj/cli.py`).
 
 ## Feature: Launcher (Phase 17 / 18)
 
@@ -178,6 +179,19 @@ pnpm tauri dev
 ```
 
 - Hotkey: `Alt+Space` (fallback `Ctrl+Cmd+Space`). Type 2+ characters to filter. Drag a row onto djay Pro's Deck A / B to load.
+
+## Building the dmg
+
+Prerequisites for `just dmg` (first successful end-to-end build in PR #510, Fri 28-Sat 29 Aug 2026). The recipe stages the engine payload, bundles the Tauri shell, then mounts and verifies the artifact in one pass; any missing piece exits non-zero.
+
+- cargo >= 1.85. The crate graph pulls edition2024 crates; `rustup update stable`.
+- tauri-cli ^2: `cargo install tauri-cli --locked --version '^2'`.
+- A uv-resolved repo venv. Its interpreter version drives the staged runtime (3.11 and 3.14 are proven; the runtime prune list has been glob-based since #510, so it follows whatever minor is staged).
+- SPA pre-built: `pnpm build` in `apps/webui/frontend`. The payload builder fails loudly on a missing or stale build; it never rebuilds the SPA behind your back.
+- Clean working tree. Release builds are cut from clean trees only; any dirty file aborts.
+- Lane label: plain `just dmg` builds the real product (Open DJ). A lane build requires double intent: `MDT_LANE_LABEL=X` in the env AND `just dmg X` together (OPS-08; a lone env var or a lone recipe arg is refused).
+- arm64 only (v1 decision). The artifact does not run on Intel Macs.
+- Signing is required, not optional. `MDT_MACOS_SIGNING_IDENTITY` (a Developer ID Application identity) and `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` (an `xcrun notarytool store-credentials` profile) must both be set, or the build is refused before it starts. The one deliberate way past that is `MDT_SHIP_UNSIGNED=1`, which builds an unsigned dev image and says so loudly; a downloaded unsigned image arrives quarantined, and `ship_dmg.sh` clears the attribute on install for that case only. Setting `MDT_SHIP_UNSIGNED=1` together with an identity is refused as contradictory. This is the Developer ID direct-download path; `scripts/ship_appstore.sh` is a separate path with a different certificate off the same Team ID.
 
 ## Safety rail updates in the v1.0 ship window
 

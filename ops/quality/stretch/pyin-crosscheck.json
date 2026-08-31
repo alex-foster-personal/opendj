@@ -1,0 +1,24 @@
+[
+  {
+    "agreement_within_20_cents": 0.8461538461538461,
+    "fixture": "F2",
+    "frames_compared": 37,
+    "median_cents_offset": 1.4573345511391504,
+    "octave_disagreements": 2,
+    "p95_abs_cents": 47.201118207639,
+    "status": "ok",
+    "voiced_fraction_mine": 0.10618436406067679,
+    "voiced_fraction_pyin": 0.08284714119019837
+  },
+  {
+    "agreement_within_20_cents": 0.8818897637795275,
+    "fixture": "F5",
+    "frames_compared": 131,
+    "median_cents_offset": 2.6682159087266104,
+    "octave_disagreements": 2,
+    "p95_abs_cents": 37.68639569297302,
+    "status": "ok",
+    "voiced_fraction_mine": 0.1866977829638273,
+    "voiced_fraction_pyin": 0.4574095682613769
+  }
+]

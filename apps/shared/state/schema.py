@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION: int = 6
+SCHEMA_VERSION: int = 7
 
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -236,7 +236,7 @@ _V4: list[str] = [
 # both steps; IF NOT EXISTS / OR IGNORE keep the second a no-op.
 _V5: list[str] = _V4
 
-# --- migration 5 -> 6: sync-safe schema (CLOUDSYNC) ------------------------
+# --- migration 6 -> 7: sync-safe schema (CLOUDSYNC) ------------------------
 # Contract: specs/design_decision_05.md, rationale specs/design_decision_04.md.
 # Three facts blocked hub sync: track_locations had an INTEGER PRIMARY KEY
 # AUTOINCREMENT that collides across machines, no synced table carried
@@ -245,7 +245,10 @@ _V5: list[str] = _V4
 # machinery.
 #
 # Amended IN PLACE for round 2 by specs/design_decision_08.md points 1 and 2
-# (v6 has never touched a real database; v7 is reserved for the auth branch).
+# (this migration had never touched a real database). ADR 05 reserved v6 for
+# CLOUDSYNC and v7 for auth, but the auth branch (Google sign-in) merged to
+# main first and took v6, so CLOUDSYNC yields and renumbers to v7: this list
+# sits ABOVE main's auth _V6 in the ladder. Same statements, one step higher.
 #
 # Four deliberate readings of the ADRs, recorded here so a reader does not
 # have to diff the docs:
@@ -282,7 +285,7 @@ _V5: list[str] = _V4
 #    ``MAX(seq)`` going backwards, so pruning a changelog no longer looks
 #    like a Litestream restore and no longer makes every spoke re-offer its
 #    whole library. NULL until the first sync against that peer completes.
-_V6: list[str] = [
+_V7: list[str] = [
     # --- fleet identity + per-machine policy (synced set, ADR 04 c8) ------
     """
     CREATE TABLE IF NOT EXISTS machines (
@@ -438,9 +441,55 @@ _V6: list[str] = [
     "WHERE remote_url IS NOT NULL",
 ]
 
+# --- migration 5 -> 6: Google sign-in (users + auth_sessions) --------------
+# The webui gained a user bauble that signs in with Google (openid/email/
+# profile only). Two tables, both keyed off Google's ``sub`` claim -- the
+# only identifier Google guarantees is stable and never reused. Email is
+# NOT the key: Google account emails can change.
+#
+# ``auth_sessions.session_token_sha256`` stores a hash, never the bearer
+# value the browser holds, so a stolen DB cannot be replayed as a cookie.
+# ``refresh_token`` is the Google grant that produced the session; it stays
+# server-side and is never exposed over the API.
+#
+# Numbered 6, not 4: this landed on a branch cut before main's
+# track_locations work, and both claimed _V4 independently. A DB that had
+# already applied main's 4 and 5 would never have run these statements, so
+# the auth tables move to their own step rather than sharing a number.
+_V6: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        google_sub  TEXT PRIMARY KEY,
+        email       TEXT NOT NULL,
+        name        TEXT,
+        avatar_url  TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+    """
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        session_token_sha256 TEXT PRIMARY KEY,
+        google_sub           TEXT NOT NULL
+                               REFERENCES users(google_sub) ON DELETE CASCADE,
+        refresh_token        TEXT,
+        access_token         TEXT,
+        access_expires_at    TEXT,
+        created_at           TEXT NOT NULL,
+        last_seen_at         TEXT NOT NULL,
+        expires_at           TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_sub "
+    "ON auth_sessions(google_sub)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires "
+    "ON auth_sessions(expires_at)",
+]
+
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -502,7 +551,10 @@ TABLES: tuple[str, ...] = (
     "adapters",
     "events",
     "track_locations",
-    # v6 (CLOUDSYNC, specs/design_decision_05.md)
+    # v6 (auth, Google sign-in) -- landed on main first, took v6
+    "users",
+    "auth_sessions",
+    # v7 (CLOUDSYNC, specs/design_decision_05.md) -- yielded to v7
     "machines",
     "sync_policies",
     "playlist_pins",

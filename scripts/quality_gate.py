@@ -113,6 +113,20 @@ class CFG:
     VENDORED: tuple[str, ...] = (
         "apps/sync/usb/pioneer/_vendor",
     )
+    # Build OUTPUT that happens to land under a scored path. Neither
+    # third-party source nor ours: derived bytes, gitignored, rebuilt from
+    # scratch by `just dmg`. The desktop payload stages a relocatable CPython
+    # plus the whole installed dependency closure into
+    # apps/desktop/src-tauri/payload, and tauri-build mirrors it into target/
+    # for dev runs -- ~100MB of numpy, uvicorn and sqlalchemy that would
+    # otherwise be scored as this repo's own complexity debt. radon found it
+    # first, by failing to parse numpy's .pxd files: the gate crashed rather
+    # than merely lying, which is the better of the two outcomes but still
+    # not the right one.
+    DERIVED: tuple[str, ...] = (
+        "apps/desktop/src-tauri/payload/",
+        "apps/desktop/src-tauri/target/",
+    )
 
 
 # Metrics that must be exactly zero, with no baseline allowance. An
@@ -192,12 +206,16 @@ def _is_vendored(rel: str) -> bool:
     return any(rel.startswith(v) for v in CFG.VENDORED)
 
 
+def _is_derived(rel: str) -> bool:
+    return any(rel.startswith(d) for d in CFG.DERIVED)
+
+
 def _python_files() -> list[Path]:
     out: list[Path] = []
     for root in CFG.PY_PATHS:
         for path in (REPO / root).rglob("*.py"):
             rel = path.relative_to(REPO).as_posix()
-            if "__pycache__" in rel or _is_vendored(rel):
+            if "__pycache__" in rel or _is_vendored(rel) or _is_derived(rel):
                 continue
             out.append(path)
     return out
@@ -205,10 +223,15 @@ def _python_files() -> list[Path]:
 
 def _frontend_files() -> list[Path]:
     src = FRONTEND / "src"
+    # api-types.ts is emitted by openapi-typescript ("Do not make direct
+    # changes"); its length tracks the API surface, not hand-written bloat,
+    # so sizing it would gate every new endpoint. Same principle as keeping
+    # the desktop payload out of the Python scans.
+    generated = {src / "lib" / "api-types.ts"}
     return [
         p
         for p in src.rglob("*")
-        if p.suffix in {".ts", ".svelte", ".js"} and p.is_file()
+        if p.suffix in {".ts", ".svelte", ".js"} and p.is_file() and p not in generated
     ]
 
 
@@ -267,15 +290,21 @@ def _eval_ruff() -> list[Metric]:
 
 def _eval_complexity() -> list[Metric]:
     paths = ["apps"]
-    _, cc_raw = _uv("radon", "cc", *paths, "-j", allow_fail=True)
+    # radon walks the tree itself and does NOT read .gitignore, so the desktop
+    # payload's bundled CPython has to be excluded by hand. Skipping it in the
+    # loop below is not enough: radon reports an unparseable file as an error
+    # entry, and numpy ships .pxd files that are not Python, so an unexcluded
+    # payload crashes this evaluator before the filter is ever reached.
+    excludes = ",".join(f"{prefix}*" for prefix in CFG.DERIVED)
+    _, cc_raw = _uv("radon", "cc", *paths, "-e", excludes, "-j", allow_fail=True)
     cc = json.loads(cc_raw)
     worst_name, worst_value = "", 0
     over_limit = 0
     for file, blocks in cc.items():
+        if _is_vendored(file) or _is_derived(file):
+            continue
         if isinstance(blocks, dict) and blocks.get("error"):
             raise RuntimeError(f"radon failed to parse {file}: {blocks['error']}")
-        if _is_vendored(file):
-            continue
         for block in blocks:
             value = block["complexity"]
             if value > CFG.MAX_COMPLEXITY:
@@ -284,14 +313,16 @@ def _eval_complexity() -> list[Metric]:
                 worst_value = value
                 worst_name = f"{file}:{block['lineno']} {block['name']}"
 
-    _, mi_raw = _uv("radon", "mi", *paths, "-j", allow_fail=True)
+    _, mi_raw = _uv("radon", "mi", *paths, "-e", excludes, "-j", allow_fail=True)
     mi = json.loads(mi_raw)
     low_mi = sorted(
         (
             (file, data["mi"])
             for file, data in mi.items()
             if isinstance(data, dict) and "rank" in data
-            and data["rank"] != "A" and not _is_vendored(file)
+            and data["rank"] != "A"
+            and not _is_vendored(file)
+            and not _is_derived(file)
         ),
         key=lambda kv: kv[1],
     )

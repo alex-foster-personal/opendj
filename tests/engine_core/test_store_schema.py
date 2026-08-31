@@ -899,6 +899,12 @@ def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> N
 
     before_objects = objects(conn)
     before_counts = _row_counts(conn)
+    before_legacy_version = int(
+        conn.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_meta WHERE version < ?",
+            (consolidated.VERSION_OFFSET,),
+        ).fetchone()[0]
+    )
     assert before_counts.get("tracks", 0) > 0, "fixture: the live DB should have tracks"
 
     consolidated.apply_migrations(conn)
@@ -932,8 +938,19 @@ def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> N
         consolidated.ADOPTION_VERSION,
         consolidated.VERSION_OFFSET + consolidated.SCHEMA_VERSION,
     }, f"adoption wrote unexpected ledger rows: {sorted(stamped)}"
-    assert after_counts["schema_meta"] == before_counts["schema_meta"] + 2, (
-        "adoption should add exactly the two marker rows"
+    # Two consolidated markers, PLUS one row per legacy ladder step this file
+    # still owed. A sample DB captured before a legacy version bump is behind
+    # by definition, and adoption is right to carry it forward -- pinning this
+    # at +2 would only hold while the sample happened to sit at the terminal
+    # legacy version, and would fail every future bump for the wrong reason.
+    legacy_steps_owed = max(
+        0, consolidated.LEGACY_SHARED_STATE_VERSION - before_legacy_version
+    )
+    assert after_counts["schema_meta"] == (
+        before_counts["schema_meta"] + 2 + legacy_steps_owed
+    ), (
+        "adoption should add the two marker rows plus one row per legacy step "
+        f"it had to run (owed {legacy_steps_owed} from v{before_legacy_version})"
     )
 
     created = set(after_counts) - set(before_counts) - LEDGER_TABLES
