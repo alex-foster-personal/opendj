@@ -653,9 +653,9 @@ def _apply_edit(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
 def _apply_sync(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     if machine in run.offline:
         raise ScenarioError(
-            f"machine is partitioned (offline); a real spoke cannot reach "
-            f"the hub in this state -- add a 'partition' step to reconnect "
-            f"it first"
+            "machine is partitioned (offline); a real spoke cannot reach "
+            "the hub in this state -- add a 'partition' step to reconnect "
+            "it first"
         )
     result = client.run_sync(
         run.data_dirs[machine], "http://hub.invalid", transport=run.hub_transport, name=machine
@@ -783,24 +783,35 @@ def _apply_assert_digest(run: SimRun, machine: str, args: Mapping[str, Any]) -> 
             )
 
 
+def _dispatch_step(run: SimRun, step: Step) -> None:
+    """The action -> handler mapping, raising on anything unrecognized.
+
+    Split out of :func:`_execute_step` (ruff TRY301): the dispatch is what
+    can raise ``ScenarioError`` for an unknown action, and living in its own
+    function keeps the outer ``try`` catching only calls, never raising
+    directly itself.
+    """
+    if step.action == "edit":
+        _ensure_spoke(run, step.on, "edit")
+        _apply_edit(run, step.on, step.args)
+    elif step.action == "sync":
+        _ensure_spoke(run, step.on, "sync")
+        _apply_sync(run, step.on, step.args)
+    elif step.action == "assert_converged":
+        _apply_assert_converged(run, step.on, step.args)
+    elif step.action == "assert_digest":
+        _apply_assert_digest(run, step.on, step.args)
+    elif step.action == "partition":
+        _ensure_spoke(run, step.on, "partition")
+        _apply_partition(run, step.on, step.args)
+    else:
+        raise ScenarioError(f"unknown action {step.action!r}")
+
+
 def _execute_step(run: SimRun, index: int, step: Step) -> None:
     where = f"steps[{index}] ({step.action} on {step.on})"
     try:
-        if step.action == "edit":
-            _ensure_spoke(run, step.on, "edit")
-            _apply_edit(run, step.on, step.args)
-        elif step.action == "sync":
-            _ensure_spoke(run, step.on, "sync")
-            _apply_sync(run, step.on, step.args)
-        elif step.action == "assert_converged":
-            _apply_assert_converged(run, step.on, step.args)
-        elif step.action == "assert_digest":
-            _apply_assert_digest(run, step.on, step.args)
-        elif step.action == "partition":
-            _ensure_spoke(run, step.on, "partition")
-            _apply_partition(run, step.on, step.args)
-        else:
-            raise ScenarioError(f"unknown action {step.action!r}")
+        _dispatch_step(run, step)
     except ScenarioError as exc:
         raise ScenarioError(f"{where}: {exc}") from exc
 
@@ -913,17 +924,26 @@ def _run_fleet_cli(scenario: Scenario, args: argparse.Namespace) -> None:
     )
 
 
+def _run_mode(scenario: Scenario, args: argparse.Namespace) -> None:
+    """The ``--mode`` dispatch, raising on anything unrecognized.
+
+    Split out of :func:`main` (ruff TRY301) for the same reason
+    :func:`_dispatch_step` was: the outer ``try`` should catch, not raise.
+    """
+    if args.mode == "sim":
+        with tempfile.TemporaryDirectory(prefix="cloudsync-scenario-") as tmp:
+            run_scenario_sim(scenario, Path(tmp))
+    elif args.mode == "fleet":
+        _run_fleet_cli(scenario, args)
+    else:
+        raise ScenarioError(f"unknown --mode {args.mode!r}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
     try:
         scenario = _find_scenario(args.scenario)
-        if args.mode == "sim":
-            with tempfile.TemporaryDirectory(prefix="cloudsync-scenario-") as tmp:
-                run_scenario_sim(scenario, Path(tmp))
-        elif args.mode == "fleet":
-            _run_fleet_cli(scenario, args)
-        else:
-            raise ScenarioError(f"unknown --mode {args.mode!r}")
+        _run_mode(scenario, args)
     except (ScenarioError, NotImplementedError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
