@@ -975,7 +975,11 @@
 	}
 
 	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
-		if (typeof wire.stable_id !== 'string' || typeof wire.file_exists !== 'boolean') {
+		if (
+			typeof wire.stable_id !== 'string' ||
+			typeof wire.file_exists !== 'boolean' ||
+			typeof wire.has_rb_mapping !== 'boolean'
+		) {
 			throw new Error(
 				`hydrated playlist row ${order} malformed - backend contract point 4 not met`
 			);
@@ -1001,6 +1005,7 @@
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
 			vocals: parseVocals(wire.vocals),
 			stems: parseStemSummary(wire.stems),
+			has_rb_mapping: wire.has_rb_mapping,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1038,6 +1043,7 @@
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
 			vocals: parseVocals(track.vocals),
 			stems: parseStemSummary(track.stems),
+			has_rb_mapping: track.has_rb_mapping,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1083,16 +1089,22 @@
 	}
 
 	async function _hydrateRowMeta(row: BrowserRow): Promise<void> {
+		// Without a rekordbox mapping there is nothing here worth a round-trip.
+		// Since #505 rb-meta answers 200 for such a track, but every field in
+		// that payload is a known constant (vendor local, vendor_id null,
+		// artwork/analysis false, cue_count 0, genre null) except quality and
+		// file_exists, which THIS ROW already carries inline from the listing.
+		// So the request could only tell us what we know. Skipping it also
+		// keeps a locally imported library off one fetch per visible row.
+		if (!row.has_rb_mapping) return;
 		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
 		} catch (exc) {
-			if (exc instanceof RbApiError && exc.status === 404) {
-				// No rekordbox vendor mapping for this track - a real library
-				// state: no meta, no artwork.
-				return;
-			}
+			// A track with no rekordbox vendor mapping is NOT an error any more:
+			// rb-meta answers 200 with the local-vendor payload. A 404 here now
+			// means an unknown stable_id, which is a real fault worth logging.
 			// Loud but non-modal: a toast per row would spam during scrolling.
 			// Transient fails leave rb_meta null; rowVisible can retry later
 			// when the row re-enters the observer (inflight cleared).
@@ -1102,7 +1114,8 @@
 		}
 	}
 
-	/** One retry on non-404 failure so a blip does not leave the row art-dead. */
+	/** One retry on non-404 failure so a blip does not leave the row art-dead.
+	 * A 404 (unknown stable_id) is terminal - retrying it just doubles the noise. */
 	async function _fetchRbMetaWithRetry(stable_id: string): Promise<RbMeta> {
 		try {
 			return await fetchRbMeta(stable_id);

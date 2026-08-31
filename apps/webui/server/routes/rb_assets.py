@@ -9,7 +9,7 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -44,20 +44,27 @@ class BeatgridIssueOut(BaseModel):
 
 
 class RbMetaOut(BaseModel):
-    """COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief)."""
+    """COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).
+
+    ``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the
+    rekordbox-sourced fields are then honestly empty (``vendor_id`` None,
+    artwork/analysis False, no cues, no genre) while ``folder_path``,
+    ``file_exists`` and ``quality`` still carry the state layer's own disk
+    truth. See :func:`_local_rb_meta`.
+    """
 
     stable_id: str
-    vendor: str
-    vendor_id: str
-    folder_path: Optional[str]
+    vendor: Literal["rekordbox", "local"]
+    vendor_id: str | None
+    folder_path: str | None
     file_exists: bool
     is_streaming: bool
-    genre: Optional[str]
-    comment: Optional[str]
-    duration_s: Optional[int]
+    genre: str | None
+    comment: str | None
+    duration_s: int | None
     artwork_available: bool
     analysis_available: bool
-    beatgrid_issue: Optional[BeatgridIssueOut]
+    beatgrid_issue: BeatgridIssueOut | None
     cue_count: int
     quality: QualityOut
 
@@ -137,6 +144,40 @@ def get_track_anlz(
     return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ})
 
 
+def _local_rb_meta(stable_id: str) -> RbMetaOut:
+    """rb-meta for a track with NO rekordbox vendor mapping - never a 404.
+
+    Mirrors :func:`get_track_anlz`'s VENDOR_MAPPING_NOT_FOUND branch: every
+    rekordbox-sourced field is empty because it genuinely does not exist for a
+    locally imported file, and nothing is synthesised to fill the gap. The two
+    fields that are NOT rekordbox facts - file_exists and quality - are still
+    measured, from the same state-layer file_path and the same cached stat the
+    bulk listing uses, so a row and its rb-meta cannot disagree.
+    """
+    file_path, duration_ms = rb_vendor.local_track_row(stable_id)
+    quality = rb_vendor.bulk_quality(
+        [stable_id], {stable_id: file_path}, {stable_id: duration_ms}
+    )[stable_id]
+    return RbMetaOut(
+        stable_id=stable_id,
+        vendor="local",
+        vendor_id=None,
+        folder_path=file_path,
+        file_exists=rb_vendor.bulk_availability(
+            [stable_id], {stable_id: file_path}, {}
+        )[stable_id],
+        is_streaming=rb_vendor.is_streaming_path(file_path),
+        genre=None,
+        comment=None,
+        duration_s=duration_ms // 1000 if duration_ms is not None else None,
+        artwork_available=False,
+        analysis_available=False,
+        beatgrid_issue=None,
+        cue_count=0,
+        quality=QualityOut(**quality),
+    )
+
+
 @router.get("/{stable_id}/rb-meta", response_model=RbMetaOut)
 def get_track_rb_meta(
     stable_id: str,
@@ -144,8 +185,17 @@ def get_track_rb_meta(
     _backend: StateBackend = Depends(get_read_state),
 ) -> RbMetaOut:
     """Rekordbox vendor fields + file-existence flags for browser rows."""
-    content = rb_vendor.resolve_content(stable_id)
     response.headers["Cache-Control"] = _CACHE_RB_META
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+        # Locally imported track: empty-but-valid payload, same contract shape
+        # as get_track_anlz's fallback. A whole locally-imported library would
+        # otherwise 404 once per visible row (console noise, no information).
+        return _local_rb_meta(stable_id)
     is_streaming = rb_vendor.is_streaming_path(content.folder_path)
     # Same residency gate as bulk listings (dataless stubs == missing).
     file_exists = False
