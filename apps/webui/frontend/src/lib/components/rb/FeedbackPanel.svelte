@@ -14,6 +14,8 @@
 		PANEL_POS_KEY,
 		parsePanelPos,
 		serializePanelPos,
+		startsPanelDrag,
+		type DragNode,
 		type PanelPos
 	} from '$lib/rb/feedback';
 	import {
@@ -82,6 +84,11 @@
 	// ----- panel drag -----------------------------------------------------
 	function handleDragDown(e: PointerEvent): void {
 		if (panelPos === null) return;
+		// The close X lives INSIDE this handle. Capturing the pointer here
+		// retargets the derived click to the header, so the button's own
+		// onclick never runs and the X cannot dismiss the panel.
+		if (!startsPanelDrag(e.target as DragNode | null, e.currentTarget as DragNode | null))
+			return;
 		dragging = true;
 		dragOffset = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);

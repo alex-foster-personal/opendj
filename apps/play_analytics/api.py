@@ -9,7 +9,13 @@ from fastapi import APIRouter, HTTPException, Query
 
 from apps.sets.paths import SETS_DB
 
-from .query import AnalyticsSchemaError, EventsTable, ShareState, query_play_analytics
+from .query import (
+    DEFAULT_MIN_AUDIBLE_S,
+    AnalyticsSchemaError,
+    EventsTable,
+    ShareState,
+    query_play_analytics,
+)
 
 
 def create_router(
@@ -26,6 +32,17 @@ def create_router(
     def get_play_analytics(
         share_state: ShareState | None = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        min_audible_s: Annotated[
+            float,
+            Query(
+                ge=0,
+                description=(
+                    "Read-time 'counts as played' filter, in seconds of "
+                    "audible playback. Only applies to rows that recorded a "
+                    "dwell (Open DJ's own decks). 0 counts every play."
+                ),
+            ),
+        ] = DEFAULT_MIN_AUDIBLE_S,
     ) -> dict[str, object]:
         try:
             return query_play_analytics(
@@ -33,6 +50,7 @@ def create_router(
                 share_state=share_state,
                 limit=limit,
                 events_table=events_table,
+                min_audible_s=min_audible_s,
             )
         except AnalyticsSchemaError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc

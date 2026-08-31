@@ -599,8 +599,9 @@ def resume(
 def _default_source_factories(
     cfg: RecorderConfig,
 ) -> dict[str, Callable[[Recorder], Any]]:
-    """Return factories that build live DjaySource / RB source."""
+    """Return factories that build the live deck-state sources."""
     from .sources.djay_source import DjaySource
+    from .sources.opendj_source import OpenDjDeckSource
     from .sources.rb_source import RekordboxHistorySource
 
     def make_djay(rec: Recorder) -> Any:
@@ -619,7 +620,19 @@ def _default_source_factories(
             session_started_at=rec.session_started_at,
         )
 
-    return {"djay_monitor": make_djay, "rb_history": make_rb}
+    def make_opendj(rec: Recorder) -> Any:
+        # Push-fed: the HTTP ingest calls submit(), this poll drains it.
+        return OpenDjDeckSource(
+            session_id=rec.session_id,
+            state=rec.state,
+            session_started_at=rec.session_started_at,
+        )
+
+    return {
+        "djay_monitor": make_djay,
+        "rb_history": make_rb,
+        "opendj_decks": make_opendj,
+    }
 
 
 def status(

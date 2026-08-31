@@ -14,6 +14,7 @@ is bound.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -28,6 +29,12 @@ from apps.engine_core.config import (
     prepare_layout,
 )
 from apps.engine_core.lock import EngineLock, EngineLockError
+from apps.feature_flags.profiles import (
+    BUILD_PROFILE_ENV,
+    UnknownProfileError,
+    available_profiles,
+    profile_path,
+)
 
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
@@ -53,18 +60,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="single-worker by design; anything else is refused",
     )
     serve.add_argument("--log-level", default="info")
+    serve.add_argument(
+        "--build-profile",
+        default=None,
+        help=(
+            "named feature-flag profile for this boot, e.g. 'appstore'. "
+            f"One of: {', '.join(available_profiles())}. Sets "
+            f"{BUILD_PROFILE_ENV} for the process; an explicit "
+            "MDT_FEATURE_FLAGS_FILE still wins. An unknown name is refused, "
+            "never defaulted to the full build."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _apply_build_profile(args.build_profile)
         cfg = build_config(args.data_dir, args.host, args.port)
         _preflight(cfg, workers=args.workers)
     except EngineBootError as exc:
         print(f"[ERROR] engine refused to boot: {exc}", file=sys.stderr)
         return EXIT_REFUSED
     return _serve(cfg, log_level=args.log_level)
+
+
+def _apply_build_profile(name: str | None) -> None:
+    """Publish ``--build-profile`` to the environment, validating it first.
+
+    Set as an env var rather than threaded through EngineConfig because the
+    flag store is read at import-adjacent startup by ``create_app`` and by any
+    subprocess this boot spawns, and one env var reaches all of them. Validated
+    HERE so a typo dies at argument parsing with the list of real profiles,
+    rather than at flag-load time inside the app factory.
+    """
+    if name is None:
+        return
+    try:
+        profile_path(name)
+    except UnknownProfileError as exc:
+        raise EngineBootError(str(exc)) from exc
+    os.environ[BUILD_PROFILE_ENV] = name
 
 
 def _preflight(cfg: EngineConfig, *, workers: int) -> None:
@@ -81,6 +118,39 @@ def _preflight(cfg: EngineConfig, *, workers: int) -> None:
     prepare_layout(cfg)
 
 
+def _telemetry_decision():
+    """Ask the build what it is, then decide whether to report errors.
+
+    This glue lives here rather than in apps.shared.telemetry because that
+    module has to stay a leaf: apps.engine_core imports apps.webui, and
+    apps.webui imports the telemetry module, so a build_info import from
+    inside it would close a cycle.
+
+    A build that cannot describe itself is treated as a checkout rather than
+    as a fault. Telemetry is the diagnostic, not the product, so it declines
+    to report rather than taking the boot down with it -- and a checkout
+    defaults OFF, so declining is also the quiet, safe direction.
+    """
+    from apps.engine_core.build_info import (
+        BuildInfoUnavailable,
+        resolve_build_info,
+    )
+    from apps.shared import platform_paths
+    from apps.shared.telemetry import decide_telemetry
+
+    try:
+        info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
+        source, release = info.source, info.git_sha_full
+    except BuildInfoUnavailable as exc:
+        print(
+            f"[WARN] build identity unavailable ({exc}); telemetry treats this "
+            "as a checkout and will not tag a release",
+            file=sys.stderr,
+        )
+        source, release = None, None
+    return decide_telemetry(os.environ, build_source=source, release=release)
+
+
 def _serve(cfg: EngineConfig, *, log_level: str) -> int:
     lock = EngineLock(cfg.lock_path)
     try:
@@ -94,6 +164,19 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
         import uvicorn
 
         from apps.engine_core.app import create_app
+        from apps.shared.telemetry import TelemetryConfigError, init_telemetry
+
+        # BEFORE create_app, not after: the Sentry FastAPI integration wraps
+        # route handlers as they are registered, so a later init would leave
+        # every route already built and silently uninstrumented.
+        try:
+            init_telemetry(_telemetry_decision())
+        except TelemetryConfigError as exc:
+            # Asked for by name and undeliverable. Refusing here is the whole
+            # point: booting anyway would mean the errors somebody is waiting
+            # on never arrive and nothing ever says so.
+            print(f"[ERROR] telemetry refused to start: {exc}", file=sys.stderr)
+            return EXIT_REFUSED
 
         app = create_app(cfg, lock=lock)
         print(

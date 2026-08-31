@@ -3,9 +3,13 @@ import { before, describe, it } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
+/** The chain/pick algebra lives in its own module; auto-play.ts re-exports only
+ * the part with static importers, so reach internals are read from the owner. */
+let chain;
 
 before(async () => {
 	mod = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
+	chain = await loadTypeScriptModule('src/lib/rb/auto-play-chain.ts');
 });
 
 function deck(partial) {
@@ -393,7 +397,7 @@ describe('auto-play maximize reach (slack path)', () => {
 	});
 
 	it('over budget falls back to greedy earliest with fell_back', () => {
-		const { pickNextMaximizingReach, AUTO_PLAY_REACH_MAX_STEPS } = mod;
+		const { pickNextMaximizingReach, AUTO_PLAY_REACH_MAX_STEPS } = chain;
 		assert.equal(AUTO_PLAY_REACH_MAX_STEPS >= 50_000, true);
 		const many = [row('a', '8A', 120), row('b', '8A', 121), row('c', '8A', 119)];
 		const pick = pickNextMaximizingReach({
@@ -482,5 +486,348 @@ describe('auto-play Beat Sync handoff policy', () => {
 		});
 		assert.match(halfDouble, /Select BEAT mode for half\/double/);
 		assert.doesNotMatch(halfDouble, /auto-switch/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Live-set regression, Mon 31 Aug 2026. Two operator-visible failures:
+//   1. "autoplay loaded SAME song into two decks"
+//   2. "contact and acid rain both loaded after hypnosis - shortly after each
+//      other, and got an error re set deck master which I then couldn't dismiss"
+// The invariant: AutoPlay loads a new track only when the MASTER reaches the
+// end, exactly once per master track. Scenario numbers below map to the matrix
+// in the auto-play.ts module docstring.
+// ---------------------------------------------------------------------------
+
+describe('auto-play handoff commit point (scenarios 16, 17)', () => {
+	it('re-arms only when nothing has been committed to the follower deck', () => {
+		const { handoffFailureIsRetryable } = mod;
+		// Scenario 16: unload/load rejected - deck untouched, try another pick.
+		assert.equal(handoffFailureIsRetryable('load'), true);
+		// Scenario 17: beat_sync/play/master rejected AFTER the track landed.
+		// Re-arming here is what loaded "contact" and then "acid rain".
+		assert.equal(handoffFailureIsRetryable('commit'), false);
+	});
+
+	it('throws on an unknown phase rather than guessing a default', () => {
+		const { handoffFailureIsRetryable } = mod;
+		assert.throws(() => handoffFailureIsRetryable('nonsense'), /unhandled handoff phase/);
+	});
+});
+
+describe('auto-play exclusion set (scenarios 13, 14)', () => {
+	it('excludes tracks on other decks but never the source deck track', () => {
+		const { autoPlayExcludedIds } = mod;
+		const decks = [
+			deck({ id: 1, stable_id: 'hypnosis', playing: true, is_master: true }),
+			deck({ id: 2, stable_id: 'contact' }),
+			deck({ id: 3, stable_id: null }),
+			deck({ id: 4, stable_id: 'acid-rain' })
+		];
+		const out = autoPlayExcludedIds({
+			decks,
+			source_deck: 1,
+			claimed_ids: new Set(),
+			unplayable_ids: new Set()
+		});
+		assert.equal(out.has('contact'), true);
+		assert.equal(out.has('acid-rain'), true);
+		assert.equal(out.has('hypnosis'), false);
+	});
+
+	it('excludes every id AutoPlay ever claimed, even after the deck is emptied', () => {
+		const { autoPlayExcludedIds } = mod;
+		// Scenario 14 / bug 1: the deck that held "contact" was unloaded, so the
+		// deck scan no longer sees it. The claim is what stops the second load.
+		const decks = [
+			deck({ id: 1, stable_id: 'hypnosis', playing: true, is_master: true }),
+			deck({ id: 2, stable_id: null }),
+			deck({ id: 3, stable_id: null }),
+			deck({ id: 4, stable_id: null })
+		];
+		const out = autoPlayExcludedIds({
+			decks,
+			source_deck: 1,
+			claimed_ids: new Set(['contact']),
+			unplayable_ids: new Set(['ghost'])
+		});
+		assert.equal(out.has('contact'), true);
+		assert.equal(out.has('ghost'), true);
+	});
+
+	it('a claimed id can never be picked again by the track picker', () => {
+		// REGRESSION for bug 1: same stable_id must never reach two decks.
+		const { autoPlayExcludedIds, pickNextStableId } = mod;
+		const playlist = [
+			row('hypnosis', '8A', 124),
+			row('contact', '8A', 124),
+			row('acid-rain', '8A', 124)
+		];
+		const decks = [
+			deck({ id: 1, stable_id: 'hypnosis', playing: true, is_master: true }),
+			deck({ id: 2, stable_id: null }),
+			deck({ id: 3, stable_id: null }),
+			deck({ id: 4, stable_id: null })
+		];
+		const claimed = new Set();
+		const picked = [];
+		for (let pass = 0; pass < 3; pass++) {
+			const next = pickNextStableId({
+				playlist,
+				current_stable_id: 'hypnosis',
+				current_key: '8A',
+				current_bpm: 124,
+				exclude_ids: autoPlayExcludedIds({
+					decks,
+					source_deck: 1,
+					claimed_ids: claimed,
+					unplayable_ids: new Set()
+				}),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			});
+			if (next === null) break;
+			claimed.add(next);
+			picked.push(next);
+		}
+		assert.deepEqual(picked, ['contact', 'acid-rain']);
+		assert.equal(new Set(picked).size, picked.length, 'no id may be picked twice');
+	});
+});
+
+describe('auto-play deferred master promotion (scenario 18)', () => {
+	it('waits while the freshly started follower is scheduled but not yet audible', () => {
+		// This is the exact refusal the maintainer hit: setDeckMaster rejects a
+		// not-yet-audible deck while the outgoing master is still audible.
+		const { decideMasterPromotion } = mod;
+		assert.equal(
+			decideMasterPromotion({
+				pending_deck: 2,
+				pending_stable_id: 'contact',
+				deck: deck({ id: 2, stable_id: 'contact', playing: true }),
+				audible: false
+			}),
+			'wait'
+		);
+	});
+
+	it('promotes once the follower is actually presenting audio', () => {
+		const { decideMasterPromotion } = mod;
+		assert.equal(
+			decideMasterPromotion({
+				pending_deck: 2,
+				pending_stable_id: 'contact',
+				deck: deck({ id: 2, stable_id: 'contact', playing: true }),
+				audible: true
+			}),
+			'promote'
+		);
+	});
+
+	it('drops the promotion when nothing is pending, it already landed, or the operator took over', () => {
+		const { decideMasterPromotion } = mod;
+		assert.equal(
+			decideMasterPromotion({
+				pending_deck: null,
+				pending_stable_id: null,
+				deck: null,
+				audible: false
+			}),
+			'drop'
+		);
+		assert.equal(
+			decideMasterPromotion({
+				pending_deck: 2,
+				pending_stable_id: 'contact',
+				deck: deck({ id: 2, stable_id: 'contact', playing: true, is_master: true }),
+				audible: true
+			}),
+			'drop'
+		);
+		assert.equal(
+			decideMasterPromotion({
+				pending_deck: 2,
+				pending_stable_id: 'contact',
+				deck: deck({ id: 2, stable_id: 'something-else', playing: true }),
+				audible: true
+			}),
+			'drop'
+		);
+	});
+});
+
+describe('auto-play live-set replay (bugs 1 and 2, Mon 31 Aug 2026)', () => {
+	/** Decision half of one _tick, using only the pure policy helpers. */
+	function tickDecision(state, source) {
+		const rem = mod.remainingMs(source.position_ms, source.duration_ms);
+		if (rem !== null && rem > mod.AUTO_PLAY_THRESHOLD_MS) {
+			if (state.triggeredFor === source.stable_id) state.triggeredFor = null;
+			return null;
+		}
+		if (
+			!mod.shouldTriggerAutoPlay({
+				enabled: true,
+				remaining_ms: rem,
+				threshold_ms: mod.AUTO_PLAY_THRESHOLD_MS,
+				source_stable_id: source.stable_id,
+				already_triggered_for: state.triggeredFor,
+				in_flight: false
+			})
+		) {
+			return null;
+		}
+		const next = mod.pickNextStableId({
+			playlist: state.playlist,
+			current_stable_id: source.stable_id,
+			current_key: '8A',
+			current_bpm: 124,
+			exclude_ids: mod.autoPlayExcludedIds({
+				decks: state.decks,
+				source_deck: source.id,
+				claimed_ids: state.claimed,
+				unplayable_ids: state.unplayable
+			}),
+			played_ids: state.played,
+			enforce_play_order: false,
+			min_tempo_ratio: 0.84,
+			max_tempo_ratio: 1.16
+		});
+		if (next === null) {
+			state.triggeredFor = source.stable_id;
+			return null;
+		}
+		// Commit before dispatch - the ordering the fix depends on.
+		state.triggeredFor = source.stable_id;
+		state.claimed.add(next);
+		state.played.add(source.stable_id);
+		state.played.add(next);
+		return next;
+	}
+
+	function freshState() {
+		return {
+			playlist: [
+				row('hypnosis', '8A', 124),
+				row('contact', '8A', 124),
+				row('acid-rain', '8A', 124)
+			],
+			decks: [
+				deck({ id: 1, stable_id: 'hypnosis', playing: true, is_master: true }),
+				deck({ id: 2, stable_id: null }),
+				deck({ id: 3, stable_id: null }),
+				deck({ id: 4, stable_id: null })
+			],
+			claimed: new Set(),
+			played: new Set(),
+			unplayable: new Set(),
+			triggeredFor: null
+		};
+	}
+
+	it('bug 2: a refused master handover no longer loads a second track', () => {
+		const state = freshState();
+		const master = deck({
+			id: 1,
+			stable_id: 'hypnosis',
+			playing: true,
+			is_master: true,
+			position_ms: 290_000,
+			duration_ms: 300_000
+		});
+
+		const first = tickDecision(state, master);
+		assert.equal(first, 'contact');
+
+		// setDeckMaster refuses the not-yet-audible follower. This is a 'commit'
+		// phase failure: "contact" is already loaded and playing on deck 2.
+		assert.equal(mod.handoffFailureIsRetryable('commit'), false);
+		// So the trigger is NOT rolled back. Old code did `_triggeredFor = null`
+		// here, which is what loaded "acid rain" 250 ms later.
+		state.decks[1].stable_id = 'contact';
+
+		for (let poll = 0; poll < 20; poll++) {
+			assert.equal(tickDecision(state, master), null, `poll ${poll} must not load`);
+		}
+		assert.deepEqual([...state.claimed], ['contact']);
+	});
+
+	it('bug 1: the same stable_id can never be loaded onto two decks', () => {
+		const state = freshState();
+		const master = deck({
+			id: 1,
+			stable_id: 'hypnosis',
+			playing: true,
+			is_master: true,
+			position_ms: 290_000,
+			duration_ms: 300_000
+		});
+		const loaded = [];
+		const next = tickDecision(state, master);
+		if (next !== null) loaded.push(next);
+
+		// Every way the deck scan can stop seeing "contact": the operator
+		// unloads deck 2, and the playlist feed epoch rolls (which retires
+		// played history and quarantine). The claim must survive both.
+		state.decks[1].stable_id = null;
+		state.played = new Set();
+		state.unplayable = new Set();
+		state.triggeredFor = null;
+
+		for (let poll = 0; poll < 20; poll++) {
+			const again = tickDecision(state, master);
+			if (again !== null) loaded.push(again);
+			state.triggeredFor = null;
+		}
+		assert.equal(loaded.includes('contact'), true);
+		assert.equal(
+			loaded.filter((id) => id === 'contact').length,
+			1,
+			'AutoPlay must never load one stable_id twice'
+		);
+		assert.equal(new Set(loaded).size, loaded.length, 'no duplicate loads at all');
+	});
+
+	it('scenario 6/7: a looped master arms once; a seek back out re-arms once', () => {
+		const state = freshState();
+		const inWindow = deck({
+			id: 1,
+			stable_id: 'hypnosis',
+			playing: true,
+			is_master: true,
+			position_ms: 292_000,
+			duration_ms: 300_000
+		});
+		// Row 6: master looping inside the threshold window, polled repeatedly.
+		assert.equal(tickDecision(state, inWindow), 'contact');
+		for (let poll = 0; poll < 20; poll++) {
+			assert.equal(tickDecision(state, inWindow), null);
+		}
+		// Row 7: operator seeks back out of the window, then plays to the end.
+		state.decks[1].stable_id = 'contact';
+		const seekedBack = { ...inWindow, position_ms: 100_000 };
+		assert.equal(tickDecision(state, seekedBack), null);
+		assert.equal(state.triggeredFor, null, 'leaving the window disarms');
+		assert.equal(tickDecision(state, inWindow), 'acid-rain', 're-entry arms exactly once');
+		for (let poll = 0; poll < 20; poll++) {
+			assert.equal(tickDecision(state, inWindow), null);
+		}
+	});
+
+	it('scenario 3: an unknown duration never triggers a load', () => {
+		const state = freshState();
+		const unknown = deck({
+			id: 1,
+			stable_id: 'hypnosis',
+			playing: true,
+			is_master: true,
+			position_ms: 0,
+			duration_ms: null
+		});
+		for (let poll = 0; poll < 10; poll++) {
+			assert.equal(tickDecision(state, unknown), null);
+		}
+		assert.equal(state.claimed.size, 0);
 	});
 });

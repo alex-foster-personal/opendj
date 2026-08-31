@@ -306,6 +306,31 @@ class SetsState:
             )
             return int(cur.lastrowid or 0)
 
+    def update_event_value(self, event_id: int, value: dict[str, Any]) -> None:
+        """Replace one event's ``value_json`` in place.
+
+        Used by the Open DJ deck observer, which writes a play row as soon
+        as a track becomes audible and then keeps its accumulated dwell
+        current as the track keeps sounding. The row has to exist from the
+        first audible second so a crash cannot lose the play, which means
+        the dwell it carries has to be refreshable.
+
+        Only the payload moves. The identity of the row -- session, deck,
+        track, action, wall clock -- is fixed at insert and never rewritten,
+        so this cannot silently repoint a play at another track.
+        """
+        tbl = self._events_table
+        with self._rw() as conn:
+            cur = conn.execute(
+                f"UPDATE {tbl} SET value_json = ? WHERE id = ?",
+                (json.dumps(value, separators=(",", ":")) if value else None, event_id),
+            )
+            if cur.rowcount != 1:
+                raise KeyError(
+                    f"{tbl} row {event_id} not found; refusing to silently "
+                    "discard a dwell update"
+                )
+
     def fetch_events(
         self,
         session_id: str,

@@ -10,6 +10,9 @@ started_at. Left alone, negative numbers would have sat in the median every futu
 judged against. The skipped-job and negative-duration cases below pin that fix.
 
 No network: the gh layer is stubbed, so the check functions stay pure over their inputs.
+
+The R4 watermark catch-up cases live in test_ci_health_watermark.py, split out to keep both
+files under the repo's 600-line quality gate.
 """
 
 from __future__ import annotations
@@ -147,6 +150,29 @@ def test_fast_steps_are_never_judged():
     result = mod._check_iteration_speed(metrics)
     assert result.ok
     assert result.classification == "insufficient-data"
+
+
+def test_check_windows_in_ts_order_not_append_order():
+    """If check 5 trusted append order
+    then a catch-up that appended an older-completed job after a newer record would judge
+    stale samples as the newest ones, or broken.
+    """
+
+    def _at(minute: int, seconds: float) -> mod.Metric:
+        return mod.Metric(
+            ts=f"2026-08-20T00:{minute:02d}:00Z",
+            step="ci:CI/pytest",
+            seconds=seconds,
+            source="ci",
+            job_id=None,
+        )
+
+    slow_newest = [_at(50 + index, 40.0) for index in range(mod.ITERATION_SPEED_RECENT_WINDOW)]
+    baseline = [_at(index, 20.0) for index in range(20)]
+    # Append order puts the newest-by-ts records FIRST, as a straddling-run catch-up can.
+    result = mod._check_iteration_speed([*slow_newest, *baseline])
+    assert not result.ok
+    assert "2.00x" in result.detail
 
 
 def test_median_window_ignores_records_older_than_the_window():
@@ -297,7 +323,11 @@ def test_failed_job_is_recorded_with_a_nonzero_exit(tmp_path):
 
 
 def _jobs_payload(monkeypatch, items):
-    """Stub the gh layer so _fetch_jobs runs over a literal jobs payload."""
+    """Stub the gh layer so _fetch_jobs runs over a literal jobs payload.
+
+    These cases all run the BOOTSTRAP path (`existing=[]`, no watermark), so the run list
+    returned here is the one _fetch_jobs works from and no runs listing is requested.
+    """
     run = _run(age_minutes=1, duration_seconds=100, conclusion="success")
     monkeypatch.setattr(mod, "_gh_api_json", lambda path: {"jobs": items})
     return [run]
@@ -328,7 +358,7 @@ def test_skipped_jobs_are_never_recorded(monkeypatch):
             )
         ],
     )
-    assert mod._fetch_jobs(runs) == []
+    assert mod._fetch_jobs(runs, []).jobs == []
 
 
 @pytest.mark.parametrize("conclusion", ["skipped", "cancelled", "neutral"])
@@ -345,7 +375,7 @@ def test_non_executing_conclusions_are_all_excluded(monkeypatch, conclusion):
             )
         ],
     )
-    assert mod._fetch_jobs(runs) == []
+    assert mod._fetch_jobs(runs, []).jobs == []
 
 
 def test_executed_jobs_are_still_recorded(monkeypatch):
@@ -361,7 +391,7 @@ def test_executed_jobs_are_still_recorded(monkeypatch):
             )
         ],
     )
-    jobs = mod._fetch_jobs(runs)
+    jobs = mod._fetch_jobs(runs, []).jobs
     assert len(jobs) == 1
     assert jobs[0].duration_seconds == 30.0
 
@@ -382,7 +412,7 @@ def test_negative_duration_on_an_executed_job_fails_loudly(monkeypatch):
         ],
     )
     with pytest.raises(mod.PreconditionError) as excinfo:
-        mod._fetch_jobs(runs)
+        mod._fetch_jobs(runs, [])
     assert "negative duration" in str(excinfo.value)
     assert "77" in str(excinfo.value)
 
@@ -394,4 +424,4 @@ def test_incomplete_jobs_are_skipped(monkeypatch):
     )
     item["status"] = "in_progress"
     item["completed_at"] = None
-    assert mod._fetch_jobs(_jobs_payload(monkeypatch, [item])) == []
+    assert mod._fetch_jobs(_jobs_payload(monkeypatch, [item]), []).jobs == []

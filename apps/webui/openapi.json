@@ -2044,6 +2044,26 @@
         "title": "DecisionRecordOut",
         "type": "object"
       },
+      "DeckObservationsRequest": {
+        "description": "A batch of Open DJ deck-state snapshots, oldest first.\n\nSnapshots stay untyped here on purpose. Pydantic would happily\ncoerce the string \"false\" into ``False`` and 0 into ``0.0``, which\nis exactly the quiet reinterpretation this pipeline must not do, so\nvalidation belongs to :func:`~apps.sets.sources.opendj_wire.parse_snapshot`\nalone rather than being split across two disagreeing contracts.\n\nThe cap is ten minutes of a 1 s cadence: enough for a tab that was\nbackgrounded to flush its buffer, small enough to bound one request.",
+        "properties": {
+          "snapshots": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 600,
+            "minItems": 1,
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshots"
+        ],
+        "title": "DeckObservationsRequest",
+        "type": "object"
+      },
       "DeckPerformanceSample": {
         "properties": {
           "audible": {
@@ -6273,7 +6293,8 @@
             "items": {
               "enum": [
                 "djay_monitor",
-                "rb_history"
+                "rb_history",
+                "opendj_decks"
               ],
               "type": "string"
             },
@@ -10177,6 +10198,19 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "Read-time 'counts as played' filter, in seconds of audible playback. Only applies to rows that recorded a dwell (Open DJ's own decks). 0 counts every play.",
+            "in": "query",
+            "name": "min_audible_s",
+            "required": false,
+            "schema": {
+              "default": 60.0,
+              "description": "Read-time 'counts as played' filter, in seconds of audible playback. Only applies to rows that recorded a dwell (Open DJ's own decks). 0 counts every play.",
+              "minimum": 0,
+              "title": "Min Audible S",
+              "type": "number"
+            }
           }
         ],
         "responses": {
@@ -10223,6 +10257,72 @@
           }
         },
         "summary": "Api List Sessions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/deck-observations": {
+      "get": {
+        "description": "Why a row did or did not appear: per-deck dwell against the threshold.",
+        "operationId": "api_deck_observation_status_api_sets_deck_observations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Deck Observation Status Api Sets Deck Observations Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Deck Observation Status",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Ingest Open DJ deck-state snapshots into the live recording.\n\nThe browser posts here on a timer; any agent can post the same\npayload, which is what keeps this flow drivable without a UI.\nBad snapshots are rejected 422 rather than dropped, because a\nsilently discarded observation is an under-counted set.",
+        "operationId": "api_submit_deck_observations_api_sets_deck_observations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeckObservationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Submit Deck Observations Api Sets Deck Observations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Submit Deck Observations",
         "tags": [
           "sets"
         ]

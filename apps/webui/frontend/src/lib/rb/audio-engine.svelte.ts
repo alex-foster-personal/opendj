@@ -74,7 +74,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
-import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import {
 	armXrunSentinel,
 	disarmContextInstrumentation,
@@ -1985,6 +1985,31 @@ function _tempoAt(deck: DeckId, contextTime: number): number {
 	return _controlSegmentAt(_rt[deck], contextTime).tempoRatio;
 }
 
+/**
+ * Transport position read from the AUDIO CLOCK rather than the rAF-published
+ * mirror in `deckStates[deck].position_ms`.
+ *
+ * That mirror only advances inside `_tick`, which runs on requestAnimationFrame
+ * and which the browser stops entirely while the tab is in the background. Any
+ * decision that must keep being made while the user is on another tab has to
+ * read the clock directly, or it silently stalls: the mirror freezes at
+ * whatever it last published, so derived remaining-time never enters its
+ * trigger window and nothing ever fires. AutoPlay's end-of-track handoff is
+ * exactly that shape, and stopped the set dead at the current track whenever
+ * the user tabbed away.
+ *
+ * This is a READ for decisions only. `_currentPosSec` stays unpublished to
+ * DeckState while audio is active, per its own contract: the UI must keep
+ * showing the PRESENTED position, which trails this one by output latency.
+ * A paused deck has no running clock, so its published cursor is the truth -
+ * the same split `_scheduleSeek` already makes.
+ */
+export function deckAudioClockPositionMs(deck: DeckId): number {
+	const st = deckStates[deck];
+	if (!st.playing) return st.position_ms;
+	return _currentPosSec(deck) * 1000;
+}
+
 /** Render/control-clock position in seconds, with manual loop wrap. This is
  * never published directly to DeckState while audio is active. */
 function _currentPosSec(deck: DeckId): number {
@@ -2181,11 +2206,32 @@ export interface ContextTimeSource {
 	readonly state: string;
 }
 
+/**
+ * The two time primitives the context-time wait below is built on: the
+ * millisecond reading it measures stall progress against, and the sleep it
+ * parks on between polls. They are injectable for one reason - the wait's
+ * contract is "give up within `stallTimeoutMs` of the last observed
+ * progress", and that is a statement about scheduling arithmetic, not about
+ * how punctually a loaded machine delivers a timer callback. A test that
+ * drives a virtual clock checks the arithmetic; a test that times real
+ * `setTimeout` calls checks the host's spare CPU.
+ */
+export interface ContextWaitClock {
+	nowMs(): number;
+	sleep(ms: number): Promise<void>;
+}
+
+export const REAL_CONTEXT_WAIT_CLOCK: ContextWaitClock = {
+	nowMs: () => Date.now(),
+	sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+};
+
 export async function waitForAdvancingContextTime(
 	ctx: ContextTimeSource,
 	targetContextTime: number,
 	stillCurrent: () => boolean = () => true,
-	stallTimeoutMs: number = CONTEXT_WAIT_STALL_TIMEOUT_MS
+	stallTimeoutMs: number = CONTEXT_WAIT_STALL_TIMEOUT_MS,
+	clock: ContextWaitClock = REAL_CONTEXT_WAIT_CLOCK
 ): Promise<void> {
 	if (!Number.isFinite(targetContextTime) || targetContextTime < 0) {
 		throw new RangeError(
@@ -2202,7 +2248,7 @@ export async function waitForAdvancingContextTime(
 		);
 	}
 	let lastContextTime = initialContextTime;
-	let lastProgressAtMs = Date.now();
+	let lastProgressAtMs = clock.nowMs();
 	while (ctx.currentTime < targetContextTime) {
 		if (!stillCurrent()) throw new Error('context-time wait state changed before target');
 		if (ctx.state !== 'running') {
@@ -2216,9 +2262,9 @@ export async function waitForAdvancingContextTime(
 		}
 		if (contextTime > lastContextTime) {
 			lastContextTime = contextTime;
-			lastProgressAtMs = Date.now();
+			lastProgressAtMs = clock.nowMs();
 		}
-		const stallRemainingMs = stallTimeoutMs - (Date.now() - lastProgressAtMs);
+		const stallRemainingMs = stallTimeoutMs - (clock.nowMs() - lastProgressAtMs);
 		if (stallRemainingMs <= 0) {
 			throw new Error(
 				`AudioContext time stalled before target ${targetContextTime} at ${contextTime}`
@@ -2229,7 +2275,7 @@ export async function waitForAdvancingContextTime(
 			1,
 			Math.ceil(Math.min(CONTEXT_WAIT_POLL_MS, contextRemainingMs, stallRemainingMs))
 		);
-		await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+		await clock.sleep(delayMs);
 	}
 }
 
@@ -2887,7 +2933,7 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordPerfTiming('deck-load-fail', stages, deck);
+			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
@@ -2985,7 +3031,7 @@ class RbAudioEngine implements AudioEngine {
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.last_load_stages = { ...stages };
-		recordPerfTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck);
+		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
 	}
 
 	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR

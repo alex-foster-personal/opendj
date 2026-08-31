@@ -37,6 +37,8 @@ from .classify import CLASS_LIST, read_transitions
 from .label import append_label
 from .recorder_service import RecorderConflict, RecorderService
 from .sessions import Session, get_session, list_sessions, summary_to_dict
+from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
+from .sources.opendj_source import DeckObservationError
 
 
 @asynccontextmanager
@@ -84,7 +86,7 @@ class LabelRequest(BaseModel):
     labeler: str = Field(default="web_ui", max_length=64)
 
 
-SourceName = Literal["djay_monitor", "rb_history"]
+SourceName = Literal["djay_monitor", "rb_history", "opendj_decks"]
 _SERVICE_INIT_LOCK = threading.Lock()
 
 
@@ -115,6 +117,22 @@ class RecorderRecoveryRequest(BaseModel):
     expected_pid: int = Field(gt=0)
 
 
+class DeckObservationsRequest(BaseModel):
+    """A batch of Open DJ deck-state snapshots, oldest first.
+
+    Snapshots stay untyped here on purpose. Pydantic would happily
+    coerce the string "false" into ``False`` and 0 into ``0.0``, which
+    is exactly the quiet reinterpretation this pipeline must not do, so
+    validation belongs to :func:`~apps.sets.sources.opendj_wire.parse_snapshot`
+    alone rather than being split across two disagreeing contracts.
+
+    The cap is ten minutes of a 1 s cadence: enough for a tab that was
+    backgrounded to flush its buffer, small enough to bound one request.
+    """
+
+    snapshots: list[dict[str, Any]] = Field(min_length=1, max_length=600)
+
+
 def _recorder_service(request: Request) -> RecorderService:
     service = getattr(request.app.state, "sets_recorder_service", None)
     if service is None:
@@ -126,6 +144,14 @@ def _recorder_service(request: Request) -> RecorderService:
     if not isinstance(service, RecorderService):
         raise RuntimeError("app.state.sets_recorder_service must be RecorderService")
     return service
+
+
+def _opendj_source(request: Request) -> Any:
+    """The live Open DJ observer, or a 409 explaining why there isn't one."""
+    try:
+        return _recorder_service(request).active_source(OPENDJ_SOURCE_NAME)
+    except RecorderConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _validated_recorder_session_id(service: RecorderService, session_id: str) -> None:
@@ -199,6 +225,37 @@ async def api_recorder_recover(
         )
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Open DJ own-deck observations
+# ---------------------------------------------------------------------------
+
+
+@router.post("/deck-observations", status_code=202)
+async def api_submit_deck_observations(
+    request: Request,
+    body: DeckObservationsRequest,
+) -> dict[str, Any]:
+    """Ingest Open DJ deck-state snapshots into the live recording.
+
+    The browser posts here on a timer; any agent can post the same
+    payload, which is what keeps this flow drivable without a UI.
+    Bad snapshots are rejected 422 rather than dropped, because a
+    silently discarded observation is an under-counted set.
+    """
+    source = _opendj_source(request)
+    try:
+        accepted = source.submit_many(body.snapshots)
+    except DeckObservationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"accepted": accepted, "status": source.status()}
+
+
+@router.get("/deck-observations")
+async def api_deck_observation_status(request: Request) -> dict[str, Any]:
+    """Why a row did or did not appear: per-deck dwell against the threshold."""
+    return _opendj_source(request).status()
 
 
 @router.get("")
