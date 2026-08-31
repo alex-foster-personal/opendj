@@ -221,26 +221,30 @@ def test_backlog_of_exactly_the_page_bound_is_complete_not_a_gap(monkeypatch):
     assert outcome.note is None
 
 
-def test_busy_prior_day_past_the_bound_is_overlap_not_a_gap(monkeypatch):
+def test_busy_prior_day_past_the_bound_gets_the_hedged_note_not_a_definite_gap(monkeypatch):
     """If the gap note keyed on total_count alone
-    then a busy day BEFORE the watermark could fill the created lookback past the page
-    bound and claim a permanent hole on every poll, despite every run newer than the
-    watermark having been fetched, or broken.
+    then a busy day BEFORE the watermark would claim a definite permanent hole on every
+    poll, and if a stale deepest page suppressed the note entirely
+    then an older-created long-runner beyond the bound could be lost in silence - the
+    honest middle is a hedged note naming the unexamined remainder, or broken.
     """
     pages = [_full_page(40_000)] + [
         _stale_page(50_000 + page * 1000) for page in range(mod.JOB_FETCH_MAX_PAGES - 1)
     ]
-    # 2000 more already-recorded prior-day runs sit beyond the bound.
+    # 2000 more older-created runs sit beyond the bound, unexamined.
     fake = _FakeGh(pages, total_count=mod.JOB_FETCH_MAX_PAGES * mod.RUN_FETCH_COUNT + 2000)
     monkeypatch.setattr(mod, "_gh_api_json", fake)
 
     outcome = mod._fetch_jobs([], [_ci_record(WATERMARK_TS, 1)])
 
-    # Everything newer than the watermark (page 1) was recorded, and no gap is claimed:
-    # the deepest page held nothing at or after the watermark, so the remainder is the
-    # already-recorded prior day swept in by the created lookback.
+    # Everything newer than the watermark (page 1) was recorded. The note hedges: it
+    # names the unexamined older-created remainder and the long-runner risk, and it does
+    # NOT make the definite "runs newer than the watermark" backlog claim.
     assert len(outcome.jobs) == mod.RUN_FETCH_COUNT
-    assert outcome.note is None
+    assert outcome.note is not None
+    assert "2000" in outcome.note
+    assert "never examined" in outcome.note
+    assert "still finding" not in outcome.note
 
 
 def test_rerun_of_a_run_older_than_the_lookback_is_swept_from_page_one(monkeypatch):

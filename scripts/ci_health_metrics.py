@@ -67,9 +67,10 @@ MINI-PRD
          [if] the backlog is deeper than JOB_FETCH_MAX_PAGES pages
               [then] the bounded window is still recorded AND the permanent gap is named
               in the log and in --json, never silently dropped and never fatal (*)
-         [if] a busy prior day fills the created lookback past the page bound but every
-              run newer than the watermark was fetched
-              [then] no gap is claimed - lookback overlap is not lost data (*)
+         [if] a busy prior day fills the created lookback past the page bound and the
+              deepest page holds nothing newer than the watermark
+              [then] the note names the unexamined older-created remainder as a possible
+              long-runner loss - never a definite gap, and never silence (*)
          [if] a `source: ci` record carries an unparseable ts
               [then] raise PreconditionError naming it, never guess a watermark (*)
          [if] a local `just` record is newer than every ci record
@@ -268,22 +269,34 @@ def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | N
         if len(body["workflow_runs"]) < RUN_FETCH_COUNT:
             break
     else:
-        # Exhausting the bound is only a gap when BOTH hold: the listing held more runs
-        # than were fetched (exactly JOB_FETCH_MAX_PAGES full pages is complete, not a
-        # hole), AND the deepest page still contained a run at or after the watermark.
-        # total_count alone cannot size a gap: the created lookback sweeps in the
-        # already-recorded prior day, so a busy yesterday can fill the window past the
-        # bound while every run newer than the watermark sat on the early pages. The
-        # listing is ordered newest-created first, so a deepest page with nothing at or
-        # after the watermark means the remainder is lookback overlap, not lost data.
+        # An exhausted bound with runs left behind is ALWAYS noted, in one of two shapes.
+        # A remainder of zero (exactly JOB_FETCH_MAX_PAGES full pages) is complete, not a
+        # hole. Beyond that, the deepest page picks the wording, never silence: updated_at
+        # is non-monotonic in the listing's newest-created-first order, so even a deepest
+        # page with nothing at or after the watermark cannot PROVE the unseen remainder is
+        # stale - an older-created long-runner beyond the bound could have finished after
+        # the watermark. What it does change is what is honestly claimable: post-watermark
+        # runs on the deepest page mean the backlog itself was cut (a definite gap), while
+        # a stale deepest page means the remainder is mostly the already-recorded prior
+        # day swept in by the created lookback (a possible long-runner loss, named as
+        # exactly that - total_count cannot size a definite gap there).
         remainder = total_count - raw_seen
-        if remainder > 0 and any(run.updated_at >= watermark for run in page_runs):
-            note = (
-                f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound while still finding "
-                f"runs newer than the watermark; {remainder} more runs matched the "
-                "created window beyond the bound, and any of them newer than the "
-                "watermark are permanently unrecorded"
-            )
+        if remainder > 0:
+            if any(run.updated_at >= watermark for run in page_runs):
+                note = (
+                    f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound while still "
+                    f"finding runs newer than the watermark; {remainder} more runs "
+                    "matched the created window beyond the bound, and any of them newer "
+                    "than the watermark are permanently unrecorded"
+                )
+            else:
+                note = (
+                    f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound; the deepest "
+                    f"page held nothing newer than the watermark, but {remainder} "
+                    "older-created runs in the lookback window were never examined, so "
+                    "a long-runner among them that finished after the watermark would "
+                    "be permanently unrecorded"
+                )
     return [run for run in fetched if run.updated_at >= watermark], note
 
 
