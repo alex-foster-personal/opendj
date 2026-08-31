@@ -53,6 +53,7 @@ from .routes import ingest as ingest_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
+from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
@@ -284,6 +285,7 @@ def create_app(
     app.include_router(tracks_routes.router, prefix=api_prefix)
     app.include_router(client_errors_routes.router, prefix=api_prefix)
     app.include_router(client_events_routes.router, prefix=api_prefix)
+    app.include_router(performance_telemetry_routes.router, prefix=api_prefix)
     app.include_router(bench_routes.router, prefix=api_prefix)
     app.include_router(bulk_edit_routes.router, prefix=api_prefix)
     app.include_router(find_replace_routes.router, prefix=api_prefix)
