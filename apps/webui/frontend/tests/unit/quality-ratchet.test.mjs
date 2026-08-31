@@ -27,7 +27,7 @@ test.before(async () => {
 });
 
 test('a well-formed response parses to generated + metrics intact', () => {
-	const ratchet = qualityApi._parseQualityRatchetForTests({
+	const ratchet = qualityApi.parseQualityRatchet({
 		generated: '2026-08-18T22:28:54+00:00',
 		metrics: { 'ruff.total': 2227, 'arch.contracts_broken': 0, 'duplication.percent': 0.32 }
 	});
@@ -41,7 +41,7 @@ test('a well-formed response parses to generated + metrics intact', () => {
 
 test('a non-object response is refused', () => {
 	assert.throws(
-		() => qualityApi._parseQualityRatchetForTests('not an object'),
+		() => qualityApi.parseQualityRatchet('not an object'),
 		/response is not an object/
 	);
 });
@@ -49,7 +49,7 @@ test('a non-object response is refused', () => {
 test('a non-object metrics map is refused', () => {
 	assert.throws(
 		() =>
-			qualityApi._parseQualityRatchetForTests({
+			qualityApi.parseQualityRatchet({
 				generated: 't',
 				metrics: [1, 2, 3]
 			}),
@@ -60,7 +60,7 @@ test('a non-object metrics map is refused', () => {
 test('a non-numeric metric value is refused rather than rendering as a junk row', () => {
 	assert.throws(
 		() =>
-			qualityApi._parseQualityRatchetForTests({
+			qualityApi.parseQualityRatchet({
 				generated: 't',
 				metrics: { 'ruff.total': '2227' }
 			}),
@@ -70,7 +70,7 @@ test('a non-numeric metric value is refused rather than rendering as a junk row'
 
 test('a missing generated field is refused', () => {
 	assert.throws(
-		() => qualityApi._parseQualityRatchetForTests({ metrics: {} }),
+		() => qualityApi.parseQualityRatchet({ metrics: {} }),
 		/generated is not a string/
 	);
 });

@@ -49,10 +49,6 @@ export function parseQualityRatchet(raw: unknown): QualityRatchet {
 	};
 }
 
-// Exposed for the unit suite: it can hand the parser a hand-built payload
-// without a network round trip through openapi-fetch's mock plumbing.
-export const _parseQualityRatchetForTests = parseQualityRatchet;
-
 //----- fetch ----------------------------------------------------------------
 
 export async function fetchQualityRatchet(): Promise<QualityRatchet> {
