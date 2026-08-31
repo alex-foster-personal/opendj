@@ -21,7 +21,9 @@ these; nothing here is UI-only):
     filtered by ``machine_id``.
   * ``PUT  /cloudsync/policies``       -- upsert one (machine_id, asset_kind)
     cell. Stamps ``updated_at`` + ``origin_device_id`` (this server's own
-    machine id, NOT the target machine) per D5.
+    machine id, NOT the target machine) per D5, through
+    :func:`apps.shared.state.sync_stamp.stamp_and_log` so the write also
+    lands in ``local_changelog``.
   * ``GET  /cloudsync/playlist-pins``  -- ``playlist_pins`` rows joined to
     ``playlists.name``, optionally filtered by ``machine_id``.
   * ``PUT  /cloudsync/playlist-pins``  -- upsert one (machine_id,
@@ -45,12 +47,21 @@ scope limit, not a fabricated number.
 
 Registered in ``app.py`` by the sync-engine lane (hotspot, not edited here):
 ``app.include_router(cloudsync_routes.router, prefix=api_prefix)``.
+
+Identity note (round 2 finding N1a, round 3): this router's machine identity
+comes from the CONNECTION -- ``sync_stamp.data_dir_for_connection`` -- not
+from ``app.state.data_dir``. One machine must have exactly one identity: two
+data dirs on one host mint two ``machine_id`` values under one hostname, and
+``machines.name`` is UNIQUE, so the second registration is a 409 rather than
+a second machine. Deriving from the DB the writes land in is what makes this
+router's ``origin_device_id`` the same id ``StateWriter``, ``provenance`` and
+``locations`` stamp with.
 """
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -58,15 +69,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.shared.events import publish
-from apps.shared.paths import DATA_DIR
 from apps.shared.state import schema as state_schema
+from apps.shared.state import sync_stamp
 from apps.shared.state.machine_identity import (
     MachineIdentityError,
-    get_or_create_machine_id,
     register_machine,
 )
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
+
+POLICIES_TABLE: str = "sync_policies"
+PLAYLIST_PINS_TABLE: str = "playlist_pins"
 
 AssetKind = Literal["audio", "stem_bundle", "anlz_cache", "vocal_cache"]
 SyncMode = Literal["pinned", "cached", "stream", "excluded"]
@@ -82,9 +95,18 @@ def _db_path(request: Request) -> Path:
     )
 
 
-def _data_dir(request: Request) -> Path:
-    configured = getattr(request.app.state, "data_dir", None)
-    return Path(configured) if configured is not None else DATA_DIR
+def _data_dir(conn: sqlite3.Connection) -> Path:
+    """The data dir whose ``machine-id`` file owns this connection's writes.
+
+    See the identity note in the module docstring: one source, the DB's own
+    location, shared with every other writer in the repo.
+    """
+    try:
+        return sync_stamp.data_dir_for_connection(conn)
+    except sync_stamp.SyncStampError as exc:
+        raise HTTPException(status_code=500, detail={
+            "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
+        }) from exc
 
 
 def _unavailable(db_path: Path) -> HTTPException:
@@ -150,16 +172,31 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+@contextmanager
+def _write_unit(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """One transaction around a policy write and its changelog entry.
+
+    ``get_cloudsync_write_conn`` hands out an autocommit handle, so without
+    this the row INSERT and the ``local_changelog`` append are two separate
+    commits and a crash between them leaves a row the push fence will never
+    offer -- the same shape as round 2 finding N3a.
+    """
+    with sync_stamp.stamped_transaction(conn) as open_conn:
+        yield open_conn
 
 
-def _origin_device_id(request: Request) -> str:
+def _origin_device_id(conn: sqlite3.Connection) -> str:
     """This server process's own machine id (the write's origin), not the
-    machine_id of whichever machine's policy is being edited."""
+    machine_id of whichever machine's policy is being edited.
+
+    ``ensure_local_machine`` rather than ``get_or_create_machine_id``: the
+    stamped write needs the ``machines`` row its foreign keys point at to
+    exist, and the id must be the one every other writer on this machine
+    stamps with.
+    """
     try:
-        return get_or_create_machine_id(_data_dir(request))
-    except MachineIdentityError as exc:
+        return sync_stamp.ensure_local_machine(conn)
+    except sync_stamp.SyncStampError as exc:
         raise HTTPException(status_code=500, detail={
             "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
         }) from exc
@@ -300,10 +337,14 @@ def _require_playlist(conn: sqlite3.Connection, playlist_id: str) -> None:
 
 @router.get("/machines", response_model=list[MachineOut])
 def list_machines(
-    request: Request,
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> list[MachineOut]:
-    register_machine(conn, data_dir=_data_dir(request))
+    try:
+        register_machine(conn, data_dir=_data_dir(conn))
+    except MachineIdentityError as exc:
+        raise HTTPException(status_code=500, detail={
+            "code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc),
+        }) from exc
     rows = conn.execute(
         "SELECT machine_id, name, platform, is_hub, data_root, "
         "first_seen, last_seen FROM machines ORDER BY name"
@@ -336,36 +377,47 @@ def list_policies(
 @router.put("/policies", response_model=SyncPolicyOut)
 def put_policy(
     body: SyncPolicyPut,
-    request: Request,
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> SyncPolicyOut:
-    _require_machine(conn, body.machine_id)
-    now = _now_iso()
-    origin = _origin_device_id(request)
-    conn.execute(
-        """
-        INSERT INTO sync_policies(
-            machine_id, asset_kind, mode, cache_budget_mb,
-            updated_at, origin_device_id, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, NULL)
-        ON CONFLICT(machine_id, asset_kind) DO UPDATE SET
-            mode             = excluded.mode,
-            cache_budget_mb  = excluded.cache_budget_mb,
-            updated_at       = excluded.updated_at,
-            origin_device_id = excluded.origin_device_id,
-            deleted_at       = NULL
-        """,
-        (
-            body.machine_id, body.asset_kind, body.mode, body.cache_budget_mb,
-            now, origin,
-        ),
-    )
+    """Upsert one policy cell THROUGH the stamp chokepoint.
+
+    Round 2 finding N1a: this endpoint stamped the row correctly but skipped
+    ``local_changelog``, so the edit was never offered to the hub and the
+    machine then failed its post-sync digest compare on ``sync_policies``
+    forever. Changing one policy in the config UI stopped that machine
+    syncing anything at all.
+    """
+    with _write_unit(conn):
+        _require_machine(conn, body.machine_id)
+        origin = _origin_device_id(conn)
+        stamp = sync_stamp.stamp_and_log(
+            conn, POLICIES_TABLE, (body.machine_id, body.asset_kind), origin,
+        )
+        conn.execute(
+            """
+            INSERT INTO sync_policies(
+                machine_id, asset_kind, mode, cache_budget_mb,
+                updated_at, origin_device_id, deleted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(machine_id, asset_kind) DO UPDATE SET
+                mode             = excluded.mode,
+                cache_budget_mb  = excluded.cache_budget_mb,
+                updated_at       = excluded.updated_at,
+                origin_device_id = excluded.origin_device_id,
+                deleted_at       = NULL
+            """,
+            (
+                body.machine_id, body.asset_kind, body.mode,
+                body.cache_budget_mb, stamp.updated_at, stamp.origin_device_id,
+            ),
+        )
     publish("library.changed", {
         "kind": "cloudsync_policy", "ids": [f"{body.machine_id}:{body.asset_kind}"],
     })
     return SyncPolicyOut(
         machine_id=body.machine_id, asset_kind=body.asset_kind, mode=body.mode,
-        cache_budget_mb=body.cache_budget_mb, updated_at=now, origin_device_id=origin,
+        cache_budget_mb=body.cache_budget_mb, updated_at=stamp.updated_at,
+        origin_device_id=stamp.origin_device_id,
     )
 
 
@@ -397,37 +449,45 @@ def list_playlist_pins(
 @router.put("/playlist-pins", response_model=PlaylistPinOut)
 def put_playlist_pin(
     body: PlaylistPinPut,
-    request: Request,
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> PlaylistPinOut:
-    _require_machine(conn, body.machine_id)
-    _require_playlist(conn, body.playlist_id)
-    now = _now_iso()
-    origin = _origin_device_id(request)
-    conn.execute(
-        """
-        INSERT INTO playlist_pins(
-            machine_id, playlist_id, mode, updated_at, origin_device_id, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, NULL)
-        ON CONFLICT(machine_id, playlist_id) DO UPDATE SET
-            mode             = excluded.mode,
-            updated_at       = excluded.updated_at,
-            origin_device_id = excluded.origin_device_id,
-            deleted_at       = NULL
-        """,
-        (body.machine_id, body.playlist_id, body.mode, now, origin),
-    )
+    """Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`."""
+    with _write_unit(conn):
+        _require_machine(conn, body.machine_id)
+        _require_playlist(conn, body.playlist_id)
+        origin = _origin_device_id(conn)
+        stamp = sync_stamp.stamp_and_log(
+            conn, PLAYLIST_PINS_TABLE, (body.machine_id, body.playlist_id),
+            origin,
+        )
+        conn.execute(
+            """
+            INSERT INTO playlist_pins(
+                machine_id, playlist_id, mode, updated_at, origin_device_id,
+                deleted_at
+            ) VALUES (?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(machine_id, playlist_id) DO UPDATE SET
+                mode             = excluded.mode,
+                updated_at       = excluded.updated_at,
+                origin_device_id = excluded.origin_device_id,
+                deleted_at       = NULL
+            """,
+            (
+                body.machine_id, body.playlist_id, body.mode,
+                stamp.updated_at, stamp.origin_device_id,
+            ),
+        )
+        name_row = conn.execute(
+            "SELECT name FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
+            (body.playlist_id,),
+        ).fetchone()
     publish("library.changed", {
         "kind": "cloudsync_playlist_pin", "ids": [f"{body.machine_id}:{body.playlist_id}"],
     })
-    name_row = conn.execute(
-        "SELECT name FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
-        (body.playlist_id,),
-    ).fetchone()
     return PlaylistPinOut(
         machine_id=body.machine_id, playlist_id=body.playlist_id,
         playlist_name=name_row[0] if name_row else None, mode=body.mode,
-        updated_at=now, origin_device_id=origin,
+        updated_at=stamp.updated_at, origin_device_id=stamp.origin_device_id,
     )
 
 
