@@ -381,29 +381,11 @@ class RowChange:
                 f"{table!r} is not a pushable table; the sync set is "
                 f"{sorted(SPEC_BY_TABLE)}"
             )
-        raw_pk = payload.get("pk")
-        if not isinstance(raw_pk, list) or not raw_pk:
-            raise SyncProtocolError(f"{table}: 'pk' must be a non-empty array")
-        expected = len(SPEC_BY_TABLE[table].pk)
-        if len(raw_pk) != expected:
-            raise SyncProtocolError(
-                f"{table}: primary key has {expected} column(s), got {len(raw_pk)}"
-            )
+        raw_pk = _require_pk(payload, table, expected=len(SPEC_BY_TABLE[table].pk))
         values = payload.get("values")
         if not isinstance(values, dict):
             raise SyncProtocolError(f"{table}: 'values' must be an object")
-        raw_members = payload.get("members")
-        members: tuple[dict[str, Any], ...] | None
-        if raw_members is None:
-            members = None
-        elif isinstance(raw_members, list):
-            if table != "playlists":
-                raise SyncProtocolError(
-                    f"{table}: 'members' is only meaningful on a playlists row"
-                )
-            members = tuple(_require_mapping(item, "members[]") for item in raw_members)
-        else:
-            raise SyncProtocolError(f"{table}: 'members' must be an array or absent")
+        members = _parse_members(payload, table)
         # Canonicalize BEFORE the row can reach a comparison or a table:
         # what this peer sent is the last chance to reject a timestamp that
         # cannot be ordered (module docstring point 4).
@@ -570,6 +552,37 @@ def _require_mapping(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SyncProtocolError(f"{label} must be an object, got {type(value).__name__}")
     return dict(value)
+
+
+def _require_pk(payload: Mapping[str, Any], table: str, *, expected: int) -> list[Any]:
+    """``payload['pk']``, checked shape and arity. Split out of
+    :meth:`RowChange.from_wire` to keep its own branch count under the
+    quality-gate complexity limit (mccabe 12)."""
+    raw_pk = payload.get("pk")
+    if not isinstance(raw_pk, list) or not raw_pk:
+        raise SyncProtocolError(f"{table}: 'pk' must be a non-empty array")
+    if len(raw_pk) != expected:
+        raise SyncProtocolError(
+            f"{table}: primary key has {expected} column(s), got {len(raw_pk)}"
+        )
+    return raw_pk
+
+
+def _parse_members(
+    payload: Mapping[str, Any], table: str
+) -> tuple[dict[str, Any], ...] | None:
+    """``payload['members']``, or ``None`` if absent. Split out of
+    :meth:`RowChange.from_wire` for the same reason as :func:`_require_pk`."""
+    raw_members = payload.get("members")
+    if raw_members is None:
+        return None
+    if not isinstance(raw_members, list):
+        raise SyncProtocolError(f"{table}: 'members' must be an array or absent")
+    if table != "playlists":
+        raise SyncProtocolError(
+            f"{table}: 'members' is only meaningful on a playlists row"
+        )
+    return tuple(_require_mapping(item, "members[]") for item in raw_members)
 
 
 __all__ = [
