@@ -87,10 +87,6 @@ _APPLY_ORDER: dict[str, int] = {
 }
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
 # ----- watermarks (machine-local ``sync_state``) ---------------------------
 
 
@@ -723,7 +719,12 @@ def _apply(
     record_changelog: bool,
     received_at: str | None = None,
 ) -> ApplyResult:
-    stamp = received_at or _now_iso()
+    # canonical_now(), not a local isoformat() call (round 3 finding R8): the
+    # two disagree on a zero-microsecond tick, where isoformat() omits the
+    # field and the bare +00:00 then sorts BELOW a canonical .000000+00:00
+    # stamp naming the same instant -- hub_changelog.received_at would look a
+    # fraction of a second older than it really is.
+    stamp = received_at or sync_stamp.canonical_now()
     ordered = sorted(changes, key=lambda change: _APPLY_ORDER[change.table])
     accepted = 0
     rejected = 0

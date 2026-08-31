@@ -464,7 +464,10 @@ def status(
 
 
 @router.get("/digest", response_model=DigestResponse)
-def digest(request: Request) -> DigestResponse:
+def digest(
+    request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
+) -> DigestResponse:
     """Per-table digests over the sync set, tombstones included (ADR 04 c6).
 
     Computed inside one read transaction (ADR 08 point 6b): without it a
@@ -479,8 +482,15 @@ def digest(request: Request) -> DigestResponse:
     reconstruct. Reporting the position instead lets the spoke tell a third
     machine's push apart from a real divergence, and settle by pulling
     again rather than halting.
+
+    Requires registration like every other endpoint (round 1 finding 7b,
+    closed everywhere except here until round 3 finding R8): unlike
+    ``/pull``, this answer carries no per-row data, but it does carry the
+    hub's live changelog position, which an unregistered caller had no
+    business reading either.
     """
     with _hub_conn(request) as conn:
+        _require_registered(conn, machine_id)
         try:
             with _transaction(conn):
                 computed = protocol.sync_digest(conn, seq=engine.current_seq(conn))

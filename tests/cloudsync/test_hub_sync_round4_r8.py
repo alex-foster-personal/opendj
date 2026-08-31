@@ -16,12 +16,24 @@ let back in:
   so a push carrying an unparseable ``deleted_at`` was accepted, stored
   verbatim, and hashed into the digest -- the one column a tombstone's
   correctness depends on was the one column this boundary never checked.
+- R8 (``/status`` write ordering) -> ``service.status`` ran ``_hub_identity``
+  (which upserts the HUB's own ``machines`` row) in a transaction BEFORE
+  checking whether the CALLER was registered, so a refused status call still
+  had a write side effect.
+- 7b (``/digest`` registration) -> every other endpoint refuses a machine
+  that never said hello (round 1 finding 7b); ``/digest`` alone took no
+  ``machine_id`` and answered anyone, including the hub's live changelog
+  position.
 
 Acceptance criteria:
 - if an unparseable ``deleted_at`` on the wire is accepted instead of 422ing,
   the protocol boundary is validating ``updated_at`` only -- broken.
 - if a real ``deleted_at`` timestamp stops propagating (soft delete breaks),
   the fix over-tightened the boundary -- also broken.
+- if a ``/status`` call from an unregistered machine still writes the hub's
+  own machines row before refusing, the guard is decorative -- broken.
+- if ``/digest`` answers a machine that never said hello, 7b is closed
+  everywhere except here -- broken.
 """
 from __future__ import annotations
 
@@ -37,6 +49,7 @@ from tests.cloudsync.test_hub_sync import (
     _DEV_A,
     _T0,
     _T1,
+    _open,
     _sync,
     _TestClientTransport,
 )
@@ -163,3 +176,64 @@ def test_a_real_deleted_at_timestamp_still_propagates(
         },
     )
     assert response["accepted"] == 1
+
+
+# ----- R8: /status refuses BEFORE it writes ---------------------------------
+
+
+def test_a_refused_status_call_does_not_register_the_hub(
+    hub: _TestClientTransport, hub_dir: Path
+) -> None:
+    """Round 3 R8: a refused ``/status`` call still had a write side effect.
+
+    ``[observed]`` in the round 3 review: ``status refused: HTTP 409
+    SYNC_UNKNOWN_MACHINE`` then ``machines rows after a REFUSED status:
+    [('427380e6...', 'hub')]`` -- the hub's own row landed anyway, because
+    ``_hub_identity`` ran (and committed) before ``_require_registered`` ever
+    looked at the caller. Nothing must be written on the refused path.
+    """
+    with pytest.raises(client.SyncTransportError) as excinfo:
+        hub.get(f"{client.API_PREFIX}/status", {"machine_id": "deadbeef" * 4})
+    assert "SYNC_UNKNOWN_MACHINE" in str(excinfo.value)
+
+    conn = _open(hub_dir)
+    try:
+        rows = conn.execute("SELECT machine_id FROM machines").fetchall()
+    finally:
+        conn.close()
+    assert rows == [], "a refused /status call registered the hub's own row"
+
+
+# ----- 7b: /digest requires registration like every other endpoint ---------
+
+
+def test_digest_refuses_a_machine_that_never_said_hello(
+    hub: _TestClientTransport,
+) -> None:
+    """Round 1 finding 7b, still open for ``/digest`` as of round 3.
+
+    ``/pull`` and ``/status`` both refuse an unregistered caller (round 2);
+    ``/digest`` took no ``machine_id`` at all and answered anyone, including
+    the hub's live changelog position.
+    """
+    with pytest.raises(client.SyncTransportError) as excinfo:
+        hub.get(f"{client.API_PREFIX}/digest", {"machine_id": "deadbeef" * 4})
+    assert "SYNC_UNKNOWN_MACHINE" in str(excinfo.value)
+
+
+def test_digest_without_a_machine_id_is_refused(hub: _TestClientTransport) -> None:
+    """The guard cannot be skipped by omitting the parameter, like ``/pull``."""
+    with pytest.raises(client.SyncTransportError) as excinfo:
+        hub.get(f"{client.API_PREFIX}/digest", {})
+    assert "422" in str(excinfo.value)
+
+
+def test_digest_answers_a_registered_machine(
+    hub: _TestClientTransport, spoke_a: Path
+) -> None:
+    """The tightened endpoint still works for the case it exists to serve."""
+    result = _sync(spoke_a, hub, "spoke-a")
+    response = hub.get(
+        f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id}
+    )
+    assert "overall" in response and "seq" in response

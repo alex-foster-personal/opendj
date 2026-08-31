@@ -565,7 +565,9 @@ def test_status_and_digest_endpoints_answer(
     assert status["row_counts"]["tracks"] == 1
     assert {machine["name"] for machine in status["machines"]} >= {"hub", "spoke-a"}
 
-    digest = protocol.SyncDigest.from_wire(hub.get(f"{client.API_PREFIX}/digest", {}))
+    digest = protocol.SyncDigest.from_wire(
+        hub.get(f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id})
+    )
     assert set(digest.tables) == set(protocol.DIGEST_TABLES)
     assert len(digest.overall) == 64
 
