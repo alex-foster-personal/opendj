@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION: int = 5
+SCHEMA_VERSION: int = 6
 
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -236,9 +236,55 @@ _V4: list[str] = [
 # both steps; IF NOT EXISTS / OR IGNORE keep the second a no-op.
 _V5: list[str] = _V4
 
+# --- migration 5 -> 6: Google sign-in (users + auth_sessions) --------------
+# The webui gained a user bauble that signs in with Google (openid/email/
+# profile only). Two tables, both keyed off Google's ``sub`` claim -- the
+# only identifier Google guarantees is stable and never reused. Email is
+# NOT the key: Google account emails can change.
+#
+# ``auth_sessions.session_token_sha256`` stores a hash, never the bearer
+# value the browser holds, so a stolen DB cannot be replayed as a cookie.
+# ``refresh_token`` is the Google grant that produced the session; it stays
+# server-side and is never exposed over the API.
+#
+# Numbered 6, not 4: this landed on a branch cut before main's
+# track_locations work, and both claimed _V4 independently. A DB that had
+# already applied main's 4 and 5 would never have run these statements, so
+# the auth tables move to their own step rather than sharing a number.
+_V6: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        google_sub  TEXT PRIMARY KEY,
+        email       TEXT NOT NULL,
+        name        TEXT,
+        avatar_url  TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+    """
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        session_token_sha256 TEXT PRIMARY KEY,
+        google_sub           TEXT NOT NULL
+                               REFERENCES users(google_sub) ON DELETE CASCADE,
+        refresh_token        TEXT,
+        access_token         TEXT,
+        access_expires_at    TEXT,
+        created_at           TEXT NOT NULL,
+        last_seen_at         TEXT NOT NULL,
+        expires_at           TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_sub "
+    "ON auth_sessions(google_sub)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires "
+    "ON auth_sessions(expires_at)",
+]
+
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -300,6 +346,10 @@ TABLES: tuple[str, ...] = (
     "adapters",
     "events",
     "track_locations",
+    "users",
+    "auth_sessions",
 )
-"""Core tables created by migration v1. ``schema_meta`` is intentionally
-excluded -- it is infrastructure, not domain data."""
+"""Domain tables. v1 created everything up to ``events``; v4 added
+``track_locations``; v6 added ``users`` and ``auth_sessions``.
+``schema_meta`` is intentionally excluded -- it is infrastructure, not
+domain data."""

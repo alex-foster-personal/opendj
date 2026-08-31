@@ -32,6 +32,19 @@
  * control to have, and a separate test pins the UI button's honest-inert
  * contract. No beat-loop, key-sync or quantized-seek behaviour is asserted.
  *
+ * PLAYHEAD RUNWAY, and the bug that bought it: the fixture audio is 60s and
+ * deck 1 plays continuously from the double-click load onward, so the suite's
+ * own cumulative playing time - about 68s on a fast machine - used to walk the
+ * playhead off the END of the track partway through. Nothing was broken when
+ * it did: auto-play looked for a successor, correctly found none (both fixture
+ * tracks are already loaded), and the deck stopped. Every later
+ * `_waitForAudible` then timed out against a deck that was loaded and simply
+ * out of audio, and WHICH test wore the failure depended on nothing but machine
+ * speed - it read as the tempo test on one machine, the loop test on another,
+ * and play/pause on a slower run of the same worktree. A beforeEach now returns
+ * deck 1 to zero, so every test gets the whole 60s regardless of what ran
+ * before it, and `_waitForAudible` states the playhead it gave up on.
+ *
  * SELECTOR DISCIPLINE, all of it learned by something breaking:
  *
  * - Controls are addressed by `data-performance-control`, never by `title`.
@@ -63,6 +76,8 @@
  *   IPC snapshot, so a passing run proves a real worklet was created.
  * - ✔︎ Every rate and every frequency is read from ONE named deck, never from a
  *   flat scrape of the page, so a reading can always be attributed.
+ * - ✔︎ Every test starts deck 1 from a known playhead, so no test inherits how
+ *   long the tests before it happened to take.
  *
  * Acceptance tests:
  *
@@ -78,6 +93,10 @@
  * - [if] the playhead leaves the loop window [then ⛔️] the loop test passes.
  * - [if] a deck refuses a dragover [then ⛔️] the drag test passes.
  * - [if] a deck ignores a drop whose transfer is empty [then ⛔️] it passes.
+ * - [if] a test inherits the playhead the one before it left [then ⛔️] this
+ *   suite is independent of machine speed.
+ * - [if] a wait for audible gives up without naming the playhead and duration
+ *   it gave up on [then ⛔️] the next reader can tell a dry deck from a dead one.
  */
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
@@ -139,6 +158,20 @@ const LOOP_LENGTH_MS = 1_200;
 const LOOP_OBSERVE_MS = 5_000;
 /** Slack on the loop edges: one scheduler quantum, not a free pass. */
 const LOOP_EDGE_TOLERANCE_MS = 150;
+
+/**
+ * How far past a seek target the playhead may already have traveled before the
+ * landing counts. A seek on a PLAYING deck starts advancing the instant it
+ * lands, so an exact-equality wait could never be satisfied. Wide enough for
+ * that, far too narrow to accept a seek that never happened.
+ */
+const SEEK_LANDING_TOLERANCE_MS = 2_000;
+
+/**
+ * Playhead distance the CUE test travels before stamping its cue point. Well
+ * past the 1s floor its own assertion needs, and nowhere near the 60s fixture.
+ */
+const CUE_RUNWAY_MS = 3_000;
 
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const PERF_LOG_STORAGE_KEY = 'mdt.perfEventLog';
@@ -321,29 +354,114 @@ async function _dblClickLoad(page: Page, index: number): Promise<string> {
 	return stableId;
 }
 
-/** Wait until the deck's PRESENTED transport state matches `audible`. */
+/**
+ * Wait until the deck's PRESENTED transport state matches `audible`.
+ *
+ * The bare Playwright timeout this used to raise reads as "the deck is
+ * broken", and it cost a full investigation once already: the deck was loaded
+ * and simply out of audio, because a 60s fixture had run dry mid-suite. The
+ * position, the duration and the transport clock separate those two cases at a
+ * glance, so they are stated rather than left for whoever opens the trace.
+ */
 async function _waitForAudible(page: Page, deck: DeckId, audible: boolean): Promise<void> {
+	try {
+		await page.waitForFunction(
+			({ deckId, expected }) => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) return false;
+				const state = ipc.query().decks[deckId];
+				return (
+					state.audible === expected &&
+					!state.transport_pending &&
+					state.transport_clock.presented_revision === state.transport_clock.desired_revision
+				);
+			},
+			{ deckId: deck, expected: audible },
+			{ timeout: 30_000 }
+		);
+	} catch {
+		const state = (await _query(page)).decks[deck];
+		throw new Error(
+			`deck ${deck} never reached audible=${audible}: ` +
+				`position ${state.position_ms.toFixed(0)}ms of ${state.duration_ms ?? 'unknown'}ms, ` +
+				`playing=${state.playing}, audible=${state.audible}, ` +
+				`transport_pending=${state.transport_pending}, ` +
+				`presented=${state.transport_clock.presented_revision} ` +
+				`desired=${state.transport_clock.desired_revision}, ` +
+				`stable_id=${state.stable_id ?? 'null'}, ` +
+				`command_error=${state.command_error ?? 'null'}`
+		);
+	}
+}
+
+/**
+ * Return one deck's playhead to `positionMs`, and wait for it to land.
+ *
+ * The UI's own way back is a CUE press, which also PAUSES and stamps a cue
+ * point - both asserted in their own right below, so using it here would have
+ * one test set up through another test's subject. This is the agent-native IPC
+ * endpoint the house rules require every UI control to have, and it moves the
+ * playhead without touching transport state.
+ */
+async function _seek(page: Page, deck: DeckId, positionMs: number): Promise<void> {
+	await _dispatch(page, { type: 'seek', deck, position_ms: positionMs });
+	try {
+		await page.waitForFunction(
+			({ deckId, target, tolerance }) => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) return false;
+				const state = ipc.query().decks[deckId];
+				return (
+					!state.transport_pending &&
+					state.position_ms >= target &&
+					state.position_ms < target + tolerance
+				);
+			},
+			{ deckId: deck, target: positionMs, tolerance: SEEK_LANDING_TOLERANCE_MS },
+			{ timeout: 15_000 }
+		);
+	} catch {
+		// Same reason `_waitForAudible` states its evidence: a bare timeout here
+		// names neither the deck nor where the playhead actually went.
+		const state = (await _query(page)).decks[deck];
+		throw new Error(
+			`deck ${deck} did not land a seek to ${positionMs}ms: ` +
+				`position ${state.position_ms.toFixed(0)}ms of ${state.duration_ms ?? 'unknown'}ms, ` +
+				`playing=${state.playing}, audible=${state.audible}, ` +
+				`transport_pending=${state.transport_pending}, ` +
+				`stable_id=${state.stable_id ?? 'null'}, ` +
+				`command_error=${state.command_error ?? 'null'}`
+		);
+	}
+}
+
+/** Wait until one deck's playhead has traveled past `positionMs`. */
+async function _playUntilPast(page: Page, deck: DeckId, positionMs: number): Promise<void> {
 	await page.waitForFunction(
-		({ deckId, expected }) => {
+		({ deckId, past }) => {
 			const ipc = window.musicDjToolsPerformance;
-			if (ipc === undefined) return false;
-			const state = ipc.query().decks[deckId];
-			return (
-				state.audible === expected &&
-				!state.transport_pending &&
-				state.transport_clock.presented_revision === state.transport_clock.desired_revision
-			);
+			return ipc !== undefined && ipc.query().decks[deckId].position_ms > past;
 		},
-		{ deckId: deck, expected: audible },
+		{ deckId: deck, past: positionMs },
 		{ timeout: 30_000 }
 	);
 }
 
-/** Playhead movement over one wall-clock sample window, in ms. */
+/**
+ * Playhead movement over one sample window, scaled to TRANSPORT_SAMPLE_MS.
+ *
+ * MEASURED interval, not an assumed one. This used to read the position from
+ * node, wait TRANSPORT_SAMPLE_MS, and read it again - so the two Playwright
+ * round trips landed INSIDE the window being attributed to the audio clock. On
+ * a loaded machine those round trips are worth hundreds of ms each, and a
+ * correctly playing deck reported 3201ms of travel for a 1500ms window: a real
+ * measurement of the wrong interval. `_measureRate` below already avoids this
+ * by timing itself in-page, and this now does the same, then reports what the
+ * deck would have travelled in one honest window.
+ */
 async function _sampleAdvanceMs(page: Page, deck: DeckId): Promise<number> {
-	const before = (await _query(page)).decks[deck].position_ms;
-	await page.waitForTimeout(TRANSPORT_SAMPLE_MS);
-	return (await _query(page)).decks[deck].position_ms - before;
+	const rate = await _measureRate(page, deck, TRANSPORT_SAMPLE_MS);
+	return rate * TRANSPORT_SAMPLE_MS;
 }
 
 /** DeckHeader's MM:SS.d formatter, mirrored so the readout can be asserted. */
@@ -649,6 +767,24 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		await page.close();
 	});
 
+	/**
+	 * Give every test the full 60s of fixture audio (see PLAYHEAD RUNWAY above).
+	 *
+	 * Deck 1 only, deliberately. Deck 2 is loaded and left playing by the load
+	 * test and does run dry later, which trips auto-play into logging a real
+	 * ui-error about a successor this two-track fixture never had - but nothing
+	 * below reads deck 2's position again, so that line is noise rather than a
+	 * failure. Rewinding deck 2 as well would silence it and is worth doing, but
+	 * only behind a run that can actually verify it: these are real-time audio
+	 * assertions, and a loaded machine fails them for reasons of its own.
+	 *
+	 * Skipped before the load test, which is the one that puts a track there.
+	 */
+	test.beforeEach(async () => {
+		if ((await _query(page)).decks[1].stable_id === null) return;
+		await _seek(page, 1, 0);
+	});
+
 	test('double-click loads deck 1 and deck 2 with a real worklet', async () => {
 		const firstId = await _dblClickLoad(page, 0);
 		await _waitForDeckLoaded(page, 1);
@@ -855,6 +991,12 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		await _ensurePlaying(page, 1, true);
 		await _centrePitch(page, 1);
 
+		// Travel a deliberate distance first. This used to be whatever the tests
+		// before it happened to leave on the playhead - the same accidental
+		// coupling that let the fixture run dry mid-suite - and the cue point it
+		// produces is asserted below, so it cannot be an accident.
+		await _playUntilPast(page, 1, CUE_RUNWAY_MS);
+
 		// Paused with no cue set, the engine stamps one at the current position.
 		await _ensurePlaying(page, 1, false);
 		const pausedAt = (await _query(page)).decks[1].position_ms;
@@ -874,14 +1016,7 @@ test.describe('webkit performance controls on the engine-served build', () => {
 
 		// Play well past it, then press CUE: the contract is return AND pause.
 		await _ensurePlaying(page, 1, true);
-		await page.waitForFunction(
-			({ deckId, past }) => {
-				const ipc = window.musicDjToolsPerformance;
-				return ipc !== undefined && ipc.query().decks[deckId].position_ms > past;
-			},
-			{ deckId: 1 as DeckId, past: (cueMs ?? 0) + 2_000 },
-			{ timeout: 30_000 }
-		);
+		await _playUntilPast(page, 1, (cueMs ?? 0) + 2_000);
 
 		await _pressControl(page, 1, 'cue');
 		await _waitForAudible(page, 1, false);

@@ -3,14 +3,29 @@
 # Install once with: pip install pre-commit && pre-commit install
 # Run on the whole tree with: pre-commit run --all-files
 #
-# Black is intentionally NOT included — the repo uses ruff for both linting
+# Black is intentionally NOT included: the repo uses ruff for both linting
 # and formatting. If black is ever adopted, add `psf/black-pre-commit-mirror`
 # here with `language_version: python3.11`.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.4
+    # This rev MUST equal the `ruff==` pin in ops/quality/requirements.txt,
+    # which is the ruff that `make lint` and the `make quality` ratchet
+    # actually measure with. tests/quality/test_toolchain_pins.py fails when
+    # the two drift.
+    #
+    # They did drift, and the failure mode is the expensive one: this hook sat
+    # on v0.7.4 while the gate moved to 0.16.3, so a clean local run proved
+    # nothing about CI. 113 findings the gate counts were invisible here,
+    # RUF022 (unsorted __all__) among them at 69 sites -- a rule 0.7.4 does
+    # not have at all. One new unsorted __all__ passed this hook and then put
+    # ruff.correctness over its ops/quality/baseline.json allowance in CI.
+    # The blindness ran both ways: 0.7.4 reported 31 UP038s against a rule
+    # 0.16.3 has since removed, and split UP007 into UP007 + UP045.
+    rev: v0.16.3
     hooks:
-      - id: ruff
+      # `ruff-check`, not the bare `ruff` id: since 0.16.x that id is carried
+      # as "ruff (legacy alias)" and is on its way out.
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
 

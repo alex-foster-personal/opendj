@@ -28,6 +28,8 @@ forbidden_modules =
     apps.cloud
     apps.dedup
     apps.dj_copilot
+    apps.entitlements
+    apps.feature_flags
     apps.open_dj
     apps.pairings
     apps.play_analytics
@@ -58,6 +60,8 @@ source_modules =
     apps.cloud
     apps.dedup
     apps.dj_copilot
+    apps.entitlements
+    apps.feature_flags
     apps.open_dj
     apps.pairings
     apps.play_analytics

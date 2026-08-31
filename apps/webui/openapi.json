@@ -35,6 +35,127 @@
         "title": "AccessProbeOut",
         "type": "object"
       },
+      "AccountDeleteOut": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "google_sub",
+          "message"
+        ],
+        "title": "AccountDeleteOut",
+        "type": "object"
+      },
+      "AccountOut": {
+        "properties": {
+          "authorisation_enforced": {
+            "title": "Authorisation Enforced",
+            "type": "boolean"
+          },
+          "authorisation_note": {
+            "title": "Authorisation Note",
+            "type": "string"
+          },
+          "local_data": {
+            "items": {
+              "$ref": "#/components/schemas/LocalDataOut"
+            },
+            "title": "Local Data",
+            "type": "array"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "privacy_policy_url": {
+            "title": "Privacy Policy Url",
+            "type": "string"
+          },
+          "signed_in": {
+            "title": "Signed In",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountUserOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "signed_in",
+          "user",
+          "plan",
+          "authorisation_enforced",
+          "authorisation_note",
+          "local_data",
+          "privacy_policy_url"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
+      "AccountUserOut": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "google_sub",
+          "email",
+          "name",
+          "avatar_url",
+          "created_at"
+        ],
+        "title": "AccountUserOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -1843,6 +1964,42 @@
         "title": "EngineHealthOut",
         "type": "object"
       },
+      "EntitlementsOut": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureEntitlementOut"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/RefusalOut"
+          }
+        },
+        "required": [
+          "provider",
+          "plan",
+          "refusal",
+          "features"
+        ],
+        "title": "EntitlementsOut",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "details": {
@@ -1938,6 +2095,51 @@
           "beats"
         ],
         "title": "FallbackBeatgridOut",
+        "type": "object"
+      },
+      "FeatureEntitlementOut": {
+        "properties": {
+          "entitled": {
+            "title": "Entitled",
+            "type": "boolean"
+          },
+          "feature_id": {
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "quota": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota"
+          },
+          "server_side": {
+            "title": "Server Side",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "feature_id",
+          "label",
+          "entitled",
+          "quota",
+          "server_side",
+          "note"
+        ],
+        "title": "FeatureEntitlementOut",
         "type": "object"
       },
       "FileProbeOut": {
@@ -2212,6 +2414,75 @@
           "etag"
         ],
         "title": "FindReplaceRowOut",
+        "type": "object"
+      },
+      "FlagOut": {
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "flag_id": {
+            "title": "Flag Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "overridden": {
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "retire_by": {
+            "title": "Retire By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flag_id",
+          "enabled",
+          "default",
+          "overridden",
+          "owner",
+          "note",
+          "retire_by"
+        ],
+        "title": "FlagOut",
+        "type": "object"
+      },
+      "FlagsOut": {
+        "properties": {
+          "file_present": {
+            "title": "File Present",
+            "type": "boolean"
+          },
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FlagOut"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "file_present",
+          "flags"
+        ],
+        "title": "FlagsOut",
         "type": "object"
       },
       "FolderImportIn": {
@@ -3098,6 +3369,122 @@
         "title": "LastImportOut",
         "type": "object"
       },
+      "LocalDataOut": {
+        "description": "One store on this machine that holds something about the account.",
+        "properties": {
+          "contents": {
+            "title": "Contents",
+            "type": "string"
+          },
+          "delete_with": {
+            "title": "Delete With",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "location",
+          "contents",
+          "delete_with"
+        ],
+        "title": "LocalDataOut",
+        "type": "object"
+      },
+      "LoginIn": {
+        "properties": {
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          }
+        },
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "LoginOut": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "state",
+          "redirect_uri"
+        ],
+        "title": "LoginOut",
+        "type": "object"
+      },
+      "MeOut": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "google_sub": {
+            "title": "Google Sub",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "google_sub",
+          "email",
+          "name",
+          "avatar_url",
+          "created_at"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
       "MemberOut": {
         "properties": {
           "artist": {
@@ -3853,6 +4240,41 @@
           "track_updates"
         ],
         "title": "PlanModel",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "plan_id",
+          "label",
+          "note",
+          "provider"
+        ],
+        "title": "PlanOut",
         "type": "object"
       },
       "PlanRequest": {
@@ -5327,6 +5749,30 @@
           "recently_done_ids"
         ],
         "title": "RefreshStatusOut",
+        "type": "object"
+      },
+      "RefusalOut": {
+        "description": "The one refusal shape, so a control and its tooltip cannot disagree.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "title": "Ui Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "ui_title"
+        ],
+        "title": "RefusalOut",
         "type": "object"
       },
       "RekordboxDetectionOut": {
@@ -9241,6 +9687,72 @@
         ]
       }
     },
+    "/api/v1/account": {
+      "delete": {
+        "description": "Erase the user row and, by FK cascade, every session it owns.\n\nThe deletion half of https://open-dj.com/privacy (ACCT-03). The session\ncookie is cleared on the way out, because leaving the browser holding a\ntoken for a row that no longer exists would leave the UI showing a signed\nin state that resolves to nobody.",
+        "operationId": "delete_account_api_v1_account_delete",
+        "parameters": [
+          {
+            "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Must be exactly 'delete-my-local-account-data'. Typed confirm, so this cannot fire by accident from a bare DELETE.",
+              "title": "Confirm",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "account"
+        ]
+      },
+      "get": {
+        "description": "Identity, plan, and the full local-storage disclosure.\n\nAnswers signed OUT too, with ``user: null``: what is stored and what is\ngated are questions somebody is entitled to ask BEFORE handing over an\nidentity, and refusing to answer until they sign in would be a strange\nreading of a privacy disclosure.",
+        "operationId": "read_account_api_v1_account_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Account",
+        "tags": [
+          "account"
+        ]
+      }
+    },
     "/api/v1/admin/quality-ratchet": {
       "get": {
         "operationId": "get_quality_ratchet_api_v1_admin_quality_ratchet_get",
@@ -9327,6 +9839,147 @@
         "summary": "Assistant Status",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "description": "Google's loopback redirect target. Plants the cookie, returns to the SPA.",
+        "operationId": "finish_login_api_v1_auth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Begin sign-in: mint CSRF state + PKCE and return the consent URL.\n\nThe caller (browser or agent) is responsible for actually visiting\n``authorization_url``. Nothing is persisted until the callback lands.",
+        "operationId": "start_login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Drop the session server-side and clear the cookie.\n\nIdempotent: signing out when already signed out is a 204, not an error.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "The signed-in user, or 401. The bauble polls this on mount.",
+        "operationId": "whoami_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Whoami",
+        "tags": [
+          "auth"
         ]
       }
     },
@@ -9775,6 +10428,71 @@
         ]
       }
     },
+    "/api/v1/entitlements": {
+      "get": {
+        "description": "The plan, the refusal shape, and every gateable feature.\n\n``features`` is empty while the catalog is, and that is the honest answer\nrather than a missing one: openDJ has no paid features, so there is\nnothing an account could fail to be entitled to.",
+        "operationId": "read_entitlements_api_v1_entitlements_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Entitlements",
+        "tags": [
+          "entitlements"
+        ]
+      }
+    },
+    "/api/v1/entitlements/{feature_id}": {
+      "get": {
+        "description": "May this account use one feature?\n\nAn id the catalog does not know is answered, not 404'd: while no provider\nis configured everything is entitled (ENT-04), and a 404 here would let a\ncaller mistake \"we have never heard of that\" for \"you may not\".",
+        "operationId": "read_entitlement_api_v1_entitlements__feature_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "title": "Feature Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureEntitlementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Entitlement",
+        "tags": [
+          "entitlements"
+        ]
+      }
+    },
     "/api/v1/feedback/archive": {
       "post": {
         "operationId": "archive_feedback_api_v1_feedback_archive_post",
@@ -10107,6 +10825,28 @@
         "summary": "Preview",
         "tags": [
           "find-replace"
+        ]
+      }
+    },
+    "/api/v1/flags": {
+      "get": {
+        "description": "The declared flags, as resolved once at engine boot.\n\nA separate surface from /entitlements on purpose (FLAG-01): these are\nengineering-owned code-path toggles, not anything an account is entitled\nto, and folding them into one response is the first step toward one store.",
+        "operationId": "read_flags_api_v1_flags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Flags",
+        "tags": [
+          "feature-flags"
         ]
       }
     },
