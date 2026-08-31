@@ -121,12 +121,20 @@ def _seed_local_location(
     *,
     available: int = 1,
     content_hash: str | None = None,
+    machine_id: str = "m1",
 ) -> None:
+    """A local copy belonging to ONE machine (ADR 08 point 1).
+
+    ``machine_id`` is not optional in practice even though the DDL allows
+    NULL: every read and every write in the location path filters on it, so a
+    row without one is invisible to the machine it describes -- which is
+    exactly round 2 finding N1b.
+    """
     conn.execute(
-        "INSERT INTO track_locations(stable_id, kind, role, file_path, "
-        "available, content_hash, created_at, updated_at) "
-        "VALUES (?, 'local', 'primary', ?, ?, ?, 't0', 't0')",
-        (stable_id, str(file_path), available, content_hash),
+        "INSERT INTO track_locations(stable_id, machine_id, kind, role, "
+        "file_path, available, content_hash, created_at, updated_at) "
+        "VALUES (?, ?, 'local', 'primary', ?, ?, ?, 't0', 't0')",
+        (stable_id, machine_id, str(file_path), available, content_hash),
     )
 
 

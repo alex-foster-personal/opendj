@@ -35,10 +35,14 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
+
+from apps.shared.state import locations as state_locations
+from apps.shared.state import sync_stamp
 
 from .asset_store import (
     DEFAULT_PRESIGN_EXPIRY_SECONDS,
@@ -64,6 +68,10 @@ MODE_STRENGTH: dict[str, int] = {
     "stream": 1,
     "excluded": 0,
 }
+
+#: The one synced table this module writes. Named rather than repeated so the
+#: ``local_changelog`` entry and the ``INSERT`` can never name two tables.
+_LOCATIONS_TABLE: str = "track_locations"
 
 #: ``sync_policies.asset_kind`` CHECK vocabulary (schema v6).
 ASSET_KINDS: tuple[str, ...] = (
@@ -398,7 +406,12 @@ class ProduceOutcome:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    """This instant in the one format the sync protocol can order.
+
+    ``datetime.now(UTC).isoformat()`` omits the microseconds entirely on the
+    tick where they are zero, which is a second format for one column.
+    """
+    return sync_stamp.canonical_now()
 
 
 def _upsert_remote_location(
@@ -415,39 +428,91 @@ def _upsert_remote_location(
     ``remote_url`` stores the object KEY, not a URL: a presigned URL expires
     and differs on every mint, so persisting one would guarantee a stale row
     (ADR 06 point 4).
+
+    Round 2 finding N1b: this used to write ``machine_id`` NULL and skip
+    ``local_changelog`` entirely. The row was then invisible to every
+    machine-scoped read (``locations.list_locations`` filters
+    ``machine_id = owner``), so a track the daemon had just hydrated did not
+    register as present on the machine that hydrated it, and it was only
+    rescued by the next ``db.open_rw`` backfill -- which a long-lived daemon
+    never performs. It also never reached the hub. Both fixed by going
+    through :func:`apps.shared.state.sync_stamp.stamp_and_log` and naming
+    ``machine_id`` explicitly, on the same natural key
+    ``(stable_id, machine_id, kind, remote_url)`` the partial UNIQUE index
+    asserts.
     """
+    object_key = state_locations.normalize_stored_text(object_key)
     row = conn.execute(
-        "SELECT rowid FROM track_locations "
-        "WHERE stable_id = ? AND kind = 'remote' AND remote_url = ?",
-        (stable_id, object_key),
+        "SELECT location_id FROM track_locations "
+        "WHERE stable_id = ? AND machine_id = ? AND kind = 'remote' "
+        "AND remote_url = ?",
+        (stable_id, machine_id, object_key),
     ).fetchone()
+    location_id = str(row[0]) if row is not None else uuid.uuid4().hex
+    stamp = sync_stamp.stamp_and_log(
+        conn, _LOCATIONS_TABLE, (location_id,), machine_id, now=now,
+    )
     if row is None:
         conn.execute(
             """
             INSERT INTO track_locations(
-                stable_id, kind, role, remote_url, available, probed_at,
-                content_hash, created_at, updated_at, origin_device_id
-            ) VALUES (?, 'remote', 'alternate', ?, 1, ?, ?, ?, ?, ?)
+                location_id, stable_id, machine_id, kind, role, remote_url,
+                available, probed_at, content_hash, created_at, updated_at,
+                origin_device_id
+            ) VALUES (?, ?, ?, 'remote', 'alternate', ?, 1, ?, ?, ?, ?, ?)
             """,
-            (stable_id, object_key, now, content_hash, now, now, machine_id),
+            (
+                location_id, stable_id, machine_id, object_key,
+                stamp.updated_at, content_hash, stamp.updated_at,
+                stamp.updated_at, stamp.origin_device_id,
+            ),
         )
         return
     conn.execute(
         "UPDATE track_locations SET available = 1, probed_at = ?, "
         "content_hash = ?, updated_at = ?, origin_device_id = ?, "
-        "deleted_at = NULL WHERE rowid = ?",
-        (now, content_hash, now, machine_id, int(row[0])),
+        "deleted_at = NULL WHERE location_id = ?",
+        (
+            stamp.updated_at, content_hash, stamp.updated_at,
+            stamp.origin_device_id, location_id,
+        ),
     )
 
 
 def _mark_local_unavailable(
-    conn: sqlite3.Connection, stable_id: str, file_path: Path, now: str
+    conn: sqlite3.Connection,
+    stable_id: str,
+    file_path: Path,
+    machine_id: str,
+    now: str,
 ) -> None:
-    conn.execute(
-        "UPDATE track_locations SET available = 0, probed_at = ?, "
-        "updated_at = ? WHERE stable_id = ? AND kind = 'local' AND file_path = ?",
-        (now, now, stable_id, str(file_path)),
-    )
+    """Flag THIS machine's local copy as gone, stamped and logged.
+
+    Scoped to ``machine_id`` (round 2 finding N1b, ADR 08 point 1): the
+    unscoped UPDATE this replaces would mark another machine's row for the
+    same path unavailable too, on the strength of a file deleted here. Each
+    row is stamped individually so the edit carries an origin and reaches the
+    push fence instead of moving ``updated_at`` with no changelog entry.
+    """
+    normalized = state_locations.normalize_stored_text(str(file_path))
+    rows = conn.execute(
+        "SELECT location_id FROM track_locations "
+        "WHERE stable_id = ? AND machine_id = ? AND kind = 'local' "
+        "AND file_path = ?",
+        (stable_id, machine_id, normalized),
+    ).fetchall()
+    for (location_id,) in rows:
+        stamp = sync_stamp.stamp_and_log(
+            conn, _LOCATIONS_TABLE, (str(location_id),), machine_id, now=now,
+        )
+        conn.execute(
+            "UPDATE track_locations SET available = 0, probed_at = ?, "
+            "updated_at = ?, origin_device_id = ? WHERE location_id = ?",
+            (
+                stamp.updated_at, stamp.updated_at, stamp.origin_device_id,
+                str(location_id),
+            ),
+        )
 
 
 def apply_policy_after_produce(
@@ -489,14 +554,19 @@ def apply_policy_after_produce(
         )
 
     now = _now_iso()
-    _upsert_remote_location(
-        conn,
-        stable_id=stable_id,
-        object_key=result.object_key,
-        content_hash=result.content_hash,
-        machine_id=machine_id,
-        now=now,
-    )
+    # One unit: the row write and its local_changelog entry commit together
+    # or not at all (ADR 08 point 3). The filesystem moves stay outside it --
+    # they are not transactional, and the push-then-delete ORDER above is what
+    # makes them safe, not the transaction.
+    with sync_stamp.stamped_transaction(conn):
+        _upsert_remote_location(
+            conn,
+            stable_id=stable_id,
+            object_key=result.object_key,
+            content_hash=result.content_hash,
+            machine_id=machine_id,
+            now=now,
+        )
 
     if policy.mode == "pinned":
         action: LocalAction = "kept"
@@ -510,11 +580,13 @@ def apply_policy_after_produce(
         final_path = cache_path(cache_dir, result.content_hash)
         final_path.parent.mkdir(parents=True, exist_ok=True)
         source.replace(final_path)
-        _mark_local_unavailable(conn, stable_id, source, now)
+        with sync_stamp.stamped_transaction(conn):
+            _mark_local_unavailable(conn, stable_id, source, machine_id, now)
         action = "cached"
     elif policy.mode in ("stream", "excluded"):
         source.unlink()
-        _mark_local_unavailable(conn, stable_id, source, now)
+        with sync_stamp.stamped_transaction(conn):
+            _mark_local_unavailable(conn, stable_id, source, machine_id, now)
         action = "deleted"
         final_path = None
     else:
