@@ -12,9 +12,15 @@
  * ClientErrorIn.context on the server already accepts
  * dict[str, str|int|float|bool|None] with at most 32 keys, so the stage map
  * travels as flattened context and no schema changes.
+ *
+ * The whole reporting step lives here rather than in audio-engine (convention
+ * D5, docs/perf/performance-register.md): perf instrumentation belongs in a
+ * DRY module and the fat file gets a call site, not a formula.
  */
 
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import type { ClientErrorContext } from '$lib/client-error-reporting';
+import { pushToast } from '$lib/stores.svelte';
 
 /** Server-side cap on ClientErrorIn.context; anything past it is dropped. */
 export const MAX_CONTEXT_KEYS = 32;
@@ -67,4 +73,29 @@ export function deckLoadFailureContext(
 		context[`${STAGE_PREFIX}${name}`] = stages[name];
 	}
 	return context;
+}
+
+/**
+ * Report one failed deck load: the user-facing toast, the client perf ring, and
+ * - riding that same toast - the server-side error row carrying the stages.
+ *
+ * The stages are the only record of WHERE the load died, and until this existed
+ * they stopped at the client ring, which the next fader drag wipes. Riding the
+ * toast's own error report is what carries them to the server WITHOUT a second
+ * reportClientError per failure: client-error-reporting dedupes on `source`, so
+ * two reports per failure would land as two rows with the diagnosis on neither.
+ *
+ * Ordering is load-bearing and the caller owns it: `stages.failedAt` must
+ * already be stamped when this is called, or every report is missing the one
+ * number that says when the load died.
+ */
+export function reportDeckLoadFailure(
+	deck: 1 | 2 | 3 | 4,
+	message: string,
+	cause: unknown,
+	stages: Readonly<Record<string, number>>
+): void {
+	const failureContext = deckLoadFailureContext(deck, stages);
+	pushToast(`Deck ${deck} load failed - ${message}`, 'error', undefined, cause, failureContext);
+	recordPerfEvent('deck-load-fail', message, deck);
 }

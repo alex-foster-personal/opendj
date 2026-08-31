@@ -88,16 +88,34 @@ function makeWindow() {
 }
 
 /**
+ * The instance handed out by the previous freshLog, so its pending flush can be
+ * drained before the next one starts. See freshLog.
+ */
+let _priorLog = null;
+
+/**
  * A fresh module instance per test. The ring is module state, so reusing one
  * instance would let an earlier test's 60 rows decide a later test's budget.
+ *
+ * The previous instance is DRAINED first, and that is load-bearing rather than
+ * tidiness. Whichever test ran last may have left a real FLUSH_DEBOUNCE_MS
+ * timer armed, and that timer resolves `localStorage` when it FIRES, not when
+ * it was armed - so it writes the previous test's ring into this test's store,
+ * and it gets its chance during the `await` below. Seen live: the 40-row
+ * capacity test's flush landed inside the legacy-ring test's module load, which
+ * then read 40 rows that no test had seeded and reported the trim as broken.
+ * Flushing first clears the outstanding rows, so that pending timer fires as
+ * the no-op flushPerfEventLog already documents.
  */
 async function freshLog({ seed, withWindow = false } = {}) {
+	_priorLog?.flushPerfEventLog();
 	const store = makeLocalStorage(seed);
 	defineGlobal('localStorage', store);
 	const win = withWindow ? makeWindow() : undefined;
 	if (withWindow) defineGlobal('window', win);
 	else delete globalThis.window;
 	const perfLog = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts');
+	_priorLog = perfLog;
 	store.writes = 0; // module init reads; it must not write
 	return { perfLog, store, win };
 }

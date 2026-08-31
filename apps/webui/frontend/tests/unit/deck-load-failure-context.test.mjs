@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, afterEach, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { engineBlockAfter } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -157,33 +159,56 @@ test('the helper never throws over its input, because it runs inside a catch', (
 // wiring: the context must actually reach the server report
 //-----------------------------------------------------------------------------
 
-test('the deck-load catch block hands the stage context to the error report', () => {
+const MODULE_SOURCE = readFileSync(
+	fileURLToPath(new URL('../../src/lib/rb/deck-load-failure-context.ts', import.meta.url)),
+	'utf8'
+).replaceAll('\r\n', '\n');
+
+test('the deck-load catch block reports through the extracted module, after stamping failedAt', () => {
 	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string): Promise<void> {');
 
-	assert.ok(
-		body.includes('deckLoadFailureContext(deck, stages)'),
-		'if the catch stops building the context from the SAME stages map it just ' +
-			'stamped failedAt onto then the report describes a different load'
-	);
 	const stampAt = body.indexOf('stages.failedAt = perfMs();');
-	const contextAt = body.indexOf('deckLoadFailureContext(deck, stages)');
-	const toastAt = body.indexOf("pushToast(`Deck ${deck} load failed");
-	assert.ok(stampAt !== -1 && contextAt !== -1 && toastAt !== -1);
+	const reportAt = body.indexOf('reportDeckLoadFailure(deck, msg, exc, stages)');
 	assert.ok(
-		stampAt < contextAt,
-		'if the context is built before failedAt is stamped then the one number that ' +
+		reportAt !== -1,
+		'if the catch stops handing the SAME stages map it just stamped failedAt onto ' +
+			'to the reporter then the report describes a different load'
+	);
+	assert.ok(stampAt !== -1);
+	assert.ok(
+		stampAt < reportAt,
+		'if the report runs before failedAt is stamped then the one number that ' +
 			'says when the load died is missing from every report'
 	);
+	// The connect() failure further down raises its own `${message}` toast and is
+	// a different failure with no stage map, so only the stage-carrying one moved.
 	assert.ok(
-		contextAt < toastAt,
-		'the context must exist before the call that reports it'
+		!body.includes('pushToast(`Deck ${deck} load failed - ${msg}`'),
+		'the stage-carrying toast belongs to the reporter module (convention D5: the ' +
+			'fat file gets a call site, not a formula), so a copy here would double-report'
 	);
 	assert.ok(
-		/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{msg\}`,\s*'error',\s*undefined,\s*exc,\s*failureContext\s*\)/.test(
-			body
+		!body.includes("recordPerfEvent('deck-load-fail'"),
+		'the perf-ring row moved with the toast; leaving one here rings the failure twice'
+	);
+});
+
+test('the reporter rides the failure context on the toast that already reaches the server', () => {
+	assert.ok(
+		/const failureContext = deckLoadFailureContext\(deck, stages\);/.test(MODULE_SOURCE),
+		'the reported context must be built from the caller stages, not re-measured'
+	);
+	assert.ok(
+		/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*undefined,\s*cause,\s*failureContext\s*\)/.test(
+			MODULE_SOURCE
 		),
 		'the failure context must ride the toast report that already reaches the ' +
 			'server, or the deck-load row is reported twice with the stages on neither'
+	);
+	assert.ok(
+		/recordPerfEvent\('deck-load-fail', message, deck\)/.test(MODULE_SOURCE),
+		'the client perf ring still gets its row; moving the reporting out must not ' +
+			'drop the local trace that survives an offline failure'
 	);
 });
 
