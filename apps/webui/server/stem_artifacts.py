@@ -33,7 +33,10 @@ import os
 import re
 import stat
 import struct
+import threading
+import time
 from collections.abc import Iterable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Annotated, Any, Literal
@@ -631,10 +634,43 @@ _STEM_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Cheap as one summary is, build_track_rows asks for one per row and the All
+# Tracks pane re-walks every row every LIBRARY_FALLBACK_POLL_MS (60 s): on an
+# 8k-track library that is 8k manifest reads plus up to 4 stats each, every
+# minute, per open pane. Cache per (root, stable_id) with an explicit bound.
+#
+# A TTL rather than an mtime revalidation because the common answer is "none"
+# -- a track with no bundle has no manifest to stat, so only a clock can bound
+# how long that answer is trusted, and one freshness contract beats two.
+# 30 s mirrors config.FILE_EXISTS_TTL_S and is half the library poll, so a
+# bundle that lands (or is deleted) is on screen by the next poll at worst.
+STEM_SUMMARY_TTL_S: float = 30.0
+_STEM_SUMMARY_LOCK = threading.Lock()
+_STEM_SUMMARY_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+
+
 def summarize_stem_bundle(
     stable_id: str, *, stems_dir: Path = DEFAULT_STEMS_DIR
 ) -> dict[str, Any]:
-    """A cheap listing badge for one bundle: ``{"status": "none"}`` or ready.
+    """A cheap listing badge for one bundle, cached for STEM_SUMMARY_TTL_S.
+
+    Each caller gets its own copy: summaries are handed to row serializers
+    that must not be able to reach back into the cache.
+    """
+    key = (str(stems_dir), stable_id)
+    now = time.monotonic()
+    with _STEM_SUMMARY_LOCK:
+        hit = _STEM_SUMMARY_CACHE.get(key)
+    if hit is not None and now - hit[0] < STEM_SUMMARY_TTL_S:
+        return deepcopy(hit[1])
+    summary = _read_stem_summary(stable_id, stems_dir)
+    with _STEM_SUMMARY_LOCK:
+        _STEM_SUMMARY_CACHE[key] = (now, summary)
+    return deepcopy(summary)
+
+
+def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
+    """Read one bundle off disk: ``{"status": "none"}`` or ready.
 
     Never raises for a bad bundle -- an unreadable or malformed manifest is
     reported as ``none``, the same as absent, because the listing's job is to
@@ -702,7 +738,11 @@ def summarize_stem_bundle(
 def bulk_stem_summaries(
     stable_ids: Iterable[str], *, stems_dir: Path = DEFAULT_STEMS_DIR
 ) -> dict[str, dict[str, Any]]:
-    """``summarize_stem_bundle`` for a listing page, keyed by stable_id."""
+    """``summarize_stem_bundle`` for a listing page, keyed by stable_id.
+
+    Repeat pages and the 60 s library re-poll are served from that function's
+    TTL cache, so a warm page touches the filesystem not at all.
+    """
     return {sid: summarize_stem_bundle(sid, stems_dir=stems_dir) for sid in stable_ids}
 
 
@@ -711,6 +751,7 @@ __all__ = [
     "ROFORMER_PARTS",
     "ROFORMER_STEMS_DIR",
     "STEM_LAYOUTS",
+    "STEM_SUMMARY_TTL_S",
     "bulk_stem_summaries",
     "stem_roots",
     "summarize_stem_bundle",
