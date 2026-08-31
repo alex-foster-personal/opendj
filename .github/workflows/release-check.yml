@@ -44,12 +44,18 @@ jobs:
           sudo apt-get install -y libsqlcipher-dev
 
       - name: Create project venv
-        # The Makefile expects VENV=.venv with python/pytest/ruff inside it.
+        # The Makefile expects VENV=.venv with python and pytest inside it.
+        #
+        # ruff is deliberately NOT installed here. `make lint` runs the ruff
+        # pinned in ops/quality/requirements.txt through `uv run --no-project
+        # --with-requirements`, so a copy in this venv is never invoked; it
+        # was only ever a third, unpinned ruff floating alongside the two that
+        # are pinned. Guarded by tests/quality/test_toolchain_pins.py.
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -r requirements.txt
-          .venv/bin/pip install build maturin ruff
+          .venv/bin/pip install build maturin
 
       - name: Run make release-check
         env:
