@@ -657,7 +657,14 @@ function _errorMessage(error: unknown): string {
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-async function _execute(command: PerformanceCommand): Promise<void> {
+/**
+ * Q1 / S2: `pressT0Ms` is the input stamp on the `performance.now()` epoch, cut
+ * at the UI boundary BEFORE the command can queue. It travels as an argument
+ * rather than as a command field on purpose: `PerformanceCommand` is the
+ * validated IPC wire shape (`_exactKeys` rejects unknown fields), and an
+ * instrument has no business widening a public protocol.
+ */
+async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	if (command.type === 'load') {
 		await engine.load(command.deck, command.stable_id);
 		hotCueReversals[command.deck] = null;
@@ -666,11 +673,11 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 	} else if (command.type === 'play') {
-		if (command.playing) await engine.play(command.deck);
-		else await engine.pause(command.deck);
+		if (command.playing) await engine.play(command.deck, pressT0Ms);
+		else await engine.pause(command.deck, pressT0Ms);
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'cue') {
-		await engine.pressCue(command.deck);
+		await engine.pressCue(command.deck, pressT0Ms);
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'seek') {
 		await engine.quantizedSeek(command.deck, command.position_ms);
@@ -997,7 +1004,8 @@ export function abortPreparedPerformancePreset(id: string, reason: string): void
 
 async function _dispatchUnknown(
 	message: unknown,
-	commandGeneration: number
+	commandGeneration: number,
+	pressT0Ms?: number
 ): Promise<PerformanceState> {
 	_assertCommandSession(commandGeneration);
 	let command: PerformanceCommand;
@@ -1023,7 +1031,7 @@ async function _dispatchUnknown(
 		try {
 			const acquired = _commandScheduler.runImmediatelyIfIdle('headphone', async () => {
 				_assertCommandSession(commandGeneration);
-				await _execute(command);
+				await _execute(command, pressT0Ms);
 			});
 			await acquired;
 			_assertCommandSession(commandGeneration);
@@ -1040,7 +1048,7 @@ async function _dispatchUnknown(
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
 			_assertCommandSession(commandGeneration);
-			await _execute(command);
+			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
@@ -1060,7 +1068,9 @@ async function _dispatchUnknown(
 		performanceCommandStatus.last_error = null;
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
-			await _execute(command);
+			// Q1: this body starts only AFTER the scope wait above, which is
+			// exactly the gap press_to_schedule_ms exists to expose.
+			await _execute(command, pressT0Ms);
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
@@ -1083,16 +1093,28 @@ async function _dispatchUnknown(
 }
 
 export async function dispatchPerformanceCommand(
-	command: PerformanceCommand
+	command: PerformanceCommand,
+	pressT0Ms?: number
 ): Promise<PerformanceState> {
-	return _dispatchUnknown(command, _currentCommandSession());
+	return _dispatchUnknown(command, _currentCommandSession(), pressT0Ms);
 }
 
-/** UI event boundary: await the same fail-fast dispatcher, then consume the
- * rejection only after it has been persisted in visible reactive state. */
-export async function runPerformanceCommandFromUi(command: PerformanceCommand): Promise<void> {
+/**
+ * UI event boundary: await the same fail-fast dispatcher, then consume the
+ * rejection only after it has been persisted in visible reactive state.
+ *
+ * Q1 / S2: this is where the press clock starts. The default is taken on ENTRY,
+ * before `_dispatchUnknown` can park the command behind another scope's tail,
+ * so `press_to_schedule_ms` contains that wait rather than starting after it.
+ * A caller holding the originating DOM event should pass `event.timeStamp`,
+ * which is already on the `performance.now()` epoch and is earlier still.
+ */
+export async function runPerformanceCommandFromUi(
+	command: PerformanceCommand,
+	pressT0Ms: number = performance.now()
+): Promise<void> {
 	try {
-		await dispatchPerformanceCommand(command);
+		await dispatchPerformanceCommand(command, pressT0Ms);
 	} catch {
 		// The dispatcher already populated the deck alert and toast.
 	}

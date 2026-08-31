@@ -1674,6 +1674,37 @@ export function stretchScheduleChange(
 	};
 }
 
+/**
+ * Q1 / S2: turn an input stamp into the press-to-schedule delta, or nothing.
+ *
+ * `pressT0Ms` shares the `performance.now()` epoch (that is what
+ * `event.timeStamp` is), so the delta is the wait the operator actually felt
+ * before this schedule reached the audio clock: the command scheduler's scope
+ * wait, `_resumeContext()`, and the deck's own `rt.scheduleTail`.
+ *
+ * A stamp from a different epoch would produce a negative delta, and a logged
+ * negative would UNDERSTATE the P0 budget it gates - the one direction a
+ * latency instrument must never fail in. So an implausible reading is recorded
+ * loudly and then dropped: the row loses its press stages rather than carrying
+ * a lie, and the transport itself is never interrupted, because an instrument
+ * may not break the thing it measures.
+ */
+function _pressToScheduleMs(pressT0Ms: number | undefined, deck: DeckId): number | undefined {
+	if (pressT0Ms === undefined) return undefined;
+	const elapsedMs = performance.now() - pressT0Ms;
+	if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+		recordPerfEvent(
+			'press-stamp-implausible',
+			`deck ${deck} press stamp ${pressT0Ms} yields ${elapsedMs}ms to the audio clock; ` +
+				'the stamp is not on the performance.now() epoch, so press_to_schedule_ms and ' +
+				'input_to_audible_ms are dropped from this row',
+			deck
+		);
+		return undefined;
+	}
+	return elapsedMs;
+}
+
 async function _scheduleDeck(
 	deck: DeckId,
 	when: number,
@@ -1682,7 +1713,8 @@ async function _scheduleDeck(
 	tempoRatio?: number,
 	masterTempoEnabled?: boolean,
 	loop?: LoopState | null,
-	keyShiftSemitones?: number
+	keyShiftSemitones?: number,
+	pressT0Ms?: number
 ): Promise<number> {
 	const rt = _rt[deck];
 	const expectedLoadToken = rt.loadToken;
@@ -1717,7 +1749,8 @@ async function _scheduleDeck(
 			tempoRatio,
 			masterTempoEnabled,
 			loop,
-			keyShiftSemitones
+			keyShiftSemitones,
+			pressT0Ms
 		);
 	} catch (error) {
 		// Reconcile the optimistic write to the STANDING intent, not to the value
@@ -1781,7 +1814,8 @@ async function _scheduleDeckSerial(
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined
 ): Promise<number> {
 	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
 	_commitPendingIfDue(deck);
@@ -1789,6 +1823,9 @@ async function _scheduleDeckSerial(
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
 	const scheduleContextTime = _ctx.currentTime;
+	// Q1: taken against the SAME clock read the row reports, so the two halves
+	// of input_to_audible_ms meet at one instant instead of overlapping.
+	const pressToScheduleMs = _pressToScheduleMs(pressT0Ms, deck);
 	const processorLeadSec = _transportLeadSec(deck);
 	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, processorLeadSec);
 	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
@@ -1811,7 +1848,8 @@ async function _scheduleDeckSerial(
 		processorLatencySec: rt.latencySec,
 		baseLatencySec: _ctx.baseLatency,
 		outputLatencySec: _ctx.outputLatency,
-		active
+		active,
+		pressToScheduleMs
 	});
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =
@@ -3220,7 +3258,13 @@ class RbAudioEngine implements AudioEngine {
 		st.loop = _displayLoopFrom(fresh.cues);
 	}
 
-	async play(deck: DeckId): Promise<void> {
+	/**
+	 * Q1: `pressT0Ms` is the input stamp on the `performance.now()` epoch
+	 * (`event.timeStamp` is already on it). Optional because automation and
+	 * beat-sync callers have no press behind them; supplying it is what makes
+	 * `press_to_schedule_ms` / `input_to_audible_ms` appear on the row.
+	 */
+	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state
 		// NOT st.beat_sync_enabled: the flag defaults ON, and a track with no
@@ -3261,7 +3305,17 @@ class RbAudioEngine implements AudioEngine {
 			// ramp rather than the processor's self-report (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			try {
-				await _scheduleDeck(deck, when, startSec, true);
+				await _scheduleDeck(
+					deck,
+					when,
+					startSec,
+					true,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					pressT0Ms
+				);
 				_assignMaster(deck);
 				st.sync_error = null;
 			} catch (error) {
@@ -3274,7 +3328,17 @@ class RbAudioEngine implements AudioEngine {
 			// in play, so this is plain transport (LATENCY-01), led by the onset
 			// ramp (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
-			await _scheduleDeck(deck, when, startSec, true);
+			await _scheduleDeck(
+				deck,
+				when,
+				startSec,
+				true,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				pressT0Ms
+			);
 			st.sync_error = null;
 		} else {
 			// This deck is joining from silence (guarded by the desiredActive
@@ -3284,7 +3348,8 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
-	async pause(deck: DeckId): Promise<void> {
+	/** Q1: see `play` for the `pressT0Ms` contract. */
+	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'pause');
 		if (!rt.desiredActive) return; // already paused is a valid state
 		if (_ctx === null) throw new Error('pause: audio graph not initialised');
@@ -3297,7 +3362,12 @@ class RbAudioEngine implements AudioEngine {
 			deck,
 			when,
 			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-			false
+			false,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			pressT0Ms
 		);
 		const cueMs = pauseBeats !== null
 			? quantizedPositionMs(pauseBeats, positionSec * 1000, true)
@@ -3395,13 +3465,27 @@ class RbAudioEngine implements AudioEngine {
 
 	/** The physical CUE button. Playing: return to the cue point and pause.
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
-	 * set the cue at the current position. */
-	async pressCue(deck: DeckId): Promise<void> {
+	 * set the cue at the current position.
+	 *
+	 * Q1: see `play` for the `pressT0Ms` contract. Only the playing branch
+	 * schedules; the two paused branches are pure state writes with no audio
+	 * instant to measure against, and the seek branch is Q1's follow-up. */
+	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pressCue');
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
 			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
-			await _scheduleDeck(deck, _futureScheduleTime(deck), target / 1000, false);
+			await _scheduleDeck(
+				deck,
+				_futureScheduleTime(deck),
+				target / 1000,
+				false,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				pressT0Ms
+			);
 			return;
 		}
 		if (st.cue_ms === null) {

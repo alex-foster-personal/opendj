@@ -217,7 +217,7 @@ test('safeSyncScheduleTime declares the sync margin as its default safety', () =
 //-----------------------------------------------------------------------------
 
 test('the two non-sync play branches schedule through the plain-transport helper', () => {
-	const body = engineBlockAfter('	async play(deck: DeckId): Promise<void> {');
+	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {');
 	assert.ok(
 		!body.includes('SYNC_SCHEDULE_SAFETY_S'),
 		'if play() names SYNC_SCHEDULE_SAFETY_S again then the branch that becomes master, ' +
@@ -239,8 +239,8 @@ test('the two non-sync play branches schedule through the plain-transport helper
 
 test('pause, cue and seek schedule through the plain-transport horizon', () => {
 	for (const anchor of [
-		'	async pause(deck: DeckId): Promise<void> {',
-		'	async pressCue(deck: DeckId): Promise<void> {',
+		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
+		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);

@@ -196,7 +196,8 @@ test('the engine feeds the instrument the post-clamp time, not the requested one
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined
 ): Promise<number> {`);
 
 	assert.ok(
@@ -246,7 +247,8 @@ test('the log write stays off the click-to-audio path it measures', () => {
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
 	loop: LoopState | null | undefined,
-	keyShiftSemitones: number | undefined
+	keyShiftSemitones: number | undefined,
+	pressT0Ms: number | undefined
 ): Promise<number> {`);
 	const scheduleAt = body.indexOf('await processor.schedule(');
 	const recordAt = body.indexOf("recordPerfTiming('transport-schedule'");
