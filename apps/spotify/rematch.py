@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
+from apps.shared.state import sync_stamp
 from apps.shared.state.writer import immediate_transaction, next_playlist_revision
 
 from .client import SpotifyTrack
@@ -24,7 +24,13 @@ from .matcher_adapter import (
     load_local_tracks,
     match_spotify_tracks,
 )
-from .state_writer import PendingRow, ensure_aux_tables, fetch_pending_tracks
+from .state_writer import (
+    MEMBERSHIPS_TABLE,
+    PLAYLISTS_TABLE,
+    PendingRow,
+    ensure_aux_tables,
+    fetch_pending_tracks,
+)
 
 __all__ = ["RematchOutcome", "rematch_playlist"]
 
@@ -101,18 +107,35 @@ def rematch_playlist(
     if not live or not resolved_pairs:
         return outcome
 
+    # Round 2 finding N1c: the promotion below wrote playlist_memberships and
+    # playlists with no origin_device_id and no local_changelog entry, so a
+    # resolved purchase never reached the hub and every later sync failed its
+    # digest compare. Both tables now go through the shared chokepoint.
+    machine_id = sync_stamp.ensure_local_machine(conn)
     with immediate_transaction(conn):
-        now = datetime.now(timezone.utc).isoformat()
+        now = sync_stamp.canonical_now()
         for pending, _pair, target in resolved_pairs:
-            conn.execute(
+            inserted = conn.execute(
                 """
                 INSERT INTO playlist_memberships
-                  (playlist_id, stable_id, position)
-                VALUES (?, ?, ?)
+                  (playlist_id, stable_id, position, updated_at,
+                   origin_device_id)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING
                 """,
-                (playlist_id, target.stable_id, pending.position),
+                (playlist_id, target.stable_id, pending.position, now, machine_id),
             )
+            # Only a row that actually landed is logged: an ON CONFLICT skip
+            # changed nothing, and a changelog entry for it would re-offer an
+            # untouched row on every sync forever.
+            if inserted.rowcount == 1:
+                sync_stamp.stamp_and_log(
+                    conn,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, pending.position),
+                    machine_id,
+                    now=now,
+                )
             conn.execute(
                 """
                 UPDATE pending_tracks
@@ -124,9 +147,13 @@ def rematch_playlist(
                 (target.stable_id, now, pending.pending_id),
             )
         revision = next_playlist_revision(conn, playlist_id, now)
+        stamp = sync_stamp.stamp_and_log(
+            conn, PLAYLISTS_TABLE, (playlist_id,), machine_id, now=revision,
+        )
         updated = conn.execute(
-            "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
-            (revision, playlist_id),
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+            "WHERE playlist_id = ?",
+            (stamp.updated_at, stamp.origin_device_id, playlist_id),
         )
         if updated.rowcount != 1:
             raise RuntimeError(f"playlist not found during rematch: {playlist_id}")

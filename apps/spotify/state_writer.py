@@ -30,6 +30,7 @@ from urllib.parse import quote_plus
 
 from apps.shared.state import db as state_db
 from apps.shared.state import paths as state_paths
+from apps.shared.state import sync_stamp
 from apps.shared.state.writer import next_playlist_revision
 
 from .client import SpotifyPlaylist, SpotifyTrack
@@ -53,6 +54,11 @@ __all__ = [
 
 
 VENDOR: str = "spotify"
+
+# The two synced tables this importer writes. Named so the row write and its
+# ``local_changelog`` entry can never disagree about which table changed.
+PLAYLISTS_TABLE: str = "playlists"
+MEMBERSHIPS_TABLE: str = "playlist_memberships"
 
 
 _AUX_DDL_PLAYLIST_META = """
@@ -292,34 +298,51 @@ def write_playlist_and_pending(
                 skipped_existing_snapshot=True,
             )
 
-        now = datetime.now(timezone.utc).isoformat()
+        # Round 2 finding N1c: this importer stamped neither
+        # origin_device_id nor local_changelog, so an imported playlist was
+        # never offered to the hub and every later sync failed its digest
+        # compare on ['playlist_memberships', 'playlists'] permanently. The
+        # empty tiebreak component was round 1 finding 2's second half, still
+        # live on this path. Both tables now go through the shared chokepoint.
+        machine_id = sync_stamp.ensure_local_machine(conn)
+        now = sync_stamp.canonical_now()
         revision = next_playlist_revision(conn, playlist_id, now)
+        playlist_stamp = sync_stamp.stamp_and_log(
+            conn, PLAYLISTS_TABLE, (playlist_id,), machine_id, now=revision,
+        )
         conn.execute(
             """
             INSERT INTO playlists
-              (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+              (playlist_id, name, vendor, vendor_pl_id, created_at,
+               updated_at, origin_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(playlist_id) DO UPDATE SET
               name = excluded.name,
               updated_at = excluded.updated_at,
+              origin_device_id = excluded.origin_device_id,
               deleted_at = NULL
             """,
-            (playlist_id, playlist.name, VENDOR, playlist.id, now, revision),
+            (
+                playlist_id, playlist.name, VENDOR, playlist.id, now,
+                playlist_stamp.updated_at, playlist_stamp.origin_device_id,
+            ),
         )
         # deleted_at = NULL on conflict (ADR 08 point 5): playlist_id is
         # deterministic (f"spotify:{vendor_pl_id}"), so a re-import can land
         # on a row this machine soft-deleted locally. Without clearing the
         # tombstone here the playlist would re-import silently invisible
         # forever -- see apps.shared.state.writer.StateWriter.insert_playlist
-        # for the same reactivation, which this writer bypasses (Phase 9
-        # predates the shared chokepoint; see the round 2 hardening notes).
+        # for the same reactivation.
         #
         # The membership replace below is the established whole-playlist
         # pattern (matches StateWriter.set_playlist_memberships and
         # apps.sync_hub.engine._replace_members): every position is
         # overwritten on every import, so there is no independent "this one
         # membership row was removed" event to tombstone -- the fresh INSERT
-        # below is what makes the current state correct either way.
+        # below is what makes the current state correct either way. The
+        # playlists stamp above is what carries the whole bundle to the hub
+        # (ADR 04 c5); the per-row stamps are what let the push fence see
+        # that this playlist changed at all.
         conn.execute(
             "DELETE FROM playlist_memberships WHERE playlist_id = ?",
             (playlist_id,),
@@ -329,11 +352,21 @@ def write_playlist_and_pending(
             for idx, pair in enumerate(result.pairs)
             if pair.status == "matched" and pair.target is not None
         ]
-        if matched_rows:
-            conn.executemany(
-                "INSERT INTO playlist_memberships (playlist_id, stable_id, position)"
-                " VALUES (?, ?, ?)",
-                matched_rows,
+        for member in matched_rows:
+            member_stamp = sync_stamp.stamp_and_log(
+                conn,
+                MEMBERSHIPS_TABLE,
+                (playlist_id, member[2]),
+                machine_id,
+                now=playlist_stamp.updated_at,
+            )
+            conn.execute(
+                "INSERT INTO playlist_memberships (playlist_id, stable_id, "
+                "position, updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    *member, member_stamp.updated_at,
+                    member_stamp.origin_device_id,
+                ),
             )
 
         conn.execute(
