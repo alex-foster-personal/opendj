@@ -38,9 +38,10 @@ import logging
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol
 from apps.sync_hub.protocol import (
@@ -55,6 +56,17 @@ from apps.sync_hub.protocol import (
 log = logging.getLogger(__name__)
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
+
+#: The two changelog tables :func:`prune_changelog` will touch. An allowlist
+#: because the table name is interpolated into the DELETE -- SQLite does not
+#: bind identifiers, so this check is load-bearing, not decorative.
+CHANGELOG_TABLES: frozenset[str] = frozenset({"hub_changelog", LOCAL_CHANGELOG_TABLE})
+
+#: Retention defaults for :func:`prune_changelog`. Generous on purpose: the
+#: prune is lossless for the pull (it only drops superseded entries), so the
+#: bounds exist to keep a recent audit trail, not to protect correctness.
+DEFAULT_KEEP_DAYS: float = 30.0
+DEFAULT_KEEP_ROWS: int = 10_000
 
 #: Hub-side cap on one ``/pull`` response. A first sync of a real library is
 #: 6.6 MB+ of JSON (round 1 finding A2), held twice in memory on each side;
@@ -96,12 +108,19 @@ class Watermark:
       watermark. Round 1 lost rows precisely because a wall clock was one
       (finding 3), so nothing here compares it against a row's
       ``updated_at``.
+    * ``peer_generation`` is the token ``peer`` reported at the last
+      completed sync (:mod:`apps.sync_hub.generation`). A different token
+      next time means that peer's DB moved backwards and everything above is
+      meaningless, which is round 2's replacement for inferring a restore
+      from the peer's ``MAX(seq)`` (finding N6). None until one sync
+      completes.
     """
 
     peer: str
     last_push_seq: int = 0
     last_pull_seq: int = 0
     last_sync_at: str | None = None
+    peer_generation: str | None = None
 
     @property
     def needs_full_offer(self) -> bool:
@@ -118,7 +137,7 @@ class Watermark:
 def read_watermark(conn: sqlite3.Connection, peer: str) -> Watermark:
     """Load the ``sync_state`` row for ``peer``; zeros if never synced."""
     row = conn.execute(
-        "SELECT last_push_seq, last_pull_seq, last_sync_at "
+        "SELECT last_push_seq, last_pull_seq, last_sync_at, peer_generation "
         "FROM sync_state WHERE peer = ?",
         (peer,),
     ).fetchone()
@@ -129,6 +148,7 @@ def read_watermark(conn: sqlite3.Connection, peer: str) -> Watermark:
         last_push_seq=int(row[0]),
         last_pull_seq=int(row[1]),
         last_sync_at=None if row[2] is None else str(row[2]),
+        peer_generation=None if row[3] is None else str(row[3]),
     )
 
 
@@ -136,18 +156,22 @@ def write_watermark(conn: sqlite3.Connection, watermark: Watermark) -> None:
     """Upsert one ``sync_state`` row. Machine-local; never synced."""
     conn.execute(
         """
-        INSERT INTO sync_state(peer, last_push_seq, last_pull_seq, last_sync_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO sync_state(
+            peer, last_push_seq, last_pull_seq, last_sync_at, peer_generation
+        )
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(peer) DO UPDATE SET
-            last_push_seq = excluded.last_push_seq,
-            last_pull_seq = excluded.last_pull_seq,
-            last_sync_at  = excluded.last_sync_at
+            last_push_seq   = excluded.last_push_seq,
+            last_pull_seq   = excluded.last_pull_seq,
+            last_sync_at    = excluded.last_sync_at,
+            peer_generation = excluded.peer_generation
         """,
         (
             watermark.peer,
             watermark.last_push_seq,
             watermark.last_pull_seq,
             watermark.last_sync_at,
+            watermark.peer_generation,
         ),
     )
 
@@ -761,7 +785,70 @@ def hub_changes_since(
     )
 
 
+# ----- retention -----------------------------------------------------------
+
+
+def prune_changelog(
+    conn: sqlite3.Connection,
+    *,
+    changelog: str = HUB_CHANGELOG_TABLE,
+    keep_days: float = DEFAULT_KEEP_DAYS,
+    keep_rows: int = DEFAULT_KEEP_ROWS,
+    now: str | None = None,
+) -> int:
+    """Drop SUPERSEDED changelog entries. Returns how many went.
+
+    Neither changelog had any retention at all (round 2 finding N6): one row
+    per synced-table write, forever, on a library the repo measures at 8355
+    tracks with many analyzed fields each.
+
+    What makes this safe is that it only ever deletes an entry that is NOT
+    the newest for its ``(table_name, row_pk)``. Both changelogs are read by
+    :func:`_changelog_rows`, which reads each row LIVE and collapses several
+    entries for one row into one change, so a superseded entry carries no
+    information the newest one does not. Coverage is therefore unchanged: a
+    spoke pulling from seq 0 still gets every row that ever changed, and
+    ``MAX(seq)`` cannot move, so the prune cannot look like a hub restore
+    (:mod:`apps.sync_hub.generation`).
+
+    ``keep_days`` and ``keep_rows`` are belt on top of that: an entry has to
+    be superseded AND older than ``keep_days`` AND outside the newest
+    ``keep_rows`` entries before it is eligible. Both are compared as the
+    protocol compares -- ``received_at`` lexicographically, which is an
+    ordering over instants because every writer emits the canonical UTC
+    format (``apps.shared.state.sync_stamp.CANONICAL_FORMAT``).
+    """
+    if changelog not in CHANGELOG_TABLES:
+        raise SyncApplyError(
+            f"{changelog!r} is not a changelog table; expected one of "
+            f"{sorted(CHANGELOG_TABLES)}."
+        )
+    if keep_days < 0:
+        raise SyncApplyError(f"keep_days must be >= 0, got {keep_days}")
+    if keep_rows < 0:
+        raise SyncApplyError(f"keep_rows must be >= 0, got {keep_rows}")
+    cutoff_at = (
+        datetime.now(UTC) if now is None else sync_stamp.parse_canonical(now)
+    ) - timedelta(days=keep_days)
+    cursor = conn.execute(
+        f"""
+        DELETE FROM {changelog}
+        WHERE seq NOT IN (
+            SELECT MAX(seq) FROM {changelog} GROUP BY table_name, row_pk
+        )
+          AND received_at < ?
+          AND seq <= (SELECT COALESCE(MAX(seq), 0) FROM {changelog}) - ?
+        """,
+        (sync_stamp.canonical_from(cutoff_at), int(keep_rows)),
+    )
+    return int(cursor.rowcount)
+
+
 __all__ = [
+    "CHANGELOG_TABLES",
+    "DEFAULT_KEEP_DAYS",
+    "DEFAULT_KEEP_ROWS",
+    "prune_changelog",
     "DEFAULT_PULL_LIMIT",
     "ApplyResult",
     "ChangeBatch",

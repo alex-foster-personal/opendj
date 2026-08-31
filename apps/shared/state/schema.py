@@ -276,6 +276,12 @@ _V5: list[str] = _V4
 #    (ADR 08 point 3): same shape, machine-local, never synced. It is what
 #    ``sync_state.last_push_seq`` fences against, replacing the wall-clock
 #    push watermark that lost rows under clock skew (round 1 finding 3).
+# 5. ``sync_state.peer_generation`` is the last generation token a peer
+#    reported (apps/sync_hub/generation.py, round 2 finding N6). Restore
+#    detection keys on that token changing rather than on the peer's
+#    ``MAX(seq)`` going backwards, so pruning a changelog no longer looks
+#    like a Litestream restore and no longer makes every spoke re-offer its
+#    whole library. NULL until the first sync against that peer completes.
 _V6: list[str] = [
     # --- fleet identity + per-machine policy (synced set, ADR 04 c8) ------
     """
@@ -322,10 +328,11 @@ _V6: list[str] = [
     # --- machine-local sync bookkeeping (never synced, ADR 04 c8) --------
     """
     CREATE TABLE IF NOT EXISTS sync_state (
-        peer           TEXT PRIMARY KEY,
-        last_push_seq  INTEGER NOT NULL DEFAULT 0,
-        last_pull_seq  INTEGER NOT NULL DEFAULT 0,
-        last_sync_at   TEXT
+        peer            TEXT PRIMARY KEY,
+        last_push_seq   INTEGER NOT NULL DEFAULT 0,
+        last_pull_seq   INTEGER NOT NULL DEFAULT 0,
+        last_sync_at    TEXT,
+        peer_generation TEXT
     )
     """,
     # Hub-local. AUTOINCREMENT is correct here precisely because this table

@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import engine, protocol
+from apps.sync_hub import engine, generation, protocol
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -86,6 +86,11 @@ class HelloResponse(BaseModel):
     schema_version: int
     seq: int
     machines: list[MachineModel]
+    #: This hub's generation token (round 2 finding N6). It changes when the
+    #: hub's DB moves backwards under a data dir that did not -- a restore --
+    #: and NOT when its changelog is pruned. A spoke that sees a different
+    #: token than the one it stored resets both sync floors.
+    hub_generation: str
 
 
 class PushRequest(BaseModel):
@@ -129,6 +134,7 @@ class StatusResponse(BaseModel):
     seq: int
     machines: list[MachineModel]
     row_counts: dict[str, int]
+    hub_generation: str
 
 
 class DigestResponse(BaseModel):
@@ -290,6 +296,23 @@ def _require_registered(conn: sqlite3.Connection, machine_id: str) -> None:
         )
 
 
+def _generation(request: Request, conn: sqlite3.Connection) -> str:
+    """This hub's generation token, re-minted if the DB moved backwards.
+
+    Called OUTSIDE the writing transaction on purpose
+    (:func:`apps.sync_hub.generation.observe`): an anchor written inside a
+    transaction that then rolled back would sit above the hub's seq, and
+    every later call would read that as a restore.
+    """
+    try:
+        return generation.observe(conn, _data_dir(request))
+    except generation.SyncGenerationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "SYNC_HUB_GENERATION", "message": str(exc)},
+        ) from exc
+
+
 def _apply_error(exc: engine.SyncApplyError) -> HTTPException:
     return HTTPException(
         status_code=409,
@@ -325,6 +348,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
             schema_version=state_schema.SCHEMA_VERSION,
             seq=engine.current_seq(conn),
             machines=_machine_models(conn),
+            hub_generation=_generation(request, conn),
         )
 
 
@@ -350,6 +374,9 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
+        # After the COMMIT: the anchor records the greatest seq this hub has
+        # ever reported, and it must never sit above what the DB holds.
+        _generation(request, conn)
         return PushResponse(
             accepted=result.accepted, rejected=result.rejected, seq=result.seq
         )
@@ -415,6 +442,7 @@ def status(
             seq=seq,
             machines=machines,
             row_counts=counts,
+            hub_generation=_generation(request, conn),
         )
 
 

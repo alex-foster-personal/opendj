@@ -360,6 +360,16 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
             "RFC 3339 UTC timestamp of the last successful sync with this "
             "peer, or NULL if never synced."
         ),
+        "peer_generation": (
+            "The generation token this peer reported at the last completed "
+            "sync (apps/sync_hub/generation.py). A DIFFERENT token on the "
+            "next hello means the peer's database moved backwards -- a "
+            "Litestream point-in-time restore -- so both watermarks reset to "
+            "0 and this machine re-offers its library. Keying restore "
+            "detection on the token rather than on the peer's MAX(seq) going "
+            "backwards is what stops a routine changelog prune from looking "
+            "like a restore. NULL until the first sync completes."
+        ),
     },
     "hub_changelog": {
         "seq": (

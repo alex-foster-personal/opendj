@@ -62,7 +62,14 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import locations, provenance, sync_stamp
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import client, engine, protocol, service
+from apps.sync_hub import (
+    client,
+    engine,
+    generation,
+    maintenance,
+    protocol,
+    service,
+)
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
     _DEV_B,
@@ -1054,6 +1061,203 @@ def test_a_restored_hub_resets_the_floors_and_recovers(
         assert _track_title(hub_conn, "trk-2") == "two"
     finally:
         hub_conn.close()
+
+
+# ----- N6: the generation token and changelog retention ---------------------
+
+
+def _changelog(conn: sqlite3.Connection, table: str) -> list[tuple[int, str, str]]:
+    return [
+        (int(row[0]), str(row[1]), str(row[2]))
+        for row in conn.execute(
+            f"SELECT seq, table_name, row_pk FROM {table} ORDER BY seq"
+        )
+    ]
+
+
+def test_a_changelog_prune_is_not_mistaken_for_a_restore(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, spoke_b: Path
+) -> None:
+    """N6's sketch: maintenance must not cost a fleet-wide re-offer.
+
+    Round 2 observed ``n5b changelog-only prune -> restore_detected=True
+    pushed=1`` -- any prune, vacuum or table-scoped repair made every spoke
+    log ``the hub went BACKWARDS`` at ERROR and re-offer its whole library
+    (minutes per 8k tracks, ADR 08 consequence 3). The token does not move
+    when entries are pruned, and the sanctioned prune cannot lower
+    ``MAX(seq)`` because it never drops the newest entry for a row.
+    """
+    conn_a = _open(spoke_a)
+    try:
+        _insert_track(conn_a, "trk-1", title="one", updated_at=_T0, origin=_DEV_A)
+        _insert_track(conn_a, "trk-2", title="other", updated_at=_T1, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+    # A second edit in a second sync: one row, two hub_changelog entries, the
+    # older of which is superseded and therefore prunable.
+    conn_a = _open(spoke_a)
+    try:
+        _set_track_title(conn_a, "trk-1", title="three", updated_at=_T2, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+    _sync(spoke_b, hub, "spoke-b")
+
+    hub_conn = _open(hub_dir)
+    try:
+        before = _changelog(hub_conn, "hub_changelog")
+        deleted = engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=0)
+        after = _changelog(hub_conn, "hub_changelog")
+    finally:
+        hub_conn.close()
+
+    assert deleted >= 1, f"nothing was prunable out of {before}"
+    assert max(seq for seq, _, _ in after) == max(seq for seq, _, _ in before), (
+        "the prune lowered MAX(seq); that is indistinguishable from a restore"
+    )
+    assert {(table, pk) for _, table, pk in after} == {
+        (table, pk) for _, table, pk in before
+    }, "the prune dropped a row's ONLY entry; that row can never be pulled again"
+
+    quiet = _sync(spoke_a, hub, "spoke-a")
+    assert quiet.hub_restore_detected is False, "a prune was read as a restore"
+    assert quiet.pushed == 0, "the spoke re-offered its library after a prune"
+
+    # And a spoke starting from scratch still gets everything the hub holds.
+    fresh = _sync(spoke_b, hub, "spoke-b")
+    assert fresh.hub_restore_detected is False
+    conn_b = _open(spoke_b)
+    try:
+        assert _track_title(conn_b, "trk-1") == "three"
+        assert _track_title(conn_b, "trk-2") == "other"
+    finally:
+        conn_b.close()
+
+
+def test_prune_keeps_entries_inside_the_retention_window(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """Superseded is necessary but not sufficient: the bounds bind too."""
+    conn_a = _open(spoke_a)
+    try:
+        _insert_track(conn_a, "trk-1", title="one", updated_at=_T0, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+    conn_a = _open(spoke_a)
+    try:
+        _set_track_title(conn_a, "trk-1", title="two", updated_at=_T1, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert len(_changelog(hub_conn, "hub_changelog")) == 2, (
+            "the probe needs one superseded entry to be about anything"
+        )
+        assert (
+            engine.prune_changelog(hub_conn, keep_days=3650.0, keep_rows=0) == 0
+        ), "an entry inside the day window was pruned"
+        assert (
+            engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=10_000) == 0
+        ), "an entry inside the row window was pruned"
+        assert (
+            engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=0, now=_T3) == 0
+        ), "an entry newer than the supplied cutoff was pruned"
+        # Not vacuous: with both bounds open, the superseded entry does go.
+        assert engine.prune_changelog(hub_conn, keep_days=0.0, keep_rows=0) == 1
+        with pytest.raises(engine.SyncApplyError):
+            engine.prune_changelog(hub_conn, changelog="tracks")
+    finally:
+        hub_conn.close()
+
+
+def test_a_rotated_generation_is_what_triggers_the_re_offer(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """The restore runbook's own signal, for a restore the anchor cannot see.
+
+    A whole-machine restore rolls the data dir back with the DB, so the
+    anchor agrees with the DB and nothing looks wrong. Rotating by hand is
+    then the signal, and it must produce the same recovery as an automatic
+    rotation.
+    """
+    conn_a = _open(spoke_a)
+    try:
+        _insert_track(conn_a, "trk-1", title="one", updated_at=_T0, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    first = _sync(spoke_a, hub, "spoke-a")
+    assert first.hub_restore_detected is False
+
+    before = maintenance.show_generation(hub_dir)
+    after = maintenance.rotate(hub_dir)
+    assert after != before
+
+    recovered = _sync(spoke_a, hub, "spoke-a")
+    assert recovered.hub_restore_detected is True
+    assert recovered.pushed >= 1, "the re-offer did not happen"
+    assert _sync(spoke_a, hub, "spoke-a").hub_restore_detected is False, (
+        "the rotation was detected twice; the spoke did not store the new token"
+    )
+
+
+def test_the_generation_anchor_survives_an_ordinary_sync(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """The token is stable across syncs, and the spoke stores what it saw."""
+    _seed_common_track((spoke_a,), "trk-1")
+    _sync(spoke_a, hub, "spoke-a")
+    minted = maintenance.show_generation(hub_dir)
+    result = _sync(spoke_a, hub, "spoke-a")
+
+    assert maintenance.show_generation(hub_dir) == minted
+    conn_a = _open(spoke_a)
+    try:
+        watermark = engine.read_watermark(conn_a, result.hub_machine_id)
+    finally:
+        conn_a.close()
+    assert watermark.peer_generation == minted
+    assert generation.anchor_path(hub_dir).exists()
+
+
+def test_the_maintenance_cli_prunes_and_rotates(
+    hub: _TestClientTransport,
+    hub_dir: Path,
+    spoke_a: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Agent-native parity: the operator actions are drivable without a UI."""
+    conn_a = _open(spoke_a)
+    try:
+        _insert_track(conn_a, "trk-1", title="one", updated_at=_T0, origin=_DEV_A)
+        _set_track_title(conn_a, "trk-1", title="two", updated_at=_T1, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+
+    assert (
+        maintenance.main(
+            [
+                "prune",
+                "--data-dir",
+                str(hub_dir),
+                "--keep-days",
+                "0",
+                "--keep-rows",
+                "0",
+            ]
+        )
+        == 0
+    )
+    assert "pruned" in capsys.readouterr().out
+
+    assert maintenance.main(["generation", "--data-dir", str(hub_dir)]) == 0
+    shown = capsys.readouterr().out.strip()
+    assert maintenance.main(["rotate", "--data-dir", str(hub_dir)]) == 0
+    assert capsys.readouterr().out.strip() != shown
 
 
 # ----- finding 7b: registration on every endpoint ---------------------------

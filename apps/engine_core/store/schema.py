@@ -259,7 +259,7 @@ _SYNC_INFRA: tuple[str, ...] = (
     "(machine_id, playlist_id) )",
     "CREATE TABLE IF NOT EXISTS sync_state ( peer TEXT PRIMARY KEY, "
     "last_push_seq INTEGER NOT NULL DEFAULT 0, last_pull_seq INTEGER NOT "
-    "NULL DEFAULT 0, last_sync_at TEXT )",
+    "NULL DEFAULT 0, last_sync_at TEXT, peer_generation TEXT )",
     "CREATE TABLE IF NOT EXISTS hub_changelog ( seq INTEGER PRIMARY KEY "
     "AUTOINCREMENT, table_name TEXT NOT NULL, row_pk TEXT NOT NULL, "
     "updated_at TEXT NOT NULL, origin_device_id TEXT NOT NULL, received_at "
