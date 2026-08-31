@@ -63,6 +63,30 @@ def _session_store(request: Request) -> SessionStore:
     return store
 
 
+def session_store(request: Request) -> SessionStore:
+    """THE session store for this app, for any router that needs one.
+
+    Public because ``/api/v1/account`` (``apps.engine_core.account.api``) has
+    to resolve the same cookie against the same store. A second SessionStore
+    built from the same path would work but would be a second answer to
+    "which store", and app.state is where the first one is cached.
+    """
+    return _session_store(request)
+
+
+def signed_in_user(request: Request) -> SessionUser | None:
+    """The user behind this request's cookie, or None when signed out.
+
+    Signed out is a legitimate state everywhere in this app (sign-in is
+    identity, never authorisation), so this returns None rather than raising;
+    a route that needs a user raises its own 401 with its own code.
+    """
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    return _session_store(request).resolve(token)
+
+
 def _oauth_config() -> GoogleOAuthConfig:
     """Load Google credentials, or 503 with the provisioning runbook."""
     try:
@@ -237,8 +261,7 @@ def finish_login(
 @router.get("/me", response_model=MeOut)
 def whoami(request: Request) -> MeOut:
     """The signed-in user, or 401. The bauble polls this on mount."""
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    user = _session_store(request).resolve(token) if token else None
+    user = signed_in_user(request)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -282,4 +305,4 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-__all__ = ["router"]
+__all__ = ["router", "session_store", "signed_in_user"]

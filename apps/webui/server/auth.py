@@ -504,6 +504,29 @@ class SessionStore:
         finally:
             conn.close()
 
+    def delete_user(self, google_sub: str) -> bool:
+        """Erase the user row and, by cascade, every session it owns.
+
+        The deletion half of the privacy promise at https://open-dj.com/privacy
+        (ACCT-03): signing out drops one session, this drops the account. The
+        ``auth_sessions -> users`` FK is ``ON DELETE CASCADE`` and ``open_rw``
+        sets ``PRAGMA foreign_keys = ON``, so the Google refresh and access
+        tokens held alongside those sessions go with it -- there is no second
+        statement that could be forgotten.
+
+        Returns True if a row was removed, False if there was nothing to
+        remove. Idempotent on purpose: deleting data that is already gone is
+        the outcome the caller asked for, not an error.
+        """
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM users WHERE google_sub = ?", (google_sub,)
+            )
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
 
 __all__ = [
     "AUTH_ENDPOINT",
