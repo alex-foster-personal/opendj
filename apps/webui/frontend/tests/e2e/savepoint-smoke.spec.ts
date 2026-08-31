@@ -375,6 +375,14 @@ test('5. a channel-fader interaction reaches the typed performance IPC', async (
 });
 
 test('6. /admin renders the KPI panel without a load failure', async () => {
+	// All six checks share ONE page, so a playlist fetch started by an earlier
+	// test can still be in flight here. Navigating out from under it aborts it,
+	// BrowserPanel's catch toasts "playlist load failed: TypeError: Failed to
+	// fetch", and pushToast forwards every toast to the perf-event ring at
+	// console.error -- which this suite's console gate then attributes to test
+	// 6. Settle the current page before leaving it: the race is this suite's,
+	// not the app's.
+	await page.waitForLoadState('networkidle');
 	await page.goto('/admin');
 	await expect(page.locator('h2')).toHaveText('Admin');
 	await expect(page.locator('section.panel h3').first()).toBeVisible();
