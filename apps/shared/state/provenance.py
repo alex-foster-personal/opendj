@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
+from . import sync_stamp as _sync_stamp
 from .types import SOURCES, ProvenanceValue, Source
 
 # Whitelist of field_names allowed in track_fields. Everything else must
@@ -50,10 +51,6 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
 def _canonical_json(value: Any) -> str:
     """Canonical JSON encoding: sorted keys, compact separators, UTF-8."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def _utcnow_rfc3339() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _validate_rfc3339_utc(raw: str) -> None:
@@ -104,6 +101,7 @@ def write_field(
     confidence: float | None = None,
     actor: str | None = None,
     now: str | None = None,
+    machine_id: str | None = None,
 ) -> bool:
     """Upsert a provenance-wrapped field.
 
@@ -114,6 +112,13 @@ def write_field(
     Runs inside an IMMEDIATE transaction. Appends one row to ``events``
     on a real change. On overwrite, the prior row is copied to
     ``track_field_history`` with ``superseded_at = now``.
+
+    ``track_fields`` is a synced table, so a real change is stamped through
+    :func:`apps.shared.state.sync_stamp.stamp_and_log`. Round 1 finding A1
+    was this write leaving ``updated_at`` NULL: every edit after the first
+    then presented the same LWW key, was rejected by the hub, and bricked
+    the machine on the next digest compare. ``machine_id`` defaults to the
+    local machine, resolved from the connection's data dir.
     """
     _validate_field(field_name, source)
     _validate_rfc3339_utc(modified_at)
@@ -121,12 +126,15 @@ def write_field(
         raise ValueError(f"confidence must be in [0, 1], got {confidence!r}")
 
     value_json = _canonical_json(value)
-    stamp = now or _utcnow_rfc3339()
+    # One clock for the whole call: history's superseded_at, the sync stamp
+    # and the events row all read the same instant, in the one canonical
+    # format the LWW comparison can order (ADR 08 point 2).
+    stamp_at = _sync_stamp.canonical_now() if now is None else _sync_stamp.to_canonical(now)
 
     # Per-call SAVEPOINT so nested transactions (e.g. a dry-run ingest
     # adapter wrapping the writer in its own SAVEPOINT) compose cleanly.
     # SQLite identifier rules: keep the name alphanumeric + underscore.
-    sp_name = f"prov_{id(conn)}_{abs(hash((stable_id, field_name, stamp)))}"
+    sp_name = f"prov_{id(conn)}_{abs(hash((stable_id, field_name, stamp_at)))}"
     conn.execute(f"SAVEPOINT {sp_name}")
     try:
         existing = conn.execute(
@@ -154,14 +162,36 @@ def write_field(
                     existing[1],
                     existing[2],
                     existing[3],
-                    stamp,
+                    stamp_at,
                 ),
             )
+        stamp = _sync_stamp.stamp_and_log(
+            conn,
+            "track_fields",
+            (stable_id, field_name),
+            machine_id or _sync_stamp.ensure_local_machine(conn),
+            now=stamp_at,
+        )
         conn.execute(
-            "INSERT OR REPLACE INTO track_fields(stable_id, field_name, "
-            "value_json, source, confidence, modified_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (stable_id, field_name, value_json, source, confidence, modified_at),
+            "INSERT INTO track_fields(stable_id, field_name, "
+            "value_json, source, confidence, modified_at, updated_at, "
+            "origin_device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(stable_id, field_name) DO UPDATE SET "
+            "value_json=excluded.value_json, source=excluded.source, "
+            "confidence=excluded.confidence, "
+            "modified_at=excluded.modified_at, "
+            "updated_at=excluded.updated_at, "
+            "origin_device_id=excluded.origin_device_id",
+            (
+                stable_id,
+                field_name,
+                value_json,
+                source,
+                confidence,
+                modified_at,
+                stamp.updated_at,
+                stamp.origin_device_id,
+            ),
         )
         payload = {
             "field_name": field_name,
@@ -175,7 +205,7 @@ def write_field(
             "INSERT INTO events(ts, kind, stable_id, payload_json, actor) "
             "VALUES (?, ?, ?, ?, ?)",
             (
-                stamp,
+                stamp_at,
                 "track.field.set",
                 stable_id,
                 _canonical_json(payload),

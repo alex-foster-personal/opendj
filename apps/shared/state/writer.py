@@ -17,10 +17,20 @@ from typing import Any, Callable, Iterable, Iterator
 
 from . import locations as _locations
 from . import provenance as _prov
+from . import sync_stamp as _sync_stamp
 from .events import EventBus, FakeEventBus
 from .types import Event, Source
 
 _Clock = Callable[[], datetime]
+
+# The synced tables this class writes, and the primary key columns whose
+# values become the ``local_changelog`` row_pk. Kept beside the writes rather
+# than imported from apps.sync_hub: apps.shared must not depend on the sync
+# app, and tests/shared/state/test_sync_stamp.py pins the two lists together.
+TRACKS_TABLE: str = "tracks"
+VENDOR_IDS_TABLE: str = "track_vendor_ids"
+PLAYLISTS_TABLE: str = "playlists"
+MEMBERSHIPS_TABLE: str = "playlist_memberships"
 
 
 def _default_clock() -> datetime:
@@ -28,9 +38,15 @@ def _default_clock() -> datetime:
 
 
 def _iso(dt: datetime) -> str:
+    """Canonical sync timestamp for ``dt``.
+
+    A naive datetime is read as UTC (long-standing behaviour of the injected
+    test clocks) and then rendered in the one format the LWW comparison can
+    order -- fixed-width microseconds, explicit ``+00:00`` (ADR 08 point 2).
+    """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
+    return _sync_stamp.canonical_from(dt)
 
 
 def compute_playlist_id(vendor: str, vendor_pl_id: str) -> str:
@@ -122,6 +138,7 @@ class StateWriter:
         self._actor = actor
         self._sp_counter = itertools.count()
         self._closed = False
+        self._machine_id: str | None = None
 
     @property
     def raw_conn(self) -> sqlite3.Connection:
@@ -200,6 +217,26 @@ class StateWriter:
     def _now_iso(self) -> str:
         return _iso(self._clock())
 
+    def machine_id(self) -> str:
+        """This writer's origin device id, resolved once per instance.
+
+        Every synced-table write carries it as ``origin_device_id``; without
+        it the LWW tiebreak is empty on both sides and degenerates to
+        first-writer-wins (round 1 finding 2). Resolution fails loudly on a
+        connection with no data dir rather than inventing an identity.
+        """
+        if self._machine_id is None:
+            self._machine_id = _sync_stamp.ensure_local_machine(self._conn)
+        return self._machine_id
+
+    def _stamp(
+        self, table: str, row_pk: tuple[Any, ...], now: str
+    ) -> _sync_stamp.Stamp:
+        """Stamp one synced-table write and log it to ``local_changelog``."""
+        return _sync_stamp.stamp_and_log(
+            self._conn, table, row_pk, self.machine_id(), now=now,
+        )
+
     def _append_event(
         self,
         *,
@@ -267,12 +304,13 @@ class StateWriter:
             )
             if existing is not None and tuple(existing) == new_row:
                 return False
+            stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
             if existing is None:
                 conn.execute(
                     "INSERT INTO tracks(stable_id, stable_id_tier, title, "
                     "artists_json, album, isrc, duration_ms, file_path, "
-                    "content_hash, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "content_hash, created_at, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         stable_id,
                         stable_id_tier,
@@ -284,7 +322,8 @@ class StateWriter:
                         file_path,
                         content_hash,
                         now,
-                        now,
+                        stamp.updated_at,
+                        stamp.origin_device_id,
                     ),
                 )
                 kind = "track.insert"
@@ -292,8 +331,8 @@ class StateWriter:
                 conn.execute(
                     "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
                     "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, "
-                    "updated_at=? WHERE stable_id=?",
-                    (*new_row, now, stable_id),
+                    "updated_at=?, origin_device_id=? WHERE stable_id=?",
+                    (*new_row, stamp.updated_at, stamp.origin_device_id, stable_id),
                 )
                 kind = "track.update"
             ev = self._append_event(
@@ -304,7 +343,11 @@ class StateWriter:
             )
             self.bus.publish(ev)
             _locations.sync_primary_local(
-                conn, stable_id=stable_id, file_path=file_path, now=now,
+                conn,
+                stable_id=stable_id,
+                file_path=file_path,
+                now=now,
+                machine_id=self.machine_id(),
             )
         return True
 
@@ -317,8 +360,13 @@ class StateWriter:
         remote_url: str | None = None,
         role: _locations.Role = "alternate",
         content_hash: str | None = None,
-    ) -> int:
-        """Record an extra playable copy. Does not change ``tracks.file_path``."""
+    ) -> str:
+        """Record an extra playable copy on THIS machine.
+
+        Does not change ``tracks.file_path``. Returns the ``location_id``
+        (uuid4 hex): schema v6 dropped the INTEGER rowid key because it
+        collided across machines.
+        """
         now = self._now_iso()
         with self._tx() as conn:
             loc_id = _locations.upsert_location(
@@ -330,11 +378,12 @@ class StateWriter:
                 role=role,
                 content_hash=content_hash,
                 now=now,
+                machine_id=self.machine_id(),
             )
             ev = self._append_event(
                 kind="track.location.upsert",
                 stable_id=stable_id,
-                payload={"id": loc_id, "kind": kind, "role": role},
+                payload={"location_id": loc_id, "kind": kind, "role": role},
                 ts=now,
             )
             self.bus.publish(ev)
@@ -347,10 +396,24 @@ class StateWriter:
     ) -> None:
         now = self._now_iso()
         with self._tx() as conn:
+            stamp = self._stamp(VENDOR_IDS_TABLE, (stable_id, vendor), now)
+            # Upsert rather than INSERT OR REPLACE: the latter is a
+            # delete-then-insert, which would silently drop ``deleted_at``
+            # (and fire ON DELETE cascades) on every vendor-id refresh.
             conn.execute(
-                "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-                "VALUES (?, ?, ?)",
-                (stable_id, vendor, vendor_id),
+                "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id, "
+                "updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(stable_id, vendor) DO UPDATE SET "
+                "vendor_id=excluded.vendor_id, "
+                "updated_at=excluded.updated_at, "
+                "origin_device_id=excluded.origin_device_id",
+                (
+                    stable_id,
+                    vendor,
+                    vendor_id,
+                    stamp.updated_at,
+                    stamp.origin_device_id,
+                ),
             )
             ev = self._append_event(
                 kind="track.vendor_id.set",
@@ -391,6 +454,7 @@ class StateWriter:
                 confidence=confidence,
                 actor=self._actor,
                 now=self._now_iso(),
+                machine_id=self.machine_id(),
             )
             if changed:
                 payload: dict[str, Any] = {
@@ -432,17 +496,29 @@ class StateWriter:
                 (playlist_id,),
             ).fetchone()
             if existing is None:
+                stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
                 conn.execute(
                     "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "
-                    "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (playlist_id, name, vendor, vendor_pl_id, now, now),
+                    "created_at, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        playlist_id,
+                        name,
+                        vendor,
+                        vendor_pl_id,
+                        now,
+                        stamp.updated_at,
+                        stamp.origin_device_id,
+                    ),
                 )
                 kind = "playlist.insert"
             elif existing[0] != name:
                 revision = next_playlist_revision(conn, playlist_id, now)
+                stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), revision)
                 conn.execute(
-                    "UPDATE playlists SET name=?, updated_at=? WHERE playlist_id=?",
-                    (name, revision, playlist_id),
+                    "UPDATE playlists SET name=?, updated_at=?, "
+                    "origin_device_id=? WHERE playlist_id=?",
+                    (name, stamp.updated_at, stamp.origin_device_id, playlist_id),
                 )
                 kind = "playlist.update"
             else:
@@ -468,7 +544,11 @@ class StateWriter:
 
         Also bumps ``playlists.updated_at`` so row-version etags derived
         from it (webui optimistic concurrency) observe membership-only
-        changes, not just renames.
+        changes, not just renames. That bump is load-bearing for sync too:
+        membership rows travel attached to their playlist row (ADR 04 c5), so
+        a membership edit that left ``playlists.updated_at`` alone would
+        never propagate and would strand the fleet on a permanent digest
+        mismatch (round 1 finding 5b).
         """
         transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
         with transaction as conn:
@@ -478,14 +558,26 @@ class StateWriter:
                 (playlist_id,),
             )
             for position, sid in enumerate(stable_ids):
-                conn.execute(
-                    "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
-                    "VALUES (?, ?, ?)",
-                    (playlist_id, sid, position),
+                member_stamp = self._stamp(
+                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
                 )
+                conn.execute(
+                    "INSERT INTO playlist_memberships(playlist_id, stable_id, "
+                    "position, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        playlist_id,
+                        sid,
+                        position,
+                        member_stamp.updated_at,
+                        member_stamp.origin_device_id,
+                    ),
+                )
+            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
-                (now, playlist_id),
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+                "WHERE playlist_id = ?",
+                (stamp.updated_at, stamp.origin_device_id, playlist_id),
             )
             ev = self._append_event(
                 kind="playlist.memberships.set",

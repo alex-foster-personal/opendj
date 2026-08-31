@@ -12,6 +12,7 @@ import sqlite3
 import pytest
 
 from apps.shared.state import provenance as prov
+from apps.shared.state import sync_stamp
 
 pytestmark = [
     pytest.mark.requirement("OPEN-01c"),
@@ -164,4 +165,10 @@ def test_write_field_accepts_explicit_now_for_deterministic_history(
     # Exactly one history row after two writes (first write persists in
     # track_fields; second write moves it to history).
     assert len(rows) == 1
-    assert rows[0][0] == frozen_now
+    # ``now`` is re-emitted in the canonical sync format (ADR 08 point 2):
+    # same instant, fixed-width microseconds, so string comparison orders
+    # timestamps the way instants order.
+    assert rows[0][0] == sync_stamp.to_canonical(frozen_now)
+    assert sync_stamp.parse_canonical(rows[0][0]) == sync_stamp.parse_canonical(
+        frozen_now
+    )
