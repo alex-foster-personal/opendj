@@ -261,7 +261,9 @@ test('the log write stays off the click-to-audio path it measures', () => {
 });
 
 test('the audio graph stamps this machine device floors, carrying every term', () => {
-	const body = engineBlockAfter('function _stampContextDeviceFloors(ctx: AudioContext): void {');
+	const body = engineBlockAfter(
+		'export function stampContextDeviceFloors(ctx: AudioContext): void {'
+	);
 	assert.ok(
 		body.includes("recordPerfTiming('audio-context'"),
 		'without the device floors on record, a scheduled_offset_ms from one machine gets ' +
@@ -278,7 +280,7 @@ test('the device-floor row is re-stamped once the context is actually running', 
 	// build-only stamp therefore under-reports the device floor by the whole
 	// output term, silently, and every later reader of that row inherits it.
 	const helper = engineBlockAfter(
-		'function _stampContextDeviceFloors(ctx: AudioContext): void {'
+		'export function stampContextDeviceFloors(ctx: AudioContext): void {'
 	);
 	assert.ok(
 		helper.includes("const running = ctx.state === 'running'"),
@@ -291,21 +293,21 @@ test('the device-floor row is re-stamped once the context is actually running', 
 			'authoritative stamp from the placeholder'
 	);
 	assert.ok(
-		helper.includes('if (running && _runningContextFloorsStamped) return;'),
+		helper.includes('if (running && _stampedRunningContext === ctx) return;'),
 		'the running stamp must be idempotent - both the statechange listener and ' +
 			'_resumeContext can reach it, and a ring full of duplicate rows is noise'
 	);
 
 	const build = engineBlockAfter('function _ensureGraph(): AudioContext {');
 	assert.ok(
-		build.includes('_stampContextDeviceFloors('),
+		build.includes('stampContextDeviceFloors('),
 		'the build-time stamp must survive: it is the only reading available if the ' +
 			'context never runs'
 	);
 	assert.ok(
-		build.includes('_runningContextFloorsStamped = false;'),
-		'if the flag is not reset with the context then a rebuilt graph keeps quoting ' +
-			"the previous device's floors"
+		helper.includes('if (running) _stampedRunningContext = ctx;'),
+		'the stamp must be remembered against THIS context rather than as a sticky ' +
+			"boolean, or a rebuilt graph keeps quoting the previous device's floors"
 	);
 	assert.ok(
 		build.includes("stampedContext.state === 'running'"),
@@ -315,7 +317,7 @@ test('the device-floor row is re-stamped once the context is actually running', 
 
 	const resume = engineBlockAfter('async function _resumeContext(): Promise<AudioContext> {');
 	assert.ok(
-		resume.includes('_stampContextDeviceFloors(ctx)'),
+		resume.includes('stampContextDeviceFloors(ctx)'),
 		'the resume path is the belt for the statechange listener; without it the ' +
 			'authoritative row depends on one event firing'
 	);

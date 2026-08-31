@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { afterEach, before, beforeEach, mock, test } from 'node:test';
 
+import { readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -30,14 +29,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if a timed-out command is excluded from the window then the max never
  *   shows the cliff being approached
  */
-
-const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-
-function readSource(relativePath) {
-	const text = readFileSync(`${FRONTEND_ROOT}/${relativePath}`, 'utf8').replaceAll('\r\n', '\n');
-	assert.ok(text.trim().length > 0, `if ${relativePath} reads empty this guard asserts nothing`);
-	return text;
-}
 
 let stats;
 let infoLines;

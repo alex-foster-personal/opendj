@@ -74,7 +74,12 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
-import { installXrunSentinel, installXrunSessionGlobal } from '$lib/rb/xrun-sentinel';
+import {
+	armXrunSentinel,
+	disarmContextInstrumentation,
+	stampContextDeviceFloors
+} from '$lib/rb/audio-context-instrumentation';
+import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
 import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
@@ -416,10 +421,6 @@ function _emptyRuntime(): _DeckRuntime {
 }
 
 let _ctx: AudioContext | null = null;
-/** LATENCY-03: has the authoritative (running-context) device-floor row been
- * emitted for the CURRENT context? Reset with the context, never sticky across
- * one, or a rebuilt graph would keep quoting the previous device's floors. */
-let _runningContextFloorsStamped = false;
 let _masterGain: GainNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
@@ -822,57 +823,6 @@ function _parseExternalRouting(): Map<DeckId, number> | null {
 	return routing;
 }
 
-/**
- * LATENCY-03: stamp this machine's device floors onto the perf ring, so a
- * `scheduled_offset_ms` read later is never compared across machines by
- * accident.
- *
- * Emitted TWICE, because the build-time reading is not trustworthy on its own:
- * `AudioContext.outputLatency` reads 0.00 while the context is SUSPENDED, and a
- * context is suspended at construction until a user gesture resumes it.
- * Verified: a freshly built, not-yet-resumed context reports
- * `baseLatency=5.80ms outputLatency=0.00ms state=suspended`, i.e. the row
- * silently under-reports the device floor by the whole 32ms output term. So the
- * build stamp is kept (it is the only reading available if the context never
- * runs) and a second, authoritative stamp is taken on the FIRST observation of
- * a running context. `context_running` says which is which.
- *
- * Per-schedule rows are unaffected: they already read both floors live at emit
- * time and carry their own copies. This is the one-time row only.
- */
-function _stampContextDeviceFloors(ctx: AudioContext): void {
-	const running = ctx.state === 'running';
-	if (running && _runningContextFloorsStamped) return;
-	if (running) _runningContextFloorsStamped = true;
-	recordPerfTiming('audio-context', {
-		sample_rate_hz: ctx.sampleRate,
-		base_latency_ms: Math.round(ctx.baseLatency * 1e6) / 1000,
-		output_latency_ms: Math.round(ctx.outputLatency * 1e6) / 1000,
-		// 0 means outputLatency above may be a suspended-context zero, not a floor.
-		context_running: running ? 1 : 0
-	});
-}
-
-/**
- * S1 / Q2: arm the audio-thread glitch detector for this context.
- *
- * Fire-and-forget because `addModule` is async and the graph build is not: the
- * decks must not wait on an instrument. Every failure path is RECORDED rather
- * than swallowed - a sentinel that quietly failed to load would leave the app
- * reporting zero xruns forever, which is indistinguishable from a healthy
- * machine and is the worst possible failure for a counter whose entire job is
- * to say "this one is not healthy". Audio is never blocked either way.
- */
-function _armXrunSentinel(ctx: AudioContext): void {
-	installXrunSessionGlobal();
-	void installXrunSentinel(ctx).catch((error: unknown) => {
-		recordPerfEvent(
-			'xrun-sentinel-failed',
-			`the xrun sentinel did not start, so this session counts no glitches: ${String(error)}`
-		);
-	});
-}
-
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -881,14 +831,13 @@ function _ensureGraph(): AudioContext {
 	// Construction options travel through ONE named constant so a future
 	// user-facing buffer/latency setting has a single place to write to.
 	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
-	_runningContextFloorsStamped = false;
-	_stampContextDeviceFloors(_ctx);
+	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
 	// suspended is re-stamped here the moment it runs, whichever path resumed it.
 	const stampedContext = _ctx;
 	stampedContext.addEventListener('statechange', () => {
-		if (stampedContext.state === 'running') _stampContextDeviceFloors(stampedContext);
+		if (stampedContext.state === 'running') stampContextDeviceFloors(stampedContext);
 	});
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
@@ -973,7 +922,7 @@ function _ensureGraph(): AudioContext {
 		}
 		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
 	}
-	_armXrunSentinel(_ctx);
+	armXrunSentinel(_ctx);
 	return _ctx;
 }
 
@@ -1696,35 +1645,18 @@ export function stretchScheduleChange(
 	};
 }
 
-/**
- * Q1 / S2: turn an input stamp into the press-to-schedule delta, or nothing.
- *
- * `pressT0Ms` shares the `performance.now()` epoch (that is what
- * `event.timeStamp` is), so the delta is the wait the operator actually felt
- * before this schedule reached the audio clock: the command scheduler's scope
- * wait, `_resumeContext()`, and the deck's own `rt.scheduleTail`.
- *
- * A stamp from a different epoch would produce a negative delta, and a logged
- * negative would UNDERSTATE the P0 budget it gates - the one direction a
- * latency instrument must never fail in. So an implausible reading is recorded
- * loudly and then dropped: the row loses its press stages rather than carrying
- * a lie, and the transport itself is never interrupted, because an instrument
- * may not break the thing it measures.
- */
-function _pressToScheduleMs(pressT0Ms: number | undefined, deck: DeckId): number | undefined {
-	if (pressT0Ms === undefined) return undefined;
-	const elapsedMs = performance.now() - pressT0Ms;
-	if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
-		recordPerfEvent(
-			'press-stamp-implausible',
-			`deck ${deck} press stamp ${pressT0Ms} yields ${elapsedMs}ms to the audio clock; ` +
-				'the stamp is not on the performance.now() epoch, so press_to_schedule_ms and ' +
-				'input_to_audible_ms are dropped from this row',
-			deck
-		);
-		return undefined;
-	}
-	return elapsedMs;
+/** Q1: `_scheduleDeck` from a press path - the stamp rides, nothing else moves.
+ * `keep` = the tempo/loop/key arguments a press never overrides, so each one
+ * stays the deck's standing intent. */
+function _schedulePress(
+	deck: DeckId,
+	when: number,
+	inputSec: number | ((effectiveWhen: number) => number),
+	active: boolean,
+	pressT0Ms: number | undefined
+): Promise<number> {
+	const keep = undefined;
+	return _scheduleDeck(deck, when, inputSec, active, keep, keep, keep, keep, pressT0Ms);
 }
 
 async function _scheduleDeck(
@@ -1845,9 +1777,9 @@ async function _scheduleDeckSerial(
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
 	const scheduleContextTime = _ctx.currentTime;
-	// Q1: taken against the SAME clock read the row reports, so the two halves
-	// of input_to_audible_ms meet at one instant instead of overlapping.
-	const pressToScheduleMs = _pressToScheduleMs(pressT0Ms, deck);
+	// Q1: the SAME clock read the row reports, so both halves of
+	// input_to_audible_ms meet at one instant instead of overlapping.
+	const pressToScheduleMs = measurePressToScheduleMs(pressT0Ms, deck);
 	const processorLeadSec = _transportLeadSec(deck);
 	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, processorLeadSec);
 	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
@@ -2459,7 +2391,7 @@ async function _resumeContext(): Promise<AudioContext> {
 	}
 	// Belt for the statechange listener: whichever fires first, the authoritative
 	// device-floor row is emitted exactly once (the helper is idempotent).
-	_stampContextDeviceFloors(ctx);
+	stampContextDeviceFloors(ctx);
 	return ctx;
 }
 
@@ -3005,6 +2937,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		_headphoneGeneration += 1;
 		_disposeHeadphoneGraph();
+		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
@@ -3280,12 +3213,7 @@ class RbAudioEngine implements AudioEngine {
 		st.loop = _displayLoopFrom(fresh.cues);
 	}
 
-	/**
-	 * Q1: `pressT0Ms` is the input stamp on the `performance.now()` epoch
-	 * (`event.timeStamp` is already on it). Optional because automation and
-	 * beat-sync callers have no press behind them; supplying it is what makes
-	 * `press_to_schedule_ms` / `input_to_audible_ms` appear on the row.
-	 */
+	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
 	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state
@@ -3327,17 +3255,7 @@ class RbAudioEngine implements AudioEngine {
 			// ramp rather than the processor's self-report (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			try {
-				await _scheduleDeck(
-					deck,
-					when,
-					startSec,
-					true,
-					undefined,
-					undefined,
-					undefined,
-					undefined,
-					pressT0Ms
-				);
+				await _schedulePress(deck, when, startSec, true, pressT0Ms);
 				_assignMaster(deck);
 				st.sync_error = null;
 			} catch (error) {
@@ -3350,17 +3268,7 @@ class RbAudioEngine implements AudioEngine {
 			// in play, so this is plain transport (LATENCY-01), led by the onset
 			// ramp (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
-			await _scheduleDeck(
-				deck,
-				when,
-				startSec,
-				true,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				pressT0Ms
-			);
+			await _schedulePress(deck, when, startSec, true, pressT0Ms);
 			st.sync_error = null;
 		} else {
 			// This deck is joining from silence (guarded by the desiredActive
@@ -3380,15 +3288,11 @@ class RbAudioEngine implements AudioEngine {
 		// stopped is the worst failure this transport has.
 		const pauseBeats = _quantizeGrid(st);
 		const when = _futureScheduleTime(deck);
-		const positionSec = await _scheduleDeck(
+		const positionSec = await _schedulePress(
 			deck,
 			when,
 			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
 			false,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
 			pressT0Ms
 		);
 		const cueMs = pauseBeats !== null
@@ -3489,25 +3393,14 @@ class RbAudioEngine implements AudioEngine {
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
 	 * set the cue at the current position.
 	 *
-	 * Q1: see `play` for the `pressT0Ms` contract. Only the playing branch
-	 * schedules; the two paused branches are pure state writes with no audio
-	 * instant to measure against, and the seek branch is Q1's follow-up. */
+	 * Q1: see `play` for the stamp. Only the playing branch schedules; the paused
+	 * branches are pure state writes, and the seek branch is Q1's follow-up. */
 	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pressCue');
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
 			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
-			await _scheduleDeck(
-				deck,
-				_futureScheduleTime(deck),
-				target / 1000,
-				false,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				pressT0Ms
-			);
+			await _schedulePress(deck, _futureScheduleTime(deck), target / 1000, false, pressT0Ms);
 			return;
 		}
 		if (st.cue_ms === null) {

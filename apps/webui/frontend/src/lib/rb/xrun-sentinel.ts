@@ -57,14 +57,19 @@ export function readXrunSessionCounter(): XrunSessionCounter {
 	return { ..._session };
 }
 
-/** Detach the sentinel and forget the session totals. Teardown and tests. */
-export function resetXrunSentinel(): void {
-	if (_node !== null) {
-		_node.port.onmessage = null;
-		_node.disconnect();
-		_node = null;
-	}
-	_session = { ...EMPTY_XRUN_SESSION };
+/**
+ * Detach the sentinel from a context that is going away.
+ *
+ * The session totals deliberately SURVIVE: they are cumulative for the app
+ * session, and a route remount that rebuilt the graph is not a new session. A
+ * counter that silently restarted at zero on every navigation would report a
+ * healthy machine to anyone who navigated once.
+ */
+export function detachXrunSentinel(): void {
+	if (_node === null) return;
+	_node.port.onmessage = null;
+	_node.disconnect();
+	_node = null;
 }
 
 function _onReport(data: unknown): void {

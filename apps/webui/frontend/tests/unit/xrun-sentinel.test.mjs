@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -32,14 +30,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if a failed sentinel install is swallowed then the app reports zero xruns
  *   forever, which reads exactly like a healthy machine
  */
-
-const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-
-function readSource(relativePath) {
-	const text = readFileSync(`${FRONTEND_ROOT}/${relativePath}`, 'utf8').replaceAll('\r\n', '\n');
-	assert.ok(text.trim().length > 0, `if ${relativePath} reads empty this guard asserts nothing`);
-	return text;
-}
 
 let xrun;
 
@@ -106,7 +96,9 @@ test('a parked audio thread is counted apart from a dropout, never as one', () =
 });
 
 test('the tally counts callbacks, xruns and parked gaps as three separate things', () => {
-	let tally = xrun.EMPTY_XRUN_TALLY;
+	// Starts at undefined on purpose: the fold owns the one empty tally, so a
+	// caller cannot begin from a hand-written literal that drifted from it.
+	let tally;
 	for (const gapMs of [1, 2, 1, 30, 2, 1, 45, 90_000, 1]) {
 		tally = xrun.foldXrunGap(tally, gapMs, 10);
 	}
@@ -122,7 +114,7 @@ test('the tally counts callbacks, xruns and parked gaps as three separate things
 });
 
 test('the tally is a pure fold: the input is never mutated', () => {
-	const start = xrun.EMPTY_XRUN_TALLY;
+	const start = xrun.foldXrunGap(undefined, 1, 10);
 	const next = xrun.foldXrunGap(start, 50, 10);
 	assert.equal(start.xruns, 0);
 	assert.equal(next.xruns, 1);
@@ -259,7 +251,7 @@ test('a healthy window costs nothing: no post, no ring row', () => {
 });
 
 test('the graph arms the sentinel without ever letting it break audio', () => {
-	const body = engineBlockAfter('function _armXrunSentinel(ctx: AudioContext): void {');
+	const body = engineBlockAfter('export function armXrunSentinel(ctx: AudioContext): void {');
 	assert.ok(
 		body.includes('.catch('),
 		'addModule is async and can reject; an unhandled rejection here would surface as a ' +
@@ -272,10 +264,10 @@ test('the graph arms the sentinel without ever letting it break audio', () => {
 	);
 	const graph = engineBlockAfter('function _ensureGraph(): AudioContext {');
 	assert.ok(
-		graph.includes('_armXrunSentinel(_ctx);'),
+		graph.includes('armXrunSentinel(_ctx);'),
 		'the sentinel must be armed with the graph, or it only exists in theory'
 	);
-	const armAt = graph.indexOf('_armXrunSentinel(_ctx);');
+	const armAt = graph.indexOf('armXrunSentinel(_ctx);');
 	const returnAt = graph.lastIndexOf('return _ctx;');
 	assert.ok(
 		armAt !== -1 && armAt < returnAt,

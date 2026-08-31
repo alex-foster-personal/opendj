@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, readFrontendSource as readSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -31,17 +29,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if a negative or non-finite delta is logged rather than refused then the
  *   ratchet can be passed by a broken clock
  */
-
-const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-
-function readSource(relativePath) {
-	const text = readFileSync(`${FRONTEND_ROOT}/${relativePath}`, 'utf8').replaceAll('\r\n', '\n');
-	assert.ok(
-		text.trim().length > 0,
-		`if ${relativePath} reads empty then every source-text guard below asserts nothing`
-	);
-	return text;
-}
 
 let math;
 
@@ -221,7 +208,7 @@ test('the engine turns the stamp into a delta at the same clock read it reports'
 ): Promise<number> {`);
 
 	const clockAt = body.indexOf('const scheduleContextTime = _ctx.currentTime;');
-	const deltaAt = body.indexOf('const pressToScheduleMs = _pressToScheduleMs(');
+	const deltaAt = body.indexOf('const pressToScheduleMs = measurePressToScheduleMs(');
 	const emitAt = body.indexOf('scheduleOffsetStages({');
 	assert.ok(clockAt !== -1, 'the audio clock read is the reference point for the press delta');
 	assert.ok(deltaAt !== -1, 'if the delta is never computed then the press half stays invisible');
@@ -241,9 +228,10 @@ test('the engine turns the stamp into a delta at the same clock read it reports'
 });
 
 test('an implausible press delta is recorded loudly and dropped, never logged', () => {
-	const helper = engineBlockAfter(
-		'function _pressToScheduleMs(pressT0Ms: number | undefined, deck: DeckId): number | undefined {'
-	);
+	const helper = engineBlockAfter(`export function measurePressToScheduleMs(
+	pressT0Ms: number | undefined,
+	deck: PerfDeck
+): number | undefined {`);
 	assert.ok(
 		helper.includes('recordPerfEvent('),
 		'a stamp from a clock that ran backwards means the instrument has gone blind; ' +
@@ -264,7 +252,7 @@ test('the three press paths forward their stamp into the schedule', () => {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
 			body.includes('pressT0Ms'),
-			`${anchor} accepts a press stamp and must hand it to _scheduleDeck, or the ` +
+			`${anchor} accepts a press stamp and must hand it to _schedulePress, or the ` +
 				'parameter is decorative'
 		);
 	}

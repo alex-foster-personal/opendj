@@ -78,7 +78,8 @@ export interface XrunSessionCounter {
 	worst_gap_ms: number;
 }
 
-export const EMPTY_XRUN_TALLY: Readonly<XrunTally> = Object.freeze({
+/** The fold's starting point, and the only one: see `foldXrunGap`. */
+const EMPTY_XRUN_TALLY: Readonly<XrunTally> = Object.freeze({
 	callbacks: 0,
 	xruns: 0,
 	parked: 0,
@@ -158,8 +159,15 @@ export function classifyGapMs(
 	return 'ok';
 }
 
+/**
+ * Fold one inter-callback gap into a tally.
+ *
+ * `tally` defaults to the empty one so a sequence folds from `undefined` with
+ * no separate starting constant to import - and so there is exactly one empty
+ * tally in the codebase rather than a literal at every call site.
+ */
 export function foldXrunGap(
-	tally: Readonly<XrunTally>,
+	tally: Readonly<XrunTally> = EMPTY_XRUN_TALLY,
 	gapMs: number,
 	thresholdMs: number,
 	parkedGapMs: number = XRUN_PARKED_GAP_MS
