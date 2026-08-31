@@ -160,10 +160,14 @@ def list_bifrost2_bundles(preset: str | None = None) -> list[Bundle]:
 
 def r2_client() -> Any:
     """S3 client for R2. Fails naming the missing key rather than surfacing a
-    bare NoCredentialsError from three frames deeper."""
-    import boto3
-    from botocore.config import Config
+    bare NoCredentialsError from three frames deeper.
 
+    The credential check runs BEFORE the boto3 import, deliberately. boto3 is
+    a PEP 723 inline dependency, so it is absent unless the script is run
+    under `uv run` -- and the far more common mistake is forgetting `doppler
+    run`, not forgetting `uv run`. Importing first buried that behind a
+    ModuleNotFoundError, which says nothing about the actual problem.
+    """
     missing = [key for key in R2_ENV_KEYS if not os.environ.get(key)]
     if missing:
         raise SystemExit(
@@ -175,6 +179,10 @@ def r2_client() -> Any:
             "  Cloudflare dashboard > R2 > API > Manage API tokens\n"
             "and store it in Doppler general/dev_personal under those names."
         )
+
+    import boto3
+    from botocore.config import Config
+
     return boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
