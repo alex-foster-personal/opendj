@@ -29,11 +29,24 @@ STORE_PROFILE = (
 
 
 def test_detection_uses_the_process_not_a_build_flag() -> None:
-    assert sandbox.is_sandboxed({"HOME": "/Users/dj"}) is False
-    assert sandbox.is_sandboxed({"APP_SANDBOX_CONTAINER_ID": "com.opendj.desktop"})
+    """Platform is passed explicitly so this runs identically on a Linux CI box.
+
+    Without it these assertions pass on a developer's Mac and silently assert
+    nothing on the Linux pytest lane, where every call short-circuits to False.
+    """
+    mac = {"platform": "darwin"}
+    assert sandbox.is_sandboxed({"HOME": "/Users/dj"}, **mac) is False
+    assert sandbox.is_sandboxed({"APP_SANDBOX_CONTAINER_ID": "com.opendj.desktop"}, **mac)
     assert sandbox.is_sandboxed(
-        {"HOME": "/Users/dj/Library/Containers/com.opendj.desktop/Data"}
+        {"HOME": "/Users/dj/Library/Containers/com.opendj.desktop/Data"}, **mac
     )
+
+
+def test_the_sandbox_is_macos_only() -> None:
+    """A Linux or Windows host is never sandboxed, whatever the environment says."""
+    container = {"APP_SANDBOX_CONTAINER_ID": "com.opendj.desktop"}
+    assert sandbox.is_sandboxed(container, platform="linux") is False
+    assert sandbox.is_sandboxed(container, platform="win32") is False
 
 
 def test_volume_scan_refuses_rather_than_returning_empty(

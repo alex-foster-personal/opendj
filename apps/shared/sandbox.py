@@ -40,7 +40,9 @@ class SandboxRefusal(RuntimeError):
     """
 
 
-def is_sandboxed(environ: dict[str, str] | None = None) -> bool:
+def is_sandboxed(
+    environ: dict[str, str] | None = None, platform: str | None = None
+) -> bool:
     """True when this process is inside an App Sandbox container.
 
     Two independent signals, because either alone can be defeated: the env var
@@ -49,9 +51,15 @@ def is_sandboxed(environ: dict[str, str] | None = None) -> bool:
     sandboxed. Either being true is enough; the cost of a false positive is an
     explicit refusal, and the cost of a false negative is the silent empty
     answer this exists to prevent.
+
+    ``platform`` is injectable for the same reason ``environ`` is: the App
+    Sandbox is macOS-only, so on Linux this would always short-circuit to
+    False and the signal logic would go untested on a Linux CI runner. Passing
+    it keeps the decision a pure function of its inputs, testable anywhere.
     """
     env = os.environ if environ is None else environ
-    if sys.platform != "darwin":
+    host = sys.platform if platform is None else platform
+    if host != "darwin":
         return False
     if env.get(CONTAINER_ENV):
         return True
