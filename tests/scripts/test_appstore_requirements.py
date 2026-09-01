@@ -20,9 +20,10 @@ from __future__ import annotations
 
 import json
 import plistlib
+import re
 import shutil
+import struct
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -136,48 +137,58 @@ EXTENSION_ONLY_PREDICATE = (
     "find \"$1\" -type f \\( -name '*.so' -o -name '*.dylib' \\) -print0"
 )
 
-darwin_only = pytest.mark.skipif(
-    sys.platform != "darwin",
-    reason="Mach-O is a macOS file format; file(1) reports ELF elsewhere",
-)
+# A Mach-O header is 32 bytes and file(1) reads the filetype straight out of
+# it, so the fixture needs no real binary and no macOS host. That matters:
+# the pytest lanes are ubuntu-latest and macos-packaging.yml runs only
+# test_engine_payload.py and test_desktop_lane_config.py, so a darwin-only
+# marker here would mean these assertions never execute in CI at all -- a
+# regression suite that passes by skipping.
+#
+# Nothing below invokes codesign or otool, which would reject a stub. These
+# exercise DISCOVERY, which is where the bug was.
+MACHO_MAGIC_64: int = 0xFEEDFACF
+CPU_TYPE_ARM64: int = 0x0100000C
+MH_EXECUTE: int = 0x2
+MH_DYLIB: int = 0x6
+MH_BUNDLE: int = 0x8
+
+
+def _macho_header(filetype: int) -> bytes:
+    """magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, pad."""
+    return struct.pack(
+        "<IiiIIII", MACHO_MAGIC_64, CPU_TYPE_ARM64, 0, filetype, 0, 0, 0
+    ) + b"\0" * 4
 
 
 @pytest.fixture(scope="module")
 def payload(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A payload shaped like a staged one, minus the 3000 .py files.
-
-    /bin/ls stands in for every Mach-O: it is genuinely Mach-O, genuinely
-    extensionless and present on every macOS host, which is exactly the
-    shape the old predicate missed.
-    """
-    if sys.platform != "darwin":
-        pytest.skip("Mach-O fixture needs a macOS host")
+    """A payload shaped like a staged one, minus the 3000 .py files."""
     root = tmp_path_factory.mktemp("payload")
     (root / "runtime/bin").mkdir(parents=True)
     (root / "runtime/lib/python3.11/lib-dynload").mkdir(parents=True)
     (root / "bin").mkdir()
     (root / "pylib/pkg").mkdir(parents=True)
 
-    # copyfile, not copy2: /bin/ls carries SIP-restricted st_flags that
-    # copy2 tries to reproduce and cannot.
-    macho = Path("/bin/ls")
     # The interpreter: extensionless, executable, and the whole point.
-    shutil.copyfile(macho, root / "runtime/bin/python3.11")
-    (root / "runtime/bin/python3.11").chmod(0o755)
+    interpreter = root / "runtime/bin/python3.11"
+    interpreter.write_bytes(_macho_header(MH_EXECUTE))
+    interpreter.chmod(0o755)
     # What the launcher names. stage_runtime copies the tree with
     # symlinks=True, so the payload carries this symlink verbatim.
     (root / "runtime/bin/python3").symlink_to("python3.11")
-    shutil.copyfile(macho, root / "runtime/lib/libpython3.11.dylib")
-    (root / "runtime/lib/libpython3.11.dylib").chmod(0o755)
+
+    dylib = root / "runtime/lib/libpython3.11.dylib"
+    dylib.write_bytes(_macho_header(MH_DYLIB))
+    dylib.chmod(0o755)
     # An extension module at 0644: no exec bit, so only the extension clause
     # catches it. Its presence proves the narrowing did not lose the files
     # the old predicate did find.
     ext = root / "runtime/lib/python3.11/lib-dynload/_crypt.cpython-311-darwin.so"
-    shutil.copyfile(macho, ext)
+    ext.write_bytes(_macho_header(MH_BUNDLE))
     ext.chmod(0o644)
 
     launcher = root / "bin/opendj-engine"
-    launcher.write_text("#!/bin/sh\nexec \"$payload/runtime/bin/python3\" -m x\n")
+    launcher.write_text('#!/bin/sh\nexec "$payload/runtime/bin/python3" -m x\n')
     launcher.chmod(0o755)
 
     (root / "pylib/pkg/module.py").write_text("x = 1\n")
@@ -203,7 +214,25 @@ def _macho_files(payload: Path) -> list[str]:
     )
 
 
-@darwin_only
+def test_the_fixture_is_recognizable_as_macho(payload: Path) -> None:
+    """The control for every assertion below: file(1) must see these at all.
+
+    A 32-byte stub header is enough on macOS. If a host's file(1) disagrees,
+    every "not found" result below would be vacuously true, so this fails
+    loudly here rather than passing quietly there.
+    """
+    described = subprocess.run(
+        ["file", "-b", str(payload / "runtime/bin/python3.11")],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "Mach-O" in described, (
+        f"file(1) does not recognize the fixture as Mach-O ({described!r}); "
+        "the discovery assertions below would pass without measuring anything"
+    )
+
+
 def test_the_extensionless_interpreter_is_discovered(payload: Path) -> None:
     """The regression, stated as the presence of the good thing."""
     found = _macho_files(payload)
@@ -215,11 +244,10 @@ def test_the_extensionless_interpreter_is_discovered(payload: Path) -> None:
     )
 
 
-@darwin_only
 def test_the_old_predicate_missed_only_the_interpreter(payload: Path) -> None:
     """The control: the replaced predicate still fires, and still misses one.
 
-    Without this, "the new helper finds 4 files" says nothing about what the
+    Without this, "the new helper finds 3 files" says nothing about what the
     old one did. Run side by side, the old predicate finds the dylib and the
     .so -- proving it works -- and misses the interpreter alone, which is
     the entire defect and the entire fix.
@@ -249,7 +277,6 @@ def test_the_old_predicate_missed_only_the_interpreter(payload: Path) -> None:
     )
 
 
-@darwin_only
 def test_the_shell_launcher_is_not_a_signing_candidate(payload: Path) -> None:
     """bin/opendj-engine is #!/bin/sh, and codesign rejects a script.
 
@@ -262,13 +289,11 @@ def test_the_shell_launcher_is_not_a_signing_candidate(payload: Path) -> None:
     )
 
 
-@darwin_only
 def test_a_static_archive_is_not_a_signing_candidate(payload: Path) -> None:
     """A .a is an ar archive, not Mach-O, and codesign refuses it."""
     assert "pylib/pkg/libstatic.a" not in _macho_files(payload)
 
 
-@darwin_only
 def test_the_interpreter_symlink_is_not_signed_twice(payload: Path) -> None:
     """runtime/bin/python3 points at the versioned binary already in the set."""
     found = _macho_files(payload)
@@ -276,6 +301,81 @@ def test_the_interpreter_symlink_is_not_signed_twice(payload: Path) -> None:
         "the symlink is in the set alongside its target, so codesign signs "
         f"one file twice under a name it does not record: {found}"
     )
+
+
+# ----- preflight counts what --build signs --------------------------------
+#
+# check_payload reports how many Mach-O files --build will sign. It counted
+# with the extension-only predicate, so a payload holding nothing but the
+# extensionless interpreter reported 0: a zero that reads as "clean" and
+# means "not measured". Worse, a rename left it testing a variable local to
+# build(), so under `set -u` the whole preflight aborted with an unbound
+# variable -- and preflight is the DEFAULT mode that --build and --all both
+# run first.
+#
+#   [if] check_payload reads a variable it does not set, every mode dies
+#        -> test_the_payload_check_survives_a_staged_payload
+#   [if] it counts by extension, it reports 0 for a real payload
+#        -> test_the_payload_check_counts_the_interpreter
+
+def _run_check_payload(tmp_path: Path, payload: Path | None) -> subprocess.CompletedProcess[str]:
+    """Run check_payload out of the real script, against a payload of our own.
+
+    Extracted rather than invoked through --preflight because the full
+    preflight scans the whole source tree for sandbox reachability and takes
+    minutes. The extraction is asserted non-empty by the caller, so a rename
+    fails this loudly instead of silently testing nothing.
+    """
+    body = re.search(
+        r"^check_payload\(\) \{.*?^\}", SHIP_APPSTORE.read_text(), re.MULTILINE | re.DOTALL
+    )
+    assert body, "check_payload is no longer a top-level function in ship_appstore.sh"
+    harness = tmp_path / "harness.sh"
+    harness.write_text(
+        "set -euo pipefail\n"
+        f'TAURI_DIR="{tmp_path}/tauri"\n'
+        f'. "{MACHO_LIB}"\n'
+        "ok()      { printf '[OK] %s\\n' \"$1\"; }\n"
+        "gap()     { printf '[WARN] %s\\n' \"$1\"; }\n"
+        "section() { printf '=== %s ===\\n' \"$1\"; }\n"
+        f"{body.group(0)}\n"
+        "check_payload\n"
+    )
+    staged = tmp_path / "tauri/payload"
+    staged.mkdir(parents=True)
+    if payload is not None:
+        shutil.copytree(payload, staged, dirs_exist_ok=True, symlinks=True)
+    return subprocess.run(
+        ["bash", str(harness)], capture_output=True, text=True, check=False
+    )
+
+
+def test_the_payload_check_survives_a_staged_payload(
+    tmp_path: Path, payload: Path
+) -> None:
+    """A staged payload is the normal state, and it used to abort every mode."""
+    result = _run_check_payload(tmp_path, payload)
+    assert "unbound variable" not in result.stderr, result.stderr
+    assert result.returncode == 0, f"exit {result.returncode}: {result.stderr}"
+
+
+def test_the_payload_check_counts_the_interpreter(
+    tmp_path: Path, payload: Path
+) -> None:
+    """The number preflight prints must be the number --build will sign."""
+    result = _run_check_payload(tmp_path, payload)
+    assert "payload staged, 3 Mach-O" in result.stdout, (
+        "preflight must count by content, like the signing pass. An "
+        f"extension-only count reports 2 here and 0 for a runtime-only "
+        f"payload. Got: {result.stdout!r}"
+    )
+
+
+def test_an_empty_payload_directory_is_reported_not_passed(tmp_path: Path) -> None:
+    """Zero is an error signature here, not a clean bill."""
+    result = _run_check_payload(tmp_path, None)
+    assert result.returncode == 0
+    assert "no Mach-O files found" in result.stdout, result.stdout
 
 
 @pytest.mark.parametrize("script", [SHIP_APPSTORE, SIGN_DEVELOPER_ID])

@@ -352,13 +352,22 @@ check_payload() {
     # Every Mach-O in the bundle needs its own signature, applied inside-out.
     # The count is the point: it tells you whether signing is a step or an
     # ordeal, and it is the reason --deep looks tempting and stays banned.
-    local macho_count
-    macho_count="$(find "$payload" -type f \( -name '*.so' -o -name '*.dylib' \) 2>/dev/null | wc -l | tr -d ' ')"
-    ok "payload staged, $macho_count Mach-O libraries to sign inside-out"
-    if [ "$signed_count" -gt 0 ]; then
+    #
+    # Counted with the SAME helper --build signs with, so this number cannot
+    # disagree with the work it predicts. It used to count
+    # -name '*.so' -o -name '*.dylib', which reported 0 for a payload holding
+    # nothing but the extensionless interpreter: a zero that reads as "clean"
+    # and means "not measured".
+    local macho_total
+    macho_total="$(macho_count "$payload")"
+    ok "payload staged, $macho_total Mach-O files to sign inside-out"
+    if [ "$macho_total" -gt 0 ]; then
         echo "          Signed individually by --build, deepest first, WITHOUT --deep."
         echo "          --deep would overwrite each one with the parent's entitlements,"
         echo "          handing a full sandbox profile to a Python interpreter."
+    else
+        gap "no Mach-O files found under $payload" \
+            "The payload carries a whole CPython runtime, so an empty scan means it is not staged (or file(1) is missing), not that there is nothing to sign."
     fi
 }
 
