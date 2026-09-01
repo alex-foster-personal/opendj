@@ -146,3 +146,211 @@ def test_inline_comments_alone_are_a_valid_artifact() -> None:
 
 def test_artifact_count_sums_all_three_sources() -> None:
     assert _evid(reviews=1, inline=10, bodies=("x",)).artifact_count == 12
+
+
+# ----- known-unavailable reviewers ---------------------------------------
+# A gate that can never go green blocks all work. A silent exemption is how
+# "never reviewed" starts reading as "clean" again. These pin both edges.
+
+from scripts.review_coverage import KNOWN_UNAVAILABLE_REVIEWERS  # noqa: E402
+
+
+def test_the_exemption_list_is_not_a_blanket() -> None:
+    """If every expected reviewer were exempt the gate could never fail, which
+    is the exact defect this whole module exists to catch, one level up."""
+    assert set(KNOWN_UNAVAILABLE_REVIEWERS) != set(EXPECTED_REVIEWERS)
+    assert len(KNOWN_UNAVAILABLE_REVIEWERS) < len(EXPECTED_REVIEWERS)
+
+
+def test_every_exemption_states_a_reason() -> None:
+    """An exemption with no reason and no owner is the note that outlives the
+    outage it describes."""
+    for name, reason in KNOWN_UNAVAILABLE_REVIEWERS.items():
+        assert len(reason) > 20, f"{name} exemption needs a real reason"
+
+
+def test_exempt_reviewers_are_reviewers_we_actually_expect() -> None:
+    """Guards a typo silently exempting nothing, which would read as a working
+    exemption while the gate stayed permanently red."""
+    for name in KNOWN_UNAVAILABLE_REVIEWERS:
+        assert name in EXPECTED_REVIEWERS, f"{name} is not in EXPECTED_REVIEWERS"
+
+
+# ----- an exemption must not swallow a reviewer that is STILL RUNNING ------
+
+from scripts.review_coverage import partition_verdicts  # noqa: E402
+
+
+def _verdicts(checks: list[dict[str, str]]) -> list[ReviewerVerdict]:
+    """Real verdicts, produced by the production classifier from real check
+    payload shapes. No stand-in stands in front of `classify_reviewer`."""
+    return [classify_reviewer(name, checks) for name in EXPECTED_REVIEWERS]
+
+
+def test_an_exempt_reviewer_that_is_still_running_still_blocks() -> None:
+    """Devin is exempt because it is DOWN, not because its output is optional.
+
+    The day it is re-enabled its check goes `pending` before it goes anywhere
+    else. If the exemption covered that, this gate would pass the moment the
+    other reviewers finished, and the PR could merge while Devin was still
+    writing findings that would then never get a pre-merge disposition.
+    """
+    verdicts = _verdicts([
+        _check("CodeRabbit", "Review completed"),
+        _check("Devin Review", "Running", bucket="pending"),
+    ])
+    devin = next(v for v in verdicts if v.name == "Devin Review")
+    assert devin.in_progress is True
+
+    unavailable, unreviewed, _ = partition_verdicts(verdicts)
+    assert [v.name for v in unavailable] == []
+    assert "Devin Review" in [v.name for v in unreviewed]
+
+
+def test_an_exempt_reviewer_that_reports_its_outage_does_not_block() -> None:
+    """The control for the test above, and the reason the exemption exists.
+
+    Without this pair, restricting the exemption to nothing at all would
+    satisfy the blocking test and leave the gate permanently red, which is the
+    failure this change was made to fix.
+
+    The payload is Devin's ACTUAL live description, verbatim from
+    `gh pr checks` on Tue 1 Sep 2026. An earlier version of this test used a
+    PR with no Devin row at all and asserted that absence was exempt. That was
+    wrong twice over: it is not what the live check emits, and it made the
+    exemption rest on an absence, which is what let a `skipping` bucket and a
+    stale comment body both pass for an outage. Absence is now handled by the
+    test below, and it blocks.
+    """
+    verdicts = _verdicts([
+        _check("CodeRabbit", "Review completed"),
+        _check(
+            "Devin Review",
+            "Full review skipped: trial expired and no credits remaining",
+        ),
+    ])
+    devin = next(v for v in verdicts if v.name == "Devin Review")
+    assert devin.in_progress is False
+    assert devin.outage is True, "the live outage description must certify the outage"
+
+    unavailable, unreviewed, _ = partition_verdicts(verdicts)
+    assert [v.name for v in unavailable] == ["Devin Review"]
+    assert [v.name for v in unreviewed] == []
+
+
+def test_an_exempt_reviewer_that_reports_nothing_at_all_blocks() -> None:
+    """No check row is not evidence of an outage; it is evidence of nothing.
+
+    A reviewer that reports nothing may be out of credit, uninstalled, or
+    misconfigured, and those need different responses. Blocking is the honest
+    verdict, and it is also the one that forces `EXPECTED_REVIEWERS` to be
+    corrected rather than quietly carrying a name nothing answers to.
+    """
+    verdicts = _verdicts([_check("CodeRabbit", "Review completed")])
+    devin = next(v for v in verdicts if v.name == "Devin Review")
+    assert devin.outage is False
+
+    unavailable, unreviewed, _ = partition_verdicts(verdicts)
+    assert [v.name for v in unavailable] == []
+    assert "Devin Review" in [v.name for v in unreviewed]
+
+
+def test_a_reviewer_with_no_exemption_blocks_whether_pending_or_absent() -> None:
+    """Guards the guard: `in_progress` must not become a second exemption.
+
+    A non-exempt reviewer that is still running is still not a review, so it
+    belongs in `unreviewed` exactly as an absent one does.
+    """
+    for bucket, description in (("pending", "Running"), ("fail", "Review rate limited")):
+        verdicts = _verdicts([_check("CodeRabbit", description, bucket=bucket)])
+        _, unreviewed, _ = partition_verdicts(verdicts)
+        assert "CodeRabbit" in [v.name for v in unreviewed], bucket
+
+
+def test_a_pending_rerun_is_not_exempted_by_its_own_stale_outage_comment() -> None:
+    """Two instruments disagree, and the ORDER decided which one was heard.
+
+    Devin's outage comment stays on the PR forever. When Devin is re-enabled and
+    rerun, that historical body is still sitting there, so a marker scan placed
+    ahead of the bucket check matched it, returned `in_progress=False`, and
+    `partition_verdicts` exempted a reviewer that was at that moment writing
+    findings. A PAST run outvoted the CURRENT one, which is the pending-swallow
+    defect wearing a different hat: the guard existed, and a stale artifact made
+    it unreachable.
+    """
+    checks = [
+        _check("CodeRabbit", "Review completed"),
+        _check("Devin Review", "Running", bucket="pending"),
+    ]
+    # The artifact Devin leaves when its trial lapses. Still on the PR after the
+    # account is topped up and the rerun has started.
+    stale = _evid(bodies=("Devin's trial expired. Add credits to continue.",))
+    verdicts = [
+        classify_reviewer("CodeRabbit", checks, _evid(reviews=1)),
+        classify_reviewer("Devin Review", checks, stale),
+    ]
+
+    devin = next(v for v in verdicts if v.name == "Devin Review")
+    assert devin.in_progress is True, "a live rerun was read as a historical outage"
+
+    unavailable, unreviewed, _ = partition_verdicts(verdicts)
+    assert [v.name for v in unavailable] == []
+    assert "Devin Review" in [v.name for v in unreviewed]
+
+
+def test_a_skipped_or_canceled_run_is_not_an_outage_and_still_blocks() -> None:
+    """`skipping` and `cancel` are terminal non-reviews with nothing to do with
+    credits, so the credit exemption must not swallow them.
+
+    The exemption used to key on "this reviewer is on the known-down list and
+    did not review", which is an ABSENCE. Every way of failing to review then
+    looked identical to being out of credit.
+    """
+    for bucket in ("skipping", "cancel"):
+        verdicts = _verdicts([
+            _check("CodeRabbit", "Review completed"),
+            _check("Devin Review", "", bucket=bucket),
+        ])
+        devin = next(v for v in verdicts if v.name == "Devin Review")
+        assert devin.outage is False, bucket
+
+        unavailable, unreviewed, _ = partition_verdicts(verdicts)
+        assert [v.name for v in unavailable] == [], bucket
+        assert "Devin Review" in [v.name for v in unreviewed], bucket
+
+
+def test_a_restored_reviewer_is_not_exempted_by_its_own_historical_outage_comment() -> None:
+    """An outage comment never leaves the PR, so an exemption keyed on bodies
+    is permanent and can never be retracted.
+
+    Devin restored: its check reports a completed review and it left an
+    artifact, but the old "trial expired" comment is still sitting on the PR.
+    Scanning bodies for exemption evidence made that reviewer exempt FOREVER,
+    on this PR and on every later one, so the gate would pass without anyone
+    being forced to remove a list entry describing an outage that had ended.
+
+    What this asserts is the fail-closed half: the gate BLOCKS instead of
+    silently passing. It deliberately does not assert `revived`, which still
+    will not fire here, because certifying the review would mean letting a
+    clean description outrank a body marker and that would regress the
+    reviewer-reports-success-while-doing-nothing case this tool exists for.
+    A red gate is the signal that forces the exemption to be revisited.
+    """
+    checks = [
+        _check("CodeRabbit", "Review completed"),
+        _check("Devin Review", "Review completed"),
+    ]
+    verdicts = [
+        classify_reviewer("CodeRabbit", checks, _evid(reviews=1)),
+        classify_reviewer(
+            "Devin Review",
+            checks,
+            _evid(reviews=1, bodies=("Devin's trial expired. Add credits to continue.",)),
+        ),
+    ]
+    devin = next(v for v in verdicts if v.name == "Devin Review")
+    assert devin.outage is False, "a historical body certified a current outage"
+
+    unavailable, unreviewed, _ = partition_verdicts(verdicts)
+    assert [v.name for v in unavailable] == []
+    assert "Devin Review" in [v.name for v in unreviewed]
