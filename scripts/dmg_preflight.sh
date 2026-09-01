@@ -85,6 +85,24 @@ fail() { # <check name> <what is wrong> <how to fix it>
     FAILED_NAMES="${FAILED_NAMES:+$FAILED_NAMES, }$1"
 }
 
+# Run a version probe WITHOUT letting a failing probe end the report.
+#
+# This is the trap the whole script exists to avoid, one level down. Under
+# `set -e` plus `pipefail`, `x="$(broken_tool --version | head -1)"` ENDS THE
+# SCRIPT, so the branch written to report that the tool is broken never runs
+# and the operator gets a truncated report with no summary and no idea which
+# check died. Every external probe goes through here: the caller reads the
+# status and the output, and decides.
+_probe_in() { # <dir> <command...>; prints first output line, returns its status
+    local dir="$1"
+    shift
+    local out status=0
+    out="$(cd "$dir" && "$@" 2>/dev/null | head -1)" || status=$?
+    printf '%s' "$out"
+    return "$status"
+}
+_probe() { _probe_in "$PWD" "$@"; }
+
 #----- A. host platform ---------------------------------------------------
 
 check_platform() {
@@ -165,7 +183,10 @@ check_signing_config() {
              "no Developer ID signing identity. THE DEFAULT IS REFUSAL, so an unsigned image is never fallen into" \
              "Set MDT_MACOS_SIGNING_IDENTITY and MDT_MACOS_NOTARY_KEYCHAIN_PROFILE to sign and notarize (see the dmg recipe header and docs/operator-setup.md), or export MDT_SHIP_UNSIGNED=1 to build a deliberately unsigned dev image that testers must clear by hand."
         printf '          identities on this machine:\n'
-        security find-identity -v -p codesigning 2>&1 | sed 's/^/          /'
+        # `|| true`: this line runs INSIDE a failure report, and on a machine
+        # with no `security` at all the pipeline's nonzero status would end
+        # the script mid-sentence under `set -e`.
+        security find-identity -v -p codesigning 2>&1 | sed 's/^/          /' || true
         return
     fi
     if [ -n "$identity" ] && [ -z "$notary" ]; then
@@ -191,8 +212,8 @@ check_rust_toolchain() {
         return
     fi
     local tauri_version
-    if ! tauri_version="$(cargo tauri --version 2>/dev/null | head -1)" || [ -z "$tauri_version" ]; then
-        fail "rust toolchain" "cargo-tauri not found (cargo is present)" \
+    if ! tauri_version="$(_probe cargo tauri --version)" || [ -z "$tauri_version" ]; then
+        fail "rust toolchain" "cargo-tauri did not answer 'cargo tauri --version' (cargo itself is present)" \
              "cargo install tauri-cli --version ^2"
         return
     fi
@@ -208,7 +229,17 @@ check_uv() {
              "Install uv: https://docs.astral.sh/uv/. The recipe stages the engine payload and reads every build stamp through 'uv run'."
         return
     fi
-    ok "uv present ($(uv --version 2>/dev/null | head -1))"
+    # NOT `ok "uv present ($(uv --version))"`. A command substitution inside an
+    # argument throws its status away, so a uv that is present and broken
+    # printed `[OK] uv present ()`: a PASS reported by a probe that measured
+    # nothing, which is the one thing this script promises never to do.
+    local version
+    if ! version="$(_probe uv --version)" || [ -z "$version" ]; then
+        fail "uv" "uv is on PATH but 'uv --version' did not answer, so the payload stage and every build stamp would fail later instead of here" \
+             "Reinstall uv: https://docs.astral.sh/uv/. Check 'uv --version' answers before re-running."
+        return
+    fi
+    ok "uv present ($version)"
 }
 
 #----- F. node toolchain pin ----------------------------------------------
@@ -241,10 +272,12 @@ check_pnpm_pin() {
     # so asking the repo root reports whatever pnpm is on PATH and calls a
     # correctly pinned machine unpinned. Measured from the root on this Mac:
     # 11.24.0. Measured from the frontend: 11.9.0, the pin. Same machine.
-    installed="$(cd "$FRONTEND_DIR" && pnpm --version 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$installed" ]; then
-        fail "pnpm toolchain pin" "pnpm is on PATH but 'pnpm --version' printed nothing in $FRONTEND_DIR, so the toolchain cannot be verified" \
-             "Reinstall pnpm: corepack enable && corepack use pnpm@$pinned"
+    local status=0
+    installed="$(_probe_in "$FRONTEND_DIR" pnpm --version)" || status=$?
+    installed="${installed//[[:space:]]/}"
+    if [ "$status" -ne 0 ] || [ -z "$installed" ]; then
+        fail "pnpm toolchain pin" "'pnpm --version' in $FRONTEND_DIR exited $status and printed '$installed', so the toolchain cannot be checked against the pnpm@$pinned pin. corepack failing to resolve a pinned version it has never fetched looks exactly like this" \
+             "corepack enable && corepack use pnpm@$pinned, and resolve the pin once while online if corepack cannot reach the registry."
         return
     fi
     if [ "$installed" != "$pinned" ]; then
