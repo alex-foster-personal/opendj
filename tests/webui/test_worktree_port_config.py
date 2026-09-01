@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import json
 import socket
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from apps.webui.port_config import (
+    PROJECT_ROOT,
     PortConfigError,
     WebuiPorts,
+    assert_source_tree_matches_worktree,
     check_reservation,
     claim_ports,
+    main,
     resolve_ports,
 )
 
@@ -66,9 +70,7 @@ def test_claim_preserves_unrelated_env_and_removes_redundant_proxy(
     assert "KEEP_THIS=value" in env_text
     assert "MUSIC_DJ_API_PROXY_TARGET" not in env_text
     registry = json.loads(
-        (common_dir / "music-dj-tools" / "worktree-ports.json").read_text(
-            encoding="utf-8"
-        )
+        (common_dir / "music-dj-tools" / "worktree-ports.json").read_text(encoding="utf-8")
     )
     assert registry["reservations"][str(repo_root.resolve())] == {
         "backend": backend,
@@ -228,3 +230,52 @@ def test_repeat_claim_leaves_dotenv_untouched(tmp_path: Path) -> None:
     assert dotenv.read_text(encoding="utf-8") == first_text
     assert dotenv.stat().st_mtime_ns == first_stat.st_mtime_ns
     assert dotenv.stat().st_ino == first_stat.st_ino
+
+
+def _init_git_worktree(root: Path) -> Path:
+    """A real Git worktree, so the guard resolves it the way Git does."""
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    return root.resolve()
+
+
+def test_claim_refuses_a_foreign_worktree_source_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """If apps/ came from another worktree then claim must refuse, not rewrite .env."""
+    other = _init_git_worktree(tmp_path / "other-worktree")
+    _write_env(other, 18777, 19477)
+    before = (other / ".env").read_text(encoding="utf-8")
+    monkeypatch.chdir(other)
+
+    exit_code = main(["claim"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert str(PROJECT_ROOT.resolve()) in captured.err
+    assert str(other) in captured.err
+    assert (other / ".env").read_text(encoding="utf-8") == before
+    assert not (other / ".git" / "music-dj-tools").exists()
+
+
+def test_guard_accepts_the_worktree_it_was_loaded_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If apps/ is this worktree's own tree then the guard must stay out of the way."""
+    monkeypatch.chdir(PROJECT_ROOT)
+
+    assert assert_source_tree_matches_worktree() == PROJECT_ROOT.resolve()
+
+
+def test_guard_is_inapplicable_outside_any_git_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the working directory is not in a worktree then no port contract applies."""
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
+    assert assert_source_tree_matches_worktree() is None
