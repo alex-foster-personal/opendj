@@ -2047,6 +2047,12 @@
       "DeckObservationsRequest": {
         "description": "A batch of Open DJ deck-state snapshots, oldest first.\n\nSnapshots stay untyped here on purpose. Pydantic would happily\ncoerce the string \"false\" into ``False`` and 0 into ``0.0``, which\nis exactly the quiet reinterpretation this pipeline must not do, so\nvalidation belongs to :func:`~apps.sets.sources.opendj_wire.parse_snapshot`\nalone rather than being split across two disagreeing contracts.\n\nThe cap is ten minutes of a 1 s cadence: enough for a tab that was\nbackgrounded to flush its buffer, small enough to bound one request.",
         "properties": {
+          "session_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
           "snapshots": {
             "items": {
               "additionalProperties": true,
@@ -2059,7 +2065,8 @@
           }
         },
         "required": [
-          "snapshots"
+          "snapshots",
+          "session_id"
         ],
         "title": "DeckObservationsRequest",
         "type": "object"

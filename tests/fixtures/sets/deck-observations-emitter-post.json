@@ -1,0 +1,2670 @@
+{
+  "snapshots": [
+    {
+      "observed_at": "2026-08-31T20:00:00.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:01.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:02.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:03.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:04.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:05.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:06.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:07.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:08.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:09.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:10.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:11.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:12.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:13.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:14.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:15.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:16.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:17.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:18.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:19.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:20.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:21.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:22.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:23.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:24.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:25.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:26.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:27.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:28.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:29.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:30.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:31.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:32.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:33.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:34.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:35.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:36.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:37.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:38.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:39.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:40.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:41.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:42.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:43.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:44.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:45.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:46.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:47.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:48.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:49.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:50.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:51.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:52.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:53.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:54.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:55.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:56.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:57.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:58.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:00:59.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:01:00.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:01:01.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:01:02.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:01:03.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    },
+    {
+      "observed_at": "2026-08-31T20:01:04.000Z",
+      "decks": {
+        "1": {
+          "stable_id": "sid-1",
+          "playing": true,
+          "audible": true,
+          "position_ms": 12000,
+          "duration_ms": 220000,
+          "title": "Open Windows",
+          "artist": "Cass Delaney"
+        },
+        "2": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "3": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        },
+        "4": {
+          "stable_id": null,
+          "playing": false,
+          "audible": false,
+          "position_ms": 0,
+          "duration_ms": null,
+          "title": null,
+          "artist": null
+        }
+      }
+    }
+  ],
+  "session_id": "2026-08-31T20-00-00"
+}

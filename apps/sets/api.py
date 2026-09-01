@@ -132,6 +132,26 @@ class DeckObservationsRequest(BaseModel):
 
     snapshots: list[dict[str, Any]] = Field(min_length=1, max_length=600)
 
+    #: The recording these snapshots were sampled under. REQUIRED.
+    #:
+    #: The only thing that can bind a batch to a set. The client cannot do it:
+    #: it can re-read the recorder before posting, and the recording can still
+    #: stop and be replaced between that read and this request landing, or the
+    #: post can come from a `pagehide` flush that never re-read anything. Both
+    #: file one set's playback under another, and both are invisible from
+    #: either side. Sent, it is checked below, where the answer cannot change
+    #: underneath the caller.
+    #:
+    #: It was optional for one round, so an already-open browser running the
+    #: shipped emitter would keep posting. That is the fallback that masks a
+    #: failure: an unbound batch is not "compatible", it is a batch nobody can
+    #: say belongs to this set, and accepting it files a dead session's
+    #: playback under whichever set is recording now - silently, and exactly
+    #: in the window where a stale tab is most likely. Codex found it on #709.
+    #: A stale client now gets 422 and its user reloads, which is a loud,
+    #: recoverable failure instead of a quiet, permanent one.
+    session_id: str = Field(min_length=1, max_length=64)
+
 
 def _recorder_service(request: Request) -> RecorderService:
     service = getattr(request.app.state, "sets_recorder_service", None)
@@ -245,6 +265,19 @@ async def api_submit_deck_observations(
     silently discarded observation is an under-counted set.
     """
     source = _opendj_source(request)
+    if body.session_id != source.session_id:
+        # A backlog that outlived its recording. Refusing is the only place
+        # this can be caught: by the time the request arrives the client's own
+        # check is already stale. 409 rather than 422 because the payload is
+        # perfectly well formed -- it just belongs to a set that is over.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"snapshots were sampled under session {body.session_id!r} but "
+                f"{source.session_id!r} is recording now; discarded rather than "
+                "recorded against the wrong set"
+            ),
+        )
     try:
         accepted = source.submit_many(body.snapshots)
     except DeckObservationError as exc:

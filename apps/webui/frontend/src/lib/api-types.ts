@@ -3278,6 +3278,8 @@ export interface components {
          *     backgrounded to flush its buffer, small enough to bound one request.
          */
         DeckObservationsRequest: {
+            /** Session Id */
+            session_id: string;
             /** Snapshots */
             snapshots: {
                 [key: string]: unknown;
