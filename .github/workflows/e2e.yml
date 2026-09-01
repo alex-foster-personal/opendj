@@ -228,43 +228,44 @@ jobs:
         # throwaway fixture the repo generates from stdlib `wave` and ingests
         # through the real folder adapter, inside a sandboxed HOME.
         #
-        # NAMED QUARANTINE, not a silent skip. This --grep runs 11 of the
-        # suite's 23 tests. What is left out, and why:
+        # NAMED QUARANTINE, not a silent skip. This runs 10 of the suite's 23
+        # tests: all of setup-entry-points, and none of webkit-deckload.
         #
-        #   Four tests measure the playhead RATE, and on ubuntu-latest webkit
-        #   the deck reports advancing ~2.25 ms per 1 ms of wall clock. That
-        #   is not runner slowness: _measureRate normalizes by MEASURED wall
-        #   time, so a slow runner cancels out. Cause not yet diagnosed, so it
-        #   is tracked in issue #637 rather than guessed at here:
-        #     - play advances the playhead, pause holds it, play resumes it
-        #     - a tempo change drives the playhead rate, not just the fader
-        #     - MASTER TEMPO holds the key under a tempo change...
-        #     - a key nudge shifts the audio one semitone without touching tempo
+        # WHY THE DECK-LOAD TESTS ARE NOT HERE, measured rather than assumed.
+        # Across 5 runs on ubuntu-latest AFTER the audio sink landed, 2 had a
+        # deck test fail, for two DIFFERENT reasons:
         #
-        #   A FIFTH test is quarantined for the same underlying reason, added
-        #   after it failed on run 33456706346 having passed on 33454886465:
-        #     - the wave row exposes the decoded duration of the loaded audio
-        #   It does not measure rate itself, but its beforeEach seek does not
-        #   land ("deck 1 did not land a seek to 0ms: position 12255ms of
-        #   60000ms, playing=true"). A transport that will not seek and a
-        #   playhead that advances at 2.25x are almost certainly the same
-        #   defect seen twice, so it is tracked under #637 rather than given a
-        #   second issue.
+        #   - `double-click loads deck 1 and deck 2 with a real worklet`:
+        #     "AudioContext did not enter running state; current state is
+        #     interrupted" (run 33457566974 attempt 3). The PulseAudio null
+        #     sink reduced this but did not eliminate it. Tracked in #680.
+        #   - `the wave row exposes the decoded duration of the loaded audio`:
+        #     "deck 1 did not land a seek to 0ms: position 12255ms of 60000ms"
+        #     (run 33456706346). Tracked in #637 with the 2.25x playhead rate,
+        #     which looks like the same projection defect seen twice.
         #
-        #   The suite is `describe.configure({ mode: 'serial' })`, so the first
-        #   of those failing also stopped the remaining 10 from running at all.
-        #   That is why the exclusion is a positive --grep of what is verified
-        #   green on the runner, rather than a --grep-invert of the bad titles
-        #   that would still let a mid-suite failure hide its successors.
+        #   Attempts 1, 2 and 3 of ONE re-run of ONE commit went pass, pass,
+        #   fail. That is the definition of a gate that waves rather than
+        #   bites, and a gate that fails at random gets muted, which is how
+        #   this repo ended up with an unenforced merge-gate clause at all.
+        #   Shipping a flaky blocking gate to fix an absent one is a bad trade.
         #
-        # The FULL suite, those four included, runs nightly in the extended
-        # job below, where the failure stays visible and red. This subset is
-        # the blocking floor, not the ceiling: when #637 is understood the
-        # right end state is the whole suite blocking and this --grep deleted.
+        # WHAT THIS STILL BUYS, which is not nothing and is still WEBKIT:
+        # setup-entry-points has passed 10/10 on all 5 runs. It drives the
+        # PRODUCTION build served by the ENGINE under webkit, so it gates the
+        # artifact boot path, the settings accelerator surviving the production
+        # transform, and the build identity chip. It does NOT gate the audio
+        # worklet path. That limit is real and is stated in the PR body rather
+        # than papered over.
+        #
+        # The FULL 23-test suite runs nightly in the extended job, so every
+        # quarantined test stays visible and red. Quarantined is not unwatched,
+        # and the end state once #637 and #680 are fixed is the whole suite
+        # blocking and this --grep deleted.
         run: |
           pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
-            --grep "setup entry points|double-click loads deck 1 and deck 2 with a real worklet|the wave row exposes the decoded duration of the loaded audio"
+            --grep "setup entry points"
 
       # -- TIER 1b: hermetic chromium suites ----------------------------------
       # These run as steps in THIS job rather than a job of their own on
