@@ -59,6 +59,7 @@ from apps.engine_core.jobs.runner import (
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.setup.api import router as setup_router
+from apps.engine_core.update_channel import add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
@@ -151,6 +152,12 @@ def create_app(
     add_build_info_route(
         app, environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
     )
+    # The update channel, mounted AFTER build-info because it reads the
+    # identity that route resolves onto app.state. It reports only: applying
+    # an update is the desktop shell's Tauri updater, which owns signature
+    # verification. Here so an agent and a browser tab can ask the same
+    # question the shell's button asks.
+    add_update_check_route(app)
 
     _drop_root_placeholder(app)
     _mount_spa(app)

@@ -207,7 +207,17 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
 }
 
 fn main() {
-    let builder = tauri::Builder::default();
+    // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
+    // debug, so a developer build cannot silently lack the surface a shipped
+    // one has. The plugin owns the whole apply path -- fetch, minisign verify
+    // against `plugins.updater.pubkey`, swap the bundle -- because signature
+    // verification must not be separable from installation. The engine's
+    // /api/v1/update/check answers the same question for agents and for a
+    // browser tab, and reads the SAME endpoint constant; see docs/auto-update.md
+    // for why the check is duplicated rather than shared.
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
 
     // DEBUG BUILDS ONLY. The dependency itself is gated on cfg(debug_assertions)
     // in Cargo.toml, so a release build cannot compile this line in at all.

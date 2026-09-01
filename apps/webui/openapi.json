@@ -9225,6 +9225,127 @@
         "title": "UiPrefsPatch",
         "type": "object"
       },
+      "UpdateCheckOut": {
+        "description": "What the UI and any agent read.\n\n``applies_via`` is stated because the answer and the action come from\ndifferent components: this route answers, and the Tauri updater inside\nthe desktop shell is what can act. A browser tab can learn an update\nexists and cannot install it, and saying so beats a dead button.",
+        "properties": {
+          "applies_via": {
+            "default": "the desktop shell's Tauri updater; this endpoint only reports",
+            "title": "Applies Via",
+            "type": "string"
+          },
+          "available_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Version"
+          },
+          "current_built_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Built At Utc"
+          },
+          "current_git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Git Sha"
+          },
+          "current_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Version"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "endpoint": {
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "platform_key": {
+            "title": "Platform Key",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "same_version_different_build": {
+            "default": false,
+            "title": "Same Version Different Build",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "update-available",
+              "up-to-date",
+              "ahead-of-channel",
+              "endpoint-unreachable",
+              "endpoint-refused",
+              "manifest-malformed",
+              "platform-unsupported",
+              "identity-unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "endpoint",
+          "platform_key"
+        ],
+        "title": "UpdateCheckOut",
+        "type": "object"
+      },
       "UploadFileResult": {
         "properties": {
           "duplicate_of": {
@@ -16383,6 +16504,30 @@
         "summary": "Put Ui Prefs",
         "tags": [
           "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/update/check": {
+      "get": {
+        "operationId": "update_check_api_v1_update_check_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "502": {
+            "description": "the update channel could not be read"
+          }
+        },
+        "summary": "Update Check",
+        "tags": [
+          "health"
         ]
       }
     },

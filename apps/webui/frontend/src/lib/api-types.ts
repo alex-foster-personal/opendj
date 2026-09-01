@@ -2404,6 +2404,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/update/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Check */
+        get: operations["update_check_api_v1_update_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/usb-export/apply": {
         parameters: {
             query?: never;
@@ -5886,6 +5903,50 @@ export interface components {
             hide_todo_settings?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /**
+         * UpdateCheckOut
+         * @description What the UI and any agent read.
+         *
+         *     ``applies_via`` is stated because the answer and the action come from
+         *     different components: this route answers, and the Tauri updater inside
+         *     the desktop shell is what can act. A browser tab can learn an update
+         *     exists and cannot install it, and saying so beats a dead button.
+         */
+        UpdateCheckOut: {
+            /**
+             * Applies Via
+             * @default the desktop shell's Tauri updater; this endpoint only reports
+             */
+            applies_via: string;
+            /** Available Version */
+            available_version?: string | null;
+            /** Current Built At Utc */
+            current_built_at_utc?: string | null;
+            /** Current Git Sha */
+            current_git_sha?: string | null;
+            /** Current Version */
+            current_version?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Endpoint */
+            endpoint: string;
+            /** Notes */
+            notes?: string | null;
+            /** Platform Key */
+            platform_key: string;
+            /** Published At */
+            published_at?: string | null;
+            /**
+             * Same Version Different Build
+             * @default false
+             */
+            same_version_different_build: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "update-available" | "up-to-date" | "ahead-of-channel" | "endpoint-unreachable" | "endpoint-refused" | "manifest-malformed" | "platform-unsupported" | "identity-unavailable";
         };
         /** UploadFileResult */
         UploadFileResult: {
@@ -10625,6 +10686,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    update_check_api_v1_update_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateCheckOut"];
+                };
+            };
+            /** @description the update channel could not be read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

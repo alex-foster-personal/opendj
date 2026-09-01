@@ -50,6 +50,14 @@
 		type SideState
 	} from '$lib/rb/build-identity';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import {
+		applyUpdate,
+		canApplyHere,
+		fetchUpdateCheck,
+		summarizeUpdate,
+		type ApplyProgress,
+		type UpdateState
+	} from '$lib/rb/update-channel';
 
 	// The shell stamp is synchronous: it was injected before any script ran.
 	const shell: SideState<ShellStamp> = readShellBuild();
@@ -65,6 +73,61 @@
 	/** Where this app lives. Read once at mount, for the same reason the build
 	 * identity is: it does not change while the page is open. */
 	let engineUrl = $state<EngineUrl>({ kind: 'fault', reason: 'not resolved yet' });
+
+	// ----- the update channel ---------------------------------------------
+	// Checked once at mount, UNLIKE the build identity, because the answer can
+	// change while the window is open: somebody publishes a release and this
+	// build stops being current without anything here changing. Re-checked only
+	// on request, so an idle app is not polling a release host all night.
+	let update = $state<UpdateState>({ kind: 'idle' });
+	/** Progress of an install in flight, or null when none is. */
+	let applying = $state<ApplyProgress | null>(null);
+	/** The outcome of the last install attempt. Success or failure, never blank. */
+	let applyNote = $state<string | null>(null);
+
+	const updateSummary = $derived(summarizeUpdate(update));
+	/** Only the desktop shell has an installer. A browser tab is told so. */
+	const installable = $derived(
+		update.kind === 'ok' && update.value.status === 'update-available'
+	);
+
+	async function checkForUpdates(): Promise<void> {
+		update = { kind: 'checking' };
+		update = await fetchUpdateCheck();
+	}
+
+	/**
+	 * Install and restart. Everything the updater refuses -- an unverifiable
+	 * signature, a 404 endpoint, a bundle macOS will not replace -- lands in
+	 * applyNote verbatim. There is no silent retry and no swallowed failure:
+	 * an update that did not happen must never look like one that did.
+	 */
+	async function installUpdate(): Promise<void> {
+		applyNote = null;
+		const outcome = await applyUpdate((progress) => (applying = progress));
+		applying = null;
+		if (outcome.kind === 'installed') {
+			applyNote = 'installed; restarting';
+		} else if (outcome.kind === 'no-update') {
+			applyNote = 'the updater found nothing to install; re-checking is the next step';
+			void checkForUpdates();
+		} else {
+			applyNote = `update refused: ${outcome.reason}`;
+		}
+	}
+
+	function describeApplying(progress: ApplyProgress): string {
+		if (progress.phase === 'downloading') {
+			const total = progress.total;
+			const pct = total === null ? null : Math.round((progress.received / total) * 100);
+			return pct === null ? 'downloading...' : `downloading ${pct}%`;
+		} else if (progress.phase === 'checking') {
+			return 'verifying the channel...';
+		} else if (progress.phase === 'installing') {
+			return 'installing...';
+		}
+		return 'restarting...';
+	}
 
 	/** The lane this artifact was built as, or the fact that it has none. */
 	const lane = $derived(engine.kind === 'ok' ? (engine.value.lane_label ?? 'unlabelled') : '?');
@@ -113,6 +176,10 @@
 		// The address is synchronous and the tray's foldout shows it, so it
 		// stays at mount.
 		engineUrl = engineBaseUrl();
+		// One check at startup. An indicator that only appears after somebody
+		// clicks is not an indicator, and the failure this whole readout exists
+		// to prevent is running a stale build without noticing.
+		void checkForUpdates();
 	});
 </script>
 
@@ -144,6 +211,13 @@
 		</span>
 		{#if drift === 'drifted'}
 			<span class="drift" title={driftTitle}>SHELL DRIFT</span>
+		{/if}
+		<!-- The update indicator. Only the states worth interrupting a glance
+		     appear here (an available update, and a channel that could not be
+		     read); "up to date" is not news and stays in the foldout. A span,
+		     not a button: this sits inside the summary button already. -->
+		{#if updateSummary !== null && updateSummary.prominent}
+			<span class="update-badge" title={updateSummary.title}>{updateSummary.label}</span>
 		{/if}
 		{#if engineStamp !== null}
 			<span
@@ -200,6 +274,61 @@
 					{/if}
 				{:else}
 					<span class="reason">{engineUrl.reason}</span>
+				{/if}
+			</dd>
+
+			<dt
+				title="The auto-update channel. Asking is plain HTTP to the engine, so it works here and in a browser; installing is the desktop shell's Tauri updater, which verifies the package signature. The same question over a CLI: python -m apps.engine_core.update_channel check"
+			>
+				update
+			</dt>
+			<dd>
+				<span class="url-row">
+					<button
+						type="button"
+						class="copy"
+						onclick={() => void checkForUpdates()}
+						disabled={update.kind === 'checking' || applying !== null}
+						title="Ask the update channel what it is offering, now."
+					>
+						{update.kind === 'checking' ? 'checking...' : 'check for updates'}
+					</button>
+					{#if installable && canApplyHere()}
+						<button
+							type="button"
+							class="copy install"
+							onclick={() => void installUpdate()}
+							disabled={applying !== null}
+							title={`Download, verify and install ${update.kind === 'ok' ? update.value.available_version : ''}, then restart. The package signature is verified by the desktop shell against its compiled-in public key; a package that does not verify is refused.`}
+						>
+							{applying === null ? 'install and restart' : describeApplying(applying)}
+						</button>
+					{/if}
+				</span>
+				{#if updateSummary !== null}
+					<span
+						class="meta"
+						class:reason={updateSummary.prominent}
+						title={updateSummary.title}
+					>
+						{updateSummary.label}
+					</span>
+				{/if}
+				{#if update.kind === 'ok' && update.value.status === 'update-available' && !canApplyHere()}
+					<span
+						class="meta"
+						title="Applying an update replaces the installed .app bundle, which only the desktop shell can do. This page is running in a browser."
+					>
+						open the desktop app to install it
+					</span>
+				{/if}
+				{#if update.kind === 'fault'}
+					<span class="reason">{update.reason}</span>
+				{/if}
+				{#if applyNote !== null}
+					<span class="meta" class:reason={applyNote !== 'installed; restarting'}>
+						{applyNote}
+					</span>
 				{/if}
 			</dd>
 
@@ -278,9 +407,21 @@
 	/* A dirty or drifted build must not be able to pass for a clean one at a
 	   glance, so these are the only two colours in the readout. */
 	.dirty,
-	.drift {
+	.drift,
+	.update-badge {
 		font-weight: 700;
 		color: #e0b341;
+	}
+	/* The one control that is an ACTION rather than a readout, so it is the
+	   one thing in this component that carries the accent colour. */
+	.copy.install {
+		color: var(--accent, #d97757);
+		border-color: currentColor;
+		font-weight: 700;
+	}
+	.copy:disabled {
+		opacity: 0.55;
+		cursor: default;
 	}
 	.build-identity.drifted .summary,
 	.build-identity.fault .summary {

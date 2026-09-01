@@ -11,7 +11,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg"],
+    "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
     "publisher": "open-dj",
     "category": "Music",
@@ -22,6 +23,14 @@
     },
     "macOS": {
       "minimumSystemVersion": "11.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/maintainer/music-dj-tools/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1Q0RDQjZDRkEzQzIxQ0QKUldUTklUejZiTXZONVpUM3J5OVJWdkxCUlBINC9DQ1BMN0lCMU50WEt4K1E1OHNFZkVPUFg4dmQK"
     }
   }
 }

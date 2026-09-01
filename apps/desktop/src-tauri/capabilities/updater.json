@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "The auto-update channel, granted to the bootstrap page AND to the bundled engine's loopback origin. The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below the check-for-updates control would be inert in the shipped app. The port is OS-assigned per launch (engine::free_loopback_port), which is why the pattern wildcards it rather than naming one. Scope and risk are documented in docs/auto-update.md -- read that before widening this.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
+  },
+  "permissions": ["updater:default", "process:allow-restart"]
+}

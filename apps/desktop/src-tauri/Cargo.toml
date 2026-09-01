@@ -25,6 +25,17 @@ libc = "0.2"
 # exact outcome the bundled-engine work exists to remove. default-features
 # off keeps the Linux-only portal/gtk backends out of the build.
 rfd = { version = "0.15", default-features = false }
+# The auto-update channel. The plugin is the ONLY component that can apply an
+# update: it re-fetches the manifest itself, verifies the minisign signature
+# against `plugins.updater.pubkey`, and swaps the .app bundle. The engine's
+# /api/v1/update/check is deliberately NOT wired into it -- a check that handed
+# the installer a pre-parsed manifest would move signature verification out of
+# the component that owns it.
+tauri-plugin-updater = "2"
+# `check()` reports a newer version; something has to restart into it. Exposed
+# through the same capability as the updater so the apply path is one grant,
+# not two.
+tauri-plugin-process = "2"
 
 # DEBUG BUILDS ONLY, and deliberately expressed as a cfg-gated DEPENDENCY
 # rather than a Cargo feature: this crate serves an unauthenticated W3C
