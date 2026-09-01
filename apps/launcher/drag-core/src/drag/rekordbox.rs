@@ -299,19 +299,24 @@ pub(crate) fn file_path_to_rb_location(path: &str) -> String {
     if path.starts_with("file://") {
         return path.to_string();
     }
-    let normalized = path.replace('\\', "/");
-    let has_windows_drive = normalized.as_bytes().get(1) == Some(&b':')
-        && normalized
-            .as_bytes()
+    let path_bytes = path.as_bytes();
+    let has_windows_drive = path_bytes.get(1) == Some(&b':')
+        && path_bytes
             .first()
-            .is_some_and(u8::is_ascii_alphabetic);
+            .is_some_and(u8::is_ascii_alphabetic)
+        && (path_bytes.get(2) == Some(&b'\\') || path_bytes.get(2) == Some(&b'/'));
+    let normalized = if has_windows_drive {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
     let mut out = String::with_capacity(normalized.len() + 17);
     out.push_str("file://localhost");
     if has_windows_drive {
         out.push('/');
     }
-    for &b in normalized.as_bytes() {
-        if is_rb_location_unreserved(b) {
+    for (index, &b) in normalized.as_bytes().iter().enumerate() {
+        if is_rb_location_unreserved(b) || (has_windows_drive && index == 1 && b == b':') {
             out.push(b as char);
         } else {
             // Hex-escape the byte. Matches percent-encoding's
@@ -326,8 +331,7 @@ pub(crate) fn file_path_to_rb_location(path: &str) -> String {
 }
 
 /// Bytes that are safe to leave literal inside a Rekordbox Location URL.
-/// Equivalent to RFC 3986 `unreserved` plus `/` and `:` (path separators and
-/// Windows drive separators stay raw).
+/// Equivalent to RFC 3986 `unreserved` plus `/` (path separators stay raw).
 #[inline]
 fn is_rb_location_unreserved(b: u8) -> bool {
     matches!(
@@ -336,7 +340,6 @@ fn is_rb_location_unreserved(b: u8) -> bool {
             | b'a'..=b'z'
             | b'0'..=b'9'
             | b'/'
-            | b':'
             | b'-'
             | b'.'
             | b'_'
@@ -532,6 +535,22 @@ mod rekordbox_tests {
         assert_eq!(
             file_path_to_rb_location(r"C:\Users\dj\Music\My Track.mp3"),
             "file://localhost/C:/Users/dj/Music/My%20Track.mp3"
+        );
+    }
+
+    #[test]
+    fn file_path_to_rb_location_preserves_posix_backslashes() {
+        assert_eq!(
+            file_path_to_rb_location(r"/Music/AC\DC.mp3"),
+            "file://localhost/Music/AC%5CDC.mp3"
+        );
+    }
+
+    #[test]
+    fn file_path_to_rb_location_encodes_posix_colons() {
+        assert_eq!(
+            file_path_to_rb_location("/Music/A:C.mp3"),
+            "file://localhost/Music/A%3AC.mp3"
         );
     }
 
