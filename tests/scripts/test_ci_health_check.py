@@ -23,6 +23,8 @@ from scripts import ci_health_check as mod
 from scripts.ci_health_core import (
     EXCLUDED_RUN_EVENTS,
     EXIT_ITERATION_SPEED,
+    EXIT_TRUNK_UNVERIFIED,
+    Job,
     _parse_github_timestamp,
 )
 
@@ -36,6 +38,7 @@ def _run(
     conclusion: str,
     branch: str = "main",
     event: str = "push",
+    head_sha: str = "0" * 40,
 ) -> mod.Run:
     started = NOW - timedelta(minutes=age_minutes)
     return mod.Run(
@@ -43,6 +46,7 @@ def _run(
         name="CI",
         event=event,
         head_branch=branch,
+        head_sha=head_sha,
         conclusion=conclusion,
         started_at=started,
         updated_at=started + timedelta(seconds=duration_seconds),
@@ -277,3 +281,83 @@ def test_iteration_speed_is_the_least_severe_failure():
     ]
     assert mod._resolve_exit_code(results) == mod.EXIT_BILLING
     assert EXIT_ITERATION_SPEED > mod.EXIT_STALENESS
+
+
+# ----- R6 trunk-verified -------------------------------------------------------------
+#
+# These cover the two states that look identical downstream and are not: a trunk head
+# whose jobs PASSED, and a trunk head whose jobs never ran. Both present as "not red".
+
+
+def _job(name: str, conclusion: str):
+    return Job(job_id=abs(hash(name)) % 10_000, name=name, conclusion=conclusion)
+
+
+def _trunk_run(conclusion: str = "success"):
+    return _run(age_minutes=1, duration_seconds=300, conclusion=conclusion)
+
+
+def test_trunk_verified_passes_when_every_job_concluded_success(monkeypatch):
+    """If a trunk head has all jobs green and this still alarms then it is crying wolf."""
+    monkeypatch.setattr(
+        mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success"), _job("ui", "success")]
+    )
+    result = mod._check_trunk_verified([_trunk_run()], "main")
+    assert result.ok
+    assert result.classification == "healthy"
+
+
+def test_trunk_verified_treats_skipped_as_passing(monkeypatch):
+    """If a path-filtered job counts as unverified then every docs-only merge alarms."""
+    monkeypatch.setattr(
+        mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success"), _job("deploy", "skipped")]
+    )
+    assert mod._check_trunk_verified([_trunk_run()], "main").ok
+
+
+def test_trunk_verified_catches_jobs_that_never_executed(monkeypatch):
+    """If a cancelled job reads as green then a merge burst silently leaves trunk unverified.
+
+    This is the Mon 31 Aug 2026 case: the run itself did not fail, so nothing was red.
+    """
+    monkeypatch.setattr(
+        mod,
+        "fetch_run_jobs",
+        lambda run_id: [_job("ratchet", "success"), _job("pytest fast lane", "cancelled")],
+    )
+    result = mod._check_trunk_verified([_trunk_run(conclusion="cancelled")], "main")
+    assert not result.ok
+    assert result.classification == "trunk-unverified"
+    assert "pytest fast lane" in result.detail
+    assert result.exit_code == EXIT_TRUNK_UNVERIFIED
+
+
+def test_trunk_verified_catches_a_failed_job_inside_a_cancelled_run(monkeypatch):
+    """If only the run conclusion is read then a real red hides inside a cancelled run.
+
+    This is the 5f7466d3 case: the ratchet genuinely reported failure and went unseen for
+    hours because the run's own top line said 'cancelled'.
+    """
+    monkeypatch.setattr(
+        mod, "fetch_run_jobs", lambda run_id: [_job("quality ratchet", "failure")]
+    )
+    result = mod._check_trunk_verified([_trunk_run(conclusion="cancelled")], "main")
+    assert not result.ok
+    assert result.classification == "trunk-failed"
+    assert "quality ratchet" in result.detail
+
+
+def test_trunk_verified_alarms_when_the_gating_workflow_is_absent():
+    """If a missing gating workflow passes quietly then the check cannot ever fail."""
+    result = mod._check_trunk_verified([], "main")
+    assert not result.ok
+    assert result.classification == "insufficient-data"
+
+
+def test_trunk_verified_ignores_pull_request_runs(monkeypatch):
+    """If PR runs count as trunk then a green PR masks an unverified main."""
+    monkeypatch.setattr(mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success")])
+    pr_only = [
+        _run(age_minutes=1, duration_seconds=300, conclusion="success", event="pull_request")
+    ]
+    assert mod._check_trunk_verified(pr_only, "main").classification == "insufficient-data"

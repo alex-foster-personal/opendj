@@ -15,7 +15,13 @@ on:
 
 concurrency:
   group: release-check-${{ github.ref }}
-  cancel-in-progress: true
+  # Trunk verification is never cancellable. Every ref-grouped workflow shares one
+  # concurrency group per branch, so on main a merge burst cancelled its predecessors
+  # and left heads with jobs that never executed (Mon 31 Aug 2026: six merges in 25s
+  # left main with no completed pytest or frontend job, while nothing reported a
+  # problem, because a cancelled job is not a failed one). Feature branches and pull
+  # requests still cancel, which is where the runner savings actually come from.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   release-check:

@@ -35,6 +35,7 @@ def _run(
     conclusion: str,
     branch: str = "main",
     event: str = "push",
+    head_sha: str = "0" * 40,
 ) -> mod.Run:
     started = NOW - timedelta(minutes=age_minutes)
     return mod.Run(
@@ -42,6 +43,7 @@ def _run(
         name="CI",
         event=event,
         head_branch=branch,
+        head_sha=head_sha,
         conclusion=conclusion,
         started_at=started,
         updated_at=started + timedelta(seconds=duration_seconds),

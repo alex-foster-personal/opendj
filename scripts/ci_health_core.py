@@ -36,6 +36,7 @@ EXIT_TRIGGER_DRIFT = 3
 EXIT_FAILURE_RATE = 4
 EXIT_STALENESS = 5
 EXIT_ITERATION_SPEED = 6
+EXIT_TRUNK_UNVERIFIED = 7
 EXIT_PRECONDITION = 10
 
 STALENESS_REMEDIATION = (
@@ -63,6 +64,7 @@ class Run:
     name: str
     event: str
     head_branch: str
+    head_sha: str
     conclusion: str
     started_at: datetime
     updated_at: datetime
@@ -172,6 +174,7 @@ def _parse_completed_runs(payload: object) -> list[Run]:
                 name=str(item["name"]),
                 event=event,
                 head_branch=str(item["head_branch"]),
+                head_sha=str(item["head_sha"]),
                 conclusion=str(item["conclusion"]),
                 started_at=_parse_github_timestamp(
                     item["run_started_at"], "run_started_at", run_id
@@ -180,3 +183,51 @@ def _parse_completed_runs(payload: object) -> list[Run]:
             )
         )
     return runs
+
+
+# ----- actions/runs/{id}/jobs ------------------------------------------------------
+
+# A job that never executed is not a job that passed, and the two are indistinguishable
+# downstream unless something says so out loud. `cancelled` is the one that misleads: it
+# reads as benign, nothing alerts on it, and `gh run watch --exit-status` even returns 1
+# for it, so the same state scans as fine from one angle and as a hard failure from
+# another. `null` is a job the run never got to at all.
+NON_EXECUTING_CONCLUSIONS = ("cancelled", "null", "None", "")
+
+
+@dataclass
+class Job:
+    """One job of a workflow run, reduced to what a trunk-coverage verdict needs."""
+
+    job_id: int
+    name: str
+    conclusion: str
+
+    @property
+    def passed(self) -> bool:
+        # 'skipped' counts as passing: a path-filtered job legitimately has nothing to do,
+        # which is different from a job that had work and did not run it.
+        return self.conclusion in ("success", "skipped")
+
+    @property
+    def never_executed(self) -> bool:
+        return self.conclusion in NON_EXECUTING_CONCLUSIONS
+
+    @property
+    def failed(self) -> bool:
+        return self.conclusion == "failure"
+
+
+def fetch_run_jobs(run_id: int) -> list[Job]:
+    """Every job of one run. Raises rather than returning an empty list on a bad body."""
+    payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100")
+    if not isinstance(payload, dict) or "jobs" not in payload:
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response has no jobs key")
+    return [
+        Job(
+            job_id=int(item["id"]),
+            name=str(item["name"]),
+            conclusion=str(item.get("conclusion")),
+        )
+        for item in payload["jobs"]
+    ]
