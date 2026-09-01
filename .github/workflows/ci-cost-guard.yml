@@ -6,18 +6,46 @@ on:
     # Linux job that has never approached any threshold, and pricing it
     # doubled the guard's own run count for no signal. The cumulative view
     # in ci-budget-watch.yml covers every workflow, this one included.
-    # E2E added Mon 1 Sep 2026 with the workflow itself: it is the most
-    # expensive per-PR addition in a while (browser downloads plus a real
-    # engine boot), so it is exactly the kind of run that should be priced
-    # rather than trusted to stay cheap.
+    # Full CI was removed Tue 1 Sep 2026 on arithmetic, not preference. This
+    # guard alerts ABOVE $0.30. A workflow whose own timeouts cap it below that
+    # can never trip it, so pricing it buys one billed minute per run and zero
+    # possible signal. Windows Parity was removed the same day and is BACK: the
+    # row below priced it at exactly $0.30 by treating its timeout as an exact
+    # billed duration, but production bills whole ceiling-minutes, so a run
+    # cancelled at the 30-minute timeout bills 31 and DOES trip. Ceilings below
+    # now carry that extra minute per job:
+    #
+    #   Release Check    30 Linux + 20 macOS = $1.49  CAN trip
+    #   macOS Packaging  16 macOS min        = $1.05  CAN trip
+    #   E2E              30 + 45 Linux min   = $0.46  CAN trip (see below)
+    #   CI               20+15+20 Linux min  = $0.35  CAN trip
+    #   Windows Parity   30 Windows min      = $0.31  CAN trip on cancellation
+    #   Full CI          20 Linux min        = $0.13  cannot, ever
+    #
+    # THAT TABLE IS NO LONGER LOAD-BEARING. It is a reader's convenience, and
+    # the same table one revision ago was wrong: it priced E2E at one 30-minute
+    # job when the workflow has two, the second being the 45-minute nightly
+    # extended suite, so a scheduled run's ceiling is $0.45 and DOES trip. The
+    # arithmetic is now derived from the workflow files themselves and enforced
+    # by test_every_workflow_that_can_trip_the_guard_is_watched, which fails if
+    # any workflow's own ceiling exceeds the threshold below while its name is
+    # missing from this list. Codex found the E2E row on #713.
+    #
+    # E2E stays watched but is priced only on the events that can reach that
+    # ceiling. Its `extended` job is gated on schedule / workflow_dispatch, so
+    # a push or pull_request run is the 30-minute gate alone at $0.18 and
+    # cannot trip. Pricing those bought 94 billed minutes on 1 Sep, 4.7% of the
+    # monthly allowance, to answer a question whose answer was fixed at 'no'.
+    # The job-level `if` below drops exactly those runs and keeps the ones that
+    # can alert. That gating is itself pinned by a test, because it is the
+    # assumption the skip rests on.
     workflows:
       [
         CI,
         E2E,
         Release Check,
-        Windows Parity (on-demand),
-        Full CI (on-demand),
         macOS Packaging,
+        Windows Parity (on-demand),
       ]
     types: [completed]
 
@@ -36,6 +64,14 @@ concurrency:
 jobs:
   assess:
     name: Price completed workflow run
+    # Skip only the E2E runs that provably cannot trip: without the schedule or
+    # a manual dispatch its 45-minute `extended` job does not run at all, so the
+    # ceiling is the 30-minute gate, $0.18. Every other watched workflow is
+    # priced on every event.
+    if: >-
+      github.event.workflow_run.name != 'E2E'
+      || github.event.workflow_run.event == 'schedule'
+      || github.event.workflow_run.event == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

@@ -1,4 +1,12 @@
+import re
+from pathlib import Path
+
+import yaml
+
 from scripts.ci_cost_guard import infer_standard_sku, price_jobs, render_markdown
+
+WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
 
 
 def _job(name, labels, start, end, *, steps=None):
@@ -87,3 +95,240 @@ def test_report_flags_strictly_greater_than_one_dollar_and_lists_steps():
     assert "**$1.080**" in report
     assert "runaway" in report
     assert "test" in report
+
+
+# ----- the guard's own registration, derived rather than asserted ------------
+
+
+def _workflows() -> dict[str, dict]:
+    """Every workflow definition on disk, keyed by the `name:` the guard sees.
+
+    Both suffixes GitHub will execute, not just `.yml`: Codex pointed out on
+    #713 that a `.yaml` workflow whose ceiling exceeds the threshold stays
+    absent from the watch list while the repository-wide assertion below still
+    passes, because the glob never loads it.
+    """
+
+    out: dict[str, dict] = {}
+    seen: dict[str, Path] = {}
+    for path in sorted(p for pat in ("*.yml", "*.yaml") for p in WORKFLOW_DIR.glob(pat)):
+        doc = yaml.safe_load(path.read_text())
+        name = doc.get("name", path.stem)
+        # Refuse a collision rather than let the later file win. GitHub happily
+        # runs two workflows sharing a `name:`, and this dict keys on the name
+        # the guard sees, so a silent overwrite prices only one of them: an
+        # expensive definition can be hidden behind a cheap namesake and the
+        # shared name left off the watch list with everything still green.
+        # Reachable because the glob above deliberately reads BOTH suffixes.
+        assert name not in seen, (
+            f"{path.name} and {seen[name].name} both declare `name: {name}`, so "
+            "pricing one of them silently drops the other. Rename one, or price "
+            "every document per name."
+        )
+        seen[name] = path
+        out[name] = doc
+    return out
+
+
+def _ceiling_usd(doc: dict) -> float:
+    """Worst-case cost of one run: EVERY job at its own timeout.
+
+    Every job, including ones behind an `if`, because a ceiling that ignores a
+    conditional job is exactly the mistake this test exists to catch: the
+    guard's comment priced E2E at its 30-minute gate and missed the 45-minute
+    nightly `extended` job sitting beside it.
+
+    Priced through the production `infer_standard_sku`, so a runner the guard
+    could not price is a runner this cannot price either, and the missing
+    number fails the test instead of quietly reading as cheap.
+    """
+    return sum(_job_ceiling_usd(i, j) for i, j in (doc.get("jobs") or {}).items())
+
+
+def _job_ceiling_usd(job_id: str, job: dict) -> float:
+    """One job's worst-case cost, priced through the guard's own SKU table."""
+    assert "strategy" not in job, (
+        f"{job_id} has a matrix; one job no longer means one billed run "
+        "and this ceiling would understate it"
+    )
+    timeout = job.get("timeout-minutes")
+    assert isinstance(timeout, int), (
+        f"{job_id} has no explicit timeout-minutes, so its ceiling is "
+        "GitHub's 360-minute default and this arithmetic is meaningless"
+    )
+    runs_on = job.get("runs-on")
+    labels = [runs_on] if isinstance(runs_on, str) else list(runs_on or [])
+    sku = infer_standard_sku(labels)
+    assert sku is not None, f"{job_id} runs on {labels}, which has no known rate"
+    # One billed minute MORE than the timeout, because that is what production
+    # would charge. `price_jobs` bills `max(1, math.ceil(seconds / 60))`, so a
+    # job cancelled at a 30-minute timeout whose recorded duration runs even
+    # fractionally past the mark bills 31 minutes, not 30. Treating the timeout
+    # as an exact billed ceiling understates every workflow by up to one minute,
+    # and a workflow sitting exactly ON the threshold is then classified as
+    # unable to trip and dropped from the watch list. Codex found this on #713:
+    # Windows Parity priced at exactly $0.30 against a `> $0.30` alert.
+    return (timeout + 1) * sku.rate_usd_per_minute
+
+
+def _guard_threshold() -> float:
+    match = re.search(r"--threshold\s+([0-9.]+)", GUARD.read_text())
+    assert match, "the guard no longer passes --threshold; this test cannot measure"
+    return float(match.group(1))
+
+
+def test_every_workflow_that_can_trip_the_guard_is_watched() -> None:
+    """The registration list is a claim about arithmetic, so check the arithmetic.
+
+    A workflow whose own timeouts cap it below the threshold can never alert,
+    and pricing it costs a billed minute per run for no signal - which is why
+    workflows get removed from the list. The failure mode is removing one that
+    CAN trip, and it has already happened once: E2E was dropped on a hand-written
+    table that counted one of its two jobs, so a nightly run with a $0.45 ceiling
+    lost its per-run alert. Codex caught it on #713 by reading the workflow.
+
+    Nothing here trusts that table. Each ceiling is recomputed from the workflow
+    files through the guard's own pricing, so the next edit to a timeout, a
+    runner label, or a job list is checked rather than remembered.
+    """
+    threshold = _guard_threshold()
+    watched = set(yaml.safe_load(GUARD.read_text())[True]["workflow_run"]["workflows"])
+
+    can_trip = {n: c for n, d in _workflows().items() if (c := _ceiling_usd(d)) > threshold}
+    assert can_trip, (
+        "no workflow can reach the threshold, so this test would pass against an "
+        "EMPTY watch list; the threshold or the pricing is wrong"
+    )
+
+    unwatched = {n: f"${c:.2f}" for n, c in can_trip.items() if n not in watched}
+    assert not unwatched, (
+        f"these workflows can exceed the ${threshold:.2f} alert on a single run "
+        f"and nothing prices them: {unwatched}"
+    )
+
+    # CONTROL on the assertion above: it has to be able to fail. If every
+    # workflow on disk could trip, "none unwatched" would be satisfied by a
+    # list naming all of them and would prove nothing about the arithmetic.
+    assert len(can_trip) < len(_workflows()), (
+        "every workflow can trip, so this test cannot distinguish a correct "
+        "list from an exhaustive one"
+    )
+
+
+def _event_set(condition: str, variable: str) -> set[str]:
+    """The event names `condition` admits. Fail-closed: EVERY disjunct counts.
+
+    Only one shape is accepted: a disjunction in which every clause is
+    `<variable> == \'<name>\'`. An earlier revision skipped past clauses that
+    did not mention `variable`, and Codex called that on #713: a disjunct like
+    `github.ref == \'refs/heads/main\'` admits every event the workflow
+    triggers on, including `push`, while the parser silently returned
+    `{\'schedule\'}` and the containment below still passed. A clause this
+    function cannot read may widen the set arbitrarily, so it must refuse
+    rather than skip - an uncomputable set returned as a small one satisfies
+    every containment, which is the failure it exists to prevent.
+    """
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    events: set[str] = set()
+    for clause in (c.strip() for c in stripped.split("||")):
+        match = re.fullmatch(rf"{re.escape(variable)} == \'([A-Za-z_]+)\'", clause)
+        assert match, (
+            f"cannot compute the event set: clause {clause!r} is not a "
+            f"`{variable} == \'<name>\'` comparison, so the events it admits "
+            f"are unknown and may be all of them. Widen the parser "
+            f"deliberately, or gate the job on event names only."
+        )
+        events.add(match.group(1))
+    return events
+
+
+def _e2e_priced_events(condition: str) -> set[str]:
+    """The events the guard prices FOR E2E, read from its `assess` gate.
+
+    The gate opens with `github.event.workflow_run.name != \'E2E\'`, which is
+    the escape hatch for every other workflow and is what makes the remaining
+    disjuncts E2E-specific. That one clause is matched exactly and removed;
+    everything after it goes through the strict parser above, so a fourth
+    disjunct of any other shape reddens this rather than being skipped.
+    """
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    escape = "github.event.workflow_run.name != \'E2E\'"
+    head, sep, tail = stripped.partition("||")
+    assert head.strip() == escape and sep, (
+        f"the guard\'s gate no longer opens with {escape!r}, so which of its "
+        f"clauses are E2E-specific can no longer be read: {condition}"
+    )
+    return _event_set(tail, "github.event.workflow_run.event")
+
+
+def _e2e_ceiling_on(event: str, doc: dict) -> float:
+    """What an E2E run triggered by `event` can cost at worst.
+
+    Every job that would run on that event, priced. A job with no `if` runs on
+    every trigger the workflow declares; a gated one runs only on the events
+    its condition admits, read by the fail-closed parser above.
+    """
+    total = 0.0
+    for job_id, job in doc["jobs"].items():
+        gate = job.get("if")
+        if gate is None or event in _event_set(gate, "github.event_name"):
+            total += _job_ceiling_usd(job_id, job)
+    return total
+
+
+def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
+    """The property the E2E skip actually rests on, not a proxy for it.
+
+    The guard prices E2E only on schedule and workflow_dispatch. That is safe
+    if and only if an E2E run on any OTHER trigger cannot reach the alert
+    threshold - so compute exactly that, per event, from the jobs that would
+    run on it. Codex pointed out on #713 that checking the shape of
+    `extended`'s gate leaves two ways to break the arithmetic without moving
+    the gate at all: raise the always-on `gate` job's timeout, or add a second
+    ungated job. Both are priced here.
+    """
+    condition = yaml.safe_load(GUARD.read_text())["jobs"]["assess"]["if"]
+    assert "E2E" in condition, (
+        "the guard's gate no longer special-cases E2E, so which events it "
+        "prices can no longer be read here. Skipping would be fail-open: a "
+        "gate generalized to event names only would leave costly push and "
+        "pull_request runs unpriced while this test reports green. Re-derive "
+        f"the arithmetic against the new gate instead: {condition}"
+    )
+
+    threshold = _guard_threshold()
+    doc = yaml.safe_load((WORKFLOW_DIR / "e2e.yml").read_text())
+    # `on:` is a YAML 1.1 boolean key, and its value may be a scalar, a list or
+    # a mapping. A scalar must be wrapped before it reaches set(): `on: push`
+    # would otherwise decompose into {'p','u','s','h'}, and a costly job gated
+    # on `github.event_name == 'push'` would be priced for four invented
+    # character events and never for the real one, with this test still green.
+    raw_on = doc[True] if True in doc else doc["on"]
+    triggers = {raw_on} if isinstance(raw_on, str) else set(raw_on)
+    priced = _e2e_priced_events(condition)
+
+    skipped = triggers - priced
+    assert skipped, (
+        f"the guard prices every event E2E triggers on ({sorted(triggers)}), "
+        "so there is no skip left for this test to be about"
+    )
+
+    too_expensive = {
+        event: f"${cost:.2f}"
+        for event in sorted(skipped)
+        if (cost := _e2e_ceiling_on(event, doc)) > threshold
+    }
+    assert not too_expensive, (
+        f"an E2E run on these events can exceed the ${threshold:.2f} alert and "
+        f"the guard walks past it: {too_expensive}"
+    )
+
+    # CONTROL, and the reason E2E is on the watch list at all: the events the
+    # guard DOES price must be able to trip it. Without this the test passes
+    # against an e2e.yml whose every job is trivially cheap, where the numbers
+    # are real but prove nothing about a threshold nothing can reach.
+    reachable = {e: _e2e_ceiling_on(e, doc) for e in sorted(priced)}
+    assert any(cost > threshold for cost in reachable.values()), (
+        f"no priced E2E event can reach ${threshold:.2f} ({reachable}), so this "
+        "test cannot tell a correct skip from an arithmetic that never bites"
+    )
