@@ -57,6 +57,82 @@ describe('auto-play remaining / trigger', () => {
 		assert.equal(shouldTriggerAutoPlay({ ...base, source_stable_id: null }), false);
 		assert.equal(shouldTriggerAutoPlay({ ...base, remaining_ms: null }), false);
 	});
+
+	it('scenario 19: the window clamps to duration/2 so a short track never arms at t=0', () => {
+		// Rule from the maintainer, Tue 1 Sep 2026. Before the clamp, a track shorter
+		// than the constant window was in-window the moment play started, so
+		// AutoPlay loaded the next track over its own first beat.
+		const { effectiveAutoPlayThresholdMs, AUTO_PLAY_THRESHOLD_MS } = mod;
+
+		// Long track: constant window unchanged.
+		assert.equal(effectiveAutoPlayThresholdMs(300_000), AUTO_PLAY_THRESHOLD_MS);
+		// Exactly 2x the constant window: the two rules meet, still 16s.
+		assert.equal(effectiveAutoPlayThresholdMs(32_000), AUTO_PLAY_THRESHOLD_MS);
+		// Short track: half the track, not the constant.
+		assert.equal(effectiveAutoPlayThresholdMs(12_000), 6_000);
+		// The incident shape: a 15s sting used to arm at t=0.
+		assert.equal(effectiveAutoPlayThresholdMs(15_000), 7_500);
+		// Unknown/degenerate durations must never trigger (scenario row 3).
+		assert.equal(effectiveAutoPlayThresholdMs(null), null);
+		assert.equal(effectiveAutoPlayThresholdMs(0), null);
+		assert.equal(effectiveAutoPlayThresholdMs(-5), null);
+		assert.equal(effectiveAutoPlayThresholdMs(Number.NaN), null);
+	});
+
+	it('scenario 19: composed - a 12s track triggers after 6s played, not at start', () => {
+		const { shouldTriggerAutoPlay, remainingMs, effectiveAutoPlayThresholdMs } = mod;
+		const duration = 12_000;
+		const windowMs = effectiveAutoPlayThresholdMs(duration);
+		const at = (position_ms) => ({
+			enabled: true,
+			remaining_ms: remainingMs(position_ms, duration),
+			threshold_ms: windowMs,
+			source_stable_id: 'sting',
+			already_triggered_for: null,
+			in_flight: false
+		});
+		assert.equal(shouldTriggerAutoPlay(at(0)), false, 'play start must not arm');
+		assert.equal(shouldTriggerAutoPlay(at(5_999)), false, 'first half must not arm');
+		assert.equal(shouldTriggerAutoPlay(at(6_000)), true, 'half played - window opens');
+		assert.equal(shouldTriggerAutoPlay(at(11_000)), true, 'still armed near the end');
+	});
+
+	it('duplicate stable_ids in the feed: playing one copy retires every copy', () => {
+		// The production library holds 785 paths that resolve to more than one
+		// row (found Tue 1 Sep 2026), so duplicate stable_ids in a published
+		// feed are a real input, not a hypothetical. The invariant: exclusion
+		// and played-history key on stable_id, so one played/excluded id must
+		// retire EVERY row carrying it - a duplicate row must never let the
+		// same track play twice.
+		const { pickNextStableId } = mod;
+		const playlist = [
+			{ stable_id: 'dup', key: '8A', bpm: 124, file_exists: true },
+			{ stable_id: 'dup', key: '8A', bpm: 124, file_exists: true },
+			{ stable_id: 'other', key: '8A', bpm: 126, file_exists: true }
+		];
+		const base = {
+			playlist,
+			current_stable_id: 'dup',
+			current_key: '8A',
+			current_bpm: 124,
+			exclude_ids: new Set(),
+			played_ids: new Set(['dup']),
+			enforce_play_order: false,
+			min_tempo_ratio: 0.84,
+			max_tempo_ratio: 1.16
+		};
+		assert.equal(pickNextStableId(base), 'other', 'the second dup row must not be picked');
+		assert.equal(
+			pickNextStableId({ ...base, played_ids: new Set(['dup', 'other']) }),
+			null,
+			'with both ids retired nothing is pickable, dup rows included'
+		);
+		assert.equal(
+			pickNextStableId({ ...base, enforce_play_order: true }),
+			'other',
+			'play-order mode skips the duplicate row the same way'
+		);
+	});
 });
 
 describe('auto-play deck pick', () => {

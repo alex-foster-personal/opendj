@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "why": "A pinned snapshot of the v5 schema, independent of today's MIGRATIONS. Building the historical input from the production migration list makes the fixture change whenever those entries are edited, so the test cannot detect the backward-compatibility regression it exists for: an accidental rewrite of migrations 1-5 would update both the code under test and its history together. Codex, #701.",
+  "files": {
+    "v5.sql": {
+      "sha256": "1d1a46ab63cf116774fc283900d353f94ae74ed88f993c4f7226d9df7865c267",
+      "bytes": 4807,
+      "schema_version": 5,
+      "pinned": "2026-09-01",
+      "pinned_from": "apps.shared.state.schema.MIGRATIONS[0:5] as of 865e282e",
+      "note": "sqlite3 iterdump of an empty database with migrations 1-5 applied, applied_at frozen at 2026-09-01T00:00:00+00:00 so the dump is byte-stable. IMMUTABLE from here: it is the v5 shape, not a view of the current migration list. If a future migration edit makes this dump wrong to replay, that is the regression the test exists to report, not a reason to regenerate it."
+    }
+  }
+}

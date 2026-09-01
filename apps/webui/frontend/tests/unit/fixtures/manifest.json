@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "why": "These blobs are evidence, so they are verified before they are parsed. A test that reads a fixture somebody edited takes its green light from a rewritten baseline rather than from a loader that still reads old state. Check version and sha256, fail closed on either.",
+  "provenance": "REAL CAPTURES, read out of this machine's Chrome Local Storage leveldb (Profile 2) on Tue 1 Sep 2026, one per origin the webui has run on. Each file is the exact string localStorage held, as production wrote it with a compact JSON.stringify: no reformatting, no trailing newline, so the file is byte-identical to what the browser stored. Version 1 of this manifest listed a single hand-built blob that claimed to be a build-605d5827 capture and was not - it was pretty-printed at 624 bytes against 511 for the same object compact, and had never been taken off a running build. Codex found it on #701 and it is gone.",
+  "immutable": "Never regenerate one of these to make a test pass. The whole point is that a blob written by an OLD build still loads. Add a new capture per release; never edit an existing one.",
+  "storage_key": "mdt.rb.ui-prefs.v1",
+  "captured": "2026-09-01",
+  "files": {
+    "prefs-blob-capture-6e8bf3c9.json": {
+      "sha256": "6e8bf3c947cdf857e531494b3530318d09ac8dbeda04bf6dae5c4580603109de",
+      "bytes": 243,
+      "keys": 8,
+      "origin": "http://127.0.0.1:5199",
+      "note": "OLDEST shape captured: 8 keys, written before auto_play_*, usb_* and last_playlist existed. The backward-compatibility case with teeth - a build that assumes any of those keys is present fails here."
+    },
+    "prefs-blob-capture-ea3349c1.json": {
+      "sha256": "ea3349c11b6a982a03be35b82d0281d091dcd6c98c1ce445e59328073e4f2b5d",
+      "bytes": 300,
+      "keys": 10,
+      "origin": "http://localhost:9418",
+      "note": "10 keys: auto_play_enabled and auto_play_enforce_order present, auto_play_maximize_reach not yet. The intermediate shape, so the ladder is not merely oldest-to-newest."
+    },
+    "prefs-blob-capture-28fe8192.json": {
+      "sha256": "28fe819211e9fa6c76629f951c5a985935a389dda224eba331c7714135ed338f",
+      "bytes": 484,
+      "keys": 15,
+      "origin": "http://127.0.0.1:8690",
+      "note": "15 keys, the full current shape including usb_* and last_playlist. Carries auto_play_enabled=true, the value the Tue 1 Sep 2026 incident turned on."
+    }
+  }
+}

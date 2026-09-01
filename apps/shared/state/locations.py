@@ -193,7 +193,14 @@ def list_locations(
         "SELECT location_id, machine_id, stable_id, kind, role, file_path, "
         "remote_url, venue_key, venue_rank, available, probed_at, "
         "content_hash FROM track_locations "
-        "WHERE stable_id = ? AND machine_id = ? ORDER BY created_at, location_id",
+        # `OR machine_id IS NULL` is load-bearing, not defensive breadth: a row
+        # that escaped the v6 backfill belongs to no machine, so an owner-only
+        # filter drops it SILENTLY and this accessor returns a short list that
+        # reads as a complete one. Selecting it lets _row_to_location refuse it
+        # with the runbook message, which is the behavior this module promises.
+        # Codex found the guard unreachable on #701.
+        "WHERE stable_id = ? AND (machine_id = ? OR machine_id IS NULL) "
+        "ORDER BY created_at, location_id",
         (stable_id, owner),
     ).fetchall()
     return [_row_to_location(row) for row in rows]

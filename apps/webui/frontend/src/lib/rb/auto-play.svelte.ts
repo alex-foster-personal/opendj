@@ -31,6 +31,7 @@ import {
 	autoPlayExcludedIds,
 	decideAutoPlayBeatSync,
 	decideMasterPromotion,
+	effectiveAutoPlayThresholdMs,
 	handoffFailureIsRetryable,
 	formatAutoPlaySyncSkipToast,
 	getAutoPlayFeedEpoch,
@@ -366,7 +367,10 @@ async function _tick(): Promise<void> {
 	_refreshChartedOrder(source, excludeIds);
 
 	const rem = remainingMs(source.position_ms, source.duration_ms);
-	if (rem !== null && rem > AUTO_PLAY_THRESHOLD_MS) {
+	// min(constant, duration/2): a track shorter than the constant window must
+	// not arm at t=0 (it used to load the next track over its own first beat).
+	const windowMs = effectiveAutoPlayThresholdMs(source.duration_ms);
+	if (rem !== null && windowMs !== null && rem > windowMs) {
 		// Seek back out of the window: allow a later re-arm for same track.
 		if (_triggeredFor === source.stable_id) _triggeredFor = null;
 		if (_waitingFollowerFor === source.stable_id) _waitingFollowerFor = null;
@@ -377,7 +381,7 @@ async function _tick(): Promise<void> {
 		!shouldTriggerAutoPlay({
 			enabled: true,
 			remaining_ms: rem,
-			threshold_ms: AUTO_PLAY_THRESHOLD_MS,
+			threshold_ms: windowMs ?? AUTO_PLAY_THRESHOLD_MS,
 			source_stable_id: source.stable_id,
 			already_triggered_for: _triggeredFor,
 			in_flight: _inFlight
