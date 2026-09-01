@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "provenance": "Captured Tue 1 Sep 2026 from Apple clang on macOS 15 (arm64), built from two trivial C sources: 'int main(void){return 0;}' and 'int mdt_probe(void){return 7;}'. Real linker output, not constructed bytes: each file is a loadable Mach-O that otool -L reads and codesign would accept.",
+  "deployment_target": "Built with -mmacosx-version-min=11.0 so LC_BUILD_VERSION minos matches the app's own bundle.macOS.minimumSystemVersion in apps/desktop/src-tauri/tauri.conf.json. The first capture defaulted to the host SDK (minos 26.0) and could not have been loaded by the macos-14 packaging runner, which contradicted the loadability claim these fixtures are here to support. A test asserts minos <= that declared minimum, so the two cannot drift apart again.",
+  "file_b_note": "The file_b string per entry is what macOS file(1) printed when these were captured. It is PROVENANCE, not an assertion target: GNU file words the same binary differently (ubuntu-latest prints 'Mach-O 64-bit arm64 executable, flags:<...>'), and it describes a bundle with a phrase containing the one it uses for a shared library. Filetype is read from otool -hv, which prints a token; tests assert only that file(1) says 'Mach-O' at all.",
+  "shapes": {
+    "opendj-probe-executable": "MH_EXECUTE with no extension -- runtime/bin/python3.N, the interpreter an extension-only predicate misses",
+    "libopendj-probe.dylib": "MH_DYLIB named .dylib -- runtime/lib/libpython3.N.dylib",
+    "opendj-probe-bundle.so": "MH_BUNDLE named .so -- a CPython extension module",
+    "opendj-probe-dylib-named.so": "MH_DYLIB named .so -- the real shape of pydantic_core, rpds, watchfiles, rbox and protobuf's _message.abi3.so, where suffix and filetype disagree"
+  },
+  "immutable": "Canonical fixture. Verify by checksum before use; tests hydrate a disposable copy and never mutate these.",
+  "files": {
+    "opendj-probe-executable": {
+      "sha256": "a5eab1ba0ae03f12d08d8e8998234bf73a93c26b959d59ddfbcc43f94437839c",
+      "bytes": 16808,
+      "minos": "11.0",
+      "filetype": "EXECUTE",
+      "file_b": "Mach-O 64-bit executable arm64"
+    },
+    "libopendj-probe.dylib": {
+      "sha256": "f0ad5be0e48893876311f23c60e2b983875a6ec0240fb6f3ca36afae10174800",
+      "bytes": 16744,
+      "minos": "11.0",
+      "filetype": "DYLIB",
+      "file_b": "Mach-O 64-bit dynamically linked shared library arm64"
+    },
+    "opendj-probe-bundle.so": {
+      "sha256": "8b5e5d89c4fb29f2eda0a5bf5e24e1b14a0419d6a8ae34701516f3f7214b4b56",
+      "bytes": 16744,
+      "minos": "11.0",
+      "filetype": "BUNDLE",
+      "file_b": "Mach-O 64-bit bundle arm64"
+    },
+    "opendj-probe-dylib-named.so": {
+      "sha256": "a2be5ebf005e0ea2e658f41f09a5a8414700740cb2dfbcade6331d604ab2b81d",
+      "bytes": 16744,
+      "minos": "11.0",
+      "filetype": "DYLIB",
+      "file_b": "Mach-O 64-bit dynamically linked shared library arm64"
+    }
+  }
+}

@@ -22,11 +22,12 @@ import json
 import plistlib
 import re
 import shutil
-import struct
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests.scripts.macho_fixtures import BUNDLE_SO, DYLIB, EXECUTABLE, hydrate
 
 TAURI_DIR = Path(__file__).resolve().parents[2] / "apps/desktop/src-tauri"
 CONF = TAURI_DIR / "tauri.conf.json"
@@ -137,60 +138,43 @@ EXTENSION_ONLY_PREDICATE = (
     "find \"$1\" -type f \\( -name '*.so' -o -name '*.dylib' \\) -print0"
 )
 
-# A Mach-O header is 32 bytes and file(1) reads the filetype straight out of
-# it, so the fixture needs no real binary and no macOS host. That matters:
-# the pytest lanes are ubuntu-latest and macos-packaging.yml runs only
-# test_engine_payload.py and test_desktop_lane_config.py, so a darwin-only
-# marker here would mean these assertions never execute in CI at all -- a
-# regression suite that passes by skipping.
+# The fixtures are real, loadable Mach-O files captured from Apple's linker
+# and verified against a manifest checksum, not constructed headers: AGENTS.md
+# forbids stubs and permits captured real artifacts consumed through
+# production paths. They also need no macOS host, which matters here -- the
+# pytest lanes are ubuntu-latest and macos-packaging.yml runs only
+# test_engine_payload*.py and test_desktop_lane_config.py, so a darwin-only
+# marker would mean these assertions never execute in CI at all.
 #
-# Nothing below invokes codesign or otool, which would reject a stub. These
-# exercise DISCOVERY, which is where the bug was.
-MACHO_MAGIC_64: int = 0xFEEDFACF
-CPU_TYPE_ARM64: int = 0x0100000C
-MH_EXECUTE: int = 0x2
-MH_DYLIB: int = 0x6
-MH_BUNDLE: int = 0x8
-
-
-def _macho_header(filetype: int) -> bytes:
-    """magic, cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, pad."""
-    return struct.pack(
-        "<IiiIIII", MACHO_MAGIC_64, CPU_TYPE_ARM64, 0, filetype, 0, 0, 0
-    ) + b"\0" * 4
+# Nothing below invokes codesign or otool. These exercise DISCOVERY, which is
+# where the bug was.
 
 
 @pytest.fixture(scope="module")
 def payload(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A payload shaped like a staged one, minus the 3000 .py files."""
     root = tmp_path_factory.mktemp("payload")
-    (root / "runtime/bin").mkdir(parents=True)
-    (root / "runtime/lib/python3.11/lib-dynload").mkdir(parents=True)
-    (root / "bin").mkdir()
-    (root / "pylib/pkg").mkdir(parents=True)
-
     # The interpreter: extensionless, executable, and the whole point.
-    interpreter = root / "runtime/bin/python3.11"
-    interpreter.write_bytes(_macho_header(MH_EXECUTE))
-    interpreter.chmod(0o755)
+    hydrate(EXECUTABLE, root / "runtime/bin/python3.11")
     # What the launcher names. stage_runtime copies the tree with
     # symlinks=True, so the payload carries this symlink verbatim.
     (root / "runtime/bin/python3").symlink_to("python3.11")
-
-    dylib = root / "runtime/lib/libpython3.11.dylib"
-    dylib.write_bytes(_macho_header(MH_DYLIB))
-    dylib.chmod(0o755)
+    hydrate(DYLIB, root / "runtime/lib/libpython3.11.dylib")
     # An extension module at 0644: no exec bit, so only the extension clause
     # catches it. Its presence proves the narrowing did not lose the files
     # the old predicate did find.
-    ext = root / "runtime/lib/python3.11/lib-dynload/_crypt.cpython-311-darwin.so"
-    ext.write_bytes(_macho_header(MH_BUNDLE))
-    ext.chmod(0o644)
+    hydrate(
+        BUNDLE_SO,
+        root / "runtime/lib/python3.11/lib-dynload/_crypt.cpython-311-darwin.so",
+        mode=0o644,
+    )
 
     launcher = root / "bin/opendj-engine"
+    launcher.parent.mkdir(parents=True, exist_ok=True)
     launcher.write_text('#!/bin/sh\nexec "$payload/runtime/bin/python3" -m x\n')
     launcher.chmod(0o755)
 
+    (root / "pylib/pkg").mkdir(parents=True)
     (root / "pylib/pkg/module.py").write_text("x = 1\n")
     subprocess.run(
         ["ar", "rcs", str(root / "pylib/pkg/libstatic.a"), str(root / "pylib/pkg/module.py")],
@@ -217,9 +201,9 @@ def _macho_files(payload: Path) -> list[str]:
 def test_the_fixture_is_recognizable_as_macho(payload: Path) -> None:
     """The control for every assertion below: file(1) must see these at all.
 
-    A 32-byte stub header is enough on macOS. If a host's file(1) disagrees,
-    every "not found" result below would be vacuously true, so this fails
-    loudly here rather than passing quietly there.
+    If a host's file(1) did not recognize the fixture, every "not found"
+    result below would be vacuously true, so this fails loudly here rather
+    than passing quietly there.
     """
     described = subprocess.run(
         ["file", "-b", str(payload / "runtime/bin/python3.11")],
