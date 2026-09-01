@@ -24,6 +24,9 @@ import os
 import statistics
 import subprocess
 import time
+import uuid
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 
 import pytest
 
@@ -50,6 +53,18 @@ SAMPLES_PER_PHASE = 7
 #: skip below rather than testing anything). Capped so a 4-vCPU CI runner is
 #: saturated rather than buried: 4x already moved its wall time 9.71x.
 HOG_COUNT = min(4 * (os.cpu_count() or 4), 32)
+
+#: The hog itself. A shell spin loop, split out so a test can spawn the same real
+#: loop under a unique marker and count it with pgrep.
+HOG_LOOP = "while :; do :; done"
+HOG_COMMAND = ["/bin/sh", "-c", HOG_LOOP]
+
+#: A path that cannot be exec'd, so a real subprocess.Popen raises a real
+#: FileNotFoundError. No double: the failure is the OS refusing the exec.
+UNSPAWNABLE = ["/nonexistent/mdt-there-is-no-such-binary"]
+
+#: Real children the partial-spawn test starts before the unspawnable one.
+HOGS_BEFORE_THE_FAILURE = 3
 
 #: Wall time must move at least this much BETWEEN the two phases, in either
 #: direction, or the machine's conditions demonstrably did not change and the
@@ -99,23 +114,134 @@ def _sensitivity_ceiling(wall_swing: float) -> float:
     return 1.0 + (wall_swing - 1.0) / LOAD_SENSITIVITY_RATIO
 
 
-def _spawn_cpu_hogs(count: int) -> list[subprocess.Popen[bytes]]:
-    """Competing CPU-bound children. Caller must terminate them.
+@contextmanager
+def _cpu_hogs(
+    count: int, commands: Sequence[Sequence[str]] | None = None
+) -> Iterator[list[subprocess.Popen[bytes]]]:
+    """Competing CPU-bound children, reaped on every exit path.
 
     A shell spin loop, not a Python one: this has to oversubscribe a box the
     agent fleet is ALREADY hammering, so the hog count is large and each hog has
     to be cheap. Twenty Python interpreters cost a couple of hundred MB on a Mac
     that is usually short of RAM; the same number of `sh` loops cost almost
     nothing and compete for the scheduler just as hard.
+
+    A context manager, and the accumulator is built BEFORE the first spawn, on
+    purpose. Spawning into a list comprehension loses every child already started
+    if the next Popen raises or the run is interrupted, and what leaks is not an
+    idle process: it is an unkillable-looking shell spin loop, on a host this
+    test only runs on because it was already short of CPU. Codex flagged the
+    comprehension on PR #644 (P2, discussion_r3899739840) and it was right.
+
+    ``commands`` is input DATA, not a seam for a double: every path still runs
+    the real ``subprocess.Popen``, real fork/exec, real SIGTERM and real wait.
+    It exists so the partial-spawn branch can be provoked by handing the OS a
+    program it genuinely cannot exec, after some it genuinely can. Exhausting
+    the process table would reach that branch too, and would take the rest of
+    the fleet down with it.
     """
-    return [
-        subprocess.Popen(
-            ["/bin/sh", "-c", "while :; do :; done"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+    plan = [HOG_COMMAND] * count if commands is None else [list(c) for c in commands]
+    hogs: list[subprocess.Popen[bytes]] = []
+    try:
+        for command in plan:
+            # PERF401 wants a comprehension or list.extend here. Both rebuild the
+            # list only once the loop finishes, which is exactly the leak this
+            # shape exists to close: a Popen that raises halfway would strand
+            # every child already spinning.
+            hogs.append(  # noqa: PERF401
+                subprocess.Popen(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            )
+        yield hogs
+    finally:
+        for hog in hogs:
+            hog.terminate()
+        for hog in hogs:
+            hog.wait(timeout=10)
+
+
+def _probe_marker(label: str) -> str:
+    """A marker no other process on this host can be carrying.
+
+    Fixed markers cross-contaminate. Codex reproduced it on PR #704
+    (discussion_r3903289017) by running two invocations at once: one counted
+    five hogs instead of two, and the other's `pgrep` died of the first's
+    SIGTERM. That is not hypothetical here - this repo runs pytest under
+    `-n auto` locally and several agents share this Mac - so both the count and
+    the `pkill` have to be scoped to one invocation. PID alone is not enough:
+    PIDs are reused, and two xdist workers of the same run share nothing but
+    still need distinct markers, hence the random component too.
+    """
+    return f"mdt-hog-{label}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+
+
+def _marked_hog(marker: str) -> list[str]:
+    """The production spin loop, tagged so pgrep can find exactly these."""
+    return ["/bin/sh", "-c", f"{HOG_LOOP} # {marker}"]
+
+
+def _alive(marker: str) -> int:
+    """How many processes currently carry this marker in their command line."""
+    found = subprocess.run(
+        ["pgrep", "-f", marker], capture_output=True, text=True, check=False
+    )
+    if found.returncode not in (0, 1):
+        raise RuntimeError(
+            f"pgrep failed with {found.returncode}, so this count is not a "
+            f"measurement: {found.stderr.strip()}"
         )
-        for _ in range(count)
-    ]
+    return len([line for line in found.stdout.splitlines() if line.strip()])
+
+
+def test_real_hogs_spin_inside_the_block_and_are_dead_after_it() -> None:
+    """if the reaper does not really work then every later test inherits the load"""
+    marker = _probe_marker("lifecycle")
+    try:
+        with _cpu_hogs(2, [_marked_hog(marker), _marked_hog(marker)]) as hogs:
+            # Control for the assertions after the block AND for the pgrep probe
+            # itself: real children are running right now, so a later count of
+            # zero means they were reaped rather than never started.
+            assert all(hog.poll() is None for hog in hogs), (
+                "the hogs exited on their own, so nothing here measures termination"
+            )
+            live = _alive(marker)
+            assert live == 2, (
+                f"pgrep found {live} of 2 live hogs, so the probe cannot see the "
+                "processes this test reasons about"
+            )
+        assert all(hog.poll() is not None for hog in hogs), (
+            "a hog survived the context manager"
+        )
+        survivors = _alive(marker)
+        assert survivors == 0, f"{survivors} marked hogs outlived the block"
+    finally:
+        subprocess.run(["pkill", "-f", marker], check=False)
+
+
+def test_a_failed_spawn_reaps_the_hogs_already_spinning() -> None:
+    """if a partial spawn leaks then spin loops outlive pytest on a starved host"""
+    marker = _probe_marker("partial-spawn")
+    plan = [_marked_hog(marker)] * HOGS_BEFORE_THE_FAILURE + [UNSPAWNABLE]
+    try:
+        # No "baseline is zero" assertion here: the marker is unique to this
+        # invocation, so that check could never fail and would only look like
+        # diligence. The control this test actually leans on is
+        # test_real_hogs_spin_inside_the_block_and_are_dead_after_it, which
+        # proves the pgrep probe can SEE marked hogs; without it a survivor
+        # count of zero would be indistinguishable from a broken probe.
+        with pytest.raises(FileNotFoundError), _cpu_hogs(len(plan), plan):
+            pass  # pragma: no cover - the context manager raises on entry
+
+        survivors = _alive(marker)
+        assert survivors == 0, (
+            f"{survivors} of {HOGS_BEFORE_THE_FAILURE} real shell spin loops were left "
+            "running after a mid-spawn failure"
+        )
+    finally:
+        subprocess.run(["pkill", "-f", marker], check=False)
 
 
 def test_a_stalled_call_is_not_charged_the_stall() -> None:
@@ -139,15 +265,9 @@ def test_cpu_time_holds_while_wall_time_swings_with_the_machine() -> None:
     """if the metric tracks machine load then the same commit scores differently"""
     _phase()  # discard: process start and first-touch page faults are not the subject
     quiet_cpu_ms, quiet_wall_ms = _phase()
-    hogs = _spawn_cpu_hogs(HOG_COUNT)
-    try:
+    with _cpu_hogs(HOG_COUNT) as hogs:
         _phase()  # discard: lets the children reach steady state
         loaded_cpu_ms, loaded_wall_ms = _phase()
-    finally:
-        for hog in hogs:
-            hog.terminate()
-        for hog in hogs:
-            hog.wait(timeout=10)
 
     wall_swing = max(quiet_wall_ms, loaded_wall_ms) / min(quiet_wall_ms, loaded_wall_ms)
     cpu_swing = max(quiet_cpu_ms, loaded_cpu_ms) / min(quiet_cpu_ms, loaded_cpu_ms)

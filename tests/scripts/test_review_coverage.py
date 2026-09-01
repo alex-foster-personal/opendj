@@ -233,9 +233,61 @@ def test_an_exempt_reviewer_that_reports_its_outage_does_not_block() -> None:
     assert devin.in_progress is False
     assert devin.outage is True, "the live outage description must certify the outage"
 
-    unavailable, unreviewed, _ = partition_verdicts(verdicts)
+    # The mapping is an ARGUMENT here, so this pins the partition MECHANISM
+    # independently of whether any reviewer happens to be exempt today. That
+    # matters because the live list is empty as of Tue 1 Sep 2026 (Devin came
+    # back), and a mechanism only exercised while an outage exists is untested
+    # at exactly the moment the next outage needs it to work.
+    #
+    # What this test does NOT cover is the default wiring, which is the gap
+    # Codex named on #704 (discussion_r3903503396). That is covered directly by
+    # test_the_live_policy_exempts_nobody_and_that_is_load_bearing below, which
+    # calls partition_verdicts with NO argument.
+    unavailable, unreviewed, _ = partition_verdicts(
+        verdicts, known_unavailable={"Devin Review": "down"}
+    )
     assert [v.name for v in unavailable] == ["Devin Review"]
     assert [v.name for v in unreviewed] == []
+
+
+def test_the_live_policy_exempts_nobody_and_that_is_load_bearing() -> None:
+    """The DEFAULT wiring, exercised with no injected policy at all.
+
+    `partition_verdicts` gained a `known_unavailable` parameter so the exemption
+    mechanism stays pinned while the production list is empty. That parameter
+    also created a hole: every other test passes its own mapping, so nothing
+    would notice if the default stopped reading the production one. A test suite
+    that is green because it never touches the live wiring is the same defect
+    this module exists to catch, one level up.
+
+    So this calls `partition_verdicts` exactly as `triage()` does, with real
+    captured check descriptions and no policy argument, and asserts the
+    consequence of today's empty list: a reviewer whose outage is certified is
+    still NOT exempt, and blocks. It fails if the default is rewired to
+    something else, and it fails if an exemption is re-added without anyone
+    updating the tests that describe the policy.
+    """
+    verdicts = _verdicts([
+        _check("CodeRabbit", "Review completed"),
+        _check(
+            "Devin Review",
+            "Full review skipped: trial expired and no credits remaining",
+        ),
+    ])
+    devin = next(v for v in verdicts if v.name == "Devin Review")
+    assert devin.outage is True, (
+        "the outage is certified, so exemption is the ONLY thing that could "
+        "excuse this reviewer; without that this test would prove nothing"
+    )
+
+    unavailable, unreviewed, revived = partition_verdicts(verdicts)
+
+    assert [v.name for v in unavailable] == [], (
+        "the live exemption list is empty, so nothing may be exempt; an entry "
+        "was re-added without updating the tests that state the policy"
+    )
+    assert [v.name for v in unreviewed] == ["Devin Review"]
+    assert [v.name for v in revived] == []
 
 
 def test_an_exempt_reviewer_that_reports_nothing_at_all_blocks() -> None:

@@ -46,7 +46,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 REPO = "maintainer/music-dj-tools"
 
@@ -92,12 +94,14 @@ REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
 #: reviews, the run FAILS and tells you to delete its entry. So this list
 #: cannot quietly outlive the outage it describes, which is the failure mode of
 #: every "do not trust X" note that was ever left in a repo.
-KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {
-    "Devin Review": (
-        "trial expired at #530, no credits; billing decision is the maintainer's, "
-        "tracked in .planning/MAINTAINER-QUEUE.md DECIDE section"
-    ),
-}
+#: EMPTY, and that is the invariant working rather than the list being
+#: forgotten. "Devin Review" sat here from #530 (trial expired, no credits).
+#: On #704, Tue 1 Sep 2026, Devin reviewed again -- completed in 1m 9s with 3
+#: artifacts including a real inline finding -- so the gate failed exactly as
+#: designed, saying the exemption was now hiding a live reviewer, and the entry
+#: is deleted per its own remediation. Nothing about the outage is inferred
+#: here: the trigger was an artifact on a diff, not a status line.
+KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 class TriageError(RuntimeError):
@@ -268,6 +272,7 @@ def classify_reviewer(
 
 def partition_verdicts(
     verdicts: list[ReviewerVerdict],
+    known_unavailable: Mapping[str, str] = MappingProxyType(KNOWN_UNAVAILABLE_REVIEWERS),
 ) -> tuple[list[ReviewerVerdict], list[ReviewerVerdict], list[ReviewerVerdict]]:
     """Split verdicts into (exempt, blocking, stale-exemption).
 
@@ -291,7 +296,7 @@ def partition_verdicts(
         if not v.reviewed
         and not v.in_progress
         and v.outage
-        and v.name in KNOWN_UNAVAILABLE_REVIEWERS
+        and v.name in known_unavailable
     ]
     exempt_names = {v.name for v in unavailable}
     unreviewed = [
@@ -302,7 +307,7 @@ def partition_verdicts(
     # Failing here is what stops this list outliving the outage it describes.
     revived = [
         v for v in verdicts
-        if v.reviewed and v.name in KNOWN_UNAVAILABLE_REVIEWERS
+        if v.reviewed and v.name in known_unavailable
     ]
     return unavailable, unreviewed, revived
 
