@@ -3175,10 +3175,13 @@ class RbAudioEngine implements AudioEngine {
 			rt.nextScheduleRevision = 0;
 			rt.desiredActive = false;
 			st.stable_id = stable_id;
-			st.title = candidateTrack.title;
-			st.artist = candidateTrack.artist;
-			st.bpm = candidateTrack.bpm;
-			st.key = candidateTrack.key;
+			// TrackOut spells every nullable field optional (a pydantic default
+			// becomes a not-required property), so absent and null both land as
+			// the deck's "unknown" null.
+			st.title = candidateTrack.title ?? null;
+			st.artist = candidateTrack.artist ?? null;
+			st.bpm = candidateTrack.bpm ?? null;
+			st.key = candidateTrack.key ?? null;
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);

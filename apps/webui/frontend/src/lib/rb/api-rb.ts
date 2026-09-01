@@ -309,7 +309,13 @@ export interface PlaylistTrackRowWire {
 	has_rb_mapping: boolean;
 }
 
-export interface PlaylistDetailHydrated extends PlaylistDetail {
+/** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
+ * two rows have DRIFTED: the schema's `TrackRowOut.spotify_pending` is a
+ * required boolean (a pydantic default, so always on the wire) while this
+ * module's `PlaylistTrackRowWire` still spells it optional for older payloads.
+ * Closing that gap is api-rb's own call, so the drift is recorded here rather
+ * than silently widened. */
+export interface PlaylistDetailHydrated extends Omit<PlaylistDetail, 'tracks'> {
 	/** Full rows in membership order - kills the per-row GET fan-out. */
 	tracks: PlaylistTrackRowWire[];
 }

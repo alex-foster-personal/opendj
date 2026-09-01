@@ -21,7 +21,9 @@
 				rating_min: ratingMin || null, cursor, limit: 200
 			});
 			tracks = cursor ? [...tracks, ...page.items] : page.items;
-			nextCursor = page.next_cursor;
+			// `next_cursor` is optional AND nullable in the schema; both spellings
+			// mean the same "no further page" to this view.
+			nextCursor = page.next_cursor ?? null;
 		} catch (exc) {
 			pushToast(`Failed to load tracks: ${exc}`, 'error');
 		} finally {

@@ -75,9 +75,11 @@
 			const items = await fetchAllPages((cursor) => listTracksHydrated({ limit: 500, cursor }));
 			rows = items.map((t) => ({
 				stable_id: t.stable_id,
-				title: t.title,
-				artist: t.artist,
-				album: t.album,
+				// TrackOut spells its nullable fields optional; absent reads the
+				// same as null to every column here.
+				title: t.title ?? null,
+				artist: t.artist ?? null,
+				album: t.album ?? null,
 				file_exists: t.file_exists,
 				// Bulk listing has no is_streaming (same gap as All Tracks
 				// table rows before their lazy rb-meta hydrates, contract

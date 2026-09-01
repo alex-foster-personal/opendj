@@ -158,7 +158,7 @@ again without adding a row here.
 | `complexity` | radon                       | Worst cyclomatic block, how many blocks exceed the mccabe limit, how many files sit below maintainability rank A.                                                                    |
 | `arch`       | import-linter + grimp       | Do the layering contracts hold, and how many top-level packages import each other in a cycle.                                                                                        |
 | `deps`       | deptry                      | Imports with no declaration, declarations nothing imports, and imports that only work because something else happened to pull the library in.                                        |
-| `frontend`   | knip + a local import graph | Import cycles across `.ts` **and** `.svelte`, worst fan-in and fan-out, orphaned modules, unreferenced exports and packages.                                                         |
+| `frontend`   | knip + a local import graph | Import cycles across `.ts` **and** `.svelte`, worst fan-in and fan-out, orphaned modules, unreferenced exports and packages, and `as unknown as` double-casts (the one assertion the compiler cannot check).                                                         |
 | `size`       | local + jscpd               | Longest file per language, count over the review threshold, percentage of duplicated lines.                                                                                          |
 
 Plus a **hotspot** table in the report: git churn multiplied by file size over

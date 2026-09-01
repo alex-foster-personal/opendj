@@ -149,6 +149,40 @@ test('unwrap fails loudly when a JSON route answers with no body', async () => {
 	assert.equal(caught.status, 204);
 });
 
+test('requireBody hands back both halves so a caller can read a header', async () => {
+	globalThis.fetch = async () =>
+		new Response(JSON.stringify({ status: 'ok' }), {
+			status: 200,
+			headers: { 'content-type': 'application/json', etag: '"rev-7"' }
+		});
+
+	const { data, response } = clientModule.requireBody(
+		await clientModule.api.GET('/api/v1/health')
+	);
+
+	assert.equal(data.status, 'ok');
+	assert.equal(response.headers.get('etag'), '"rev-7"');
+});
+
+test('requireBody fails loudly when a JSON route answers with no body', async () => {
+	// The reason it exists: a call site that also wants the ETag used to
+	// destructure { data, response } straight off the client and assert the
+	// body onto its type, so an empty body reached UI state as undefined.
+	globalThis.fetch = async () => new Response(null, { status: 204 });
+
+	const call = await clientModule.api.GET('/api/v1/health');
+	let caught = null;
+	try {
+		clientModule.requireBody(call);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert.ok(caught instanceof clientModule.ApiError, 'expected an ApiError');
+	assert.equal(caught.code, 'EMPTY_BODY');
+	assert.equal(caught.status, 204);
+});
+
 test('a transport failure propagates unwrapped so callers can classify it', async () => {
 	globalThis.fetch = async () => {
 		throw new TypeError('fetch failed');

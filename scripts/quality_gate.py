@@ -60,6 +60,17 @@ REG  Q-08 Enforce three shell constructs as a hard gate (no ratchet) via
           [if `gh api` is passed --arg then shell.gh_api_arg is 1 and exits 1]
           [if discovery collapses to fewer files than the linter's floor then
            the run aborts rather than scoring 0 violations]
+REG  Q-10 Measure frontend type-erasure: `as unknown as` double-casts across
+          hand-written .ts/.svelte sources. A single `as` is a claim the
+          compiler still checks for overlap; the double form asserts through
+          `unknown` and therefore checks nothing at all, which is how a
+          response type can drift away from its schema in silence.
+          [if a new `as unknown as` lands then frontend.unknown_casts rises
+           and the run exits 1]
+          [if a double-cast is replaced by a generated-schema alias then the
+           run prints RATCHET and still exits 0]
+          [if the frontend scan finds no sources then the run aborts rather
+           than scoring 0 casts on an empty tree]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -258,6 +269,41 @@ def _frontend_files() -> list[Path]:
         for p in src.rglob("*")
         if p.suffix in {".ts", ".svelte", ".js"} and p.is_file() and p not in generated
     ]
+
+
+# `x as unknown as T` is the one assertion TypeScript cannot argue with: a
+# single `as` still demands that the two types overlap, while routing through
+# `unknown` erases the source type first and asserts anything onto anything.
+# That is why the frontend's hand-written response interfaces could drift from
+# the daemon's generated schemas without a single compiler error -- one of them
+# promised a non-optional `PlaylistDetail.updated_at` the server never sent.
+# Ratcheted, not hard-zero: 16 remain outside src/lib/api.ts as of Tue 1 Sep
+# 2026, each one its own conversion, and the target is 0.
+# `\s+` and not a literal space: a formatter is free to wrap the assertion
+# across two lines, and a whitespace-literal pattern would let it hide there.
+_FE_UNKNOWN_CAST_RE = re.compile(r"\bas\s+unknown\s+as\b")
+
+
+def _unknown_cast_count(source: str) -> int:
+    """`as unknown as` occurrences in one source file."""
+    return len(_FE_UNKNOWN_CAST_RE.findall(source))
+
+
+def _fe_unknown_casts() -> tuple[int, str]:
+    """Count `as unknown as` double-casts over the frontend, worst file named."""
+    files = _frontend_files()
+    if not files:
+        raise RuntimeError(
+            "frontend double-cast scan found no .ts/.svelte files; that is a "
+            "broken scan reporting as a clean tree"
+        )
+    per_file: collections.Counter[str] = collections.Counter()
+    for path in files:
+        hits = _unknown_cast_count(path.read_text(encoding="utf-8", errors="replace"))
+        if hits:
+            per_file[path.relative_to(REPO).as_posix()] = hits
+    detail = ", ".join(f"{rel}={n}" for rel, n in per_file.most_common(3))
+    return sum(per_file.values()), detail
 
 
 # ----- evaluator: ruff -----------------------------------------------------
@@ -535,6 +581,7 @@ def _eval_frontend() -> list[Metric]:
                          for i in knip["issues"])
     unused_deps = sum(len(i.get("dependencies", [])) + len(i.get("devDependencies", []))
                       for i in knip["issues"])
+    casts, cast_detail = _fe_unknown_casts()
 
     return [
         Metric(
@@ -553,6 +600,8 @@ def _eval_frontend() -> list[Metric]:
                ", ".join(unused_files[:3])),
         Metric("frontend.unused_exports", unused_exports, "unreferenced exports"),
         Metric("frontend.unused_deps", unused_deps, "unreferenced package.json deps"),
+        Metric("frontend.unknown_casts", casts, "`as unknown as` double-casts",
+               cast_detail),
     ]
 
 

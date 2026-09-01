@@ -8,7 +8,7 @@
  * Not part of the performance command path - chrome-only signal for now.
  */
 
-import { getSettings } from '$lib/api';
+import { getSettings, type SettingItem } from '$lib/api';
 
 const STORAGE_KEY = 'mdt.rb.vibe-history.v1';
 const HISTORY_CAP = 400;
@@ -133,7 +133,7 @@ function _maybeSample(now: number): void {
 	});
 }
 
-function _settingNumber(items: { key: string; value: unknown }[], key: string): number | null {
+function _settingNumber(items: SettingItem[], key: string): number | null {
 	const item = items.find((i) => i.key === key);
 	if (item === undefined) return null;
 	const n = typeof item.value === 'number' ? item.value : Number(item.value);

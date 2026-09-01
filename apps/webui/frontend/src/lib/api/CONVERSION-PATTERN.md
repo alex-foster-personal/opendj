@@ -137,9 +137,15 @@ branch. `ApiError` carries `status`, `code`, `message`, the raw `response`
   a re-export of the client's and the duplicate resolution is gone. `client.ts`
   still resolves the base URL itself rather than importing `api.ts`, because it
   is the root of the dependency graph and that import would be a cycle.
-  Its hand-written response interfaces stay hand-written: they have already
-  drifted from the generated schemas (see the module docstring), so step 4 does
-  not apply to them.
+  Step 4 is now DONE there too (issue #725): every response type in that module
+  is an alias of `components['schemas'][...]` and the module holds zero
+  `as unknown as`. The drifts step 4 says to keep hand-written were re-read
+  against the schemas and every one of them was the frontend being WRONG, not
+  the two shapes being genuinely different -- including a non-optional
+  `PlaylistDetail.updated_at` the server has never sent. Read that module as
+  the worked example of step 4 at scale, and `requireBody` in `client.ts` as
+  what a call site that needs a response header uses instead of asserting the
+  body onto its type.
 
 ## Test-side changes (this bites every module)
 

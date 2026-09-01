@@ -31,6 +31,13 @@ export interface LogicalAst {
 
 export type RuleAst = LogicalAst | PredicateAst;
 
+/** A rule exactly as the daemon hands it over: `SmartlistSummary.rule` is an
+ * open record in the OpenAPI schema, so nothing on the HTTP boundary can hand
+ * out a `RuleAst` without asserting one. `astToForm` therefore takes either,
+ * which is also an honest statement of what it always did -- it never
+ * validated the AST it was given. */
+export type WireRule = { [key: string]: unknown };
+
 export interface FormPredicate {
 	kind: 'predicate';
 	id: string;
@@ -75,7 +82,7 @@ export function isFormGroup(node: FormNode): node is FormGroup {
 	return node.kind === 'group';
 }
 
-function isLogicalAst(node: RuleAst): node is LogicalAst {
+function isLogicalAst(node: RuleAst | WireRule): node is LogicalAst {
 	return (LOGICAL_OPS as string[]).includes((node as LogicalAst).op) && 'children' in node;
 }
 
@@ -119,7 +126,7 @@ export function changeGroupOp(group: FormGroup, nextOp: LogicalOp): string | nul
 }
 
 /** Convert a validated (or freshly loaded) rule AST into an editable form tree. */
-export function astToForm(rule: RuleAst): FormNode {
+export function astToForm(rule: RuleAst | WireRule): FormNode {
 	if (isLogicalAst(rule)) {
 		return {
 			kind: 'group',

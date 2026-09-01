@@ -108,7 +108,27 @@ const _throwApiError: Middleware = {
 export async function unwrap<T>(
 	call: Promise<{ data?: T; response: Response }>
 ): Promise<NonNullable<T>> {
-	const { data, response } = await call;
+	return requireBody(await call).data;
+}
+
+/** The same check as `unwrap`, applied to an already-awaited call, for the
+ * call sites that need the RESPONSE as well as the body.
+ *
+ * Reading an ETag or `x-bind-warning` used to mean destructuring
+ * `{ data, response }` straight off the client and then asserting the body
+ * onto its real type, because `data` is typed as possibly-undefined. This is
+ * that assertion replaced by the check it was standing in for. It is
+ * synchronous on purpose: a module that maps HTTP failures onto its own error
+ * class awaits the call inside its `try` and calls this AFTER, so a
+ * contract-violating empty body is never re-labelled as one of those failures.
+ *
+ *     const { data, response } = requireBody(await api.GET('/api/v1/health'));
+ */
+export function requireBody<T>(result: {
+	data?: T;
+	response: Response;
+}): { data: NonNullable<T>; response: Response } {
+	const { data, response } = result;
 	if (data === undefined || data === null) {
 		throw new ApiError(
 			response.status,
@@ -117,7 +137,7 @@ export async function unwrap<T>(
 			response
 		);
 	}
-	return data as NonNullable<T>;
+	return { data: data as NonNullable<T>, response };
 }
 
 /** The one client instance. Import this; never call `createClient` again.

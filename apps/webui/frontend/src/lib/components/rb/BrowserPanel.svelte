@@ -244,9 +244,13 @@
 			// 5b) - NOT alphabetical. Playlists without a rekordbox order (seq
 			// null) sink below the ordered ones, name-sorted among themselves.
 			.sort((a, b) => {
-				if (a.seq !== null && b.seq !== null) return a.seq - b.seq;
-				else if (a.seq !== null) return -1;
-				else if (b.seq !== null) return 1;
+				// `seq` is optional as well as nullable in PlaylistSummary, so an
+				// absent key means the same "no rekordbox order" as a null one.
+				const aSeq = a.seq ?? null;
+				const bSeq = b.seq ?? null;
+				if (aSeq !== null && bSeq !== null) return aSeq - bSeq;
+				else if (aSeq !== null) return -1;
+				else if (bSeq !== null) return 1;
 				else return a.name.localeCompare(b.name);
 			})
 			.map(
@@ -1092,14 +1096,16 @@
 		return {
 			stable_id: track.stable_id,
 			order,
-			title: track.title,
-			artist: track.artist,
-			key: track.key,
-			bpm: track.bpm,
-			rating: track.rating,
+			// TrackOut spells its nullable fields optional; a BrowserRow wants one
+			// spelling of "unknown", so absent collapses onto null here.
+			title: track.title ?? null,
+			artist: track.artist ?? null,
+			key: track.key ?? null,
+			bpm: track.bpm ?? null,
+			rating: track.rating ?? null,
 			// List items carry no ETag; rating edits lazily fetch one.
 			etag: '',
-			comments: track.notes,
+			comments: track.notes ?? null,
 			duration_ms: track.duration_ms ?? null,
 			// genre/is_streaming are NOT in the listing contract (point 1) -
 			// null here means 'fall back to lazily fetched rb-meta'.
@@ -1223,11 +1229,11 @@
 				etag = (await getTrack(row.stable_id)).etag;
 			}
 			const { track, etag: fresh } = await patchTrack(row.stable_id, etag, { rating: next });
-			row.rating = track.rating;
+			row.rating = track.rating ?? null;
 			row.etag = fresh;
 		} catch (exc) {
 			if (exc instanceof ConflictError) {
-				row.rating = exc.current.rating;
+				row.rating = exc.current.rating ?? null;
 				row.etag = exc.etag;
 				pushToast('rating conflict: track changed elsewhere - showing current value', 'error');
 				return;
