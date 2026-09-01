@@ -76,6 +76,20 @@ def test_import_succeeds_on_this_platform() -> None:
     assert pp.SHARE_ROOT == pp.REKORDBOX_APP_DIR / "share"
 
 
+@pytest.mark.parametrize(
+    "path", [r"C:relative\song.mp3", "D:track.flac", "1:/music", "?:/music"]
+)
+def test_is_any_absolute_rejects_invalid_windows_drive_paths(path: str) -> None:
+    assert pp.is_any_absolute(path) is False
+
+
+@pytest.mark.parametrize(
+    "path", [r"C:\Music\song.mp3", "D:/Music/track.flac", r"\\server\share\song.mp3"]
+)
+def test_is_any_absolute_accepts_windows_absolute_paths(path: str) -> None:
+    assert pp.is_any_absolute(path) is True
+
+
 # ----- load_path_map ------------------------------------------------------
 
 

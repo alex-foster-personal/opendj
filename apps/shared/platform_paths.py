@@ -18,7 +18,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Optional
 
 from apps.shared import fs_residency
@@ -255,6 +255,19 @@ def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
     return PathMap(entries=tuple(entries))
 
 
+def _is_windows_absolute(path: str) -> bool:
+    parsed = PureWindowsPath(path)
+    if not parsed.is_absolute():
+        return False
+    if parsed.drive.startswith("\\\\"):
+        return True
+    return (
+        len(parsed.drive) == 2
+        and parsed.drive[1] == ":"
+        and parsed.drive[0].isalpha()
+    )
+
+
 def _is_foreign_absolute(path: str) -> bool:
     """True if ``path`` is an absolute path native to a DIFFERENT OS.
 
@@ -266,22 +279,13 @@ def _is_foreign_absolute(path: str) -> bool:
     Explicit and small on purpose -- no ``os.path`` heuristics that guess.
     """
     if IS_WINDOWS:
-        return path.startswith("/")
-    else:
-        if path.startswith("\\\\"):
-            return True
-        if len(path) >= 2 and path[1] == ":" and path[0].isalpha():
-            return True
-        return False
+        return PurePosixPath(path).is_absolute() and not _is_windows_absolute(path)
+    return _is_windows_absolute(path)
 
 
 def is_any_absolute(path: str) -> bool:
     """Return whether ``path`` is absolute in either supported syntax."""
-    return (
-        path.startswith("/")
-        or path.startswith("\\\\")
-        or (len(path) >= 2 and path[1] == ":" and path[0].isalpha())
-    )
+    return PurePosixPath(path).is_absolute() or _is_windows_absolute(path)
 
 
 def _has_parent_reference(path: str) -> bool:
@@ -345,13 +349,8 @@ def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
 def _is_native_absolute(path: str) -> bool:
     """True if ``path`` is absolute in the format THIS OS understands."""
     if IS_WINDOWS:
-        if path.startswith("\\\\"):
-            return True
-        if len(path) >= 2 and path[1] == ":" and path[0].isalpha():
-            return True
-        return False
-    else:
-        return path.startswith("/")
+        return _is_windows_absolute(path)
+    return PurePosixPath(path).is_absolute()
 
 
 def resolve_library_path(
