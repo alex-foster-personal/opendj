@@ -145,6 +145,9 @@ class Bundle:
     files: dict[str, Path] = field(default_factory=dict)   # dest name -> source
     stable_id: str | None = None
     source_path: str | None = None
+    # Every id the source path could belong to. Length > 1 means the library
+    # holds several rows for one file, so the owner cannot be decided here.
+    candidate_ids: tuple[str, ...] = ()
     issues: list[str] = field(default_factory=list)
 
     @property
@@ -220,6 +223,15 @@ class TrackResolver:
     Both ``tracks.file_path`` and ``track_locations.file_path`` are consulted:
     a track that has since moved keeps its old path as an alternate location,
     and that alternate is often exactly the path a months-old render recorded.
+
+    ONE PATH CAN CARRY SEVERAL IDS. 785 paths in this library resolve to more
+    than one stable_id, because a re-import mints a fresh id while the old row
+    keeps the same file_path. An earlier draft of this class kept a
+    ``dict[path, id]`` and let one of them win by insertion order, which
+    silently attributed a bundle to whichever row happened to be read first
+    and made the answer depend on the query plan. Candidates are therefore
+    kept as a set and a single id is returned ONLY when there is exactly one:
+    an ambiguous path is a finding for a human, not a coin flip.
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -228,7 +240,7 @@ class TrackResolver:
                 f"state database not found at {db_path}. Pass --db, or run from "
                 "a checkout whose data/ directory is populated."
             )
-        self._by_path: dict[str, str] = {}
+        self._by_path: dict[str, set[str]] = defaultdict(set)
         self.availability: dict[str, str] = {}
         connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
@@ -237,7 +249,7 @@ class TrackResolver:
                     f"SELECT file_path, stable_id FROM {table} "
                     "WHERE file_path IS NOT NULL AND file_path != ''"
                 ):
-                    self._by_path.setdefault(path, stable_id)
+                    self._by_path[path].add(stable_id)
             self.availability = dict(
                 connection.execute(
                     "SELECT stable_id, state FROM track_availability"
@@ -246,10 +258,16 @@ class TrackResolver:
         finally:
             connection.close()
 
-    def stable_id_for_path(self, source_path: str | None) -> str | None:
+    def candidates_for_path(self, source_path: str | None) -> tuple[str, ...]:
+        """Every stable_id this path could belong to, sorted for stable output."""
         if not source_path:
-            return None
-        return self._by_path.get(source_path)
+            return ()
+        return tuple(sorted(self._by_path.get(source_path, ())))
+
+    def stable_id_for_path(self, source_path: str | None) -> str | None:
+        """The id, but only when the path names exactly one track."""
+        candidates = self.candidates_for_path(source_path)
+        return candidates[0] if len(candidates) == 1 else None
 
     def denominator(self) -> dict[str, int]:
         """Availability buckets, re-measured. Never cite a remembered figure."""
@@ -391,13 +409,35 @@ def scan_loose_bundles(root: Path, resolver: TrackResolver | None) -> list[Bundl
             bundle.issues.append("no meta.json sidecar, so no source path")
         elif source_path is None:
             bundle.issues.append("meta.json records no source_path")
-        if resolver is not None:
-            bundle.stable_id = resolver.stable_id_for_path(source_path)
-            if bundle.stable_id is None and source_path is not None:
-                bundle.issues.append("source path matches no track row")
+        _attach_identity(bundle, resolver)
         bundle.issues.append("loose form: the stem loader cannot see this bundle")
         bundles.append(bundle)
     return bundles
+
+
+def _attach_identity(bundle: Bundle, resolver: TrackResolver | None) -> None:
+    """Resolve a loose bundle's owner, recording WHY when it cannot be decided.
+
+    Three outcomes, kept distinct because they need different follow-up: one
+    candidate is a clean resolution, several means the library holds more than
+    one row for that file and a human must pick, and none means the audio was
+    never in the library at all (the bought-in acapella pack).
+    """
+    if resolver is None:
+        return
+    bundle.candidate_ids = resolver.candidates_for_path(bundle.source_path)
+    bundle.stable_id = resolver.stable_id_for_path(bundle.source_path)
+    if bundle.stable_id is not None or bundle.source_path is None:
+        return
+    if len(bundle.candidate_ids) > 1:
+        # Publishing under a guessed id files the stems against the wrong
+        # track, which is harder to notice than not publishing at all.
+        bundle.issues.append(
+            f"source path maps to {len(bundle.candidate_ids)} stable_ids, "
+            "so the owner is ambiguous"
+        )
+    else:
+        bundle.issues.append("source path matches no track row")
 
 
 def scan_root(root: Path, resolver: TrackResolver | None) -> list[Bundle]:
