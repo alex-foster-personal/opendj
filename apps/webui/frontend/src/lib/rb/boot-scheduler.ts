@@ -7,13 +7,29 @@
  * loaded while the app was still booting cost 2.1x more (fetchWall median
  * 3793 -> 8038ms, the four small metadata calls 3.5-4.7x), while a deck
  * loaded on a settled page was unchanged at 86ms. The cause is arithmetic,
- * not mystery. Today's page opens nine endpoint families at mount that the
- * old build never called at all, which stretched the boot burst from 1187ms
- * to 3579ms. The daemon is single-worker by design (workers=1 is LOCKED),
- * and the browser gives one origin six connections. Nine extra boot requests
- * therefore do two things at once: they queue behind each other on the
- * server, and they hold connections the deck load needs. The deck load is
- * the one request a DJ can feel.
+ * not mystery. Today's page opens a set of endpoint families at mount that
+ * the old build never called at all, which stretched the boot burst from
+ * 1187ms to 3579ms. The daemon is single-worker by design (workers=1 is
+ * LOCKED), and the browser gives one origin six connections. Extra boot
+ * requests therefore do two things at once: they queue behind each other on
+ * the server, and they hold connections the deck load needs. The deck load
+ * is the one request a DJ can feel.
+ *
+ * WHAT MOVES, counted rather than reasoned about (measured on the bench
+ * fixture, Mon 1 Sep 2026): EIGHT requests leave the burst -- auth/me x2,
+ * build-info, feedback/todos + comments + general, jobs?limit=200 and the
+ * first telemetry/heartbeat. They now land together at ~3.2s instead of
+ * inside the first ~350ms.
+ *
+ * WHAT STAYS, and why the burst is still not empty: the health probe
+ * (everything gates on it), entitlements (planRefusal() is read
+ * synchronously by controls all over the app), setup/status (it decides
+ * whether the app sits behind the first-run wizard), and the library's own
+ * tracks?limit=500, which is the page's primary content rather than
+ * background chatter. The same measurement also found settings, smartlists,
+ * playlists, ui-prefs x2, stems/tiers, client-events and FOUR health calls
+ * in that window, none of them named in the original finding -- see the
+ * performance register for that flag.
  *
  * WHAT IT DOES. Nothing here makes a request faster or smaller. It moves the
  * requests nobody is waiting on out of the window where somebody is. A call
