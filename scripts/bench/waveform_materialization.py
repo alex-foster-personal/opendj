@@ -5,12 +5,35 @@ Both kernels receive the same band arrays decoded by rb_vendor from a real
 Rekordbox ANLZ directory. Timings are repeated and interleaved; peak RSS is
 measured in isolated child processes so the first kernel cannot contaminate
 the second kernel's high-water mark.
+
+THE VERDICT READS PROCESS CPU TIME, NOT ELAPSED WALL TIME. Both kernels are
+CPU-bound and single-threaded (the PyO3 side releases the GIL for the
+downsample and fans out to nothing), so their cost is CPU seconds. Gating on
+elapsed time instead measured this box's other tenants: on Mon 31 Aug 2026 one
+commit scored 6.28, 14.29 and 33.53 percent improvement across three runs while
+the load average climbed 42 -> 68, and every local agent that hit the red paid
+for a regression that was not in the diff. ``median_cpu_ms`` and the
+``rust_improvement_pct`` derived from it are therefore the gated numbers, and
+the thresholds themselves are unchanged: 30 percent median improvement and a
+peak-RSS ratio at or under 1.10.
+
+``median_wall_ms`` and the whole ``same_process_threads`` block are REPORT ONLY
+and deliberately still wall-clock. Thread throughput is a concurrency figure;
+CPU-time it and it stops meaning anything. Read them as a description of the
+machine the run met, never as a verdict, and do not add either to ``targets``.
+
+Acceptance tests (tests/scripts/test_bench_timing.py cover the instrument):
+  [if] the box is loaded with competing CPU hogs
+       [then] the gated medians hold while the wall medians move with the box
+  [if] the Rust payload differs from the Python payload
+       [then] refuse to report a speed number at all
+  [if] the CPU clock cannot resolve the Python kernel
+       [then] raise rather than divide by zero into a fake improvement
 """
 
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import resource
 import statistics
@@ -19,6 +42,7 @@ import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +51,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from apps.webui.server import rb_vendor  # noqa: E402
+from scripts.bench.timing import Sample, interleaved_samples  # noqa: E402
 
 DEFAULT_FIXTURE = REPO_ROOT / "tests/fixtures/rb-usb-export/PIONEER/USBANLZ/P000/00029138"
 
@@ -84,6 +109,14 @@ def _isolated_peak_rss(backend: str, anlz_dir: Path, points: int, iterations: in
     return int(json.loads(completed.stdout.strip().splitlines()[-1])["peak_rss"])
 
 
+def _medians(samples: dict[str, list[Sample]], field: str) -> dict[str, float]:
+    """Per-arm median of one Sample field, in milliseconds."""
+    return {
+        name: statistics.median(getattr(sample, field) for sample in values)
+        for name, values in samples.items()
+    }
+
+
 def _threaded_throughput(
     kernel: Callable[[dict[str, Any], int], dict[str, Any]],
     bands: dict[str, Any],
@@ -133,21 +166,19 @@ def main() -> int:
         for kernel in kernels.values():
             kernel(bands, args.points)
 
-    timings: dict[str, list[float]] = {"python": [], "rust": []}
-    gc.disable()
-    try:
-        for iteration in range(args.iterations):
-            order = ("python", "rust") if iteration % 2 == 0 else ("rust", "python")
-            for backend in order:
-                started = time.perf_counter_ns()
-                kernels[backend](bands, args.points)
-                elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
-                timings[backend].append(elapsed_ms)
-    finally:
-        gc.enable()
-
-    medians = {name: statistics.median(values) for name, values in timings.items()}
-    improvement = (medians["python"] - medians["rust"]) / medians["python"] * 100.0
+    samples = interleaved_samples(
+        {name: partial(kernel, bands, args.points) for name, kernel in kernels.items()},
+        args.iterations,
+    )
+    cpu_medians = _medians(samples, "cpu_ms")
+    wall_medians = _medians(samples, "wall_ms")
+    if cpu_medians["python"] <= 0.0:
+        raise RuntimeError(
+            "the Python kernel measured 0ms of CPU time, so no improvement is computable; "
+            f"process_time resolution here is {time.get_clock_info('process_time').resolution}s "
+            "- raise --points until the kernel outruns the clock"
+        )
+    improvement = (cpu_medians["python"] - cpu_medians["rust"]) / cpu_medians["python"] * 100.0
     threaded: dict[str, list[float]] = {"python": [], "rust": []}
     for round_index in range(args.thread_rounds):
         order = ("python", "rust") if round_index % 2 == 0 else ("rust", "python")
@@ -172,7 +203,13 @@ def main() -> int:
         "band_length": len(next(iter(bands.values()))),
         "points": args.points,
         "iterations": args.iterations,
-        "median_ms": medians,
+        "timing_basis": (
+            "median_cpu_ms and rust_improvement_pct are process CPU time and are what "
+            "`pass` reads; median_wall_ms and same_process_threads are elapsed wall time, "
+            "report only, and move with whatever else is running on this box"
+        ),
+        "median_cpu_ms": cpu_medians,
+        "median_wall_ms": wall_medians,
         "rust_improvement_pct": improvement,
         "peak_rss": rss,
         "rust_peak_rss_ratio": rss_ratio,
@@ -180,9 +217,10 @@ def main() -> int:
             "workers": args.threads,
             "calls_per_round": args.thread_calls,
             "rounds": args.thread_rounds,
+            "basis": "elapsed wall time, report only - a concurrency figure has no CPU-time form",
             "median_requests_per_second": threaded_medians,
             "throughput_vs_single_call": {
-                name: threaded_medians[name] / (1000.0 / medians[name]) for name in kernels
+                name: threaded_medians[name] / (1000.0 / wall_medians[name]) for name in kernels
             },
         },
         "targets": {"median_improvement_pct": 30.0, "peak_rss_ratio": 1.10},
