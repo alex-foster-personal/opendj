@@ -66,6 +66,16 @@
 			prefetchMB: Math.round(cacheBytes / (1024 * 1024)),
 			prefetchCount: cacheN
 		});
+		// Idle gate: an identical readout means no work landed in the last 2s,
+		// so skip the $state writes that would otherwise dirty the TopBar on
+		// every sample while the page sits open doing nothing.
+		if (
+			readout.text === memoryText &&
+			readout.level === memoryLevel &&
+			readout.hover === memoryHover
+		) {
+			return;
+		}
 		memoryText = readout.text;
 		memoryLevel = readout.level;
 		memoryHover = readout.hover;

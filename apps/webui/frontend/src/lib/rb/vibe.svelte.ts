@@ -162,6 +162,7 @@ async function _fetchConfig(): Promise<void> {
 export function voteVibe(dir: 'up' | 'down'): void {
 	const delta = dir === 'up' ? VOTE_DELTA : -VOTE_DELTA;
 	_setCharge(vibeState.charge + delta);
+	_ensureRaf();
 	_persistSample({
 		t: Date.now(),
 		level: vibeState.display,
@@ -189,6 +190,7 @@ function _onPointerMove(e: PointerEvent): void {
 	vibeState.moved_total += dist;
 	const fillPx = BASE_FILL_PX / Math.max(0.01, vibeState.sensitivity);
 	_setCharge(vibeState.charge + dist / fillPx);
+	_ensureRaf();
 }
 
 function _tickRainbow(dt: number): void {
@@ -202,6 +204,7 @@ function _tickRainbow(dt: number): void {
 }
 
 function _tick(now: number): void {
+	_raf = 0;
 	if (_lastTick === 0) _lastTick = now;
 	const dt = Math.min(0.1, (now - _lastTick) / 1000);
 	_lastTick = now;
@@ -210,6 +213,17 @@ function _tick(now: number): void {
 	}
 	if (dt > 0 && vibeState.display >= 0.9) _tickRainbow(dt);
 	_maybeSample(now);
+	// Idle exit: at zero charge there is nothing to decay, the rainbow sits
+	// far below its 0.9 threshold and _maybeSample skips flat stretches - a
+	// re-armed frame would be pure burn. Pointer moves and votes restart the
+	// loop via _ensureRaf. Mirrors the anyTransport gate in audio-engine.
+	if (vibeState.charge > 0) _raf = requestAnimationFrame(_tick);
+	else _lastTick = 0;
+}
+
+/** Re-arm the decay loop after an event that puts charge back on the meter. */
+function _ensureRaf(): void {
+	if (_raf !== 0 || !_listening) return;
 	_raf = requestAnimationFrame(_tick);
 }
 

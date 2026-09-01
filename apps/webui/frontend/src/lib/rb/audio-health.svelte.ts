@@ -40,6 +40,10 @@ function _ensureSampler(): void {
 		if (hz < 1) {
 			_hz = null;
 			_level = 'idle';
+			// Idle exit: a whole window with no engine ticks means nothing is
+			// audible. noteAudioPresentationTick re-arms on the next publish,
+			// so the readout stays live without polling through idle.
+			_stopSampler();
 			return;
 		}
 		const rounded = Math.round(hz);
@@ -48,6 +52,12 @@ function _ensureSampler(): void {
 		else if (rounded < WARN_HZ) _level = 'warn';
 		else _level = 'ok';
 	}, SAMPLE_MS);
+}
+
+function _stopSampler(): void {
+	if (_samplerId === null) return;
+	clearInterval(_samplerId);
+	_samplerId = null;
 }
 
 /** Called once per engine presentation publish while transport is live. */
