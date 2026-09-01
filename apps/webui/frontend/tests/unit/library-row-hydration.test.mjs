@@ -209,6 +209,29 @@ test('the row-rendering path holds no fetch entry point at all', () => {
 	}
 });
 
+// ------------------------------------------- unmapped rows must hydrate too
+//
+// #737 made rb-meta.artwork_available a real embedded-tag read for a track
+// with no rekordbox mapping (previously pinned to a constant false). The
+// lazy hydrator used to skip the round-trip entirely for such rows on the
+// (once-true) premise that the payload held nothing new - Codex caught this
+// live on PR #773: the skip survived the backend change, so the main
+// library browser stayed permanently blind to real embedded artwork.
+
+test('_hydrateRowMeta does not skip the round-trip for unmapped rows', () => {
+	const fnStart = panelSource.indexOf('async function _hydrateRowMeta');
+	assert.ok(fnStart >= 0, '_hydrateRowMeta not found in BrowserPanel.svelte');
+	const fnEnd = panelSource.indexOf('\n\t}', fnStart);
+	assert.ok(fnEnd > fnStart, '_hydrateRowMeta body end not found');
+	const fnText = panelSource.slice(fnStart, fnEnd);
+	assert.ok(
+		!/if\s*\(\s*!row\.has_rb_mapping\s*\)\s*return/.test(fnText),
+		'_hydrateRowMeta still returns early for !row.has_rb_mapping - unmapped rows never ' +
+			'fetch rb-meta, so a real embedded-tag artwork_available is never observed by the ' +
+			'main library browser (PR #773 finding)'
+	);
+});
+
 test('BrowserPanel warms exactly one anlz, on select, and reads the cache purely elsewhere', () => {
 	const calls = [...panelSource.matchAll(/\bensureAnlz\s*\(([^)]*)\)/g)].map((m) => m[1].trim());
 	assert.deepEqual(

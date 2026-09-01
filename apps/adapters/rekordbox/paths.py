@@ -27,12 +27,13 @@ from typing import Any
 from fastapi import HTTPException
 
 from apps.shared import fs_residency, platform_paths
+from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.platform_paths import MappedPath
 from apps.shared.state import locations as track_locations
 
 from . import config
 from .cues import HOT_CUE_SLOTS
-from .errors import _open_ro, not_found
+from .errors import _open_ro, not_found, unavailable
 from .models import RbContent
 
 
@@ -225,6 +226,95 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
     return path, media_type
 
 
+def _resolve_local_audio_path(file_path: str | None) -> Path | None:
+    """Resolved, materialised on-disk path for a state-layer ``file_path``.
+
+    ``None`` when the path is absent, unresolvable on this platform, or not
+    materialised (dataless/iCloud stub) -- same residency gate as
+    :func:`local_audio_file`. Shared by :func:`_embedded_artwork_for_file_path`
+    and :func:`local_artwork` so both agree on what "the file exists" means.
+    """
+    if not file_path:
+        return None
+    mapped = resolve_asset_path(file_path)
+    if mapped.resolved is None or not fs_residency.is_materialised(mapped.resolved):
+        return None
+    return mapped.resolved
+
+
+def _embedded_artwork_for_file_path(file_path: str | None) -> tuple[bytes, str] | None:
+    """Real embedded cover art for a state-layer ``file_path``, or ``None``.
+
+    Shared by :func:`local_artwork` (404s when absent) and
+    :func:`local_artwork_available` (a bare bool for ``rb-meta``) so both
+    agree with each other and neither re-opens ``state.db`` -- callers that
+    already have ``file_path`` (e.g. ``_local_rb_meta``, which fetched it for
+    other fields) pass it straight through instead of paying a second
+    ``local_track_row`` query.
+    """
+    resolved = _resolve_local_audio_path(file_path)
+    if resolved is None:
+        return None
+    from apps.shared import audio_files as _audio_files
+
+    return _audio_files.read_embedded_artwork(resolved)
+
+
+def local_artwork(stable_id: str) -> tuple[bytes, str]:
+    """Embedded-tag cover art for a track with NO rekordbox vendor mapping.
+
+    :func:`artwork_file` needs a ``djmdContent.ImagePath``, which a locally
+    imported file never has, so ``/artwork`` 404'd for every such row
+    (PARITY-TODO). This reads the same on-disk file :func:`local_audio_file`
+    resolves and returns the real embedded picture frame instead -- never a
+    generated or placeholder image, and never resized (there is no
+    pre-rendered s/m variant for embedded art, unlike the rekordbox path).
+
+    ``mutagen`` is an opt-in ``[tags]`` extra (GPL vs this wheel's Apache
+    license, see ``apps.shared._mutagen``), so a build that omits it cannot
+    tell a track with no embedded picture apart from one it never checked.
+    Collapsing that into ``ARTWORK_NOT_FOUND`` would be a guessed verdict, so
+    a track with a real, resolvable file but no reader raises 503
+    ``ARTWORK_READER_UNAVAILABLE`` instead -- loud and distinct from "checked,
+    no art". Residency is checked FIRST: a stale path, a missing file, or a
+    streaming URI has no file to read regardless of whether a reader exists,
+    so those still 404 ``ARTWORK_NOT_FOUND`` even when mutagen is absent.
+    """
+    file_path, _duration_ms = local_track_row(stable_id)
+    resolved = _resolve_local_audio_path(file_path)
+    if resolved is None:
+        raise not_found(
+            "ARTWORK_NOT_FOUND",
+            f"track {stable_id} has no resolvable local file "
+            f"(file_path={file_path!r})",
+        )
+    if not HAS_MUTAGEN:
+        raise unavailable(
+            "ARTWORK_READER_UNAVAILABLE",
+            f"track {stable_id} has a resolvable local file but the optional "
+            "'mutagen' tag reader is not installed (pip install music-dj-tools[tags])",
+        )
+    from apps.shared import audio_files as _audio_files
+
+    embedded = _audio_files.read_embedded_artwork(resolved)
+    if embedded is None:
+        raise not_found(
+            "ARTWORK_NOT_FOUND",
+            f"track {stable_id} has a local file with no embedded artwork tag "
+            f"(file_path={file_path!r})",
+        )
+    return embedded
+
+
+def local_artwork_available(file_path: str | None) -> bool:
+    """True iff the local ``file_path`` is materialised AND carries a real
+    embedded cover art frame -- the local-track counterpart of
+    ``artwork_available`` for a rekordbox-mapped row (see ``rb_assets.py``'s
+    ``_local_rb_meta``, which already holds ``file_path`` for other fields).
+    """
+    return _embedded_artwork_for_file_path(file_path) is not None
+
+
 def local_track_row(stable_id: str) -> tuple[str | None, int | None]:
     """``(file_path, duration_ms)`` from state.db for a track with NO rekordbox
     vendor mapping.
@@ -412,6 +502,8 @@ __all__ = [
     "empty_anlz_payload",
     "empty_hot_cue_slots",
     "is_streaming_path",
+    "local_artwork",
+    "local_artwork_available",
     "local_audio_file",
     "local_track_row",
     "resolve_asset_path",

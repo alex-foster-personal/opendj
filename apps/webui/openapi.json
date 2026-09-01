@@ -6001,7 +6001,7 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nartwork/analysis False, no cues, no genre) while ``folder_path``,\n``file_exists`` and ``quality`` still carry the state layer's own disk\ntruth. See :func:`_local_rb_meta`.",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False, no cues, no genre) while ``folder_path``, ``file_exists``\nand ``quality`` still carry the state layer's own disk truth.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
@@ -15843,7 +15843,7 @@
     },
     "/api/v1/tracks/{stable_id}/artwork": {
       "get": {
-        "description": "Serve the rekordbox artwork jpg at the requested size variant.",
+        "description": "Serve artwork for the track: rekordbox's pre-rendered jpg variant when\nmapped, else the embedded tag picture read straight from the local file.\n\nThe embedded-tag path has no pre-rendered s/m/orig variants (rekordbox\nnever touched this file), so ``size`` is not honoured there -- the real\nembedded image is served at its original dimensions and mime type for\nall three, rather than fabricating a resize.",
         "operationId": "get_track_artwork_api_v1_tracks__stable_id__artwork_get",
         "parameters": [
           {

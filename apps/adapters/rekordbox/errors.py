@@ -32,6 +32,17 @@ def not_found(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": code, "message": message})
 
 
+def unavailable(code: str, message: str) -> HTTPException:
+    """503 for a capability that is missing, not a fact that is absent.
+
+    Distinct from :func:`not_found`: a 404 asserts "this does not exist", which
+    is a verdict the caller cannot honestly reach when the tool needed to check
+    is itself missing (verification.md: report UNKNOWN, never a guessed
+    verdict). Use this when an optional runtime dependency blocks the check.
+    """
+    return HTTPException(status_code=503, detail={"code": code, "message": message})
+
+
 def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     """Open ``path`` read-only, or fail loudly if it is not on disk.
 

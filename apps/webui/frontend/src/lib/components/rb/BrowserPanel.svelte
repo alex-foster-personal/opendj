@@ -1178,14 +1178,15 @@
 	}
 
 	async function _hydrateRowMeta(row: BrowserRow): Promise<void> {
-		// Without a rekordbox mapping there is nothing here worth a round-trip.
-		// Since #505 rb-meta answers 200 for such a track, but every field in
-		// that payload is a known constant (vendor local, vendor_id null,
-		// artwork/analysis false, cue_count 0, genre null) except quality and
-		// file_exists, which THIS ROW already carries inline from the listing.
-		// So the request could only tell us what we know. Skipping it also
-		// keeps a locally imported library off one fetch per visible row.
-		if (!row.has_rb_mapping) return;
+		// Pre-#737 a track with no rekordbox mapping had every rb-meta field
+		// pinned to a known constant (artwork/analysis always false), so the
+		// round-trip could only confirm what the row already knew and was
+		// skipped outright. #737 made artwork_available a real embedded-tag
+		// read for these rows (see _local_rb_meta), so skipping the fetch
+		// left the main browser permanently blind to it -- the artwork cell
+		// stayed empty even when /artwork could serve real bytes. Unmapped
+		// rows now pay the same one-fetch-per-visible-row cost mapped rows
+		// already pay via this same IntersectionObserver-gated path.
 		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {

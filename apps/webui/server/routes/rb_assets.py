@@ -48,9 +48,12 @@ class RbMetaOut(BaseModel):
 
     ``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the
     rekordbox-sourced fields are then honestly empty (``vendor_id`` None,
-    artwork/analysis False, no cues, no genre) while ``folder_path``,
-    ``file_exists`` and ``quality`` still carry the state layer's own disk
-    truth. See :func:`_local_rb_meta`.
+    analysis False, no cues, no genre) while ``folder_path``, ``file_exists``
+    and ``quality`` still carry the state layer's own disk truth.
+    ``artwork_available`` is the one exception -- it reflects a real embedded
+    tag picture on the local file when present, since ``/artwork`` now
+    serves that instead of a rekordbox-rendered jpg for these rows. See
+    :func:`_local_rb_meta`.
     """
 
     stable_id: str
@@ -95,16 +98,34 @@ def get_track_audio(
     )
 
 
-@router.get("/{stable_id}/artwork", response_class=FileResponse)
+@router.get("/{stable_id}/artwork", response_class=FileResponse, response_model=None)
 def get_track_artwork(
     stable_id: str,
     size: Literal["s", "m", "orig"] = Query(
         "s", description="s=80x80 browser rows, m=240x240 deck thumbs, orig"
     ),
     _backend: StateBackend = Depends(get_read_state),
-) -> FileResponse:
-    """Serve the rekordbox artwork jpg at the requested size variant."""
-    content = rb_vendor.resolve_content(stable_id)
+) -> FileResponse | Response:
+    """Serve artwork for the track: rekordbox's pre-rendered jpg variant when
+    mapped, else the embedded tag picture read straight from the local file.
+
+    The embedded-tag path has no pre-rendered s/m/orig variants (rekordbox
+    never touched this file), so ``size`` is not honoured there -- the real
+    embedded image is served at its original dimensions and mime type for
+    all three, rather than fabricating a resize.
+    """
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+        data, mime = rb_vendor.local_artwork(stable_id)
+        return Response(
+            content=data,
+            media_type=mime,
+            headers={"Cache-Control": _CACHE_ARTWORK},
+        )
     path = rb_vendor.artwork_file(content, size)
     return FileResponse(
         path,
@@ -149,8 +170,9 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
 
     Mirrors :func:`get_track_anlz`'s VENDOR_MAPPING_NOT_FOUND branch: every
     rekordbox-sourced field is empty because it genuinely does not exist for a
-    locally imported file, and nothing is synthesised to fill the gap. The two
-    fields that are NOT rekordbox facts - file_exists and quality - are still
+    locally imported file, and nothing is synthesised to fill the gap. The
+    fields that are NOT rekordbox facts - file_exists, quality, and
+    artwork_available (an embedded tag, not a rekordbox render) - are still
     measured, from the same state-layer file_path and the same cached stat the
     bulk listing uses, so a row and its rb-meta cannot disagree.
     """
@@ -170,7 +192,7 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
         genre=None,
         comment=None,
         duration_s=duration_ms // 1000 if duration_ms is not None else None,
-        artwork_available=False,
+        artwork_available=rb_vendor.local_artwork_available(file_path),
         analysis_available=False,
         beatgrid_issue=None,
         cue_count=0,
