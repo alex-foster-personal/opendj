@@ -14,14 +14,19 @@ on:
     branches: ["release/*"]
 
 concurrency:
-  group: release-check-${{ github.ref }}
-  # Trunk verification is never cancellable. Every ref-grouped workflow shares one
-  # concurrency group per branch, so on main a merge burst cancelled its predecessors
-  # and left heads with jobs that never executed (Mon 31 Aug 2026: six merges in 25s
-  # left main with no completed pytest or frontend job, while nothing reported a
-  # problem, because a cancelled job is not a failed one). Feature branches and pull
-  # requests still cancel, which is where the runner savings actually come from.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: release-check-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
+  # Trunk verification is never cancellable. A merge burst used to cancel each
+  # run's predecessor and leave heads whose jobs never executed (Mon 31 Aug 2026:
+  # six merges in 25s left main with no completed pytest or frontend job, while
+  # nothing reported a problem, because a cancelled job is not a failed one).
+  #
+  # This gives every trunk push its OWN group rather than making the cancellation
+  # conditional, matching ci.yml. A conditional flag was tried first (#631) and
+  # did not hold: three post-fix trunk runs were still cancelled seconds after the
+  # next push run was created. Removing the shared group removes the precondition
+  # for cancelling at all, so it does not depend on the mechanism that failed.
+  # Pull requests keep the shared group and still cancel superseded runs.
+  cancel-in-progress: true
 
 jobs:
   release-check:
