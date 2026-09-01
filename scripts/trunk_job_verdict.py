@@ -31,7 +31,8 @@ RELEVANCE IS ANCESTRY, NEVER A TIMESTAMP
     ~23:41Z. By clock it is "a successful trunk run after the fix"; by ancestry it is
     PRE-fix, because b9a16ab8 is not its ancestor. It merely started earlier and finished
     later. Under a fast trunk, "started after X landed" wears the exact costume of "built a
-    tree containing X", so --contains uses `git merge-base --is-ancestor`, and a SHA
+    tree containing X", so --since resolves a commit with `git merge-base --is-ancestor`,
+    and a SHA
     missing from the clone raises rather than degrading to a time comparison.
 
 SURVIVAL, THE DISCRIMINATING TEST FOR THE CONCURRENCY GUARD
@@ -40,17 +41,25 @@ SURVIVAL, THE DISCRIMINATING TEST FOR THE CONCURRENCY GUARD
     nothing merged fast enough to kill them - so it measures nothing. Only raced runs are
     counted; a run nobody raced never tested the guard.
 
-    Measured over the newest 40 trunk runs AFTER #631 landed: 27 of 32 raced runs were
-    cancelled mid-flight. #631 changed cancel-in-progress but never touched the concurrency
-    GROUP, and the flag is read from the run that STARTS, not the one being killed. Trunk
-    cancellation is therefore still live, and until the real fix lands this per-job verdict
-    is the only working instrument on trunk. Nothing here may degrade to "the run
-    concluded, therefore fine".
+    Measured after #631: 27 of 32 raced runs were still cancelled mid-flight, because
+    #631 changed cancel-in-progress but never touched the concurrency GROUP, and the flag
+    is read from the run that STARTS, not the one being killed. #646 removed the
+    precondition; measured with --since on its merge commit, 14 of 14 raced runs survived,
+    several outliving seven merges landing mid-flight.
+
+    THE VERDICT IS ALWAYS SCOPED TO A STATED WINDOW. A count over the whole listing
+    averages a broken regime with a working one and reports the mixture as the present
+    state: the same 40-run window said "18 of 34 killed, the guard is NOT holding" while
+    the runs since the fix were unbroken. That failure is permanent, since every future fix
+    leaves a pre-fix tail inside the window, so the alert would stay red forever and train
+    the reader to ignore it - the exact alert fatigue the three-valued verdict avoids. See
+    build_survival_report.
 
 USAGE
     python -m scripts.trunk_job_verdict --limit 60
-    python -m scripts.trunk_job_verdict --limit 60 --contains b9a16ab8
+    python -m scripts.trunk_job_verdict --limit 60 --since b9a16ab8
     python -m scripts.trunk_job_verdict --survival --limit 40
+    python -m scripts.trunk_job_verdict --survival --limit 40 --since 33a228d6
     python -m scripts.trunk_job_verdict --run-id 33421400044 --json
     python -m scripts.trunk_job_verdict --runs-json fixture.json   # offline, no network
 
@@ -81,6 +90,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 from scripts.ci_health_core import REPO, PreconditionError
@@ -95,11 +105,13 @@ from scripts.trunk_job_verdict_core import (
     VERDICT_UNKNOWN,
     RunOutcome,
     RunVerdict,
-    SurvivalOutcome,
+    SurvivalReport,
     assess_survival,
+    build_survival_report,
     classify_run,
     fetch_recent_runs,
     fetch_run,
+    git_knows_commit,
     is_built_on,
     load_runs_json,
 )
@@ -212,9 +224,14 @@ def _emit_json(verdicts: list[RunVerdict], scope: str, exit_code: int) -> None:
     )
 
 
-def _emit_survival(outcomes: list[SurvivalOutcome], scope: str) -> int:
-    """Report the survival rate of raced trunk runs, and fail when any was killed."""
-    if not outcomes:
+def _emit_survival(report: SurvivalReport, scope: str) -> int:
+    """Report survival as a PRESENT-TENSE claim about a stated window, plus history.
+
+    The per-run lines carry their own evidence, so a reader can see a regime boundary in
+    them directly. It is the rollup that used to lose it, by counting kills across a window
+    that spanned a fix and reporting the mixture as the current state.
+    """
+    if not report.recent:
         print(f"[INFO] scope: {scope}")
         print(
             "[OK] no trunk run in this window was raced by a later merge, so this window "
@@ -222,8 +239,7 @@ def _emit_survival(outcomes: list[SurvivalOutcome], scope: str) -> int:
         )
         return EXIT_OK
 
-    killed = [item for item in outcomes if not item.survived]
-    for item in outcomes:
+    for item in report.recent:
         token = "[OK]" if item.survived else "[ERROR]"
         verb = "survived" if item.survived else "was KILLED by"
         print(
@@ -231,16 +247,41 @@ def _emit_survival(outcomes: list[SurvivalOutcome], scope: str) -> int:
             f"{len(item.overlapped_by)} merge(s) landing mid-flight "
             f"(reads '{item.run_conclusion}')"
         )
-    print(f"[INFO] scope: {scope}")
-    survived = len(outcomes) - len(killed)
-    print(f"[INFO] denominator: {len(outcomes)} raced runs, not the whole window")
-    if killed:
+    for item in report.older:
+        mark = "survived" if item.survived else "KILLED"
         print(
-            f"[ERROR] {len(killed)} of {len(outcomes)} raced trunk runs were cancelled "
-            "mid-flight - the concurrency guard is NOT holding"
+            f"[INFO] (history, outside the verdict window) {item.head_sha[:8]} "
+            f"run {item.run_id}: {mark}"
+        )
+
+    print(f"[INFO] scope: {scope}")
+    # The window is printed on the SAME line as the number it produced, so the figure can
+    # never be quoted later without the constraint that made it true.
+    source = "--since" if report.explicit else "default recent window"
+    print(f"[INFO] verdict window ({source}): {report.boundary}")
+    print(
+        f"[INFO] denominator: {len(report.recent)} raced runs in the verdict window, "
+        f"not the whole listing ({len(report.older)} older raced runs shown as history)"
+    )
+
+    if report.killed_recent:
+        print(
+            f"[ERROR] {len(report.killed_recent)} of {len(report.recent)} raced trunk runs "
+            f"in the verdict window were cancelled mid-flight - the concurrency guard is "
+            f"NOT holding over {report.boundary}"
         )
         return EXIT_BURIED_FAILURE
-    print(f"[OK] all {survived} raced trunk runs survived - the concurrency guard holds")
+
+    print(
+        f"[OK] all {len(report.recent)} raced trunk runs in the verdict window survived - "
+        f"the concurrency guard holds over {report.boundary}"
+    )
+    if report.regime_changed:
+        print(
+            f"[INFO] regime change: {len(report.killed_older)} of {len(report.older)} "
+            "older raced runs were killed, so a fix landed inside this listing. The "
+            "verdict above is deliberately NOT averaged across that boundary."
+        )
     return EXIT_OK
 
 
@@ -269,11 +310,39 @@ def _load_runs(args: argparse.Namespace) -> tuple[list[RunOutcome], str]:
     return runs, f"newest {len(runs)} completed {args.workflow} runs on {args.branch}"
 
 
-def _apply_contains(
-    runs: list[RunOutcome], base_sha: str, scope: str
-) -> tuple[list[RunOutcome], str]:
-    kept = [run for run in runs if is_built_on(run.head_sha, base_sha)]
-    return kept, f"{scope}, restricted to trees containing {base_sha[:8]} (ancestry, not clock)"
+def _apply_since(
+    runs: list[RunOutcome], boundary: str, scope: str
+) -> tuple[list[RunOutcome], str, str]:
+    """Restrict to runs at or after an explicit boundary: a commit, or a timestamp.
+
+    A COMMIT IS RESOLVED BY ANCESTRY, NEVER BY TIME. Run 33451482070 at a9fc0504 concluded
+    SUCCESS after #631 merged by the clock, yet b9a16ab8 is not its ancestor, so it is
+    pre-fix and says nothing about that guard. "Started after X landed" wears the exact
+    costume of "built a tree containing X".
+
+    Git is asked FIRST, because a bare digit string like 20260831 is both a plausible
+    abbreviated SHA and something datetime.fromisoformat will happily parse. Resolving it
+    as a commit when git knows it removes that ambiguity instead of guessing.
+    """
+    if git_knows_commit(boundary):
+        kept = [run for run in runs if is_built_on(run.head_sha, boundary)]
+        label = f"trees containing {boundary[:8]} (ancestry, not clock)"
+        return kept, f"{scope}, restricted to {label}", label
+    try:
+        cutoff = datetime.fromisoformat(boundary.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise PreconditionError(
+            f"--since {boundary!r} is neither a commit this clone knows nor an ISO-8601 "
+            "timestamp. Fetch the commit, or pass a timestamp like 2026-09-01T00:00:00Z."
+        ) from exc
+    kept = [
+        run
+        for run in runs
+        if run.created_at
+        and datetime.fromisoformat(run.created_at.replace("Z", "+00:00")) >= cutoff
+    ]
+    label = f"runs created at or after {boundary}"
+    return kept, f"{scope}, restricted to {label}", label
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -285,10 +354,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch", default=DEFAULT_BRANCH)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument(
-        "--contains",
+        "--since",
         help=(
-            "keep only runs whose commit has this SHA as an ancestor. Ancestry, never a "
-            "timestamp: a run that merely started later may predate the commit entirely."
+            "explicit window boundary: a commit (resolved by ANCESTRY, never by clock) or "
+            "an ISO-8601 timestamp. Whatever is passed is printed alongside the verdict, "
+            "so the number always travels with the constraint that produced it."
         ),
     )
     parser.add_argument(
@@ -307,8 +377,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         runs, scope = _load_runs(args)
-        if args.contains:
-            runs, scope = _apply_contains(runs, args.contains, scope)
+        boundary_label: str | None = None
+        if args.since:
+            runs, scope, boundary_label = _apply_since(runs, args.since, scope)
     except PreconditionError as exc:
         # Still emit a zero count. The caller keys its alerting off this output, and an
         # UNSET output reads as truthy in a GitHub Actions `!= '0'` expression, which would
@@ -319,7 +390,10 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_PRECONDITION
 
     if args.survival:
-        return _emit_survival(assess_survival(runs), scope)
+        return _emit_survival(
+            build_survival_report(assess_survival(runs), boundary_label=boundary_label),
+            scope,
+        )
 
     verdicts = [classify_run(run) for run in runs]
     buried = sum(1 for item in verdicts if item.is_buried)
