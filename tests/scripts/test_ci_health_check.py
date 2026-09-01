@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from scripts import ci_health_check as mod
+from scripts import ci_health_trunk as trunk_mod
 
 # EXCLUDED_RUN_EVENTS, the actions/runs page parse and the timestamp parse live in
 # ci_health_core: both the checker (page 1) and the metrics catch-up (paged) read that
@@ -300,7 +301,9 @@ def _trunk_run(conclusion: str = "success"):
 def test_trunk_verified_passes_when_every_job_concluded_success(monkeypatch):
     """If a trunk head has all jobs green and this still alarms then it is crying wolf."""
     monkeypatch.setattr(
-        mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success"), _job("ui", "success")]
+        trunk_mod,
+        "fetch_run_jobs",
+        lambda run_id: [_job("pytest", "success"), _job("ui", "success")],
     )
     result = mod._check_trunk_verified([_trunk_run()], "main")
     assert result.ok
@@ -310,7 +313,9 @@ def test_trunk_verified_passes_when_every_job_concluded_success(monkeypatch):
 def test_trunk_verified_treats_skipped_as_passing(monkeypatch):
     """If a path-filtered job counts as unverified then every docs-only merge alarms."""
     monkeypatch.setattr(
-        mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success"), _job("deploy", "skipped")]
+        trunk_mod,
+        "fetch_run_jobs",
+        lambda run_id: [_job("pytest", "success"), _job("deploy", "skipped")],
     )
     assert mod._check_trunk_verified([_trunk_run()], "main").ok
 
@@ -321,7 +326,7 @@ def test_trunk_verified_catches_jobs_that_never_executed(monkeypatch):
     This is the Mon 31 Aug 2026 case: the run itself did not fail, so nothing was red.
     """
     monkeypatch.setattr(
-        mod,
+        trunk_mod,
         "fetch_run_jobs",
         lambda run_id: [_job("ratchet", "success"), _job("pytest fast lane", "cancelled")],
     )
@@ -339,7 +344,7 @@ def test_trunk_verified_catches_a_failed_job_inside_a_cancelled_run(monkeypatch)
     hours because the run's own top line said 'cancelled'.
     """
     monkeypatch.setattr(
-        mod, "fetch_run_jobs", lambda run_id: [_job("quality ratchet", "failure")]
+        trunk_mod, "fetch_run_jobs", lambda run_id: [_job("quality ratchet", "failure")]
     )
     result = mod._check_trunk_verified([_trunk_run(conclusion="cancelled")], "main")
     assert not result.ok
@@ -356,7 +361,7 @@ def test_trunk_verified_alarms_when_the_gating_workflow_is_absent():
 
 def test_trunk_verified_ignores_pull_request_runs(monkeypatch):
     """If PR runs count as trunk then a green PR masks an unverified main."""
-    monkeypatch.setattr(mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success")])
+    monkeypatch.setattr(trunk_mod, "fetch_run_jobs", lambda run_id: [_job("pytest", "success")])
     pr_only = [
         _run(age_minutes=1, duration_seconds=300, conclusion="success", event="pull_request")
     ]
