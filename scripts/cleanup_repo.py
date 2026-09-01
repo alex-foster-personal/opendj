@@ -8,8 +8,8 @@ writes a manifest describing how to restore them.
 
 Usage::
 
-    uv run --no-project python -m scripts.cleanup_repo --repo "$PWD"
-    uv run --no-project python -m scripts.cleanup_repo --repo "$PWD" --apply
+    uv run --frozen python -m scripts.cleanup_repo --repo "$PWD"
+    uv run --frozen python -m scripts.cleanup_repo --repo "$PWD" --apply
 """
 
 from __future__ import annotations
@@ -99,6 +99,85 @@ def _inside(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _overlaps(first: Path, second: Path) -> bool:
+    return first == second or _inside(first, second) or _inside(second, first)
+
+
+def registered_worktrees(repo: Path) -> list[Path]:
+    """Return every worktree registered in ``repo``'s Git common directory."""
+    worktrees: list[Path] = []
+    for line in _git(repo, "worktree", "list", "--porcelain").splitlines():
+        if line.startswith("worktree "):
+            worktrees.append(Path(line.removeprefix("worktree ")).expanduser().resolve())
+    return worktrees
+
+
+def git_markers(path: Path) -> list[Path]:
+    """Find embedded ``.git`` entries without following symlinks."""
+    if path.is_symlink() or not path.is_dir():
+        return []
+
+    markers: list[Path] = []
+    pending = [path]
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.name == ".git":
+                    markers.append(Path(entry.path))
+                elif entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+    return markers
+
+
+def worktree_hazards(repo: Path, paths: list[Path]) -> list[str]:
+    """Describe registered, linked, or dirty Git trees a move would disturb."""
+    hazards: list[str] = []
+
+    for worktree in registered_worktrees(repo):
+        if worktree == repo:
+            continue
+        for target in paths:
+            if _overlaps(worktree, target):
+                hazards.append(f"registered worktree {worktree} overlaps {target}")
+
+    for target in paths:
+        for marker in git_markers(target):
+            nested_repo = marker.parent.resolve()
+            if marker.is_symlink() or not marker.is_dir():
+                hazards.append(f"linked Git worktree marker {marker} is inside {target}")
+                continue
+
+            nested_top = Path(_git(nested_repo, "rev-parse", "--show-toplevel")).resolve()
+            if nested_top != nested_repo:
+                hazards.append(
+                    f"embedded Git metadata {marker} resolves outside its directory to {nested_top}"
+                )
+                continue
+
+            other_worktrees = [
+                worktree
+                for worktree in registered_worktrees(nested_repo)
+                if worktree != nested_repo
+            ]
+            if other_worktrees:
+                rendered = ", ".join(str(worktree) for worktree in other_worktrees)
+                hazards.append(
+                    f"nested repository {nested_repo} has registered worktrees: {rendered}"
+                )
+
+            dirty = _git(
+                nested_repo,
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=normal",
+            )
+            if dirty:
+                hazards.append(f"nested repository {nested_repo} has uncommitted files")
+
+    return hazards
 
 
 def tree_stats(path: Path) -> tuple[int, int]:
@@ -225,9 +304,17 @@ def apply_cleanup(
     if _inside(trash_root, repo):
         raise CleanupError(f"Trash root must be outside the repository: {trash_root}")
 
-    handles, warning = open_handles([path for _, path, _, _ in found])
+    sources = [path for _, path, _, _ in found]
+    hazards = worktree_hazards(repo, sources)
+    if hazards:
+        sample = "\n".join(f"  {hazard}" for hazard in hazards[:20])
+        raise CleanupError(
+            f"cleanup targets overlap protected Git worktrees; nothing moved:\n{sample}"
+        )
+
+    handles, warning = open_handles(sources)
     if warning:
-        print(f"[WARN] {warning}", file=sys.stderr)
+        raise CleanupError(f"{warning}; refusing --apply")
     if handles:
         sample = "\n".join(
             f"  pid={item['pid']} command={item['command']} path={item['path']}"

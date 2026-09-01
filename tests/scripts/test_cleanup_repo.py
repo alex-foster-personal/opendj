@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -36,7 +37,12 @@ def _repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _run(repo: Path, trash: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _run(
+    repo: Path,
+    trash: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         (
             sys.executable,
@@ -50,6 +56,7 @@ def _run(repo: Path, trash: Path, *args: str) -> subprocess.CompletedProcess[str
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -133,3 +140,121 @@ def test_apply_refuses_a_trash_root_inside_the_repository(tmp_path: Path) -> Non
     assert result.returncode == 3
     assert "outside the repository" in result.stderr
     assert artifact.is_file()
+
+
+def test_apply_refuses_when_lsof_is_unavailable(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    trash = tmp_path / "trash"
+    artifact = _artifact(repo, "spikes/rusty-link/target")
+    git = shutil.which("git")
+    assert git is not None
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "git").symlink_to(git)
+    env = os.environ.copy()
+    env["PATH"] = str(tools)
+
+    result = _run(repo, trash, "--apply", env=env)
+
+    assert result.returncode == 3
+    assert "lsof is unavailable" in result.stderr
+    assert "refusing --apply" in result.stderr
+    assert artifact.is_file()
+    assert not trash.exists()
+
+
+def test_apply_refuses_a_registered_worktree_inside_a_target(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    trash = tmp_path / "trash"
+    linked = repo / "spikes/rusty-link/target/active-worktree"
+    linked.parent.mkdir(parents=True)
+    _git(repo, "worktree", "add", "-q", "-b", "cleanup-linked", str(linked))
+
+    result = _run(repo, trash, "--apply")
+
+    assert result.returncode == 3
+    assert "registered worktree" in result.stderr
+    assert (linked / "seed.txt").is_file()
+    assert not trash.exists()
+
+
+def test_apply_refuses_a_foreign_linked_worktree_inside_a_target(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    trash = tmp_path / "trash"
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    _git(foreign, "init", "-q", "-b", "main")
+    _git(foreign, "config", "user.email", "cleanup@example.test")
+    _git(foreign, "config", "user.name", "Cleanup Test")
+    (foreign / "foreign.txt").write_text("tracked\n")
+    _git(foreign, "add", "foreign.txt")
+    _git(foreign, "commit", "-qm", "seed")
+
+    linked = repo / "spikes/rusty-link/target"
+    linked.parent.mkdir(parents=True)
+    _git(foreign, "worktree", "add", "-q", "-b", "foreign-linked", str(linked))
+
+    result = _run(repo, trash, "--apply")
+
+    assert result.returncode == 3
+    assert "linked Git worktree marker" in result.stderr
+    assert (linked / "foreign.txt").is_file()
+    assert not trash.exists()
+
+
+def test_unrelated_sibling_worktree_does_not_block_cleanup(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    trash = tmp_path / "trash"
+    sibling = tmp_path / "sibling"
+    _git(repo, "worktree", "add", "-q", "-b", "cleanup-sibling", str(sibling))
+    artifact = _artifact(repo, "spikes/rusty-link/target")
+
+    result = _run(repo, trash, "--apply")
+
+    assert result.returncode == 0, result.stderr
+    assert not artifact.exists()
+    assert (sibling / "seed.txt").is_file()
+
+
+def test_apply_refuses_a_dirty_nested_repository(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    trash = tmp_path / "trash"
+    nested = repo / "spikes/carabiner-link/upstream"
+    nested.mkdir(parents=True)
+    _git(nested, "init", "-q", "-b", "main")
+    _git(nested, "config", "user.email", "cleanup@example.test")
+    _git(nested, "config", "user.name", "Cleanup Test")
+    authored = nested / "authored.txt"
+    authored.write_text("keep me\n")
+
+    result = _run(repo, trash, "--apply")
+
+    assert result.returncode == 3
+    assert "uncommitted files" in result.stderr
+    assert authored.read_text() == "keep me\n"
+    assert not trash.exists()
+
+
+def test_apply_allows_a_clean_standalone_downloaded_clone(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    trash = tmp_path / "trash"
+    nested = repo / "spikes/carabiner-link/upstream"
+    nested.mkdir(parents=True)
+    _git(nested, "init", "-q", "-b", "main")
+    _git(nested, "config", "user.email", "cleanup@example.test")
+    _git(nested, "config", "user.name", "Cleanup Test")
+    downloaded = nested / "downloaded.txt"
+    downloaded.write_text("regenerable\n")
+    _git(nested, "add", "downloaded.txt")
+    _git(nested, "commit", "-qm", "downloaded")
+
+    result = _run(repo, trash, "--apply")
+
+    assert result.returncode == 0, result.stderr
+    assert not nested.exists()
+    sessions = [path for path in trash.iterdir() if path.is_dir()]
+    assert len(sessions) == 1
+    assert (
+        sessions[0] / "spikes/carabiner-link/upstream/downloaded.txt"
+    ).read_text() == "regenerable\n"
