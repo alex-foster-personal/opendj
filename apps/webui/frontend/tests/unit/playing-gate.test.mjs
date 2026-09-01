@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
+import { loadRuneModule } from './load-rune-module.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const GATE_SOURCE = readFileSync(
@@ -311,6 +312,41 @@ test('a deferred release is coalesced against a run already in flight', async ()
 	assert.equal(live.started, 2, 'the trailing pass carries the deferred invalidation');
 	gates[1].resolve();
 	await flush();
+});
+
+test('the DEFAULT recorder is the real perf ring, not just an injectable seam', async () => {
+	// Every test above injects `record`, so a typo in the production default
+	// would be invisible. This one wires the gate to nothing but its defaults
+	// and reads the row back out of the real ring.
+	const real = await loadRuneModule(
+		[
+			"export { createPlayingGate } from '$lib/rb/playing-gate';",
+			"export { readPerfEvents } from '$lib/rb/perf-event-log';"
+		].join('\n')
+	);
+	let playing = true;
+	let runs = 0;
+	const gate = real.createPlayingGate({
+		kind: 'library-refresh-deferred',
+		isPlaying: () => playing,
+		run: async () => {
+			runs += 1;
+		}
+	});
+
+	gate.request();
+	gate.request();
+	playing = false;
+	gate.drain();
+	await flush();
+
+	assert.equal(runs, 1);
+	const row = real.readPerfEvents().find((e) => e.kind === 'library-refresh-deferred');
+	assert.notEqual(row, undefined, 'the deferral must be diagnosable after the fact');
+	assert.equal(row.deck, null);
+	assert.equal(row.stages.coalesced, 2);
+	assert.equal(typeof row.stages.deferredMs, 'number');
+	assert.equal(row.labels.resumedBy, 'playback-stopped');
 });
 
 // ------------------------------------------------------------- anyDeckPlaying
