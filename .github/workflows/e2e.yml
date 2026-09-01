@@ -1,0 +1,448 @@
+name: E2E
+
+# Makes the third clause of the per-PR merge gate real.
+#
+# .planning/FANOUT-CONVENTIONS.md has always stated the gate as "svelte-check 0
+# errors, scoped pytest green, e2e smoke if user-visible". The first two are
+# enforced by ci.yml. The third never was: before this file there was no
+# Playwright job and no e2e step in any of the eight workflows, so every
+# "e2e smoke passed" in a PR body was an agent running Playwright by hand on a
+# developer machine at whatever load that machine happened to be under, with
+# the result recorded only in prose. Issue #624 has the full account.
+#
+# SEPARATE FILE, not a job inside ci.yml, for three reasons:
+#   1. E2E needs a full PYTHON environment, not just node: 6 of the 9 Playwright
+#      configs shell out to `uv run`, and the webkit gate boots the real engine.
+#      ci.yml's frontend job is node-only, and a node-only runner fails these in
+#      a way that reads as a test failure rather than a missing interpreter.
+#   2. A distinct check name is what a branch protection rule can require.
+#   3. E2E can be sized, scheduled and reasoned about without perturbing the
+#      fast lane's latency budget.
+#
+# It is registered in ci-cost-guard.yml's workflow list so its runs get priced
+# like every other workflow.
+
+on:
+  pull_request:
+    branches: [main]
+    # Mirrors ci.yml: a docs-only PR cannot change runtime behavior.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "handoffs/**"
+      - ".planning/**"
+      - "specs/**"
+      - "blog/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "handoffs/**"
+      - ".planning/**"
+      - "specs/**"
+      - "blog/**"
+  schedule:
+    # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
+    # the hour, where GitHub's scheduler queues are busiest.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+# Concurrency uses the SAME shape as ci.yml, deliberately, so this repo has one
+# house pattern rather than a third variant to reason about.
+#
+# Push runs get a per-commit group, so a merge can never cancel the previous
+# merge's run. Non-push runs keep one group per ref, so a new commit on a PR
+# still supersedes its predecessor, which is the behavior worth keeping.
+#
+# This is NOT the conditional `cancel-in-progress: github.event_name != 'push'`
+# that PR #631 tried first. That shape was measured and did not work: three
+# post-fix trunk runs (589d2a5d, 481c29ba, a1a78c47) were still cancelled 1-2s
+# after the next push run was created, each killer carrying the guard. PR #646
+# replaced it with the per-SHA group below, which removes the PRECONDITION for
+# cancelling instead of making the cancellation conditional, and therefore does
+# not depend on the mechanism that was in dispute.
+concurrency:
+  group: e2e-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # apps.shared.library_mode refuses to import on non-darwin platforms without
+  # this. ci.yml sets the same value for its openapi dump. 'local' is
+  # schema-and-fixture only; no real library is reachable from a runner.
+  MDT_LIBRARY_MODE: local
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # TIER 1, BLOCKING on every PR and every push to main.
+  #
+  # Everything in this job is hermetic: it needs the repo, a production build,
+  # and audio this repo GENERATES. No rekordbox library, no real music, no
+  # network. That is the property that makes it safe to block on, and it is why
+  # the specs below are the ones chosen rather than the ones with the most
+  # coverage.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: e2e gate (webkit artifact + hermetic chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Enable pinned pnpm
+        # Order matters: corepack before setup-node, so a `pnpm` shim exists on
+        # PATH when setup-node's `cache: pnpm` resolves the store. Same
+        # ordering constraint ci.yml documents.
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          cache: pnpm
+          cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          # Same 3.11 target ci.yml pins, and for the same reason.
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          enable-cache: true
+
+      - name: System deps for pyrekordbox (SQLCipher)
+        # The engine imports pyrekordbox, which links libsqlcipher at runtime.
+        # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev
+
+      - name: Install Python deps into the project venv
+        # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
+        # with `uv run --no-sync`, which requires an already-populated .venv;
+        # against an unpopulated one it resolves somewhere else entirely and
+        # reports success while binding the wrong thing. Populating the venv
+        # here is what makes that command mean what it says.
+        run: uv sync
+
+      - name: Prove the venv is populated and is this checkout's
+        # Fail fast and loudly rather than letting the engine boot fail 180s
+        # later inside a Playwright webServer timeout, where the real cause is
+        # invisible.
+        run: |
+          set -euo pipefail
+          test -x .venv/bin/python || { echo "[ERROR] .venv/bin/python missing after uv sync"; exit 1; }
+          echo "[OK] venv interpreter: $(.venv/bin/python -c 'import sys; print(sys.executable)')"
+          .venv/bin/python -c "import apps.engine_core" \
+            || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
+          echo "[OK] apps.engine_core imports"
+
+      - name: Install frontend dependencies
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve the Playwright version for the browser cache key
+        id: pw
+        working-directory: apps/webui/frontend
+        # Key the cache on the exact version. A browser cache reused across a
+        # Playwright upgrade is how you get a driver/browser mismatch that
+        # looks like a product failure.
+        run: echo "version=$(pnpm exec playwright --version | tr -d '\n' | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ steps.pw.outputs.version }}-webkit-chromium
+
+      - name: Install Playwright browsers
+        working-directory: apps/webui/frontend
+        # webkit AND chromium, deliberately, and no firefox.
+        #
+        # webkit is the point of this job. The packaged desktop app is a
+        # WKWebView and Playwright's webkit shares that engine core, so this is
+        # the only gate in the repo that can see the class of fault where the
+        # installed app is broken while every chromium/dev-server gate is
+        # green. Two such faults have already shipped (blob: AudioWorklet
+        # modules, esbuild-lowered class fields in a self-stringifying
+        # worklet), and three separate agents flagged webkit as an unverified
+        # blind spot in a single evening.
+        #
+        # chromium carries the hermetic suites below, which are chromium
+        # configured. firefox is installed by neither: nothing in this product
+        # ships or targets it, so its browser download and system deps would be
+        # runner minutes spent on a surface with no users.
+        #
+        # --with-deps even on a cache hit: the apt libraries live outside
+        # ~/.cache/ms-playwright and are not restored by it.
+        run: pnpm exec playwright install --with-deps webkit chromium
+
+      - name: Virtual audio sink (PulseAudio null sink)
+        # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
+        # a gate that fails at random gets muted, which is how the repo ended up
+        # with unenforced gates in the first place.
+        #
+        # Measured, not assumed. `double-click loads deck 1 and deck 2 with a
+        # real worklet` PASSED on run 33451307165 and FAILED on run
+        # 33453793079 at the same commit range with
+        # "AudioContext did not enter running state; current state is
+        # interrupted". A headless Linux runner has no audio device at all, so
+        # WebKit's GStreamer backend can leave the context in `interrupted`.
+        # Whether it does is a race, which is exactly why one run passed.
+        #
+        # A null sink gives the backend a real device to open that discards
+        # samples. It does NOT fake the audio graph: decode, the worklet and
+        # the analyser all still run for real, which is what the suite measures.
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=DummyOutput
+          pactl set-default-sink DummyOutput
+          echo "[OK] default sink: $(pactl get-default-sink)"
+
+      - name: Build the production frontend
+        working-directory: apps/webui/frontend
+        # The webkit gate refuses to load without this and says so at config
+        # time. It deliberately does NOT use vite: dev serves packages
+        # untransformed and the artifact does not, which is exactly where the
+        # faults it hunts for live.
+        run: pnpm build
+
+      # -- TIER 1a: the WebKit artifact gate ----------------------------------
+      - name: WebKit artifact gate (production build, named subset)
+        working-directory: apps/webui/frontend
+        # Engine-served production build, webkit, one worker, zero retries.
+        # Retries stay at zero because a flaky worklet IS the defect under
+        # test, so a retry would launder the signal. The library is a
+        # throwaway fixture the repo generates from stdlib `wave` and ingests
+        # through the real folder adapter, inside a sandboxed HOME.
+        #
+        # NAMED QUARANTINE, not a silent skip. This --grep runs 11 of the
+        # suite's 23 tests. What is left out, and why:
+        #
+        #   Four tests measure the playhead RATE, and on ubuntu-latest webkit
+        #   the deck reports advancing ~2.25 ms per 1 ms of wall clock. That
+        #   is not runner slowness: _measureRate normalizes by MEASURED wall
+        #   time, so a slow runner cancels out. Cause not yet diagnosed, so it
+        #   is tracked in issue #637 rather than guessed at here:
+        #     - play advances the playhead, pause holds it, play resumes it
+        #     - a tempo change drives the playhead rate, not just the fader
+        #     - MASTER TEMPO holds the key under a tempo change...
+        #     - a key nudge shifts the audio one semitone without touching tempo
+        #
+        #   A FIFTH test is quarantined for the same underlying reason, added
+        #   after it failed on run 33456706346 having passed on 33454886465:
+        #     - the wave row exposes the decoded duration of the loaded audio
+        #   It does not measure rate itself, but its beforeEach seek does not
+        #   land ("deck 1 did not land a seek to 0ms: position 12255ms of
+        #   60000ms, playing=true"). A transport that will not seek and a
+        #   playhead that advances at 2.25x are almost certainly the same
+        #   defect seen twice, so it is tracked under #637 rather than given a
+        #   second issue.
+        #
+        #   The suite is `describe.configure({ mode: 'serial' })`, so the first
+        #   of those failing also stopped the remaining 10 from running at all.
+        #   That is why the exclusion is a positive --grep of what is verified
+        #   green on the runner, rather than a --grep-invert of the bad titles
+        #   that would still let a mid-suite failure hide its successors.
+        #
+        # The FULL suite, those four included, runs nightly in the extended
+        # job below, where the failure stays visible and red. This subset is
+        # the blocking floor, not the ceiling: when #637 is understood the
+        # right end state is the whole suite blocking and this --grep deleted.
+        run: |
+          pnpm exec playwright test \
+            --config tests/e2e/playwright.webkit-deckload.config.ts \
+            --grep "setup entry points|double-click loads deck 1 and deck 2 with a real worklet|the wave row exposes the decoded duration of the loaded audio"
+
+      # -- TIER 1b: hermetic chromium suites ----------------------------------
+      # These run as steps in THIS job rather than a job of their own on
+      # purpose: a separate job would re-pay checkout, node, pnpm install,
+      # python, uv sync and the browser download, which together dominate the
+      # cost. Sharing the setup is the single biggest runner-minute saving
+      # available here, worth more than the warm-server seam is in CI.
+      - name: Hermetic gate - rekordbox writeback disabled
+        working-directory: apps/webui/frontend
+        # `!cancelled()` so a red webkit gate does not SKIP this one and turn
+        # two independent answers into one. That happened on the first run of
+        # this workflow: the webkit step failed and both chromium gates
+        # reported `skipped`, which reads as 'fine' and means 'unknown'.
+        if: ${{ !cancelled() }}
+        # Every /api/v1/** call is fulfilled in-page, so this suite needs no
+        # backend and no library and can run literally anywhere.
+        run: pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts
+
+      - name: Hermetic gate - stretch quality smoke
+        working-directory: apps/webui/frontend
+        # `!cancelled()` so a red webkit gate does not SKIP this one and turn
+        # two independent answers into one. That happened on the first run of
+        # this workflow: the webkit step failed and both chromium gates
+        # reported `skipped`, which reads as 'fine' and means 'unknown'.
+        if: ${{ !cancelled() }}
+        # No webServer, no port, no data dir; it synthesizes its own audio.
+        # STRETCH_QUALITY_PLAN is deliberately unset so the smoke arm runs and
+        # the full grid stays skipped: the grid is a quality sweep, not a gate.
+        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-gate-failures
+          path: |
+            apps/webui/frontend/test-results/**
+            apps/webui/frontend/playwright-report/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
+  #
+  # These suites are hermetic too, but each boots its own server and one needs
+  # ffmpeg, so together they cost more than a per-PR gate should. Running them
+  # once a day catches drift within a day, which for these surfaces is enough.
+  #
+  # `continue-on-error` is deliberately NOT set anywhere here. A suite that
+  # runs but can never report red is only marginally better than one that never
+  # runs, and this repo already has enough green-looking signal that carries no
+  # verification. When this job fails, the workflow is red.
+  # ---------------------------------------------------------------------------
+  extended:
+    name: e2e extended (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          cache: pnpm
+          cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          enable-cache: true
+
+      - name: System deps (SQLCipher for pyrekordbox, ffmpeg for the stems fixture)
+        # tests.stems.seed_e2e_library shells out to ffmpeg to build its
+        # throwaway library. Without it that suite fails on a missing binary,
+        # which reads as a product failure and is not one.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlcipher-dev ffmpeg
+
+      - name: Install Python deps into the project venv
+        run: uv sync
+
+      - name: Install frontend dependencies
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve the Playwright version for the browser cache key
+        id: pw
+        working-directory: apps/webui/frontend
+        run: echo "version=$(pnpm exec playwright --version | tr -d '\n' | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ steps.pw.outputs.version }}-webkit-chromium
+
+      - name: Install Playwright browsers
+        working-directory: apps/webui/frontend
+        run: pnpm exec playwright install --with-deps webkit chromium
+
+      - name: Virtual audio sink (PulseAudio null sink)
+        # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
+        # a gate that fails at random gets muted, which is how the repo ended up
+        # with unenforced gates in the first place.
+        #
+        # Measured, not assumed. `double-click loads deck 1 and deck 2 with a
+        # real worklet` PASSED on run 33451307165 and FAILED on run
+        # 33453793079 at the same commit range with
+        # "AudioContext did not enter running state; current state is
+        # interrupted". A headless Linux runner has no audio device at all, so
+        # WebKit's GStreamer backend can leave the context in `interrupted`.
+        # Whether it does is a race, which is exactly why one run passed.
+        #
+        # A null sink gives the backend a real device to open that discards
+        # samples. It does NOT fake the audio graph: decode, the worklet and
+        # the analyser all still run for real, which is what the suite measures.
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=DummyOutput
+          pactl set-default-sink DummyOutput
+          echo "[OK] default sink: $(pactl get-default-sink)"
+
+      - name: Build the production frontend
+        working-directory: apps/webui/frontend
+        # stretch-artifact globs the built immutable assets, so the build is a
+        # prerequisite here too.
+        run: pnpm build
+
+      - name: Extended - FULL webkit artifact suite (no grep)
+        working-directory: apps/webui/frontend
+        # All 23 tests, including the four rate-measurement tests the
+        # blocking gate quarantines under issue #637. Nightly is where that
+        # failure stays visible: quarantined is not the same as unwatched.
+        run: pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
+
+      - name: Extended - desktop setup page
+        working-directory: apps/webui/frontend
+        run: pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
+
+      - name: Extended - play analytics
+        working-directory: apps/webui/frontend
+        # Boots a self-seeding SQLite fixture server; no real library.
+        run: pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+
+      - name: Extended - stretch artifact (chromium + webkit)
+        working-directory: apps/webui/frontend
+        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
+
+      - name: Extended - stems progress
+        working-directory: apps/webui/frontend
+        # Real apps.engine_core over a throwaway ffmpeg-built library, with the
+        # Modal GPU call replaced by the repo's own in-tree double at
+        # tests.stems.modal_separator_double. That substitution is the suite's
+        # own design, not something this workflow introduces.
+        run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-extended-failures
+          path: |
+            apps/webui/frontend/test-results/**
+            apps/webui/frontend/playwright-report/**
+          if-no-files-found: ignore
+          retention-days: 14

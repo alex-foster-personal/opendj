@@ -6,9 +6,14 @@ on:
     # Linux job that has never approached any threshold, and pricing it
     # doubled the guard's own run count for no signal. The cumulative view
     # in ci-budget-watch.yml covers every workflow, this one included.
+    # E2E added Mon 1 Sep 2026 with the workflow itself: it is the most
+    # expensive per-PR addition in a while (browser downloads plus a real
+    # engine boot), so it is exactly the kind of run that should be priced
+    # rather than trusted to stay cheap.
     workflows:
       [
         CI,
+        E2E,
         Release Check,
         Windows Parity (on-demand),
         Full CI (on-demand),

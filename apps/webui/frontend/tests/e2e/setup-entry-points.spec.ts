@@ -173,7 +173,26 @@ test.describe('setup entry points', () => {
 		await runSetupButton(page).click();
 		await expectWizard(page);
 
-		expect(errors.filter((e) => !e.includes('favicon'))).toEqual([]);
+		// The signed-out auth probe is EXPECTED noise, not a defect, and this
+		// filter is deliberately the narrowest thing that removes it. The shell
+		// asks `/api/v1/auth/me` on mount; the daemon answers 401 for a
+		// signed-out user. Both sides document that as the contract:
+		// `apps/webui/server/routes/auth.py` says "the signed-in user, or 401",
+		// and `lib/auth.svelte.ts` says "A 401 is the signed-out answer, not a
+		// failure", clearing the user with no error surfaced. The browser still
+		// logs every non-2xx fetch, so app code cannot suppress it.
+		//
+		// Scoped to this endpoint AND this status: a 401 from any other URL, or
+		// any other status from this one, still fails the gate. Same reasoning
+		// as the /rb-meta 404 filter that used to live here and was removed
+		// once the endpoint stopped 404ing.
+		//
+		// Why it was never caught: this assertion predates the sign-in bauble
+		// (cf454dcf), and nothing re-ran the suite afterwards. That is issue
+		// #624 in miniature, which is what this branch is fixing.
+		const isSignedOutAuthProbe = (entry: string) =>
+			entry.includes('/api/v1/auth/me') && entry.includes('401');
+		expect(errors.filter((e) => !e.includes('favicon') && !isSignedOutAuthProbe(e))).toEqual([]);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
