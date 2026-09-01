@@ -102,6 +102,7 @@ def build_report(
             "publishable": sum(1 for b in bundles if b.is_publishable),
             "needs_manifest": sum(1 for b in bundles if b.needs_manifest),
             "identified": sum(1 for b in bundles if b.stable_id is not None),
+            "ambiguous": sum(1 for b in bundles if len(b.candidate_ids) > 1),
             "loose": sum(1 for b in bundles if b.form == "loose"),
             "publishable_bytes": sum(
                 b.total_bytes for b in bundles if b.is_publishable
@@ -172,6 +173,11 @@ def print_report(report: dict[str, Any], bundles: list[Bundle]) -> None:
     print(
         f"      {totals['loose']} are in LOOSE form, invisible to the stem loader"
     )
+    if totals["ambiguous"]:
+        print(
+            f"      {totals['ambiguous']} have a source path that maps to "
+            "SEVERAL stable_ids; owner undecidable here"
+        )
 
     coverage = report.get("coverage")
     if coverage is not None:
