@@ -192,7 +192,40 @@ test.describe('setup entry points', () => {
 		// #624 in miniature, which is what this branch is fixing.
 		const isSignedOutAuthProbe = (entry: string) =>
 			entry.includes('/api/v1/auth/me') && entry.includes('401');
-		expect(errors.filter((e) => !e.includes('favicon') && !isSignedOutAuthProbe(e))).toEqual([]);
+
+		// The update channel's 502 is EXPECTED, for the same reason and by the
+		// same rule as the 401 above: the endpoint is answering correctly and the
+		// browser logs every non-2xx fetch regardless.
+		//
+		// apps/engine_core/update_channel.py deliberately answers 502 with a named
+		// status rather than a silent "up to date", because a channel that hides
+		// its own outage converts an outage into a false reassurance. Its own
+		// docstring calls a 404 from the release manifest "the expected state of
+		// this channel until the repo or its releases exist", and #655 shipped the
+		// updater with NO workflow that publishes a release. So the manifest 404s,
+		// the engine faults honestly, the UI renders the fault, and three console
+		// errors land here on EVERY run. This is deterministic, not flaky.
+		//
+		// Both sides are individually correct and only the union is red, which is
+		// the same union-defect pattern #678 recorded inside the quality gate:
+		// neither change could observe the other, because neither ran against a
+		// tree containing the other.
+		//
+		// Scoped to this endpoint AND this status, exactly as narrow as the 401
+		// filter: a 502 from any other URL, or any other status from this one,
+		// still fails the gate. This filter must be DELETED once a release
+		// manifest publishes, because a 502 here is a real defect again from that
+		// moment. Burn-down owner is issue #684, not this comment: a cleanup note
+		// with no owner is how GITHUB_REPO_BASE pointed at a dead org for weeks.
+		const isUnpublishedUpdateChannel = (entry: string) =>
+			entry.includes('/api/v1/update/check') && entry.includes('502');
+
+		expect(
+			errors.filter(
+				(e) =>
+					!e.includes('favicon') && !isSignedOutAuthProbe(e) && !isUnpublishedUpdateChannel(e)
+			)
+		).toEqual([]);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
