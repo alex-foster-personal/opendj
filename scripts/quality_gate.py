@@ -50,6 +50,16 @@ OK   Q-06 Report (never gate) change hotspots: git churn multiplied by file
           size, so refactoring effort lands where the mess is actually edited.
 RUN  Q-07 Emit a machine-readable JSON result and a human markdown report so
           both CI and a person get the same numbers from one run.
+REG  Q-08 Enforce three shell constructs as a hard gate (no ratchet) via
+          scripts/shell_construct_lint.py, over shell sources and justfile
+          recipes. Each one returns a plausible value with no error, so a
+          growing allowance for them is not a rule.
+          [if `$?` is read after a pipeline without pipefail then
+           shell.pipeline_status is 1 and the run exits 1 regardless of
+           baseline]
+          [if `gh api` is passed --arg then shell.gh_api_arg is 1 and exits 1]
+          [if discovery collapses to fewer files than the linter's floor then
+           the run aborts rather than scoring 0 violations]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -72,6 +82,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from scripts import shell_construct_lint
 
 # ----- config --------------------------------------------------------------
 
@@ -130,8 +142,14 @@ class CFG:
 
 
 # Metrics that must be exactly zero, with no baseline allowance. An
-# architecture rule with a growing allowance is not a rule.
-HARD_ZERO: frozenset[str] = frozenset({"arch.contracts_broken"})
+# architecture rule with a growing allowance is not a rule, and neither is a
+# ban on a construct that silently returns the wrong answer.
+HARD_ZERO: frozenset[str] = frozenset({
+    "arch.contracts_broken",
+    "shell.pipeline_status",
+    "shell.gh_api_arg",
+    "shell.zsh_modifier_path",
+})
 
 # Metrics that are measured and printed but never gated, because their value
 # is not reproducible across hosts. A ratchet compares today's number to a
@@ -152,7 +170,14 @@ HARD_ZERO: frozenset[str] = frozenset({"arch.contracts_broken"})
 # To re-gate it, make the measurement host-independent (run deptry in a pinned
 # container, or record a per-platform baseline) rather than just deleting this
 # entry.
-REPORT_ONLY: frozenset[str] = frozenset({"deps.issues"})
+#
+# shell.files_scanned is the second, for the opposite reason: it is a CONTROL on
+# the shell gate, not an allowance. It exists so a reader can see the three
+# hard-zero shell metrics were measured over a real file set rather than over
+# nothing, and gating it either way is wrong (a ratchet would fail on every new
+# script added, a hard zero is nonsense). The floor that makes it meaningful is
+# enforced in _eval_shell, which aborts rather than scoring an empty scan.
+REPORT_ONLY: frozenset[str] = frozenset({"deps.issues", "shell.files_scanned"})
 
 
 @dataclass(frozen=True)
@@ -569,6 +594,44 @@ def _eval_size() -> list[Metric]:
     ]
 
 
+# ----- evaluator: shell constructs -----------------------------------------
+
+
+def _eval_shell() -> list[Metric]:
+    """Three shell constructs that silently answer a question nobody asked.
+
+    Hard zero, never a ratchet: every one of these returns a plausible value with
+    no error, so "we are allowed four of them" is not a position anyone would
+    defend out loud. Full rationale, the measured zsh modifier alphabet, and the
+    mutation tests live in scripts/shell_construct_lint.py and
+    tests/scripts/test_shell_construct_lint.py.
+    """
+    files = shell_construct_lint.discover(REPO)
+    floor = shell_construct_lint.CFG.MIN_FILES
+    if len(files) < floor:
+        raise RuntimeError(
+            f"shell lint discovered {len(files)} files under {REPO}, expected at "
+            f"least {floor}. That is a broken scan reporting as a clean tree."
+        )
+    violations = shell_construct_lint.lint_paths(files)
+    counts = collections.Counter(v.rule for v in violations)
+    metrics = [
+        Metric("shell.files_scanned", len(files), "shell files + justfiles",
+               "control: the three gates below are measured over this set")
+    ]
+    for rule in sorted(shell_construct_lint.RULES):
+        offenders = [v.render(REPO) for v in violations if v.rule == rule]
+        metrics.append(
+            Metric(
+                f"shell.{rule.replace('-', '_')}",
+                counts[rule],
+                "violations",
+                "; ".join(offenders[:3]),
+            )
+        )
+    return metrics
+
+
 # ----- hotspots (report only) ----------------------------------------------
 
 
@@ -602,6 +665,7 @@ EVALUATORS: tuple[Evaluator, ...] = (
     Evaluator("deps", "Dependency declaration defects", _eval_deps),
     Evaluator("frontend", "Frontend coupling and dead code", _eval_frontend, needs_node=True),
     Evaluator("size", "File bloat and duplication", _eval_size, needs_node=True),
+    Evaluator("shell", "Shell constructs that fail silently", _eval_shell),
 )
 
 
