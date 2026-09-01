@@ -8,8 +8,8 @@ writes a manifest describing how to restore them.
 
 Usage::
 
-    uv run --frozen python -m scripts.cleanup_repo --repo "$PWD"
-    uv run --frozen python -m scripts.cleanup_repo --repo "$PWD" --apply
+    uv run --no-sync python -m scripts.cleanup_repo --repo "$PWD"
+    uv run --no-sync python -m scripts.cleanup_repo --repo "$PWD" --apply
 """
 
 from __future__ import annotations
