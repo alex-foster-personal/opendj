@@ -49,6 +49,7 @@
 	import LoopCluster from './deck/LoopCluster.svelte';
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
+	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
@@ -426,6 +427,8 @@
 			onDismiss={() => dismissPerformanceDeckError(deckId)}
 		/>
 	{/if}
+
+	<SecondaryLoadBadge status={deck.stems.status} error={deck.stems.error} />
 
 	{#if deck.last_load_latency_ms !== null}
 		<span

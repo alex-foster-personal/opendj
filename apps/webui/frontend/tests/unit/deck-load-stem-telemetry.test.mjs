@@ -105,6 +105,16 @@ test('a broken stem bundle records mix-only playback and says why', async () => 
 	assert.deepEqual(row.labels, { stemLayout: 'error' });
 });
 
+test('a mix-first load withholds the flag while the stem bundle is still in flight', async () => {
+	const { mod, log } = await _load();
+	// Lazy stems: the deck-load row is written as soon as the mix can play, so
+	// the stem verdict genuinely is not known yet. Recording 0 here would make
+	// every mix-first load masquerade as a measured mix-only load.
+	const row = _writeAndRead(mod, log, { ...MIX_ONLY, status: 'loading', error: null });
+	assert.equal('stemmed' in row.stages, false, 'a pending verdict must not be fabricated');
+	assert.deepEqual(row.labels, { stemLayout: 'pending' });
+});
+
 test('an unrecognized stem status throws instead of defaulting to mix-only', async () => {
 	const { mod, log } = await _load();
 	assert.throws(

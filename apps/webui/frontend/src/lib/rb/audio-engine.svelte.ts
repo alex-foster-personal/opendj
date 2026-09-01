@@ -117,6 +117,7 @@ import {
 import {
 	AlignedStemDeckProcessor,
 	DEMUCS_PARTS,
+	loadingStemDeckState,
 	readyStemDeckState,
 	STEM_CONTROLS,
 	unavailableStemDeckState,
@@ -399,6 +400,20 @@ interface _DeckRuntime {
 	 * `_scheduleReanchoredFollower` / `_continueTempoRamp`.
 	 */
 	reanchorRampActive: boolean;
+	/**
+	 * LAZY-STEMS. A fully built AlignedStemDeckProcessor waiting for the deck to
+	 * be replaceable, held here because the engine forbids swapping a deck's
+	 * processor while it is playing or audible (assertDeckReplacementAllowed).
+	 * Set by _upgradeDeckStems when the stems finish decoding mid-playback;
+	 * drained by _drainPendingStemUpgrade on the next stop. Null the rest of the
+	 * time. `token` pins it to the load that produced it so a track swap during
+	 * the fetch cannot graft one track's stems onto another's mix.
+	 */
+	pendingStemUpgrade: {
+		token: number;
+		processor: AlignedStemDeckProcessor;
+		state: StemDeckState;
+	} | null;
 }
 
 function _emptyRuntime(): _DeckRuntime {
@@ -426,7 +441,8 @@ function _emptyRuntime(): _DeckRuntime {
 		slipTempoBoundaries: [],
 		keySyncBaselineSemitones: null,
 		audioBuffer: null,
-		reanchorRampActive: false
+		reanchorRampActive: false,
+		pendingStemUpgrade: null
 	};
 }
 
@@ -2738,6 +2754,208 @@ async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promi
 	}
 }
 
+/** LAZY-STEMS. True when the deck can have its processor replaced right now.
+ * Same predicate the engine has always enforced for load/unload, asked as a
+ * question instead of thrown as an assertion, because a background upgrade
+ * arriving mid-set is an EXPECTED state to wait out, not a fault. */
+function _deckIsReplaceable(deck: DeckId): boolean {
+	const st = deckStates[deck];
+	const rt = _rt[deck];
+	try {
+		assertDeckReplacementAllowed(deck, {
+			playing: st.playing,
+			audible: st.audible,
+			transportPending: st.transport_pending,
+			controlActive: rt.controlActive,
+			pendingScheduleCount: rt.pending.length,
+			scheduleIntentCount: rt.scheduleIntentCount
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * LAZY-STEMS. Put a prepared AlignedStemDeckProcessor in place of the deck's
+ * mix processor. The caller MUST have established that the deck is replaceable.
+ *
+ * Playhead safety: a stopped deck's position lives in `st.position_ms` (what
+ * `play` resumes from) and `rt.presentation`. This function touches NEITHER, so
+ * a deck cued to 1:30 is still at 1:30 after the swap. That is the whole reason
+ * it is not written in terms of the load-time swap, which deliberately zeroes
+ * both because it is publishing a DIFFERENT track.
+ */
+function _adoptStemProcessor(
+	deck: DeckId,
+	upgrade: { processor: AlignedStemDeckProcessor; state: StemDeckState }
+): void {
+	const st = deckStates[deck];
+	const rt = _rt[deck];
+	if (rt.nodes === null) throw new Error(`stem upgrade: deck ${deck} audio graph is missing`);
+	const retired = rt.processor;
+	upgrade.processor.connect(rt.nodes.analyser);
+	rt.processor = upgrade.processor;
+	st.stems = upgrade.state;
+	if (retired !== null) retired.disconnect();
+}
+
+/** LAZY-STEMS. Detach and silence a held stem upgrade that will never land
+ * (deck unloaded, engine disposed, track swapped). Without this the prepared
+ * worklet nodes stay connected to a context nobody owns any more: the exact
+ * "PCM should drop to 0 on unload" property the perf log treats as the leak
+ * signature. Safe to call when nothing is pending. */
+function _releasePendingStemUpgrade(rt: _DeckRuntime): void {
+	const pending = rt.pendingStemUpgrade;
+	if (pending === null) return;
+	rt.pendingStemUpgrade = null;
+	pending.processor.disconnect();
+}
+
+/** LAZY-STEMS. Called wherever a deck comes to rest, to land a stem upgrade
+ * that finished while the deck was playing. No-op when nothing is pending. */
+function _drainPendingStemUpgrade(deck: DeckId): void {
+	const rt = _rt[deck];
+	const pending = rt.pendingStemUpgrade;
+	if (pending === null) return;
+	if (pending.token !== rt.loadToken) {
+		// The deck moved on to another track while these stems were decoding.
+		rt.pendingStemUpgrade = null;
+		pending.processor.disconnect();
+		return;
+	}
+	if (!_deckIsReplaceable(deck)) return;
+	rt.pendingStemUpgrade = null;
+	_adoptStemProcessor(deck, pending);
+}
+
+/**
+ * LAZY-STEMS. The whole secondary load: probe, fetch, decode, build, swap.
+ * Runs AFTER the deck is playable and is never awaited by `load`.
+ *
+ * Fail-fast: this never leaves the deck claiming a capability it does not have.
+ * Every exit either settles `st.stems` to `ready` (processor actually in the
+ * graph), `unavailable` (no bundle - a settled answer), or `error` (the bundle
+ * exists but could not be used, with the reason). A deck that ends up anything
+ * other than `ready` still plays; only the stem CONTROLS are absent, and
+ * `_setStemControl` already refuses loudly for any non-`ready` status.
+ */
+async function _upgradeDeckStems(
+	deck: DeckId,
+	stableId: string,
+	token: number,
+	ctx: AudioContext,
+	mixBuffer: AudioBuffer
+): Promise<void> {
+	const rt = _rt[deck];
+	const st = deckStates[deck];
+	const t0 = performance.now();
+	const stages: Record<string, number> = {};
+	const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
+		const started = performance.now();
+		try {
+			return await work;
+		} finally {
+			stages[name] = Math.round(performance.now() - started);
+		}
+	};
+	const stale = (): boolean => token !== rt.loadToken;
+	let built: AlignedStemDeckProcessor | null = null;
+	try {
+		const probe = await time('probeStem', probeStemArtifact(stableId));
+		if (stale()) return;
+		if (probe.status !== 'ready') {
+			// A settled "this track has no bundle". Not an error, and not a
+			// spinner: the deck is finished loading.
+			st.stems = unavailableStemDeckState(probe.error);
+			stages.total = Math.round(performance.now() - t0);
+			recordPerfTiming(`deck-stems-none sid=${stableId.slice(0, 12)}`, stages, deck);
+			return;
+		}
+		const layout = probe.manifest.layout;
+		const layoutParts = STEM_LAYOUT_PART_NAMES[layout];
+		const encodedParts = await time(
+			'fetchStems',
+			fetchStemAudioArrayBuffers(stableId, layout)
+		);
+		if (stale()) return;
+		const decodedEntries = await time(
+			'decodeStems',
+			Promise.all(
+				layoutParts.map(
+					async (part) =>
+						[part, await ctx.decodeAudioData(encodedParts[part] as ArrayBuffer)] as const
+				)
+			)
+		);
+		if (stale()) return;
+		const stemBuffers = Object.fromEntries(decodedEntries) as StemBuffers;
+		const created = await time(
+			'stemProcessorCreate',
+			AlignedStemDeckProcessor.create(ctx, stemBuffers, {
+				onProcessorError: (error: unknown) => {
+					if (_rt[deck].processor === built) _recordProcessorFailure(deck, error);
+				}
+			})
+		);
+		built = created.processor;
+		if (stale()) {
+			built.disconnect();
+			return;
+		}
+		if (
+			created.alignment.sample_rate_hz !== mixBuffer.sampleRate ||
+			created.alignment.frame_count !== mixBuffer.length ||
+			Math.abs(created.alignment.duration_ms - mixBuffer.duration * 1000) >
+				1000 / mixBuffer.sampleRate
+		) {
+			built.disconnect();
+			throw new Error(
+				`stem/source alignment mismatch: source ${mixBuffer.sampleRate}Hz, ` +
+					`${mixBuffer.length} frames, ${mixBuffer.duration}s; stems ` +
+					`${created.alignment.sample_rate_hz}Hz, ${created.alignment.frame_count} ` +
+					`frames, ${created.alignment.duration_ms / 1000}s`
+			);
+		}
+		const readyState = readyStemDeckState(
+			{ source: probe.manifest.source, model: probe.manifest.model, layout },
+			created.alignment
+		);
+		await _withDeckSwap(rt, async () => {
+			if (stale()) {
+				built?.disconnect();
+				built = null;
+				return;
+			}
+			if (!_deckIsReplaceable(deck)) {
+				// Playing. The engine forbids replacing a live processor, so hold
+				// the finished bundle and land it on the next stop rather than
+				// glitching the output mid-phrase.
+				rt.pendingStemUpgrade = {
+					token,
+					processor: created.processor,
+					state: readyState
+				};
+				built = null;
+				stages.deferredToStop = 1;
+				return;
+			}
+			_adoptStemProcessor(deck, { processor: created.processor, state: readyState });
+			built = null;
+		});
+		stages.total = Math.round(performance.now() - t0);
+		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck);
+	} catch (error) {
+		if (built !== null) built.disconnect();
+		if (stale()) return;
+		const message = error instanceof Error ? error.message : String(error);
+		st.stems = { ...unavailableStemDeckState(message), status: 'error' };
+		stages.failedAt = Math.round(performance.now() - t0);
+		recordPerfTiming(`deck-stems-fail sid=${stableId.slice(0, 12)}`, stages, deck);
+		pushToast(`Deck ${deck} stems unavailable - ${message}`, 'error');
+	}
+}
+
 /**
  * The monitor's tap into the engine graph, handed to the headphone module as a
  * thunk. Resolved lazily on purpose: a headphone selection must still build the
@@ -2768,6 +2986,7 @@ class RbAudioEngine implements AudioEngine {
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			rt.loadToken += 1;
+			_releasePendingStemUpgrade(rt);
 			const processor = detachProcessorForDisposal(rt);
 			if (processor !== null) processors.push(processor);
 			if (rt.nodes !== null) {
@@ -2821,6 +3040,10 @@ class RbAudioEngine implements AudioEngine {
 		let latencySec = 0;
 		let processor: _DeckProcessor | null = null;
 		let candidateStemState: StemDeckState = unavailableStemDeckState();
+		// Hoisted so the deferred stem upgrade decodes into the SAME context the
+		// mix decoded into; re-resolving it after the swap could hand the stems a
+		// rebuilt graph and a silent sample-rate mismatch.
+		let loadCtx: AudioContext | null = null;
 		// Always-on stage timings -> recordPerfTiming / DevTools filter `[perf]`.
 		const perfT0 = performance.now();
 		const perfMs = (): number => Math.round(performance.now() - perfT0);
@@ -2846,18 +3069,23 @@ class RbAudioEngine implements AudioEngine {
 				prefetchedAudio !== null
 					? Promise.resolve(prefetchedAudio)
 					: fetchAudioArrayBuffer(stable_id);
-			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots, stemProbe] =
+			// LAZY-STEMS: the critical path fetches ONLY what first playback needs.
+			// `probeStem` used to ride here as a fifth request and, being last in
+			// the list behind a multi-MB audio download on a single-worker engine,
+			// it held the fetch wall on its own (PR #601 measured 47% of it for a
+			// 1-9ms endpoint). It now runs after the swap, in _upgradeDeckStems.
+			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] =
 				await Promise.all([
 					time('getTrack', getTrack(stable_id)),
 					time(prefetchedAudio !== null ? 'fetchAudioCacheHit' : 'fetchAudio', audioPromise),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
-					time('fetchHotCues', fetchHotCueSlots(stable_id)),
-					time('probeStem', probeStemArtifact(stable_id))
+					time('fetchHotCues', fetchHotCueSlots(stable_id))
 				]);
 			stages.fetchWall = perfMs();
 			stages.audioBytes = audioBytes.byteLength;
 			stages.audioPrefetchHit = prefetchedAudio !== null ? 1 : 0;
 			const ctx = _ensureGraph();
+			loadCtx = ctx;
 			track = trackRes.track;
 			anlz = requiredAnlz;
 			hotCueSlots = requiredHotCueSlots;
@@ -2866,67 +3094,21 @@ class RbAudioEngine implements AudioEngine {
 					if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
 				}
 			};
-			if (stemProbe.status === 'ready') {
-				// SPIKE-PERF: decode mix while stem files download.
-				// The bundle's own layout drives fetch AND decode: a roformer2
-				// bundle has no drums/bass/other to ask for.
-				const stemLayout = stemProbe.manifest.layout;
-				const layoutParts = STEM_LAYOUT_PART_NAMES[stemLayout];
-				const [decodedMix, encodedParts] = await Promise.all([
-					time('decodeMix', ctx.decodeAudioData(audioBytes)),
-					time('fetchStems', fetchStemAudioArrayBuffers(stable_id, stemLayout))
-				]);
-				buffer = decodedMix;
-				const decodedEntries = await time(
-					'decodeStems',
-					Promise.all(
-						layoutParts.map(
-							async (part) =>
-								[
-									part,
-									await ctx.decodeAudioData(encodedParts[part] as ArrayBuffer)
-								] as const
-						)
-					)
-				);
-				const stemBuffers = Object.fromEntries(decodedEntries) as StemBuffers;
-				const created = await time(
-					'stemProcessorCreate',
-					AlignedStemDeckProcessor.create(ctx, stemBuffers, processorOptions)
-				);
-				if (
-					created.alignment.sample_rate_hz !== buffer.sampleRate ||
-					created.alignment.frame_count !== buffer.length ||
-					Math.abs(created.alignment.duration_ms - buffer.duration * 1000) >
-						1000 / buffer.sampleRate
-				) {
-					created.processor.disconnect();
-					throw new Error(
-						`stem/source alignment mismatch: source ${buffer.sampleRate}Hz, ${buffer.length} ` +
-							`frames, ${buffer.duration}s; stems ${created.alignment.sample_rate_hz}Hz, ` +
-							`${created.alignment.frame_count} frames, ${created.alignment.duration_ms / 1000}s`
-					);
-				}
-				processor = created.processor;
-				candidateStemState = readyStemDeckState(
-					{
-						source: stemProbe.manifest.source,
-						model: stemProbe.manifest.model,
-						layout: stemLayout
-					},
-					created.alignment
-				);
-			} else {
-				// SPIKE-PERF: overlap decode with worklet create (common non-stem path).
-				const [decodedMix, mixProcessor] = await Promise.all([
-					time('decodeMix', ctx.decodeAudioData(audioBytes)),
-					time('stretchCreate', StretchDeckProcessor.create(ctx, processorOptions))
-				]);
-				buffer = decodedMix;
-				await time('stretchLoad', mixProcessor.load(buffer));
-				processor = mixProcessor;
-				candidateStemState = unavailableStemDeckState(stemProbe.error);
-			}
+			// LAZY-STEMS: EVERY load now takes the mix path. The mix buffer is
+			// what first playback actually needs -- a stemmed deck kept the mix
+			// buffer anyway (rt.audioBuffer, for the sync blend), so nothing
+			// audible is being deferred here, only the per-stem gain branches.
+			// SPIKE-PERF: overlap decode with worklet create.
+			const [decodedMix, mixProcessor] = await Promise.all([
+				time('decodeMix', ctx.decodeAudioData(audioBytes)),
+				time('stretchCreate', StretchDeckProcessor.create(ctx, processorOptions))
+			]);
+			buffer = decodedMix;
+			await time('stretchLoad', mixProcessor.load(buffer));
+			processor = mixProcessor;
+			// `loading`, not `unavailable`: the probe has not run yet, so claiming
+			// "no stems" here would be a guess. _upgradeDeckStems settles it.
+			candidateStemState = loadingStemDeckState();
 			latencySec = await time('processorLatency', processor.latencySec());
 			_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);
 			stages.totalBeforeSwap = perfMs();
@@ -2984,6 +3166,9 @@ class RbAudioEngine implements AudioEngine {
 				}
 				throw error;
 			}
+			// LAZY-STEMS: the outgoing track may have had a stem bundle waiting for
+			// a stop that will now never come for it.
+			_releasePendingStemUpgrade(rt);
 			_clearLoadedTrackState(st);
 			rt.processor = candidateProcessor;
 			rt.durationSec = candidateBuffer.duration;
@@ -3032,6 +3217,12 @@ class RbAudioEngine implements AudioEngine {
 		st.last_load_latency_ms = stages.total;
 		st.last_load_stages = { ...stages };
 		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
+		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
+		// deck can play; the stem bundle lands afterwards and moves st.stems off
+		// `loading` on its own. Errors are handled inside, so no rejection can
+		// escape into an unhandled promise.
+		if (loadCtx === null) throw new Error('load: audio context was never resolved');
+		void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
 	}
 
 	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR
@@ -3137,6 +3328,9 @@ class RbAudioEngine implements AudioEngine {
 			: positionSec * 1000;
 		st.cue_ms = cueMs;
 		if (st.slip_active) _clearSlip(deck);
+		// LAZY-STEMS: the deck has just come to rest, so a stem bundle that
+		// finished decoding mid-play can land now without touching live audio.
+		_drainPendingStemUpgrade(deck);
 	}
 
 	async cueJump(deck: DeckId, ms: number): Promise<void> {
@@ -3600,6 +3794,7 @@ class RbAudioEngine implements AudioEngine {
 			}
 		}
 		rt.loadToken += 1;
+		_releasePendingStemUpgrade(rt);
 		const processor = detachProcessorForDisposal(rt);
 		if (processor !== null) {
 			processor.disconnect();

@@ -250,7 +250,7 @@ export function recordPerfTiming(
  * exhaustive switch below cannot silently fall behind.
  */
 export interface StemLoadFacts {
-	status: 'unavailable' | 'ready' | 'error';
+	status: 'unavailable' | 'loading' | 'ready' | 'error';
 	source: string | null;
 	model: string | null;
 	layout: string | null;
@@ -282,6 +282,14 @@ function _stemLoadTelemetry(stems: StemLoadFacts): _StemLoadTelemetry {
 					stemModel: stems.model ?? 'unknown'
 				}
 			};
+		case 'loading':
+			// Mix-first load: the deck is playable now and the stem bundle is still
+			// in flight, so at THIS row's write time there is no stemmed verdict to
+			// record. Withheld rather than written as 0, for the same reason as the
+			// unresolved case below: only a settled probe answer earns stemmed=0.
+			// The outcome lands on the separate deck-stems / deck-stems-none /
+			// deck-stems-fail rows the upgrade emits.
+			return { stemmed: null, labels: { stemLayout: 'pending' } };
 		case 'unavailable':
 			// A null error means the probe never answered - the load failed before
 			// it resolved. That is NOT mix-only, so the flag is withheld rather
