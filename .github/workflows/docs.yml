@@ -30,7 +30,18 @@ permissions:
   id-token: write
 
 concurrency:
-  group: docs-${{ github.ref }}
+  group: docs-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
+  # Trunk verification is never cancellable. A merge burst used to cancel each
+  # run's predecessor and leave heads whose jobs never executed (Mon 31 Aug 2026:
+  # six merges in 25s left main with no completed pytest or frontend job, while
+  # nothing reported a problem, because a cancelled job is not a failed one).
+  #
+  # This gives every trunk push its OWN group rather than making the cancellation
+  # conditional, matching ci.yml. A conditional flag was tried first (#631) and
+  # did not hold: three post-fix trunk runs were still cancelled seconds after the
+  # next push run was created. Removing the shared group removes the precondition
+  # for cancelling at all, so it does not depend on the mechanism that failed.
+  # Pull requests keep the shared group and still cancel superseded runs.
   cancel-in-progress: true
 
 jobs:
