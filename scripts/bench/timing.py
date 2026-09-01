@@ -11,8 +11,18 @@ from 42 to 68 on Mon 31 Aug 2026.
 
 THE INSTRUMENT. ``time.process_time_ns`` counts user+system CPU consumed by THIS
 process across all its threads, and nothing else. Time the process spent
-runnable-but-not-running is not charged to it, so an oversubscribed box reports
-the same number an idle one does. That is the property a CPU-cost gate needs.
+runnable-but-not-running is not charged to it, which is the property a CPU-cost
+gate needs.
+
+WHAT IT IS NOT: perfectly load-invariant. CPU time measures time ON the CPU, and
+contention makes the same instruction stream genuinely occupy the CPU longer
+through shared-cache thrashing and SMT siblings. Measured on a 4-vCPU
+ubuntu-latest runner under 6x oversubscription, one fixed workload moved 12.3 ->
+22.9ms of CPU (1.87x) while its wall time moved 12.3 -> 119.3ms (9.71x). So the
+honest claim is that this instrument is roughly an ORDER OF MAGNITUDE less
+load-sensitive than elapsed time, not that it is immune, and the regression test
+pins that relative claim rather than an absolute drift number it would have to
+keep re-tuning per machine.
 
 WHAT IT DOES NOT MEASURE, stated so nobody re-gates on the wrong half:
 

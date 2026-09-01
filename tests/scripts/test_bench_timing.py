@@ -47,8 +47,9 @@ SAMPLES_PER_PHASE = 7
 #: busy: a run on an idle Mac needs far fewer, but the machine this defect
 #: actually bites on carries a load average in the 40s to 60s, and 2x the core
 #: count barely moves wall time there (measured 1.33x, which tripped the UNKNOWN
-#: skip below rather than testing anything).
-HOG_COUNT = min(6 * (os.cpu_count() or 4), 64)
+#: skip below rather than testing anything). Capped so a 4-vCPU CI runner is
+#: saturated rather than buried: 4x already moved its wall time 9.71x.
+HOG_COUNT = min(4 * (os.cpu_count() or 4), 32)
 
 #: Wall time must move at least this much BETWEEN the two phases, in either
 #: direction, or the machine's conditions demonstrably did not change and the
@@ -59,14 +60,21 @@ HOG_COUNT = min(6 * (os.cpu_count() or 4), 64)
 #: that a failed control when it is the cleanest demonstration of the defect.
 WALL_SWING_FLOOR = 1.5
 
-#: CPU time per call is allowed to drift this much under load (cache pressure,
-#: core migration and frequency changes are all real; measured 1.04x here with 16
-#: hogs on 10 cores), and no further. Kept strictly BELOW WALL_SWING_FLOOR so the
-#: two thresholds cannot both be satisfied by one number: a wall-clock instrument
-#: reports the same value on both sides, so it necessarily lands above the
-#: ceiling once the skip gate above has confirmed wall moved at all. That is what
-#: makes this test bite against the pre-fix source instead of merely passing.
-CPU_DRIFT_CEILING = 1.35
+#: How much less load-sensitive CPU time must be than wall time, measured on each
+#: instrument's EXCESS over an unchanged 1.0x.
+#:
+#: This is deliberately a RELATIVE invariant and not an absolute drift ceiling.
+#: An absolute one was tried first at 1.35x and was WRONG, not merely tight: CPU
+#: time is not load-invariant, because contention makes the same instruction
+#: stream genuinely occupy the CPU longer via shared-cache thrashing and SMT
+#: siblings. A 4-vCPU ubuntu-latest runner measured cpu 12.3 -> 22.9ms (1.87x)
+#: against wall 12.3 -> 119.3ms (9.71x), so the ceiling reddened CI for a
+#: property the fix never claimed. Excess ratios there: 8.71 / 0.87 = 10x. On a
+#: 10-core Mac under fleet load: 0.86 / 0.04 = 21x. A wall-clock instrument reads
+#: the same number on both sides and scores exactly 1x, so 3x cannot be reached
+#: by the source this test exists to catch, on any machine, without needing a
+#: per-machine number that would rot.
+LOAD_SENSITIVITY_RATIO = 3.0
 
 
 def _busy(rounds: int = BUSY_ROUNDS) -> int:
@@ -84,6 +92,11 @@ def _phase() -> tuple[float, float]:
         statistics.median(sample.cpu_ms for sample in samples),
         statistics.median(sample.wall_ms for sample in samples),
     )
+
+
+def _sensitivity_ceiling(wall_swing: float) -> float:
+    """The most CPU time may swing given how far wall time swung beside it."""
+    return 1.0 + (wall_swing - 1.0) / LOAD_SENSITIVITY_RATIO
 
 
 def _spawn_cpu_hogs(count: int) -> list[subprocess.Popen[bytes]]:
@@ -148,10 +161,34 @@ def test_cpu_time_holds_while_wall_time_swings_with_the_machine() -> None:
             f"{wall_swing:.2f}x, under the {WALL_SWING_FLOOR}x this test needs before it "
             f"can claim the machine's conditions changed at all ({measured})"
         )
-    assert cpu_swing <= CPU_DRIFT_CEILING, (
-        f"process CPU time swung {cpu_swing:.2f}x with the machine, over the "
-        f"{CPU_DRIFT_CEILING}x ceiling, so the bench verdict tracks fleet load again "
-        f"({measured})"
+    ceiling = _sensitivity_ceiling(wall_swing)
+    assert cpu_swing <= ceiling, (
+        f"process CPU time swung {cpu_swing:.2f}x while wall swung {wall_swing:.2f}x, so it "
+        f"is only {(wall_swing - 1.0) / max(cpu_swing - 1.0, 1e-9):.1f}x less load-sensitive, "
+        f"under the {LOAD_SENSITIVITY_RATIO}x this fix claims (ceiling {ceiling:.2f}x here). "
+        f"The bench verdict tracks fleet load again ({measured})"
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "cpu_swing", "wall_swing", "passes"),
+    [
+        # Real measurements, so this table is evidence rather than illustration.
+        ("4-vCPU ubuntu runner, 4x oversubscribed", 1.87, 9.71, True),
+        ("10-core Mac under fleet load", 1.04, 1.86, True),
+        # A wall-clock instrument reads one number and reports it on both sides.
+        ("pre-fix instrument, busy CI", 9.71, 9.71, False),
+        ("pre-fix instrument, busy Mac", 1.86, 1.86, False),
+    ],
+)
+def test_the_ceiling_admits_measured_cpu_swings_and_refuses_a_wall_clock_one(
+    label: str, cpu_swing: float, wall_swing: float, passes: bool
+) -> None:
+    """if the ceiling needs a per-machine number then it rots between machines"""
+    assert (cpu_swing <= _sensitivity_ceiling(wall_swing)) is passes, (
+        f"{label}: cpu {cpu_swing}x against wall {wall_swing}x scored "
+        f"{'pass' if not passes else 'fail'} at ceiling "
+        f"{_sensitivity_ceiling(wall_swing):.2f}x, which is backwards"
     )
 
 

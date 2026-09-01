@@ -24,7 +24,8 @@ machine the run met, never as a verdict, and do not add either to ``targets``.
 
 Acceptance tests (tests/scripts/test_bench_timing.py cover the instrument):
   [if] the box is loaded with competing CPU hogs
-       [then] the gated medians hold while the wall medians move with the box
+       [then] the gated medians move an order of magnitude less than the wall
+       medians beside them
   [if] the Rust payload differs from the Python payload
        [then] refuse to report a speed number at all
   [if] the CPU clock cannot resolve the Python kernel
