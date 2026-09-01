@@ -46,6 +46,10 @@ PASSING_JOB_CONCLUSIONS = ("success", "skipped", "neutral")
 DEFAULT_WORKFLOW = "ci.yml"
 DEFAULT_BRANCH = "main"
 DEFAULT_LIMIT = 60
+# How many of the newest RACED runs form the present-tense survival verdict. Wide
+# enough that one lucky quiet patch cannot fake a passing guard, narrow enough that a
+# fix landing inside the window is not averaged away by the regime before it.
+SURVIVAL_RECENT_WINDOW = 10
 
 Verdict = Literal["pass", "failure", "unknown"]
 
@@ -178,6 +182,7 @@ class SurvivalOutcome:
     run_conclusion: str | None
     overlapped_by: tuple[int, ...]
     survived: bool
+    created_at: str = ""
 
 
 def assess_survival(runs: list[RunOutcome]) -> list[SurvivalOutcome]:
@@ -218,12 +223,101 @@ def assess_survival(runs: list[RunOutcome]) -> list[SurvivalOutcome]:
                 run_conclusion=run.run_conclusion,
                 overlapped_by=overlapped_by,
                 survived=run.run_conclusion != "cancelled",
+                created_at=run.created_at,
             )
         )
+    outcomes.sort(
+        key=lambda item: _parse_github_timestamp(item.created_at, "created_at", item.run_id),
+        reverse=True,
+    )
     return outcomes
 
 
+# ----- the survival rollup -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SurvivalReport:
+    """A survival verdict that always travels with the window that produced it."""
+
+    recent: tuple[SurvivalOutcome, ...]
+    older: tuple[SurvivalOutcome, ...]
+    boundary: str
+    explicit: bool
+
+    @property
+    def killed_recent(self) -> tuple[SurvivalOutcome, ...]:
+        return tuple(item for item in self.recent if not item.survived)
+
+    @property
+    def killed_older(self) -> tuple[SurvivalOutcome, ...]:
+        return tuple(item for item in self.older if not item.survived)
+
+    @property
+    def guard_holds(self) -> bool:
+        """Present tense, and only ever about `recent`."""
+        return not self.killed_recent
+
+    @property
+    def regime_changed(self) -> bool:
+        """The recent window is clean while history is not: a fix landed inside the window."""
+        return bool(self.recent) and self.guard_holds and bool(self.killed_older)
+
+
+def build_survival_report(
+    outcomes: list[SurvivalOutcome],
+    recent_window: int = SURVIVAL_RECENT_WINDOW,
+    boundary_label: str | None = None,
+) -> SurvivalReport:
+    """Split raced runs into a present-tense window and history, never averaging the two.
+
+    WHY A COUNT OVER THE WHOLE LIMIT IS THE WRONG ROLLUP
+        A window wide enough to be useful will eventually span a fix, and averaging a
+        broken regime with a working one reports the mixture as the current state. Live
+        case Tue 1 Sep 2026: 18 of 34 raced runs were cancelled across a window straddling
+        #646, while the 12 runs since that fix were 12 for 12 survivors. "The guard is NOT
+        holding" was true of the window and false of the present.
+
+        That failure is permanent, not cosmetic: every future fix to this class leaves a
+        tail of pre-fix cancellations inside the window, so the alert stays red long after
+        the defect is gone and the reader learns to ignore it. That is the same alert
+        fatigue the three-valued verdict was designed to avoid, reached by another route.
+
+    So the verdict is computed over `recent` ONLY, `older` is reported as history, and the
+    boundary between them is named in the output every time.
+    """
+    if boundary_label is not None:
+        return SurvivalReport(
+            recent=tuple(outcomes), older=(), boundary=boundary_label, explicit=True
+        )
+    recent = tuple(outcomes[:recent_window])
+    older = tuple(outcomes[recent_window:])
+    if recent:
+        oldest = recent[-1]
+        boundary = (
+            f"the newest {len(recent)} raced runs, back to {oldest.head_sha[:8]} "
+            f"at {oldest.created_at}"
+        )
+    else:
+        boundary = "no raced runs in range"
+    return SurvivalReport(recent=recent, older=older, boundary=boundary, explicit=False)
+
+
 # ----- ancestry ----------------------------------------------------------------------
+
+
+def git_knows_commit(sha: str, repo_dir: Path | None = None) -> bool:
+    """Can this clone resolve `sha` to a commit? Used to disambiguate --since inputs."""
+    return (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 def is_built_on(candidate_sha: str, base_sha: str, repo_dir: Path | None = None) -> bool:
@@ -239,14 +333,7 @@ def is_built_on(candidate_sha: str, base_sha: str, repo_dir: Path | None = None)
     wearing the costume of a fact.
     """
     for sha in (base_sha, candidate_sha):
-        resolved = subprocess.run(
-            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if resolved.returncode != 0:
+        if not git_knows_commit(sha, repo_dir):
             raise PreconditionError(
                 f"commit {sha} is not present in this clone, so ancestry cannot be "
                 "decided. Fetch it (git fetch origin) rather than falling back to a "
