@@ -102,6 +102,8 @@ from scripts.ci_health_core import (
     CheckResult,
     PreconditionError,
     Run,
+    RunJobsPayloadCache,
+    _cached_run_jobs_payload,
     _completed_runs_page,
     _gh_api_json,
     _parse_completed_runs,
@@ -300,7 +302,11 @@ def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | N
     return [run for run in fetched if run.updated_at >= watermark], note
 
 
-def _fetch_jobs(runs: list[Run], existing: list[Metric]) -> JobFetchOutcome:
+def _fetch_jobs(
+    runs: list[Run],
+    existing: list[Metric],
+    job_payloads: RunJobsPayloadCache | None = None,
+) -> JobFetchOutcome:
     """Completed jobs for every run finished since the store's newest CI record.
 
     Two paths. With no CI records in the store this is a fresh machine, so it seeds from the
@@ -324,6 +330,7 @@ def _fetch_jobs(runs: list[Run], existing: list[Metric]) -> JobFetchOutcome:
     raises rather than being quietly dropped: silently discarding it would hide a real
     change in how GitHub reports timings behind a thinning sample nobody noticed.
     """
+    payload_cache = {} if job_payloads is None else job_payloads
     watermark = _ci_watermark(existing)
     if watermark is None:
         candidates, note = runs[:JOB_FETCH_BOOTSTRAP_RUN_COUNT], None
@@ -342,9 +349,7 @@ def _fetch_jobs(runs: list[Run], existing: list[Metric]) -> JobFetchOutcome:
 
     jobs: list[Job] = []
     for run in candidates:
-        payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run.run_id}/jobs?per_page=100")
-        if not isinstance(payload, dict) or "jobs" not in payload:
-            raise PreconditionError(f"runs/{run.run_id}/jobs response has no jobs key")
+        payload = _cached_run_jobs_payload(run.run_id, payload_cache, _gh_api_json)
         for item in payload["jobs"]:
             if item.get("status") != "completed" or not item.get("completed_at"):
                 continue

@@ -331,7 +331,9 @@ def _jobs_payload(monkeypatch, items):
     returned here is the one _fetch_jobs works from and no runs listing is requested.
     """
     run = _run(age_minutes=1, duration_seconds=100, conclusion="success")
-    monkeypatch.setattr(mod, "_gh_api_json", lambda path: {"jobs": items})
+    monkeypatch.setattr(
+        mod, "_gh_api_json", lambda path: {"total_count": len(items), "jobs": items}
+    )
     return [run]
 
 

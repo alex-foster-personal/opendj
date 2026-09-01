@@ -70,17 +70,16 @@ class _FakeGh:
         if "/jobs?" in path:
             self.job_paths.append(path)
             run_id = int(path.split("/runs/")[1].split("/jobs", maxsplit=1)[0])
-            return {
-                "jobs": [
-                    _job_item(
-                        run_id,
-                        conclusion="success",
-                        started=_stamp(0),
-                        completed=_stamp(0.5),
-                        name="pytest",
-                    )
-                ]
-            }
+            jobs = [
+                _job_item(
+                    run_id,
+                    conclusion="success",
+                    started=_stamp(0),
+                    completed=_stamp(0.5),
+                    name="pytest",
+                )
+            ]
+            return {"total_count": len(jobs), "jobs": jobs}
         self.run_paths.append(path)
         # '&page=' not 'page=': the query string also carries 'per_page='.
         page = int(path.split("&page=")[1].split("&", maxsplit=1)[0])

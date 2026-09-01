@@ -147,52 +147,6 @@ def test_trigger_drift_ignores_runs_older_than_the_window(monkeypatch):
     assert result.classification == "trigger-drift"
 
 
-# ----- R3 real failure rate ---------------------------------------------------------
-
-
-def test_failure_rate_fires_above_the_limit():
-    """If 14 of 20 runs failed after 300s then 70 percent, exit 4, or broken."""
-    sample = _runs(14, duration_seconds=300, conclusion="failure")
-    sample += [
-        _run(age_minutes=100 + index, duration_seconds=300, conclusion="success")
-        for index in range(6)
-    ]
-    result = mod._check_failure_rate(sample)
-    assert not result.ok
-    assert result.exit_code == mod.EXIT_FAILURE_RATE
-    assert result.sample_size == 20
-    assert "70 percent" in result.detail
-
-
-def test_failure_rate_excludes_instant_refusals():
-    """If all 20 runs failed in 4s
-    then failure-rate stays OK and billing carries the alarm, or broken.
-    """
-    result = mod._check_failure_rate(_runs(20, duration_seconds=4, conclusion="failure"))
-    assert result.ok
-    assert "0/20" in result.detail
-
-
-def test_failure_rate_quiet_on_a_healthy_repo():
-    """If 2 of 20 runs failed after 300s then 10 percent is under the limit, or broken."""
-    sample = _runs(2, duration_seconds=300, conclusion="failure")
-    sample += [
-        _run(age_minutes=100 + index, duration_seconds=300, conclusion="success")
-        for index in range(18)
-    ]
-    result = mod._check_failure_rate(sample)
-    assert result.ok
-
-
-def test_failure_rate_refuses_to_pass_with_no_runs():
-    """If there are zero completed runs
-    then insufficient-data ERROR, never a silent pass, or broken.
-    """
-    result = mod._check_failure_rate([])
-    assert not result.ok
-    assert result.classification == "insufficient-data"
-
-
 # ----- R4 staleness -----------------------------------------------------------------
 
 

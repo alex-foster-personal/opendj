@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -187,6 +188,82 @@ def _parse_completed_runs(payload: object) -> list[Run]:
 
 # ----- actions/runs/{id}/jobs ------------------------------------------------------
 
+RunJobsPayloadCache = dict[int, object]
+
+
+def _validate_run_jobs_payload(payload: object, run_id: int) -> list[dict[str, object]]:
+    """Validate the fields shared by every job-verdict consumer.
+
+    Job IDs are deliberately outside this minimal contract: ``classify_run`` consumes
+    locked real API projections containing only name/status/conclusion. Consumers that
+    materialize an ID-bearing object must validate that additional field themselves.
+    """
+    if not isinstance(payload, dict) or "jobs" not in payload:
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response has no jobs key")
+    jobs = payload["jobs"]
+    if not isinstance(jobs, list):
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response jobs was not a list")
+
+    if "total_count" not in payload:
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response has no total_count key")
+    total_count = payload["total_count"]
+    if type(total_count) is not int or total_count < 0:
+        raise PreconditionError(
+            f"actions/runs/{run_id}/jobs response has invalid total_count: {total_count!r}"
+        )
+    if total_count > len(jobs):
+        raise PreconditionError(
+            f"actions/runs/{run_id}/jobs returned {len(jobs)} of {total_count} jobs; "
+            "a partial page cannot support a truthful run verdict"
+        )
+    if total_count < len(jobs):
+        raise PreconditionError(
+            f"actions/runs/{run_id}/jobs response has invalid total_count "
+            f"{total_count} for {len(jobs)} jobs"
+        )
+
+    required = ("name", "status", "conclusion")
+    validated: list[dict[str, object]] = []
+    for index, item in enumerate(jobs, start=1):
+        if not isinstance(item, dict):
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} was not an object"
+            )
+        missing = [field for field in required if field not in item]
+        if missing:
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} is missing: {missing}"
+            )
+        if not isinstance(item["name"], str) or not isinstance(item["status"], str):
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} has invalid name or status"
+            )
+        if item["conclusion"] is not None and not isinstance(item["conclusion"], str):
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} has invalid conclusion"
+            )
+        validated.append(item)
+    return validated
+
+
+def _cached_run_jobs_payload(
+    run_id: int,
+    cache: RunJobsPayloadCache,
+    fetch_json: Callable[[str], object],
+) -> dict:
+    """One complete jobs page, fetched at most once for this cache.
+
+    Metrics, failure-rate, and trunk verification all need the same endpoint but reduce it
+    differently. Sharing the RAW validated body lets each consumer keep truthful semantics
+    (notably job status for ``unknown``) without paying for the same GitHub call twice.
+    """
+    payload = cache.get(run_id)
+    if payload is None:
+        payload = fetch_json(f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100")
+    _validate_run_jobs_payload(payload, run_id)
+    cache[run_id] = payload
+    return payload
+
 # A job that never executed is not a job that passed, and the two are indistinguishable
 # downstream unless something says so out loud. `cancelled` is the one that misleads: it
 # reads as benign, nothing alerts on it, and `gh run watch --exit-status` even returns 1
@@ -218,16 +295,31 @@ class Job:
         return self.conclusion == "failure"
 
 
-def fetch_run_jobs(run_id: int) -> list[Job]:
+def _validated_job_id(item: dict[str, object], run_id: int, index: int) -> int:
+    """Return one GitHub job ID without coercing malformed API values."""
+    if "id" not in item:
+        raise PreconditionError(
+            f"actions/runs/{run_id}/jobs response job {index} is missing: ['id']"
+        )
+    job_id = item["id"]
+    if type(job_id) is not int or job_id <= 0:
+        raise PreconditionError(
+            f"actions/runs/{run_id}/jobs response job {index} has invalid id: {job_id!r}"
+        )
+    return job_id
+
+
+def fetch_run_jobs(
+    run_id: int, job_payloads: RunJobsPayloadCache | None = None
+) -> list[Job]:
     """Every job of one run. Raises rather than returning an empty list on a bad body."""
-    payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100")
-    if not isinstance(payload, dict) or "jobs" not in payload:
-        raise PreconditionError(f"actions/runs/{run_id}/jobs response has no jobs key")
+    cache = {} if job_payloads is None else job_payloads
+    payload = _cached_run_jobs_payload(run_id, cache, _gh_api_json)
     return [
         Job(
-            job_id=int(item["id"]),
+            job_id=_validated_job_id(item, run_id, index),
             name=str(item["name"]),
             conclusion=str(item.get("conclusion")),
         )
-        for item in payload["jobs"]
+        for index, item in enumerate(payload["jobs"], start=1)
     ]

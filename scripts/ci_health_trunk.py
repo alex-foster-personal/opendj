@@ -19,13 +19,18 @@ from scripts.ci_health_core import (
     CheckResult,
     PreconditionError,
     Run,
+    RunJobsPayloadCache,
     fetch_run_jobs,
 )
 
 GATING_WORKFLOW_NAME = "CI"
 
 
-def _check_trunk_verified(runs: list[Run], default_branch: str) -> CheckResult:
+def _check_trunk_verified(
+    runs: list[Run],
+    default_branch: str,
+    job_payloads: RunJobsPayloadCache | None = None,
+) -> CheckResult:
     """(f) The current trunk head was actually verified, not merely not-failed.
 
     Every other check here reasons about failures. This one reasons about ABSENCE, which
@@ -70,7 +75,14 @@ def _check_trunk_verified(runs: list[Run], default_branch: str) -> CheckResult:
         )
 
     newest = max(trunk, key=lambda run: run.started_at)
-    jobs = fetch_run_jobs(newest.run_id)
+    # Keep the one-argument form when no shared cache was supplied so the check remains a
+    # standalone unit. The watchdog supplies the cache and avoids re-fetching a run that
+    # failure-rate or metrics already inspected.
+    jobs = (
+        fetch_run_jobs(newest.run_id)
+        if job_payloads is None
+        else fetch_run_jobs(newest.run_id, job_payloads)
+    )
     sha = newest.head_sha[:8]
     if not jobs:
         raise PreconditionError(f"run {newest.run_id} reports no jobs at all")

@@ -27,6 +27,7 @@ from scripts.ci_health_core import (
     PreconditionError,
     _gh_api_json,
     _parse_github_timestamp,
+    _validate_run_jobs_payload,
 )
 
 # ----- configuration ---------------------------------------------------------------
@@ -358,16 +359,15 @@ def is_built_on(candidate_sha: str, base_sha: str, repo_dir: Path | None = None)
 # ----- fetching ----------------------------------------------------------------------
 
 
-def _parse_jobs(payload: object, run_id: int) -> tuple[JobOutcome, ...]:
-    if not isinstance(payload, dict) or "jobs" not in payload:
-        raise PreconditionError(f"runs/{run_id}/jobs response has no jobs key")
+def parse_run_jobs(payload: object, run_id: int) -> tuple[JobOutcome, ...]:
+    """Reduce a jobs endpoint body to the fields ``classify_run`` reasons about."""
     return tuple(
         JobOutcome(
             name=str(item["name"]),
             status=str(item["status"]),
             conclusion=None if item.get("conclusion") is None else str(item["conclusion"]),
         )
-        for item in payload["jobs"]
+        for item in _validate_run_jobs_payload(payload, run_id)
     )
 
 
@@ -382,7 +382,7 @@ def fetch_run(run_id: int) -> RunOutcome:
         run_id=run_id,
         head_sha=str(payload["head_sha"]),
         run_conclusion=None if conclusion is None else str(conclusion),
-        jobs=_parse_jobs(jobs_payload, run_id),
+        jobs=parse_run_jobs(jobs_payload, run_id),
         html_url=str(payload.get("html_url", "")),
         created_at=str(payload.get("created_at", "")),
         updated_at=str(payload.get("updated_at", "")),
@@ -409,7 +409,7 @@ def fetch_recent_runs(
         run_id = int(item["id"])
         # Survival reasons only about the listing's own timestamps, so skip the per-run
         # job call: it is one API round trip per run and buys nothing for that question.
-        jobs_payload: object = {"jobs": []}
+        jobs_payload: object = {"total_count": 0, "jobs": []}
         if with_jobs:
             jobs_payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100")
         conclusion = item.get("conclusion")
@@ -418,7 +418,7 @@ def fetch_recent_runs(
                 run_id=run_id,
                 head_sha=str(item["head_sha"]),
                 run_conclusion=None if conclusion is None else str(conclusion),
-                jobs=_parse_jobs(jobs_payload, run_id),
+                jobs=parse_run_jobs(jobs_payload, run_id),
                 html_url=str(item.get("html_url", "")),
                 created_at=str(item.get("created_at", "")),
                 updated_at=str(item.get("updated_at", "")),
