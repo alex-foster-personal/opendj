@@ -67,6 +67,11 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              measurement includes the xrun sentinel AudioWorklet (1,636),
 //              which the predecessor gate never counted at all.
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
+//              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
+//              policy matrix, machines, pins, overview + api-cloudsync client)
+//              is a genuine 17th route in this shared bucket; new measured
+//              64,328, same +5% ceil-to-KiB rule => 67,584 (66 KiB). Widened
+//              deliberately per the rule above, not by accident.
 //              This surface exists so that no chunk is unmeasured. It spans 16
 //              routes plus the error template, so its 3 KB of headroom is TIGHT
 //              by construction; widen it deliberately if ordinary feature work
@@ -79,7 +84,7 @@ import { join, dirname, normalize, relative } from 'node:path';
 const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   { name: 'performance', limit: 203776, measured: 193544, note: '/performance and children' },
-  { name: 'other-lazy', limit: 63488, measured: 60160, note: 'all other routes plus deferred shell' },
+  { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
