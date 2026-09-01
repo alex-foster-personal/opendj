@@ -69,6 +69,44 @@ TABLES: dict[str, str] = {
         "One applied migration. The highest `version` is the schema the file "
         "is at; the ladder in apps/shared/state/schema.py replays from there."
     ),
+    # ----- sync_infra: CloudSync fleet + changelog -----------------------
+    "machines": (
+        "One machine that has ever synced, keyed on a uuid4 machine_id "
+        "minted at first run and stored outside the database so a "
+        "Litestream restore onto different hardware cannot inherit the "
+        "old machine's identity. Part of the synced set itself, so any "
+        "machine can see the whole fleet."
+    ),
+    "sync_policies": (
+        "One machine's sync mode (pinned, cached, stream, or excluded) and "
+        "optional cache budget for one asset kind (audio, stem_bundle, "
+        "anlz_cache, vocal_cache). The CloudSync config UI's per-machine "
+        "toggles write here."
+    ),
+    "playlist_pins": (
+        "One machine's sync-mode override for one playlist, taking "
+        "precedence over that machine's general sync_policies row for the "
+        "tracks it contains -- keeping a gig playlist's audio pinned "
+        "locally even when the machine otherwise streams."
+    ),
+    "sync_state": (
+        "This machine's push and pull watermarks against one sync peer "
+        "(today, always the hub): how far it has pushed into and pulled "
+        "from that peer's changelog. Machine-local and never itself "
+        "synced -- syncing your own sync watermarks would be incoherent."
+    ),
+    "hub_changelog": (
+        "One row the hub accepted from a spoke's push, appended in a "
+        "monotonic AUTOINCREMENT sequence so a spoke's pull watermark is "
+        "just the highest seq it has already pulled. Hub-local (agentbox "
+        "only); it never rides sync itself."
+    ),
+    "local_changelog": (
+        "One row this spoke appended for its own write to a synced table, "
+        "the spoke-local twin of hub_changelog that this machine's push "
+        "watermark fences against. Machine-local; it never rides sync "
+        "itself."
+    ),
     # ----- analysis ------------------------------------------------------
     "analysis": (
         "One track's computed audio analysis (BPM, key, beatgrid, loudness). "

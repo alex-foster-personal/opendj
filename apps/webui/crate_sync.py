@@ -217,12 +217,17 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
 
 def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...]:
     rows = state.execute(
-        "SELECT playlist_id, name FROM playlists WHERE name = ?", (name,)
+        "SELECT playlist_id, name FROM playlists "
+        "WHERE name = ? AND deleted_at IS NULL",
+        (name,),
     ).fetchall()
     if not rows:
         known = [
             r[0]
-            for r in state.execute("SELECT DISTINCT name FROM playlists ORDER BY name")
+            for r in state.execute(
+                "SELECT DISTINCT name FROM playlists "
+                "WHERE deleted_at IS NULL ORDER BY name"
+            )
         ]
         raise RuntimeError(
             f"unknown playlist {name!r}. Known: {', '.join(known) or '(none)'}"
@@ -232,7 +237,7 @@ def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...
     for playlist_id, _name in rows:
         for (stable_id,) in state.execute(
             "SELECT stable_id FROM playlist_memberships "
-            "WHERE playlist_id = ? ORDER BY position",
+            "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
             (playlist_id,),
         ):
             if stable_id not in seen:
@@ -334,13 +339,14 @@ def collect_plan(
         )
         if wanted is None:
             rows = state.execute(
-                "SELECT stable_id, file_path FROM tracks ORDER BY stable_id"
+                "SELECT stable_id, file_path FROM tracks "
+                "WHERE deleted_at IS NULL ORDER BY stable_id"
             ).fetchall()
         else:
             marks = ",".join("?" * len(wanted))
             rows = state.execute(
                 f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
-                "ORDER BY stable_id",
+                "AND deleted_at IS NULL ORDER BY stable_id",
                 wanted,
             ).fetchall()
             found = {str(r["stable_id"]) for r in rows}
@@ -1137,7 +1143,9 @@ def status_report(
     if state_db.is_file():
         state = _open_ro(state_db, "STATE_DB")
         try:
-            rows = state.execute("SELECT file_path FROM tracks").fetchall()
+            rows = state.execute(
+                "SELECT file_path FROM tracks WHERE deleted_at IS NULL"
+            ).fetchall()
         finally:
             state.close()
         path_map = platform_paths.PathMap(entries=tuple(user_maps))

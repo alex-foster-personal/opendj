@@ -140,12 +140,15 @@ def data_dir(tmp_path: Path) -> Path:
     state = sqlite3.connect(data / "state" / "state.db")
     state.executescript(
         """
-        CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT);
+        CREATE TABLE tracks (
+            stable_id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT);
         CREATE TABLE track_vendor_ids (
             stable_id TEXT, vendor TEXT, vendor_id TEXT);
-        CREATE TABLE playlists (playlist_id TEXT PRIMARY KEY, name TEXT);
+        CREATE TABLE playlists (
+            playlist_id TEXT PRIMARY KEY, name TEXT, deleted_at TEXT);
         CREATE TABLE playlist_memberships (
-            playlist_id TEXT, stable_id TEXT, position INTEGER);
+            playlist_id TEXT, stable_id TEXT, position INTEGER,
+            deleted_at TEXT);
         """
     )
     master = sqlite3.connect(data / "master.plain.db")
@@ -155,7 +158,10 @@ def data_dir(tmp_path: Path) -> Path:
     )
     for i, (sid, length, folder, adp) in enumerate(rows):
         vendor_id = f"v{i}"
-        state.execute("INSERT INTO tracks VALUES (?, ?)", (sid, f"title-{sid}"))
+        state.execute(
+            "INSERT INTO tracks (stable_id, title) VALUES (?, ?)",
+            (sid, f"title-{sid}"),
+        )
         state.execute(
             "INSERT INTO track_vendor_ids VALUES (?, 'rekordbox', ?)",
             (sid, vendor_id),
@@ -165,13 +171,22 @@ def data_dir(tmp_path: Path) -> Path:
             (vendor_id, f"title-{sid}", length, folder, adp),
         )
     # big playlist: 3 on-disk members (pvdi1, todoA, todoC); small: 1 (todoB).
-    state.execute("INSERT INTO playlists VALUES ('plbig', 'big')")
-    state.execute("INSERT INTO playlists VALUES ('plsml', 'small')")
+    state.execute(
+        "INSERT INTO playlists (playlist_id, name) VALUES ('plbig', 'big')"
+    )
+    state.execute(
+        "INSERT INTO playlists (playlist_id, name) VALUES ('plsml', 'small')"
+    )
     for pos, sid in enumerate(["pvdi1", "todoA", "todoC", "pvdi2"]):
         state.execute(
-            "INSERT INTO playlist_memberships VALUES ('plbig', ?, ?)", (sid, pos)
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
+            "VALUES ('plbig', ?, ?)",
+            (sid, pos),
         )
-    state.execute("INSERT INTO playlist_memberships VALUES ('plsml', 'todoB', 0)")
+    state.execute(
+        "INSERT INTO playlist_memberships (playlist_id, stable_id, position) "
+        "VALUES ('plsml', 'todoB', 0)"
+    )
     state.commit()
     state.close()
     master.commit()

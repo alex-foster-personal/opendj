@@ -2168,6 +2168,32 @@
         "title": "DeckPerformanceSample",
         "type": "object"
       },
+      "DigestResponse": {
+        "properties": {
+          "overall": {
+            "title": "Overall",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "tables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Tables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "tables",
+          "overall",
+          "seq"
+        ],
+        "title": "DigestResponse",
+        "type": "object"
+      },
       "EngineHealthOut": {
         "description": "Legacy health plus the handshake fields. Extension, not a rewrite.",
         "properties": {
@@ -3184,6 +3210,66 @@
         "title": "HeartbeatIn",
         "type": "object"
       },
+      "HelloRequest": {
+        "properties": {
+          "machine": {
+            "$ref": "#/components/schemas/MachineModel"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine",
+          "schema_version"
+        ],
+        "title": "HelloRequest",
+        "type": "object"
+      },
+      "HelloResponse": {
+        "properties": {
+          "hub_generation": {
+            "title": "Hub Generation",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "schema_version",
+          "seq",
+          "machines",
+          "hub_generation"
+        ],
+        "title": "HelloResponse",
+        "type": "object"
+      },
       "HotCueMutationOut": {
         "properties": {
           "cue": {
@@ -3703,6 +3789,164 @@
         "title": "LoginOut",
         "type": "object"
       },
+      "MachineModel": {
+        "description": "One ``machines`` row on the wire.",
+        "properties": {
+          "data_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Root"
+          },
+          "first_seen": {
+            "minLength": 1,
+            "title": "First Seen",
+            "type": "string"
+          },
+          "is_hub": {
+            "default": false,
+            "title": "Is Hub",
+            "type": "boolean"
+          },
+          "last_seen": {
+            "minLength": 1,
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "machine_id": {
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "platform": {
+            "minLength": 1,
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "platform",
+          "first_seen",
+          "last_seen"
+        ],
+        "title": "MachineModel",
+        "type": "object"
+      },
+      "MachineOut": {
+        "properties": {
+          "data_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Root"
+          },
+          "first_seen": {
+            "title": "First Seen",
+            "type": "string"
+          },
+          "is_hub": {
+            "title": "Is Hub",
+            "type": "boolean"
+          },
+          "last_seen": {
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "platform": {
+            "enum": [
+              "macos",
+              "windows",
+              "linux"
+            ],
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "platform",
+          "is_hub",
+          "first_seen",
+          "last_seen"
+        ],
+        "title": "MachineOut",
+        "type": "object"
+      },
+      "MachineOverview": {
+        "properties": {
+          "cached_tracks": {
+            "title": "Cached Tracks",
+            "type": "integer"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pinned_tracks": {
+            "title": "Pinned Tracks",
+            "type": "integer"
+          },
+          "stream_tracks": {
+            "title": "Stream Tracks",
+            "type": "integer"
+          },
+          "unhydrated_pinned_count": {
+            "title": "Unhydrated Pinned Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine_id",
+          "name",
+          "pinned_tracks",
+          "cached_tracks",
+          "stream_tracks",
+          "unhydrated_pinned_count"
+        ],
+        "title": "MachineOverview",
+        "type": "object"
+      },
       "MeOut": {
         "properties": {
           "avatar_url": {
@@ -4155,6 +4399,27 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "OverviewOut": {
+        "properties": {
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineOverview"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "total_tracks": {
+            "title": "Total Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tracks",
+          "machines"
+        ],
+        "title": "OverviewOut",
         "type": "object"
       },
       "PairingCreate": {
@@ -5003,6 +5268,97 @@
         "title": "PlaylistModel",
         "type": "object"
       },
+      "PlaylistPinOut": {
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "pinned",
+              "cached",
+              "stream",
+              "excluded"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "playlist_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Name"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id",
+          "mode"
+        ],
+        "title": "PlaylistPinOut",
+        "type": "object"
+      },
+      "PlaylistPinPut": {
+        "properties": {
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "pinned",
+              "cached",
+              "stream",
+              "excluded"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "playlist_id",
+          "mode"
+        ],
+        "title": "PlaylistPinPut",
+        "type": "object"
+      },
       "PlaylistRenameIn": {
         "properties": {
           "name": {
@@ -5153,6 +5509,102 @@
           "modified_at"
         ],
         "title": "ProvenanceOut",
+        "type": "object"
+      },
+      "PullResponse": {
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RowModel"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "seq",
+          "machines"
+        ],
+        "title": "PullResponse",
+        "type": "object"
+      },
+      "PushRequest": {
+        "properties": {
+          "machine_id": {
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RowModel"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine_id",
+          "schema_version",
+          "rows"
+        ],
+        "title": "PushRequest",
+        "type": "object"
+      },
+      "PushResponse": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted",
+          "rejected",
+          "seq"
+        ],
+        "title": "PushResponse",
         "type": "object"
       },
       "QualityOut": {
@@ -6311,6 +6763,51 @@
         "title": "RelocateCandidateOut",
         "type": "object"
       },
+      "RowModel": {
+        "description": "One offered row. ``members`` is set only on a ``playlists`` row.",
+        "properties": {
+          "members": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Members"
+          },
+          "pk": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Pk",
+            "type": "array"
+          },
+          "table": {
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "table",
+          "pk",
+          "values"
+        ],
+        "title": "RowModel",
+        "type": "object"
+      },
       "SearchHit": {
         "description": "One hydrated result row + the FTS match excerpt.",
         "properties": {
@@ -6942,6 +7439,50 @@
         "title": "SmartlistUpdateIn",
         "type": "object"
       },
+      "StatusResponse": {
+        "properties": {
+          "hub_generation": {
+            "title": "Hub Generation",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/MachineModel"
+            },
+            "title": "Machines",
+            "type": "array"
+          },
+          "row_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Row Counts",
+            "type": "object"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_machine_id",
+          "schema_version",
+          "seq",
+          "machines",
+          "row_counts",
+          "hub_generation"
+        ],
+        "title": "StatusResponse",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -7402,6 +7943,121 @@
           "seconds_since_request"
         ],
         "title": "SurfaceActivityOut",
+        "type": "object"
+      },
+      "SyncPolicyOut": {
+        "properties": {
+          "asset_kind": {
+            "enum": [
+              "audio",
+              "stem_bundle",
+              "anlz_cache",
+              "vocal_cache"
+            ],
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "cache_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Budget Mb"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "pinned",
+              "cached",
+              "stream",
+              "excluded"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "origin_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Device Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind",
+          "mode"
+        ],
+        "title": "SyncPolicyOut",
+        "type": "object"
+      },
+      "SyncPolicyPut": {
+        "properties": {
+          "asset_kind": {
+            "enum": [
+              "audio",
+              "stem_bundle",
+              "anlz_cache",
+              "vocal_cache"
+            ],
+            "title": "Asset Kind",
+            "type": "string"
+          },
+          "cache_budget_mb": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Budget Mb"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "pinned",
+              "cached",
+              "stream",
+              "excluded"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "asset_kind",
+          "mode"
+        ],
+        "title": "SyncPolicyPut",
         "type": "object"
       },
       "TierEstimateOut": {
@@ -10629,6 +11285,238 @@
         "summary": "Capture Client Event",
         "tags": [
           "client-events"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/machines": {
+      "get": {
+        "operationId": "list_machines_api_v1_cloudsync_machines_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MachineOut"
+                  },
+                  "title": "Response List Machines Api V1 Cloudsync Machines Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Machines",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/overview": {
+      "get": {
+        "operationId": "get_overview_api_v1_cloudsync_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Overview",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/playlist-pins": {
+      "get": {
+        "operationId": "list_playlist_pins_api_v1_cloudsync_playlist_pins_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "machine_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Machine Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlaylistPinOut"
+                  },
+                  "title": "Response List Playlist Pins Api V1 Cloudsync Playlist Pins Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Playlist Pins",
+        "tags": [
+          "cloudsync"
+        ]
+      },
+      "put": {
+        "description": "Upsert one pin THROUGH the stamp chokepoint. See :func:`put_policy`.",
+        "operationId": "put_playlist_pin_api_v1_cloudsync_playlist_pins_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistPinPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistPinOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Playlist Pin",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/policies": {
+      "get": {
+        "operationId": "list_policies_api_v1_cloudsync_policies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "machine_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Machine Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SyncPolicyOut"
+                  },
+                  "title": "Response List Policies Api V1 Cloudsync Policies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Policies",
+        "tags": [
+          "cloudsync"
+        ]
+      },
+      "put": {
+        "description": "Upsert one policy cell THROUGH the stamp chokepoint.\n\nRound 2 finding N1a: this endpoint stamped the row correctly but skipped\n``local_changelog``, so the edit was never offered to the hub and the\nmachine then failed its post-sync digest compare on ``sync_policies``\nforever. Changing one policy in the config UI stopped that machine\nsyncing anything at all.",
+        "operationId": "put_policy_api_v1_cloudsync_policies_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncPolicyPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPolicyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Policy",
+        "tags": [
+          "cloudsync"
         ]
       }
     },
@@ -14144,6 +15032,255 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/sync/digest": {
+      "get": {
+        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.",
+        "operationId": "digest_api_v1_sync_digest_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DigestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Digest",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/hello": {
+      "post": {
+        "description": "Register a spoke in ``machines`` and report the hub's id and seq.",
+        "operationId": "hello_api_v1_sync_hello_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelloRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelloResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hello",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/pull": {
+      "get": {
+        "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.",
+        "operationId": "pull_api_v1_sync_pull_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "last hub_changelog.seq applied",
+            "in": "query",
+            "name": "since_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "last hub_changelog.seq applied",
+              "minimum": 0,
+              "title": "Since Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "max changelog entries to consume in this chunk",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "description": "max changelog entries to consume in this chunk",
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pull",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/push": {
+      "post": {
+        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.\n\nThe pusher's ``machines`` snapshot is merged first, in the same\ntransaction (round 2 finding N4): a row this hub has never met is a\nFOREIGN KEY violation, and the recovery push after a hub restore is\nexactly the push most likely to carry one.",
+        "operationId": "push_api_v1_sync_push_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/status": {
+      "get": {
+        "description": "Hub identity, current seq, known machines and synced row counts.",
+        "operationId": "status_api_v1_sync_status_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "sync"
         ]
       }
     },

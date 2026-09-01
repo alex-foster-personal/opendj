@@ -115,7 +115,7 @@ outside these budgets):
 | ------------- | ------- | ---------------------- | --------------------------------------------------- |
 | `library`     | 256,000 | 93,011 (36.3%)         | the initial load of `/`                              |
 | `performance` | 203,776 | 193,544 (95.0%)        | `/performance` and its children, lazily loaded       |
-| `other-lazy`  | 63,488  | 60,160 (94.8%)         | every other route, plus deferred app-shell chunks    |
+| `other-lazy`  | 67,584  | 64,328 (95.2%)         | every other route, plus deferred app-shell chunks    |
 
 A surface is the STATIC import closure of its roots. SvelteKit code-splits at
 every dynamic import, so a dynamic import is a budget boundary: weight behind

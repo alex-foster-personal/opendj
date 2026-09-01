@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from apps.shared import hashing
 from apps.shared import paths as shared_paths
 from apps.shared import rekordbox_db
 from apps.shared.state import db as state_db
@@ -78,6 +79,7 @@ class IngestReport:
     playlists_inserted: int = 0
     playlists_updated: int = 0
     fields_written: int = 0
+    content_hash_missing: int = 0
     duration_s: float = 0.0
     rb_path: str = ""
     dry_run: bool = True
@@ -151,6 +153,24 @@ def _rb_playlists(rb_db: Any) -> Iterator[tuple[str, str, list[str]]]:
             if getattr(s, "ContentID", None) is not None
         ]
         yield (str(p.ID), p.Name or "", tids)
+
+
+def _content_hash_for(path_str: str, is_streaming: bool) -> str | None:
+    """Sha256 the audio file at ``path_str``, or None when there is none to hash.
+
+    Streaming rows (no local file by definition) and rows with no
+    ``FolderPath`` at all return None silently -- there was never audio to
+    hash. A populated local path that fails to open (unplugged volume,
+    permissions, deleted file) also returns None, but the caller counts it
+    as a warning: this is a metadata-only machine for that track, and
+    ingest must survive that without crashing.
+    """
+    if not path_str or is_streaming:
+        return None
+    try:
+        return hashing.sha256_file(path_str)
+    except OSError:
+        return None
 
 
 _UNKNOWN_MODIFIED_AT = "1970-01-01T00:00:00+00:00"
@@ -265,6 +285,14 @@ def ingest_rb(
                 continue
             seen_sids.add(sid)
 
+            content_hash = _content_hash_for(path_str, track["is_streaming"])
+            if (
+                content_hash is None
+                and path_str
+                and not track["is_streaming"]
+            ):
+                report.content_hash_missing += 1
+
             changed = writer.upsert_track(
                 stable_id=sid,
                 stable_id_tier=tier,
@@ -274,7 +302,7 @@ def ingest_rb(
                 isrc=track["isrc"],
                 duration_ms=track["duration_ms"],
                 file_path=path_str or None,
-                content_hash=None,
+                content_hash=content_hash,
             )
             if changed:
                 existing_vendor = conn.execute(
@@ -387,7 +415,8 @@ def _write_csv_artefact(
             "t.artists_json, t.isrc, t.duration_ms, t.file_path "
             "FROM tracks t "
             "LEFT JOIN track_vendor_ids v "
-            "ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox'"
+            "ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox' "
+            "WHERE t.deleted_at IS NULL"
         ):
             w.writerow(row)
     return out_path
@@ -405,6 +434,13 @@ def _print_summary(report: IngestReport) -> None:
         print(f"  tier {tier:<12} {n}")
     print(f"  playlists new:    {report.playlists_inserted}")
     print(f"  fields written:   {report.fields_written}")
+    if report.content_hash_missing:
+        print(
+            f"  warning: content hash missing for {report.content_hash_missing} "
+            "track(s) with a local FolderPath (audio unreadable on this "
+            "machine); run apps.shared.state.backfill_content_hash later",
+            file=sys.stderr,
+        )
 
 
 def _warn_if_stale(rb_path: Path) -> None:

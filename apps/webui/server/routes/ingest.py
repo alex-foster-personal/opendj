@@ -175,7 +175,8 @@ def _tracks_on_disk() -> tuple[list[tuple[str, str]], int]:
     conn = open_ro()
     try:
         rows = conn.execute(
-            "SELECT stable_id, file_path FROM tracks WHERE file_path IS NOT NULL"
+            "SELECT stable_id, file_path FROM tracks "
+            "WHERE file_path IS NOT NULL AND deleted_at IS NULL"
         ).fetchall()
     finally:
         conn.close()
@@ -248,7 +249,9 @@ def get_coverage() -> CoverageOut:
     missing = _missing_by_step(on_disk)
     conn = open_ro()
     try:
-        total = conn.execute("SELECT count(*) FROM tracks").fetchone()[0]
+        total = conn.execute(
+            "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
+        ).fetchone()[0]
     finally:
         conn.close()
     return CoverageOut(

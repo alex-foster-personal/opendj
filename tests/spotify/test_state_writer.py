@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import schema as state_schema
+from apps.shared.state import sync_stamp
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import LocalTrack, MatchedPair, MatchResult
 from apps.spotify.state_writer import (
@@ -328,3 +329,87 @@ def test_mark_pending_abandoned(state_conn: sqlite3.Connection) -> None:
         state_conn, _state_playlist_id("pl123"), status="abandoned"
     )
     assert len(abandoned) == 1
+
+
+# --- round 2 finding N1c: the importer must reach the push fence ----------
+
+
+def _changelog(conn: sqlite3.Connection) -> dict[str, int]:
+    return dict(
+        conn.execute(
+            "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
+        ).fetchall()
+    )
+
+
+def test_an_imported_playlist_is_stamped_and_logged(state_conn: sqlite3.Connection):
+    """Round 2 finding N1c, reproduced as a permanent regression.
+
+      [observed] b3 spotify playlist row: ('2026-08-31T10:41:47...', None)
+      [observed] b3 local_changelog playlists entries: 0
+      [observed] b3 lww_key -> ('2026-08-31T10:41:47.349967+00:00', '')
+      [observed] b3 sync 0/1: ... tables ['playlist_memberships',
+                                          'playlists'] differ
+
+    Importing a Spotify playlist stopped that machine syncing anything, and
+    the empty tiebreak component is round 1 finding 2's second half still
+    live on this path.
+    """
+    result = MatchResult(pairs=[
+        MatchedPair(_mk_src("t1"), _mk_local("s1"), 1.0, (), "matched"),
+        MatchedPair(_mk_src("t2"), None, 0.0, (), "unmatched"),
+    ])
+    write_playlist_and_pending(
+        state_conn, _mk_playlist(tracks=()), result,
+        backup_path=_TEST_BACKUP, reversal_script_path=_TEST_REVERSAL,
+    )
+
+    playlist = state_conn.execute(
+        "SELECT updated_at, origin_device_id FROM playlists"
+    ).fetchone()
+    assert playlist[0] and playlist[1], (
+        "an unstamped playlist row presents an empty LWW tiebreak and loses "
+        "every conflict"
+    )
+    assert sync_stamp.to_canonical(playlist[0]) == playlist[0]
+
+    members = state_conn.execute(
+        "SELECT updated_at, origin_device_id FROM playlist_memberships"
+    ).fetchall()
+    assert members and all(u and o for u, o in members)
+    assert {o for _u, o in members} == {playlist[1]}, (
+        "every row this importer writes carries THIS machine's origin"
+    )
+
+    counts = _changelog(state_conn)
+    # Two playlists: the Spotify vendor playlist AND its linked ODJ twin (the
+    # user-facing browser playlist), both stamped and offered to the hub.
+    assert counts.get("playlists") == 2
+    assert counts.get("playlist_memberships") == len(members)
+
+
+def test_a_reimport_outranks_the_previous_import(state_conn: sqlite3.Connection):
+    """The hub's test is ``incoming <= stored -> reject``, so a re-import
+    that presents an equal key is a change that never propagates."""
+    result = MatchResult(pairs=[
+        MatchedPair(_mk_src("t1"), _mk_local("s1"), 1.0, (), "matched"),
+    ])
+    write_playlist_and_pending(
+        state_conn, _mk_playlist(snapshot="snap-1", tracks=()), result,
+        backup_path=_TEST_BACKUP, reversal_script_path=_TEST_REVERSAL,
+    )
+    first = state_conn.execute(
+        "SELECT updated_at, origin_device_id FROM playlists"
+    ).fetchone()
+
+    write_playlist_and_pending(
+        state_conn, _mk_playlist(snapshot="snap-2", tracks=()), result,
+        backup_path=_TEST_BACKUP, reversal_script_path=_TEST_REVERSAL,
+    )
+    second = state_conn.execute(
+        "SELECT updated_at, origin_device_id FROM playlists"
+    ).fetchone()
+
+    assert (second[0], second[1]) > (first[0], first[0])
+    # Two imports x two playlists (Spotify + linked ODJ twin) = four rows.
+    assert _changelog(state_conn).get("playlists") == 4

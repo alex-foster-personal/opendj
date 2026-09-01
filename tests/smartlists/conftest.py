@@ -27,7 +27,8 @@ _PHASE5_TEST_DDL: tuple[str, ...] = (
         file_path       TEXT,
         content_hash    TEXT,
         created_at      TEXT NOT NULL,
-        updated_at      TEXT NOT NULL
+        updated_at      TEXT NOT NULL,
+        deleted_at      TEXT
     )
     """,
     """

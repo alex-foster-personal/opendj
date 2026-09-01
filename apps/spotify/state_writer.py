@@ -34,6 +34,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 from apps.shared.state import paths as state_paths
+from apps.shared.state import sync_stamp
 from apps.shared.state.writer import next_playlist_revision
 
 from .client import SpotifyPlaylist, SpotifyTrack
@@ -206,12 +207,19 @@ def _upsert_synthetic_track(
     conn: sqlite3.Connection,
     src: SpotifyTrack,
     *,
+    machine_id: str,
     now: str,
 ) -> str:
     """Insert/update a placeholder track row for an unmatched Spotify track.
 
     ``file_path`` is the Spotify URI so ``is_streaming_path`` marks the row
     streaming (not broken-missing) in the browser.
+
+    ``tracks`` and ``track_vendor_ids`` are synced digest tables (ADR 08
+    point 2): this writer stamps ``updated_at`` / ``origin_device_id`` and
+    appends a ``local_changelog`` entry through
+    :func:`apps.shared.state.sync_stamp.stamp_and_log`, or the row syncs as
+    epoch-old and the push fence never offers it.
     """
     sid = synthetic_stable_id(src.spotify_uri)
     artists_json = json.dumps(
@@ -222,13 +230,15 @@ def _upsert_synthetic_track(
     existing = conn.execute(
         "SELECT stable_id FROM tracks WHERE stable_id = ?", (sid,)
     ).fetchone()
+    track_stamp = sync_stamp.stamp_and_log(conn, "tracks", (sid,), machine_id, now=now)
     if existing is None:
         conn.execute(
             """
             INSERT INTO tracks
               (stable_id, stable_id_tier, title, artists_json, album, isrc,
-               duration_ms, file_path, content_hash, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+               duration_ms, file_path, content_hash, created_at, updated_at,
+               origin_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
             """,
             (
                 sid,
@@ -240,14 +250,16 @@ def _upsert_synthetic_track(
                 src.duration_ms or None,
                 file_path,
                 now,
-                now,
+                track_stamp.updated_at,
+                track_stamp.origin_device_id,
             ),
         )
     else:
         conn.execute(
             """
             UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?,
-              album=?, isrc=?, duration_ms=?, file_path=?, updated_at=?
+              album=?, isrc=?, duration_ms=?, file_path=?, updated_at=?,
+              origin_device_id=?, deleted_at=NULL
             WHERE stable_id=?
             """,
             (
@@ -258,17 +270,14 @@ def _upsert_synthetic_track(
                 src.isrc,
                 src.duration_ms or None,
                 file_path,
-                now,
+                track_stamp.updated_at,
+                track_stamp.origin_device_id,
                 sid,
             ),
         )
     vendor_id = _spotify_vendor_track_id(src)
     if vendor_id:
-        conn.execute(
-            "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-            "VALUES (?, ?, ?)",
-            (sid, VENDOR, vendor_id),
-        )
+        _set_track_vendor_id(conn, sid, vendor_id, machine_id=machine_id, now=now)
     return sid
 
 
@@ -276,11 +285,28 @@ def _set_track_vendor_id(
     conn: sqlite3.Connection,
     stable_id: str,
     vendor_id: str,
+    *,
+    machine_id: str,
+    now: str,
 ) -> None:
+    """Set the Spotify vendor id for a track, stamped for sync.
+
+    ``track_vendor_ids`` is a synced digest table (ADR 08 point 2); the raw
+    ``INSERT OR REPLACE`` this replaced left ``updated_at`` /
+    ``origin_device_id`` NULL and logged nothing, so a re-import never
+    reached the hub.
+    """
+    stamp = sync_stamp.stamp_and_log(
+        conn, "track_vendor_ids", (stable_id, VENDOR), machine_id, now=now
+    )
     conn.execute(
-        "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-        "VALUES (?, ?, ?)",
-        (stable_id, VENDOR, vendor_id),
+        "INSERT INTO track_vendor_ids"
+        "(stable_id, vendor, vendor_id, updated_at, origin_device_id) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(stable_id, vendor) DO UPDATE SET "
+        "vendor_id=excluded.vendor_id, updated_at=excluded.updated_at, "
+        "origin_device_id=excluded.origin_device_id, deleted_at=NULL",
+        (stable_id, VENDOR, vendor_id, stamp.updated_at, stamp.origin_device_id),
     )
 
 
@@ -318,6 +344,7 @@ def _build_membership(
     playlist_id: str,
     result: MatchResult,
     *,
+    machine_id: str,
     now: str,
 ) -> _MembershipBuild:
     """Walk match pairs: matched local rows OR synthetic pending rows."""
@@ -329,11 +356,15 @@ def _build_membership(
             build.matched_rows.append((playlist_id, sid, idx))
             vendor_id = _spotify_vendor_track_id(pair.source)
             if vendor_id:
-                _set_track_vendor_id(conn, sid, vendor_id)
+                _set_track_vendor_id(
+                    conn, sid, vendor_id, machine_id=machine_id, now=now
+                )
                 build.vendor_ids_set += 1
         else:
             src = pair.source
-            sid = _upsert_synthetic_track(conn, src, now=now)
+            sid = _upsert_synthetic_track(
+                conn, src, machine_id=machine_id, now=now
+            )
             build.synthetic_tracks_written += 1
             build.membership.append((playlist_id, sid, idx))
             build.pending_rows.append(
@@ -360,9 +391,17 @@ def _mirror_membership_to_odj(
     playlist_id: str,
     membership: list[tuple[str, str, int]],
     *,
+    machine_id: str,
     now: str,
 ) -> tuple[str, bool]:
-    """Ensure the ODJ twin exists and mirror full membership onto it."""
+    """Ensure the ODJ twin exists and mirror full membership onto it.
+
+    The ODJ twin's ``playlists`` row and every ``playlist_memberships`` row
+    are synced digest tables, so each write is stamped and logged (ADR 08
+    point 2). The whole-list membership DELETE is the allowlisted local
+    full-replace (ADR 08 point 5, ``tests/cloudsync/test_soft_delete.py``):
+    the playlists stamp below carries the complete bundle to the hub.
+    """
     link, odj_created = ensure_odj_link(
         conn,
         vendor_pl_id=playlist.id,
@@ -371,21 +410,31 @@ def _mirror_membership_to_odj(
         now=now,
     )
     odj_playlist_id = link.odj_playlist_id
-    odj_membership = [(odj_playlist_id, sid, pos) for (_pl, sid, pos) in membership]
     conn.execute(
         "DELETE FROM playlist_memberships WHERE playlist_id = ?",
         (odj_playlist_id,),
     )
-    if odj_membership:
-        conn.executemany(
+    for (_pl, sid, pos) in membership:
+        member_stamp = sync_stamp.stamp_and_log(
+            conn, "playlist_memberships", (odj_playlist_id, pos), machine_id, now=now
+        )
+        conn.execute(
             "INSERT INTO playlist_memberships "
-            "(playlist_id, stable_id, position) VALUES (?, ?, ?)",
-            odj_membership,
+            "(playlist_id, stable_id, position, updated_at, origin_device_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                odj_playlist_id, sid, pos,
+                member_stamp.updated_at, member_stamp.origin_device_id,
+            ),
         )
     odj_revision = next_playlist_revision(conn, odj_playlist_id, now)
+    odj_stamp = sync_stamp.stamp_and_log(
+        conn, "playlists", (odj_playlist_id,), machine_id, now=odj_revision
+    )
     conn.execute(
-        "UPDATE playlists SET name = ?, updated_at = ? WHERE playlist_id = ?",
-        (playlist.name, odj_revision, odj_playlist_id),
+        "UPDATE playlists SET name = ?, updated_at = ?, origin_device_id = ?, "
+        "deleted_at = NULL WHERE playlist_id = ?",
+        (playlist.name, odj_stamp.updated_at, odj_stamp.origin_device_id, odj_playlist_id),
     )
     return odj_playlist_id, odj_created
 
@@ -442,31 +491,58 @@ def write_playlist_and_pending(
                 ),
             )
 
-        now = datetime.now(UTC).isoformat()
+        # Round 2 finding N1c: this importer stamped neither origin_device_id
+        # nor local_changelog, so an imported playlist (and its ODJ twin,
+        # memberships, synthetic tracks and vendor ids) never reached the hub
+        # and every later sync failed its digest compare permanently. Every
+        # synced-table write below now goes through the shared chokepoint.
+        machine_id = sync_stamp.ensure_local_machine(conn)
+        now = sync_stamp.canonical_now()
         revision = next_playlist_revision(conn, playlist_id, now)
+        playlist_stamp = sync_stamp.stamp_and_log(
+            conn, "playlists", (playlist_id,), machine_id, now=revision
+        )
         conn.execute(
             """
             INSERT INTO playlists
-              (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+              (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at,
+               origin_device_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(playlist_id) DO UPDATE SET
               name = excluded.name,
-              updated_at = excluded.updated_at
+              updated_at = excluded.updated_at,
+              origin_device_id = excluded.origin_device_id,
+              deleted_at = NULL
             """,
-            (playlist_id, playlist.name, VENDOR, playlist.id, now, revision),
+            (
+                playlist_id, playlist.name, VENDOR, playlist.id, now,
+                playlist_stamp.updated_at, playlist_stamp.origin_device_id,
+            ),
         )
 
-        build = _build_membership(conn, playlist_id, result, now=now)
+        build = _build_membership(
+            conn, playlist_id, result, machine_id=machine_id, now=now
+        )
 
+        # Whole-list replace (allowlisted, ADR 08 point 5): each fresh
+        # membership row is stamped and logged so the push fence sees the
+        # playlist changed at all.
         conn.execute(
             "DELETE FROM playlist_memberships WHERE playlist_id = ?",
             (playlist_id,),
         )
-        if build.membership:
-            conn.executemany(
-                "INSERT INTO playlist_memberships (playlist_id, stable_id, position)"
-                " VALUES (?, ?, ?)",
-                build.membership,
+        for (_pl, sid, pos) in build.membership:
+            member_stamp = sync_stamp.stamp_and_log(
+                conn, "playlist_memberships", (playlist_id, pos), machine_id,
+                now=playlist_stamp.updated_at,
+            )
+            conn.execute(
+                "INSERT INTO playlist_memberships (playlist_id, stable_id, "
+                "position, updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    playlist_id, sid, pos,
+                    member_stamp.updated_at, member_stamp.origin_device_id,
+                ),
             )
 
         conn.execute(
@@ -510,7 +586,8 @@ def write_playlist_and_pending(
 
         if link_odj:
             odj_playlist_id, odj_created = _mirror_membership_to_odj(
-                conn, playlist, playlist_id, build.membership, now=now
+                conn, playlist, playlist_id, build.membership,
+                machine_id=machine_id, now=now,
             )
 
         conn.execute(

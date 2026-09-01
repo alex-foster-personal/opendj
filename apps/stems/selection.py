@@ -90,6 +90,7 @@ def library_buckets(data_dir: Path, stems_root: Path | None = None) -> LibraryBu
         rows = connection.execute(
             "SELECT stable_id, file_path, duration_ms FROM tracks "
             "WHERE file_path IS NOT NULL AND file_path != '' "
+            "AND deleted_at IS NULL "
             "ORDER BY stable_id"
         ).fetchall()
     finally:

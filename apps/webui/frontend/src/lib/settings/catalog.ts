@@ -9,6 +9,7 @@ export type SettingGroupId =
 	| 'performance'
 	| 'confirmations'
 	| 'sync'
+	| 'cloudsync'
 	| 'advanced'
 	| 'rekordbox'
 	| 'djay';
@@ -24,7 +25,16 @@ export type SettingControl =
 	| {
 			kind: 'multi_bool';
 			keys: ReadonlyArray<{ id: string; label: string; title: string }>;
-	  };
+	  }
+	// Pure-navigation entry: no inline widget, just a searchable pointer to a
+	// full route page. SettingsOverlay.svelte's control-kind branches
+	// (boolean/enum/multi_bool) do not render one of these -- by design,
+	// this lane could not touch that shared component (fan-out file
+	// ownership) -- so today the row is discoverable and shows its target in
+	// `detail`/`title`, but clicking it does not yet navigate. A follow-up
+	// in SettingsOverlay.svelte adding `{:else if kind === 'link'}<a href=...>`
+	// (and a matching branch in `activateSetting`) makes it clickable.
+	| { kind: 'link'; href: string };
 
 export interface SettingDef {
 	id: string;
@@ -46,6 +56,7 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'performance', label: 'Performance' },
 	{ id: 'confirmations', label: 'Confirmations' },
 	{ id: 'sync', label: 'Sync' },
+	{ id: 'cloudsync', label: 'CloudSync' },
 	{ id: 'advanced', label: 'Advanced' },
 	{ id: 'rekordbox', label: 'Rekordbox (todo)' },
 	{ id: 'djay', label: 'djay Pro (todo)' }
@@ -223,6 +234,50 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		detail: 'When on, only implemented settings appear in search results and category lists.',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+
+	// ----- cloudsync (specs/cloudsync-spec.md D5) -------------------------
+	// Navigation entries only (no inline widget) -- the real controls are
+	// the policy matrix / pin list / overview table on the /cloudsync route.
+	// Full CRUD backing every row there is live at /api/v1/cloudsync/*
+	// (apps/webui/server/routes/cloudsync.py); implemented: true is correct
+	// even though these specific catalog rows are not yet click-to-navigate
+	// (see the 'link' control-kind comment above).
+	{
+		id: 'cloudsync.machines',
+		label: 'CloudSync: machines & asset policy',
+		group: 'cloudsync',
+		keywords: [
+			'cloudsync', 'cloud', 'sync', 'r2', 'stem', 'stems', 'policy',
+			'machine', 'pin', 'pinned', 'cache', 'cached', 'stream', 'excluded'
+		],
+		title: 'Open the CloudSync policy matrix (/cloudsync)',
+		detail:
+			'Per-machine, per-asset-kind sync policy (pinned/cached/stream/excluded) for audio, stem bundles, ANLZ cache, and vocal cache. GET+PUT /api/v1/cloudsync/policies.',
+		implemented: true,
+		control: { kind: 'link', href: '/cloudsync?tab=policies' }
+	},
+	{
+		id: 'cloudsync.playlist_pins',
+		label: 'CloudSync: playlist pins',
+		group: 'cloudsync',
+		keywords: ['cloudsync', 'playlist', 'pin', 'gig', 'crate', 'local', 'set'],
+		title: 'Open CloudSync playlist pins (/cloudsync)',
+		detail:
+			'Pin specific playlists pinned/cached/stream per machine, e.g. keep a gig crate fully local. GET+PUT /api/v1/cloudsync/playlist-pins.',
+		implemented: true,
+		control: { kind: 'link', href: '/cloudsync?tab=pins' }
+	},
+	{
+		id: 'cloudsync.overview',
+		label: 'CloudSync: fleet overview',
+		group: 'cloudsync',
+		keywords: ['cloudsync', 'overview', 'fleet', 'hydrate', 'hydrated', 'unhydrated', 'last sync'],
+		title: 'Open the CloudSync fleet overview (/cloudsync)',
+		detail:
+			'Per-machine pinned/cached/stream track counts, unhydrated-pinned count, and last sync time. GET /api/v1/cloudsync/overview.',
+		implemented: true,
+		control: { kind: 'link', href: '/cloudsync?tab=overview' }
 	},
 
 	// ----- rekordbox parity stubs ----------------------------------------

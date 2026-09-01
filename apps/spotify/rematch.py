@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
+from apps.shared.state import sync_stamp
 from apps.shared.state.writer import immediate_transaction, next_playlist_revision
 
 from .client import SpotifyTrack
@@ -29,7 +29,6 @@ from .state_writer import (
     ensure_aux_tables,
     fetch_pending_tracks,
     fetch_playlist_link,
-    synthetic_stable_id,
 )
 
 __all__ = ["RematchOutcome", "rematch_playlist"]
@@ -110,27 +109,41 @@ def _promote_pending_row(
     pending: PendingRow,
     target: LocalTrack,
     now: str,
+    *,
+    machine_id: str,
 ) -> None:
-    """Swap the synthetic placeholder for the matched local track."""
-    synth_sid = synthetic_stable_id(pending.spotify_uri)
-    # Drop the synthetic placeholder at this position (Spotify + ODJ).
+    """Swap the synthetic placeholder for the matched local track.
+
+    ``playlist_memberships`` and ``track_vendor_ids`` are synced digest
+    tables, so every write is stamped and logged (ADR 08 point 2). The
+    synthetic placeholder sits at ``(playlist_id, position)`` -- the
+    membership primary key -- so the matched track replaces it in place via
+    ``ON CONFLICT`` rather than a hard DELETE, which keeps this off the
+    ``test_soft_delete`` allowlist (finding 4a).
+    """
+    # Replace the synthetic placeholder at this position (Spotify + ODJ).
     for pl_id in playlist_ids:
         if pl_id is None:
             continue
-        conn.execute(
-            "DELETE FROM playlist_memberships "
-            "WHERE playlist_id = ? AND stable_id = ? AND position = ?",
-            (pl_id, synth_sid, pending.position),
+        member_stamp = sync_stamp.stamp_and_log(
+            conn, "playlist_memberships", (pl_id, pending.position), machine_id,
+            now=now,
         )
         conn.execute(
             """
             INSERT INTO playlist_memberships
-              (playlist_id, stable_id, position)
-            VALUES (?, ?, ?)
+              (playlist_id, stable_id, position, updated_at, origin_device_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(playlist_id, position) DO UPDATE SET
-              stable_id = excluded.stable_id
+              stable_id = excluded.stable_id,
+              updated_at = excluded.updated_at,
+              origin_device_id = excluded.origin_device_id,
+              deleted_at = NULL
             """,
-            (pl_id, target.stable_id, pending.position),
+            (
+                pl_id, target.stable_id, pending.position,
+                member_stamp.updated_at, member_stamp.origin_device_id,
+            ),
         )
     # Link local track -> Spotify id for future de-dup.
     vendor_track = None
@@ -138,10 +151,21 @@ def _promote_pending_row(
     if uri.startswith("spotify:track:"):
         vendor_track = uri.split(":", 2)[2] or None
     if vendor_track:
+        vendor_stamp = sync_stamp.stamp_and_log(
+            conn, "track_vendor_ids", (target.stable_id, "spotify"), machine_id,
+            now=now,
+        )
         conn.execute(
-            "INSERT OR REPLACE INTO track_vendor_ids"
-            "(stable_id, vendor, vendor_id) VALUES (?, 'spotify', ?)",
-            (target.stable_id, vendor_track),
+            "INSERT INTO track_vendor_ids"
+            "(stable_id, vendor, vendor_id, updated_at, origin_device_id) "
+            "VALUES (?, 'spotify', ?, ?, ?) "
+            "ON CONFLICT(stable_id, vendor) DO UPDATE SET "
+            "vendor_id=excluded.vendor_id, updated_at=excluded.updated_at, "
+            "origin_device_id=excluded.origin_device_id, deleted_at=NULL",
+            (
+                target.stable_id, vendor_track,
+                vendor_stamp.updated_at, vendor_stamp.origin_device_id,
+            ),
         )
     conn.execute(
         """
@@ -160,14 +184,20 @@ def _bump_playlist_revisions(
     playlist_ids: tuple[str | None, ...],
     primary_playlist_id: str,
     now: str,
+    *,
+    machine_id: str,
 ) -> None:
     for pl_id in playlist_ids:
         if pl_id is None:
             continue
         revision = next_playlist_revision(conn, pl_id, now)
+        stamp = sync_stamp.stamp_and_log(
+            conn, "playlists", (pl_id,), machine_id, now=revision
+        )
         updated = conn.execute(
-            "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
-            (revision, pl_id),
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+            "WHERE playlist_id = ?",
+            (stamp.updated_at, stamp.origin_device_id, pl_id),
         )
         if pl_id == primary_playlist_id and updated.rowcount != 1:
             raise RuntimeError(
@@ -203,13 +233,24 @@ def rematch_playlist(
     if not live or not resolved_pairs:
         return outcome
 
+    # Round 2 finding N1c: the promotion below wrote playlist_memberships,
+    # playlists and track_vendor_ids with no origin_device_id and no
+    # local_changelog entry, so a resolved purchase never reached the hub and
+    # every later sync failed its digest compare. All go through the shared
+    # chokepoint now.
+    machine_id = sync_stamp.ensure_local_machine(conn)
     with immediate_transaction(conn):
-        now = datetime.now(UTC).isoformat()
+        now = sync_stamp.canonical_now()
         # Linked ODJ twin (if any) must swap the same positions.
         target_playlists = (playlist_id, _linked_odj_playlist_id(conn, playlist_id))
         for pending, _pair, target in resolved_pairs:
-            _promote_pending_row(conn, target_playlists, pending, target, now)
-        _bump_playlist_revisions(conn, target_playlists, playlist_id, now)
+            _promote_pending_row(
+                conn, target_playlists, pending, target, now,
+                machine_id=machine_id,
+            )
+        _bump_playlist_revisions(
+            conn, target_playlists, playlist_id, now, machine_id=machine_id
+        )
 
     return outcome
 

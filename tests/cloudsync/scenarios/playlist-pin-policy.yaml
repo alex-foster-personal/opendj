@@ -1,0 +1,92 @@
+name: playlist-pin-policy
+description: >
+  Two spokes each set their own pin policy for the same playlist to a
+  different mode. Because playlist_pins is keyed by (machine_id,
+  playlist_id), the two rows never collide under LWW -- each machine's own
+  resolution survives sync unchanged, while both rows become visible on
+  every machine (fleet-wide policy visibility, per specs/design_decision_05.md
+  D5: "any machine can view the fleet"). "Resolves per machine" means each
+  machine keeps its own answer, not that the two modes merge into one.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: OLTF opener
+      "on": [spoke-a, spoke-b]
+  playlists:
+    - playlist_id: pl-oltf
+      name: Once Loft Twice Found
+      members: [trk-1]
+      "on": [spoke-a, spoke-b]
+  policies:
+    - kind: playlist_pin
+      playlist_id: pl-oltf
+      mode: pinned
+      "on": [spoke-a]
+    - kind: playlist_pin
+      playlist_id: pl-oltf
+      mode: excluded
+      "on": [spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 3 }   # tracks + playlists + its own playlist_pins row
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1 }   # only its own playlist_pins row is new
+
+  # A syncs again to pick up B's pin row -- the fleet-visibility half of
+  # the claim.
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  # Each machine's own pin stayed exactly what it set.
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: playlist_pins
+      pk: { playlist_id: pl-oltf }   # machine_id defaults to spoke-a itself
+      field: mode
+      equals: pinned
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: playlist_pins
+      pk: { playlist_id: pl-oltf }   # machine_id defaults to spoke-b itself
+      field: mode
+      equals: excluded
+
+  # And both machines can see the OTHER's pin too (fleet-wide visibility).
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: playlist_pins
+      pk: { machine_id: "@spoke-b", playlist_id: pl-oltf }
+      field: mode
+      equals: excluded
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: playlist_pins
+      pk: { machine_id: "@spoke-a", playlist_id: pl-oltf }
+      field: mode
+      equals: pinned
+
+expected:
+  digest_converged: true

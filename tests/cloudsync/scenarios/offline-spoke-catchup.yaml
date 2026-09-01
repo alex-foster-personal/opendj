@@ -1,0 +1,91 @@
+name: offline-spoke-catchup
+description: >
+  A spoke goes offline (partitioned), keeps editing locally while dark --
+  which is legal, it is only a local sqlite write -- then reconnects and
+  syncs. Its accumulated offline work must not be lost: once it rejoins it
+  should win the row (later logical tick) and propagate to every other
+  machine, exactly as if it had never been offline.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-cave
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  # Both start in sync with the hub before anyone goes dark.
+  - "on": spoke-a
+    action: sync
+  - "on": spoke-b
+    action: sync
+
+  - "on": spoke-b
+    action: partition
+    args: { state: offline }
+
+  # A edits and pushes while B is dark.
+  - "on": spoke-a
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-cave
+      set:
+        title: edited on A while B is dark
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+
+  # B edits locally too -- perfectly legal offline, no network involved --
+  # after A's edit, so B's tick is the later one.
+  - "on": spoke-b
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-cave
+      set:
+        title: edited offline on B
+
+  # Reconnect. Had a 'sync' step appeared anywhere above while B was still
+  # offline, the harness would have raised instead of silently skipping it --
+  # the partition is enforced, not decorative.
+  - "on": spoke-b
+    action: partition
+    args: { state: online }
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1 }
+
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-cave }
+      field: title
+      equals: edited offline on B
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-cave }
+      field: title
+      equals: edited offline on B
+
+expected:
+  digest_converged: true

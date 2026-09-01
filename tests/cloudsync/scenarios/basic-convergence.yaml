@@ -1,0 +1,49 @@
+name: basic-convergence
+description: >
+  The simplest possible fixture: one spoke edits a track, syncs, and the
+  edit reaches a second spoke through the hub. If this scenario does not
+  converge, nothing else in the harness can be trusted.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-1
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-1
+      set:
+        title: edited on A
+
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-1 }
+      field: title
+      equals: edited on A
+
+expected:
+  digest_converged: true

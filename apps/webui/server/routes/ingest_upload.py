@@ -66,7 +66,8 @@ def _dup_candidates(duration_s: float) -> list[tuple[str, str, str, str]]:
     try:
         return conn.execute(
             "SELECT stable_id, title, artists_json, file_path FROM tracks "
-            "WHERE duration_ms BETWEEN ? AND ? AND file_path IS NOT NULL",
+            "WHERE duration_ms BETWEEN ? AND ? AND file_path IS NOT NULL "
+            "AND deleted_at IS NULL",
             (lo, hi),
         ).fetchall()
     finally:

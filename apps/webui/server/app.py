@@ -24,6 +24,7 @@ from starlette.types import Scope
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
     resolve_backend_port,
@@ -44,6 +45,7 @@ from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
+from .routes import cloudsync as cloudsync_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import feedback as feedback_routes
@@ -319,6 +321,7 @@ def create_app(
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
     app.include_router(ui_prefs_routes.router, prefix=api_prefix)
+    app.include_router(cloudsync_routes.router, prefix=api_prefix)
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(usb_volumes_routes.router, prefix=api_prefix)
@@ -328,6 +331,7 @@ def create_app(
         app.include_router(usb_volumes_sim_routes.router, prefix=api_prefix)
     app.include_router(telemetry_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
+    app.include_router(sync_hub_router, prefix=api_prefix)
     app.include_router(sets_router)
     app.include_router(play_analytics_router)
 

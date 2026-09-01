@@ -1160,7 +1160,7 @@ test.describe('webkit performance controls on the engine-served build', () => {
 	});
 
 	test('a gridless deck plays and pauses, with BEAT SYNC and Q inert', async () => {
-		// THE GRIDLESS TRANSPORT CONTRACT, specs/design_decision_02.md. The
+		// THE GRIDLESS TRANSPORT CONTRACT, specs/design_decision_09.md. The
 		// engine genuinely refuses beat sync, quantized cue and beat loops
 		// without a grid. The defect was that the refusal leaked into TRANSPORT,
 		// so an unanalysed track could not be played at all - and an unanalysed

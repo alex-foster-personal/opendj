@@ -360,6 +360,7 @@ class SqliteBackend:
                     "SELECT stable_id, title, artists_json, album, "
                     "       duration_ms, file_path, created_at, updated_at "
                     "FROM tracks "
+                    "WHERE deleted_at IS NULL "
                     "ORDER BY stable_id"
                 )
             )
@@ -467,7 +468,7 @@ class SqliteBackend:
                 conn.execute(
                     "SELECT playlist_id, name, vendor, vendor_pl_id, "
                     "       created_at, updated_at "
-                    "FROM playlists ORDER BY playlist_id"
+                    "FROM playlists WHERE deleted_at IS NULL ORDER BY playlist_id"
                 )
             )
             if not self._table_exists(conn, "playlist_memberships"):
@@ -476,7 +477,7 @@ class SqliteBackend:
                 members = {}
                 for pid, sid in conn.execute(
                     "SELECT playlist_id, stable_id FROM playlist_memberships "
-                    "ORDER BY playlist_id, position"
+                    "WHERE deleted_at IS NULL ORDER BY playlist_id, position"
                 ):
                     members.setdefault(pid, []).append(sid)
         return [
@@ -497,7 +498,7 @@ class SqliteBackend:
             row = conn.execute(
                 "SELECT playlist_id, name, vendor, vendor_pl_id, "
                 "       created_at, updated_at "
-                "FROM playlists WHERE playlist_id = ?",
+                "FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
                 (playlist_id,),
             ).fetchone()
             if row is None:
@@ -507,7 +508,8 @@ class SqliteBackend:
                 items = [
                     r[0] for r in conn.execute(
                         "SELECT stable_id FROM playlist_memberships "
-                        "WHERE playlist_id = ? ORDER BY position",
+                        "WHERE playlist_id = ? AND deleted_at IS NULL "
+                        "ORDER BY position",
                         (playlist_id,),
                     )
                 ]
@@ -551,7 +553,7 @@ class SqliteBackend:
                 _warn_fallback_once("stats:tracks", "no tracks table")
             if self._table_exists(conn, "playlists"):
                 playlists = conn.execute(
-                    "SELECT COUNT(*) FROM playlists"
+                    "SELECT COUNT(*) FROM playlists WHERE deleted_at IS NULL"
                 ).fetchone()[0]
             else:
                 _warn_fallback_once("stats:playlists", "no playlists table")
@@ -719,7 +721,8 @@ class SqliteBackend:
                 conn.execute("BEGIN IMMEDIATE")
                 rows = list(conn.execute(
                     "SELECT stable_id, title, artists_json, album, duration_ms, "
-                    "file_path, created_at, updated_at FROM tracks ORDER BY stable_id",
+                    "file_path, created_at, updated_at FROM tracks "
+                    "WHERE deleted_at IS NULL ORDER BY stable_id",
                 ))
                 fields_by_id = _fetch_fields(conn, [row["stable_id"] for row in rows])
                 tracks = [

@@ -1,0 +1,75 @@
+name: concurrent-edit-lww
+description: >
+  Two spokes edit the same track before either has synced. Whichever edit
+  is later (by the harness's logical clock, i.e. whichever 'edit' step
+  appears later in this file) must win everywhere, regardless of which
+  spoke pushed to the hub first -- last-writer-wins is a property of
+  updated_at, not of arrival order.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-race
+      title: original
+      "on": [spoke-a, spoke-b]
+
+steps:
+  # A edits first (earlier tick) but pushes... also first. It should still
+  # lose to B's later edit once B's push reaches the hub.
+  - "on": spoke-a
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-race
+      set:
+        title: A's version
+
+  - "on": spoke-b
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-race
+      set:
+        title: B's version
+
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1 }
+
+  # A pulls again to pick up B's win.
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { applied: 1 }
+
+  - "on": spoke-a
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-race }
+      field: title
+      equals: B's version
+
+  - "on": spoke-b
+    action: assert_converged
+    args:
+      table: tracks
+      pk: { stable_id: trk-race }
+      field: title
+      equals: B's version
+
+expected:
+  digest_converged: true

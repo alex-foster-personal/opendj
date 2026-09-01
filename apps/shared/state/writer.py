@@ -4,90 +4,52 @@ Every write is a small transaction that appends one row to ``events`` and
 publishes a matching in-process event on :class:`EventBus`. Callers MUST
 NOT ``INSERT`` into the state tables directly; this class is the chokepoint
 that guarantees the durable log + in-process fanout stay in sync.
+
+The track-level writes (tracks, locations, vendor ids, wrapped fields) and
+the playlist writes (insert, membership replace, tombstone) moved to
+:mod:`apps.shared.state.writer_tracks` and
+:mod:`apps.shared.state.writer_playlists` (quality-gate file_size ratchet,
+round 4), as mixins :class:`StateWriter` composes below. Both assume the
+infrastructure this class defines -- ``_tx``, ``_stamp``, ``_now_iso``,
+``machine_id``, ``bus`` -- so neither is usable on its own. The constants
+and free helpers both mixins ALSO need (table names,
+``immediate_transaction``, ``next_playlist_revision``) live in
+:mod:`apps.shared.state.writer_common` rather than here, so this module can
+import the two mixins without a cycle: this module and both mixins import
+only ``writer_common``, never each other. An earlier version of this split
+had the mixins import their constants back from this module instead, which
+worked when this module happened to be the first of the three imported and
+broke -- reproducibly -- whenever anything imported a mixin module first
+(``python -m`` re-importing a package under its real name is one such path;
+so is any test collector that imports alphabetically).
 """
 from __future__ import annotations
 
-import hashlib
 import itertools
 import json
 import sqlite3
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterable, Iterator
+from datetime import datetime
+from typing import Any
 
-from . import locations as _locations
-from . import provenance as _prov
+from . import sync_stamp as _sync_stamp
 from .events import EventBus, FakeEventBus
-from .types import Event, Source
+from .types import Event
+from .writer_common import (
+    _default_clock,
+    _iso,
+    compute_playlist_id,
+    immediate_transaction,
+    next_playlist_revision,
+)
+from .writer_playlists import _PlaylistWriterMixin
+from .writer_tracks import _TrackWriterMixin
 
 _Clock = Callable[[], datetime]
 
 
-def _default_clock() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(dt: datetime) -> str:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
-
-
-def compute_playlist_id(vendor: str, vendor_pl_id: str) -> str:
-    """Stable playlist id: ``sha1('<vendor>:<vendor_pl_id>')``.
-
-    Lets us round-trip a playlist between vendors without collisions while
-    keeping the id deterministic.
-    """
-    return hashlib.sha1(f"{vendor}:{vendor_pl_id}".encode("utf-8")).hexdigest()
-
-
-@contextmanager
-def immediate_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """Acquire SQLite's writer lock before an authoritative read-modify-write.
-
-    Membership replacement is destructive, so an ETag, member validation, and
-    replacement must all happen after this lock is held.  Nested callers use a
-    SAVEPOINT through :meth:`StateWriter._tx`; this outer primitive fails fast
-    if a caller attempts to upgrade an already-open deferred transaction.
-    """
-    if conn.in_transaction:
-        raise RuntimeError(
-            "immediate transaction requires an idle connection; acquire it "
-            "before reading membership state"
-        )
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        yield conn
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    else:
-        conn.execute("COMMIT")
-
-
-def next_playlist_revision(
-    conn: sqlite3.Connection, playlist_id: str, candidate: str,
-) -> str:
-    """Return a revision distinct from the playlist's current ``updated_at``.
-
-    Wall-clock timestamps normally differ at microsecond precision.  A fixed
-    clock used by a deterministic caller must still rotate an ETag, so advance
-    an equal ISO timestamp by one microsecond instead of silently reusing it.
-    """
-    row = conn.execute(
-        "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
-    ).fetchone()
-    if row is None:
-        return candidate
-    previous = datetime.fromisoformat(row[0])
-    requested = datetime.fromisoformat(candidate)
-    if requested > previous:
-        return candidate
-    return _iso(previous + timedelta(microseconds=1))
-
-
-class StateWriter:
+class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin):
     """Write-serialised facade over the state DB.
 
     Owns its own event bus unless one is injected. Tests can pass in a
@@ -122,6 +84,7 @@ class StateWriter:
         self._actor = actor
         self._sp_counter = itertools.count()
         self._closed = False
+        self._machine_id: str | None = None
 
     @property
     def raw_conn(self) -> sqlite3.Connection:
@@ -179,7 +142,7 @@ class StateWriter:
         if self._own_bus:
             self.bus.close()
 
-    def __enter__(self) -> "StateWriter":
+    def __enter__(self) -> StateWriter:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -199,6 +162,26 @@ class StateWriter:
 
     def _now_iso(self) -> str:
         return _iso(self._clock())
+
+    def machine_id(self) -> str:
+        """This writer's origin device id, resolved once per instance.
+
+        Every synced-table write carries it as ``origin_device_id``; without
+        it the LWW tiebreak is empty on both sides and degenerates to
+        first-writer-wins (round 1 finding 2). Resolution fails loudly on a
+        connection with no data dir rather than inventing an identity.
+        """
+        if self._machine_id is None:
+            self._machine_id = _sync_stamp.ensure_local_machine(self._conn)
+        return self._machine_id
+
+    def _stamp(
+        self, table: str, row_pk: tuple[Any, ...], now: str
+    ) -> _sync_stamp.Stamp:
+        """Stamp one synced-table write and log it to ``local_changelog``."""
+        return _sync_stamp.stamp_and_log(
+            self._conn, table, row_pk, self.machine_id(), now=now,
+        )
 
     def _append_event(
         self,
@@ -224,317 +207,6 @@ class StateWriter:
             payload=payload,
             actor=self._actor,
         )
-
-    # --- tracks -----------------------------------------------------
-
-    def upsert_track(
-        self,
-        *,
-        stable_id: str,
-        stable_id_tier: str,
-        title: str | None,
-        artists: Iterable[str],
-        album: str | None,
-        isrc: str | None,
-        duration_ms: int | None,
-        file_path: str | None,
-        content_hash: str | None = None,
-    ) -> bool:
-        """Insert/update ``tracks``. Returns True on change, False on no-op.
-
-        A byte-equal repeat is a no-op (no history, no event).
-        """
-        artists_json = json.dumps(
-            list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
-        )
-        now = self._now_iso()
-        with self._tx() as conn:
-            existing = conn.execute(
-                "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                "duration_ms, file_path, content_hash FROM tracks "
-                "WHERE stable_id = ?",
-                (stable_id,),
-            ).fetchone()
-            new_row = (
-                stable_id_tier,
-                title,
-                artists_json,
-                album,
-                isrc,
-                duration_ms,
-                file_path,
-                content_hash,
-            )
-            if existing is not None and tuple(existing) == new_row:
-                return False
-            if existing is None:
-                conn.execute(
-                    "INSERT INTO tracks(stable_id, stable_id_tier, title, "
-                    "artists_json, album, isrc, duration_ms, file_path, "
-                    "content_hash, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        stable_id,
-                        stable_id_tier,
-                        title,
-                        artists_json,
-                        album,
-                        isrc,
-                        duration_ms,
-                        file_path,
-                        content_hash,
-                        now,
-                        now,
-                    ),
-                )
-                kind = "track.insert"
-            else:
-                conn.execute(
-                    "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
-                    "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, "
-                    "updated_at=? WHERE stable_id=?",
-                    (*new_row, now, stable_id),
-                )
-                kind = "track.update"
-            ev = self._append_event(
-                kind=kind,
-                stable_id=stable_id,
-                payload={"tier": stable_id_tier, "had_isrc": bool(isrc)},
-                ts=now,
-            )
-            self.bus.publish(ev)
-            _locations.sync_primary_local(
-                conn, stable_id=stable_id, file_path=file_path, now=now,
-            )
-        return True
-
-    def upsert_track_location(
-        self,
-        *,
-        stable_id: str,
-        kind: _locations.Kind,
-        file_path: str | None = None,
-        remote_url: str | None = None,
-        role: _locations.Role = "alternate",
-        content_hash: str | None = None,
-    ) -> int:
-        """Record an extra playable copy. Does not change ``tracks.file_path``."""
-        now = self._now_iso()
-        with self._tx() as conn:
-            loc_id = _locations.upsert_location(
-                conn,
-                stable_id=stable_id,
-                kind=kind,
-                file_path=file_path,
-                remote_url=remote_url,
-                role=role,
-                content_hash=content_hash,
-                now=now,
-            )
-            ev = self._append_event(
-                kind="track.location.upsert",
-                stable_id=stable_id,
-                payload={"id": loc_id, "kind": kind, "role": role},
-                ts=now,
-            )
-            self.bus.publish(ev)
-        return loc_id
-
-    # --- vendor ids -------------------------------------------------
-
-    def set_vendor_id(
-        self, stable_id: str, vendor: str, vendor_id: str
-    ) -> None:
-        now = self._now_iso()
-        with self._tx() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
-                "VALUES (?, ?, ?)",
-                (stable_id, vendor, vendor_id),
-            )
-            ev = self._append_event(
-                kind="track.vendor_id.set",
-                stable_id=stable_id,
-                payload={"vendor": vendor, "vendor_id": vendor_id},
-                ts=now,
-            )
-            self.bus.publish(ev)
-
-    # --- wrapped fields --------------------------------------------
-
-    def set_field(
-        self,
-        stable_id: str,
-        field_name: str,
-        value: Any,
-        *,
-        source: Source,
-        modified_at: str,
-        confidence: float | None = None,
-    ) -> bool:
-        """Set a provenance-wrapped field. Returns True on change.
-
-        The DB mutation and the bus publish are ordered inside one outer
-        SAVEPOINT: if ``bus.publish`` raises, the mutation is rolled back so
-        subscribers and the ``track_fields`` row can never drift. This keeps
-        the durable log + in-process fanout invariant the module docstring
-        promises -- addresses Codex P05 finding on mutation/publish ordering.
-        """
-        with self._tx():
-            changed = _prov.write_field(
-                self._conn,
-                stable_id=stable_id,
-                field_name=field_name,
-                value=value,
-                source=source,
-                modified_at=modified_at,
-                confidence=confidence,
-                actor=self._actor,
-                now=self._now_iso(),
-            )
-            if changed:
-                payload: dict[str, Any] = {
-                    "field_name": field_name,
-                    "value": value,
-                    "source": source,
-                    "modified_at": modified_at,
-                }
-                if confidence is not None:
-                    payload["confidence"] = confidence
-                # Publish inside the SAVEPOINT: a raising bus propagates out
-                # of ``_tx`` and triggers ROLLBACK TO, reverting write_field's
-                # already-RELEASEd inner SAVEPOINT.
-                self.bus.publish(
-                    Event(
-                        ts=self._now_iso(),
-                        kind="track.field.set",
-                        stable_id=stable_id,
-                        payload=payload,
-                        actor=self._actor,
-                    )
-                )
-        return changed
-
-    # --- playlists --------------------------------------------------
-
-    def insert_playlist(
-        self,
-        *,
-        playlist_id: str,
-        name: str,
-        vendor: str,
-        vendor_pl_id: str,
-    ) -> bool:
-        now = self._now_iso()
-        with self._tx() as conn:
-            existing = conn.execute(
-                "SELECT name FROM playlists WHERE playlist_id = ?",
-                (playlist_id,),
-            ).fetchone()
-            if existing is None:
-                conn.execute(
-                    "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "
-                    "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (playlist_id, name, vendor, vendor_pl_id, now, now),
-                )
-                kind = "playlist.insert"
-            elif existing[0] != name:
-                revision = next_playlist_revision(conn, playlist_id, now)
-                conn.execute(
-                    "UPDATE playlists SET name=?, updated_at=? WHERE playlist_id=?",
-                    (name, revision, playlist_id),
-                )
-                kind = "playlist.update"
-            else:
-                return False
-            ev = self._append_event(
-                kind=kind,
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "vendor": vendor,
-                    "vendor_pl_id": vendor_pl_id,
-                    "name": name,
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
-        return True
-
-    def set_playlist_memberships(
-        self, playlist_id: str, stable_ids: list[str]
-    ) -> None:
-        """Full-replace playlist memberships. Positions become 0..N-1.
-
-        Also bumps ``playlists.updated_at`` so row-version etags derived
-        from it (webui optimistic concurrency) observe membership-only
-        changes, not just renames.
-        """
-        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
-        with transaction as conn:
-            now = next_playlist_revision(conn, playlist_id, self._now_iso())
-            conn.execute(
-                "DELETE FROM playlist_memberships WHERE playlist_id = ?",
-                (playlist_id,),
-            )
-            for position, sid in enumerate(stable_ids):
-                conn.execute(
-                    "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
-                    "VALUES (?, ?, ?)",
-                    (playlist_id, sid, position),
-                )
-            conn.execute(
-                "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
-                (now, playlist_id),
-            )
-            ev = self._append_event(
-                kind="playlist.memberships.set",
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "count": len(stable_ids),
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
-
-    def delete_playlist(self, playlist_id: str) -> bool:
-        """Delete a playlist and its memberships. Returns True when a row existed.
-
-        Memberships are deleted explicitly (not via FK cascade) so the
-        behaviour does not depend on the connection's ``foreign_keys``
-        PRAGMA. Appends one ``playlist.delete`` event on success.
-        """
-        now = self._now_iso()
-        with self._tx() as conn:
-            existing = conn.execute(
-                "SELECT name, vendor, vendor_pl_id FROM playlists "
-                "WHERE playlist_id = ?",
-                (playlist_id,),
-            ).fetchone()
-            if existing is None:
-                return False
-            conn.execute(
-                "DELETE FROM playlist_memberships WHERE playlist_id = ?",
-                (playlist_id,),
-            )
-            conn.execute(
-                "DELETE FROM playlists WHERE playlist_id = ?",
-                (playlist_id,),
-            )
-            ev = self._append_event(
-                kind="playlist.delete",
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "name": existing[0],
-                    "vendor": existing[1],
-                    "vendor_pl_id": existing[2],
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
-        return True
 
     # --- adapters ---------------------------------------------------
 

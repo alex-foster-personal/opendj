@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import schema as state_schema
+from apps.shared.state import sync_stamp
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import MatchedPair, MatchResult
 from apps.spotify.rematch import rematch_playlist
@@ -177,3 +178,82 @@ def test_rematch_still_pending_without_local_match(
     outcome = rematch_playlist(state_conn, playlist_id, live=True)
     assert outcome.resolved_count == 0
     assert outcome.still_pending_count == 1
+
+
+# --- round 2 finding N1c: rematch must reach the push fence ---------------
+
+
+def test_a_resolved_purchase_is_stamped_and_logged(state_conn: sqlite3.Connection):
+    """Round 2 finding N1c on the rematch path.
+
+    The promotion wrote playlist_memberships and playlists with no
+    origin_device_id and no local_changelog entry, so a resolved purchase
+    never reached the hub and every later sync failed its digest compare on
+    ['playlist_memberships', 'playlists'] permanently.
+    """
+    playlist_id = _seed_unmatched_playlist(state_conn)
+    _insert_track(state_conn, "s-bought", "USABC2500001", title="Hello")
+    state_conn.execute("DELETE FROM local_changelog")
+
+    outcome = rematch_playlist(state_conn, playlist_id, live=True)
+    assert outcome.resolved_count == 1
+
+    members = state_conn.execute(
+        "SELECT updated_at, origin_device_id FROM playlist_memberships "
+        "WHERE playlist_id = ?",
+        (playlist_id,),
+    ).fetchall()
+    assert members and all(u and o for u, o in members)
+
+    playlist = state_conn.execute(
+        "SELECT updated_at, origin_device_id FROM playlists WHERE playlist_id = ?",
+        (playlist_id,),
+    ).fetchone()
+    assert playlist[0] and playlist[1]
+    assert sync_stamp.to_canonical(playlist[0]) == playlist[0]
+
+    logged = dict(
+        state_conn.execute(
+            "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
+        ).fetchall()
+    )
+    # Two of each: the Spotify playlist AND its linked ODJ twin are both
+    # promoted and bumped (the twin is the user-facing browser playlist), so
+    # both must reach the hub. One track_vendor_ids: the resolved purchase's
+    # spotify id is linked for future de-dup.
+    assert logged.get("playlists") == 2
+    assert logged.get("playlist_memberships") == 2, (
+        "a membership promotion the push fence cannot see never reaches the hub"
+    )
+    assert logged.get("track_vendor_ids") == 1
+
+
+def test_a_resolved_purchase_is_not_re_offered_on_a_second_rematch(
+    state_conn: sqlite3.Connection,
+):
+    """A rematch that resolves nothing must not touch the changelog.
+
+    Logging an untouched row would re-offer it on every sync, forever -- the
+    redundant-traffic half of the changelog-retention problem. Idempotency
+    now rests on the pending row's status rather than an ON CONFLICT skip
+    (the synthetic placeholder is replaced in place on the first pass): once
+    resolved, the second pass finds no pending row and writes nothing.
+    """
+    playlist_id = _seed_unmatched_playlist(state_conn)
+    _insert_track(state_conn, "s-bought", "USABC2500001", title="Hello")
+
+    first = rematch_playlist(state_conn, playlist_id, live=True)
+    assert first.resolved_count == 1
+    state_conn.execute("DELETE FROM local_changelog")
+
+    second = rematch_playlist(state_conn, playlist_id, live=True)
+    assert second.resolved_count == 0
+
+    logged = dict(
+        state_conn.execute(
+            "SELECT table_name, COUNT(*) FROM local_changelog GROUP BY table_name"
+        ).fetchall()
+    )
+    assert logged == {}, (
+        "a rematch that resolved nothing must not re-offer any row to the hub"
+    )

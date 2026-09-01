@@ -54,11 +54,28 @@ from `REPORT_ONLY` in `scripts/quality_gate.py` -- do not just delete the entry.
 
 ## Allowances raised by hand, and why
 
-Six entries in `baseline.json` are above where they once stood. All were
-raised deliberately, each in the diff that caused it, and each is a debt with a
-named owner rather than a number that drifted. The two `crate_sync.py` rows
-date from Sun 17 Aug 2026; two frontend rows from Sat 29 Aug 2026, and two more
-from Mon 31 Aug 2026.
+`ruff.complexity` carries one hand-raised point from Mon 31 Aug 2026 (round 4's
+cloudsync work), on top of the entries below. All were raised deliberately in
+the diff that found them, and each is a debt with a named owner rather than a
+number that drifted.
+
+Round 4's quality-gate ratchet (`.planning/cloudsync-round3-adversarial.md`
+Part 3 item 8) traced round 3's cloudsync work pushing `ruff.complexity` from
+144 to 145 to one line: `apps/shared/state/locations.py:231`,
+`upsert_location`, PLR0913 (9 args > 8). N1b (round 2) fixed
+`hydration.py` writing a NULL `machine_id`, and the row's owner has to travel
+through the same call as the rest of the natural key -- the ninth parameter is
+`machine_id`. Bundling parameters to dodge the threshold would touch four call
+sites, two of them test modules owned by other round 4 lanes, for a signature
+`specs/design_decision_08.md` point 1 already documents. See
+`baseline.json`'s `CLOUDSYNC_MACHINE_SCOPE` entry. Paid back only if
+`upsert_location` grows a tenth parameter.
+
+Six further entries in `baseline.json` predate this branch and are above where
+they once stood. All were raised deliberately, each in the diff that caused it,
+and each is a debt with a named owner. The two `crate_sync.py` rows date from
+Sun 17 Aug 2026; two frontend rows from Sat 29 Aug 2026, and two more from
+Mon 31 Aug 2026, each described in the subsections below.
 
 CI was fail-open between the default-branch rename and PR #464, so the
 `fix(agentbox)` crate-reconcile train (`6287d7c1`, `58dbfc13`, `bfa33dec`,

@@ -298,7 +298,9 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
     db = Path(data_dir) / "state" / "state.db"
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
         row = conn.execute(
-            "SELECT file_path FROM tracks WHERE stable_id = ?", (stable_id,)
+            "SELECT file_path FROM tracks "
+            "WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
         ).fetchone()
     if row is None:
         raise FileNotFoundError(f"no track {stable_id!r} in {db}")
@@ -330,7 +332,9 @@ def _duration_from_state(data_dir: Path, stable_id: str) -> float:
     db = data_dir / "state" / "state.db"
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
         row = conn.execute(
-            "SELECT duration_ms FROM tracks WHERE stable_id = ?", (stable_id,)
+            "SELECT duration_ms FROM tracks "
+            "WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
         ).fetchone()
     if row is None:
         raise SystemExit(f"error: no track {stable_id!r} in {db}")
