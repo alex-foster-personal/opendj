@@ -8,10 +8,17 @@ const SETS_PATH = '/api/sets';
 
 export type RecorderStatus = components['schemas']['RecorderStatus'];
 
+/** The source names the daemon accepts, taken from the generated schema so
+ *  this list cannot drift from `SourceName` in apps/sets/api.py again: it was
+ *  still missing 'opendj_decks' after PR #605 added it server-side. */
+export type RecorderSourceName = NonNullable<
+	components['schemas']['RecorderStartRequest']['sources']
+>[number];
+
 export interface RecorderStartInput {
 	session_id: string | null;
 	ffmpeg_device_idx: number;
-	sources: Array<'djay_monitor' | 'rb_history'>;
+	sources: RecorderSourceName[];
 }
 
 export interface SessionSummary {

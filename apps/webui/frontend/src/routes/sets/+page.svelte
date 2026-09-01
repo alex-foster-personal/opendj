@@ -85,7 +85,11 @@
 			recorder = await startRecorder({
 				session_id: null,
 				ffmpeg_device_idx: parsedDeviceIndex,
-				sources: ['djay_monitor']
+				// opendj_decks records OUR own decks; the browser emitter installed
+				// on /performance posts their state to /api/sets/deck-observations
+				// while this session is live. Without it in this list REC captures
+				// djay only and an Open DJ set records zero tracks.
+				sources: ['djay_monitor', 'opendj_decks']
 			});
 			pushToast(`Recording ${recorder.session_id}`);
 		} catch (error) {
