@@ -11,7 +11,7 @@
 # Override (rare, emergency only):
 #   MDT_ALLOW_MASTER_PUSH=1 git push origin master
 
-set -eu
+set -euo pipefail
 
 remote="${1:-}"
 url="${2:-}"

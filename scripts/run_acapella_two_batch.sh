@@ -4,7 +4,10 @@
 set -uo pipefail
 BASE="/Users/dev/Music/_incoming/clubsauna-acapella-techno-100"
 REPO="/Users/dev/Music/music-dj-tools"
-cd "$REPO"
+# No -e in this script (see fire() below), so the cd is guarded explicitly: it
+# is followed by `exec >>` into a log and a Modal batch costing real money,
+# neither of which should ever run from the caller's directory.
+cd "$REPO" || { echo "FATAL: no checkout at $REPO" >&2; exit 1; }
 exec >>"$BASE/farm.log" 2>&1
 
 audio() { find "$BASE" -maxdepth 1 -type f \( -iname '*.mp3' -o -iname '*.wav' \

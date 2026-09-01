@@ -6,7 +6,9 @@ set -uo pipefail
 BASE="/Users/dev/Music/_incoming/clubsauna-acapella-techno-100"
 REPO="/Users/dev/Music/music-dj-tools"
 LOG="$BASE/farm.log"
-cd "$REPO"
+# No -e in this script (RC is read explicitly after the farm call), so the cd
+# is guarded explicitly rather than silently continuing in the wrong tree.
+cd "$REPO" || { echo "FATAL: no checkout at $REPO" >&2; exit 1; }
 exec >>"$LOG" 2>&1
 
 audio() { find "$BASE" -maxdepth 1 -type f \( -iname '*.mp3' -o -iname '*.wav' \

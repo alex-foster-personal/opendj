@@ -10,6 +10,17 @@
 #
 # Source it, do not execute it:
 #   . "$(dirname "${BASH_SOURCE[0]}")/lib/macho.sh"
+#
+# NO `set -euo pipefail` IN THIS FILE, DELIBERATELY, and this is not an
+# oversight for a later sweep to "fix". `set` in a sourced file mutates the
+# CALLER's shell, so the options would silently leak into whatever sourced it
+# and could not be handed back. Both callers already set -euo pipefail BEFORE
+# the source line (sign_macos_developer_id.sh:52 before :57,
+# ship_appstore.sh:36 before :44), so macho_files and macho_count already run
+# under pipefail: the find|while and the tr|wc|tr below cannot report a
+# downstream success over an upstream failure. A signing script that acquired
+# these options by accident, rather than by declaring them, is the drift this
+# shared file exists to prevent.
 
 # Emit every Mach-O file under a directory, NUL separated.
 #

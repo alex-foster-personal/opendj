@@ -4,10 +4,17 @@
 # calm runs reach 78 consecutive minutes against a 22-minute job. Checking once
 # tells you almost nothing; polling costs a minute and buys the one resource
 # that actually kills a run.
-cd /Users/dev/Music/music-dj-tools
+set -euo pipefail
+# An unguarded `cd` here would poll, and then LAUNCH A MODAL RUN, from whatever
+# directory the caller happened to be in. Explicit so it cannot be silent.
+cd /Users/dev/Music/music-dj-tools || { echo "FATAL: repo checkout missing" >&2; exit 1; }
 MAX=${MAX_POLLS:-180}   # 3h at 60s
 for i in $(seq 1 "$MAX"); do
-  OUT=$(uv run scripts/mem_gate.py check 2>&1 | tail -1)
+  # BLOCK is the EXPECTED answer ~88% of the time, so a nonzero gate status is
+  # data, not an error: tolerate it explicitly rather than letting -e end the
+  # poll on the first busy sample. The launch decision is the `if` below, which
+  # reads the gate's own status un-piped.
+  OUT=$(uv run scripts/mem_gate.py check 2>&1 | tail -1) || true
   if uv run scripts/mem_gate.py check >/dev/null 2>&1; then
     echo "[$(date +%H:%M:%S)] poll $i: $OUT -> LAUNCHING"
     exec uv run --with modal python -m scripts.stem_split_runner --limit 100 --dest bifrost2

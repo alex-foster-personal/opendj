@@ -5,7 +5,9 @@
 # cache is skipped unless --force).
 set -uo pipefail
 REPO="/Users/dev/Music/music-dj-tools"
-cd "$REPO"
+# No -e in this script (per-track failures are counted, not fatal), so the cd
+# is guarded explicitly: every path below is relative to the repo root.
+cd "$REPO" || { echo "FATAL: no checkout at $REPO" >&2; exit 1; }
 LOG="$REPO/.tmp/vocal_fill.log"
 # htdemucs hits a hard MPS limit (Output channels > 65536) that
 # PYTORCH_ENABLE_MPS_FALLBACK cannot rescue (it's a dimension cap, not a
@@ -14,8 +16,18 @@ LOG="$REPO/.tmp/vocal_fill.log"
 export MDT_VOCAL_WORKER_DEVICE="${MDT_VOCAL_WORKER_DEVICE:-cpu}"
 
 # stable_ids are hex (no spaces) -> safe to word-split (bash 3.2 has no mapfile)
-IDS=$(python3 -c "import json;[print(g['stable_id']) for g in json.load(open('.tmp/vocal_gap_fillable.json'))]")
-N=$(printf '%s\n' "$IDS" | grep -c .)
+# A missing or malformed input file used to leave IDS empty and the run then
+# reported "DONE: ok=0 fail=0 of 0" -- a confident answer to a question it never
+# asked. The status is read explicitly so an unreadable input is announced.
+if ! IDS=$(python3 -c "import json;[print(g['stable_id']) for g in json.load(open('.tmp/vocal_gap_fillable.json'))]"); then
+  echo "FATAL: cannot read .tmp/vocal_gap_fillable.json" >&2; exit 1
+fi
+# grep -c exits 1 on a zero count, which here means "nothing to do", not an
+# error: tolerated explicitly so the floor check below is what decides.
+N=$(printf '%s\n' "$IDS" | grep -c . || true)
+if [ "$N" -eq 0 ]; then
+  echo "FATAL: input listed 0 fillable tracks; nothing to do" >&2; exit 1
+fi
 echo "[$(date '+%H:%M:%S')] START vocal fill: $N tracks, device=$MDT_VOCAL_WORKER_DEVICE" | tee "$LOG"
 
 i=0; ok=0; fail=0
