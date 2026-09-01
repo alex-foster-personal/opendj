@@ -50,6 +50,18 @@ OK   Q-06 Report (never gate) change hotspots: git churn multiplied by file
           size, so refactoring effort lands where the mess is actually edited.
 RUN  Q-07 Emit a machine-readable JSON result and a human markdown report so
           both CI and a person get the same numbers from one run.
+REG  Q-09 Measure Python type debt with a pinned mypy, split by top-level
+          path so test-fixture debt cannot mask a production regression, with
+          the count of files mypy actually checked as an ungated control.
+          [if an untyped return value is assigned in apps/ then
+           mypy.errors_apps rises and the run exits 1]
+          [if the scanned scope is narrowed then mypy.files_checked drops and
+           the falling error counts read as a narrowed gate, not a cleanup]
+          [if mypy exits on a config error then the run aborts rather than
+           reporting zero type errors]
+          [if MYPYPATH or PYTHONPATH is set in the calling shell then the
+           isolated run still measures the pinned tree, not the ambient
+           search path]
 REG  Q-08 Enforce three shell constructs as a hard gate (no ratchet) via
           scripts/shell_construct_lint.py, over shell sources and justfile
           recipes. Each one returns a plausible value with no error, so a
@@ -84,10 +96,12 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -101,7 +115,16 @@ from scripts import shell_construct_lint
 REPO = Path(__file__).resolve().parent.parent
 FRONTEND = REPO / "apps" / "webui" / "frontend"
 TOOL_REQS = REPO / "ops" / "quality" / "requirements.txt"
+MYPY_REQS = REPO / "ops" / "quality" / "mypy-requirements.txt"
 BASELINE = REPO / "ops" / "quality" / "baseline.json"
+
+# `--isolated` pins uv's *package* set but forwards the caller's environment
+# unchanged, and mypy reads these to widen its own import search path outside
+# any package manager. A `.venv`-free host still measures a different tree if
+# either is set: pointing MYPYPATH at one throwaway directory holding a single
+# unrelated module moved mypy.errors_scripts 107 -> 117 on this exact tree,
+# reproduced via _eval_mypy() itself, no source change.
+IMPORT_PATH_ENV_VARS: tuple[str, ...] = ("MYPYPATH", "PYTHONPATH")
 
 
 class CFG:
@@ -117,6 +140,18 @@ class CFG:
     # jscpd: a clone has to be this big before it is worth naming.
     DUP_MIN_LINES: int = 30
     DUP_MIN_TOKENS: int = 100
+    # mypy runs from its own pinned env and takes its scope from
+    # [tool.mypy] files in pyproject.toml, so the gate hands it flags only.
+    # Restating the paths here would let the command line override the config
+    # and let the two disagree; tests/quality/test_mypy_scope.py enforces that.
+    MYPY_FLAGS: tuple[str, ...] = ("--output", "json", "--no-color-output")
+    # Floor under the mypy control metric. mypy.files_checked is report-only,
+    # so it SHOWS a narrowed scope but cannot fail on one. This aborts instead,
+    # for the same reason _eval_shell aborts on an empty scan: a gate that
+    # measured almost nothing must not report a clean tree. 1178 modules are
+    # checked as of Tue 1 Sep 2026; the floor is loose enough to survive real
+    # deletions and tight enough to catch a scope that collapsed.
+    MYPY_MIN_FILES: int = 900
     # Hotspot report window.
     CHURN_DAYS: int = 90
     HOTSPOT_COUNT: int = 12
@@ -188,7 +223,18 @@ HARD_ZERO: frozenset[str] = frozenset({
 # nothing, and gating it either way is wrong (a ratchet would fail on every new
 # script added, a hard zero is nonsense). The floor that makes it meaningful is
 # enforced in _eval_shell, which aborts rather than scoring an empty scan.
-REPORT_ONLY: frozenset[str] = frozenset({"deps.issues", "shell.files_scanned"})
+#
+# mypy.files_checked is the third, and it is a control of the same kind: the
+# number of modules the type checker actually looked at. Error counts fall
+# when code improves AND when the scope shrinks, and only this metric tells
+# the two apart. Gating it would be wrong both ways (a ratchet fails on every
+# new module; a hard zero is nonsense), so the floor that makes it meaningful
+# is enforced in _eval_mypy, which aborts rather than scoring a collapsed scan.
+REPORT_ONLY: frozenset[str] = frozenset({
+    "deps.issues",
+    "shell.files_scanned",
+    "mypy.files_checked",
+})
 
 
 @dataclass(frozen=True)
@@ -211,9 +257,19 @@ class Evaluator:
 # ----- process helpers -----------------------------------------------------
 
 
-def _run(cmd: list[str], cwd: Path = REPO, allow_fail: bool = False) -> tuple[int, str]:
-    """Run a command, returning (exit code, stdout). Fails fast by default."""
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
+def _run(
+    cmd: list[str],
+    cwd: Path = REPO,
+    allow_fail: bool = False,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str]:
+    """Run a command, returning (exit code, stdout). Fails fast by default.
+
+    `env=None` inherits the caller's environment unchanged, matching
+    `subprocess.run`'s own default. Pass a full replacement dict (built from
+    `os.environ`, not a bare override) to strip specific variables.
+    """
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False, env=env)
     if proc.returncode != 0 and not allow_fail:
         raise RuntimeError(
             f"{' '.join(cmd[:4])}... exited {proc.returncode}\n"
@@ -222,16 +278,56 @@ def _run(cmd: list[str], cwd: Path = REPO, allow_fail: bool = False) -> tuple[in
     return proc.returncode, proc.stdout
 
 
-def _uv(*args: str, allow_fail: bool = False) -> tuple[int, str]:
-    """Run a pinned Python tool in a throwaway env, never the project venv."""
-    if not TOOL_REQS.exists():
-        raise RuntimeError(f"missing pinned tool manifest: {TOOL_REQS}")
+def _uv(
+    *args: str,
+    allow_fail: bool = False,
+    reqs: Path = TOOL_REQS,
+    isolated: bool = False,
+) -> tuple[int, str]:
+    """Run a pinned Python tool in a throwaway env, never the project venv.
+
+    `isolated` is load bearing for any tool that RESOLVES IMPORTS, and it is
+    not what `--no-project` does. `--no-project` declines to sync the project,
+    but uv still discovers a `.venv` in the working directory and layers the
+    `--with-requirements` packages ON TOP of it. Measured Tue 1 Sep 2026: the
+    same tree read 550 mypy errors from a worktree holding a `.venv` and 1356
+    from one without, because `pytest`, `fastapi`, `pydantic` and `numpy`
+    resolved in the first and not the second. `--isolated` is what actually
+    makes the env hold the pinned manifest and nothing else.
+
+    Left off elsewhere on purpose. ruff and radon parse rather than resolve, so
+    they cannot see a venv; import-linter scores only first-party modules. The
+    one other import-resolving tool is deptry, and `deps.issues` is already
+    REPORT_ONLY for exactly this class of reason -- flipping its environment
+    would move that number for reasons unrelated to the tree, which is a
+    separate decision from this one.
+
+    `--isolated` pins the PACKAGE set; it does not touch the process
+    environment `uv run` forwards into the tool. `isolated=True` also strips
+    `IMPORT_PATH_ENV_VARS` from that forwarded environment, because mypy reads
+    MYPYPATH (and PYTHONPATH) directly to widen its own search path outside
+    uv's env entirely -- see the module-level comment on that constant for the
+    measured 107 -> 117 swing from one inert ambient variable.
+
+    `--no-env-file` closes the same hole one layer up: uv itself reads a
+    `.env` file (path from `UV_ENV_FILE`, `.env` by default) and injects ITS
+    contents into the child, which happens after the stripped `env` below is
+    handed to `_run` and so bypasses it entirely. Confirmed the same
+    107 -> 117 swing via `UV_ENV_FILE` pointing at a file that just sets
+    MYPYPATH, with both variables absent from the parent process.
+    """
+    if not reqs.exists():
+        raise RuntimeError(f"missing pinned tool manifest: {reqs}")
     cmd = [
         "uv", "run", "--no-project", "--quiet",
-        "--with-requirements", str(TOOL_REQS),
+        *(["--isolated", "--no-env-file"] if isolated else []),
+        "--with-requirements", str(reqs),
         *args,
     ]
-    return _run(cmd, allow_fail=allow_fail)
+    env = None
+    if isolated:
+        env = {k: v for k, v in os.environ.items() if k not in IMPORT_PATH_ENV_VARS}
+    return _run(cmd, allow_fail=allow_fail, env=env)
 
 
 def _pnpm_dlx(pkg: str, *args: str, allow_fail: bool = False) -> tuple[int, str]:
@@ -482,6 +578,127 @@ def _eval_deps() -> list[Metric]:
     ]
 
 
+# ----- evaluator: mypy -----------------------------------------------------
+
+# The metrics that own the scored roots. Errors are split rather than totalled
+# because test-fixture debt and production debt are not the same debt: one
+# `mypy.errors` would let 40 new errors in apps/ hide behind 40 deleted test
+# modules, which is precisely the regression a ratchet exists to catch.
+_MYPY_ERROR_BUCKETS: tuple[str, ...] = ("apps", "tests", "scripts")
+
+
+def _mypy_bucket(rel: str) -> str:
+    """Map a reported file to the metric that owns it, or refuse to guess."""
+    head = rel.split("/", 1)[0]
+    # conftest.py is the one scored root that is a file. It is test scaffolding,
+    # so its debt is test debt rather than a fourth metric holding one number.
+    if head == "conftest.py":
+        return "tests"
+    if head in _MYPY_ERROR_BUCKETS:
+        return head
+    raise RuntimeError(
+        f"mypy reported an error in {rel}, which no metric owns. Either "
+        f"[tool.mypy] files in pyproject.toml gained a root that "
+        f"_MYPY_ERROR_BUCKETS does not name, or mypy followed an import out of "
+        "the scored tree. Silently dropping it would understate the debt."
+    )
+
+
+def _mypy_metrics(records: list[dict[str, Any]], files_checked: int) -> list[Metric]:
+    """Turn mypy's JSON diagnostics into one metric per scored root."""
+    by_bucket: collections.Counter[str] = collections.Counter(
+        dict.fromkeys(_MYPY_ERROR_BUCKETS, 0)
+    )
+    by_code: dict[str, collections.Counter[str]] = {
+        bucket: collections.Counter() for bucket in _MYPY_ERROR_BUCKETS
+    }
+    for record in records:
+        # mypy emits `note` severity for unchecked annotations and for the
+        # follow-up lines of a multi-part diagnostic. Its own "Found N errors"
+        # summary counts neither, and neither does this.
+        if record["severity"] != "error":
+            continue
+        bucket = _mypy_bucket(record["file"])
+        by_bucket[bucket] += 1
+        by_code[bucket][record.get("code") or "unknown"] += 1
+
+    metrics = [
+        Metric(
+            f"mypy.errors_{bucket}",
+            by_bucket[bucket],
+            "type errors",
+            ", ".join(f"{c}={n}" for c, n in by_code[bucket].most_common(3)),
+        )
+        for bucket in _MYPY_ERROR_BUCKETS
+    ]
+    metrics.append(
+        Metric(
+            "mypy.files_checked",
+            files_checked,
+            "modules mypy checked",
+            "control: the three counts above are measured over this set",
+        )
+    )
+    return metrics
+
+
+def _eval_mypy() -> list[Metric]:
+    """Python type debt, measured under a pinned install set.
+
+    The scope comes from `[tool.mypy] files` in pyproject.toml and the tool
+    from ops/quality/mypy-requirements.txt, which holds mypy and nothing else.
+    Both matter: an unresolvable third-party import scores as an error, so a
+    count taken against whatever happened to be installed would move with the
+    host rather than with the tree. That is the failure mode `deps.issues` had
+    to be un-gated for.
+
+    See `_uv` for why this call is `isolated=True`. Without it the measurement
+    silently includes any `.venv` sitting in the working directory, which is a
+    difference of 550 errors against 1356 on one identical commit -- caught by
+    CI reading a number no developer machine could reproduce.
+
+    The report directory is a fresh `tempfile.mkdtemp()` per call, not a fixed
+    path. Two quality gates running at once (e.g. separate worktrees on one
+    host) would otherwise share one process-global directory, each wiping the
+    other's `--linecount-report` output mid-run.
+    """
+    report_dir = Path(tempfile.mkdtemp(prefix="quality-gate-mypy-"))
+    try:
+        code, out = _uv(
+            "mypy", *CFG.MYPY_FLAGS, "--linecount-report", str(report_dir),
+            allow_fail=True, reqs=MYPY_REQS, isolated=True,
+        )
+        # 0 = clean, 1 = type errors found. Anything else is mypy declining to
+        # run at all (bad config, unreadable source), which has to abort: a
+        # crashed checker reporting zero type errors is the worst of the three.
+        if code not in (0, 1):
+            # mypy writes config and usage errors to stderr, and the call
+            # above discarded it (allow_fail keeps only stdout, which holds
+            # the JSON). Repeating the run without allow_fail costs nothing on
+            # a path that is already aborting and makes _run raise with BOTH
+            # streams attached, so the reader gets the actual complaint
+            # instead of a bare exit code.
+            _uv("mypy", *CFG.MYPY_FLAGS, reqs=MYPY_REQS, isolated=True)
+            raise RuntimeError(f"mypy exited {code} on the scored run, then {out[-2000:]}")
+
+        linecount = report_dir / "linecount.txt"
+        if not linecount.exists():
+            raise RuntimeError(f"mypy wrote no linecount report to {report_dir}")
+        # One `total` row followed by one row per module mypy actually checked.
+        files_checked = len(linecount.read_text(encoding="utf-8").splitlines()) - 1
+        if files_checked < CFG.MYPY_MIN_FILES:
+            raise RuntimeError(
+                f"mypy checked {files_checked} modules, expected at least "
+                f"{CFG.MYPY_MIN_FILES}. That is a collapsed scope reporting as a "
+                "smaller pile of type errors."
+            )
+
+        records = [json.loads(line) for line in out.splitlines() if line.strip()]
+        return _mypy_metrics(records, files_checked)
+    finally:
+        shutil.rmtree(report_dir, ignore_errors=True)
+
+
 # ----- evaluator: frontend graph + knip ------------------------------------
 
 _FE_IMPORT_RE = re.compile(
@@ -712,6 +929,7 @@ EVALUATORS: tuple[Evaluator, ...] = (
     Evaluator("complexity", "Python structural complexity", _eval_complexity),
     Evaluator("arch", "Architecture contracts and package cycles", _eval_arch),
     Evaluator("deps", "Dependency declaration defects", _eval_deps),
+    Evaluator("mypy", "Python type debt by scored root", _eval_mypy),
     Evaluator("frontend", "Frontend coupling and dead code", _eval_frontend, needs_node=True),
     Evaluator("size", "File bloat and duplication", _eval_size, needs_node=True),
     Evaluator("shell", "Shell constructs that fail silently", _eval_shell),

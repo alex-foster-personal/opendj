@@ -52,6 +52,90 @@ switched off. To re-gate it, make the measurement host-independent (run deptry
 in a pinned container, or record a per-platform baseline) and then remove it
 from `REPORT_ONLY` in `scripts/quality_gate.py` -- do not just delete the entry.
 
+`shell.files_scanned` and `mypy.files_checked` are report-only for a third
+reason: they are **controls**, not allowances. An error count falls when the
+code improves and it falls when the gate stops looking, and only the count of
+things looked at tells those two apart. Gating a control is wrong in both
+directions (a ratchet fails on every module added; a hard zero is nonsense), so
+each instead carries a floor in its evaluator that ABORTS the run rather than
+scoring a collapsed scan: `shell_construct_lint.CFG.MIN_FILES` and
+`CFG.MYPY_MIN_FILES`.
+
+## The mypy ratchet, and its pinned install set
+
+Type debt was completely unmeasured until Tue 1 Sep 2026. The repo had no
+`[tool.mypy]` section at all, so nothing type-checked anything: 553 errors at
+default strictness over `apps` + `tests`, against 119 measured in April. The
+number had quadrupled with no gate able to see it. (Both of those figures were
+taken with a project venv in scope, so they are history rather than something to
+compare against `baseline.json`; see the isolation note below.)
+
+`mypy.errors_apps` (157), `mypy.errors_tests` (215) and `mypy.errors_scripts`
+(106) are ordinary ratchets recorded at today's values, so nothing is red on day
+one and the pile can only shrink from here. Nothing was fixed in the PR that landed them; the
+point was to turn an unmeasured quantity into a measured one.
+
+The one design decision worth knowing about is **where the count is measured**.
+mypy is the only tool in this gate whose answer depends on what else is
+importable from the environment it runs in, because an unresolvable third-party
+import scores as an error. Measured against a `uv sync`, the number would move
+whenever an optional extra did or did not resolve on the host -- exactly the
+`deps.issues` failure mode above.
+
+So mypy gets its own throwaway environment holding **mypy and nothing else**,
+pinned in `ops/quality/mypy-requirements.txt` (separate from the shared
+`requirements.txt` so a ruff or deptry bump dragging in a transitive dependency
+cannot move the type count). Which third-party imports are silenced is then a
+property of the source tree: the `[[tool.mypy.overrides]]` block in
+`pyproject.toml` lists them, and it takes **1356 errors to 478**. The 29 import
+errors that survive are all first-party modules that only resolve through
+`sys.path` manipulation at runtime, plus the compiled Rust extension; those are
+findings, not environment artifacts, so they stay in the count.
+`python_version`, `platform` and `exclude` are pinned in the same block for the
+same reason; the header comment there explains each one.
+
+### "Nothing else" needed `--isolated`, and that cost a red CI run
+
+`uv run --no-project` is not enough, which is worth writing down because it is
+not what the flag sounds like. uv declines to sync the project, then still
+discovers a `.venv` in the working directory and layers the
+`--with-requirements` packages **on top of it**. So the first recording of
+these metrics was taken with the whole project venv silently in scope: 550
+errors on a developer worktree, against 1356 in CI, which has no venv, for one
+identical commit. CI caught it the same day by reading a number no local run
+could reproduce.
+
+`--isolated` is what actually empties the environment. Verified by measuring the
+same commit in a worktree with a `.venv` and in one without: 157 / 215 / 106
+both times. `tests/test_quality_gate.py` now fails if that flag is dropped.
+
+The same leak applies in principle to any tool here that resolves imports.
+ruff and radon parse rather than resolve, and import-linter scores only
+first-party modules, so they cannot see a venv at all. deptry can, and
+`deps.issues` is already report-only for exactly this class of reason; changing
+its environment would move that number for reasons unrelated to the tree, so it
+is left alone deliberately rather than by oversight.
+
+### What the count does NOT yet see
+
+Everything this repo depends on is silenced, including its typed dependencies:
+`pydantic`, `fastapi`, `pytest`, `numpy`, `sqlalchemy`. A mistyped pydantic
+field is therefore invisible to the gate today. That is a deliberate trade of
+fidelity for reproducibility, and it is reversible one package at a time: add an
+exact pin to `ops/quality/mypy-requirements.txt` (that file IS the install set),
+delete its line from the overrides block, and reprint the baseline in the same
+diff. That is the one legitimate reason to RAISE these allowances, and it has
+to say so in the diff.
+
+Two more things to know:
+
+- `just typecheck` runs the isolated environment, so it prints the number the
+  gate uses. It exits non-zero while any debt remains, which is mypy reporting
+  rather than the recipe breaking. `just quality-types` is the gated form.
+- The scope lives in `[tool.mypy] files` and nowhere else. The gate passes mypy
+  no paths at all, and `tests/quality/test_mypy_scope.py` fails if that list
+  drifts from the set ruff lints.
+
 ## Allowances raised by hand, and why
 
 `ruff.complexity` carries one hand-raised point from Mon 31 Aug 2026 (round 4's
@@ -160,6 +244,7 @@ again without adding a row here.
 | `deps`       | deptry                      | Imports with no declaration, declarations nothing imports, and imports that only work because something else happened to pull the library in.                                        |
 | `frontend`   | knip + a local import graph | Import cycles across `.ts` **and** `.svelte`, worst fan-in and fan-out, orphaned modules, unreferenced exports and packages, and `as unknown as` double-casts (the one assertion the compiler cannot check).                                                         |
 | `size`       | local + jscpd               | Longest file per language, count over the review threshold, percentage of duplicated lines.                                                                                          |
+| `mypy`       | mypy (pinned, own env)      | How many type errors in `apps/`, in `tests/` and in `scripts/`, plus how many modules were actually checked. Split three ways so test-fixture debt cannot mask a production regression. |
 
 Plus a **hotspot** table in the report: git churn multiplied by file size over
 90 days, never gated. A 2000-line file nobody touches is not urgent; a
@@ -183,9 +268,10 @@ empty again.
 
 ## Pins, and why they are exact
 
-`ops/quality/requirements.txt` pins every Python tool to an exact version, and
-`CFG.KNIP` / `CFG.JSCPD` in `scripts/quality_gate.py` do the same for the node
-tools. A ratchet compares a number today against a number from last month, so
+`ops/quality/requirements.txt` pins every Python tool to an exact version,
+`ops/quality/mypy-requirements.txt` does the same for mypy in an environment of
+its own, and `CFG.KNIP` / `CFG.JSCPD` in `scripts/quality_gate.py` do the same
+for the node tools. A ratchet compares a number today against a number from last month, so
 the measurement has to be identical. Ruff in particular widened its default
 rule set substantially between 0.5 and 0.16; before this directory existed, the
 repo had no `[tool.ruff]` section at all and `make lint` inherited whichever

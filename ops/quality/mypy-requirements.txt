@@ -1,0 +1,33 @@
+# Pinned type checker for the mypy half of `python -m scripts.quality_gate`.
+#
+# Separate from requirements.txt beside it, on purpose. That file provisions
+# ONE throwaway env shared by ruff, radon, import-linter and deptry. mypy is
+# the only tool in the gate whose answer depends on what else is importable
+# from the environment it runs in: an unresolvable third-party import scores as
+# an error, so a transitive dependency arriving with a future ruff or deptry
+# bump would silently move the mypy count and nothing would explain why.
+#
+# So mypy gets an env of its own holding mypy and nothing else. The install set
+# the ratchet is measured under is then exactly this file, on every host, and
+# the [[tool.mypy.overrides]] block in pyproject.toml -- not a `uv sync` -- is
+# what decides which third-party imports are silenced.
+#
+# "Nothing else" needs `uv run --isolated`, not just `--no-project`. uv layers
+# --with-requirements packages on top of a `.venv` it finds in the working
+# directory, and that difference is 550 errors against 1356 on one identical
+# commit. See _uv in scripts/quality_gate.py and the guard in
+# tests/test_quality_gate.py.
+#
+# This file is also the knob for BUYING TYPE FIDELITY BACK. Everything the repo
+# depends on is currently silenced, so a mistyped pydantic field is invisible.
+# Adding an exact pin here (say `pydantic==2.11.7`), deleting its line from the
+# overrides block, and reprinting the baseline in the same diff turns those
+# errors on. One package at a time keeps each jump in the count attributable.
+#
+# Exact pin, not a floor: mypy adds and removes checks between minor versions
+# just as ruff does (see tests/quality/test_toolchain_pins.py for what that
+# already cost this repo once). Bumping it is a deliberate act that reprints
+# the baseline, and tests/quality/test_mypy_scope.py fails if this pin and the
+# copy in pyproject.toml's dev extra stop matching.
+
+mypy==2.3.1
