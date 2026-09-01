@@ -1,0 +1,126 @@
+import { fileURLToPath } from 'node:url';
+
+import { build } from 'esbuild';
+import { compileModule } from 'svelte/compiler';
+
+const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
+let moduleSequence = 0;
+
+/**
+ * Vite's `?url` suffix, modelled for the test bundler. Same contract as the one
+ * in load-typescript.mjs: the import resolves to the path as a string, and
+ * nothing under test may depend on the value.
+ */
+const urlSuffixImports = {
+	name: 'vite-url-suffix',
+	setup(build) {
+		build.onResolve({ filter: /\?url$/ }, (args) => ({
+			path: args.path,
+			namespace: 'vite-url-suffix'
+		}));
+		build.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
+			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
+			loader: 'js'
+		}));
+	}
+};
+
+function _bundle(entry, { stdin = false } = {}) {
+	return build({
+		...(stdin
+			? { stdin: { contents: entry, resolveDir: FRONTEND_ROOT, loader: 'ts', sourcefile: 'rune-entry.ts' } }
+			: { entryPoints: [entry] }),
+		absWorkingDir: FRONTEND_ROOT,
+		alias: { $lib: LIB_ROOT },
+		bundle: true,
+		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://rune-harness.example.test') },
+		format: 'esm',
+		logLevel: 'silent',
+		platform: 'browser',
+		plugins: [urlSuffixImports],
+		target: 'es2022',
+		write: false
+	});
+}
+
+/**
+ * Load a `.svelte.ts` rune module with its RUNES LIVE, not stubbed.
+ *
+ * load-typescript.mjs defines `$state` as an identity function, which is right
+ * for testing pure logic and useless for testing reactivity: an `$effect` there
+ * is a syntax error waiting to happen, never a subscription. This harness
+ * instead runs the real compiler.
+ *
+ * Three passes, and each one is load-bearing:
+ *   1. esbuild the module graph into one file with the runes INTACT (no $state
+ *      define), because compileModule works on source, not on a package tree.
+ *   2. svelte compileModule, which is what turns $state/$effect/$effect.root
+ *      into real svelte/internal/client reactivity for a module (not a
+ *      component) file.
+ *   3. esbuild again to inline svelte/internal/client, because a data: URL
+ *      cannot resolve a bare specifier.
+ *
+ * `entrySource` is TypeScript evaluated at the frontend root, so it can
+ * re-export from '$lib/...' - the module under test plus whatever singletons a
+ * test needs to poke to drive it.
+ */
+export async function loadRuneModule(entrySource) {
+	const runes = await _bundle(entrySource, { stdin: true });
+	const compiled = compileModule(runes.outputFiles[0].text, {
+		generate: 'client',
+		filename: 'rune-entry.svelte.js'
+	});
+	const linked = await _bundle(compiled.js.code, { stdin: true });
+	const source = Buffer.from(linked.outputFiles[0].text).toString('base64');
+	moduleSequence += 1;
+	return import(`data:text/javascript;base64,${source}#${moduleSequence}`);
+}
+
+/**
+ * A browser-ish host for a rune module: localStorage that behaves, and interval
+ * counters so a test can see whether a timer is actually running.
+ *
+ * Returns the live-interval reader plus a restore(). Real timers underneath -
+ * the point is to observe the module's own scheduling, not to fake it.
+ */
+export function installTimerProbe() {
+	const realSetInterval = globalThis.setInterval;
+	const realClearInterval = globalThis.clearInterval;
+	// setTimeout is left alone AND captured: flush() must not create work the
+	// probe then counts, and a leaked interval would keep the test runner's
+	// event loop open forever rather than failing.
+	const realSetTimeout = globalThis.setTimeout;
+	const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+	const store = new Map();
+	let live = 0;
+
+	globalThis.setInterval = (...args) => {
+		live += 1;
+		return realSetInterval(...args);
+	};
+	globalThis.clearInterval = (id) => {
+		if (id !== null && id !== undefined) live -= 1;
+		return realClearInterval(id);
+	};
+	Object.defineProperty(globalThis, 'localStorage', {
+		configurable: true,
+		value: {
+			getItem: (key) => (store.has(key) ? store.get(key) : null),
+			setItem: (key, value) => store.set(key, String(value)),
+			removeItem: (key) => store.delete(key)
+		}
+	});
+
+	return {
+		liveIntervals: () => live,
+		/** Let svelte's effect flush and any queued continuation settle. */
+		flush: () => new Promise((resolve) => realSetTimeout(resolve, 40)),
+		restore: () => {
+			globalThis.setInterval = realSetInterval;
+			globalThis.clearInterval = realClearInterval;
+			if (realLocalStorage === undefined) delete globalThis.localStorage;
+			else Object.defineProperty(globalThis, 'localStorage', realLocalStorage);
+		}
+	};
+}
