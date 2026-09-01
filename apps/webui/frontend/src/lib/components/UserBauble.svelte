@@ -12,6 +12,7 @@
 	import { onMount } from 'svelte';
 	import { auth, logout, refreshUser, startLogin } from '$lib/auth.svelte';
 	import { openAccountOverlay } from '$lib/account/overlay.svelte';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { pushToast } from '$lib/stores.svelte';
 
 	// The performance route's topbar is ~28px tall, so the shell's 32px bauble
@@ -33,7 +34,13 @@
 	);
 
 	onMount(() => {
-		void refreshUser();
+		// Deferred out of the boot burst (PERF-R6). The bauble renders its
+		// signed-out face while the answer is outstanding, which is what it
+		// already did for the duration of the request; nobody is waiting on
+		// it at second zero, and the deck load is.
+		bootScheduler.defer('user-bauble:refreshUser', () => {
+			void refreshUser();
+		});
 	});
 
 	// A fresh sign-in means a fresh picture URL; let it try to load again.

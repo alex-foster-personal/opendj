@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 
+import { immediateBootScheduler, manualBootScheduler } from './fake-boot-scheduler.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://jobs.example.test';
@@ -197,7 +198,7 @@ test('a failed hydrate records the error and KEEPS the rows already on screen', 
 test('a jobs.updated frame upserts its row by id instead of appending', async () => {
 	const fake = makeFakeBus();
 	globalThis.fetch = async () => jsonResponse([job({ id: 'job-1', progress: 0.1 })]);
-	store.attach(fake.bus);
+	store.attach(fake.bus, immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(store.jobs.length, 1);
 
@@ -212,7 +213,7 @@ test('a frame for an unseen id is inserted in newest-first order', async () => {
 	const fake = makeFakeBus();
 	globalThis.fetch = async () =>
 		jsonResponse([job({ id: 'first', created_at: '2026-08-19T09:00:00.000Z' })]);
-	store.attach(fake.bus);
+	store.attach(fake.bus, immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 
 	fake.deliver(job({ id: 'second', created_at: '2026-08-19T12:00:00.000Z' }));
@@ -226,7 +227,7 @@ test('a frame for an unseen id is inserted in newest-first order', async () => {
 test('a malformed frame is dropped and reported, never spread into the list', async () => {
 	const fake = makeFakeBus();
 	globalThis.fetch = async () => jsonResponse([]);
-	store.attach(fake.bus);
+	store.attach(fake.bus, immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 
 	fake.deliver({ kind: 'stems', status: 'running', progress: 0.5 });
@@ -247,7 +248,7 @@ test('a resync refetches the whole list', async () => {
 		calls += 1;
 		return jsonResponse([job({ id: `after-${calls}` })]);
 	};
-	store.attach(fake.bus);
+	store.attach(fake.bus, immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(calls, 1, 'attach does the first fetch');
 
@@ -265,8 +266,8 @@ test('attach is idempotent, so a remount does not double every upsert', async ()
 	const fake = makeFakeBus();
 	globalThis.fetch = async () => jsonResponse([]);
 
-	store.attach(fake.bus);
-	store.attach(fake.bus);
+	store.attach(fake.bus, immediateBootScheduler());
+	store.attach(fake.bus, immediateBootScheduler());
 
 	assert.equal(fake.topicCount('jobs.updated'), 1);
 	assert.equal(fake.resyncCount(), 1);
@@ -274,6 +275,41 @@ test('attach is idempotent, so a remount does not double every upsert', async ()
 	store.detach();
 	assert.equal(fake.topicCount('jobs.updated'), 0);
 	assert.equal(fake.resyncCount(), 0);
+});
+
+test('attach subscribes at once but defers the catch-up fetch out of the boot burst', async () => {
+	// PERF-R6. The 200-row list is nobody's critical path at second zero and
+	// it was in the burst a startup deck load has to fight; the SUBSCRIPTION
+	// is, because a jobs.updated frame that arrives during boot must not be
+	// missed. So the two halves of attach() are split.
+	// [if the subscription waits too then a frame during boot is lost]
+	// [if the fetch does not wait then the burst is unchanged]
+	const fake = makeFakeBus();
+	const manual = manualBootScheduler();
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse([job({ id: 'job-1' })]);
+	};
+
+	store.attach(fake.bus, manual.scheduler);
+	await new Promise((resolve) => setImmediate(resolve));
+
+	assert.equal(fake.topicCount('jobs.updated'), 1, 'the bus is live from the first frame');
+	assert.equal(calls, 0, 'but the catch-up list waits for the boot window');
+	assert.equal(manual.pending(), 1, 'queued, never dropped');
+
+	// A frame arriving before the fetch still lands, which is the whole
+	// reason the subscription is not deferred with it.
+	fake.deliver(job({ id: 'live-frame' }));
+	assert.deepEqual(
+		store.jobs.map((row) => row.id),
+		['live-frame']
+	);
+
+	manual.release();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1, 'and the list is fetched once the window closes');
 });
 
 // ------------------------------------------------------------------ actions

@@ -13,6 +13,7 @@
  */
 
 import { API_BASE } from '$lib/api/client';
+import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
 export type UsageSurface = 'desktop-shell' | 'browser';
 
@@ -65,7 +66,7 @@ export function detectSurface(scope: ShellScope): UsageSurface {
  * clients, and a reload is a new one. Nothing is persisted, so there is no
  * identifier to leak and no stale row that outlives the engine.
  */
-export function startUsageHeartbeat(): () => void {
+export function startUsageHeartbeat(scheduler: BootScheduler = bootScheduler): () => void {
 	if (typeof window === 'undefined' || typeof document === 'undefined') {
 		return () => {};
 	}
@@ -89,7 +90,13 @@ export function startUsageHeartbeat(): () => void {
 		});
 	};
 
-	send();
+	// The FIRST check-in is deferred out of the boot burst (PERF-R6): the
+	// engine's window is 45s wide and three intervals fit inside it, so a
+	// check-in that lands a few seconds later still reads as live -- while
+	// the request it is not making at mount is one more connection the deck
+	// load gets to keep. The interval and the visibility listener are
+	// untouched; only the boot-window send moves.
+	scheduler.defer('usage-heartbeat:first', send);
 	const timer = setInterval(send, HEARTBEAT_INTERVAL_MS);
 	document.addEventListener('visibilitychange', send);
 

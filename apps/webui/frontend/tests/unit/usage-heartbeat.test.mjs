@@ -8,11 +8,18 @@
  * loopback probe engine): `globalThis.OPENDJ_ENGINE_ORIGIN` survives the
  * webview's navigation from tauri://localhost to the engine origin, while
  * `window.__TAURI__` is undefined there.
+ *
+ * The FIRST check-in is deferred out of the boot request burst (PERF-R6), so
+ * these cases hand startUsageHeartbeat an immediate scheduler: their subject
+ * is the payload and the listener wiring, not the boot window. The deferral
+ * itself gets its own case at the bottom, and its ordering is proven in
+ * boot-scheduler.test.mjs.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, afterEach, before, test } from 'node:test';
 
+import { immediateBootScheduler, manualBootScheduler } from './fake-boot-scheduler.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://engine.example.test';
@@ -72,8 +79,8 @@ after(() => {
 	globalThis.fetch = originalFetch;
 });
 
-test('a heartbeat is sent immediately on start', async () => {
-	const stop = heartbeat.startUsageHeartbeat();
+test('the check-in names the surface, the visibility and the version', async () => {
+	const stop = heartbeat.startUsageHeartbeat(immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
 
@@ -90,7 +97,7 @@ test('a heartbeat is sent immediately on start', async () => {
 });
 
 test('visibilitychange sends a fresh heartbeat carrying the new state', async () => {
-	const stop = heartbeat.startUsageHeartbeat();
+	const stop = heartbeat.startUsageHeartbeat(immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 
 	document.visibilityState = 'hidden';
@@ -104,7 +111,7 @@ test('visibilitychange sends a fresh heartbeat carrying the new state', async ()
 });
 
 test('stopping removes the listener so no further heartbeats fire', async () => {
-	const stop = heartbeat.startUsageHeartbeat();
+	const stop = heartbeat.startUsageHeartbeat(immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
 
@@ -114,7 +121,7 @@ test('stopping removes the listener so no further heartbeats fire', async () => 
 
 test('the desktop shell is detected from the origin the shell injects', async () => {
 	installBrowserGlobals({ shell: true });
-	const stop = heartbeat.startUsageHeartbeat();
+	const stop = heartbeat.startUsageHeartbeat(immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
 
@@ -136,10 +143,30 @@ test('an engine that is down does not throw into the app', async () => {
 	};
 	let stop;
 	assert.doesNotThrow(() => {
-		stop = heartbeat.startUsageHeartbeat();
+		stop = heartbeat.startUsageHeartbeat(immediateBootScheduler());
 	});
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
+});
+
+test('the first check-in waits for the boot window instead of joining the burst', async () => {
+	// PERF-R6: the boot burst is what a deck load at startup competes with.
+	// Three heartbeat intervals fit inside the engine's 45s liveness window,
+	// so a first check-in that lands a few seconds later still reads as live.
+	// [if the first heartbeat posts at mount then it is back in the burst]
+	const manual = manualBootScheduler();
+	const stop = heartbeat.startUsageHeartbeat(manual.scheduler);
+	await new Promise((resolve) => setImmediate(resolve));
+
+	assert.equal(posted.length, 0, 'no check-in may go out during the boot window');
+	assert.equal(manual.pending(), 1, 'and it must be queued, never dropped');
+
+	manual.release();
+	await new Promise((resolve) => setImmediate(resolve));
+	stop();
+
+	assert.equal(posted.length, 1);
+	assert.equal(posted[0].url, `${API_BASE}/api/v1/telemetry/heartbeat`);
 });
 
 test('APP_VERSION stays in step with the package it ships from', () => {

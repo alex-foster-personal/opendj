@@ -38,6 +38,7 @@
 import type { components } from '../api-types';
 import { jobsRefusal } from '../api/capabilities.svelte';
 import { ApiError, api, unwrap } from '../api/client';
+import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import {
 	TOPIC_JOBS_UPDATED,
 	subscribe,
@@ -288,7 +289,7 @@ class JobsStore {
 	 * subscribes to nothing and fetches nothing: it records why and hands back
 	 * a detacher that has nothing to detach.
 	 */
-	attach(bus: JobsBus = REAL_BUS): Unsubscribe {
+	attach(bus: JobsBus = REAL_BUS, scheduler: BootScheduler = bootScheduler): Unsubscribe {
 		const refusal = jobsRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
@@ -310,7 +311,16 @@ class JobsStore {
 					void this.hydrate();
 				})
 			);
-			void this.hydrate();
+			// The SUBSCRIPTION is immediate -- a jobs.updated frame that
+			// arrives during boot must not be missed. Only the catch-up
+			// fetch waits for the boot window to clear (PERF-R6): it is a
+			// 200-row list nobody is looking at yet, and the socket keeps
+			// the rows current from the moment it is attached. An attach
+			// after boot (the drawer opening) fetches immediately, because
+			// the scheduler is already released by then.
+			scheduler.defer('jobs-store:hydrate', () => {
+				void this.hydrate();
+			});
 		}
 		let released = false;
 		return () => {

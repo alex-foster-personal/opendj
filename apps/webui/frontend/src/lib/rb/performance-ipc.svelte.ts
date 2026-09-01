@@ -24,6 +24,7 @@
 
 import { pushToast } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
 	DECK_IDS,
 	deckEffectiveBpm,
@@ -694,7 +695,18 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	if (command.type === 'load') {
-		await engine.load(command.deck, command.stable_id);
+		// THE deck-load entry point from every UI surface, so it is also the
+		// one place the boot scheduler has to be told a load is in flight:
+		// deferred boot work waits for this to settle rather than racing it
+		// for the origin's six connections (PERF-R6). The beacon is a
+		// counter, not a lock -- it cannot fail the load, and the scheduler
+		// releases on its own ceiling if a load never settles.
+		const deckLoadSettled = bootScheduler.deckLoadStarted();
+		try {
+			await engine.load(command.deck, command.stable_id);
+		} finally {
+			deckLoadSettled();
+		}
 		hotCueReversals[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'unload') {

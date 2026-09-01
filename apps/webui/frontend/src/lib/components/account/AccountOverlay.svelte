@@ -32,6 +32,7 @@
 	import { auth, logout, refreshUser } from '$lib/auth.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import { accountStore } from '$lib/account/account-store.svelte';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { entitlements, planRefusal } from '$lib/api/entitlements.svelte';
 	import {
 		accountOverlay,
@@ -58,7 +59,13 @@
 	});
 
 	onMount(() => {
-		if (auth.user === null) void refreshUser();
+		// This overlay is mounted at the root but starts closed, so its
+		// who-am-I is the second /auth/me of the boot burst and the one
+		// nobody can even see. Deferred (PERF-R6), not dropped: it still
+		// runs, seconds later, off the critical path.
+		bootScheduler.defer('account-overlay:refreshUser', () => {
+			if (auth.user === null) void refreshUser();
+		});
 	});
 
 	function onPanelKeydown(event: KeyboardEvent): void {

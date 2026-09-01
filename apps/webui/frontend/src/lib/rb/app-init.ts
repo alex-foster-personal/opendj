@@ -11,22 +11,32 @@
  * module can, and does.
  */
 
+import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { installPerfEventLogGlobal } from './perf-event-log';
 import { startUsageHeartbeat } from './usage-heartbeat';
 
 /**
  * Start the page-lifetime instruments. Returns the teardown, which the
  * caller owns (the root layout hands it back from onMount).
+ *
+ * The scheduler is a parameter so the unit suite can drive the boot window
+ * by hand instead of waiting BOOT_QUIET_MS of real time. Production passes
+ * nothing and gets the page's one scheduler.
  */
-export function startAppInstruments(): () => void {
+export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	// DevTools + e2e read the client's own timing ring through these:
 	// __mdtPerfLog() for the full ring, __mdtLastLoads() for deck loads.
 	installPerfEventLogGlobal();
+	// The boot request window (PERF-R6): everything nobody is waiting on
+	// queues behind the deck load instead of racing it for the daemon's
+	// single worker and the origin's six connections. See boot-scheduler.
+	const stopBootScheduler = scheduler.start();
 	// Tell the engine this page exists, so "is the app open" is a question
 	// it can answer on its own instead of anyone having to ask a human.
-	const stopUsageHeartbeat = startUsageHeartbeat();
+	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
 
 	return () => {
 		stopUsageHeartbeat();
+		stopBootScheduler();
 	};
 }
