@@ -7,6 +7,7 @@ Requirements:
 - ✔︎ A Git-common-dir registry prevents copied worktrees from sharing ports.
 - ✔︎ Port availability checks are per service and use cross-platform sockets.
 - ✔︎ CLI values override process environment, which overrides root ``.env``.
+- ✔︎ The CLI refuses to run when the loaded ``apps`` tree is another worktree.
 
 Acceptance tests:
 
@@ -14,6 +15,8 @@ Acceptance tests:
 - [if] an unrelated backend owns the reserved port [then ⛔️] Vite starts.
 - [if] a port is missing, malformed, privileged, or out of range [then ⛔️]
   startup continues.
+- [if] ``uv`` binds an ancestor worktree's ``.venv`` [then ⛔️] the CLI prints
+  ports, because those ports belong to the other worktree's ``.env``.
 """
 
 from __future__ import annotations
@@ -50,6 +53,10 @@ class PortConfigError(ValueError):
     """The worktree port contract is missing, invalid, or unsafe."""
 
 
+class WorktreeEnvironmentError(PortConfigError):
+    """The loaded ``apps`` tree does not belong to the current worktree."""
+
+
 @dataclass(frozen=True)
 class WebuiPorts:
     """Validated backend and frontend ports for one worktree."""
@@ -72,9 +79,7 @@ def _validate_port(name: str, value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise PortConfigError(f"{name} must be an integer")
     if value < MIN_PORT or value > MAX_PORT:
-        raise PortConfigError(
-            f"{name} must be between {MIN_PORT} and {MAX_PORT}, got {value}"
-        )
+        raise PortConfigError(f"{name} must be between {MIN_PORT} and {MAX_PORT}, got {value}")
     return value
 
 
@@ -168,9 +173,7 @@ def resolve_frontend_port(
 def _write_dotenv_ports(dotenv_path: Path, ports: WebuiPorts) -> None:
     dotenv_path.parent.mkdir(parents=True, exist_ok=True)
     existing_lines = (
-        dotenv_path.read_text(encoding="utf-8").splitlines()
-        if dotenv_path.is_file()
-        else []
+        dotenv_path.read_text(encoding="utf-8").splitlines() if dotenv_path.is_file() else []
     )
     replacements = {
         BACKEND_ENV: str(ports.backend),
@@ -231,6 +234,45 @@ def _repo_root(repo_root: Path | None) -> Path:
     return (repo_root or _git_path("--show-toplevel")).resolve()
 
 
+def assert_source_tree_matches_worktree(
+    *,
+    source_root: Path = PROJECT_ROOT,
+    repo_root: Path | None = None,
+) -> Path | None:
+    """Fail when the running ``apps`` tree belongs to a different worktree.
+
+    ``uv run --no-sync`` resolves its environment from the nearest ANCESTOR
+    ``pyproject.toml``. A directory without one of its own, a worktree checked
+    out beneath the primary clone or any plain subdirectory of it, therefore
+    binds the ancestor project's ``.venv``. That environment's editable install
+    pins ``apps`` to the ancestor tree through a ``sys.meta_path`` finder, which
+    outranks the working directory on ``sys.path``. The result is silent: this
+    module's ``PROJECT_ROOT`` becomes the other worktree, so ``resolve_ports``
+    reads that worktree's reserved ports while ``claim_ports`` writes this
+    worktree's ``.env``, and two agents that believe they are isolated bind the
+    same pair.
+
+    Returns the current worktree root, or ``None`` when the working directory
+    lies outside any Git worktree, where no worktree port contract exists to
+    violate.
+    """
+    try:
+        resolved_root = _repo_root(repo_root)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    resolved_source = source_root.resolve()
+    if resolved_source == resolved_root:
+        return resolved_root
+    raise WorktreeEnvironmentError(
+        f"apps/ was loaded from {resolved_source} but the working directory "
+        f"belongs to worktree {resolved_root}. The interpreter at "
+        f"{sys.prefix} is another worktree's environment, so ports would be "
+        f"read from {resolved_source / '.env'} while a claim writes "
+        f"{resolved_root / '.env'}. Give this worktree its own environment "
+        f"(`uv sync` in {resolved_root}) and re-run from there."
+    )
+
+
 def _common_dir(common_dir: Path | None) -> Path:
     return (common_dir or _git_path("--git-common-dir")).resolve()
 
@@ -252,8 +294,7 @@ def _locked_registry(common_dir: Path) -> Iterator[Path]:
         except FileExistsError as exc:
             if time.monotonic() >= deadline:
                 raise PortConfigError(
-                    f"port registry stayed locked at {lock_dir} for "
-                    f"{LOCK_TIMEOUT_SECONDS:.1f}s"
+                    f"port registry stayed locked at {lock_dir} for {LOCK_TIMEOUT_SECONDS:.1f}s"
                 ) from exc
             time.sleep(0.05)
     try:
@@ -268,9 +309,7 @@ def _load_registry(registry_path: Path) -> dict[str, WebuiPorts]:
     try:
         raw_registry = json.loads(registry_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
-        raise PortConfigError(
-            f"invalid port registry at {registry_path}: {exc}"
-        ) from exc
+        raise PortConfigError(f"invalid port registry at {registry_path}: {exc}") from exc
     if not isinstance(raw_registry, dict):
         raise PortConfigError(f"invalid port registry object at {registry_path}")
     if raw_registry.get("schema") != 1:
@@ -377,8 +416,7 @@ def _pair_overlaps_reservation(
 ) -> bool:
     candidate_ports = {ports.backend, ports.frontend}
     return any(
-        path != excluding_path
-        and bool(candidate_ports & {reserved.backend, reserved.frontend})
+        path != excluding_path and bool(candidate_ports & {reserved.backend, reserved.frontend})
         for path, reserved in reservations.items()
     )
 
@@ -405,9 +443,7 @@ def _configured_candidate(
 
 def _allocate_pair(reservations: Mapping[str, WebuiPorts]) -> WebuiPorts:
     reserved_ports = {
-        port
-        for ports in reservations.values()
-        for port in (ports.backend, ports.frontend)
+        port for ports in reservations.values() for port in (ports.backend, ports.frontend)
     }
     for slot in range(POOL_SIZE):
         candidate = WebuiPorts(
@@ -418,9 +454,7 @@ def _allocate_pair(reservations: Mapping[str, WebuiPorts]) -> WebuiPorts:
             continue
         if _pair_is_available(candidate):
             return candidate
-    raise PortConfigError(
-        "no free worktree port pair remains; release stale reservations first"
-    )
+    raise PortConfigError("no free worktree port pair remains; release stale reservations first")
 
 
 def claim_ports(
@@ -544,11 +578,15 @@ def _print_ports(ports: WebuiPorts) -> None:
 
 
 def _print_ports_json(ports: WebuiPorts) -> None:
-    print(json.dumps({
-        "backend": ports.backend,
-        "frontend": ports.frontend,
-        "api_proxy_target": ports.api_proxy_target,
-    }))
+    print(
+        json.dumps(
+            {
+                "backend": ports.backend,
+                "frontend": ports.frontend,
+                "api_proxy_target": ports.api_proxy_target,
+            }
+        )
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -578,11 +616,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
+        assert_source_tree_matches_worktree()
         if args.command == "claim":
             if (args.backend_port is None) != (args.frontend_port is None):
-                parser.error(
-                    "--backend-port and --frontend-port must be supplied together"
-                )
+                parser.error("--backend-port and --frontend-port must be supplied together")
             requested = (
                 WebuiPorts(args.backend_port, args.frontend_port)
                 if args.backend_port is not None

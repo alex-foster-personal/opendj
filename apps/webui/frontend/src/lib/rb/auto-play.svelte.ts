@@ -64,6 +64,8 @@ const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 const MAX_HANDOFF_ATTEMPTS = 3;
 
 let _timer: ReturnType<typeof setInterval> | null = null;
+/** Teardown for the $effect.root that arms/disarms the poll. Install marker. */
+let _stopArmWatcher: (() => void) | null = null;
 let _inFlight = false;
 let _triggeredFor: string | null = null;
 let _playedIds = new Set<string>();
@@ -477,19 +479,51 @@ async function _tick(): Promise<void> {
 	}
 }
 
-/** Start polling; returns uninstall that clears the timer. */
-export function installAutoPlay(): () => void {
-	if (_timer !== null) {
-		throw new Error('auto-play already installed');
-	}
+function _startPoll(): void {
+	if (_timer !== null) return;
 	_timer = setInterval(() => {
 		void _tick();
 	}, POLL_MS);
+}
+
+function _stopPoll(): void {
+	if (_timer === null) return;
+	clearInterval(_timer);
+	_timer = null;
+}
+
+/**
+ * Wire the arm watcher; returns uninstall that stops it and clears all state.
+ *
+ * PERFMODE-04: the poll exists only while AutoPlay is ARMED. Disarmed, _tick
+ * already returned before touching a deck, but the timer still woke the main
+ * thread four times a second for the life of the route, which is pure burn on
+ * a machine that is meant to be protecting an audio graph. The $effect makes
+ * `uiPrefs.auto_play_enabled` start and stop the interval instead, so disarmed
+ * costs literally nothing and arming re-creates the same 250ms poll.
+ *
+ * ARMED BEHAVIOR IS UNCHANGED, deliberately: the cadence, the audio-clock read
+ * in _snaps and the whole handoff path are untouched, so the background-tab
+ * mixing property (78d4c95b - setInterval survives a hidden tab, and _snaps
+ * reads the audio clock rather than the frozen rAF mirror) still holds.
+ *
+ * $effect.root because this is module-level reactive state with an explicit
+ * lifecycle, not a component's - the same shape as attachMidiGlue's LED root.
+ */
+export function installAutoPlay(): () => void {
+	if (_stopArmWatcher !== null) {
+		throw new Error('auto-play already installed');
+	}
+	_stopArmWatcher = $effect.root(() => {
+		$effect(() => {
+			if (uiPrefs.auto_play_enabled) _startPoll();
+			else _stopPoll();
+		});
+	});
 	return () => {
-		if (_timer !== null) {
-			clearInterval(_timer);
-			_timer = null;
-		}
+		_stopArmWatcher?.();
+		_stopArmWatcher = null;
+		_stopPoll();
 		_inFlight = false;
 		_triggeredFor = null;
 		_waitingFollowerFor = null;

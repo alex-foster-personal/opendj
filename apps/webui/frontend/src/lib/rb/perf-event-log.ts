@@ -41,6 +41,18 @@ export interface PerfEvent {
 	 * never trip over a value that is not a duration.
 	 */
 	labels?: Record<string, string>;
+	/**
+	 * Correlation id for rows that something on screen also shows.
+	 *
+	 * A toast prints this id and copies it to the clipboard, so the id here and
+	 * the id the user pasted into an issue are the same string by construction.
+	 * Without it, two identical `toast-error` rows ten minutes apart are
+	 * indistinguishable and the copied id refers to nothing.
+	 *
+	 * Optional and additive: rows written before this field existed stay valid,
+	 * and rows nothing displays (deck-load timings) have no id to carry.
+	 */
+	id?: string;
 }
 
 const STORAGE_KEY = 'mdt.perfEventLog';
@@ -192,21 +204,51 @@ function _stageSummary(stages: Record<string, number>): string {
 		.join(' ');
 }
 
-/** Append a performance failure/event for after-the-fact diagnosis. */
+/**
+ * Append a performance failure/event for after-the-fact diagnosis.
+ *
+ * RETURNS THE ROW IT WROTE, which is what lets a caller stamp the SAME instant
+ * onto whatever it puts on screen. A toast that called `new Date()` of its own
+ * would print a timestamp a millisecond off the row's, and a reader comparing
+ * the two would be left wondering whether they were even the same event.
+ *
+ * `id` is printed into the console line as well as stored, because the console
+ * is where somebody actually greps: a structured field nothing prints is a
+ * field that only helps whoever already knew to open localStorage.
+ */
 export function recordPerfEvent(
 	kind: string,
 	message: string,
 	deck: 1 | 2 | 3 | 4 | null = null,
-	severity: 'info' | 'warn' | 'error' = 'warn'
-): void {
-	_push({
+	severity: 'info' | 'warn' | 'error' = 'warn',
+	id?: string
+): PerfEvent {
+	const entry: PerfEvent = {
 		t: new Date().toISOString(),
 		kind,
 		deck,
-		message
-	});
+		message,
+		...(id === undefined ? {} : { id })
+	};
+	_push(entry);
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
-	console[severity](`[perf-event] ${kind}${deckBit}: ${message}`);
+	const idBit = id === undefined ? '' : ` id=${id}`;
+	console[severity](`[perf-event] ${kind}${deckBit}${idBit}: ${message}`);
+	return entry;
+}
+
+/**
+ * The ring row carrying this correlation id, or null.
+ *
+ * This is the lookup that proves the id on screen is not decorative: an agent
+ * or a test copies the id out of a toast and asks the log for it directly,
+ * rather than eyeballing two lists side by side.
+ */
+export function findPerfEventById(id: string): PerfEvent | null {
+	for (let i = _events.length - 1; i >= 0; i--) {
+		if (_events[i].id === id) return _events[i];
+	}
+	return null;
 }
 
 /** Always-on stage timing (ms). One console.info + ring entry. */

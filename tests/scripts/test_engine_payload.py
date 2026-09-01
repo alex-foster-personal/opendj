@@ -561,3 +561,4 @@ def test_the_copy_filter_still_drops_the_heavy_derived_trees(tmp_path: Path) -> 
         "__pycache__",
         "test-results",
     }
+

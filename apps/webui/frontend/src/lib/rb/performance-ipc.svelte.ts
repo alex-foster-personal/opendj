@@ -22,7 +22,15 @@
  *       use fresh scheduler tails and clean pending counters
  */
 
-import { pushToast } from '$lib/stores.svelte';
+import {
+	copyToast,
+	dismissToast,
+	holdToast,
+	pushToast,
+	releaseToast,
+	toasts,
+	toastTimerArmed
+} from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
@@ -187,6 +195,33 @@ export interface PerformanceBrowserIpc {
 	capture(deck: unknown): DeckAudioSnapshot;
 	/** Agent-native twin of the deck error banner's dismiss control. */
 	dismissDeckError(deck: unknown): PerformanceState;
+	/**
+	 * AGENT-NATIVE PARITY for the toast tray. Every pointer interaction a human
+	 * has (hover to hold, x to dismiss, click to copy) has an equal here, so a
+	 * browser agent can drive and assert the same flows without synthesizing
+	 * pointer events.
+	 *
+	 * Deliberately NOT behind the command-session gate the transport methods
+	 * use: a toast is app-wide state that outlives any one performance command
+	 * session, and refusing to dismiss a stuck error because a preset
+	 * transaction moved on would reproduce the bug this feature fixes.
+	 */
+	toasts(): readonly ToastIpcRow[];
+	dismissToast(id: unknown): boolean;
+	holdToast(id: unknown): boolean;
+	releaseToast(id: unknown): boolean;
+	copyToast(id: unknown): Promise<string>;
+}
+
+/** One toast as an agent sees it. `id` is the same correlation id printed on
+ * screen, copied to the clipboard and written into the perf-event ring row. */
+export interface ToastIpcRow {
+	id: string;
+	kind: 'info' | 'error';
+	message: string;
+	created_at: string;
+	/** False while a pointer (or holdToast) is holding it open. */
+	timer_armed: boolean;
 }
 
 export const performanceCommandStatus: {
@@ -1171,6 +1206,15 @@ export async function runPerformanceCommandFromUi(
 	}
 }
 
+/** Toast ids arrive over an untyped bridge, so they are validated like every
+ * other IPC input rather than trusted into a store lookup. */
+function _toastId(id: unknown): string {
+	if (typeof id !== 'string' || id === '') {
+		throw new TypeError('toast id must be a non-empty string');
+	}
+	return id;
+}
+
 function _captureUnknown(deck: unknown): DeckAudioSnapshot {
 	const snapshot = engine.captureDeckAudio(_deck(deck));
 	const scalars = [snapshot.context_time_s, snapshot.sample_rate_hz, snapshot.fft_size];
@@ -1212,7 +1256,19 @@ export function installPerformanceBrowserIpc(): () => void {
 			_assertCommandSession(commandGeneration);
 			dismissPerformanceDeckError(_deck(deck));
 			return queryPerformanceState();
-		}
+		},
+		toasts: () =>
+			toasts.map((toast) => ({
+				id: toast.logId,
+				kind: toast.kind,
+				message: toast.message,
+				created_at: toast.createdAt,
+				timer_armed: toastTimerArmed(toast.logId)
+			})),
+		dismissToast: (id: unknown) => dismissToast(_toastId(id)),
+		holdToast: (id: unknown) => holdToast(_toastId(id)),
+		releaseToast: (id: unknown) => releaseToast(_toastId(id)),
+		copyToast: (id: unknown) => copyToast(_toastId(id))
 	});
 	window.musicDjToolsPerformance = ipc;
 	return () => {

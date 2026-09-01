@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import ToastStack from '$lib/components/rb/ToastStack.svelte';
 	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
@@ -179,11 +180,7 @@
      must open something there. -->
 <AccountOverlay />
 
-<div class="toast-stack">
-	{#each toasts as toast (toast.id)}
-		<div class="toast" class:error={toast.kind === 'error'}>{toast.message}</div>
-	{/each}
-</div>
+<ToastStack items={toasts} />
 
 <style>
 	/* One extra row for the tray. Declared here rather than in app.css so the

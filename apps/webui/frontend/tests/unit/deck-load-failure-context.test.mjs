@@ -301,7 +301,12 @@ test('an error toast carries its caller context all the way onto the wire', asyn
 		'this is the whole point: the server must learn WHERE the load died'
 	);
 	assert.equal(payload.context.stage_decodeMix, 820);
-	assert.equal(typeof payload.context.toast_id, 'number', 'the toast identity must survive too');
+	assert.match(
+		payload.context.toast_id,
+		/^t-[a-z0-9]+-\d+$/,
+		'the toast identity must survive too, and as the SAME greppable id the toast ' +
+			'printed and copied - a bare counter restarted at 1 every page load'
+	);
 });
 
 test('a plain error toast still reports, with no context to forward', async () => {
@@ -327,5 +332,5 @@ test('a plain error toast still reports, with no context to forward', async () =
 		'toast',
 		'if the default source changes then every existing error toast moves in the JSONL'
 	);
-	assert.equal(typeof bodies[0].context.toast_id, 'number');
+	assert.match(bodies[0].context.toast_id, /^t-[a-z0-9]+-\d+$/);
 });
