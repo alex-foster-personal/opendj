@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence
 
 from apps.shared.state import db as _state_db
+from apps.shared.state import schema as _state_schema
 from apps.shared.state.writer import StateWriter
 
 from .backend import (
@@ -74,6 +75,47 @@ from .backend import (
 from .etag import compute_etag, strip_quotes
 
 log = logging.getLogger(__name__)
+
+
+class StaleStateSchemaError(RuntimeError):
+    """Raised when a state.db has a ``tracks`` table below SCHEMA_VERSION.
+
+    ``SqliteBackend`` reads exclusively through ``open_ro`` (see ``_ro``
+    below), which never migrates -- only ``open_rw``'s ``apply_migrations``
+    side effect does. Without this guard a db imported by an older build
+    serves confusing ``sqlite3.OperationalError: no such column`` crashes
+    deep inside individual query methods instead of one clear refusal at
+    construction (issue #762).
+    """
+
+
+def _stale_tracks_schema_version(path: Path) -> Optional[int]:
+    """Return the on-disk ``schema_meta`` version iff migration was skipped.
+
+    ``None`` means either "not a Phase 5 db at all" (no ``tracks`` table --
+    the existing per-table InMemory-fallback tests deliberately construct
+    dbs like this and must keep working) or "already current". A non-None
+    result means a real Phase 5 db exists but predates SCHEMA_VERSION.
+    """
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        has_tracks = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
+        ).fetchone() is not None
+        if not has_tracks:
+            return None
+        has_meta = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
+        ).fetchone() is not None
+        version = (
+            conn.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_meta"
+            ).fetchone()[0]
+            if has_meta else 0
+        )
+        return version if version < _state_schema.SCHEMA_VERSION else None
+    finally:
+        conn.close()
 
 
 # Track which fallback warnings we've already emitted, keyed by method name.
@@ -295,6 +337,24 @@ class SqliteBackend:
         fallback: Optional[InMemoryBackend] = None,
     ) -> None:
         self._path = Path(state_db_path)
+        # Skip the check for a path that does not exist yet (or whose parent
+        # dir does not exist): callers may legitimately construct a
+        # SqliteBackend before the db is created, deferring "not there" to
+        # the normal open_ro-raises-FileNotFoundError path at query time.
+        stale = (
+            _stale_tracks_schema_version(self._path)
+            if self._path.is_file() else None
+        )
+        if stale is not None:
+            raise StaleStateSchemaError(
+                f"{self._path} has a tracks table but schema_meta reports "
+                f"version {stale}, below SCHEMA_VERSION "
+                f"{_state_schema.SCHEMA_VERSION}. Migration was skipped "
+                "somewhere in the boot path; refusing to serve a mismatched "
+                "schema. Run `python -m apps.shared.state.cli init` (or "
+                "apps.shared.state.schema.apply_migrations) on this DB "
+                "before booting."
+            )
         self._fallback = fallback if fallback is not None else InMemoryBackend()
         # Serialise the read-CAS-write sequence in update_track. Without
         # this lock two in-process callers could both pass the etag CAS
@@ -796,12 +856,38 @@ class SqliteBackend:
         return self._fallback.last_writer()
 
 
+def _migrate_before_serving(target: Path) -> None:
+    """Bring an existing state.db to SCHEMA_VERSION before boot serves it.
+
+    Every ``SqliteBackend`` read goes through ``open_ro`` (see ``_ro``
+    above), which never migrates -- only ``open_rw``'s ``apply_migrations``
+    side effect does. Without this call, an install carrying a state.db from
+    an older build (schema_meta below SCHEMA_VERSION) serves 500s on every
+    query touching a column a later migration added, until some unrelated
+    write path happens to ``open_rw`` it first (issue #762).
+
+    Raise, don't swallow: a migration failure must stop the boot loudly, not
+    fall back to InMemoryBackend and quietly serve an empty library in place
+    of a real one.
+    """
+    try:
+        _state_db.open_rw(target).close()
+    except Exception:
+        log.error(
+            "state DB migration failed for %s; refusing to boot against a "
+            "mismatched schema",
+            target,
+        )
+        raise
+
+
 def make_backend(
     state_db_path: str | Path | None = None,
 ) -> StateBackend:
     """Return the right backend based on whether ``state.db`` exists.
 
-    If ``state_db_path`` resolves to an existing file, returns a
+    If ``state_db_path`` resolves to an existing file, migrates it to
+    SCHEMA_VERSION (see :func:`_migrate_before_serving`) and returns a
     :class:`SqliteBackend`; otherwise returns an :class:`InMemoryBackend`
     (matches the contract of the webui's default factory).
     """
@@ -812,6 +898,7 @@ def make_backend(
     else:
         target = Path(state_db_path)
     if Path(target).is_file():
+        _migrate_before_serving(target)
         log.info("webui backend: using SqliteBackend at %s", target)
         return SqliteBackend(target)
     log.info(
@@ -821,5 +908,5 @@ def make_backend(
 
 
 __all__ = [
-    "SqliteBackend", "make_backend",
+    "SqliteBackend", "StaleStateSchemaError", "make_backend",
 ]

@@ -5,7 +5,9 @@ Covers:
     (tracks, playlists, playlist memberships, track_fields projection);
   * fallback paths for tables Phase 5 does not ship yet (``pairings``,
     queues) and the once-per-process warning cache;
-  * :func:`make_backend` file-exists gating.
+  * :func:`make_backend` file-exists gating and its boot-time migration
+    (issue #762: an existing state.db must be migrated before it is served,
+    fail-fast if migration fails, never silently downgrade to InMemory).
 """
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
+from apps.shared.state import schema as state_schema
 from apps.webui.server import sqlite_backend as sb_mod
 from apps.webui.server.backend import (
     InMemoryBackend,
@@ -29,7 +32,12 @@ from apps.webui.server.backend import (
     TrackFilter,
     compute_mytag_catalog_revision,
 )
-from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
+from apps.webui.server.sqlite_backend import (
+    SqliteBackend,
+    StaleStateSchemaError,
+    make_backend,
+)
+from tests.test_schema_time_travel import _verified_v5_sql
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
@@ -568,6 +576,139 @@ class TestFactory:
         monkeypatch.setattr(shared_paths, "STATE_DB", missing)
         backend = make_backend()
         assert isinstance(backend, InMemoryBackend)
+
+    def test_make_backend_migrates_a_stale_existing_db(
+        self, tmp_path: Path,
+    ) -> None:
+        """issue #762: an unmigrated (v5) db must be upgraded before serving.
+
+        Restores the pinned v5 dump (the same fixture used by
+        ``tests/test_schema_time_travel.py``), seeds one row in the OLD
+        shape, then goes through ``make_backend`` -- the real boot-time
+        factory, not ``apply_migrations`` directly -- and proves the
+        resulting backend serves a v7-shaped query (``deleted_at``,
+        added in v7) instead of ``sqlite3.OperationalError``.
+        """
+        db_path = tmp_path / "state.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executescript(_verified_v5_sql())
+            conn.execute(
+                "INSERT INTO tracks(stable_id, stable_id_tier, title, "
+                "  file_path, created_at, updated_at) "
+                "VALUES ('sid-v5', 'inferred', 'Old Build Track', "
+                "  '/music/old.mp3', ?, ?)",
+                (ISO, ISO),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        backend = make_backend(db_path)
+
+        assert isinstance(backend, SqliteBackend)
+        # stats() runs a WHERE deleted_at IS NULL-shaped query (v7); this
+        # crashes with "no such column: deleted_at" on an unmigrated v5 db.
+        assert backend.stats()["tracks"] == 1
+
+        verify_conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            version = verify_conn.execute(
+                "SELECT MAX(version) FROM schema_meta"
+            ).fetchone()[0]
+        finally:
+            verify_conn.close()
+        assert version == state_schema.SCHEMA_VERSION
+
+    def test_make_backend_raises_when_migration_cannot_write_and_leaves_version_unchanged(
+        self, tmp_path: Path,
+    ) -> None:
+        """Negative control (issue #762 AC4, partial -- see caveat below): a
+        real write failure on the migrate-or-die path must abort
+        ``make_backend`` with the error surfaced -- never fall back to
+        InMemoryBackend -- and the db must be left at its pre-failure
+        version, proving ``open_rw``'s ``conn.close(); raise`` holds end to
+        end through the real boot-time entry point.
+
+        Caveat: this fires at ``open_rw``'s own ``PRAGMA journal_mode = WAL``,
+        before ``apply_migrations`` runs a single statement -- not inside a
+        migration step itself, as AC4's literal wording says. None of
+        ``MIGRATIONS`` v6/v7 can be made to raise against real v5 data
+        without fabricating broken SQL (repo policy, AGENTS.md): every
+        ``ALTER TABLE ... ADD COLUMN`` there is nullable with no
+        UNIQUE/FK/CHECK constraint touching pre-existing rows, and the new
+        constrained tables (``users``, ``machines``, ...) aren't populated
+        by the migration itself. So this proves the surrounding invariant
+        (any real failure on this path aborts, never partially commits) but
+        not literally "a migration step that raises"; that gap is open.
+
+        No fabricated SQL or patched migration content: ``open_rw``'s WAL
+        pragma needs to create ``<db>-wal`` next to the main file, so
+        pre-occupying that exact path with a directory makes the OS refuse
+        the open with a genuine ``sqlite3.OperationalError`` -- a real
+        failure a deployed engine can hit (another process already holding
+        that path, a leftover directory from a botched install). Unlike a
+        read-only chmod, this is not a permission check a privileged (root)
+        process can bypass: ``open()`` on a path that is a directory fails
+        for every uid, so this stays a real negative control under any
+        runner.
+        """
+        db_path = tmp_path / "state.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executescript(_verified_v5_sql())
+            conn.commit()
+        finally:
+            conn.close()
+
+        pre_conn = sqlite3.connect(str(db_path))
+        try:
+            pre_version = pre_conn.execute(
+                "SELECT MAX(version) FROM schema_meta"
+            ).fetchone()[0]
+        finally:
+            pre_conn.close()
+        assert pre_version == 5
+
+        wal_path = db_path.parent / f"{db_path.name}-wal"
+        wal_path.mkdir()
+        with pytest.raises(sqlite3.OperationalError, match="unable to open database file"):
+            make_backend(db_path)
+        wal_path.rmdir()
+
+        verify_conn = sqlite3.connect(str(db_path))
+        try:
+            version = verify_conn.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_meta"
+            ).fetchone()[0]
+        finally:
+            verify_conn.close()
+        assert version == pre_version, (
+            "a real, OS-level write failure while opening for migration must "
+            "not advance schema_meta; the db should still be sitting at its "
+            "pre-failure version"
+        )
+
+
+class TestSchemaGuard:
+    """SqliteBackend's own defense-in-depth guard (issue #762 AC2)."""
+
+    def test_sqlite_backend_refuses_a_stale_tracks_schema(
+        self, tmp_path: Path,
+    ) -> None:
+        """A real Phase 5 db (has ``tracks``) below SCHEMA_VERSION must be
+        refused loudly at construction, even when a caller bypasses
+        ``make_backend`` and constructs ``SqliteBackend`` directly."""
+        db_path = tmp_path / "state.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executescript(_verified_v5_sql())
+            conn.commit()
+        finally:
+            conn.close()
+
+        with pytest.raises(StaleStateSchemaError, match="version 5"):
+            SqliteBackend(db_path)
 
 
 # --- EAV edge cases ------------------------------------------------------

@@ -1,6 +1,11 @@
 """FastAPI application wiring.
 
 The ``app`` symbol is what ``uvicorn apps.webui.server.app:app`` imports.
+It is built lazily on first attribute access (see ``__getattr__`` below), not
+at module import time: ``_build_default_app()`` opens the real state.db and
+runs ``apply_migrations`` on it (#762), and merely importing this module (for
+``create_app``, as every webui test does) must never mutate a developer's or
+CI's on-disk library as a side effect of collection.
 Tests construct a fresh app via :func:`create_app` so they can inject a
 seeded backend without leaking global state.
 """
@@ -369,15 +374,12 @@ def _build_default_app() -> FastAPI:
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
-    backend: StateBackend | None = None
-    try:
-        from .sqlite_backend import make_backend
-        backend = make_backend()
-    except Exception as exc:  # pragma: no cover - defensive
-        log.warning(
-            "failed to build SqliteBackend; using InMemoryBackend: %s", exc,
-        )
-        backend = None
+    # ``make_backend()`` itself already returns InMemoryBackend when no db
+    # file exists; it only raises for a real construction/migration failure,
+    # and that must abort this boot path too (#762) rather than silently
+    # swallow into an empty in-memory library.
+    from .sqlite_backend import make_backend
+    backend: StateBackend = make_backend()
     return create_app(
         backend=backend, bind_host=bind_host, hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
@@ -385,7 +387,25 @@ def _build_default_app() -> FastAPI:
     )
 
 
-app: FastAPI = _build_default_app()
+# Single-item cache mutated in place (not rebound) so ``__getattr__`` below
+# needs no ``global`` statement.
+_default_app_cache: list[FastAPI] = []
 
 
-__all__ = ["FRONTEND_BUILD_DIR", "app", "create_app"]
+def __getattr__(name: str) -> Any:
+    """Lazily build the module-scope ``app`` on first access (PEP 562).
+
+    Deferring past plain import time means ``from .app import create_app``
+    (every webui test) never triggers ``_build_default_app()``'s state.db
+    migration side effect; only an actual attempt to serve (uvicorn's
+    ``apps.webui.server.app:app`` lookup, or ``__main__.py``'s
+    ``from apps.webui.server.app import app``) does.
+    """
+    if name == "app":
+        if not _default_app_cache:
+            _default_app_cache.append(_build_default_app())
+        return _default_app_cache[0]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["FRONTEND_BUILD_DIR", "app", "create_app"]  # noqa: F822 -- "app" is a PEP 562 lazy attribute, not a real binding

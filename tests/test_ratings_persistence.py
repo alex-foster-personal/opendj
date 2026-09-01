@@ -35,7 +35,7 @@ from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import ConflictError
 from apps.webui.server.etag import compute_etag
-from apps.webui.server.sqlite_backend import SqliteBackend
+from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
@@ -214,7 +214,16 @@ class TestSchemaMigration:
         self, tmp_path: Path,
     ) -> None:
         """A pre-existing v2 state.db (source CHECK without 'webui') must
-        migrate in place on the next writer open and accept the edit."""
+        migrate in place on boot and accept the edit.
+
+        Routes through ``make_backend()``, the boot-path entrypoint that
+        actually performs the migration (issue #762), rather than
+        constructing ``SqliteBackend`` directly: since #762's fix,
+        ``SqliteBackend.__init__`` refuses a stale (unmigrated) db outright
+        (``StaleStateSchemaError``) as a defense-in-depth guard against any
+        caller that skips ``make_backend()``, so direct construction is no
+        longer the self-migrating path this test means to exercise.
+        """
         from apps.shared.state import schema as state_schema
 
         db_path = tmp_path / "v2.db"
@@ -260,7 +269,8 @@ class TestSchemaMigration:
         finally:
             conn.close()
 
-        backend = SqliteBackend(db_path)
+        backend = make_backend(db_path)
+        assert isinstance(backend, SqliteBackend)
         current = backend.get_track(SID)
         etag = compute_etag(current.stable_id, current.updated_at)
         updated = backend.update_track(

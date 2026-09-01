@@ -1,0 +1,232 @@
+"""Engine boot must migrate an existing state.db before serving (#762).
+
+Live incident: shipping a new build over a library imported by an OLDER
+build left state.db at schema_meta version 5 while the build wanted 7.
+``SqliteBackend`` reads exclusively through ``open_ro`` (never migrates);
+only ``open_rw``'s ``apply_migrations`` side effect does, and nothing on
+the boot path called it for an EXISTING db -- so every ``/api/v1/health``
+call raised ``sqlite3.OperationalError: no such column: deleted_at`` and
+the engine never came up.
+
+Run in a SUBPROCESS, matching test_contract_rev.py / test_data_dir_sandbox.py:
+``create_app`` imports the legacy modules, which resolve their paths from
+``MDT_DATA_DIR`` at import time.
+
+Single-line intent:
+  - if a v5-shaped state.db boots through create_app then /api/v1/health
+    serves 200 with the v7 schema applied [broken if migration only runs on
+    a write path, per the #762 incident]
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from tests.test_schema_time_travel import _verified_v5_sql
+
+pytestmark = pytest.mark.requirement("GUARD-09")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+_PROBE = """
+import json
+import os
+from pathlib import Path
+
+from starlette.testclient import TestClient
+
+from apps.engine_core.app import HEALTH_PATH, create_app
+from apps.engine_core.config import EngineConfig
+
+cfg = EngineConfig(data_dir=Path(os.environ["MDT_DATA_DIR"]))
+app = create_app(cfg)
+
+with TestClient(app) as client:
+    health = client.get(HEALTH_PATH)
+
+print(json.dumps({
+    "health_status": health.status_code,
+    "health_body": health.json(),
+}))
+"""
+
+# AC4 end to end, with a REAL failure rather than fabricated migration SQL
+# (repo policy, AGENTS.md: no monkeypatching or fabricated application
+# state in tests). The fixture below makes the v5 db filesystem read-only --
+# a genuine failure mode a stale install or a locked/read-only mount can
+# actually hit -- so the real, unmodified next migration step's write is
+# refused by the OS itself. ``apps.webui.server.app`` builds its module-scope
+# ``app`` object at IMPORT time, and that build's own ``make_backend()`` call
+# is no longer caught (issue #762 fixed the silent InMemoryBackend swallow
+# there too), so the plain, unmodified ``_PROBE`` script's very first import
+# line is enough to reproduce this: no custom failing probe script needed.
+
+
+def _write_v5_state_db(db_path: Path) -> None:
+    """Restore the pinned v5 dump (same fixture as test_schema_time_travel)
+    and seed one row, so the engine boots against a real, non-empty,
+    old-shape library rather than an edge-case-empty one."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.executescript(_verified_v5_sql())
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path,"
+            " created_at, updated_at) VALUES (?, 'inferred', ?, ?, ?, ?)",
+            ("v5-boot-fixture", "Old Build Track", "/music/old.mp3", now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.fixture()
+def probe(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    data_dir = tmp_path_factory.mktemp("engine-data")
+    _write_v5_state_db(data_dir / "state" / "state.db")
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "PYTHONPATH": str(REPO_ROOT),
+            "MDT_DATA_DIR": str(data_dir),
+            "MDT_LIBRARY_MODE": "local",
+        }
+    )
+    env.pop("WEB_CONCURRENCY", None)
+    result = subprocess.run(
+        [sys.executable, "-c", _PROBE],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(REPO_ROOT),
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"engine boot-migration probe failed (exit {result.returncode})\n"
+            f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-4000:]}"
+        )
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    payload["state_db"] = data_dir / "state" / "state.db"
+    return payload
+
+
+def test_engine_boots_and_serves_health_against_a_v5_db(probe: dict) -> None:
+    assert probe["health_status"] == 200, (
+        f"health call failed against an unmigrated db: {probe['health_body']}"
+    )
+    assert probe["health_body"]["status"] == "ok"
+
+
+def test_v5_state_db_lands_on_v7_after_boot(probe: dict) -> None:
+    conn = sqlite3.connect(f"file:{probe['state_db']}?mode=ro", uri=True)
+    try:
+        version = conn.execute(
+            "SELECT MAX(version) FROM schema_meta"
+        ).fetchone()[0]
+        # v7's ``deleted_at`` column is exactly what the live incident's
+        # unmigrated db was missing; querying it proves the shape, not just
+        # the counter.
+        row = conn.execute(
+            "SELECT deleted_at FROM tracks WHERE stable_id = ?",
+            ("v5-boot-fixture",),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert version == 7
+    assert row == (None,)
+
+
+def test_boot_aborts_end_to_end_when_migration_cannot_write(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """AC4, partial -- proved through ``create_app`` itself, not just
+    ``make_backend``, but see caveat below.
+
+    ``apps.webui.server.app`` builds its own module-scope ``app`` object on
+    import (a side effect of ``apps.engine_core.app`` importing names from
+    it), and that build's ``make_backend()`` call is uncaught: issue #762
+    also removed the swallow-into-InMemoryBackend that used to sit around it,
+    so a real migration failure aborts right there, at import, rather than
+    quietly serving an empty library. The real failure here is
+    ``open_rw``'s own ``PRAGMA journal_mode = WAL`` being unable to create
+    ``<db>-wal`` because that exact path is pre-occupied by a directory --
+    a real failure (another process already holding that path, a leftover
+    directory from a botched install) that, unlike a read-only chmod, no
+    privileged (root) process can bypass either: no patched migration
+    content, per repo policy.
+
+    Caveat (same as ``tests/webui/test_sqlite_backend.py``'s equivalent):
+    this fires before ``apply_migrations`` runs any statement, not inside a
+    migration step. v6/v7 only add nullable columns and brand-new tables, so
+    no real v5 data makes an actual migration step raise without fabricating
+    broken SQL. This proves the boot path aborts on any real write failure
+    during migrate-or-open; it does not exercise a step itself raising.
+    """
+    data_dir = tmp_path_factory.mktemp("engine-data-failing")
+    db_path = data_dir / "state" / "state.db"
+    _write_v5_state_db(db_path)
+
+    pre_conn = sqlite3.connect(str(db_path))
+    try:
+        pre_version = pre_conn.execute(
+            "SELECT MAX(version) FROM schema_meta"
+        ).fetchone()[0]
+    finally:
+        pre_conn.close()
+    assert pre_version == 5
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "PYTHONPATH": str(REPO_ROOT),
+            "MDT_DATA_DIR": str(data_dir),
+            "MDT_LIBRARY_MODE": "local",
+        }
+    )
+    env.pop("WEB_CONCURRENCY", None)
+
+    wal_path = db_path.parent / f"{db_path.name}-wal"
+    wal_path.mkdir()
+    result = subprocess.run(
+        [sys.executable, "-c", _PROBE],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(REPO_ROOT),
+        timeout=180,
+        check=False,
+    )
+
+    assert result.returncode != 0, (
+        f"boot must abort when migration cannot write, not exit 0\n"
+        f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-4000:]}"
+    )
+    assert "unable to open database file" in result.stderr, (
+        f"the migration error must surface, not be swallowed\n"
+        f"stderr: {result.stderr[-4000:]}"
+    )
+    wal_path.rmdir()
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        version = conn.execute(
+            "SELECT MAX(version) FROM schema_meta"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert version == pre_version, (
+        "a real write failure during migration must not commit; the db "
+        "should still be sitting at its pre-failure version"
+    )
