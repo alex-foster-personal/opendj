@@ -11,12 +11,24 @@ Fixtures exposed:
 Tests can trust the copy-per-test contract: no test can mutate the shared
 master fixture even transiently.
 """
+
 from __future__ import annotations
 
 import os
 import shutil
 import sqlite3
 from pathlib import Path
+
+# The interpreter contract is checked before anything else here. `uv run`
+# falls back to a PATH command when that command is missing from the project
+# environment, and a PATH `pytest` brings its own interpreter with it; pytest
+# lives in the `dev` extra, so a plain `uv sync` leaves it out. Under an older
+# interpreter the visible symptom is an unrelated module failing with
+# `ImportError: cannot import name 'UTC' from 'datetime'`, which sends the
+# reader after the wrong bug. Name the real cause instead.
+from scripts.interpreter_contract import assert_interpreter_satisfies_floor
+
+assert_interpreter_satisfies_floor(Path(__file__).resolve().parent / "pyproject.toml")
 
 # Tests default to local so an agentbox root .env with remote mode cannot
 # leak into resolution. Individual tests set remote explicitly.
