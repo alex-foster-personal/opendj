@@ -184,6 +184,8 @@ pnpm tauri dev
 
 Prerequisites for `just dmg` (first successful end-to-end build in PR #510, Fri 28-Sat 29 Aug 2026). The recipe stages the engine payload, bundles the Tauri shell, then mounts and verifies the artifact in one pass; any missing piece exits non-zero.
 
+Run `just dmg-preflight` first. It checks every prerequisite below in one read-only pass (about 8 seconds) and names EVERY one that is unmet, rather than making you discover them one failed build at a time. `just dmg` runs it too, and so does `scripts/ship_dmg.sh --dry-run` whenever the plan needs a build (OPS-11). Build the SPA as `cd apps/webui/frontend && pnpm run build`: corepack resolves the `packageManager` pin from the current directory, so the `--dir` form run from the repo root silently uses whatever pnpm is on PATH instead of the pinned one.
+
 - cargo >= 1.85. The crate graph pulls edition2024 crates; `rustup update stable`.
 - tauri-cli ^2: `cargo install tauri-cli --locked --version '^2'`.
 - A uv-resolved repo venv. Its interpreter version drives the staged runtime (3.11 and 3.14 are proven; the runtime prune list has been glob-based since #510, so it follows whatever minor is staged).
