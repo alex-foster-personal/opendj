@@ -412,19 +412,26 @@ async function _tick(): Promise<void> {
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach
 	});
 	if (nextId === null) {
-		const remaining = getAutoPlayPlaylist().filter(
+		const feed = getAutoPlayPlaylist();
+		const remaining = feed.filter(
 			(r) =>
 				r.stable_id !== source.stable_id &&
 				!excludeIds.has(r.stable_id) &&
 				!_playedIds.has(r.stable_id)
 		);
 		const allMissing = remaining.length > 0 && remaining.every((r) => !r.file_exists);
+		// An empty feed is its own diagnosis and must not be reported as a
+		// key/BPM dead end: on Tue 1 Sep 2026 that message sent the maintainer reading
+		// key wheels while the real fault was a feed frozen before the pane
+		// had any rows. Name the actual failure so the log carries it.
 		pushToast(
-			allMissing
-				? 'auto-play: remaining playlist tracks are missing/stub audio'
-				: uiPrefs.auto_play_enforce_order
-					? 'auto-play: no next unplayed track in playlist order'
-					: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
+			feed.length === 0
+				? 'auto-play: candidate feed is empty - the playlist view had no rows'
+				: allMissing
+					? 'auto-play: remaining playlist tracks are missing/stub audio'
+					: uiPrefs.auto_play_enforce_order
+						? 'auto-play: no next unplayed track in playlist order'
+						: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
 			'error'
 		);
 		_triggeredFor = source.stable_id;
