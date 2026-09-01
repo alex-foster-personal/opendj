@@ -68,6 +68,8 @@ import re
 import subprocess
 import sys
 
+from scripts import review_coverage
+
 from scripts.review_thread_parse import PullRequest, Thread, build_thread
 
 # -----------------------------------------------------------------------------
@@ -311,7 +313,26 @@ def main() -> int:
 
     pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
     print(_as_json(pr) if args.json else _render(pr))
-    return 1 if pr.failing else 0
+
+    # COVERAGE PRECONDITION. Thread triage is a silence detector, and silence
+    # from a reviewer that never ran is indistinguishable from a clean review:
+    # zero threads makes "every thread reached a terminal state" vacuously
+    # true. #682 printed exactly that while Devin had left nothing at all. So
+    # ask whether anyone looked BEFORE reporting on what they found.
+    if args.json:
+        # Machine consumers read the thread payload; keep its shape stable and
+        # let them call review_coverage directly rather than nesting schemas.
+        return 1 if pr.failing else 0
+
+    print()
+    try:
+        coverage = review_coverage.triage(str(args.pr))
+    except review_coverage.TriageError as exc:
+        # Could not measure is not a verdict, and must not read as either one.
+        print(f"[review-coverage] COULD NOT MEASURE: {exc}", file=sys.stderr)
+        return 3
+
+    return 1 if (pr.failing or coverage) else 0
 
 
 if __name__ == "__main__":
