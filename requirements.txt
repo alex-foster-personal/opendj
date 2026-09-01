@@ -114,6 +114,13 @@ pytest-cov>=5.0
 # runs serial on purpose (`-n` measured slower on a 4-vCPU runner; see
 # ops/test-latency/README.md) but still needs the plugin resolvable.
 pytest-xdist>=3.6
+# Ed25519 for the dmg preflight's updater-key verification (item H). Declared
+# here as well as in the pyproject ``dev`` extra so the environment CI builds
+# matches the one we claim to support, and so the release gate never has to
+# fetch a package: `uv run --with cryptography` needs the network on a cold
+# cache, which blocked the dmg gate on a host where every build tool was
+# present and only PyPI was unreachable.
+cryptography>=42,<47
 # The type checker. Exact pin, matching ops/quality/mypy-requirements.txt and
 # the copy in pyproject.toml's `dev` extra, because the quality ratchet records
 # a mypy error count and mypy adds and removes checks between versions exactly

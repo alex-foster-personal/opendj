@@ -44,13 +44,14 @@
 #   MDT_MACOS_SIGNING_IDENTITY          Developer ID identity to sign with
 #   MDT_MACOS_NOTARY_KEYCHAIN_PROFILE   notarytool keychain profile
 #   MDT_SHIP_UNSIGNED                   1 = deliberately unsigned dev image
+#   TAURI_SIGNING_PRIVATE_KEY           updater minisign key (never printed)
 #
 # -Claude
 set -euo pipefail
 
 case "${1:-}" in
     "") ;;
-    -h|--help) sed -n '2,47p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
     *) echo "[ERROR] unknown argument '${1}'. Run with --help." >&2; exit 2 ;;
 esac
 
@@ -320,6 +321,272 @@ except PayloadBuildError as exc:
          "cd apps/webui/frontend && pnpm run build"
 }
 
+#----- H. tauri updater signing key ---------------------------------------
+
+# The gap this closes: item C checks APPLE code signing, which is a different
+# key for a different purpose, so a fully green preflight still died about
+# eight minutes into `cargo tauri build` with "A public key has been found,
+# but no private key. Make sure to set TAURI_SIGNING_PRIVATE_KEY". That is the
+# most expensive way this build can fail, because the failure lands after the
+# entire cargo release compile has been paid for.
+#
+# The requirement is not conditional on intent: tauri.conf.json sets
+# createUpdaterArtifacts and compiles in an updater pubkey, so EVERY build
+# through this recipe signs updater artifacts and every build needs the key.
+#
+# THE VALUE IS NEVER PRINTED, not even truncated. This report goes into logs,
+# CI output and pasted terminal scrollback.
+check_updater_signing_key() {
+    section "H. tauri updater signing key"
+    local conf="$ROOT/apps/desktop/src-tauri/tauri.conf.json"
+    if [ ! -f "$conf" ]; then
+        fail "updater signing key" "no $conf, so it cannot be read whether this build signs updater artifacts" \
+             "Run the preflight against a full checkout."
+        return
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        fail "updater signing key" "python3 is not on PATH, so tauri.conf.json cannot be parsed. The check is not being skipped, it could not be measured" \
+             "python3 ships with macOS; restore it (xcode-select --install) and re-run."
+        return
+    fi
+    # Prints "<createUpdaterArtifacts true|false> <has-pubkey yes|no>". A parse
+    # failure prints nothing and exits nonzero, which the caller reports.
+    local state status=0
+    state="$(python3 -c '
+import json, sys
+with open(sys.argv[1]) as fh:
+    conf = json.load(fh)
+wants = conf.get("bundle", {}).get("createUpdaterArtifacts") is True
+pubkey = conf.get("plugins", {}).get("updater", {}).get("pubkey") or ""
+print("true" if wants else "false", "yes" if pubkey.strip() else "no")
+' "$conf" 2>/dev/null)" || status=$?
+    if [ "$status" -ne 0 ] || [ -z "$state" ]; then
+        fail "updater signing key" "could not parse $conf (python3 exited $status), so it is unknown whether this build needs the updater key" \
+             "Check the file is valid JSON: python3 -m json.tool on it."
+        return
+    fi
+    local wants_artifacts has_pubkey
+    wants_artifacts="$(printf '%s' "$state" | awk '{print $1}')"
+    has_pubkey="$(printf '%s' "$state" | awk '{print $2}')"
+
+    if [ "$wants_artifacts" != "true" ]; then
+        ok "createUpdaterArtifacts is off, so no updater signing key is needed"
+        return
+    fi
+    if [ "$has_pubkey" != "yes" ]; then
+        fail "updater signing key" \
+             "tauri.conf.json sets createUpdaterArtifacts but carries no plugins.updater.pubkey, so the bundler would emit update artifacts nothing can verify" \
+             "Add the public key to plugins.updater.pubkey (see docs/auto-update.md), or set createUpdaterArtifacts to false."
+        return
+    fi
+    if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+        fail "updater signing key" \
+             "createUpdaterArtifacts is on and an updater pubkey is compiled in, but TAURI_SIGNING_PRIVATE_KEY is empty or unset. cargo tauri build fails on this AFTER the full release compile, about eight minutes in" \
+             "export TAURI_SIGNING_PRIVATE_KEY=\"\$(doppler secrets get TAURI_UPDATER_PRIVATE_KEY --project general --config dev_personal --plain)\" and export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" (the key has no passphrase). Full detail: docs/auto-update.md."
+        return
+    fi
+    # NON-EMPTY IS NOT THE SAME AS USABLE. A malformed key, a wrong password,
+    # or a key belonging to a DIFFERENT pubkey all satisfy an emptiness test
+    # and then either kill the build after the full compile or, worse, sign
+    # updates the compiled-in public key cannot verify. That second failure
+    # ships silently and breaks the updater in every installed copy.
+    #
+    # So prove it rather than assume it: sign a throwaway file with the real
+    # signer, then compare the key id in the signature against the key id in
+    # the configured pubkey. Both are 8 bytes at a fixed offset, and neither
+    # is secret.
+    if ! command -v cargo >/dev/null 2>&1 || ! cargo tauri --version >/dev/null 2>&1; then
+        fail "updater signing key" \
+             "TAURI_SIGNING_PRIVATE_KEY is set, but cargo-tauri is not available to prove it signs and pairs with the compiled-in pubkey, so the pairing could NOT be measured" \
+             "Install tauri-cli (see section D). A key that is merely non-empty can still fail the build after the full compile, or sign updates nothing can verify."
+        return
+    fi
+    local probe_dir probe sign_out sign_rc=0 scrubbed
+    probe_dir="$(mktemp -d /tmp/opendj-updater-key.XXXXXX)"
+    probe="$probe_dir/probe.txt"
+    printf 'preflight\n' > "$probe"
+    # The signer reads TAURI_SIGNING_PRIVATE_KEY from the environment itself,
+    # so the secret never lands on disk here and never appears in argv.
+    sign_out="$(TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
+        cargo tauri signer sign "$probe" 2>&1)" || sign_rc=$?
+    if [ "$sign_rc" -ne 0 ] || [ ! -f "$probe.sig" ]; then
+        # Scrubbed defensively, in case a future signer echoes what it got.
+        #
+        # Redacted with a bash substitution rather than a sed program built
+        # from the key. A real generated key is multiline (comment line, then
+        # payload), so interpolating it into `s|...|...|g` lets its first
+        # newline terminate the expression: sed dies with `unterminated s
+        # command`, and under `set -euo pipefail` that takes the whole
+        # preflight down HERE, before the cleanup, the fail() and the summary.
+        # The operator asked why their key does not work and would get a sed
+        # parse error, a leaked probe dir and no report. The wrong-password
+        # case, which is the most likely one, is exactly when it fires.
+        scrubbed="${sign_out//"$TAURI_SIGNING_PRIVATE_KEY"/"<REDACTED>"}"
+        scrubbed="$(printf '%s' "$scrubbed" | tail -3 | tr '\n' ' ')"
+        rm -rf "$probe_dir"
+        fail "updater signing key" \
+             "TAURI_SIGNING_PRIVATE_KEY is set but the signer could not USE it (exit $sign_rc). A malformed key or a wrong TAURI_SIGNING_PRIVATE_KEY_PASSWORD fails here instead of after the full compile. Signer said: $scrubbed" \
+             "Re-export from Doppler: TAURI_SIGNING_PRIVATE_KEY=\"\$(doppler secrets get TAURI_UPDATER_PRIVATE_KEY --project general --config dev_personal --plain)\" with TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" (the key has no passphrase). See docs/auto-update.md."
+        return
+    fi
+    # CRYPTOGRAPHIC VERIFICATION, not a name check.
+    #
+    # Comparing key ids alone compares an 8-byte tag chosen at generation and
+    # copied into both files. It proves the two artifacts CLAIM the same
+    # identity; it does not prove the 32-byte Ed25519 body can verify what the
+    # private key signs. A pubkey with the right header and id but a corrupted
+    # or substituted body passes a name check and then rejects every update in
+    # the field, which is the exact failure this item exists to prevent.
+    #
+    # So verify the probe signature against the configured public key, and
+    # reject payloads that are not the right length. Ed25519 comes from the
+    # `cryptography` package via uv rather than being hand-rolled: forty lines
+    # of modular arithmetic in the code path that decides whether updates are
+    # trustworthy is not a trade worth making.
+    if ! command -v uv >/dev/null 2>&1; then
+        rm -rf "$probe_dir"
+        fail "updater signing key" \
+             "the key signed, but uv is not on PATH to run the Ed25519 verification, so the pairing could NOT be measured" \
+             "Install uv (see section E). Matching key ids alone are not proof that the pubkey can verify this key's signatures."
+        return
+    fi
+    # LOCAL ENVIRONMENT FIRST, network second. `cryptography` is declared in
+    # the dev extra, so a synced checkout verifies with no fetch at all. The
+    # ad-hoc `--with` stays as a fallback for an unsynced tree, but it must
+    # not be the primary path: it needs the network on a cold cache, and a
+    # release host with every build tool present but PyPI unreachable would
+    # then have its dmg gate blocked by the verifier rather than by anything
+    # about the build.
+    local runner=(uv run --extra dev --no-sync python)
+    if ! "${runner[@]}" -c 'import cryptography' >/dev/null 2>&1; then
+        runner=(uv run --with cryptography --no-project python)
+    fi
+    local verdict
+    verdict="$("${runner[@]}" -c '
+import base64, hashlib, json, sys
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+
+def body(raw: bytes) -> bytes:
+    """The base64 payload line of a minisign pubkey or signature.
+
+    The INNER decode validates. Without validate=True, base64 silently
+    DISCARDS bytes outside its alphabet, so a stray character in the
+    configured pubkey decodes to the correct 42 bytes here while the strict
+    minisign parser in the app rejects the string outright: a green gate and
+    an updater that fails for everyone. The OUTER decode stays lenient on
+    purpose, because a key may legitimately be supplied either base64-wrapped
+    or raw, and that fallback is what tells the two apart.
+    """
+    try:
+        raw = base64.b64decode(raw, validate=True)
+    except Exception:
+        pass
+    for line in raw.decode("utf-8", "replace").splitlines():
+        if line and not line.startswith(("untrusted comment:", "trusted comment:")):
+            try:
+                return base64.b64decode(line, validate=True)
+            except Exception:
+                print("BADB64")
+                raise SystemExit(0)
+    raise SystemExit("UNPARSEABLE")
+
+
+with open(sys.argv[1]) as fh:
+    pub = body(json.load(fh)["plugins"]["updater"]["pubkey"].encode())
+sig = body(open(sys.argv[2], "rb").read())
+data = open(sys.argv[3], "rb").read()
+
+# minisign: algorithm(2) + key_id(8) + ed25519_pk(32) = 42 for a pubkey,
+# algorithm(2) + key_id(8) + signature(64) = 74 for a signature.
+if len(pub) != 42 or len(sig) != 74:
+    print("BADLEN", len(pub), len(sig))
+    raise SystemExit(0)
+
+# VALIDATE the algorithm tags, never merely read them. A pubkey whose 32-byte
+# body is intact but whose tag is corrupted cannot be parsed by the real
+# minisign implementation compiled into the app, so verifying the body alone
+# would report OK for a key every installed client rejects. Likewise an
+# unknown signature tag must not be quietly treated as legacy "Ed".
+if pub[:2] != b"Ed" or sig[:2] not in (b"ED", b"Ed"):
+    print("BADALG", pub[:2].hex(), sig[:2].hex())
+    raise SystemExit(0)
+
+pub_id, sig_id = pub[2:10].hex().upper(), sig[2:10].hex().upper()
+# "ED" signs the blake2b-512 prehash, legacy "Ed" signs the bytes.
+msg = hashlib.blake2b(data, digest_size=64).digest() if sig[:2] == b"ED" else data
+try:
+    Ed25519PublicKey.from_public_bytes(pub[10:42]).verify(sig[10:74], msg)
+except InvalidSignature:
+    print("NOVERIFY", pub_id, sig_id)
+    raise SystemExit(0)
+# BOTH checks, not either. Raw Ed25519 ignores the key id entirely, so a
+# pubkey with a mutated id but an intact body verifies here, while the
+# minisign-verify inside the app refuses the signature for the id mismatch
+# alone. (No apostrophes in this block: it lives inside a single-quoted
+# shell string, and one would terminate it.) The first
+# version of this check compared ids and skipped verification; verifying and
+# skipping the ids is the same mistake pointing the other way.
+if pub_id != sig_id:
+    print("IDMISMATCH", pub_id, sig_id)
+    raise SystemExit(0)
+print("OK", pub_id)
+' "$conf" "$probe.sig" "$probe" 2>/dev/null)" || verdict=""
+    rm -rf "$probe_dir"
+    local outcome pub_id sig_id
+    outcome="$(printf '%s' "$verdict" | awk '{print $1}')"
+    case "$outcome" in
+      OK)
+        pub_id="$(printf '%s' "$verdict" | awk '{print $2}')"
+        # Key ids are public by construction. The key itself is never printed,
+        # at any length.
+        ok "TAURI_SIGNING_PRIVATE_KEY signs, and its signature VERIFIES against the compiled-in pubkey (key id $pub_id)"
+        ;;
+      NOVERIFY)
+        pub_id="$(printf '%s' "$verdict" | awk '{print $2}')"
+        sig_id="$(printf '%s' "$verdict" | awk '{print $3}')"
+        if [ "$pub_id" = "$sig_id" ]; then
+            fail "updater signing key" \
+                 "the key signs, and its key id matches the pubkey ($pub_id), but the signature does NOT verify against that pubkey. The public key body is corrupted or substituted, so every installed copy would reject these updates while the ids looked right" \
+                 "Restore plugins.updater.pubkey in tauri.conf.json from the real keypair (see docs/auto-update.md). Matching key ids are not proof of pairing."
+        else
+            fail "updater signing key" \
+                 "TAURI_SIGNING_PRIVATE_KEY works, but it is the WRONG KEY: it signs as key id $sig_id while the pubkey compiled into the app is $pub_id. Updates signed with it are rejected by every installed copy, and nothing about the build would tell you" \
+                 "Export the key that pairs with plugins.updater.pubkey: TAURI_SIGNING_PRIVATE_KEY=\"\$(doppler secrets get TAURI_UPDATER_PRIVATE_KEY --project general --config dev_personal --plain)\". See docs/auto-update.md."
+        fi
+        ;;
+      BADB64)
+        fail "updater signing key" \
+             "the pubkey or the signature payload is not strict base64; it carries bytes outside the base64 alphabet. Python would silently DISCARD them and verify the remainder, but the strict minisign parser compiled into the app rejects the string outright, so this would pass here and break the updater for everyone" \
+             "Restore plugins.updater.pubkey in tauri.conf.json from the real keypair, with no stray characters (see docs/auto-update.md)."
+        ;;
+      IDMISMATCH)
+        pub_id="$(printf '%s' "$verdict" | awk '{print $2}')"
+        sig_id="$(printf '%s' "$verdict" | awk '{print $3}')"
+        fail "updater signing key" \
+             "the signature verifies against the pubkey's Ed25519 body, but their minisign key ids disagree (pubkey $pub_id, signature $sig_id). The app's minisign-verify refuses a signature whose key id differs from the public key's, so every installed copy would reject these updates" \
+             "Restore plugins.updater.pubkey in tauri.conf.json from the real keypair (see docs/auto-update.md)."
+        ;;
+      BADALG)
+        fail "updater signing key" \
+             "the minisign algorithm tag is not one this format allows (pubkey/signature tags: $verdict; expected pubkey 4564 and signature 4544 or 4564). The real minisign parser compiled into the app rejects unsupported tags, so a key that verifies here byte-wise would still be unreadable in the field" \
+             "Restore plugins.updater.pubkey in tauri.conf.json from the real keypair (see docs/auto-update.md)."
+        ;;
+      BADLEN)
+        fail "updater signing key" \
+             "the pubkey or the signature is not a well-formed minisign payload (lengths: $verdict; expected pubkey 42 bytes and signature 74)" \
+             "Restore plugins.updater.pubkey in tauri.conf.json from the real keypair (see docs/auto-update.md)."
+        ;;
+      *)
+        fail "updater signing key" \
+             "the key signed, but the signature could not be VERIFIED against the pubkey because the check itself did not complete, so the pairing is unmeasured" \
+             "Check plugins.updater.pubkey is a valid minisign public key, and that 'uv run --with cryptography' works on this machine (see docs/auto-update.md)."
+        ;;
+    esac
+}
+
 #----- main ---------------------------------------------------------------
 
 echo "Open DJ dmg preflight (read-only)"
@@ -331,6 +598,7 @@ check_rust_toolchain
 check_uv
 check_pnpm_pin
 check_spa_built
+check_updater_signing_key
 
 section "summary"
 if [ "$FAILURES" -gt 0 ]; then
