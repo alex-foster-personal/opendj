@@ -95,6 +95,8 @@
  * - [if] a deck ignores a drop whose transfer is empty [then ⛔️] it passes.
  * - [if] a test inherits the playhead the one before it left [then ⛔️] this
  *   suite is independent of machine speed.
+ * - [if] a seek landing is asserted while the playhead is still moving
+ *   [then ⛔️] a poller that stalls past the window reports that seek honestly.
  * - [if] a wait for audible gives up without naming the playhead and duration
  *   it gave up on [then ⛔️] the next reader can tell a dry deck from a dead one.
  */
@@ -160,12 +162,30 @@ const LOOP_OBSERVE_MS = 5_000;
 const LOOP_EDGE_TOLERANCE_MS = 150;
 
 /**
- * How far past a seek target the playhead may already have traveled before the
- * landing counts. A seek on a PLAYING deck starts advancing the instant it
- * lands, so an exact-equality wait could never be satisfied. Wide enough for
- * that, far too narrow to accept a seek that never happened.
+ * Slack on a seek landing, measured on a STOPPED deck.
+ *
+ * This used to be 2_000 and to mean "how far the playhead may already have
+ * traveled", which made the assertion a WINDOW on a value that was still
+ * moving. `_seek` now stops the deck first, so the landing is a resting
+ * position and this covers the presented clock's own rounding and nothing
+ * else. It is not a race window, and widening it would not buy one (#689).
  */
-const SEEK_LANDING_TOLERANCE_MS = 2_000;
+const SEEK_LANDING_TOLERANCE_MS = 100;
+
+/**
+ * Poll interval for every wait in this file that reads a value the AUDIO PATH
+ * moves on its own.
+ *
+ * Playwright polls on `requestAnimationFrame` by default. rAF is throttled on
+ * a loaded runner and suspended outright on a hidden page, so an rAF-polled
+ * wait can go seconds between observations - and the engine's own presentation
+ * clock only advances inside that same tick (see `_presentationPending` in
+ * audio-engine.svelte.ts). A wall-clock interval decouples the OBSERVER from
+ * the thing it is observing. Waits whose predicate latches (a stable_id
+ * appearing, a pitch the test itself just set) are left on rAF: a slow poll
+ * only delays those, it cannot make them miss.
+ */
+const TRANSPORT_POLL_MS = 100;
 
 /**
  * Playhead distance the CUE test travels before stamping its cue point. Well
@@ -395,15 +415,66 @@ async function _waitForAudible(page: Page, deck: DeckId, audible: boolean): Prom
 }
 
 /**
+ * Drive one deck's transport through the IPC and wait for the audio graph to
+ * have caught up, not merely for the promise to resolve.
+ *
+ * `playing` is the latching half of the wait. The presentation clock is the
+ * half that earns the poll interval: it only advances inside the rAF tick, and
+ * `quantizedSeek` REFUSES the paused-cursor branch while it lags (see
+ * `_presentationPending` in audio-engine.svelte.ts), so a seek issued before
+ * this settles is a different code path than the one under test.
+ *
+ * The IPC rather than the PLAY button on purpose, for the same reason `_seek`
+ * gives below: two tests here own the play/pause button's behavior, and a
+ * shared setup helper must not be driven through another test's subject.
+ */
+async function _setTransport(page: Page, deck: DeckId, playing: boolean): Promise<void> {
+	await _dispatch(page, { type: 'play', deck, playing });
+	await page.waitForFunction(
+		({ deckId, expected }) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) return false;
+			const state = ipc.query().decks[deckId];
+			return (
+				state.playing === expected &&
+				!state.transport_pending &&
+				state.transport_clock.presented_revision === state.transport_clock.desired_revision
+			);
+		},
+		{ deckId: deck, expected: playing },
+		{ timeout: 15_000, polling: TRANSPORT_POLL_MS }
+	);
+}
+
+/**
  * Return one deck's playhead to `positionMs`, and wait for it to land.
  *
  * The UI's own way back is a CUE press, which also PAUSES and stamps a cue
  * point - both asserted in their own right below, so using it here would have
  * one test set up through another test's subject. This is the agent-native IPC
- * endpoint the house rules require every UI control to have, and it moves the
- * playhead without touching transport state.
+ * endpoint the house rules require every UI control to have.
+ *
+ * WHY THE DECK IS STOPPED FIRST (#689). This used to dispatch the seek at a
+ * PLAYING deck and then wait for `position_ms` to be observed inside
+ * [target, target + 2000). That is a window that CLOSES ON ITS OWN: playback
+ * carries the playhead past it in two seconds, and once past, the predicate
+ * can never become true again. Playwright polls on rAF by default, a loaded
+ * runner throttles or suspends rAF, and a polling gap wider than the window is
+ * all it takes - the wait then burns its whole 15s timeout and reports a seek
+ * that in fact landed correctly. Measured at roughly a 36% failure rate on the
+ * blocking gate, always with the tell that the playhead sat near the timeout's
+ * own duration counted from zero.
+ *
+ * Stopping the deck removes the race rather than widening the window: the
+ * landing position is then STATIC, so the predicate LATCHES and any later
+ * observation satisfies it no matter how long the poller stalled. Transport is
+ * restored as found, so a deck that was playing plays on from the new
+ * position. Widening the tolerance was tried and rejected: the window's width
+ * was never the variable, the poller's latency was.
  */
 async function _seek(page: Page, deck: DeckId, positionMs: number): Promise<void> {
+	const wasPlaying = (await _query(page)).decks[deck].playing;
+	if (wasPlaying) await _setTransport(page, deck, false);
 	await _dispatch(page, { type: 'seek', deck, position_ms: positionMs });
 	try {
 		await page.waitForFunction(
@@ -412,13 +483,11 @@ async function _seek(page: Page, deck: DeckId, positionMs: number): Promise<void
 				if (ipc === undefined) return false;
 				const state = ipc.query().decks[deckId];
 				return (
-					!state.transport_pending &&
-					state.position_ms >= target &&
-					state.position_ms < target + tolerance
+					!state.transport_pending && Math.abs(state.position_ms - target) < tolerance
 				);
 			},
 			{ deckId: deck, target: positionMs, tolerance: SEEK_LANDING_TOLERANCE_MS },
-			{ timeout: 15_000 }
+			{ timeout: 15_000, polling: TRANSPORT_POLL_MS }
 		);
 	} catch {
 		// Same reason `_waitForAudible` states its evidence: a bare timeout here
@@ -427,15 +496,24 @@ async function _seek(page: Page, deck: DeckId, positionMs: number): Promise<void
 		throw new Error(
 			`deck ${deck} did not land a seek to ${positionMs}ms: ` +
 				`position ${state.position_ms.toFixed(0)}ms of ${state.duration_ms ?? 'unknown'}ms, ` +
-				`playing=${state.playing}, audible=${state.audible}, ` +
+				`playing=${state.playing} (was ${wasPlaying} before the seek), ` +
+				`audible=${state.audible}, ` +
 				`transport_pending=${state.transport_pending}, ` +
 				`stable_id=${state.stable_id ?? 'null'}, ` +
 				`command_error=${state.command_error ?? 'null'}`
 		);
 	}
+	// State as found: a deck that arrived playing leaves playing, from the new
+	// position. Deliberately outside the try, so a failed landing surfaces its
+	// own evidence rather than whatever the restore went on to do.
+	if (wasPlaying) await _setTransport(page, deck, true);
 }
 
-/** Wait until one deck's playhead has traveled past `positionMs`. */
+/** Wait until one deck's playhead has traveled past `positionMs`.
+ *
+ * Latching rather than windowed, so a stalled poller cannot make this MISS the
+ * way `_seek` used to - but the playhead is still moving on its own, and an
+ * rAF gap here spends the 30s budget doing nothing. Same wall-clock poll. */
 async function _playUntilPast(page: Page, deck: DeckId, positionMs: number): Promise<void> {
 	await page.waitForFunction(
 		({ deckId, past }) => {
@@ -443,7 +521,7 @@ async function _playUntilPast(page: Page, deck: DeckId, positionMs: number): Pro
 			return ipc !== undefined && ipc.query().decks[deckId].position_ms > past;
 		},
 		{ deckId: deck, past: positionMs },
-		{ timeout: 30_000 }
+		{ timeout: 30_000, polling: TRANSPORT_POLL_MS }
 	);
 }
 
