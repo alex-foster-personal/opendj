@@ -39,8 +39,14 @@ from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder as folder_ingest
 from apps.shared.state.writer import StateWriter
 from tests.engine_core.conftest import build_identity
+from tests.platform_capabilities import posix_permission_denial_supported
 
 API = "/api/v1/setup"
+
+
+_CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(
+    os.name, getattr(os, "geteuid", None)
+)
 
 
 def _write_wav(path: Path, seconds: float = 0.1) -> Path:
@@ -116,8 +122,25 @@ def client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
 
 
 # ----- the access probe ---------------------------------------------------
+
+
+def test_windows_does_not_claim_posix_permission_denial_support() -> None:
+    assert posix_permission_denial_supported("nt", None) is False
+
+
+def test_posix_without_geteuid_does_not_claim_permission_denial_support() -> None:
+    assert posix_permission_denial_supported("posix", None) is False
+
+
+def test_current_process_capability_matches_real_privilege_state() -> None:
+    geteuid = getattr(os, "geteuid", None)
+    expected = os.name != "nt" and geteuid is not None and geteuid() != 0
+    assert posix_permission_denial_supported(os.name, geteuid) is expected
+
+
 @pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads a 000 directory regardless"
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
 )
 def test_a_blocked_directory_reads_as_denied_not_as_empty(
     unreadable: Path,
@@ -150,7 +173,8 @@ def test_a_file_where_a_directory_was_expected_says_so(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads a 000 directory regardless"
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
 )
 def test_denied_roots_is_the_caveat_list(
     library: Path, unreadable: Path
@@ -228,7 +252,8 @@ def test_a_second_run_over_the_same_folder_changes_nothing(
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads a 000 directory regardless"
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
 )
 def test_an_unreadable_root_is_reported_beside_the_count(
     library: Path, unreadable: Path, data_dir: Path
@@ -283,7 +308,8 @@ def test_run_folder_import_reports_progress_and_records_the_outcome(
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads a 000 directory regardless"
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
 )
 def test_a_wholly_denied_import_refuses_with_the_access_code(
     unreadable: Path, data_dir: Path
@@ -331,7 +357,8 @@ def test_detect_folder_counts_what_is_there(
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads a 000 directory regardless"
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
 )
 def test_detect_folder_never_reports_a_count_for_a_denied_folder(
     client: TestClient, unreadable: Path
@@ -371,7 +398,8 @@ def test_folder_import_enqueues_a_folder_mode_job(
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads a 000 directory regardless"
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="platform cannot create a real chmod-based permission denial",
 )
 def test_folder_import_refuses_a_denied_folder_with_403_and_instructions(
     client: TestClient, unreadable: Path
