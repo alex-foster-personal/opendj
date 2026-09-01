@@ -15,7 +15,7 @@
  * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
  * that field can disagree with .t (Proper Education: field 124.72 vs dt→125).
  */
-import type { AnlzBeat } from '$lib/rb/types';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
 
 // -------------------------------------------------------------- contracts
 

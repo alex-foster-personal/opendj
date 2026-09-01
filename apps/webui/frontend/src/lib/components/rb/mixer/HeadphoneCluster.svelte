@@ -5,7 +5,7 @@
 	 */
 	import { knobId } from '$lib/rb/knob-control.svelte';
 	import Knob from './Knob.svelte';
-	import type { HeadphoneState } from '$lib/rb/types';
+	import type { HeadphoneState } from '$lib/rb/mixer-types';
 
 	interface Props {
 		state: HeadphoneState;

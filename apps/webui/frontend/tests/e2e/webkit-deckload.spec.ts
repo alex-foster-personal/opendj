@@ -104,7 +104,7 @@ import type {
 	PerformanceCommand,
 	PerformanceState
 } from '../../src/lib/rb/performance-ipc.svelte';
-import type { DeckId } from '../../src/lib/rb/types';
+import type { DeckId } from '../../src/lib/rb/deck-slots';
 
 /**
  * STRETCH_CREATE_TIMEOUT_MS in stretch-adapter.ts is 15_000: a broken worklet

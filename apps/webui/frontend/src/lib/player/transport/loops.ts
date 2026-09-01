@@ -12,7 +12,7 @@
  */
 
 import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
-import type { AnlzBeat } from '$lib/rb/types';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
 
 export function quantizedLoopEndpointsMs(
 	beats: readonly AnlzBeat[],

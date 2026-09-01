@@ -9,7 +9,7 @@
  * TrackTable.svelte, performance-ipc.svelte.ts, action-glue.svelte.ts,
  * auto-play.svelte.ts and performance-hotkeys.ts all read these structures
  * directly and are untouched by the split. The shapes themselves live in
- * rb/types.ts.
+ * rb/deck-state-types.ts and rb/mixer-types.ts.
  *
  * The stores are `const` and are only ever mutated in place, never reassigned,
  * which is what makes exporting the proxies across a module boundary safe.
@@ -22,14 +22,10 @@ import { playbackBpm } from '$lib/rb/beat-sync-math';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
 import type { PitchRange } from '$lib/player/constants';
-import type {
-	DeckId,
-	DeckState,
-	HeadphoneState,
-	HotCueSlot,
-	MixerChannelState,
-	MixerState
-} from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckState } from '$lib/rb/deck-state-types';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import type { HeadphoneState, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 
 /** Exported (name kept) so dispose and unload reset through one definition. */
 export function _emptyDeckState(deck_id: DeckId): DeckState {

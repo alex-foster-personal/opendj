@@ -5,7 +5,7 @@
 	// pitch%/range readout; this component is the only writer of both.
 	import { PITCH_RANGES } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
-	import type { DeckState } from '$lib/rb/types';
+	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
 

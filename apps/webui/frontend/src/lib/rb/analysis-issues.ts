@@ -22,7 +22,7 @@
  *       stays off ⛔️ a "done" badge is reused as an issue signal
  */
 import type { AnalysisIssues } from '$lib/rb/job-progress.svelte';
-import type { BeatgridIssue } from '$lib/rb/types';
+import type { BeatgridIssue } from '$lib/rb/library-types';
 
 /** Analysis kinds that have a working detector behind them, today. */
 export const DETECTED_ANALYSIS_KINDS = ['beatgrid'] as const;

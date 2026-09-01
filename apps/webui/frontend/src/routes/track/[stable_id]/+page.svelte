@@ -8,7 +8,7 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
 	import { fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
-	import type { TrackQuality } from '$lib/rb/types';
+	import type { TrackQuality } from '$lib/rb/library-types';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');

@@ -5,7 +5,8 @@
 	// beat loop at the current position; halve/double resize it in place.
 	// Requires a loaded track with a real beatgrid. Sub-beat loops remain
 	// unimplemented until the engine has honest PQTZ interpolation.
-	import type { DeckId, DeckState } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { DeckState } from '$lib/rb/deck-state-types';
 	import {
 		armLoopHover,
 		clearLoopHover,

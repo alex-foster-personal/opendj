@@ -7,7 +7,7 @@
 	import { onDestroy } from 'svelte';
 	import { peekDeckMeter } from '$lib/rb/audio-engine.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 
 	interface Props {
 		/** 0..1; 1 = full (thumb at top). */

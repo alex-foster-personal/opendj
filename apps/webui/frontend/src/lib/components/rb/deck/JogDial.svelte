@@ -7,7 +7,7 @@
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
 	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
-	import type { DeckState } from '$lib/rb/types';
+	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {

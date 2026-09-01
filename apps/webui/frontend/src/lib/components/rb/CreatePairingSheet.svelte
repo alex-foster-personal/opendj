@@ -8,7 +8,7 @@
 	// routed into app.py, so every call 404'd. The deck picker below reads real
 	// engine state and stays live; the three actions now fire no request at all.
 	import { DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 
 	let {
 		open = $bindable(false)

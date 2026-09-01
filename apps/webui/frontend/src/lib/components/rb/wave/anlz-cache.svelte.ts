@@ -12,7 +12,7 @@
  */
 import { fetchAnlz, RbApiError } from '$lib/rb/api-rb';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
-import type { AnlzData } from '$lib/rb/types';
+import type { AnlzData } from '$lib/rb/anlz-types';
 
 export type AnlzEntry =
 	| { status: 'loading' }

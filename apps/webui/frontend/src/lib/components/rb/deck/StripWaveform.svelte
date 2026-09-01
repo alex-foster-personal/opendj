@@ -13,7 +13,8 @@
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
-	import type { DeckState, HotCueSlot } from '$lib/rb/types';
+	import type { DeckState } from '$lib/rb/deck-state-types';
+	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
 
 	let {

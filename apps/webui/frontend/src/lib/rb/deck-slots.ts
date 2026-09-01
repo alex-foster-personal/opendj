@@ -1,9 +1,16 @@
 /**
- * Pure double-click deck-target picker for the browser row load gesture.
- * Extracted from BrowserPanel.svelte so the race/replace regressions below
- * are unit-testable without a component harness.
+ * Deck slot addressing: which of the four physical slots, and how one is
+ * chosen for a load gesture.
+ *
+ * Split out of the former lib/rb/types.ts god module. `DeckId` is the single
+ * most widely shared primitive in the performance UI, so it owns a module
+ * rather than riding along with a payload shape. The double-click picker
+ * lives here because it is the arbitration policy OVER those slots - same
+ * concept, and it keeps BrowserPanel.svelte importing one module for both.
  */
-import type { DeckId } from './types';
+
+/** Physical deck slot 1-4. Layout: 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right. */
+export type DeckId = 1 | 2 | 3 | 4;
 
 export type DeckLoadSeq = Record<DeckId, number>;
 

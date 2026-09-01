@@ -2,7 +2,7 @@
  * Pure time/beat math for the wavestack rows (build unit: wavestack).
  * No runes, no DOM - unit-testable helpers only.
  */
-import type { AnlzBeat, AnlzData } from '$lib/rb/types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 
 /** Index of the FIRST beat with t >= tSec (== beats.length when none).
  * beats MUST be ordered by t (contract: AnlzBeatgrid.beats is ordered). */

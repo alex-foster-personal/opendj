@@ -4,7 +4,7 @@
  *
  * Expected module: src/lib/rb/audio-engine.svelte.ts (rune store - the .svelte.ts
  * extension is REQUIRED, see RECON-FRONTEND 10.1) with exports:
- *   engine: AudioEngine                      - contract in $lib/rb/types
+ *   engine: AudioEngine                - contract in $lib/rb/audio-engine-types
  *   getDeckState(deck: DeckId): DeckState    - stable live reactive object
  *
  * If the audio-engine unit shipped different names or a different path,
