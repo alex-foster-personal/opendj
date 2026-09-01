@@ -3,11 +3,11 @@
  */
 import { getHealth, type HealthOut } from './api';
 import { reportClientError, type ClientErrorContext } from './client-error-reporting';
+import { mintErrorId } from './rb/error-id';
 import { recordPerfEvent } from './rb/perf-event-log';
 
 export type Toast = { id: number; message: string; kind: 'info' | 'error' };
 
-let _toastSeq = 0;
 export const toasts = $state<Toast[]>([]);
 
 /** Default auto-dismiss delay when a caller does not name its own. */
@@ -38,11 +38,16 @@ export function pushToast(
 		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
 	}
 	// P11-F03: capture *this* toast's id in the closure. The previous
-	// implementation closed over the module-level `_toastSeq` counter,
-	// which meant overlapping toasts would cause each timer to dismiss
-	// the most-recently-pushed toast instead of the one that was
-	// actually due to expire.
-	const id = ++_toastSeq;
+	// implementation closed over a module-level counter, which meant
+	// overlapping toasts would cause each timer to dismiss the
+	// most-recently-pushed toast instead of the one that was actually due
+	// to expire.
+	//
+	// The counter itself now lives in `rb/error-id.ts` and is shared with the
+	// deck error banner, which mints from the same source. One counter is what
+	// lets a reader holding an id search for it without first having to work
+	// out which surface raised it.
+	const id = mintErrorId();
 	toasts.push({ id, message, kind });
 	recordPerfEvent(`toast-${kind}`, message, null, kind === 'error' ? 'error' : 'info');
 	if (kind === 'error') {

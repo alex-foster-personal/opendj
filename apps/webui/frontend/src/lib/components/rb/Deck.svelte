@@ -22,6 +22,7 @@
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
+	import { deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
 	import { hasRealBeatGrid } from '$lib/player/grid-features';
 	import {
 		performanceCommandStatus,
@@ -62,6 +63,25 @@
 	const controlError: string | null = $derived(
 		performanceCommandStatus.deck_errors[deckId] ?? deck.sync_error ?? deck.processor_error
 	);
+
+	/**
+	 * Mint and log the banner's id whenever what the banner shows changes.
+	 *
+	 * An $effect rather than a $derived because this WRITES a log row, and a
+	 * derivation that logs would fire on Svelte's own re-evaluation schedule
+	 * rather than on real changes. `noteDeckError` is idempotent for an
+	 * unchanged message, so the re-runs this effect takes from the three
+	 * unrelated deck-state sources behind `controlError` cost nothing.
+	 *
+	 * Covers all three sources uniformly. That matters because only two of them
+	 * (`_persistCommandError`, `_recordProcessorFailure`) raise a toast; the
+	 * Beat Sync paths set `sync_error` directly and had no id anywhere at all.
+	 */
+	$effect(() => {
+		noteDeckError(deckId, controlError);
+	});
+
+	const controlErrorId: string | null = $derived(deckErrorIds[deckId]);
 	const keySyncAvailable: boolean = $derived(
 		deck.stable_id !== null &&
 		parseCamelotKey(deck.key) !== null &&
@@ -424,6 +444,7 @@
 		<DeckErrorBanner
 			{deckId}
 			error={controlError}
+			errorId={controlErrorId}
 			onDismiss={() => dismissPerformanceDeckError(deckId)}
 		/>
 	{/if}

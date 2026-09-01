@@ -6,20 +6,48 @@
 	would retry (AutoPlay's master handover) stuck to the deck for the rest of
 	the set with no way to get rid of it. Dismissal does not mask the condition:
 	it re-reports if it recurs.
+
+	IT ALSO CARRIES AN ID. Because it never fades, this banner can stand on a
+	deck for a whole set, and it used to render the error string and nothing
+	else -- so the words on screen tied to no row in any log, and two identical
+	failures an hour apart were indistinguishable. `errorId` is minted by
+	`rb/deck-error-id.svelte.ts` BEFORE the log row is written, from the same
+	counter `pushToast` mints from, and the string shown here is the string that
+	row carries. Searching the console or `__mdtPerfLog()` for it finds the one
+	raising it belongs to.
 -->
 <script lang="ts">
-	// Presentational: the parent owns both the deck identity and the dismiss
+	// Presentational: the parent owns the deck identity, the id and the dismiss
 	// action. `deckId` is a plain number here because it is only stamped into
 	// the test hook and the label; Deck.svelte keeps the typed DeckId.
+	//
+	// `errorId` is nullable because the id is minted by an $effect that runs
+	// after the derivation which reveals the banner, so there is one frame in
+	// which the error is showing and the id has not landed yet. Rendering
+	// nothing for that frame is correct; rendering a placeholder that looks
+	// like an id would be a search that leads nowhere.
 	let {
 		deckId,
 		error,
+		errorId,
 		onDismiss
-	}: { deckId: number; error: string; onDismiss: () => void } = $props();
+	}: { deckId: number; error: string; errorId: string | null; onDismiss: () => void } = $props();
 </script>
 
-<div class="deck-error" role="alert" data-performance-error={deckId} title={error}>
+<div
+	class="deck-error"
+	role="alert"
+	data-performance-error={deckId}
+	data-performance-error-id={errorId}
+	title={errorId === null ? error : `${error}\n\nError id ${errorId} - search the console or __mdtPerfLog() for it to find this exact failure.`}
+>
 	<span class="deck-error-text">{error}</span>
+	{#if errorId !== null}
+		<span
+			class="deck-error-id"
+			title={`Error id ${errorId}. This exact string is in the console line and the perf-event ring row for this failure.`}>{errorId}</span
+		>
+	{/if}
 	<button
 		type="button"
 		class="deck-error-dismiss"
@@ -54,6 +82,19 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Dimmer and monospace: the id is a search term a reader copies, not part
+	 * of the sentence, and it must not compete with the failure text for the
+	 * eye. It never shrinks below the message, which is why it does not flex. */
+	.deck-error-id {
+		flex: 0 0 auto;
+		margin-left: 6px;
+		font-family: var(--rb-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+		font-size: var(--rb-fs-label);
+		opacity: 0.75;
+		user-select: all;
+		cursor: text;
 	}
 
 	.deck-error-dismiss {
