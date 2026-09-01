@@ -42,7 +42,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--drive-root",
         default=None,
-        help="Override drive mount path (default: /Volumes/<profile.drive_label>)",
+        help="Drive mount path (defaults from the profile label on macOS; required elsewhere)",
     )
     p.add_argument(
         "--json",
@@ -132,14 +132,13 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         profile = profile_mod.load(args.profile)
+        drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
     except FileNotFoundError as exc:
         console.print(f"[red]profile not found: {exc}[/red]")
         return 2
     except profile_mod.ProfileError as exc:
         console.print(f"[red]profile error: {exc}[/red]")
         return 2
-
-    drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
 
     try:
         canonical = load_canonical_tracks(

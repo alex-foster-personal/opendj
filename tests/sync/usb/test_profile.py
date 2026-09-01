@@ -1,6 +1,8 @@
 """Tests for apps.sync.usb.profile."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from apps.sync.usb.profile import (
@@ -9,6 +11,7 @@ from apps.sync.usb.profile import (
     LAYOUTS,
     PLAYLIST_FILES,
     ProfileError,
+    default_mount_point,
     load,
     load_from_string,
 )
@@ -37,7 +40,16 @@ def test_happy_load_from_string() -> None:
     assert p.playlist_files == "m3u8"
     assert p.conflict_policy == "canonical-wins"
     assert p.needs_transcode is False
-    assert p.mount_point.name == "GIG-A"
+    assert default_mount_point(p.drive_label, platform="darwin").name == "GIG-A"
+
+
+def test_default_mount_point_uses_macos_volume_root() -> None:
+    assert default_mount_point("GIG-A", platform="darwin") == Path("/Volumes/GIG-A")
+
+
+def test_default_mount_point_requires_explicit_root_on_windows() -> None:
+    with pytest.raises(ProfileError, match="--drive-root is required on win32"):
+        default_mount_point("GIG-A", platform="win32")
 
 
 @pytest.mark.requirement("CAT-02")

@@ -23,6 +23,7 @@ enums are validated, ``playlists`` must be non-empty.
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,17 @@ class ProfileError(ValueError):
     """Raised when a profile YAML fails schema validation."""
 
 
+def default_mount_point(drive_label: str, *, platform: str | None = None) -> Path:
+    """Return the label-derived mount point when the platform defines one."""
+    current_platform = sys.platform if platform is None else platform
+    if current_platform != "darwin":
+        raise ProfileError(
+            f"--drive-root is required on {current_platform}; "
+            "automatic drive-label lookup is only available on macOS"
+        )
+    return Path("/Volumes") / drive_label
+
+
 @dataclass(slots=True, frozen=True)
 class Profile:
     """Validated USB profile."""
@@ -87,8 +99,8 @@ class Profile:
 
     @property
     def mount_point(self) -> Path:
-        """Standard macOS mount point derived from ``drive_label``."""
-        return Path("/Volumes") / self.drive_label
+        """Platform default mount point derived from ``drive_label``."""
+        return default_mount_point(self.drive_label)
 
     @property
     def needs_transcode(self) -> bool:
@@ -204,12 +216,13 @@ def load_from_string(text: str) -> Profile:
 
 
 __all__ = [
-    "Profile",
-    "ProfileError",
+    "CONFLICT_POLICIES",
     "FORMATS",
     "LAYOUTS",
     "PLAYLIST_FILES",
-    "CONFLICT_POLICIES",
+    "Profile",
+    "ProfileError",
+    "default_mount_point",
     "load",
     "load_from_string",
 ]

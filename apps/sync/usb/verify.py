@@ -513,7 +513,11 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Verify drive contents against canonical (SHA-256).",
     )
     p.add_argument("--profile", required=True)
-    p.add_argument("--drive-root", default=None)
+    p.add_argument(
+        "--drive-root",
+        default=None,
+        help="Drive mount path (defaults from the profile label on macOS; required elsewhere)",
+    )
     p.add_argument("--json", dest="json_out", default=None)
     p.add_argument("--only-drift", action="store_true")
     p.add_argument("--skip-playlists", action="store_true")
@@ -536,14 +540,13 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         profile = profile_mod.load(args.profile)
+        drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
     except FileNotFoundError as exc:
         console.print(f"[red]profile not found: {exc}[/red]")
         return 2
     except profile_mod.ProfileError as exc:
         console.print(f"[red]profile error: {exc}[/red]")
         return 2
-
-    drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
 
     canonical = load_canonical_tracks(
         playlist_names=profile.playlists,

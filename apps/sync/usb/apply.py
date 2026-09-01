@@ -80,7 +80,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--drive-root",
         default=None,
-        help="Override mount path (default: /Volumes/<drive_label>)",
+        help="Drive mount path (defaults from the profile label on macOS; required elsewhere)",
     )
 
     mode = p.add_argument_group("mode (one required)")
@@ -192,7 +192,7 @@ def _run_plan(
     ``touched_stable_ids`` is the set of canonical ``stable_id`` values whose
     on-drive bytes were successfully mutated during this run (copy /
     transcode / overwrite / rename). ``delete`` / ``skip`` ops do not
-    contribute — they do not warrant rewriting the playlists that reference
+    contribute -- they do not warrant rewriting the playlists that reference
     other tracks on the drive.
     """
     reversal = ReversalLog.open(
@@ -248,14 +248,13 @@ def main(argv: list[str] | None = None) -> int:
     # --- profile + canonical ------------------------------------------------
     try:
         profile = profile_mod.load(args.profile)
+        drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
     except FileNotFoundError as exc:
         console.print(f"[red]profile not found: {exc}[/red]")
         return 2
     except profile_mod.ProfileError as exc:
         console.print(f"[red]profile error: {exc}[/red]")
         return 2
-
-    drive_root = Path(args.drive_root) if args.drive_root else profile.mount_point
 
     try:
         canonical = load_canonical_tracks(
@@ -354,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- m3u8 emission ------------------------------------------------------
     # Codex finding P10-F01: cautious-mode apply must not rewrite playlists
-    # that had no tracks actually touched in this run — doing so silently
+    # that had no tracks actually touched in this run -- doing so silently
     # mutates out-of-scope playlist files (e.g. when the canonical source
     # reordered tracks in an unrelated playlist) and breaks the "cautious"
     # contract. In bulk mode we still rewrite every playlist the profile
