@@ -1,0 +1,102 @@
+name: Trunk Job Verdict
+
+# Surfaces a job that concluded FAILURE inside a trunk run whose top line does not read
+# as failed. Run 33421400044 at 5f7466d3 (Mon 31 Aug 2026) reads 'cancelled' while its
+# quality-ratchet job correctly caught the auto-play.ts merge-union regression; a per-job
+# sweep of that 60-run window finds five such runs. PR #631 made trunk cancellation rare,
+# which stopped the instance. This stops the class: any future cancellation, from a manual
+# cancel, a timeout, a runner eviction or a concurrency rule added later, hides a red
+# identically.
+#
+# WHY workflow_run AND NOT A STEP INSIDE CI
+#     A step inside CI dies with the run that carries it. That is the whole defect: the
+#     cancelled run cannot report on itself. This fires as a SEPARATE run after CI
+#     completes, with its own conclusion that nothing in CI can cancel.
+#
+# WHY AN ISSUE AND NOT ONLY A FAILING CHECK
+#     Branch protection is unavailable on this repo's plan (403, and "protected": false,
+#     verified twice Mon 31 Aug 2026), so merges cannot be blocked and AUDITABLE IS THE
+#     CEILING. A failing check is the immediate signal but lives on the Actions tab under
+#     log retention, which is the same channel that just went unread. An issue is
+#     permanent, searchable, and shows up on the commit timeline, so a stranger reading the
+#     record months later still finds the breach. Both are emitted, plus a job summary.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+# workflow_run executes this file from the default branch. Never check out or execute the
+# triggering run's head SHA: it may contain untrusted code while this workflow holds
+# permission to open an issue.
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: trunk-verdict-${{ github.event.workflow_run.id }}
+  # NEVER cancel this one. A cancelled watchdog reproduces the exact blindness it exists
+  # to report.
+  cancel-in-progress: false
+
+jobs:
+  verdict:
+    name: Verdict from per-job conclusions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Trunk only. PR runs are still legitimately cancel-in-progress, so alerting on them
+    # would manufacture the alert fatigue this work exists to prevent.
+    if: github.event.workflow_run.head_branch == github.event.repository.default_branch
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Classify the completed run by its jobs
+        id: verdict
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python -m scripts.trunk_job_verdict \
+            --run-id "$RUN_ID" \
+            --report-file trunk-job-verdict.md
+
+      # Guarded on the COUNT, never on failure() alone: the classify step also exits
+      # nonzero on a precondition error (exit 10), and filing an issue from a report that
+      # was never written would turn a broken watchdog into a fake alert.
+      - name: Record the buried failure and fail visibly
+        if: always() && steps.verdict.outputs.buried_failures != '0' && steps.verdict.outputs.buried_failures != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          short="${HEAD_SHA:0:8}"
+          title="Buried CI failure: a job failed inside run $RUN_ID, which reads '$RUN_CONCLUSION'"
+
+          # Upsert the label so --label cannot fail on a fresh repo.
+          gh label create ci:buried-failure \
+            --color B60205 \
+            --description "A job concluded failure inside a run that does not read as failed" \
+            --force
+
+          # One open thread rather than one issue per commit. A burst of merges can bury
+          # the same regression many times over (five times on Mon 31 Aug 2026), and five
+          # separate issues is its own way of being ignored.
+          existing=$(gh issue list --label ci:buried-failure --state open \
+            --limit 1 --json number --jq '.[0].number // empty')
+
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body-file trunk-job-verdict.md
+            echo "Appended to issue #$existing"
+          else
+            gh issue create --title "$title" \
+              --label ci:buried-failure --body-file trunk-job-verdict.md
+          fi
+
+          echo "::error title=$title::Commit $short passed CI on the surface while a job inside it failed. See $RUN_URL and the linked issue."
+          exit 1
