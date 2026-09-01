@@ -33,6 +33,7 @@ from scripts.build_engine_payload import (
     LockedRequirement,
     PayloadBuildError,
     RuntimeLoadSite,
+    assert_runtime_matches_pin,
     assert_spa_is_fresh,
     assert_verify_report,
     classify_runtime_load_sites,
@@ -43,6 +44,7 @@ from scripts.build_engine_payload import (
     parse_locked_export,
     parse_otool,
     prune_excluded,
+    read_python_pin,
     sha256_tree,
     skip_output_tree,
     sole_stretch_asset,
@@ -561,4 +563,53 @@ def test_the_copy_filter_still_drops_the_heavy_derived_trees(tmp_path: Path) -> 
         "__pycache__",
         "test-results",
     }
+
+
+# ----- interpreter pin ---------------------------------------------------
+def test_the_pin_is_read_verbatim(tmp_path: Path) -> None:
+    (tmp_path / ".python-version").write_text("3.11.15\n", encoding="utf-8")
+    assert read_python_pin(tmp_path) == "3.11.15"
+
+
+def test_a_missing_pin_stops_the_build(tmp_path: Path) -> None:
+    with pytest.raises(PayloadBuildError) as excinfo:
+        read_python_pin(tmp_path)
+    assert ".python-version" in str(excinfo.value)
+
+
+def test_an_unparseable_pin_stops_the_build(tmp_path: Path) -> None:
+    (tmp_path / ".python-version").write_text("cpython@3.11\n", encoding="utf-8")
+    with pytest.raises(PayloadBuildError):
+        read_python_pin(tmp_path)
+
+
+def test_a_runtime_off_the_pinned_line_is_refused(tmp_path: Path) -> None:
+    """The Tue 1 Sep 2026 failure: uv resolved 3.14.7, the pin meant 3.11."""
+    with pytest.raises(PayloadBuildError) as excinfo:
+        assert_runtime_matches_pin(
+            runtime_version="3.14.7",
+            pin="3.11.15",
+            runtime_source=tmp_path,
+        )
+    message = str(excinfo.value)
+    assert "3.14.7" in message
+    assert "3.11.15" in message
+
+
+def test_a_runtime_on_the_pinned_line_passes(tmp_path: Path) -> None:
+    assert_runtime_matches_pin(
+        runtime_version="3.11.15", pin="3.11.15", runtime_source=tmp_path
+    )
+
+
+def test_patch_drift_within_the_pinned_line_passes(tmp_path: Path) -> None:
+    """The contract is major.minor: 3.11.16 against a 3.11.15 pin ships."""
+    assert_runtime_matches_pin(
+        runtime_version="3.11.16", pin="3.11.15", runtime_source=tmp_path
+    )
+
+
+def test_the_repo_pin_is_itself_parseable() -> None:
+    """The committed .python-version must satisfy the reader that gates dmg."""
+    read_python_pin(REPO_ROOT)
 
