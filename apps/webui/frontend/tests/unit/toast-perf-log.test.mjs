@@ -45,7 +45,13 @@ test('an error toast is durably logged at console.error, not merely shown', asyn
 	assert.equal(capture.calls.warn.length, 0);
 	assert.equal(capture.calls.info.length, 0);
 	assert.equal(capture.calls.error.length, 1);
-	assert.match(capture.calls.error[0], /\[perf-event] toast-error:.*no free\/stopped follower deck/);
+	// The id between the kind and the colon is load-bearing, not incidental
+	// formatting: it is the string the toast also prints and copies, and it is
+	// what makes this line findable from a pasted report.
+	assert.match(
+		capture.calls.error[0],
+		/\[perf-event] toast-error id=t-[a-z0-9]+-\d+:.*no free\/stopped follower deck/
+	);
 });
 
 test('an info toast is durably logged at console.info, not console.error', async () => {
@@ -59,5 +65,8 @@ test('an info toast is durably logged at console.info, not console.error', async
 	assert.equal(capture.calls.error.length, 0);
 	assert.equal(capture.calls.warn.length, 0);
 	assert.equal(capture.calls.info.length, 1);
-	assert.match(capture.calls.info[0], /\[perf-event] toast-info:.*Beat Sync skipped/);
+	assert.match(
+		capture.calls.info[0],
+		/\[perf-event] toast-info id=t-[a-z0-9]+-\d+:.*Beat Sync skipped/
+	);
 });

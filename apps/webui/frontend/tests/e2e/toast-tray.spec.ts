@@ -1,0 +1,108 @@
+/**
+ * The toast tray, driven through the real DOM rather than the store.
+ *
+ * The unit suite proves the store's timers, ids and payload. What only a real
+ * browser can prove is that a POINTER over the rendered element holds it, that
+ * the x is reachable and hits the right toast, and that the clipboard actually
+ * receives the report - the clipboard in particular is a browser capability with
+ * a secure-context precondition that no node:test stand-in exercises.
+ *
+ * Toasts are raised by importing the app's own store module from the Vite dev
+ * server, which is the same module instance the layout renders, so nothing here
+ * is a stand-in for the thing under test.
+ */
+import { expect, test, type Page } from '@playwright/test';
+
+const STORE = '/src/lib/stores.svelte.ts';
+
+async function raise(page: Page, message: string, kind = 'info', dismissMs = 60_000): Promise<string> {
+	return page.evaluate(
+		async ([store, msg, k, ms]) => {
+			const mod = await import(/* @vite-ignore */ store as string);
+			mod.pushToast(msg as string, k as 'info' | 'error', ms as number);
+			return mod.toasts[mod.toasts.length - 1].logId as string;
+		},
+		[STORE, message, kind, dismissMs] as const
+	);
+}
+
+test.beforeEach(async ({ page }) => {
+	// The dev server here has no daemon behind it, so the app shell can still be
+	// laying out when the first assertion runs. Waiting for the tray container
+	// (which the layout always renders, empty or not) is the precondition that
+	// actually means "the app is up", where a body visibility check is not.
+	await page.goto('/');
+	await page.locator('.toast-stack').waitFor({ state: 'attached' });
+});
+
+test('a toast renders with a dismiss control and a copy target', async ({ page }) => {
+	const id = await raise(page, 'rendered toast');
+	const toast = page.locator(`[data-toast-id="${id}"]`);
+	await expect(toast).toBeVisible();
+	await expect(toast).toContainText('rendered toast');
+	await expect(page.locator(`[data-toast-dismiss="${id}"]`)).toBeVisible();
+	await expect(page.locator(`[data-toast-copy="${id}"]`)).toBeVisible();
+});
+
+test('the x dismisses that toast and leaves the others', async ({ page }) => {
+	const first = await raise(page, 'keep me');
+	const second = await raise(page, 'remove me');
+
+	await page.locator(`[data-toast-dismiss="${second}"]`).click();
+
+	await expect(page.locator(`[data-toast-id="${second}"]`)).toHaveCount(0);
+	await expect(page.locator(`[data-toast-id="${first}"]`)).toBeVisible();
+});
+
+test('a pointer over a toast holds it past its dismissal delay', async ({ page }) => {
+	const id = await raise(page, 'hover holds me', 'info', 1200);
+	const toast = page.locator(`[data-toast-id="${id}"]`);
+	await expect(toast).toBeVisible();
+
+	await toast.hover();
+	await page.waitForTimeout(2500); // well past the 1200ms it would have died at
+	await expect(toast).toBeVisible();
+
+	// And leaving restarts a full delay rather than firing the remainder.
+	await page.mouse.move(0, 0);
+	await page.waitForTimeout(600);
+	await expect(toast).toBeVisible();
+	await expect(toast).toHaveCount(0, { timeout: 4000 });
+});
+
+test('an untouched toast still fades, so the hold is doing the work', async ({ page }) => {
+	const id = await raise(page, 'fade normally', 'info', 800);
+	const toast = page.locator(`[data-toast-id="${id}"]`);
+	await expect(toast).toBeVisible();
+	await expect(toast).toHaveCount(0, { timeout: 5000 });
+});
+
+test('clicking a toast copies a report whose id matches the logged id', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+
+	const consoleLines: string[] = [];
+	page.on('console', (msg) => consoleLines.push(msg.text()));
+
+	const id = await raise(page, 'copy me with my id', 'error');
+	await page.locator(`[data-toast-copy="${id}"]`).click();
+	await expect(page.locator(`[data-toast-copied="${id}"]`)).toBeVisible();
+
+	const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+
+	// The payload carries what was asked for.
+	expect(clipboard).toContain(`id: ${id}`);
+	expect(clipboard).toContain('message: copy me with my id');
+	expect(clipboard).toMatch(/^when: \d{4}-\d{2}-\d{2}T/m);
+	expect(clipboard).toMatch(/^machine: /m);
+	expect(clipboard).toMatch(/^user: /m);
+	// A real browser names itself AND its version, which is what was asked for.
+	expect(clipboard).toMatch(/^client: Chrome \d/m);
+
+	// THE correlation: the id on the clipboard is the id in the log line.
+	const logLine = consoleLines.find((l) => l.includes('[perf-event] toast-error'));
+	expect(logLine, 'every toast writes a ring row').toBeTruthy();
+	expect(logLine).toContain(`id=${id}`);
+});

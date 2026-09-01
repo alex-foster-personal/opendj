@@ -416,3 +416,79 @@ test('uninstall cannot invalidate a session after browser IPC ownership changes'
 		delete globalThis.window;
 	}
 });
+
+//-----------------------------------------------------------------------------
+// agent-native parity for the toast tray
+//-----------------------------------------------------------------------------
+
+/**
+ * Every pointer interaction the toast tray offers must have an equal here, or
+ * an agent cannot drive and assert the same flows a human can.
+ *
+ * Behavior lives in toast-behavior.test.mjs against the store; what is pinned
+ * here is that the bridge EXPOSES it, validates its input like every other IPC
+ * entry point, and delegates rather than reimplementing.
+ *
+ * Regression lines:
+ * - if a tray method disappears from the IPC then agent parity silently lapses
+ *   and only a human can dismiss a stuck toast
+ * - if an id reaches a store lookup unvalidated then the untyped bridge is the
+ *   one input path that skips the validation every other one performs
+ * - if a method reimplements the behavior instead of delegating then the pointer
+ *   and the agent can drift apart
+ */
+test('the IPC exposes an equal for every toast interaction a pointer has', () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const bridge = globalThis.window.musicDjToolsPerformance;
+		for (const method of ['toasts', 'dismissToast', 'holdToast', 'releaseToast', 'copyToast']) {
+			assert.equal(typeof bridge[method], 'function', `${method} must be reachable by an agent`);
+		}
+		assert.ok(Array.isArray(bridge.toasts()), 'toasts() lists what is on screen');
+	} finally {
+		uninstall();
+	}
+});
+
+test('a toast id arriving over the untyped bridge is validated, not trusted', () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const bridge = globalThis.window.musicDjToolsPerformance;
+		for (const method of ['dismissToast', 'holdToast', 'releaseToast']) {
+			for (const bad of [undefined, null, 42, '', {}]) {
+				assert.throws(
+					() => bridge[method](bad),
+					TypeError,
+					`${method} must refuse ${JSON.stringify(bad) ?? 'undefined'}`
+				);
+			}
+		}
+	} finally {
+		uninstall();
+	}
+});
+
+test('dismissing a toast is NOT gated on the performance command session', async () => {
+	// A toast outlives any one command session. Gating it would mean a preset
+	// transaction moving on could leave a stuck error undismissable, which is
+	// the bug the dismiss control exists to fix.
+	const source = await readFile(
+		new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	const block = source.slice(source.indexOf('dismissToast: (id: unknown)'));
+	const nextMethod = block.indexOf('copyToast:');
+	assert.equal(
+		/_assertCommandSession/.test(block.slice(0, nextMethod)),
+		false,
+		'no toast method may sit behind the command-session gate'
+	);
+	assert.match(
+		source,
+		/dismissToast: \(id: unknown\) => dismissToast\(_toastId\(id\)\)/,
+		'the bridge must delegate to the store, not reimplement dismissal'
+	);
+	assert.match(source, /copyToast: \(id: unknown\) => copyToast\(_toastId\(id\)\)/);
+});
