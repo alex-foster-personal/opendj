@@ -23,6 +23,7 @@
 		hydrateFeedback,
 		toggleFeedbackPanel
 	} from '$lib/rb/feedback-store.svelte';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import FeedbackPanel from './FeedbackPanel.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
@@ -46,7 +47,14 @@
 
 	onMount(() => {
 		pathname = window.location.pathname;
-		void hydrateFeedback();
+		// Three GETs (todos, comments, general) behind a chevron nobody has
+		// clicked yet: the single biggest block of the boot burst, and the
+		// easiest to move (PERF-R6). Deferred, never dropped -- and the
+		// chevron's own toggle still calls hydrateFeedback() directly, so a
+		// user who clicks during the boot window is not made to wait for it.
+		bootScheduler.defer('feedback:hydrate', () => {
+			void hydrateFeedback();
+		});
 		const flush = () => flushFeedbackSaves();
 		window.addEventListener('pagehide', flush);
 		return () => {

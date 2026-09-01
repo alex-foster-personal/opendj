@@ -49,6 +49,7 @@
 		type ShellStamp,
 		type SideState
 	} from '$lib/rb/build-identity';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 
 	// The shell stamp is synchronous: it was injected before any script ran.
 	const shell: SideState<ShellStamp> = readShellBuild();
@@ -98,11 +99,19 @@
 	}
 
 	onMount(() => {
-		// One read, at mount. The identity of a running process does not
-		// change, so polling it would be a lie dressed as freshness.
-		void fetchEngineBuild().then((result) => {
-			engine = result;
+		// One read, once. The identity of a running process does not change,
+		// so polling it would be a lie dressed as freshness -- and by the
+		// same argument it does not have to be read AT mount, so it is
+		// deferred out of the boot burst (PERF-R6). The chip renders its
+		// 'loading' face until the answer lands, exactly as it already did
+		// for the duration of the request.
+		bootScheduler.defer('build-identity:fetchEngineBuild', () => {
+			void fetchEngineBuild().then((result) => {
+				engine = result;
+			});
 		});
+		// The address is synchronous and the tray's foldout shows it, so it
+		// stays at mount.
 		engineUrl = engineBaseUrl();
 	});
 </script>
