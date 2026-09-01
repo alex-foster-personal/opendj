@@ -8,7 +8,7 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import { api, unwrap } from '$lib/api/client';
 	import {
@@ -38,7 +38,7 @@
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
 	import { resolveRowVocals } from '$lib/rb/row-vocals';
-	import { coalesce } from '$lib/rb/coalesce';
+	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -433,10 +433,14 @@
 		// FAST PATH: the engine tells us the moment a track changes, from any
 		// writer (this tab, another tab, the CLI, an agent). One targeted
 		// refetch, no idle polling.
-		const unsubscribeTracks = subscribeKind('tracks', () => void _refreshLibraryRows());
+		// Every trigger here goes through `_libraryRefreshGate`, never through
+		// `_refreshLibraryRowsOnce` directly: the gate decides WHEN a background
+		// refetch is allowed to run, and its coalescer guarantees it is only
+		// ever one refetch.
+		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
-		const unsubscribeResync = subscribeResync(() => void _refreshLibraryRows());
+		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
 		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
 		// WS is down (daemon restarting, engine built without the hub) it is
 		// the only thing keeping this pane honest. It is 60s rather than
@@ -446,7 +450,7 @@
 		const LIBRARY_FALLBACK_POLL_MS = 60_000;
 		const libraryFallbackTimer = setInterval(() => {
 			if (getConnectionState() === 'open') return;
-			void _refreshLibraryRows();
+			_libraryRefreshGate.request();
 		}, LIBRARY_FALLBACK_POLL_MS);
 
 		return () => {
@@ -792,8 +796,9 @@
 	 * the UI in noise. The stale rows stay on screen and the next event or
 	 * tick retries.
 	 *
-	 * Never call this directly: go through `_refreshLibraryRows`, which
-	 * coalesces overlapping triggers. See the comment on that binding.
+	 * Never call this directly: go through `_libraryRefreshGate.request()`,
+	 * which decides when a background refetch may run and coalesces overlapping
+	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
 		try {
@@ -836,15 +841,54 @@
 	}
 
 	/**
-	 * The only entry point for a background library refresh.
+	 * The only entry point for a background library refresh: WHEN it may run,
+	 * and how many times.
 	 *
 	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
-	 * the 60s fallback poll) and a single gap-revealing `library.changed` frame
-	 * fires the first two for ONE event. Unguarded that is two concurrent full
-	 * library reads racing to write the same panes; coalesced it is one run
-	 * plus one trailing run. See `$lib/rb/coalesce`.
+	 * the 60s degraded-path poll) and a single gap-revealing `library.changed`
+	 * frame fires the first two for ONE event. Unguarded that is two concurrent
+	 * full library reads racing to write the same panes; the gate's coalescer
+	 * makes it one run plus one trailing run (`$lib/rb/coalesce`).
+	 *
+	 * PERFMODE-04 on top of that: no background refetch AT ALL while a deck is
+	 * playing. A refresh is a full library read per open pane followed by a
+	 * `p.rows` reassignment that re-renders the whole list, and every trigger
+	 * above fires from something the DJ did NOT ask for right now - someone
+	 * else's rating PATCH, a bulk edit, a find/replace, a WS reconnect. Mid-mix
+	 * that is main-thread time competing with the audio graph for no benefit the
+	 * DJ can see, because they are looking at the decks.
+	 *
+	 * Deferred, never dropped: the gate owes the run and pays it the moment
+	 * playback stops, or sooner if the user touches the pane (see
+	 * `_noteLibraryInteraction`).
 	 */
-	const _refreshLibraryRows = coalesce(_refreshLibraryRowsOnce);
+	const _libraryRefreshGate = createPlayingGate({
+		kind: 'library-refresh-deferred',
+		isPlaying: anyDeckPlaying,
+		run: _refreshLibraryRowsOnce
+	});
+
+	// The reactive read IS the drain trigger: `anyDeckPlaying` touches every
+	// deck's transport state, so this effect re-runs the instant the last deck
+	// stops and the owed refresh lands with no polling anywhere.
+	//
+	// untrack around the drain for the same reason PerfMeters untracks its
+	// sampler: the refresh it starts reads and writes pane state, and anything
+	// it touches synchronously would otherwise become a dependency of the effect
+	// that started it. The transport read is the only dependency this may have.
+	$effect(() => {
+		if (!anyDeckPlaying()) untrack(() => _libraryRefreshGate.drain());
+	});
+
+	/**
+	 * Scrolling, selecting or searching the library is an explicit request for
+	 * fresh rows, so a deferred refresh is released even though audio is live -
+	 * yielded to an idle slot rather than run on the gesture path. A no-op (one
+	 * boolean read) when nothing is owed, which is the common case.
+	 */
+	function _noteLibraryInteraction(): void {
+		_libraryRefreshGate.flushOnInteraction();
+	}
 
 	/** Auto-delete blank untitled empties (never renamed / non-empty). */
 	async function _sweepBlankPlaylists(
@@ -1398,6 +1442,7 @@
 	// has no multi-select concept) - treated as a non-extending single
 	// select, same as a modifier-less TrackTable click.
 	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
+		_noteLibraryInteraction();
 		const p = panes[activePane];
 		if (p.selected_id !== row.stable_id) _pushNav();
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
@@ -1453,6 +1498,7 @@
 	function setSearch(next: string): void {
 		const paneIndex = activePane;
 		_filterDebounceFor(paneIndex).push(next);
+		_noteLibraryInteraction();
 		if (searchMode === 'find') return;
 		if (!panes[paneIndex].whole_collection) return;
 		// Genre chip filters stay client-side (filterRows), never FTS.
@@ -1869,7 +1915,10 @@
 			scrollTop={pane.scroll_top}
 			removable={editablePane}
 			reorderable={reorderablePane}
-			onscrollcursor={(top) => panes[activePane].rememberScroll(top)}
+			onscrollcursor={(top) => {
+				_noteLibraryInteraction();
+				panes[activePane].rememberScroll(top);
+			}}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}

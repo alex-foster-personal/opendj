@@ -1,0 +1,335 @@
+/**
+ * PERFMODE-04 playing gate: shed background work while a deck plays, and never
+ * drop it.
+ *
+ * Regression lines:
+ * - [if] a trigger arriving while a deck plays runs the work anyway [then] a
+ *   stranger's rating PATCH still stalls the main thread mid-mix - broken
+ * - [if] a deferred run is not owed after playback stops [then] the pane is
+ *   silently stale for the rest of the session, which is worse than the stall
+ * - [if] many triggers in one episode each book their own run [then] the
+ *   deferral has only postponed the pile-up instead of collapsing it
+ * - [if] a user interaction does not release the owed run [then] scrolling the
+ *   library shows rows the app already knows are wrong
+ * - [if] an interaction release runs synchronously [then] the work is back on
+ *   the gesture path, which is the thing the gate exists to avoid
+ * - [if] the gate emits a ring row per trigger rather than per episode [then]
+ *   one bulk edit flushes the 40-row perf log it writes into
+ * - [if] a release bypasses the coalescer the gate owns [then] C5 is back: one
+ *   library.changed frame costs two concurrent refetches racing the same panes
+ * - [if] anyDeckPlaying stops reading BOTH playing and audible [then] a refetch
+ *   can land in the window at the start or the end of a mix
+ */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { before, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const GATE_SOURCE = readFileSync(
+	fileURLToPath(new URL('../../src/lib/rb/playing-gate.ts', import.meta.url)),
+	'utf8'
+);
+
+let gateModule;
+
+before(async () => {
+	gateModule = await loadTypeScriptModule('src/lib/rb/playing-gate.ts', {
+		viteApiBase: 'https://playing-gate.example.test'
+	});
+});
+
+/** A gate whose transport, clock, scheduler and ring the test owns outright. */
+function makeGate({ playing = false, run } = {}) {
+	const state = {
+		playing,
+		runs: 0,
+		rows: [],
+		scheduled: [],
+		clock: 1000
+	};
+	const gate = gateModule.createPlayingGate({
+		kind: 'library-refresh-deferred',
+		run:
+			run ??
+			(async () => {
+				state.runs += 1;
+			}),
+		isPlaying: () => state.playing,
+		schedule: (task) => state.scheduled.push(task),
+		now: () => state.clock,
+		record: (kind, stages, deck, labels) => state.rows.push({ kind, stages, deck, labels })
+	});
+	return { gate, state };
+}
+
+/** Let every already-queued microtask and continuation settle. */
+function flush() {
+	return new Promise((resolve) => setImmediate(resolve));
+}
+
+// ------------------------------------------------------------- the idle path
+
+test('a trigger with nothing playing runs immediately, exactly as before', () => {
+	const { gate, state } = makeGate();
+
+	gate.request();
+
+	assert.equal(state.runs, 1);
+	assert.equal(gate.pending, false, 'nothing is owed');
+	assert.equal(state.rows.length, 0, 'and an ungated run writes no deferral row');
+});
+
+// --------------------------------------------------------- deferral + drain
+
+test('a trigger while a deck plays defers instead of refetching mid-mix', () => {
+	const { gate, state } = makeGate({ playing: true });
+
+	gate.request();
+
+	assert.equal(state.runs, 0, 'no main-thread work while audio is live');
+	assert.equal(gate.pending, true, 'but the run is owed, not dropped');
+});
+
+test('the owed run drains the moment playback stops', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+
+	state.playing = false;
+	gate.drain();
+
+	assert.equal(state.runs, 1);
+	assert.equal(gate.pending, false);
+});
+
+test('drain is a no-op while a deck is still playing', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+
+	gate.drain();
+
+	assert.equal(state.runs, 0, 'the effect can fire for any deck change - only a stop drains');
+	assert.equal(gate.pending, true);
+});
+
+test('drain with nothing owed never manufactures a refetch', () => {
+	const { gate, state } = makeGate();
+
+	gate.drain();
+	gate.drain();
+
+	assert.equal(state.runs, 0);
+});
+
+test('a whole burst of invalidations collapses into one owed run', async () => {
+	const { gate, state } = makeGate({ playing: true });
+
+	// A bulk edit publishes library.changed per write, and one gap-revealing
+	// frame fires both bus subscriptions for a single event.
+	for (let i = 0; i < 40; i++) gate.request();
+
+	assert.equal(gate.pending, true);
+	state.playing = false;
+	gate.drain();
+	await flush();
+
+	assert.equal(state.runs, 1, '40 triggers, one refetch');
+	assert.equal(state.rows[0].stages.coalesced, 40, 'and the row says how many were absorbed');
+});
+
+test('a trigger arriving after the stop but before the drain closes the episode once', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+
+	state.playing = false;
+	gate.request();
+
+	assert.equal(state.runs, 1);
+	assert.equal(gate.pending, false, 'the flag must not survive into a second redundant run');
+	gate.drain();
+	assert.equal(state.runs, 1);
+});
+
+test('the gate re-arms after an episode rather than latching', async () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+	state.playing = false;
+	gate.drain();
+	await flush();
+
+	state.playing = true;
+	gate.request();
+	assert.equal(gate.pending, true, 'a second set deferring again');
+	state.playing = false;
+	gate.drain();
+	await flush();
+
+	assert.equal(state.runs, 2);
+	assert.equal(state.rows.length, 2, 'one row per episode, not one for all time');
+});
+
+// -------------------------------------------------------- the interaction path
+
+test('touching the library releases the owed run even while audio is live', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+
+	gate.flushOnInteraction();
+
+	assert.equal(gate.pending, false);
+	assert.equal(state.runs, 0, 'not on the gesture path');
+	assert.equal(state.scheduled.length, 1, 'yielded to an idle slot instead');
+	state.scheduled[0]();
+	assert.equal(state.runs, 1, 'and it does actually run');
+});
+
+test('an interaction with nothing owed does no work at all', () => {
+	const { gate, state } = makeGate({ playing: true });
+
+	// Wired to scroll, so the common case has to be free.
+	for (let i = 0; i < 100; i++) gate.flushOnInteraction();
+
+	assert.equal(state.runs, 0);
+	assert.equal(state.scheduled.length, 0);
+	assert.equal(state.rows.length, 0);
+});
+
+// ----------------------------------------------------------------- the ring row
+
+test('one deferral episode writes exactly one ring row, carrying both numbers', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+	gate.request();
+	gate.request();
+	assert.equal(state.rows.length, 0, 'nothing is written while the episode is open');
+
+	state.clock = 48_500;
+	state.playing = false;
+	gate.drain();
+
+	assert.equal(state.rows.length, 1);
+	const row = state.rows[0];
+	assert.equal(row.kind, 'library-refresh-deferred');
+	assert.equal(row.deck, null);
+	assert.equal(row.stages.deferredMs, 47_500, 'how long the set was shielded');
+	assert.equal(row.stages.coalesced, 3);
+	assert.equal(row.labels.resumedBy, 'playback-stopped');
+});
+
+test('an interaction release is labelled as such', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+
+	gate.flushOnInteraction();
+
+	assert.equal(state.rows[0].labels.resumedBy, 'user-interaction');
+});
+
+test('every stage value is a number, so the ring stays a ms/count map', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+	state.playing = false;
+	gate.drain();
+
+	for (const value of Object.values(state.rows[0].stages)) {
+		assert.equal(typeof value, 'number');
+		assert.ok(Number.isFinite(value));
+	}
+});
+
+// ----------------------------------------------------- the coalescer it owns
+
+test('C5: a release can never put two full refetches in flight at once', async () => {
+	const gates = [];
+	const live = { started: 0, peak: 0, now: 0 };
+	const controllable = async () => {
+		live.started += 1;
+		live.now += 1;
+		live.peak = Math.max(live.peak, live.now);
+		const gate = {};
+		gate.promise = new Promise((resolve) => {
+			gate.resolve = resolve;
+		});
+		gates.push(gate);
+		try {
+			await gate.promise;
+		} finally {
+			live.now -= 1;
+		}
+	};
+	const { gate, state } = makeGate({ run: controllable });
+
+	// The gap-revealing library.changed frame: both bus subscriptions, one
+	// event, nothing playing so neither is deferred.
+	gate.request();
+	gate.request();
+	assert.equal(live.started, 1, 'the second trigger joins the run in flight');
+
+	gates[0].resolve();
+	await flush();
+	assert.equal(live.started, 2, 'and is answered by exactly one trailing run');
+	assert.equal(live.peak, 1, 'never two full refetches at once');
+
+	gates[1].resolve();
+	await flush();
+	assert.equal(live.started, 2, 'and no third run');
+	assert.equal(state.rows.length, 0, 'an ungated run is not a deferral');
+});
+
+test('a deferred release is coalesced against a run already in flight', async () => {
+	const gates = [];
+	const live = { started: 0, now: 0, peak: 0 };
+	const controllable = async () => {
+		live.started += 1;
+		live.now += 1;
+		live.peak = Math.max(live.peak, live.now);
+		const gate = {};
+		gate.promise = new Promise((resolve) => {
+			gate.resolve = resolve;
+		});
+		gates.push(gate);
+		try {
+			await gate.promise;
+		} finally {
+			live.now -= 1;
+		}
+	};
+	const { gate, state } = makeGate({ run: controllable });
+
+	// A refresh starts while idle, a deck starts playing under it, and an
+	// invalidation lands: the deferral must not become a second concurrent read.
+	gate.request();
+	state.playing = true;
+	gate.request();
+	state.playing = false;
+	gate.drain();
+
+	assert.equal(live.peak, 1, 'the gate release still goes through the coalescer');
+	gates[0].resolve();
+	await flush();
+	assert.equal(live.started, 2, 'the trailing pass carries the deferred invalidation');
+	gates[1].resolve();
+	await flush();
+});
+
+// ------------------------------------------------------------- anyDeckPlaying
+
+test('anyDeckPlaying reports false on a fresh engine with no deck loaded', () => {
+	assert.equal(typeof gateModule.anyDeckPlaying, 'function');
+	assert.equal(gateModule.anyDeckPlaying(), false);
+});
+
+test('anyDeckPlaying watches both the scheduled and the audible transport', () => {
+	const body = GATE_SOURCE.slice(
+		GATE_SOURCE.indexOf('export function anyDeckPlaying()'),
+		GATE_SOURCE.indexOf('export type IdleScheduler')
+	);
+	assert.ok(body.length > 0, 'if anyDeckPlaying cannot be located then this guard asserts nothing');
+	assert.match(body, /for \(const deck of DECK_IDS\)/, 'every deck, not just the master');
+	assert.match(
+		body,
+		/state\.playing \|\| state\.audible/,
+		'either flag alone leaves a window at the start or the end of a mix'
+	);
+});

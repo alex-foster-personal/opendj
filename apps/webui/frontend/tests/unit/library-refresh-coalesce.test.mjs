@@ -13,10 +13,15 @@
  *   mid-refetch is lost and the pane stays stale forever
  * - if a rejected run leaves the coalescer armed then every later refresh is
  *   wedged
- * - if BrowserPanel stops routing its bus subscriptions through the coalescer
- *   then C5 is back
+ * - if BrowserPanel stops routing its bus subscriptions through the gate that
+ *   owns the coalescer then C5 is back
  * - if _refreshLibraryRowsOnce stops rechecking playlist_id after its await
  *   then a playlist switch mid-fetch paints pane B with pane A's rows
+ * - if a bus subscription calls _refreshLibraryRowsOnce directly again then the
+ *   PERFMODE-04 playing gate is bypassed and mid-set refetches are back
+ *
+ * The gate's own behavior (defer, drain, never drop, one ring row, and that its
+ * coalescer still holds under the gate) lives in playing-gate.test.mjs.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -28,6 +33,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const BROWSER_PANEL = fileURLToPath(
 	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
 );
+const PLAYING_GATE = fileURLToPath(new URL('../../src/lib/rb/playing-gate.ts', import.meta.url));
 
 let coalesceModule;
 
@@ -170,21 +176,69 @@ test('a rejected run surfaces the failure and does not wedge later triggers', as
 
 // -------------------------------------------------------- BrowserPanel wiring
 
-test('BrowserPanel routes its bus-driven refresh through the coalescer', () => {
-	const source = readFileSync(BROWSER_PANEL, 'utf8');
+test('the gate that BrowserPanel uses owns the coalescer', () => {
+	const gate = readFileSync(PLAYING_GATE, 'utf8');
 
-	assert.match(source, /import \{ coalesce \} from '\$lib\/rb\/coalesce'/);
+	assert.match(gate, /import \{ coalesce \} from '\$lib\/rb\/coalesce'/);
 	assert.match(
-		source,
-		/const _refreshLibraryRows = coalesce\(_refreshLibraryRowsOnce\)/,
+		gate,
+		/const trigger = coalesce\(options\.run\)/,
 		'the raw refresh must only be reachable through the coalescer'
 	);
-	assert.match(source, /subscribeKind\('tracks', \(\) => void _refreshLibraryRows\(\)\)/);
-	assert.match(source, /subscribeResync\(\(\) => void _refreshLibraryRows\(\)\)/);
+	assert.doesNotMatch(
+		gate,
+		/options\.run\(\)/,
+		'no path may call the wrapped work directly and skip the coalescer'
+	);
+});
+
+test('BrowserPanel routes its bus-driven refresh through that gate', () => {
+	const source = readFileSync(BROWSER_PANEL, 'utf8');
+
+	assert.match(
+		source,
+		/import \{ anyDeckPlaying, createPlayingGate \} from '\$lib\/rb\/playing-gate'/
+	);
+	assert.match(source, /run: _refreshLibraryRowsOnce/);
+	assert.match(source, /isPlaying: anyDeckPlaying/);
+	assert.match(source, /kind: 'library-refresh-deferred'/);
 	assert.equal(
-		source.split('_refreshLibraryRowsOnce').length - 1,
-		2,
-		'exactly two mentions: the declaration and the coalesce() call, no direct callers'
+		source.split('_refreshLibraryRowsOnce(').length - 1,
+		1,
+		'the declaration is the only call-shaped occurrence: nothing invokes it directly'
+	);
+
+	// Every background trigger goes through request(), never straight to the
+	// refresh: a direct call is the mid-set stall this gate exists to stop.
+	assert.match(source, /subscribeKind\('tracks', \(\) => _libraryRefreshGate\.request\(\)\)/);
+	assert.match(source, /subscribeResync\(\(\) => _libraryRefreshGate\.request\(\)\)/);
+	const requestCallSites = source
+		.split('\n')
+		.filter((line) => line.includes('_libraryRefreshGate.request()'))
+		.filter((line) => !/^\s*(\/\/|\*)/.test(line));
+	assert.equal(
+		requestCallSites.length,
+		3,
+		'the two bus subscriptions plus the 60s degraded-path poll, and nothing else'
+	);
+});
+
+test('the deferred refresh drains on a stop and on a library interaction', () => {
+	const source = readFileSync(BROWSER_PANEL, 'utf8');
+
+	// The reactive read inside the effect is what subscribes it to every deck's
+	// transport; without it the gate would need a poll of its own.
+	assert.match(
+		source,
+		/\$effect\(\(\) => \{\s*if \(!anyDeckPlaying\(\)\) untrack\(\(\) => _libraryRefreshGate\.drain\(\)\);\s*\}\);/,
+		'a stop must drain the owed refresh, or the pane is stale for the session; ' +
+			'untracked, or the refresh it starts becomes a dependency of the effect'
+	);
+	assert.match(source, /_libraryRefreshGate\.flushOnInteraction\(\);/);
+	assert.equal(
+		source.split('_noteLibraryInteraction();').length - 1,
+		3,
+		'scroll, row select and search all count as asking for fresh rows'
 	);
 });
 
