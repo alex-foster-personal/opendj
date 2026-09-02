@@ -47,6 +47,75 @@ maintenance trap this thin-shell rule exists to avoid.
   (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
   opaque RGB).
 
+## Development loops: attach without a release artifact
+
+The UI, engine, and shell are independent feedback loops. Claim this
+worktree's port pair once with `just webui-ports-claim`, then use
+`just webui-ports` whenever a command below needs the backend or frontend URL.
+Run each long-lived command in its own terminal.
+
+### Fast UI loop
+
+Run `just webui-backend`, then start Vite from source:
+
+```sh
+cd apps/webui/frontend
+pnpm exec vite dev --host 127.0.0.1
+```
+
+Open the claimed frontend URL in Chrome. Vite proxies `/api` to the claimed
+backend and applies HMR on save. Chrome is the fastest feedback loop and the
+control arm, not the final browser-engine verdict.
+
+### WebKit-truthful UI loop
+
+Start the production-bundle watcher first and wait for its initial `built in`
+line:
+
+```sh
+cd apps/webui/frontend
+pnpm build --watch
+```
+
+Only then start `just webui-backend` in another terminal. The engine chooses
+between the SPA mount and its no-build placeholder at startup, so starting it
+before the initial build would leave Safari on the placeholder until the
+engine restarts.
+
+Open the claimed backend URL in Safari. The engine serves the rebuilt bundle,
+so Safari exercises the system WebKit and the same production transforms used
+by the packaged interface. DEVLOOP-03 (#852) owns reliable persistent watch
+mode. Until it lands, treat a stopped watcher as an explicit failure and rerun
+`pnpm build` after the next save; the engine continues serving that output.
+
+### Engine loop
+
+Run `just webui-backend`. It starts the FastAPI engine with `--reload`, so
+Python changes restart the daemon while the browser or attached shell stays on
+the same claimed backend origin. A reload that cannot boot fails in that
+terminal instead of falling through to another engine.
+
+### Shell loop
+
+Build the SPA before starting `just webui-backend`, following the WebKit loop's
+startup order above. With that engine healthy, run:
+
+```sh
+just dev-attach
+```
+
+The recipe reads this worktree's claimed backend origin, verifies that engine
+is healthy and serving the SPA, builds the debug Cargo target, and launches it
+with `OPENDJ_ENGINE_ORIGIN` set. It also exposes the debug-only WebDriver seam
+on port `4456`; pass another explicit port as `just dev-attach 4457` when needed.
+Drive that real WKWebView through the webview MCP described in
+`apps/desktop/mcp/README.md`. The release build deliberately has no WebDriver
+surface.
+
+The DMG is a release artifact only. Do not use it as an inner development loop
+and do not replace files inside an installed `.app`: doing so breaks its code
+signature and build-stamp contract.
+
 ## The engine gap
 
 A packaged app on a tester's Mac has no engine: no Python, no checkout, no

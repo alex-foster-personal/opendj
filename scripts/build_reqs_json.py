@@ -44,8 +44,11 @@ _CATEGORY_RE = re.compile(rf"^###\s+(.+?)\s+\(({_CODE})\)\s*$")
 _BULLET_V1_RE = re.compile(
     rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_CODE}-\d+[a-z]?)\*\*(.*)$"
 )
-# v2 bullets often lack a checkbox: `- **CROSS-01**: Linux support`
-_BULLET_V2_RE = re.compile(rf"^-\s+\*\*({_CODE}-\d+[a-z]?)\*\*\s*:?\s*(.*)$")
+# v2 bullets often lack a checkbox (`- **CROSS-01**: Linux support`), but a
+# shipped one carries the same `[x]` marker v1 uses (`- [x] **DEVLOOP-01**: ...`).
+_BULLET_V2_RE = re.compile(
+    rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_CODE}-\d+[a-z]?)\*\*\s*:?\s*(.*)$"
+)
 _SHIPPED_PHASE_RE = re.compile(r"\(shipped\s+(Phase\s+[\w.]+)\)", re.IGNORECASE)
 _TRACE_ROW_RE = re.compile(
     r"^\|\s*([A-Z]+-\d+|[A-Z]+-\*|[A-Z]+-[\d.]+(?:\.\.\d+)?(?:,\s*[A-Z]+-\d+)*)"
@@ -152,7 +155,8 @@ def _parse_v2(lines: list[str]) -> dict:
         m_b = _BULLET_V2_RE.match(line.lstrip())
         if not m_b:
             continue
-        rid, desc = m_b.group(1), m_b.group(2).strip()
+        check, rid, desc = m_b.group(1), m_b.group(2), m_b.group(3).strip()
+        status = "shipped" if check == "x" else "pending"
         # Infer code from the bullet's prefix if the heading was free-text.
         if current_code is None:
             current_code = rid.split("-", 1)[0]
@@ -161,7 +165,7 @@ def _parse_v2(lines: list[str]) -> dict:
             {
                 "id": rid,
                 "desc": re.sub(r"\s+", " ", desc),
-                "status": "pending",
+                "status": status,
                 "phase": None,
                 "shipped_phase": None,
             }
