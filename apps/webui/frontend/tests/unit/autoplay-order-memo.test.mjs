@@ -134,7 +134,12 @@ describe('simulateAutoPlayChain at library scale', () => {
 		});
 		const ms = performance.now() - t0;
 		assert.ok(out.length > 1, 'sanity: the chain advances');
-		assert.ok(ms < 250, `if the charted simulation costs ${ms.toFixed(0)}ms then every handoff freezes the UI - broken`);
+		// 77 ms on the Air; a shared CI runner measured 273 ms once (Wed 2 Sep 2026).
+		// The symptom this guards is the ~1.5 s long task in the header, and this is
+		// one synchronous per-handoff call (source_stable_id is a memo-key input), so
+		// the line must sit well under that: 750 ms is half the freeze and ~2.7x the
+		// worst runner jitter seen. The old whole-library walk was 6900 ms.
+		assert.ok(ms < 750, `if the charted simulation costs ${ms.toFixed(0)}ms then every handoff freezes the UI - broken`);
 	});
 
 	it('the controller passes the horizon, so the column never walks the whole library', () => {
