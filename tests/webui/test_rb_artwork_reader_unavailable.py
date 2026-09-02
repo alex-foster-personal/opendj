@@ -81,6 +81,14 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
     the reader is genuinely gone rather than flagged off. ``assert HAS_MUTAGEN is
     False`` inside the subprocess is the control: if the import block ever stops
     working, this fails loudly instead of quietly testing nothing.
+
+    Same subprocess also proves GET /rb-meta's ``artwork_available`` under the
+    same genuinely blocked import (issue #795): the resolvable-but-unreadable
+    row must report ``None`` ("could not check"), not the guessed ``False``
+    that :func:`apps.adapters.rekordbox.paths.local_artwork_available` used to
+    collapse it into -- the exact reason the UI never called ``/artwork`` and
+    the 503 above went unheard. The missing-file row is the overshoot control:
+    residency still wins, so it stays a real ``False``, not ``None``.
     """
     audio_path = tmp_path / "no reader.mp3"
     shutil.copy2(FIXTURE_ROOT / "src-320.mp3", audio_path)
@@ -119,6 +127,8 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
             with TestClient(app) as test_client:
                 resp = test_client.get("/api/v1/tracks/{STABLE_ID}/artwork")
                 stale = test_client.get("/api/v1/tracks/{NO_FILE_SID}/artwork")
+                meta = test_client.get("/api/v1/tracks/{STABLE_ID}/rb-meta")
+                stale_meta = test_client.get("/api/v1/tracks/{NO_FILE_SID}/rb-meta")
 
             # A file that exists with no reader: capability UNKNOWN, not a guess.
             assert resp.status_code == 503, resp.text
@@ -130,6 +140,15 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
             # rather than flagged off.
             assert stale.status_code == 404, stale.text
             assert stale.json()["detail"]["code"] == "ARTWORK_NOT_FOUND"
+
+            # rb-meta must agree with /artwork about the epistemic state (#795):
+            # a resolvable file with no reader is UNKNOWN, never a guessed False.
+            assert meta.status_code == 200, meta.text
+            assert meta.json()["artwork_available"] is None
+            # Overshoot control: a genuinely missing file stays a real False,
+            # not None -- residency still wins even with the reader gone.
+            assert stale_meta.status_code == 200, stale_meta.text
+            assert stale_meta.json()["artwork_available"] is False
             print("PROBE_OK")
         """),
         encoding="utf-8",

@@ -80,8 +80,12 @@ export interface RbMeta {
 	folder_path: string | null;
 	/** Genre column value from djmdContent join; null when unset. */
 	genre: string | null;
-	/** True when artwork files exist - lets the browser skip doomed fetches. */
-	artwork_available: boolean;
+	/** True/false once actually checked; null only for a local-vendor row
+	 * (vendor: 'local') whose optional mutagen tag reader was never available
+	 * to check with (#795) - an honest unknown, not a guessed false. A
+	 * rekordbox-mapped row is always a definite true/false. Lets the browser
+	 * skip doomed fetches when it IS false. */
+	artwork_available: boolean | null;
 	/** Why artwork is / isn't available (empty ImagePath is the common miss). */
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	/** True when the ANLZ dir exists - ditto for /anlz. */

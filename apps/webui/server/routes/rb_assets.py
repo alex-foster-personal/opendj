@@ -55,6 +55,13 @@ class RbMetaOut(BaseModel):
     tag picture on the local file when present, since ``/artwork`` now
     serves that instead of a rekordbox-rendered jpg for these rows. See
     :func:`_local_rb_meta`.
+
+    ``artwork_available`` is tri-state (``bool | None``) rather than a plain
+    bool: for a local-vendor row it is ``None`` when the optional ``mutagen``
+    tag reader was never available to check with, distinct from a checked
+    ``False`` (no embedded picture). A rekordbox-vendor row never needs the
+    reader, so it is always a definite ``True``/``False`` there. See
+    :func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).
     """
 
     stable_id: str
@@ -66,7 +73,7 @@ class RbMetaOut(BaseModel):
     genre: str | None
     comment: str | None
     duration_s: int | None
-    artwork_available: bool
+    artwork_available: bool | None
     analysis_available: bool
     beatgrid_issue: BeatgridIssueOut | None
     cue_count: int

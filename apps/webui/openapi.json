@@ -6238,15 +6238,22 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False, no cues, no genre) while ``folder_path``, ``file_exists``\nand ``quality`` still carry the state layer's own disk truth.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False, no cues, no genre) while ``folder_path``, ``file_exists``\nand ``quality`` still carry the state layer's own disk truth.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the optional ``mutagen``\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
             "type": "boolean"
           },
           "artwork_available": {
-            "title": "Artwork Available",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
           },
           "beatgrid_issue": {
             "anyOf": [

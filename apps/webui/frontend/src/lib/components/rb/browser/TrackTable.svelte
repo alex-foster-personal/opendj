@@ -1120,8 +1120,10 @@
 						<td
 							class="c-art"
 							title={row.rb_meta !== null && !row.rb_meta.artwork_available
-								? (artworkStatusLabel(row.rb_meta.artwork_status) ??
-									'artwork unavailable')
+								? row.rb_meta.artwork_available === null
+									? 'artwork could not be checked (tag reader not installed in this build)'
+									: (artworkStatusLabel(row.rb_meta.artwork_status) ??
+										'artwork unavailable')
 								: undefined}
 						>
 							<span class="art-slate" aria-hidden="true"></span>

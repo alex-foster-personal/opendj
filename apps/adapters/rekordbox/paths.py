@@ -231,8 +231,9 @@ def _resolve_local_audio_path(file_path: str | None) -> Path | None:
 
     ``None`` when the path is absent, unresolvable on this platform, or not
     materialised (dataless/iCloud stub) -- same residency gate as
-    :func:`local_audio_file`. Shared by :func:`_embedded_artwork_for_file_path`
-    and :func:`local_artwork` so both agree on what "the file exists" means.
+    :func:`local_audio_file`. Shared by :func:`local_artwork` and
+    :func:`local_artwork_available` so both agree on what "the file exists"
+    means, and both check it BEFORE asking whether a reader exists.
     """
     if not file_path:
         return None
@@ -240,24 +241,6 @@ def _resolve_local_audio_path(file_path: str | None) -> Path | None:
     if mapped.resolved is None or not fs_residency.is_materialised(mapped.resolved):
         return None
     return mapped.resolved
-
-
-def _embedded_artwork_for_file_path(file_path: str | None) -> tuple[bytes, str] | None:
-    """Real embedded cover art for a state-layer ``file_path``, or ``None``.
-
-    Shared by :func:`local_artwork` (404s when absent) and
-    :func:`local_artwork_available` (a bare bool for ``rb-meta``) so both
-    agree with each other and neither re-opens ``state.db`` -- callers that
-    already have ``file_path`` (e.g. ``_local_rb_meta``, which fetched it for
-    other fields) pass it straight through instead of paying a second
-    ``local_track_row`` query.
-    """
-    resolved = _resolve_local_audio_path(file_path)
-    if resolved is None:
-        return None
-    from apps.shared import audio_files as _audio_files
-
-    return _audio_files.read_embedded_artwork(resolved)
 
 
 def local_artwork(stable_id: str) -> tuple[bytes, str]:
@@ -306,13 +289,28 @@ def local_artwork(stable_id: str) -> tuple[bytes, str]:
     return embedded
 
 
-def local_artwork_available(file_path: str | None) -> bool:
-    """True iff the local ``file_path`` is materialised AND carries a real
-    embedded cover art frame -- the local-track counterpart of
-    ``artwork_available`` for a rekordbox-mapped row (see ``rb_assets.py``'s
-    ``_local_rb_meta``, which already holds ``file_path`` for other fields).
+def local_artwork_available(file_path: str | None) -> bool | None:
+    """Tri-state local-track counterpart of ``artwork_available`` for a
+    rekordbox-mapped row (see ``rb_assets.py``'s ``_local_rb_meta``, which
+    already holds ``file_path`` for other fields).
+
+    Mirrors :func:`local_artwork`'s own split instead of collapsing it:
+    residency is checked FIRST, so an unresolvable/missing/streaming
+    ``file_path`` is a real ``False`` -- no file to read regardless of
+    whether a reader exists. Only once a file is confirmed present does a
+    missing ``mutagen`` reader become ``None`` ("could not check") rather
+    than a guessed ``False``. Collapsing that ``None`` into ``False`` is
+    exactly the guessed verdict :func:`local_artwork` refuses to give for
+    its own 503 -- this sibling used to make it anyway (#795).
     """
-    return _embedded_artwork_for_file_path(file_path) is not None
+    resolved = _resolve_local_audio_path(file_path)
+    if resolved is None:
+        return False
+    if not HAS_MUTAGEN:
+        return None
+    from apps.shared import audio_files as _audio_files
+
+    return _audio_files.read_embedded_artwork(resolved) is not None
 
 
 def local_track_row(stable_id: str) -> tuple[str | None, int | None]:
