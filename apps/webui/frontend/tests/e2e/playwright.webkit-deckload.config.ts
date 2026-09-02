@@ -13,16 +13,19 @@
  *   - the SPA is served by the ENGINE from `apps/webui/frontend/build`, not
  *     by vite. Dev serves packages untransformed; the artifact does not.
  *
- * TWO SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
+ * THREE SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
  * so the root chromium/vite config would pick it up, and that run still
  * happens. It is ALSO run here, because everything it asserts is exactly what
  * a tester meets in the installed app and nowhere else: the Cmd+, accelerator
  * that has to survive the production transform, and the build identity chip
  * whose whole reason to exist is stating the EPHEMERAL port the packaged
  * engine bound. Under vite the chip reads the dev origin, which is the one
- * address that was never in question. Neither suite needs a fixture the other
- * does not, so they share this engine and its throwaway library rather than
- * paying a second 180s boot.
+ * address that was never in question. deckload-smoke.spec.ts (#770) is the
+ * third: unlike the other two it also runs under a SECOND project, chromium,
+ * so the same acceptance is asserted on both browsers against the identical
+ * artifact and engine (see that file's own header for why). None of the
+ * three suites needs a fixture another does not, so they share this engine
+ * and its throwaway library rather than paying a second 180s boot.
  *
  * The library is a throwaway fixture built by the real folder ingest over
  * generated audio (see support/deckload_fixture.py). It is NOT the lane data
@@ -36,8 +39,11 @@
  * - ✔︎ The production build must already exist; a stale/absent build fails at
  *   config load with the command to run, never mid-test as a mystery.
  * - ✔︎ No retries and one worker: a flaky worklet is the defect under test.
- * - ✔︎ Both tier-1 artifact suites run here: the deck-load contract and the
- *   setup entry points.
+ * - ✔︎ Three tier-1 artifact suites run here: the deck-load contract, the
+ *   setup entry points, and the cross-browser deck-load smoke.
+ * - ✔︎ The chromium project is scoped to the smoke only, so it never doubles
+ *   the deck-load contract or setup-entry-points suites under a second
+ *   browser.
  *
  * Acceptance tests:
  *
@@ -46,6 +52,8 @@
  * - [if] a test fails [then ⛔️] Playwright retries it and hides the flake.
  * - [if] setup-entry-points.spec.ts is skipped by this config [then ⛔️] the
  *   accelerator and the chip are gated on webkit.
+ * - [if] the chromium project runs webkit-deckload.spec.ts or
+ *   setup-entry-points.spec.ts [then ⛔️] the smoke's testMatch scoping holds.
  */
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -137,7 +145,7 @@ export default defineConfig({
 	// Named individually, never a glob: this directory holds a dozen suites
 	// with their own servers and real-library fixtures, and a pattern that
 	// widened by accident would point them all at this one engine.
-	testMatch: ['webkit-deckload.spec.ts', 'setup-entry-points.spec.ts'],
+	testMatch: ['webkit-deckload.spec.ts', 'setup-entry-points.spec.ts', 'deckload-smoke.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
@@ -171,6 +179,17 @@ export default defineConfig({
 		{
 			name: 'webkit',
 			use: { ...devices['Desktop Safari'], viewport: { width: 1600, height: 1000 } }
+		},
+		// #770: the deck-load smoke gains a chromium project too, restricted to
+		// ONLY that file via its own testMatch -- otherwise this project would
+		// also pick up webkit-deckload.spec.ts and setup-entry-points.spec.ts,
+		// doubling the whole suite under a second browser nobody asked to gate
+		// them under. CI additionally passes --project so the scoping holds
+		// even if this testMatch drifts.
+		{
+			name: 'chromium',
+			testMatch: ['deckload-smoke.spec.ts'],
+			use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 1000 } }
 		}
 	]
 });

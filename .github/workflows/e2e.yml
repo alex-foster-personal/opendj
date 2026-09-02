@@ -265,7 +265,51 @@ jobs:
         run: |
           pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
-            --grep "setup entry points"
+            --project webkit --grep "setup entry points" \
+            --output test-results/setup-entry-points
+
+      # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
+      - name: Deck-load smoke (chromium + webkit, production build)
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        # Separate step, same engine-served artifact and fixture library as
+        # the step above (webServer boots fresh per `playwright test`
+        # invocation, so this pays one more ~1s engine boot -- everything
+        # else, the browser downloads, apt deps, pnpm build, the audio sink,
+        # was already paid for by the step above).
+        #
+        # deckload-smoke.spec.ts asserts ONLY the load-SETTLE signal
+        # (`stable_id` landing, held across polls) and never calls
+        # `_resumeContext` / waits on `audible` -- that is the play path, not
+        # the load path, and is where the #637/#680 flakiness quarantined
+        # above actually lives (audio-engine.svelte.ts's AudioContext
+        # running-state check). It is therefore NOT the same test as the
+        # quarantined ones above with a lighter assertion; it exercises a
+        # different, earlier code path that does not touch AudioContext at
+        # all. Measured rather than assumed: 6 consecutive local runs on this
+        # repo's WSL/ubuntu-family dev box, 24/24 sub-tests green, ~11s per
+        # run, before this was wired in here (issue #770 report has the
+        # detail). If it EVER flakes in CI, quarantine it the same way as the
+        # tests above and say so in the PR/issue rather than muting silently.
+        #
+        # --project twice, explicitly, rather than relying on the chromium
+        # project's own testMatch restriction: this is the parity half of
+        # #770 ("both chromium and webkit"), and an explicit list survives
+        # config drift the way an implicit default would not.
+        #
+        # --output, here and on every playwright invocation below: all of
+        # these configs default to the same test-results/ dir, and Playwright
+        # clears its outputDir at the start of every run. Without a distinct
+        # dir per step, a later GREEN step deletes an earlier FAILED step's
+        # trace/screenshot before "Upload failure artifacts" (which only runs
+        # once, at the end of the job) can read them -- so a cross-browser
+        # failure here would ship with no diagnosable artifact (flagged on
+        # review, PR #860).
+        run: |
+          pnpm exec playwright test \
+            --config tests/e2e/playwright.webkit-deckload.config.ts \
+            --project webkit --project chromium --grep "deck-load smoke" \
+            --output test-results/deckload-smoke
 
       # -- TIER 1b: hermetic chromium suites ----------------------------------
       # These run as steps in THIS job rather than a job of their own on
@@ -282,7 +326,7 @@ jobs:
         if: ${{ !cancelled() }}
         # Every /api/v1/** call is fulfilled in-page, so this suite needs no
         # backend and no library and can run literally anywhere.
-        run: pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts
+        run: pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
 
       - name: Hermetic gate - stretch quality smoke
         working-directory: apps/webui/frontend
@@ -294,7 +338,7 @@ jobs:
         # No webServer, no port, no data dir; it synthesizes its own audio.
         # STRETCH_QUALITY_PLAN is deliberately unset so the smoke arm runs and
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
-        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts
+        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
       - name: Upload failure artifacts
         if: failure()
