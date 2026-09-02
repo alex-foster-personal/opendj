@@ -78,6 +78,7 @@ All functions raise :class:`OneLibraryWriteError` on failure.
 from __future__ import annotations
 
 import dataclasses
+import os
 import shutil
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -182,6 +183,50 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+# Mirrors tests/fixtures/_resolver.py's external-host default and env var
+# override rather than importing it: apps/ may not import tests/
+# (.importlinter's production-code-never-imports-tests contract is a hard
+# zero-tolerance gate, and its one existing exception is scoped to
+# differ.py only).
+_DEFAULT_EXTERNAL_FIXTURE_HOST = Path("/Volumes/LaCie/music-dj-tools-fixtures")
+_TESTS_FIXTURES_DIR = Path(__file__).resolve().parents[4] / "tests" / "fixtures"
+
+
+def _is_under_fixture_root(path: Path) -> bool:
+    """True if ``path`` falls under a canonical fixture root.
+
+    Covers three cases, matching ``fixture_path()``'s three ways to hand
+    back a directory (PR #718 review):
+
+    1. The in-repo ``tests/fixtures/`` tree.
+    2. The resolved external fixture host (LaCie or ``MUX_FIXTURE_HOST``):
+       a fixture resolved through the external host no longer has "tests"
+       and "fixtures" path components, so a plain substring check alone
+       misses it.
+    3. An ad-hoc contributor symlink under ``tests/fixtures/``: its target
+       can be any directory, so the guard also treats whatever a
+       ``tests/fixtures/*`` symlink resolves to (or any path beneath it)
+       as a fixture root. This only reads directory entries and symlink
+       targets on disk -- no Python import of ``tests/`` -- so it stays
+       inside the .importlinter boundary above.
+    """
+    if any(part == "fixtures" for part in path.parts) and "tests" in path.parts:
+        return True
+    external_host = Path(
+        os.environ.get("MUX_FIXTURE_HOST", str(_DEFAULT_EXTERNAL_FIXTURE_HOST))
+    )
+    if path.is_relative_to(external_host.resolve()):
+        return True
+    if _TESTS_FIXTURES_DIR.is_dir():
+        for entry in _TESTS_FIXTURES_DIR.iterdir():
+            if not entry.is_symlink():
+                continue
+            target = entry.resolve()
+            if target.is_dir() and (path == target or path.is_relative_to(target)):
+                return True
+    return False
+
+
 def write_onelibrary(
     *,
     template_path: str | Path,
@@ -236,9 +281,9 @@ def write_onelibrary(
     if output.exists() and not overwrite:
         raise OneLibraryWriteError(f"Output path exists and overwrite=False: {output}")
 
-    if any(part == "fixtures" for part in output.parts) and "tests" in output.parts:
+    if _is_under_fixture_root(output):
         raise OneLibraryWriteError(
-            f"refusing output_path under tests/fixtures: {output}"
+            f"refusing output_path under a fixture root: {output}"
         )
 
     # --- Fixture-safety guards (defense-in-depth) --------------------
@@ -253,13 +298,14 @@ def write_onelibrary(
             "the template in-place and corrupt it "
             f"(got {template})"
         )
-    # ``tests/fixtures/`` is a sentinel marker: the committed fixture
-    # tree lives there and must never be opened read/write. Callers
-    # should copy the fixture into tmp_path and pass THAT path instead.
-    if any(part == "fixtures" for part in template.parts) and "tests" in template.parts:
+    # A canonical fixture root (in-repo tests/fixtures/ or the resolved
+    # external host) is a sentinel: the fixture tree lives there and must
+    # never be opened read/write. Callers should copy the fixture into
+    # tmp_path and pass THAT path instead.
+    if _is_under_fixture_root(template):
         raise OneLibraryWriteError(
             "refusing to operate on fixture path: template_path is "
-            f"under tests/fixtures/ ({template}). Copy the fixture to a "
+            f"under a fixture root ({template}). Copy the fixture to a "
             "scratch directory (e.g. tmp_path) first and pass that "
             "copy as template_path."
         )

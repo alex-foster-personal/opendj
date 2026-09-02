@@ -1,0 +1,13 @@
+{
+  "contract_version": 1,
+  "files": {
+    "PIONEER/DEVSETTING.DAT": "sha256:8a49d28504a003860c5d8e800aca3b57dd58d8dae2556bd1f33d5d03344cc9e4",
+    "PIONEER/djprofile.nxs": "sha256:e29fbdf8f127bc14568ca810be7deddcf83df503b4e925a1a39da8c0239bdf91",
+    "PIONEER/rekordbox/export.pdb": "sha256:99a5add7c17c24f26493f2ec7190d34fbf3df3fbd1b7bdfe6c60c5387d4b5d52",
+    "PIONEER/rekordbox/exportExt.pdb": "sha256:c17492580aed2a9f1b94b3ff45fcf2423af4de3776bda55cfd27e70724ef3d7a",
+    "PIONEER/rekordbox/exportLibrary.db": "sha256:c3ac287feba1b62c7d36e5f7eac67e0c31817fec3f0db1dae8a4acd88d7ecfc1",
+    "README.md": "sha256:eaa18928dff8989c559699a78dfa6a34c4ff2af769f32f38001b336bd4dc39f7",
+    "track-ids.json": "sha256:c0237455ef87de63b8bb74673500f001b563e8f03ba918b3ebd76fcb1ef59887"
+  },
+  "fixture": "rb-usb-export-onetera-20260805"
+}

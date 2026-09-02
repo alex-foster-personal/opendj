@@ -46,12 +46,6 @@ from tests.engine_core.conftest import build_identity
 
 API = "/api/v1/setup"
 
-FIXTURE_RB: Path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "rekordbox"
-    / "master.plain.db"
-)
 COMMITTED_OPENAPI: Path = (
     Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
 )
@@ -128,9 +122,16 @@ def unidentified_client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
     )
 
 
-def _with_plain_copy(data_dir: Path) -> Path:
+def _with_plain_copy(data_dir: Path, source: Path) -> Path:
+    """Copy the resolved rekordbox fixture DB into ``data_dir``.
+
+    ``source`` is always the ``rb_plain_db_path`` fixture (root
+    ``conftest.py``), which resolves through ``tests.fixtures._resolver``,
+    fails closed on a missing fixture host, and checksum-verifies -- rather
+    than a hard-coded in-repo path (PR #718 review).
+    """
     destination = data_dir / detect.PLAIN_COPY_NAME
-    shutil.copy2(FIXTURE_RB, destination)
+    shutil.copy2(source, destination)
     return destination
 
 
@@ -250,9 +251,9 @@ def test_dismiss_reports_dev_mode_too(dev_client: TestClient) -> None:
 
 # ----- detect -------------------------------------------------------------
 def test_detect_reports_the_real_path_it_would_import(
-    client: TestClient, data_dir: Path
+    client: TestClient, data_dir: Path, rb_plain_db_path: Path
 ) -> None:
-    plain = _with_plain_copy(data_dir)
+    plain = _with_plain_copy(data_dir, rb_plain_db_path)
     body = client.get(f"{API}/detect/rekordbox").json()
     assert body["import_source"] == str(plain)
     assert body["import_source_encrypted"] is False
@@ -278,9 +279,9 @@ def test_detect_always_explains_the_key_verdict(client: TestClient) -> None:
 
 # ----- import -------------------------------------------------------------
 def test_import_enqueues_the_registered_kind(
-    client: TestClient, data_dir: Path
+    client: TestClient, data_dir: Path, rb_plain_db_path: Path
 ) -> None:
-    _with_plain_copy(data_dir)
+    _with_plain_copy(data_dir, rb_plain_db_path)
     response = client.post(f"{API}/import", json={})
     assert response.status_code == 202, response.text
     job = response.json()
@@ -290,9 +291,9 @@ def test_import_enqueues_the_registered_kind(
 
 
 def test_import_passes_its_options_into_the_job_payload(
-    client: TestClient, data_dir: Path
+    client: TestClient, data_dir: Path, rb_plain_db_path: Path
 ) -> None:
-    source = _with_plain_copy(data_dir)
+    source = _with_plain_copy(data_dir, rb_plain_db_path)
     job = client.post(
         f"{API}/import",
         json={"source": str(source), "limit": 3, "refresh_decrypt": True},
@@ -303,9 +304,9 @@ def test_import_passes_its_options_into_the_job_payload(
 
 
 def test_import_refuses_a_second_run_while_one_is_live(
-    client: TestClient, data_dir: Path
+    client: TestClient, data_dir: Path, rb_plain_db_path: Path
 ) -> None:
-    _with_plain_copy(data_dir)
+    _with_plain_copy(data_dir, rb_plain_db_path)
     first = client.post(f"{API}/import", json={})
     assert first.status_code == 202
 
@@ -330,12 +331,12 @@ def test_import_refuses_before_enqueueing_when_nothing_is_installed(
 
 def test_a_missing_share_dir_does_not_block_the_import(
     client: TestClient, data_dir: Path, tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, rb_plain_db_path: Path,
 ) -> None:
     """Tracks land either way; only the waveforms are missing. Reported, not
     refused -- refusing would deny an operator a usable library over a
     problem they can fix afterwards."""
-    _with_plain_copy(data_dir)
+    _with_plain_copy(data_dir, rb_plain_db_path)
     monkeypatch.setattr(
         "apps.shared.platform_paths.compute_share_root",
         lambda: tmp_path / "no-share-dir",
@@ -347,9 +348,9 @@ def test_a_missing_share_dir_does_not_block_the_import(
 
 
 def test_import_refuses_a_source_it_cannot_build_a_worker_from(
-    client: TestClient, data_dir: Path
+    client: TestClient, data_dir: Path, rb_plain_db_path: Path
 ) -> None:
-    _with_plain_copy(data_dir)
+    _with_plain_copy(data_dir, rb_plain_db_path)
     response = client.post(f"{API}/import", json={"source": "   "})
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "setup_payload_invalid"

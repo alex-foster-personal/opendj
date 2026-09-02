@@ -30,6 +30,7 @@ from apps.sync.usb.pioneer.writer_rbox import (
     read_playlist_roundtrip,
     write_onelibrary,
 )
+from tests.fixtures.conftest import resolve_required_fixture
 
 # -----------------------------------------------------------------------
 # Skip marker: applied to every test in this module when rbox is missing.
@@ -49,17 +50,23 @@ pytestmark = [
 
 # -----------------------------------------------------------------------
 # Fixture-path helper
+#
+# Routes through resolve_required_fixture() (rather than a hard-coded repo
+# path) so this CAT-06 acceptance module fails closed on a missing fixture
+# host instead of silently skipping at runtime, once the in-repo directory
+# leaves and only ``rb-usb-export.extern`` remains (PR #718). Deferred out
+# of a module-level constant into this helper (called only from the
+# fixture-dependent fixture/test bodies below) so an
+# ``MDT_ALLOW_MISSING_FIXTURES=1`` skip -- or a missing host with no
+# opt-out, which fails closed via ``resolve_required_fixture`` -- drops
+# only the tests that actually need USB data: test_missing_template_raises
+# and test_track_update_to_overlay_dropping_none_fields need no fixture
+# and must stay collectible either way (PR #718 review).
 # -----------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_ONELIBRARY = (
-    REPO_ROOT
-    / "tests"
-    / "fixtures"
-    / "rb-usb-export"
-    / "PIONEER"
-    / "rekordbox"
-    / "exportLibrary.db"
-)
+def _fixture_onelibrary() -> Path:
+    return (
+        resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
+    )
 
 
 @pytest.fixture(scope="function")
@@ -77,11 +84,9 @@ def fixture_onelibrary(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """
     import shutil as _shutil
 
-    if not FIXTURE_ONELIBRARY.is_file():
-        pytest.skip(f"OneLibrary fixture missing: {FIXTURE_ONELIBRARY}")
     scratch_dir = tmp_path_factory.mktemp("rb-onelibrary-template")
     dest = scratch_dir / "exportLibrary.db"
-    _shutil.copyfile(FIXTURE_ONELIBRARY, dest)
+    _shutil.copyfile(_fixture_onelibrary(), dest)
     return dest
 
 
@@ -262,15 +267,46 @@ def test_overwrite_false_raises(
 
 def test_fixture_output_path_is_refused(fixture_onelibrary: Path) -> None:
     """Neither side of a low-level writer call may target fixtures."""
-    fixture_output = FIXTURE_ONELIBRARY.parent / "new-exportLibrary.db"
+    fixture_output = _fixture_onelibrary().parent / "new-exportLibrary.db"
 
-    with pytest.raises(OneLibraryWriteError, match="output_path.*tests/fixtures"):
+    with pytest.raises(OneLibraryWriteError, match=r"output_path.*fixture root"):
         write_onelibrary(
             template_path=fixture_onelibrary,
             output_path=fixture_output,
         )
 
     assert not fixture_output.exists()
+
+
+def test_symlinked_fixture_output_path_is_refused(
+    fixture_onelibrary: Path, tmp_path: Path
+) -> None:
+    """A fixture reached through an ad-hoc ``tests/fixtures/`` symlink is
+    protected too, not just the in-repo path and the external host.
+
+    PR #718 review: ``fixture_path()`` supports a contributor pointing
+    ``tests/fixtures/<name>`` at an out-of-tree symlink (e.g. a personal
+    canonical copy), and its target can be anywhere -- the writer's
+    fixture-safety guard must recognize that target as a protected root
+    too, or a write derived from it silently lands beside the
+    contributor's real data.
+    """
+    canonical_copy = tmp_path / "contributor-canonical-copy"
+    canonical_copy.mkdir()
+    link = Path("tests/fixtures") / "zz-scratch-writer-guard-test"
+    link.symlink_to(canonical_copy)
+    try:
+        fixture_output = canonical_copy / "new-exportLibrary.db"
+
+        with pytest.raises(OneLibraryWriteError, match=r"output_path.*fixture root"):
+            write_onelibrary(
+                template_path=fixture_onelibrary,
+                output_path=fixture_output,
+            )
+
+        assert not fixture_output.exists()
+    finally:
+        link.unlink(missing_ok=True)
 
 
 def test_missing_template_raises(

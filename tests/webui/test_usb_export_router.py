@@ -18,21 +18,30 @@ from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer import writer_rbox
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import usb_export
+from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
 pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.rekordbox_writeback]
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_DB = (
-    REPO_ROOT
-    / "tests"
-    / "fixtures"
-    / "rb-usb-export"
-    / "PIONEER"
-    / "rekordbox"
-    / "exportLibrary.db"
-)
+
+def _fixture_db() -> Path:
+    """Resolve ``tests/fixtures/rb-usb-export/PIONEER/rekordbox/exportLibrary.db`` lazily.
+
+    Routes through resolve_required_fixture() (rather than a hard-coded
+    repo path) so this CAT-06 acceptance module fails closed on a missing
+    fixture host instead of silently breaking, once the in-repo directory
+    leaves and only ``rb-usb-export.extern`` remains (PR #718). Deferred
+    out of a module-level constant into this helper (called only from the
+    fixture-dependent test bodies below) so an
+    ``MDT_ALLOW_MISSING_FIXTURES=1`` skip -- or a missing host with no
+    opt-out, which fails closed via ``resolve_required_fixture`` -- drops
+    only the tests that actually need USB data, not the whole module
+    (PR #718 review).
+    """
+    return (
+        resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
+    )
 
 
 def _promote_exclusively_on_test_filesystem(
@@ -109,7 +118,7 @@ def test_http_plan_apply_readback_matches_core_schema(
     plan_response = client.post(
         "/api/v1/usb-export/plan",
         json={
-            "template_path": str(FIXTURE_DB),
+            "template_path": str(_fixture_db()),
             "target_root": str(target),
             "playlists": [{"name": "HTTP 205", "track_ids": [1, 2]}],
             "track_updates": [{"id": 1, "title": "HTTP title", "rating": 4}],
@@ -143,7 +152,7 @@ def test_http_errors_are_structured_and_fail_closed(
     response = client.post(
         "/api/v1/usb-export/plan",
         json={
-            "template_path": str(FIXTURE_DB),
+            "template_path": str(_fixture_db()),
             "target_root": str(target),
             "playlists": [],
             "track_updates": [],

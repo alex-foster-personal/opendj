@@ -22,13 +22,6 @@ import pytest
 from apps.adapters.rekordbox.config import MASTER_PLAIN_DB
 from apps.engine_core.setup import detect
 
-FIXTURE_RB: Path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "rekordbox"
-    / "master.plain.db"
-)
-
 
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
@@ -38,9 +31,16 @@ def data_dir(tmp_path: Path) -> Path:
     return target
 
 
-def _with_plain_copy(data_dir: Path) -> Path:
+def _with_plain_copy(data_dir: Path, source: Path) -> Path:
+    """Copy the resolved rekordbox fixture DB into ``data_dir``.
+
+    ``source`` is always the ``rb_plain_db_path`` fixture (root
+    ``conftest.py``), which resolves through ``tests.fixtures._resolver``,
+    fails closed on a missing fixture host, and checksum-verifies -- rather
+    than a hard-coded in-repo path (PR #718 review).
+    """
     destination = data_dir / detect.PLAIN_COPY_NAME
-    shutil.copy2(FIXTURE_RB, destination)
+    shutil.copy2(source, destination)
     return destination
 
 
@@ -54,8 +54,10 @@ def test_the_plain_copy_name_is_the_same_one_everywhere() -> None:
 
 
 # ----- plaintext detection ------------------------------------------------
-def test_a_real_sqlite_file_reads_as_plaintext(data_dir: Path) -> None:
-    assert detect.is_plain_sqlite(_with_plain_copy(data_dir)) is True
+def test_a_real_sqlite_file_reads_as_plaintext(
+    data_dir: Path, rb_plain_db_path: Path
+) -> None:
+    assert detect.is_plain_sqlite(_with_plain_copy(data_dir, rb_plain_db_path)) is True
 
 
 def test_a_file_without_the_magic_is_not_plaintext(data_dir: Path) -> None:
@@ -79,18 +81,20 @@ def test_probe_reports_a_missing_path_instead_of_raising(
     assert probe.path.endswith("absent.db")
 
 
-def test_probe_reports_size_and_mtime_for_a_real_file(data_dir: Path) -> None:
-    probe = detect.probe(_with_plain_copy(data_dir))
+def test_probe_reports_size_and_mtime_for_a_real_file(
+    data_dir: Path, rb_plain_db_path: Path
+) -> None:
+    probe = detect.probe(_with_plain_copy(data_dir, rb_plain_db_path))
     assert probe.exists is True
-    assert probe.size_bytes == FIXTURE_RB.stat().st_size
+    assert probe.size_bytes == rb_plain_db_path.stat().st_size
     assert probe.modified_at is not None
 
 
 # ----- source selection ---------------------------------------------------
 def test_an_existing_plain_copy_is_preferred_over_the_live_db(
-    data_dir: Path,
+    data_dir: Path, rb_plain_db_path: Path,
 ) -> None:
-    plain = _with_plain_copy(data_dir)
+    plain = _with_plain_copy(data_dir, rb_plain_db_path)
     found = detect.detect_rekordbox(data_dir)
     assert found.import_source == str(plain)
     assert found.import_source_encrypted is False
@@ -112,10 +116,11 @@ def test_no_rekordbox_anywhere_is_its_own_blocker(
 
 
 def test_a_missing_share_dir_is_reported_separately(
-    data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    rb_plain_db_path: Path,
 ) -> None:
     """No share dir means no waveforms. It is not the same as no library."""
-    _with_plain_copy(data_dir)
+    _with_plain_copy(data_dir, rb_plain_db_path)
     monkeypatch.setattr(
         "apps.shared.platform_paths.compute_share_root",
         lambda: tmp_path / "share-that-does-not-exist",
@@ -141,10 +146,10 @@ def test_an_encrypted_source_without_a_key_is_a_key_blocker(
 
 # ----- no side effects ----------------------------------------------------
 def test_detection_does_not_touch_the_files_it_reports(
-    data_dir: Path,
+    data_dir: Path, rb_plain_db_path: Path,
 ) -> None:
     """The whole promise of the detect step, asserted rather than assumed."""
-    plain = _with_plain_copy(data_dir)
+    plain = _with_plain_copy(data_dir, rb_plain_db_path)
     before = plain.stat()
     contents_before = plain.read_bytes()
 

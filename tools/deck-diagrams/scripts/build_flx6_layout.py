@@ -8,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parents[1]
 DEV = ROOT / "devices" / "ddj-flx6"
 TXT = DEV / "source" / "DDJ-FLX6_MIDI_Message_List_E1.txt"
 MIDI_OUT = DEV / "midi.json"
@@ -325,7 +326,9 @@ def _build_midi() -> dict:
 
     return {
         "source": "docs/controller/reference/DDJ-FLX6_MIDI_Message_List_E1.pdf",
-        "archived": str(DEV / "source" / "DDJ-FLX6_MIDI_Message_List_E1.pdf"),
+        "archived": (DEV / "source" / "DDJ-FLX6_MIDI_Message_List_E1.pdf")
+        .relative_to(REPO_ROOT)
+        .as_posix(),
         "device": "DDJ-FLX6",
         "vendor": "AlphaTheta / Pioneer DJ",
         "channel_conventions": {

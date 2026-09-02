@@ -36,6 +36,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
+from tests.fixtures.conftest import resolve_required_fixture
 
 pytestmark = [pytest.mark.requires_mutagen, pytest.mark.requirement("CAT-05")]
 
@@ -45,15 +46,6 @@ UNKNOWN_SID = "0" * 40
 DURATION_MS = 240_000
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
-ARTWORK_JPEG = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "rb-usb-export"
-    / "PIONEER"
-    / "Artwork"
-    / "00009"
-    / "a169.jpg"
-)
 
 
 def _insert_local_track(path: Path, stable_id: str, file_path: str) -> None:
@@ -72,7 +64,16 @@ def _insert_local_track(path: Path, stable_id: str, file_path: str) -> None:
 
 @pytest.fixture(scope="module")
 def jpeg_bytes() -> bytes:
-    data = ARTWORK_JPEG.read_bytes()
+    """Real JPEG from the rekordbox USB export fixtures, not synthesised.
+
+    Routes through resolve_required_fixture() (rather than a hard-coded repo
+    path) so this CAT-05 acceptance test keeps finding the fixture, and keeps
+    refusing to silently skip, once the in-repo directory leaves and only
+    ``rb-usb-export.extern`` remains (PR #718).
+    """
+    root = resolve_required_fixture("rb-usb-export")
+    artwork_jpeg = root / "PIONEER" / "Artwork" / "00009" / "a169.jpg"
+    data = artwork_jpeg.read_bytes()
     assert data[:2] == b"\xff\xd8"
     return data
 

@@ -18,6 +18,7 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
+from typing import NoReturn
 
 # The interpreter contract is checked before anything else here. `uv run`
 # falls back to a PATH command when that command is missing from the project
@@ -54,22 +55,115 @@ pytest_plugins = ["scripts.pytest_reqs_plugin"]
 REPO_ROOT: Path = Path(__file__).resolve().parent
 FIXTURE_DIR: Path = REPO_ROOT / "tests" / "fixtures"
 RB_FIXTURE: Path = FIXTURE_DIR / "rekordbox" / "master.plain.db"
+RB_FIXTURE_MANIFEST: Path = FIXTURE_DIR / "rekordbox.manifest.json"
+
+
+def _fail_closed_missing_fixture(detail: str) -> NoReturn:
+    """Fail unless ``MDT_ALLOW_MISSING_FIXTURES=1`` explicitly opts out.
+
+    AGENTS.md: "Never silently skip acceptance because data ... is
+    missing." Once ``tests/fixtures/rekordbox/`` leaves the repo (the
+    history rewrite ``rekordbox.extern`` is staged for), a missing fixture
+    host becomes the NORMAL state for CI and fresh public clones -- every
+    ingest/reconciliation/removal/dedup/writeback-safety test built on
+    ``rb_plain_db_path`` would silently skip and the run would still read
+    green. Default to failing loud; a developer machine that knowingly
+    lacks the fixture host opts out explicitly rather than by a hidden
+    default.
+    """
+    if os.environ.get("MDT_ALLOW_MISSING_FIXTURES") == "1":
+        pytest.skip(f"{detail} (MDT_ALLOW_MISSING_FIXTURES=1 set)")
+    else:
+        pytest.fail(
+            f"{detail} Set MDT_ALLOW_MISSING_FIXTURES=1 to explicitly skip on "
+            "a machine that knowingly lacks the fixture host; unset, this "
+            "fails closed rather than silently dropping ingest/"
+            "reconciliation/removal/dedup/writeback-safety coverage."
+        )
+    raise AssertionError("unreachable: pytest.skip/pytest.fail always raise")
+
+
+def _verify_rb_fixture_checksum(candidate: Path) -> None:
+    """Verify the resolved rekordbox fixture DB against its committed manifest.
+
+    ``fixture_path()`` only confirms the resolved target is a directory:
+    once ``rekordbox.extern`` can point anywhere (LaCie, ``MUX_FIXTURE_HOST``,
+    a regenerated copy), that proves nothing about the file's CONTENT. A
+    stale or partially regenerated ``master.plain.db`` would otherwise be
+    accepted silently and change test results (AGENTS.md: "Verify canonical
+    fixtures by version, manifest, and checksum before use"). Always fails
+    hard on mismatch -- this is a data-integrity error, not a "missing
+    fixture" case, so ``MDT_ALLOW_MISSING_FIXTURES`` does not apply.
+    """
+    import json
+
+    from apps.shared.hashing import sha256_file
+
+    manifest = json.loads(RB_FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    if manifest.get("contract_version") != 1 or manifest.get("fixture") != "rekordbox":
+        pytest.fail(
+            f"Unsupported rekordbox fixture manifest at {RB_FIXTURE_MANIFEST}: "
+            f"expected contract_version=1, fixture='rekordbox', got "
+            f"contract_version={manifest.get('contract_version')!r}, "
+            f"fixture={manifest.get('fixture')!r}. A manifest from an "
+            "unsupported contract revision must not be accepted as canonical "
+            "just because it retains the same key and digest."
+        )
+    expected = manifest["files"]["master.plain.db"]
+    actual = sha256_file(candidate)
+    if actual != expected:
+        pytest.fail(
+            f"Rekordbox fixture checksum mismatch at {candidate}: expected "
+            f"{expected}, got {actual}. The resolved file does not match "
+            f"{RB_FIXTURE_MANIFEST} -- regenerate the fixture "
+            "(`python -m scripts.make_rb_fixture --force`) or fix "
+            "MUX_FIXTURE_HOST/rekordbox.extern to point at the canonical copy."
+        )
 
 
 @pytest.fixture(scope="session")
 def rb_plain_db_path() -> Path:
-    """Absolute path to the committed rekordbox fixture.
+    """Absolute path to the rekordbox fixture DB, wherever it now lives.
 
     Session-scoped + read-only: callers MUST NOT open this path in
     read-write mode. Use ``tmp_rb_db`` or ``rb_plain_conn`` for any test
     that needs to mutate.
+
+    Resolution goes through ``tests.fixtures._resolver`` rather than a
+    hard-coded path, because this fixture is leaving the repository: it
+    carries real track titles, real Spotify IDs and real filesystem paths
+    from the maintainer's library (docs/oss-going-public-checklist.md, blocker 2).
+    The resolver prefers the committed directory when it is present and
+    falls back to the ``rekordbox.extern`` marker afterwards, so this keeps
+    working on both sides of the history rewrite with no flag day.
+
+    Unavailability fails closed (see ``_fail_closed_missing_fixture``) and
+    content is checksum-verified against ``rekordbox.manifest.json`` (see
+    ``_verify_rb_fixture_checksum``) before the path is handed to callers.
     """
-    if not RB_FIXTURE.exists():
-        pytest.skip(
-            f"Rekordbox fixture missing at {RB_FIXTURE}. "
-            "Run `python -m scripts.make_rb_fixture --force` first."
+    from tests.fixtures._resolver import FixtureNotAvailable, fixture_path
+
+    try:
+        candidate = fixture_path("rekordbox") / "master.plain.db"
+    except FixtureNotAvailable as exc:
+        _fail_closed_missing_fixture(f"Rekordbox fixture host not available: {exc}")
+    except FileNotFoundError:
+        _fail_closed_missing_fixture(
+            f"Rekordbox fixture missing at {RB_FIXTURE} and no "
+            "'rekordbox.extern' marker resolved. Mount the fixture host "
+            "(MUX_FIXTURE_HOST), or regenerate with `python -m "
+            "scripts.make_rb_fixture --force` and move the result onto the "
+            "fixture host yourself -- do not leave a regenerated copy "
+            "sitting in tests/fixtures/rekordbox/ once that directory is no "
+            "longer tracked (`.gitignore` guards against re-adding it, but "
+            "the file would still carry real track titles, Spotify IDs and "
+            "filesystem paths -- see docs/oss-going-public-checklist.md "
+            "blocker 2)."
         )
-    return RB_FIXTURE
+    if not candidate.is_file():
+        _fail_closed_missing_fixture(f"Rekordbox fixture DB missing inside {candidate.parent}")
+    _verify_rb_fixture_checksum(candidate)
+    return candidate
 
 
 @pytest.fixture

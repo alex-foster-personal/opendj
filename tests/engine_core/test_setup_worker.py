@@ -46,9 +46,6 @@ from apps.engine_core.setup.jobs import (
 from tests.engine_core.conftest import build_identity
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-FIXTURE_RB: Path = (
-    REPO_ROOT / "tests" / "fixtures" / "rekordbox" / "master.plain.db"
-)
 
 #: A cold worker imports pyrekordbox and SQLAlchemy before it does any work,
 #: so the budget is generous. It is a deadline, not an expected duration.
@@ -57,10 +54,14 @@ POLL_S: float = 0.2
 
 
 @pytest.fixture
-def data_dir(tmp_path: Path) -> Path:
+def data_dir(tmp_path: Path, rb_plain_db_path: Path) -> Path:
+    """``rb_plain_db_path`` (root conftest) resolves, fails closed on a
+    missing fixture host, and checksum-verifies -- routing through it here
+    (rather than a hard-coded repo path) keeps this test working once
+    ``tests/fixtures/rekordbox/`` leaves the repo (PR #718)."""
     target = tmp_path / "data"
     (target / "state").mkdir(parents=True)
-    shutil.copy2(FIXTURE_RB, target / detect.PLAIN_COPY_NAME)
+    shutil.copy2(rb_plain_db_path, target / detect.PLAIN_COPY_NAME)
     return target
 
 

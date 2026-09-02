@@ -796,6 +796,14 @@ _VERDICT_ICON = {
     "error": "⚠️ error",
 }
 
+# The only rb-usb-export* fixture that is genuinely optional (LaCie-hosted,
+# huge, dev-machine-only). Every other discovered name is REQUIRED CAT-06
+# acceptance coverage and must fail closed (an "error" row, not "skipped")
+# rather than let an unmounted host silently pass the CLI's exit code.
+# Shared with tests/sync/usb/test_diff_matrix.py so the pytest matrix and
+# the `diff-matrix` CLI can't drift on which fixtures are optional.
+OPTIONAL_FIXTURE_NAMES = frozenset({"rb-usb-export-big"})
+
 
 def _overlay_spec_for_fixture(pioneer: Path, workdir: Path) -> list[tuple[str, list[int]]]:
     """Pick up to 3 content IDs from the fixture for the overlay test.
@@ -840,6 +848,53 @@ def _overlay_spec_for_fixture(pioneer: Path, workdir: Path) -> list[tuple[str, l
     return [("diff-matrix-test-playlist", ids)]
 
 
+def _resolve_matrix_fixture(name: str, *, optional: bool) -> tuple[Path | None, MatrixRow | None]:
+    """Resolve one matrix fixture, or the "skipped"/"error" row to record instead.
+
+    Returns ``(root, None)`` on success, or ``(None, row)`` when the
+    caller should append ``row`` and move on to the next fixture.
+
+    Only ``optional`` (:data:`OPTIONAL_FIXTURE_NAMES`) fixtures may report
+    "skipped" for an unmounted host. Every other name is REQUIRED CAT-06
+    acceptance coverage, so an unavailable host or a fixture that fails its
+    content-contract check becomes an "error" row instead (which
+    ``_cmd_diff_matrix`` maps to a nonzero exit code) -- fail closed, per
+    AGENTS.md, rather than let the CLI succeed without ever having
+    exercised the fixture. Mirrors
+    ``tests/sync/usb/test_diff_matrix.py``'s ``_resolve_or_skip()`` so the
+    pytest matrix and this CLI-facing implementation cannot silently
+    diverge on which fixtures a missing host is allowed to hide.
+    """
+    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
+        FixtureContractMismatch,
+        FixtureNotAvailable,
+        fixture_path,
+        verify_fixture_contract,
+    )
+
+    def _row(status: str, reason: str) -> MatrixRow:
+        return MatrixRow(
+            fixture=name, mode="-", status=status, verdict=status,
+            tracks=None, playlists=None, delta_content=None, delta_playlist=None,
+            reason=reason,
+        )
+
+    try:
+        root = fixture_path(name)
+    except FixtureNotAvailable as exc:
+        return None, _row("skipped" if optional else "error", str(exc))
+    except FileNotFoundError as exc:
+        return None, _row("error", str(exc))
+
+    if not optional:
+        try:
+            verify_fixture_contract(name, root)
+        except FixtureContractMismatch as exc:
+            return None, _row("error", str(exc))
+
+    return root, None
+
+
 def run_matrix(
     *,
     fixture_glob: str = "rb-usb-export*",
@@ -850,35 +905,20 @@ def run_matrix(
 
     ``work_root`` is used as a parent for per-fixture scratch dirs. If
     ``None``, a :func:`tempfile.mkdtemp` is used.
-    """
-    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
-        FixtureNotAvailable,
-        fixture_path,
-    )
 
+    See :func:`_resolve_matrix_fixture` for the fail-closed fixture
+    resolution rule applied to each discovered name.
+    """
     rows: list[MatrixRow] = []
     names = discover_fixtures(fixture_glob)
     work_root = work_root or Path(tempfile.mkdtemp(prefix="diff-matrix-"))
 
     for name in names:
-        try:
-            root = fixture_path(name)
-        except FixtureNotAvailable as exc:
-            rows.append(MatrixRow(
-                fixture=name, mode="—", status="skipped",
-                verdict="skipped", tracks=None, playlists=None,
-                delta_content=None, delta_playlist=None,
-                reason=str(exc),
-            ))
+        root, error_row = _resolve_matrix_fixture(name, optional=name in OPTIONAL_FIXTURE_NAMES)
+        if error_row is not None:
+            rows.append(error_row)
             continue
-        except FileNotFoundError as exc:
-            rows.append(MatrixRow(
-                fixture=name, mode="—", status="error",
-                verdict="error", tracks=None, playlists=None,
-                delta_content=None, delta_playlist=None,
-                reason=str(exc),
-            ))
-            continue
+        assert root is not None
 
         pioneer = root / "PIONEER"
         if not pioneer.is_dir():

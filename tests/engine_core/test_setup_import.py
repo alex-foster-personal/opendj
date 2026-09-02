@@ -25,13 +25,6 @@ import pytest
 
 from apps.engine_core.setup import detect, importer, record
 
-FIXTURE_RB: Path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "rekordbox"
-    / "master.plain.db"
-)
-
 
 @pytest.fixture
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -61,9 +54,16 @@ def _emit_into(sink: list[tuple[float, str]]):
     return emit
 
 
-def _plain_source(data_dir: Path) -> Path:
+def _plain_source(data_dir: Path, source: Path) -> Path:
+    """Copy the resolved rekordbox fixture DB into ``data_dir``.
+
+    ``source`` is always the ``rb_plain_db_path`` fixture (root
+    ``conftest.py``), which resolves through ``tests.fixtures._resolver``,
+    fails closed on a missing fixture host, and checksum-verifies -- rather
+    than a hard-coded in-repo path (PR #718 review).
+    """
     destination = data_dir / detect.PLAIN_COPY_NAME
-    shutil.copy2(FIXTURE_RB, destination)
+    shutil.copy2(source, destination)
     return destination
 
 
@@ -85,9 +85,9 @@ def _state_track_count(data_dir: Path) -> int:
 
 # ----- happy path ---------------------------------------------------------
 def test_the_fixture_import_populates_state_db(
-    data_dir: Path, emitted: list[tuple[float, str]]
+    data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
 ) -> None:
-    source = _plain_source(data_dir)
+    source = _plain_source(data_dir, rb_plain_db_path)
     outcome = importer.run_import(
         data_dir, emit=_emit_into(emitted), source=source
     )
@@ -99,11 +99,13 @@ def test_the_fixture_import_populates_state_db(
 
 
 def test_every_stage_reports_and_progress_never_goes_backwards(
-    data_dir: Path, emitted: list[tuple[float, str]]
+    data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
 ) -> None:
     """The bar is the only thing the operator watches. It must be monotonic."""
     importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=_plain_source(data_dir)
+        data_dir,
+        emit=_emit_into(emitted),
+        source=_plain_source(data_dir, rb_plain_db_path),
     )
     progresses = [progress for progress, _ in emitted]
     assert progresses == sorted(progresses)
@@ -114,11 +116,13 @@ def test_every_stage_reports_and_progress_never_goes_backwards(
 
 
 def test_the_outcome_is_written_to_setup_json(
-    data_dir: Path, emitted: list[tuple[float, str]]
+    data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
 ) -> None:
     """Survives a restart, and is readable over HTTP rather than from a tab."""
     outcome = importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=_plain_source(data_dir)
+        data_dir,
+        emit=_emit_into(emitted),
+        source=_plain_source(data_dir, rb_plain_db_path),
     )
     saved = record.read(data_dir)
     assert saved.last_import is not None
@@ -127,7 +131,7 @@ def test_the_outcome_is_written_to_setup_json(
 
 
 def test_analysis_counts_are_three_named_denominators(
-    data_dir: Path, emitted: list[tuple[float, str]]
+    data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
 ) -> None:
     """resolvable <= with_analysis_path <= rekordbox_linked, always.
 
@@ -135,7 +139,9 @@ def test_analysis_counts_are_three_named_denominators(
     failure the house rule about honest denominators exists to stop.
     """
     outcome = importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=_plain_source(data_dir)
+        data_dir,
+        emit=_emit_into(emitted),
+        source=_plain_source(data_dir, rb_plain_db_path),
     )
     assert outcome.analyses_linked <= outcome.analyses_expected
     assert outcome.analyses_expected <= outcome.rekordbox_tracks
@@ -143,13 +149,16 @@ def test_analysis_counts_are_three_named_denominators(
 
 
 def test_the_import_reads_a_copy_and_leaves_the_source_alone(
-    data_dir: Path, tmp_path: Path, emitted: list[tuple[float, str]]
+    data_dir: Path,
+    tmp_path: Path,
+    emitted: list[tuple[float, str]],
+    rb_plain_db_path: Path,
 ) -> None:
     """A source outside the data dir is snapshotted, never ingested in place."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     source = elsewhere / "master.db"
-    shutil.copy2(FIXTURE_RB, source)
+    shutil.copy2(rb_plain_db_path, source)
     before = source.read_bytes()
 
     outcome = importer.run_import(
@@ -276,6 +285,7 @@ def test_the_decrypt_stage_calls_the_shared_routine(
     data_dir: Path,
     emitted: list[tuple[float, str]],
     monkeypatch: pytest.MonkeyPatch,
+    rb_plain_db_path: Path,
 ) -> None:
     """Proves delegation, and that the stage reports the DECRYPTED state.
 
@@ -287,7 +297,7 @@ def test_the_decrypt_stage_calls_the_shared_routine(
     def _fake_ensure(**kwargs: object) -> tuple[Path, bool]:
         calls.append(kwargs)
         destination = Path(str(kwargs["plain"]))
-        shutil.copy2(FIXTURE_RB, destination)
+        shutil.copy2(rb_plain_db_path, destination)
         return destination, True
 
     monkeypatch.setattr(detect, "key_status", lambda: (True, "key present"))
@@ -317,12 +327,13 @@ def test_a_reused_plain_copy_says_so_rather_than_claiming_a_decrypt(
     data_dir: Path,
     emitted: list[tuple[float, str]],
     monkeypatch: pytest.MonkeyPatch,
+    rb_plain_db_path: Path,
 ) -> None:
     """The wizard shows the same two states the ingest-rb CLI prints."""
 
     def _fake_ensure(**kwargs: object) -> tuple[Path, bool]:
         destination = Path(str(kwargs["plain"]))
-        shutil.copy2(FIXTURE_RB, destination)
+        shutil.copy2(rb_plain_db_path, destination)
         return destination, False
 
     monkeypatch.setattr(detect, "key_status", lambda: (True, "key present"))
@@ -342,6 +353,7 @@ def test_refresh_decrypt_goes_back_to_the_encrypted_snapshot(
     data_dir: Path,
     emitted: list[tuple[float, str]],
     monkeypatch: pytest.MonkeyPatch,
+    rb_plain_db_path: Path,
 ) -> None:
     """Otherwise an existing plain copy wins detection and refresh does nothing.
 
@@ -349,13 +361,13 @@ def test_refresh_decrypt_goes_back_to_the_encrypted_snapshot(
     case the option exists for.
     """
     snapshot = _encrypted_source(data_dir)
-    _plain_source(data_dir)
+    _plain_source(data_dir, rb_plain_db_path)
     calls: list[dict[str, object]] = []
 
     def _fake_ensure(**kwargs: object) -> tuple[Path, bool]:
         calls.append(kwargs)
         destination = Path(str(kwargs["plain"]))
-        shutil.copy2(FIXTURE_RB, destination)
+        shutil.copy2(rb_plain_db_path, destination)
         return destination, True
 
     monkeypatch.setattr(detect, "key_status", lambda: (True, "key present"))
@@ -376,12 +388,12 @@ def test_refresh_decrypt_goes_back_to_the_encrypted_snapshot(
 
 # ----- limit --------------------------------------------------------------
 def test_limit_caps_the_ingest(
-    data_dir: Path, emitted: list[tuple[float, str]]
+    data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
 ) -> None:
     outcome = importer.run_import(
         data_dir,
         emit=_emit_into(emitted),
-        source=_plain_source(data_dir),
+        source=_plain_source(data_dir, rb_plain_db_path),
         limit=5,
     )
     assert 0 < outcome.tracks <= 5

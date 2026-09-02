@@ -33,19 +33,26 @@ from pathlib import Path
 import pytest
 
 from apps.shared import audio_files
+from tests.fixtures.conftest import resolve_required_fixture
 
 pytestmark = pytest.mark.requires_mutagen
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
-# Real 80x80 JPEG from the rekordbox USB export fixtures -- not synthesised.
-ARTWORK_JPEG = Path(
-    "tests/fixtures/rb-usb-export/PIONEER/Artwork/00009/a169.jpg"
-).resolve()
 
 
 @pytest.fixture(scope="module")
 def jpeg_bytes() -> bytes:
-    data = ARTWORK_JPEG.read_bytes()
+    """Real 80x80 JPEG from the rekordbox USB export fixtures, not synthesised.
+
+    Routes through ``resolve_required_fixture()`` (rather than a hard-coded
+    repo path evaluated relative to CWD) so this CAT-05 acceptance test
+    keeps finding the fixture, and keeps refusing to silently skip, once
+    the in-repo directory leaves and only ``rb-usb-export.extern`` remains
+    (PR #718).
+    """
+    root = resolve_required_fixture("rb-usb-export")
+    artwork_jpeg = root / "PIONEER" / "Artwork" / "00009" / "a169.jpg"
+    data = artwork_jpeg.read_bytes()
     assert data[:2] == b"\xff\xd8"  # real JPEG SOI marker, not a fake fixture
     return data
 

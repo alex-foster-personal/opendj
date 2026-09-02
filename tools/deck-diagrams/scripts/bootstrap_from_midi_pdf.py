@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parents[1]
 SCRIPTS = Path(__file__).resolve().parent
 
 
@@ -114,8 +115,8 @@ def bootstrap(device_id: str, model: str, pdf: Path, vendor: str) -> Path:
         )
 
     midi = {
-        "source": str(pdf),
-        "archived": str(dest_pdf.relative_to(ROOT.parent.parent)) if False else str(dest_pdf),
+        "source": pdf.resolve().relative_to(REPO_ROOT).as_posix(),
+        "archived": dest_pdf.relative_to(REPO_ROOT).as_posix(),
         "device": model,
         "vendor": vendor,
         "bootstrap": True,

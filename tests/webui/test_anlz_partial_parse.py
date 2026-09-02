@@ -37,17 +37,26 @@ import pytest
 from fastapi import HTTPException
 
 from apps.webui.server import rb_vendor
+from tests.fixtures.conftest import resolve_required_fixture
 
-FIXTURE_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures/rb-usb-export/PIONEER/USBANLZ/P063/00016827"
-)
+
+def _fixture_dir() -> Path:
+    """Resolve the rb-usb-export analysis dir through the resolver.
+
+    Routes through ``resolve_required_fixture()`` (rather than a hard-coded
+    repo path) so this GUARD-01 acceptance test keeps finding the fixture,
+    and keeps refusing to silently skip (fails closed unless
+    MDT_ALLOW_MISSING_FIXTURES=1), once the in-repo directory leaves and
+    only ``rb-usb-export.extern`` remains (PR #718).
+    """
+    root = resolve_required_fixture("rb-usb-export")
+    return root / "PIONEER" / "USBANLZ" / "P063" / "00016827"
 
 
 def _real_dir(tmp_path: Path) -> Path:
     """A copy of a real rekordbox analysis directory (.DAT, .EXT, .2EX)."""
     dst = tmp_path / "anlz"
-    shutil.copytree(FIXTURE_DIR, dst)
+    shutil.copytree(_fixture_dir(), dst)
     return dst
 
 

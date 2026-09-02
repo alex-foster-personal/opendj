@@ -22,21 +22,34 @@ import pytest
 from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer import writer_rbox
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
+from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
 pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.rekordbox_writeback]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_DB = (
-    REPO_ROOT
-    / "tests"
-    / "fixtures"
-    / "rb-usb-export"
-    / "PIONEER"
-    / "rekordbox"
-    / "exportLibrary.db"
-)
+
+
+def _fixture_db() -> Path:
+    """Resolve ``tests/fixtures/rb-usb-export/PIONEER/rekordbox/exportLibrary.db`` lazily.
+
+    Routes through resolve_required_fixture() (rather than a hard-coded
+    repo path) so this CAT-06 acceptance module fails closed on a missing
+    fixture host instead of silently breaking, once the in-repo directory
+    leaves and only ``rb-usb-export.extern`` remains (PR #718). Deferred
+    out of a module-level constant into this helper (called only from the
+    fixture-dependent test bodies below) so an
+    ``MDT_ALLOW_MISSING_FIXTURES=1`` skip -- or a missing host with no
+    opt-out, which fails closed via ``resolve_required_fixture`` -- drops
+    only the tests that actually need USB data, not the whole module
+    (PR #718 review). test_rbox_dependency_contract_is_pinned_for_ci,
+    the platform-refusal tests, and marker validation need no fixture and
+    must stay collectible either way.
+    """
+    return (
+        resolve_required_fixture("rb-usb-export") / "PIONEER" / "rekordbox" / "exportLibrary.db"
+    )
 
 
 def _identity(target: Path, *, uuid: str = "USB-205") -> workflow.TargetIdentity:
@@ -116,7 +129,7 @@ def test_plan_is_deterministic_and_serializable(
         lambda target: _identity(Path(target)),
     )
     kwargs = {
-        "template_path": FIXTURE_DB,
+        "template_path": _fixture_db(),
         "target_root": disposable_target,
         "playlists": [PlaylistSpec(name="Issue 205", track_ids=(1, 2, 3))],
         "track_updates": [TrackUpdate(id=1, title="Issue 205 title")],
@@ -201,7 +214,7 @@ def test_apply_refuses_identity_drift_before_creating_export(
         lambda target: _identity(Path(target)),
     )
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
         playlists=[PlaylistSpec(name="Issue 205", track_ids=(1,))],
     )
@@ -227,7 +240,7 @@ def test_apply_refuses_existing_payload_without_modifying_it(
         lambda target: _identity(Path(target)),
     )
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
         playlists=[PlaylistSpec(name="Issue 205", track_ids=(1,))],
     )
@@ -254,7 +267,7 @@ def test_apply_and_readback_real_onelibrary_round_trip(
         lambda target: _identity(Path(target)),
     )
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
         playlists=[PlaylistSpec(name="Issue 205", track_ids=(1, 2, 3))],
         track_updates=[
@@ -284,7 +297,7 @@ def test_apply_requires_exact_confirmation(
         lambda target: _identity(Path(target)),
     )
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
     )
 
@@ -304,7 +317,7 @@ def test_plan_rejects_tampered_serialized_payload(
         lambda target: _identity(Path(target)),
     )
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
     ).to_dict()
     plan["target_root"] = str(disposable_target / "other")
@@ -335,7 +348,7 @@ def test_cli_plan_apply_readback_uses_same_serializable_contract(
         [
             "plan",
             "--template",
-            str(FIXTURE_DB),
+            str(_fixture_db()),
             "--target",
             str(disposable_target),
             "--playlist",
@@ -392,7 +405,7 @@ def test_cli_reports_platform_gap_as_json(
         [
             "plan",
             "--template",
-            str(FIXTURE_DB),
+            str(_fixture_db()),
             "--target",
             str(target),
         ]
@@ -440,7 +453,7 @@ def test_identity_drift_after_promotion_refuses_rollback_deletion(
     original = _identity(disposable_target)
     monkeypatch.setattr(workflow, "inspect_macos_target", lambda target: original)
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
         playlists=[PlaylistSpec(name="Identity drift", track_ids=(1,))],
     )
@@ -471,7 +484,7 @@ def test_oserror_during_mounted_readback_rolls_back_exact_output(
     identity = _identity(disposable_target)
     monkeypatch.setattr(workflow, "inspect_macos_target", lambda target: identity)
     plan = workflow.plan_export(
-        template_path=FIXTURE_DB,
+        template_path=_fixture_db(),
         target_root=disposable_target,
         playlists=[PlaylistSpec(name="Readback error", track_ids=(1,))],
     )

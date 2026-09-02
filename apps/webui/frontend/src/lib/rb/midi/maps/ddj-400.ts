@@ -3,7 +3,8 @@
  *
  * SOURCE OF TRUTH for EVERY Note/CC number in this file: the official
  * Pioneer DJ "DDJ-400 List of MIDI messages" PDF (version 1.00, E1),
- * archived in-repo at docs/controller/reference/DDJ-400_MIDI_Message_List_E1.pdf
+ * from Pioneer's DDJ-400_MIDI_Message_List_E1.pdf (not redistributed here;
+ * see docs/controller/reference/README.md for how to obtain it)
  * - cited throughout as [PDF] with the PDF's own Fig. row ids (D1, M3, B1,
  * P1..) and printed page numbers (p.1 BROWSER+DECK, p.2 MIXER+EFFECT+PAD1-4,
  * p.3 PAD5-8).

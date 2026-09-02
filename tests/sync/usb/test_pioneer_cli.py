@@ -31,6 +31,7 @@ from apps.sync.usb.pioneer.writer_rbox import (
     RBOX_AVAILABLE,
     RBOX_IMPORT_ERROR,
 )
+from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
@@ -38,9 +39,25 @@ pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.requires_darwin, py
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "rb-usb-export"
-FIXTURE_PIONEER = FIXTURE_ROOT / "PIONEER"
-FIXTURE_ONELIBRARY = FIXTURE_PIONEER / "rekordbox" / "exportLibrary.db"
+
+
+def _fixture_pioneer() -> Path:
+    """Resolve ``tests/fixtures/rb-usb-export/PIONEER`` lazily.
+
+    Deferred out of a module-level constant into the fixture-dependent
+    test bodies below (rather than resolved once at import time) so an
+    ``MDT_ALLOW_MISSING_FIXTURES=1`` skip -- or a missing host with no
+    opt-out, which fails closed via ``resolve_required_fixture`` -- drops
+    only the tests that actually need USB data. TestSpecParsing, TestHelp,
+    and TestWriteDryRun need no fixture and must stay collectible either
+    way, since a module-level ``pytest.skip(..., allow_module_level=True)``
+    would otherwise skip the whole file as collateral (PR #718 review).
+    """
+    return resolve_required_fixture("rb-usb-export") / "PIONEER"
+
+
+def _fixture_onelibrary() -> Path:
+    return _fixture_pioneer() / "rekordbox" / "exportLibrary.db"
 
 
 # ---------------------------------------------------------------------------
@@ -58,11 +75,9 @@ def fixture_onelibrary_copy(tmp_path: Path) -> Path:
     """
     import shutil
 
-    if not FIXTURE_ONELIBRARY.is_file():
-        pytest.skip(f"OneLibrary fixture missing: {FIXTURE_ONELIBRARY}")
     dest = tmp_path / "template" / "exportLibrary.db"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(FIXTURE_ONELIBRARY, dest)
+    shutil.copyfile(_fixture_onelibrary(), dest)
     return dest
 
 
@@ -179,13 +194,9 @@ class TestHelp:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(
-    not FIXTURE_PIONEER.is_dir(),
-    reason=f"Fixture {FIXTURE_PIONEER} missing on this host.",
-)
 class TestRead:
     def test_read_prints_json(self, capsys: pytest.CaptureFixture[str]) -> None:
-        rc = main(["read", str(FIXTURE_PIONEER)])
+        rc = main(["read", str(_fixture_pioneer())])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
         # The 199-track real export is what the reader asserts elsewhere
@@ -194,7 +205,7 @@ class TestRead:
         assert "validation" not in payload
 
     def test_read_with_validate_ok(self, capsys: pytest.CaptureFixture[str]) -> None:
-        rc = main(["read", str(FIXTURE_PIONEER), "--validate"])
+        rc = main(["read", str(_fixture_pioneer()), "--validate"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["validation"]["ok"] is True

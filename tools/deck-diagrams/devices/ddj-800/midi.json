@@ -1,6 +1,6 @@
 {
-  "source": "/Users/dev/Music/music-dj-tools/docs/controller/reference/DDJ-800_MIDI_Message_List_E1.pdf",
-  "archived": "/Users/dev/Music/music-dj-tools/tools/deck-diagrams/devices/ddj-800/source/DDJ-800_MIDI_Message_List_E1.pdf",
+  "source": "docs/controller/reference/DDJ-800_MIDI_Message_List_E1.pdf",
+  "archived": "tools/deck-diagrams/devices/ddj-800/source/DDJ-800_MIDI_Message_List_E1.pdf",
   "device": "DDJ-800",
   "vendor": "Pioneer DJ",
   "bootstrap": true,

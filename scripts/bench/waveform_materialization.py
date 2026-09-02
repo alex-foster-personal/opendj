@@ -53,8 +53,34 @@ if str(REPO_ROOT) not in sys.path:
 
 from apps.webui.server import rb_vendor  # noqa: E402
 from scripts.bench.timing import Sample, interleaved_samples  # noqa: E402
+from tests.fixtures._resolver import (  # noqa: E402
+    FixtureNotAvailable,
+    fixture_path,
+    verify_fixture_contract,
+)
 
-DEFAULT_FIXTURE = REPO_ROOT / "tests/fixtures/rb-usb-export/PIONEER/USBANLZ/P000/00029138"
+
+def _default_fixture() -> Path | None:
+    """Resolve the default ANLZ fixture through the resolver, wherever it lives.
+
+    Returns ``None`` (rather than a stale hard-coded repo path) when the
+    fixture host isn't available, so ``--anlz-dir`` still works and a
+    no-argument invocation fails with a clear message instead of a
+    FileNotFoundError deep inside rb_vendor.
+
+    A resolved fixture's content is checked against
+    ``tests/fixtures/rb-usb-export.contract.json`` before use, so a stale
+    or partially copied ``MUX_FIXTURE_HOST`` tree crashes loudly here
+    (``FixtureContractMismatch`` propagates uncaught) rather than silently
+    producing a timing result that is not comparable to prior canonical-
+    fixture runs.
+    """
+    try:
+        root = fixture_path("rb-usb-export")
+    except (FixtureNotAvailable, FileNotFoundError):
+        return None
+    verify_fixture_contract("rb-usb-export", root)
+    return root / "PIONEER" / "USBANLZ" / "P000" / "00029138"
 
 
 def _bands(anlz_dir: Path) -> dict[str, Any]:
@@ -142,7 +168,7 @@ def _threaded_throughput(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--anlz-dir", type=Path, default=DEFAULT_FIXTURE)
+    parser.add_argument("--anlz-dir", type=Path, default=None)
     parser.add_argument("--points", type=int, default=38400)
     parser.add_argument("--iterations", type=int, default=31)
     parser.add_argument("--warmup", type=int, default=5)
@@ -151,6 +177,20 @@ def main() -> int:
     parser.add_argument("--thread-rounds", type=int, default=5)
     parser.add_argument("--rss-worker", choices=("python", "rust"))
     args = parser.parse_args()
+
+    # Resolve (and contract-verify) the canonical default only when the
+    # caller omitted --anlz-dir, so a stale/partial MUX_FIXTURE_HOST tree
+    # cannot break an invocation that passed its own directory, and an
+    # --rss-worker subprocess (always passed --anlz-dir explicitly by
+    # _isolated_peak_rss) never re-hashes the default fixture it doesn't
+    # need (PR #718 review).
+    if args.anlz_dir is None:
+        args.anlz_dir = _default_fixture()
+    if args.anlz_dir is None:
+        raise RuntimeError(
+            "rb-usb-export fixture host not available and no --anlz-dir given. "
+            "Mount the fixture host (MUX_FIXTURE_HOST) or pass --anlz-dir explicitly."
+        )
 
     if args.rss_worker:
         _rss_worker(args.rss_worker, args.anlz_dir, args.points, args.iterations)

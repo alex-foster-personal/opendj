@@ -28,7 +28,10 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -491,22 +494,74 @@ def test_discover_fixtures_picks_up_dirs_and_extern_markers(
     assert "other-thing" not in names
 
 
-def test_run_matrix_returns_skipped_row_for_unavailable_fixture(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+@contextmanager
+def _env_var(name: str, value: str) -> Iterator[None]:
+    """Set a real environment variable for the block, then restore it.
+
+    AGENTS.md forbids mocks/monkeypatching/fabricated application state in
+    tests: the resolver's external-host override is a real, documented
+    production configuration surface (``MUX_FIXTURE_HOST``), so driving it
+    through the actual environment is the production configuration path,
+    not a fake.
+    """
+    previous = os.environ.get(name)
+    os.environ[name] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+
+
+def test_run_matrix_returns_error_row_for_unavailable_required_fixture(
+    tmp_path: Path,
 ) -> None:
-    """A fixture whose host is unmounted → one skipped MatrixRow."""
-    import tests.fixtures._resolver as resolver  # type: ignore[import-not-found]
+    """A REQUIRED fixture whose host is unmounted -> an error row, not skipped.
 
-    def _raise(_name):
-        raise resolver.FixtureNotAvailable("host unmounted")
-    monkeypatch.setattr(differ, "discover_fixtures", lambda *_a, **_k: ["ghost"])
-    monkeypatch.setattr(resolver, "fixture_path", _raise)
+    PR #718 review: this CLI-facing matrix used to translate any
+    ``FixtureNotAvailable`` into a "skipped" row, which let
+    ``_cmd_diff_matrix`` exit 0 without ever having exercised a required
+    CAT-06 fixture. Only :data:`differ.OPTIONAL_FIXTURE_NAMES` may skip;
+    every other name must fail closed as an "error" row instead.
 
-    rows = differ.run_matrix(work_root=tmp_path / "wk")
+    Exercised via the real, already-committed ``rb-usb-export-big.extern``
+    marker and the real, documented ``MUX_FIXTURE_HOST`` override --
+    :func:`differ._resolve_matrix_fixture` is called directly with
+    ``optional=False`` (bypassing this name's real OPTIONAL_FIXTURE_NAMES
+    classification on purpose, to exercise the required-fixture branch) so
+    no resolver state or FIXTURES_ROOT needs patching (AGENTS.md's
+    no-mocks rule).
+    """
+    with _env_var("MUX_FIXTURE_HOST", str(tmp_path / "not-mounted")):
+        _root, row = differ._resolve_matrix_fixture("rb-usb-export-big", optional=False)
+
+    assert row is not None
+    assert row.status == "error"
+    assert row.fixture == "rb-usb-export-big"
+    assert "not mounted" in row.reason
+
+
+def test_run_matrix_skips_optional_fixture_when_unavailable(
+    tmp_path: Path,
+) -> None:
+    """The one genuinely optional fixture still skips cleanly.
+
+    Full production path, no test-only shortcuts: ``run_matrix()``
+    discovers this name from the real, already-committed
+    ``rb-usb-export-big.extern`` marker under the repo's real
+    ``FIXTURES_ROOT`` (left untouched), classifies it through the real
+    :data:`differ.OPTIONAL_FIXTURE_NAMES`, and resolves it through the
+    real, documented ``MUX_FIXTURE_HOST`` override -- no monkeypatching,
+    no scratch fixtures-root layout.
+    """
+    with _env_var("MUX_FIXTURE_HOST", str(tmp_path / "not-mounted")):
+        rows = differ.run_matrix(work_root=tmp_path / "wk", fixture_glob="rb-usb-export-big")
+
     assert len(rows) == 1
     assert rows[0].status == "skipped"
-    assert rows[0].fixture == "ghost"
-    assert "host unmounted" in rows[0].reason
+    assert rows[0].fixture == "rb-usb-export-big"
 
 
 def test_run_matrix_returns_error_row_when_fixture_missing_on_disk(
@@ -523,6 +578,41 @@ def test_run_matrix_returns_error_row_when_fixture_missing_on_disk(
     assert len(rows) == 1
     assert rows[0].status == "error"
     assert rows[0].verdict == "error"
+
+
+def test_verify_fixture_contract_detects_mismatch_against_real_contract(
+    tmp_path: Path,
+) -> None:
+    """A fixture root that fails its content contract raises, for real content.
+
+    PR #718 review: the CLI matrix bypassed contract verification
+    entirely, so a stale/regenerated ``MUX_FIXTURE_HOST`` tree could
+    report a clean run without ever being checked against
+    ``tests/fixtures/<name>.contract.json`` -- ``_resolve_matrix_fixture``
+    converts that into an "error" row via the exact same
+    try/except-then-row shape already covered end-to-end by the
+    required-fixture-unavailable test above.
+
+    This test covers the part that shape wraps: real detection. It uses
+    the real, already-committed ``tests/fixtures/rb-usb-export.contract.json``
+    (unmodified -- canonical fixture sources are immutable) against a
+    caller-supplied ``root`` directory that deliberately does not match
+    it. ``root`` is ``verify_fixture_contract``'s own, already-supported
+    parameter, not a monkeypatch: no ``FIXTURES_ROOT`` or resolver state
+    is patched, and the real canonical ``rb-usb-export`` fixture is never
+    touched (AGENTS.md's no-mocks and immutable-fixtures rules).
+    """
+    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
+        FixtureContractMismatch,
+        verify_fixture_contract,
+    )
+
+    mismatched_root = tmp_path / "not-the-real-fixture"
+    mismatched_root.mkdir()
+    (mismatched_root / "unexpected.bin").write_text("wrong content", encoding="utf-8")
+
+    with pytest.raises(FixtureContractMismatch):
+        verify_fixture_contract("rb-usb-export", mismatched_root)
 
 
 def test_run_matrix_flags_missing_pioneer_dir(

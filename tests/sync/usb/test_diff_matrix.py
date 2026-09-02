@@ -37,6 +37,7 @@ from pathlib import Path
 import pytest
 
 from apps.sync.usb.pioneer.differ import (
+    OPTIONAL_FIXTURE_NAMES,
     diff_snapshots,
     discover_fixtures,
     round_trip_via_writer,
@@ -44,6 +45,7 @@ from apps.sync.usb.pioneer.differ import (
 )
 from apps.sync.usb.pioneer.writer_rbox import RBOX_AVAILABLE, RBOX_IMPORT_ERROR
 from tests.fixtures._resolver import FixtureNotAvailable, fixture_path
+from tests.fixtures.conftest import resolve_required_fixture
 
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
@@ -67,25 +69,34 @@ _FIXTURE_NAMES: list[str] = discover_fixtures("rb-usb-export*")
 
 
 def _resolve_or_skip(name: str) -> Path:
-    """Resolve a fixture name to ``PIONEER/`` or skip cleanly.
+    """Resolve a fixture name to its ``PIONEER/`` directory.
 
-    Uses :class:`FixtureNotAvailable` (raised when an ``.extern``
-    marker points at an unmounted host) as the cue for ``pytest.skip``
-    — so cloning the repo on a machine without LaCie doesn't cause
-    failures, just skipped cells.
+    ``rb-usb-export-big`` is the one explicitly optional fixture (LaCie-only,
+    huge) and skips cleanly when its external host isn't mounted, using
+    :class:`FixtureNotAvailable` as the cue. Every other discovered
+    ``rb-usb-export*`` name is REQUIRED CAT-06 acceptance coverage and fails
+    closed via :func:`resolve_required_fixture` instead, so the matrix can't
+    report a non-failing run without actually testing it (AGENTS.md: never
+    silently skip acceptance for missing data). A resolved fixture missing
+    its expected internal structure (``PIONEER/``, ``exportLibrary.db``)
+    always fails hard -- that is a data-integrity problem, not a "missing
+    fixture host" one, so it is not gated by ``MDT_ALLOW_MISSING_FIXTURES``.
     """
-    try:
-        root = fixture_path(name)
-    except FixtureNotAvailable as exc:
-        pytest.skip(f"Fixture {name!r} not available on this host: {exc}")
-    except FileNotFoundError as exc:
-        pytest.skip(f"Fixture {name!r} not found: {exc}")
+    if name in OPTIONAL_FIXTURE_NAMES:
+        try:
+            root = fixture_path(name)
+        except FixtureNotAvailable as exc:
+            pytest.skip(f"Fixture {name!r} not available on this host: {exc}")
+        except FileNotFoundError as exc:
+            pytest.skip(f"Fixture {name!r} not found: {exc}")
+    else:
+        root = resolve_required_fixture(name)
     pioneer = root / "PIONEER"
     if not pioneer.is_dir():
-        pytest.skip(f"Fixture {name!r} has no PIONEER/ under {root}")
+        pytest.fail(f"Fixture {name!r} has no PIONEER/ under {root}")
     db = pioneer / "rekordbox" / "exportLibrary.db"
     if not db.is_file():
-        pytest.skip(
+        pytest.fail(
             f"Fixture {name!r} has no exportLibrary.db (not a OneLibrary export)"
         )
     return pioneer

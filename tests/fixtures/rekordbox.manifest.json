@@ -1,0 +1,7 @@
+{
+  "contract_version": 1,
+  "fixture": "rekordbox",
+  "files": {
+    "master.plain.db": "sha256:7238c10683fb387272dbbbf596d282f7b5f16b37d6a7b1c33274b9c237a56a7b"
+  }
+}

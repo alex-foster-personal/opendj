@@ -1,0 +1,9 @@
+{
+  "contract_version": 1,
+  "fixture": "PIONEER/USBANLZ/P000/00029138",
+  "files": {
+    "ANLZ0000.2EX": "sha256:edaf762c0a082a90991cda75fea64b69e7dd7e942158db418072e51877c5cce7",
+    "ANLZ0000.DAT": "sha256:02cc6dbb61a20f981ce2773b4d88a56fb2a437f704b94b82a1269dbc7e92e945",
+    "ANLZ0000.EXT": "sha256:62b6c6db896e7da2f38ebeabed4acca5f749c0975114b5af672650fbaad2f711"
+  }
+}

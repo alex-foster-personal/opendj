@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parents[1]
 DEV = ROOT / "devices" / "ddj-rev7"
 TXT = DEV / "source" / "DDJ-REV7_MIDI_Message_List_E1.txt"
 SCRIPTS = Path(__file__).resolve().parent
@@ -427,7 +428,9 @@ def build_midi() -> dict:
             )
     return {
         "source": "docs/controller/reference/DDJ-REV7_MIDI_Message_List_E1.pdf",
-        "archived": str(DEV / "source" / "DDJ-REV7_MIDI_Message_List_E1.pdf"),
+        "archived": (DEV / "source" / "DDJ-REV7_MIDI_Message_List_E1.pdf")
+        .relative_to(REPO_ROOT)
+        .as_posix(),
         "device": "DDJ-REV7",
         "vendor": "AlphaTheta / Pioneer DJ",
         "channel_conventions": {

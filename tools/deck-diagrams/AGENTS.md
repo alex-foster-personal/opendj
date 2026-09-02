@@ -30,7 +30,7 @@ open tools/deck-diagrams/devices/ddj-flx10/deck.html
 | `schema/control-layout.schema.json` | `layout.json` contract |
 | `devices/<id>/` | Per-controller sources, layout, overlay, deck |
 | `scripts/` | Checksum + layout builders |
-| `../docs/controller/reference/` | Archived official PDFs (human-facing) |
+| `../docs/controller/reference/` | Manifest only. The vendor PDFs are NOT in the repo (manufacturer copyright, removed 1 Sep 2026). Read its README.md for where to get them; the derived `midi.json` here is what code consumes. |
 
 ## Rules
 
@@ -46,7 +46,7 @@ See skill `reference.md` section "Scale to 100". Do not fan out past 5 until FLX
 
 ## Agent index / context excludes
 
-`devices/` (~109MB, 100+ controllers) and `docs/controller/reference/` (vendor PDFs) are excluded from default agent indexing/context. Catalog, schema, scripts, and this file stay visible. Broader repo excludes (`.planning/` audits, `blog/`, dumps, `uv.lock`) live in the same root ignore files.
+`devices/` (~109MB, 100+ controllers) is excluded from default agent indexing/context. `docs/controller/reference/` no longer holds PDFs at all -- they were removed as vendor copyright and are gitignored, so there is nothing there to index but a manifest. Catalog, schema, scripts, and this file stay visible. Broader repo excludes (`.planning/` audits, `blog/`, dumps, `uv.lock`) live in the same root ignore files.
 
 | Harness | File (repo root only) | Effect |
 |---|---|---|
