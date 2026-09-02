@@ -166,6 +166,24 @@ test('CONTROL: warn and info severity rows stay local', async () => {
 	);
 });
 
+test('a sustained condition escalates once per window, not once per report', async () => {
+	// The xrun sentinel reports every 2s for as long as the machine struggles,
+	// so a twenty-minute incident is ~600 reports describing the same twenty
+	// minutes. reportClientError's own dedupe cannot absorb them: it fingerprints
+	// on the exact message, and these messages carry live numbers.
+	const kind = 'presentation-clock-stalled';
+	for (let report = 0; report < 25; report += 1) {
+		perfLog.recordPerfEvent(kind, `stall report ${report}, worst gap ${report}ms`, null, 'error');
+	}
+	await waitForPost(() => true, 200);
+	assert.equal(
+		posted.length,
+		1,
+		`if a sustained condition POSTs ${posted.length} times then broken - one incident ` +
+			'must not become one round trip per report, on the same main thread as the audio'
+	);
+});
+
 test('CONTROL: the ring still records the row it escalated', async () => {
 	// Escalation must be additive. If a fix routes the row to the engine INSTEAD
 	// of the ring, __mdtPerfLog() and the toast correlation ids both go dark.

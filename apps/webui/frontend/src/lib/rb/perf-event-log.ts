@@ -24,6 +24,43 @@
  *    localStorage is coalesced onto a timer and forced on pagehide.
  */
 
+import { reportClientError } from '$lib/client-error-reporting';
+
+/**
+ * The perf kinds whose ERROR-severity rows leave this browser.
+ *
+ * Deliberately a short, named allowlist rather than "everything at error
+ * severity". `transport-schedule` is appended once per `_scheduleDeck` and
+ * PitchFader drives that from an unthrottled pointermove, so a blanket rule
+ * would put roughly one POST per pointer sample on the wire, during a set, on
+ * the same main thread as the audio the escalation exists to protect.
+ *
+ * These four are the audio-liveness kinds: each one means "the operator may be
+ * hearing nothing, or seeing nothing move", and each is worth a round trip.
+ */
+const ESCALATED_KINDS: ReadonlySet<string> = new Set([
+	'xrun',
+	'audio-context',
+	'silent-while-playing',
+	'presentation-clock-stalled',
+	'presentation-stalled'
+]);
+
+/**
+ * At most one escalation per kind per window.
+ *
+ * A dropout is a SUSTAINED condition, not an event: the silence watchdog and
+ * the presentation-stall watchdog are edge-triggered, but the xrun sentinel
+ * reports every 2s for as long as the machine is struggling. Without this, a
+ * twenty-minute incident is 600 POSTs describing the same twenty minutes.
+ * Rate-limiting here rather than inside reportClientError keeps its 10s
+ * fingerprint dedupe (which keys on the exact message) doing its own job:
+ * these messages carry live numbers and so are never identical twice.
+ */
+const ESCALATION_WINDOW_MS = 60_000;
+
+const _lastEscalationAtMs = new Map<string, number>();
+
 export interface PerfEvent {
 	t: string;
 	kind: string;
@@ -216,6 +253,32 @@ function _stageSummary(stages: Record<string, number>): string {
  * is where somebody actually greps: a structured field nothing prints is a
  * field that only helps whoever already knew to open localStorage.
  */
+/**
+ * Forward one audio-liveness failure to the engine, at most once per window.
+ *
+ * Additive, never a re-route: the row is already in the ring and on the
+ * console before this runs, and a failure here cannot remove it.
+ * `reportClientError` owns its own durable retry queue, so a POST that fails
+ * is retried on the next report or page load rather than lost.
+ */
+function _escalate(entry: PerfEvent): void {
+	if (!ESCALATED_KINDS.has(entry.kind)) return;
+	const nowMs = Date.now();
+	const lastMs = _lastEscalationAtMs.get(entry.kind);
+	if (lastMs !== undefined && nowMs - lastMs < ESCALATION_WINDOW_MS) return;
+	_lastEscalationAtMs.set(entry.kind, nowMs);
+	reportClientError(
+		`${entry.kind}: ${entry.message}`,
+		{
+			source: 'perf-event',
+			perf_kind: entry.kind,
+			deck: entry.deck,
+			...(entry.id === undefined ? {} : { perf_event_id: entry.id })
+		},
+		'ui-error'
+	);
+}
+
 export function recordPerfEvent(
 	kind: string,
 	message: string,
@@ -234,6 +297,10 @@ export function recordPerfEvent(
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
 	const idBit = id === undefined ? '' : ` id=${id}`;
 	console[severity](`[perf-event] ${kind}${deckBit}${idBit}: ${message}`);
+	// AFTER the ring append and the console line, so an escalation that throws
+	// cannot cost the local record that is the last resort when the network is
+	// the thing that is broken.
+	if (severity === 'error') _escalate(entry);
 	return entry;
 }
 
