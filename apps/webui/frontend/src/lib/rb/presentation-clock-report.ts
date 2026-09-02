@@ -13,6 +13,7 @@
  * transitions are reported.
  */
 
+import { noteOutputStall } from '$lib/rb/audio-output-rebind';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -56,6 +57,9 @@ export function notePresentationClock(deck: DeckId, clockStalled: boolean | null
 			'error'
 		);
 		pushToast(`Deck ${deck}: audio device clock stalled - waveform is estimated`, 'error');
+		// A stalled device position is also the only signal Chromium gives when the
+		// output device changed under a running context; ask for a re-bind.
+		noteOutputStall(deck);
 		return;
 	}
 	recordPerfEvent(

@@ -12,6 +12,7 @@
  */
 
 import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
+import { installOutputRebind } from '$lib/rb/audio-output-rebind';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -128,5 +129,20 @@ export function armAudioContextWatchdog(
 			sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 		},
 		isAnyDeckPlaying
+	);
+	// Chromium keeps a context `running` on a dead output stream after the device
+	// changes under it (a phone call taking the headphones, Wed 2 Sep 2026), so
+	// the statechange watchdog above never fires; this one cycles the output.
+	installOutputRebind(
+		ctx,
+		{
+			pushToast,
+			recordPerfEvent: (kind, message) => recordPerfEvent(kind, message, null, 'info'),
+			now: () => performance.now(),
+			setTimeout: (fn, ms) => setTimeout(fn, ms),
+			clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+		},
+		isAnyDeckPlaying,
+		typeof navigator !== 'undefined' && navigator.mediaDevices ? navigator.mediaDevices : null
 	);
 }
