@@ -2,10 +2,12 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getPlaylist, type PlaylistDetail } from '$lib/api';
+	import { hasComputedDiff } from '$lib/playlist-diff-view';
 	import PlayItPanel from '$lib/components/PlayItPanel.svelte';
 
 	let detail = $state<PlaylistDetail | null>(null);
 	let playlistId = $state<string | null>(null);
+	let hasDiff = $derived(detail !== null && hasComputedDiff(detail.diff));
 
 	onMount(async () => {
 		const id = $page.params.id;
@@ -23,30 +25,34 @@
 	{#if playlistId}
 		<PlayItPanel playlistId={playlistId} />
 	{/if}
-	<div class="diff-columns">
-		<div>
-			<h3>RB only</h3>
-			<ul>{#each detail.diff.rb_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+	{#if hasDiff}
+		<div class="diff-columns">
+			<div>
+				<h3>RB only</h3>
+				<ul>{#each detail.diff.rb_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+			</div>
+			<div>
+				<h3>Both</h3>
+				<ul>{#each detail.diff.both as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+			</div>
+			<div>
+				<h3>djay only</h3>
+				<ul>{#each detail.diff.djay_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
+			</div>
 		</div>
-		<div>
-			<h3>Both</h3>
-			<ul>{#each detail.diff.both as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
-		</div>
-		<div>
-			<h3>djay only</h3>
-			<ul>{#each detail.diff.djay_only as sid}<li><a href={`/track/${sid}`}>{sid}</a></li>{/each}</ul>
-		</div>
-	</div>
-	{#if detail.diff.conflicts.length > 0}
-		<h3>Conflicts</h3>
-		<ul>
-			{#each detail.diff.conflicts as c}
-				<li>
-					<a href={`/track/${c.stable_id}`}>{c.stable_id}</a>
-					(RB pos {c.rb_position}, djay pos {c.djay_position})
-				</li>
-			{/each}
-		</ul>
+		{#if detail.diff.conflicts.length > 0}
+			<h3>Conflicts</h3>
+			<ul>
+				{#each detail.diff.conflicts as c}
+					<li>
+						<a href={`/track/${c.stable_id}`}>{c.stable_id}</a>
+						(RB pos {c.rb_position}, djay pos {c.djay_position})
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{:else}
+		<p style="color: var(--muted);">Rekordbox/djay sync diff not computed for this playlist.</p>
 	{/if}
 {:else}
 	<p>Loading...</p>

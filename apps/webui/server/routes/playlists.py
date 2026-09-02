@@ -1,9 +1,6 @@
 """Playlist endpoints + diff viewer -- CAT-05 (+ parity contract items 2/4)."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from .. import rb_vendor
@@ -14,17 +11,6 @@ from ..models import PlaylistDetail, PlaylistDiff, PlaylistSummary, TrackRowOut
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
-
-FIXTURE_PATH: Path = (
-    Path(__file__).resolve().parent.parent / "fixtures" / "playlist-diff.json"
-)
-
-
-def _load_diff_fixture() -> PlaylistDiff:
-    if FIXTURE_PATH.exists():
-        data = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-        return PlaylistDiff(**data)
-    return PlaylistDiff()
 
 
 @router.get("", response_model=list[PlaylistSummary])
@@ -114,5 +100,11 @@ def get_playlist(
             TrackRowOut(**row) for row in rows
             if keep_by_availability(available, row["file_exists"])
         ],
-        diff=_load_diff_fixture(),
+        # GUARD-11: the real differ (apps/sync/playlist_diff.py) only runs
+        # offline against copied vendor DBs + a Phase 2 match-set CSV; it is
+        # not wired to this read path and has no stable_id-keyed output to
+        # serve per request. Rather than fabricate one (the retired
+        # fixtures/playlist-diff.json), report the honest "not computed"
+        # state -- empty buckets the UI already renders as absent.
+        diff=PlaylistDiff(),
     )
