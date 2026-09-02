@@ -13,6 +13,7 @@
 
 import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
 import { installOutputRebind } from '$lib/rb/audio-output-rebind';
+import { installOutputLiveness, type AudioOutputSnapshot } from '$lib/rb/audio-output-liveness';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -145,4 +146,20 @@ export function armAudioContextWatchdog(
 		isAnyDeckPlaying,
 		typeof navigator !== 'undefined' && navigator.mediaDevices ? navigator.mediaDevices : null
 	);
+	// A context can be `running`, advancing, and rendering into a dead device
+	// (Wed 2 Sep 2026 18:33: no sound, every other signal green). The only
+	// device-level tell the browser gives is outputLatency staying 0.
+	const liveness = installOutputLiveness(
+		ctx,
+		{
+			pushToast,
+			recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
+			setInterval: (fn, ms) => setInterval(fn, ms),
+			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>)
+		},
+		isAnyDeckPlaying
+	);
+	// Agent parity: the same health an operator would read off the toasts.
+	(window as Window & { __mdtAudioOutput?: () => AudioOutputSnapshot }).__mdtAudioOutput = () =>
+		liveness.snapshot();
 }

@@ -83,7 +83,9 @@ import { join, dirname, normalize, relative } from 'node:path';
 // reviewable act.
 const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
-  { name: 'performance', limit: 203776, measured: 193544, note: '/performance and children' },
+  // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
+  // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
+  { name: 'performance', limit: 204800, measured: 193544, note: '/performance and children' },
   { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
 ];
 
