@@ -12,7 +12,7 @@
  */
 
 import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
-import { installOutputRebind } from '$lib/rb/audio-output-rebind';
+import { installOutputRebind, type OutputRebindHandle } from '$lib/rb/audio-output-rebind';
 import { installOutputLiveness, type AudioOutputSnapshot } from '$lib/rb/audio-output-liveness';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
@@ -95,10 +95,36 @@ export function armXrunSentinel(ctx: AudioContext): void {
  * happened, and a teardown is no reason to lose them. Session totals survive,
  * because a route remount is not a new app session.
  */
+let _outputRebind: OutputRebindHandle | null = null;
+let _outputLiveness: ReturnType<typeof installOutputLiveness> | null = null;
+
 export function disarmContextInstrumentation(): void {
 	detachXrunSentinel();
 	flushWorkletAckWindow();
 	resetWorkletAckStats();
+	// Same reason as the sentinel above: this listener closes over the context
+	// being closed. `noteOutputStall` fans out to EVERY registered listener, so
+	// one left behind by a route unmount answers the next stall by resuming a
+	// closed context, which rejects and raises an "output could not be
+	// re-bound" error toast next to the live context's success one.
+	_outputRebind?.uninstall();
+	_outputRebind = null;
+	// Same again for the liveness poll, which is a setInterval rather than a
+	// listener: left behind it keeps waking every LIVENESS_POLL_MS forever, one
+	// more timer per route visit. Its own guard keeps it quiet against a closed
+	// context, so this is a leak rather than a wrong toast -- but nothing ever
+	// stops it, and `_ensureGraph` arms a fresh one on the way back in.
+	_outputLiveness?.uninstall();
+	_outputLiveness = null;
+	// The exported reader closes over the liveness handle above, so without this
+	// it keeps answering after uninstall with whatever verdict was last frozen
+	// (dead or ok) instead of reflecting that no graph is armed. Deleted rather
+	// than left pointing at a synthetic idle snapshot: absent is exactly its
+	// state before the first `armAudioContextWatchdog`, so disarm restores that
+	// same pre-arm shape instead of inventing a new "idle with no context" one.
+	if (typeof window !== 'undefined') {
+		delete (window as Window & { __mdtAudioOutput?: () => AudioOutputSnapshot }).__mdtAudioOutput;
+	}
 }
 
 /**
@@ -134,7 +160,11 @@ export function armAudioContextWatchdog(
 	// Chromium keeps a context `running` on a dead output stream after the device
 	// changes under it (a phone call taking the headphones, Wed 2 Sep 2026), so
 	// the statechange watchdog above never fires; this one cycles the output.
-	installOutputRebind(
+	// Held so `disarmContextInstrumentation` can uninstall it: the handle is the
+	// only way to drop the module-level stall listener, and dropping the local
+	// `ctx` reference is not enough to unregister it.
+	_outputRebind?.uninstall();
+	_outputRebind = installOutputRebind(
 		ctx,
 		{
 			pushToast,
@@ -149,7 +179,8 @@ export function armAudioContextWatchdog(
 	// A context can be `running`, advancing, and rendering into a dead device
 	// (Wed 2 Sep 2026 18:33: no sound, every other signal green). The only
 	// device-level tell the browser gives is outputLatency staying 0.
-	const liveness = installOutputLiveness(
+	_outputLiveness?.uninstall();
+	_outputLiveness = installOutputLiveness(
 		ctx,
 		{
 			pushToast,
@@ -160,6 +191,7 @@ export function armAudioContextWatchdog(
 		isAnyDeckPlaying
 	);
 	// Agent parity: the same health an operator would read off the toasts.
+	const liveness = _outputLiveness;
 	(window as Window & { __mdtAudioOutput?: () => AudioOutputSnapshot }).__mdtAudioOutput = () =>
 		liveness.snapshot();
 }

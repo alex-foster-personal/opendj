@@ -16,6 +16,10 @@
  * [if] the context is not running [then] resume only, no suspend
  * [if] the stall reporter's edge does not call noteOutputStall [then] the
  *   trigger is wired to nothing - broken
+ * [if] a rebind uninstalled at route unmount still answers a stall [then] it
+ *   resumes a closed context and the user sees a spurious error toast - broken
+ * [if] disarmContextInstrumentation does not uninstall the rebind [then] every
+ *   /performance remount leaves another listener armed - broken
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -126,11 +130,56 @@ describe('installOutputRebind', () => {
 		await h.advance(mod.REBIND_DEBOUNCE_MS);
 		assert.deepEqual(h.calls, []);
 	});
+
+	it('an uninstalled rebind stops answering stalls', async () => {
+		// The route-remount path: /performance unmounts (engine.dispose closes the
+		// context), then remounts and builds a new one. `noteOutputStall` fans out
+		// to EVERY registered listener, so one left behind answers the next stall
+		// by resuming a CLOSED context -- which rejects, and puts an "output could
+		// not be re-bound" error toast next to the live context's success toast.
+		const gone = harness();
+		const goneHandle = mod.installOutputRebind(gone.ctx, gone.effects, gone.isPlaying, gone.mediaDevices);
+		goneHandle.uninstall();
+
+		const live = harness();
+		const liveHandle = mod.installOutputRebind(live.ctx, live.effects, live.isPlaying, live.mediaDevices);
+		try {
+			mod.noteOutputStall(1);
+			// BOTH clocks advance. Advancing only the live one would pass whether or
+			// not the stale listener is still registered, since its timer lives on
+			// its own harness -- the assertion below would then prove nothing.
+			await gone.advance(mod.REBIND_DEBOUNCE_MS);
+			await live.advance(mod.REBIND_DEBOUNCE_MS);
+
+			assert.deepEqual(gone.calls, [],
+				'if an uninstalled rebind still answers a stall then a closed context is resumed and the user sees a spurious error toast - broken');
+			assert.ok(live.calls.includes('resume'),
+				'if the live context does not rebind then the fix broke the thing it is fixing - broken');
+		} finally {
+			liveHandle.uninstall();
+		}
+	});
 });
 
 describe('wiring (source guards; the engine and reporter are rune-bound)', () => {
 	const report = readFileSync(fileURLToPath(new URL('../../src/lib/rb/presentation-clock-report.ts', import.meta.url)), 'utf8');
 	const instr = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
+
+	// `armAudioContextWatchdog` also calls `_outputRebind?.uninstall()` (it
+	// clears the previous handle before arming a fresh one), so a loose
+	// `disarmContextInstrumentation[\s\S]*?...` regex still matches there even
+	// if the teardown's own call is deleted. Delimit the body by brace-counting
+	// from the function's opening `{` so the checks below can only match inside
+	// `disarmContextInstrumentation` itself.
+	const disarmStart = instr.indexOf('export function disarmContextInstrumentation(');
+	assert.ok(disarmStart !== -1, 'disarmContextInstrumentation not found in source');
+	const braceOpen = instr.indexOf('{', disarmStart);
+	let depth = 0, i = braceOpen;
+	for (; i < instr.length; i++) {
+		if (instr[i] === '{') depth++;
+		else if (instr[i] === '}' && --depth === 0) break;
+	}
+	const disarmBody = instr.slice(braceOpen + 1, i);
 
 	it('the stall edge calls noteOutputStall', () => {
 		assert.ok(report.includes('noteOutputStall(deck)'), 'if the stall reporter does not call noteOutputStall then the phone-call trigger is wired to nothing - broken');
@@ -138,5 +187,19 @@ describe('wiring (source guards; the engine and reporter are rune-bound)', () =>
 
 	it('the rebind is installed next to the context watchdog', () => {
 		assert.ok(instr.includes('installOutputRebind('), 'if armAudioContextWatchdog does not install the rebind then no device change ever re-binds - broken');
+	});
+
+	it('disarmContextInstrumentation uninstalls the rebind', () => {
+		assert.ok(
+			disarmBody.includes('_outputRebind?.uninstall()'),
+			'if teardown does not uninstall the rebind then every /performance remount leaves another listener armed on a closed context - broken'
+		);
+	});
+
+	it('disarmContextInstrumentation drops the agent-facing output reader', () => {
+		assert.ok(
+			/delete \(window[\s\S]*?\)\.__mdtAudioOutput/.test(disarmBody),
+			'if teardown leaves __mdtAudioOutput installed then agents read a frozen verdict for a disposed context - broken'
+		);
 	});
 });

@@ -10,6 +10,8 @@
  *   otherwise (silence stays silent)
  * [if] it stays 0 for four polls [then] the sticky reload escalation
  * [if] latency comes back [then] "restored" info once, verdict ok
+ * [if] teardown does not uninstall the poll [then] a route remount leaves
+ *   another interval waking forever - broken
  * [if] nothing is playing, or the context is not running [then] never alarms
  *   (a fresh context is 0 for a moment after resume; grace is the whole point)
  * [if] latency is > 0 throughout [then] verdict ok, no toast
@@ -113,5 +115,28 @@ describe('wiring (source guard)', () => {
 		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
 		assert.ok(src.includes('installOutputLiveness('), 'if the liveness poll is not installed at graph build then the detector is code nobody runs - broken');
 		assert.ok(src.includes('__mdtAudioOutput'), 'if the snapshot is not exposed then an agent cannot read output health - broken');
+	});
+
+	it('disarmContextInstrumentation uninstalls the liveness poll', () => {
+		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
+		// `armAudioContextWatchdog` also calls `_outputLiveness?.uninstall()` (it
+		// clears the previous handle before arming a fresh one), so a loose
+		// `disarmContextInstrumentation[\s\S]*?...` regex still matches there even
+		// if the teardown's own call is deleted. Delimit the body by brace-counting
+		// from the function's opening `{` so this can only match inside
+		// `disarmContextInstrumentation` itself.
+		const disarmStart = src.indexOf('export function disarmContextInstrumentation(');
+		assert.ok(disarmStart !== -1, 'disarmContextInstrumentation not found in source');
+		const braceOpen = src.indexOf('{', disarmStart);
+		let depth = 0, i = braceOpen;
+		for (; i < src.length; i++) {
+			if (src[i] === '{') depth++;
+			else if (src[i] === '}' && --depth === 0) break;
+		}
+		const disarmBody = src.slice(braceOpen + 1, i);
+		assert.ok(
+			disarmBody.includes('_outputLiveness?.uninstall()'),
+			'if teardown does not uninstall the liveness poll then every /performance remount leaves another 2.5s interval running forever - broken'
+		);
 	});
 });
