@@ -78,34 +78,40 @@ honest bit: the connection was accepted, or it was not.
 has navigated to the engine, an engine that dies mid-session leaves the
 webview on a dead page; recovering that is the SPA's job, not the shell's.
 
-**Not built here, and deliberately so:** pick-a-free-port with a port
-handshake to the webview, a single-instance lock, and "sidecar dies with
-the app". All three describe a shell that SPAWNS the engine. This shell
-does not: it attaches to an engine the user started. They become
-implementable, and necessary, the moment the self-contained daemon sidecar
-lands, and the shutdown path should then use the zombie-aware group check
-in `apps/engine_core/jobs/reap.py` rather than a raw `killpg(pid, 0)`
+**The shell spawns its own engine.** `start_engine` picks a free loopback
+port, spawns the bundled payload and waits for health before the window
+opens (`src-tauri/src/main.rs:179-183`). It attaches to an engine somebody
+else started ONLY when `OPENDJ_ENGINE_ORIGIN` is set, which is the operator
+dev-attach path, not the shipped one: an origin that is set is honoured
+exactly and no second engine is started behind the operator's back
+(`main.rs:237-248`). A set-but-empty value panics rather than falling back.
+
+Still not built: a single-instance lock, and "sidecar dies with the app".
+The shutdown path should use the zombie-aware group check in
+`apps/engine_core/jobs/reap.py` rather than a raw `killpg(pid, 0)`
 existence loop.
 
-### Why the engine is not bundled (yet)
+### How the engine is bundled
 
-The chosen strategy is deliberate: **the .app expects a repo checkout**, and
-says so on screen. The obvious alternative -- pip-install the wheel into
-the bundle and drive it from a Tauri sidecar -- does not work today. The
-wheel ships `apps/*` only (`[tool.setuptools.packages.find]`,
-`pyproject.toml`) and excludes `data*`, `scripts*`, `open-dj*`, yet at least
-eight production call sites derive a repo root via `parents[N]` and reach
-into exactly those excluded directories: `apps/open_dj/schema_loader.py`
-wants `open-dj/schema/`, `apps/stems/cli.py` and `apps/vocals/` want
-`scripts/*_worker.py`, `apps/webui/server/routes/progress.py` wants
-`data/progress-tree.yaml` and shells out to git at the root. Only
-`platform_paths.py` has an env escape hatch. An installed-wheel engine
-therefore boots and then breaks silently on the first path touch, which is
-the worst possible failure for a first external tester.
+**The .app carries its own engine.** `scripts/build_engine_payload.py`
+stages a relocatable CPython, the locked dependency closure, the engine
+source and the built SPA into `apps/desktop/src-tauri/payload`, which
+`tauri.conf.json` copies to `Contents/Resources/payload`; the shell starts
+that engine on an OS-assigned port at launch (`justfile:655-661`). The .app
+no longer expects a repo checkout, and there is no address to bake, which is
+why `MDT_DESKTOP_ENGINE_ORIGIN` is gone.
 
-A sidecar becomes viable once the engine is bundled as a repo-shaped tree
-(or those directories are explicitly carried as package data). That is
-tracked separately and is not this shell's work.
+The route not taken was pip-installing the wheel into the bundle and driving
+it from a Tauri sidecar. The wheel ships `apps/*` only
+(`[tool.setuptools.packages.find]`, `pyproject.toml`) and excludes `data*`,
+`scripts*`, `open-dj*`, yet at least eight production call sites derive a
+repo root via `parents[N]` and reach into exactly those excluded
+directories: `apps/open_dj/schema_loader.py` wants `open-dj/schema/`,
+`apps/stems/cli.py` and `apps/vocals/` want `scripts/*_worker.py`,
+`apps/webui/server/routes/progress.py` wants `data/progress-tree.yaml` and
+shells out to git at the root. Only `platform_paths.py` has an env escape
+hatch. An installed-wheel engine would boot and then break silently on the
+first path touch. Staging a repo-shaped tree is what avoids that.
 
 ### Engine origin
 
