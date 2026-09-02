@@ -86,6 +86,10 @@ dev-attach path, not the shipped one: an origin that is set is honoured
 exactly and no second engine is started behind the operator's back
 (`main.rs:237-248`). A set-but-empty value panics rather than falling back.
 
+For UI and transport iteration without the shell at all, see
+`docs/architecture/chrome-dev-loop.md`: vite from source in Chrome against a dev engine and a
+copied library, with the shipped-app-versus-loop topology diagram.
+
 Still not built: a single-instance lock, and "sidecar dies with the app".
 The shutdown path should use the zombie-aware group check in
 `apps/engine_core/jobs/reap.py` rather than a raw `killpg(pid, 0)`
