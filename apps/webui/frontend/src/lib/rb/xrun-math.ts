@@ -139,6 +139,77 @@ export function xrunGapThresholdMs(
 	return Math.max(quantumMs, deviceBufferMs) * factor + floorMs;
 }
 
+/** Callbacks observed before the cadence is trusted enough to judge against. */
+export const XRUN_CADENCE_WARMUP_CALLBACKS = 128;
+
+/** Most recent gaps the cadence estimate is drawn from. */
+export const XRUN_CADENCE_WINDOW = 256;
+
+/**
+ * Where in the sorted gap distribution the device's callback PERIOD sits.
+ *
+ * Callbacks are not evenly spaced: the browser renders as many 128-frame quanta
+ * as it takes to fill one device buffer and then sleeps, so a 512-frame buffer
+ * produces gaps of roughly [0, 0, 0, 11.6]ms. The period is therefore the TOP of
+ * the distribution, not its mean - a mean would read 2.9ms and be wrong by 4x.
+ *
+ * A quantile rather than the maximum, because the maximum IS the dropout: one
+ * genuine 30ms stall would redefine the cadence as 30ms and hide every stall
+ * after it. At 0.9 over a 256-gap window, twenty-five consecutive dropouts are
+ * needed to move the estimate at all.
+ */
+export const XRUN_CADENCE_QUANTILE = 0.9;
+
+/**
+ * The device's real callback period, measured from the callbacks themselves.
+ *
+ * WHY THIS EXISTS. `AudioContext.baseLatency` is the only period the main
+ * thread can see, and on Wed 2 Sep 2026 it under-reported a 512-frame HAL
+ * buffer as roughly one 128-frame quantum. The resulting 5.354ms threshold
+ * called every fourth callback of a perfectly healthy machine a dropout: 173
+ * xruns in 692 callbacks, all of them false. The audio thread is the only place
+ * the true cadence is observable, so it is measured there and nowhere else.
+ *
+ * Parked gaps are excluded: a hidden tab produces gaps of seconds, and one of
+ * those in the window would push the quantile past every real dropout.
+ */
+export function xrunCadencePeriodMs(
+	gapsMs: readonly number[],
+	parkedGapMs: number = XRUN_PARKED_GAP_MS
+): number {
+	_assertPositive('parkedGapMs', parkedGapMs);
+	const usable = gapsMs
+		.filter((gap) => Number.isFinite(gap) && gap >= 0 && gap < parkedGapMs)
+		.sort((a, b) => a - b);
+	if (usable.length === 0) {
+		throw new RangeError('cannot measure a callback cadence from zero usable gaps');
+	}
+	const at = Math.min(usable.length - 1, Math.floor(XRUN_CADENCE_QUANTILE * (usable.length - 1)));
+	return usable[at];
+}
+
+/**
+ * The late-callback threshold implied by an observed stream of gaps.
+ *
+ * Composes `xrunGapThresholdMs` rather than restating it: the arithmetic was
+ * already correct and is already tested. What changes is only which period it
+ * is handed.
+ */
+export function xrunThresholdFromCadenceMs(
+	gapsMs: readonly number[],
+	factor: number = XRUN_GAP_FACTOR,
+	floorMs: number = XRUN_GAP_FLOOR_MS
+): number {
+	const periodMs = xrunCadencePeriodMs(gapsMs);
+	if (periodMs <= 0) {
+		throw new RangeError(
+			'observed callback cadence is 0ms, which would make every gap a dropout; the ' +
+				'audio thread cannot be delivering callbacks with no time between them'
+		);
+	}
+	return xrunGapThresholdMs(periodMs, periodMs, factor, floorMs);
+}
+
 /**
  * The rule, in one comparison. `src/lib/rb/xrun-sentinel-processor.js` inlines
  * the same two comparisons because a worklet scope cannot import; the unit test

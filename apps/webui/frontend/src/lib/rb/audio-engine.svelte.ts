@@ -75,7 +75,14 @@ import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
 import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
 import {
+	notePresentationClock,
+	notePresentationTickFailure,
+	readOutputTimestamp as _readOutputTimestamp
+} from '$lib/rb/presentation-clock-report';
+import {
+	armAudioContextWatchdog,
 	armXrunSentinel,
 	disarmContextInstrumentation,
 	stampContextDeviceFloors
@@ -441,6 +448,7 @@ function _emptyRuntime(): _DeckRuntime {
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
+let _masterAnalyser: AnalyserNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
@@ -624,13 +632,18 @@ function _ensureGraph(): AudioContext {
 	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
-	// suspended is re-stamped here the moment it runs, whichever path resumed it.
-	const stampedContext = _ctx;
-	stampedContext.addEventListener('statechange', () => {
-		if (stampedContext.state === 'running') stampContextDeviceFloors(stampedContext);
-	});
+	// suspended is re-stamped the moment it runs, whichever path resumed it.
+	// The watchdog owns that re-stamp AND every non-running state: suspended,
+	// interrupted and closed used to fall through in silence, which is how
+	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
+	armAudioContextWatchdog(_ctx, () => DECK_IDS.some((deck) => deckStates[deck].playing));
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
+	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
+	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
+	_masterAnalyser = _ctx.createAnalyser();
+	_masterGain.connect(_masterAnalyser);
+	resetMasterSilenceWatch();
 	// Silence belt for headless test agents (`?muted=1`): the LAST node before
 	// the destination, so a mute is one gain value and every node upstream --
 	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
@@ -2033,31 +2046,22 @@ function _currentPosSec(deck: DeckId): number {
 	);
 }
 
-function _readOutputTimestamp(context: AudioContext): {
-	contextTime: number;
-	performanceTime: number;
-} {
-	if (typeof context.getOutputTimestamp !== 'function') {
-		throw new Error('AudioContext.getOutputTimestamp is required for presented transport');
-	}
-	const { contextTime, performanceTime } = context.getOutputTimestamp();
-	if (contextTime === undefined || performanceTime === undefined) {
-		throw new Error('AudioContext.getOutputTimestamp returned an incomplete timestamp');
-	}
-	return { contextTime, performanceTime };
-}
-
 function _publishPresentedTransport(
 	deck: DeckId,
 	outputTimestamp: { contextTime: number; performanceTime: number }
 ): PresentedTransportObservation | null {
 	const rt = _rt[deck];
 	if (rt.processor === null || rt.durationSec <= 0) return null;
+	// The sample clock is handed over so a stalled HAL output position falls back
+	// to it rather than freezing the waveform. See
+	// .planning/hardening-ledger/decisions/presentation-clock-fallback.md.
 	const observation = observePresentedTransportTimeline(
 		rt.presentation,
 		outputTimestamp,
-		rt.durationSec
+		rt.durationSec,
+		_ctx === null ? undefined : _ctx.currentTime
 	);
+	notePresentationClock(deck, observation.clock_stalled);
 	if (!observation.accepted) return observation;
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
@@ -2116,19 +2120,37 @@ function _publishPresentedTransport(
 	return observation;
 }
 
+/**
+ * One frame of presentation, guarded. `_rafId` is nulled FIRST, so before this
+ * guard any throw left no pending frame and no handler, and the only re-arm was
+ * `_ensureRaf()` in `_scheduleDeck` - which free-running playback never calls.
+ * One throw killed the waveform for the session while audio played on. A
+ * failing frame is RE-ARMED rather than abandoned, because a frozen playhead is
+ * the defect being fixed; the error row is rate-limited by perf-event-log.
+ */
 function _tick(): void {
 	_rafId = null;
 	if (_ctx === null) return;
-	const outputTimestamp = _readOutputTimestamp(_ctx);
 	let anyTransport = false;
-	for (const deck of DECK_IDS) {
-		_commitPendingIfDue(deck);
-		const observation = _publishPresentedTransport(deck, outputTimestamp);
-		_updateSlipPosition(deck);
-		if (observation?.audible || observation?.transport_pending) anyTransport = true;
+	try {
+		const outputTimestamp = _readOutputTimestamp(_ctx);
+		for (const deck of DECK_IDS) {
+			_commitPendingIfDue(deck);
+			const observation = _publishPresentedTransport(deck, outputTimestamp);
+			_updateSlipPosition(deck);
+			if (observation?.audible || observation?.transport_pending) anyTransport = true;
+		}
+		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
+		noteMasterSilence(_masterAnalyser, anyTransport, Date.now());
+		if (anyTransport) noteAudioPresentationTick();
+	} catch (error: unknown) {
+		notePresentationTickFailure(error);
+		// Unconditional, and through the guarded entry point: the throw may have
+		// happened before anyTransport was known, and a deck that IS playing must
+		// not lose its clock to one bad frame.
+		_ensureRaf();
+		return;
 	}
-	// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-	if (anyTransport) noteAudioPresentationTick();
 	if (anyTransport) _rafId = requestAnimationFrame(_tick);
 }
 

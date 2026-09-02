@@ -14,6 +14,18 @@
  * schedule must never rewind presented state, and a {0,0} or repeated output
  * timestamp must leave pending state intact rather than reporting arrival.
  *
+ * CLOCK AUTHORITY, and it is no longer unconditional. The output timestamp is
+ * presentation truth WHILE IT IS ADVANCING. On Wed 2 Sep 2026 it stopped
+ * advancing under a CoreAudio overload storm while the render-thread sample
+ * clock kept going, and because this module trusted it unconditionally the
+ * waveform froze for twenty minutes over live audio. It now falls back to the
+ * sample clock for the duration of such a stall, reports the stall, and hands
+ * authority straight back when the output timestamp recovers. The playhead
+ * leads the audible position by the output latency while that fallback is
+ * active, which is a real cost and is accepted deliberately:
+ * `.planning/hardening-ledger/decisions/presentation-clock-fallback.md` is the
+ * decision, its rejected alternative, and the conditions to revisit it.
+ *
  * DEPENDENCY DIRECTION, load-bearing: clock -> presentation, never the reverse.
  * `_publishPresentedTransport` and `_tick` need `_rt`, so they stay in the
  * engine until S6 and land in transport/clock, which imports this module. If
@@ -34,6 +46,17 @@ export interface PresentedTransportSchedule extends _ClockSegment {
 	supersededByRevision: number | null;
 }
 
+/**
+ * How long the output timestamp may stand still before it is called stalled.
+ *
+ * Long enough that a dropped frame, a GC pause or a slow paint is not an
+ * incident; short enough that an operator does not mix on a frozen playhead.
+ */
+export const PRESENTATION_STALL_MS = 500;
+
+/** Which clock the position in an observation was computed from. */
+export type PresentationClockSource = 'output' | 'sample';
+
 export interface PresentedTransportTimeline {
 	paused_position_sec: number;
 	presented_position_sec: number;
@@ -42,6 +65,15 @@ export interface PresentedTransportTimeline {
 	presented_revision: number;
 	last_presentation_context_time_s: number | null;
 	last_presentation_performance_time_ms: number | null;
+	/**
+	 * When the output timestamp was first seen to stop advancing, on the
+	 * performance clock. null whenever it is advancing normally.
+	 *
+	 * Held as the START of the freeze rather than a duration so the elapsed time
+	 * is derived from whatever sample arrives next, and a run of frames nobody
+	 * observed cannot be lost.
+	 */
+	output_frozen_since_ms: number | null;
 	schedules: PresentedTransportSchedule[];
 }
 
@@ -54,6 +86,17 @@ export interface PresentedTransportObservation {
 	transport_pending: boolean;
 	desired_revision: number;
 	presented_revision: number;
+	/**
+	 * true stalled, false advancing, **null NOT KNOWN**.
+	 *
+	 * The third state is not a nicety. The stall is measured against
+	 * `performanceTime`, and when that value is unreadable the honest answer is
+	 * that we cannot tell - collapsing it into either neighbour would either
+	 * raise an alarm on evidence that does not exist or hide a real freeze.
+	 */
+	clock_stalled: boolean | null;
+	/** Which clock `position_sec` came from. 'sample' means the fallback is live. */
+	clock_source: PresentationClockSource;
 }
 
 export function createPresentedTransportTimeline(
@@ -72,6 +115,7 @@ export function createPresentedTransportTimeline(
 		presented_revision: 0,
 		last_presentation_context_time_s: null,
 		last_presentation_performance_time_ms: null,
+		output_frozen_since_ms: null,
 		schedules: []
 	};
 }
@@ -185,11 +229,15 @@ function _prunePresentedTransportSchedules(timeline: PresentedTransportTimeline)
 function _presentedObservation(
 	timeline: PresentedTransportTimeline,
 	accepted: boolean,
-	outputStarted: boolean
+	outputStarted: boolean,
+	clockStalled: boolean | null = false,
+	clockSource: PresentationClockSource = 'output'
 ): PresentedTransportObservation {
 	return {
 		accepted,
 		output_started: outputStarted,
+		clock_stalled: clockStalled,
+		clock_source: clockSource,
 		presentation_context_time_s: timeline.last_presentation_context_time_s,
 		position_sec: timeline.presented_position_sec,
 		audible: timeline.presented_active,
@@ -199,67 +247,142 @@ function _presentedObservation(
 	};
 }
 
+/**
+ * Advance presented state to `effectiveTime`, whichever clock supplied it.
+ *
+ * Extracted so the fallback runs the SAME arithmetic as the normal path rather
+ * than a second copy of it: a fallback that computed the position differently
+ * would make the playhead jump at the moment of the stall, on top of already
+ * leading by the output latency.
+ */
+function _applyPresentedAt(
+	timeline: PresentedTransportTimeline,
+	effectiveTime: number,
+	durationSec: number
+): void {
+	const selected = _effectivePresentedScheduleAt(timeline, effectiveTime);
+	if (selected !== null && selected.revision < timeline.presented_revision) {
+		throw new Error(
+			`presented schedule revision regressed from ${timeline.presented_revision} to ` +
+				`${selected.revision} at contextTime=${effectiveTime}`
+		);
+	}
+	if (selected === null) {
+		timeline.presented_position_sec = timeline.paused_position_sec;
+		timeline.presented_active = false;
+		return;
+	}
+	const crossesNewRevision = selected.revision > timeline.presented_revision;
+	const positionSec = selected.active
+		? _positionForSegment(selected, effectiveTime, durationSec)
+		: crossesNewRevision
+			? selected.startPositionSec
+			: timeline.paused_position_sec;
+	const audible = selected.active && !deckReachedEnd(positionSec, durationSec, selected.loop);
+	timeline.presented_position_sec = positionSec;
+	timeline.presented_active = audible;
+	timeline.presented_revision = Math.max(timeline.presented_revision, selected.revision);
+	if (!audible) timeline.paused_position_sec = positionSec;
+}
+
+/**
+ * Observe one frame of output truth, and keep the playhead moving if it lies.
+ *
+ * `sampleClockTimeS` is `AudioContext.currentTime` - the render-thread clock,
+ * the same source `deckAudioClockPositionMs()` already reads. It is OPTIONAL:
+ * without it this function still detects and reports a stall, it simply has
+ * nothing to fall back to. That is deliberate, so a caller that cannot supply
+ * the clock degrades to detection rather than to silence.
+ *
+ * See `.planning/hardening-ledger/decisions/presentation-clock-fallback.md`
+ * for why the fallback exists, and for the output-latency lead it costs.
+ */
 export function observePresentedTransportTimeline(
 	timeline: PresentedTransportTimeline,
 	outputTimestamp: { contextTime: number; performanceTime: number },
-	durationSec: number
+	durationSec: number,
+	sampleClockTimeS?: number
 ): PresentedTransportObservation {
 	if (!Number.isFinite(durationSec) || durationSec <= 0) {
 		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
 	}
 	const { contextTime, performanceTime } = outputTimestamp;
-	if (
-		!Number.isFinite(contextTime) ||
-		!Number.isFinite(performanceTime) ||
-		contextTime < 0 ||
-		performanceTime < 0
-	) {
+	// contextTime IS transport authority, so it keeps failing fast: a playhead
+	// computed from a value that is not a time is worse than a frozen one.
+	if (!Number.isFinite(contextTime) || contextTime < 0) {
 		throw new RangeError(
-			`output timestamp must contain finite non-negative values, got ` +
-				`contextTime=${contextTime}, performanceTime=${performanceTime}`
+			`output timestamp contextTime must be finite and non-negative, got ${contextTime}`
 		);
 	}
-	// Chromium may expose the current performance clock while the output frame
-	// remains at zero during device warmup. Context time is presentation truth.
-	if (contextTime === 0) {
-		return _presentedObservation(
-			timeline,
-			false,
-			timeline.last_presentation_context_time_s !== null
-		);
-	}
+	// performanceTime is correlation/diagnostic data and NEVER transport
+	// authority - it says so three lines below in the code that stores it. It
+	// used to throw here, and since WebKit EXTRAPOLATES it, one bad extrapolation
+	// could take out the rAF loop that paints the waveform for the rest of the
+	// session. It now degrades to "unreadable", which costs only the ability to
+	// time a stall.
+	const clockMs =
+		Number.isFinite(performanceTime) && performanceTime >= 0 ? performanceTime : null;
+
 	const previousContextTime = timeline.last_presentation_context_time_s;
-	if (previousContextTime !== null && contextTime < previousContextTime) {
-		return _presentedObservation(timeline, false, true);
-	}
+	const outputStarted = previousContextTime !== null;
+	// Three ways the output clock fails to advance, and all three froze the
+	// waveform on Wed 2 Sep 2026: it repeats, it regresses, or it drops to 0.
+	const outputAdvancing =
+		contextTime > 0 && (previousContextTime === null || contextTime > previousContextTime);
+	// A repeat is USABLE even though it is not advancing, and the distinction is
+	// load-bearing. rAF runs at ~60Hz while the device hands over frames at its
+	// own rate, so a repeated timestamp is the ordinary case several times a
+	// second on a healthy machine; recomputing at the same time yields the same
+	// position, which is correct. What a repeat must NOT do is reset the freeze
+	// timer - a run of them for longer than the window is exactly the freeze.
+	const outputUsable =
+		contextTime > 0 && (previousContextTime === null || contextTime >= previousContextTime);
 
-	const selected = _effectivePresentedScheduleAt(timeline, contextTime);
-	if (selected !== null && selected.revision < timeline.presented_revision) {
-		throw new Error(
-			`presented schedule revision regressed from ${timeline.presented_revision} to ` +
-				`${selected.revision} at contextTime=${contextTime}`
-		);
-	}
-
-	if (selected === null) {
-		timeline.presented_position_sec = timeline.paused_position_sec;
-		timeline.presented_active = false;
+	let clockStalled: boolean | null;
+	if (outputAdvancing) {
+		timeline.output_frozen_since_ms = null;
+		clockStalled = false;
+	} else if (!outputStarted) {
+		// Waiting for a device to hand over its first frame is not a freeze.
+		clockStalled = false;
+	} else if (clockMs === null) {
+		// The clock the stall is measured against is unreadable. "I cannot tell"
+		// and "it has stalled" are different answers and must not be collapsed.
+		clockStalled = null;
 	} else {
-		const crossesNewRevision = selected.revision > timeline.presented_revision;
-		const positionSec = selected.active
-			? _positionForSegment(selected, contextTime, durationSec)
-			: crossesNewRevision
-				? selected.startPositionSec
-				: timeline.paused_position_sec;
-		const audible = selected.active && !deckReachedEnd(positionSec, durationSec, selected.loop);
-		timeline.presented_position_sec = positionSec;
-		timeline.presented_active = audible;
-		timeline.presented_revision = Math.max(timeline.presented_revision, selected.revision);
-		if (!audible) timeline.paused_position_sec = positionSec;
+		if (timeline.output_frozen_since_ms === null) timeline.output_frozen_since_ms = clockMs;
+		clockStalled = clockMs - timeline.output_frozen_since_ms > PRESENTATION_STALL_MS;
 	}
-	timeline.last_presentation_context_time_s = contextTime;
-	// Performance time is correlation/diagnostic data, never transport authority.
-	timeline.last_presentation_performance_time_ms = performanceTime;
-	_prunePresentedTransportSchedules(timeline);
-	return _presentedObservation(timeline, true, true);
+
+	const fallbackTime =
+		clockStalled === true &&
+		sampleClockTimeS !== undefined &&
+		Number.isFinite(sampleClockTimeS) &&
+		previousContextTime !== null &&
+		sampleClockTimeS > previousContextTime
+			? sampleClockTimeS
+			: null;
+
+	// The fallback is checked FIRST once the clock is stalled: a repeated
+	// timestamp is still "usable" arithmetic, but using it is precisely what
+	// paints the identical frame forever.
+	if (fallbackTime === null && outputUsable) {
+		_applyPresentedAt(timeline, contextTime, durationSec);
+		timeline.last_presentation_context_time_s = contextTime;
+		if (clockMs !== null) timeline.last_presentation_performance_time_ms = clockMs;
+		_prunePresentedTransportSchedules(timeline);
+		return _presentedObservation(timeline, true, true, clockStalled, 'output');
+	}
+
+	if (fallbackTime !== null) {
+		_applyPresentedAt(timeline, fallbackTime, durationSec);
+		if (clockMs !== null) timeline.last_presentation_performance_time_ms = clockMs;
+		// last_presentation_context_time_s is deliberately NOT advanced: it is the
+		// last value the output clock was TRUSTED at, and it is what recovery is
+		// detected against. Advancing it here would make the output timestamp look
+		// permanently behind and the fallback would never hand authority back.
+		return _presentedObservation(timeline, true, true, true, 'sample');
+	}
+
+	return _presentedObservation(timeline, false, outputStarted, clockStalled, 'output');
 }

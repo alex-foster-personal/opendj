@@ -23,6 +23,11 @@
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
 	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
+	import {
+		foldPresentationSample,
+		type PresentationStallState
+	} from '$lib/player/transport/presentation-stall';
+	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
 		drawPlayhead,
@@ -223,6 +228,19 @@
 		});
 	}
 
+	// Is the painted position actually moving? deck.playing is desired INTENT
+	// (audio-engine sets st.playing = rt.desiredActive), not presented truth, so
+	// this loop will happily repaint a pixel-identical frame at 60Hz forever and
+	// call it healthy - which is exactly what it did for twenty minutes on
+	// Wed 2 Sep 2026. Nothing here can fix a frozen clock; what it can do is stop
+	// lying about it. See .planning/hardening-ledger/items/
+	// waveform-freezes-on-stale-output-timestamp.md.
+	let stallState = $state.raw<PresentationStallState | undefined>(undefined);
+	let playheadFrozen = $state(false);
+	// Either the device clock stalled (presentation.ts is coasting on the sample
+	// clock) or the painted number itself stopped moving for any other reason.
+	const clockUntrusted = $derived(playheadFrozen || isPresentationClockStalled(deckId));
+
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
 		const masterMoving =
@@ -231,6 +249,14 @@
 		if (!(deck.playing || seeking || pulse || masterMoving)) return;
 		let raf = requestAnimationFrame(function loop() {
 			draw();
+			stallState = foldPresentationSample(stallState, {
+				playing: deck.playing,
+				position_ms: deck.position_ms,
+				tMs: performance.now()
+			});
+			const stall = stallState;
+			if (stall !== undefined && stall.verdict === 'presentation-stalled') playheadFrozen = true;
+			else if (stall !== undefined && stall.frozenSinceMs === null) playheadFrozen = false;
 			raf = requestAnimationFrame(loop);
 		});
 		return () => cancelAnimationFrame(raf);
@@ -381,6 +407,15 @@
 		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
 	</div>
 	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
+		{#if clockUntrusted}
+			<span
+				class="clock-stalled"
+				title="The audio device stopped reporting where playback is. The waveform is
+estimated from the render clock and may run ahead of what you hear."
+			>
+				CLOCK
+			</span>
+		{/if}
 		<canvas
 			bind:this={canvasEl}
 			role="slider"
@@ -414,6 +449,23 @@
 </div>
 
 <style>
+	/* Deliberately loud and deliberately not a toast: a stalled clock is a
+	   condition that persists, and it belongs on the deck it applies to. */
+	.clock-stalled {
+		position: absolute;
+		top: 2px;
+		right: 4px;
+		z-index: 3;
+		padding: 0 4px;
+		border-radius: 2px;
+		background: #b3261e;
+		color: #fff;
+		font-size: 9px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		pointer-events: auto;
+	}
+
 	.rb-waverow {
 		display: flex;
 		height: var(--rb-waverow-h);

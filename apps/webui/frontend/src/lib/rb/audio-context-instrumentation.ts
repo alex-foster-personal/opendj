@@ -11,7 +11,9 @@
  * measure must never become a failure to play.
  */
 
+import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { pushToast } from '$lib/stores.svelte';
 import {
 	flushWorkletAckWindow,
 	resetWorkletAckStats
@@ -95,4 +97,36 @@ export function disarmContextInstrumentation(): void {
 	detachXrunSentinel();
 	flushWorkletAckWindow();
 	resetWorkletAckStats();
+}
+
+/**
+ * P0: arm the non-running-state watchdog for this context.
+ *
+ * Lives here rather than in the engine for the same reason everything else in
+ * this module does (convention D5): `audio-engine.svelte.ts` sits near the
+ * ratchet's `file_size.max_frontend` cap and instrumentation is not playback.
+ *
+ * The `running` re-stamp that used to be the whole `statechange` listener is
+ * now one branch of `stampContextDeviceFloors`, called on every transition, so
+ * a context that starts suspended is still re-stamped the moment it runs.
+ */
+export function armAudioContextWatchdog(
+	ctx: AudioContext,
+	isAnyDeckPlaying: () => boolean
+): void {
+	ctx.addEventListener('statechange', () => {
+		if (ctx.state === 'running') stampContextDeviceFloors(ctx);
+	});
+	// No cast of any kind: WatchableAudioContext is declared narrowly enough that
+	// a real AudioContext structurally satisfies it, which is the point of
+	// declaring it that way rather than reaching for a double assertion.
+	installAudioContextWatchdog(
+		ctx,
+		{
+			pushToast,
+			recordPerfTiming: (kind, stages) => recordPerfTiming(kind, stages),
+			sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+		},
+		isAnyDeckPlaying
+	);
 }

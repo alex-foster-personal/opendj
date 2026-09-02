@@ -309,10 +309,24 @@ test('the device-floor row is re-stamped once the context is actually running', 
 		'the stamp must be remembered against THIS context rather than as a sticky ' +
 			"boolean, or a rebuilt graph keeps quoting the previous device's floors"
 	);
+	// The listener moved on Wed 2 Sep 2026: the engine's own statechange handler
+	// acted on 'running' ONLY, which is how suspended/interrupted/closed fell
+	// through in silence for ~24 minutes. There is now exactly one owner of the
+	// event, and the re-stamp is a branch inside it. What this guard pins is
+	// unchanged - that SOMETHING still listens - only where to look for it.
 	assert.ok(
-		build.includes("stampedContext.state === 'running'"),
-		'if nothing listens for the state transition then a context resumed outside ' +
-			'_resumeContext never gets its authoritative row'
+		build.includes('armAudioContextWatchdog('),
+		'if the graph stops arming the context watchdog then nothing listens for the ' +
+			'state transition, and a context resumed outside _resumeContext never gets ' +
+			'its authoritative row'
+	);
+	const arming = engineBlockAfter(
+		'export function armAudioContextWatchdog(\n\tctx: AudioContext,\n\tisAnyDeckPlaying: () => boolean\n): void {'
+	);
+	assert.ok(
+		arming.includes("ctx.state === 'running'") && arming.includes('stampContextDeviceFloors(ctx)'),
+		'the arming must still re-stamp on the transition to running, or the authoritative ' +
+			'row is never taken for a context that starts suspended'
 	);
 
 	const resume = engineBlockAfter('async function _resumeContext(): Promise<AudioContext> {');

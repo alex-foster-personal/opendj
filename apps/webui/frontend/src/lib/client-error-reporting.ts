@@ -1,4 +1,5 @@
 import { api } from './api/client';
+import { type PerfEvent, setPerfEventEscalator } from './rb/perf-event-log';
 
 const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 const MAX_QUEUE = 20;
@@ -127,6 +128,23 @@ export function reportClientError(
 export function installClientErrorReporting(): void {
 	if (installed || typeof window === 'undefined') return;
 	installed = true;
+	// Point the perf ring's escalated rows here. The dependency runs THIS way
+	// round on purpose: perf-event-log must stay import-free, because it is
+	// reached transitively by Playwright specs loaded under plain Node, where
+	// `$lib/api/client.ts` evaluating import.meta.env at module scope kills the
+	// whole config at load time. See setPerfEventEscalator's comment.
+	setPerfEventEscalator((event: PerfEvent) =>
+		reportClientError(
+			`${event.kind}: ${event.message}`,
+			{
+				source: 'perf-event',
+				perf_kind: event.kind,
+				deck: event.deck,
+				...(event.id === undefined ? {} : { perf_event_id: event.id })
+			},
+			'ui-error'
+		)
+	);
 	window.addEventListener('error', (event) => {
 		reportClientError(event.error ?? event.message, { source: 'window' }, 'window-error');
 	});

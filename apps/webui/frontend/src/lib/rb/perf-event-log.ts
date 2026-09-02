@@ -24,6 +24,77 @@
  *    localStorage is coalesced onto a timer and forced on pagehide.
  */
 
+/**
+ * The perf kinds whose ERROR-severity rows leave this browser.
+ *
+ * Deliberately a short, named allowlist rather than "everything at error
+ * severity". `transport-schedule` is appended once per `_scheduleDeck` and
+ * PitchFader drives that from an unthrottled pointermove, so a blanket rule
+ * would put roughly one POST per pointer sample on the wire, during a set, on
+ * the same main thread as the audio the escalation exists to protect.
+ *
+ * These four are the audio-liveness kinds: each one means "the operator may be
+ * hearing nothing, or seeing nothing move", and each is worth a round trip.
+ */
+const ESCALATED_KINDS: ReadonlySet<string> = new Set([
+	'xrun',
+	'audio-context',
+	'silent-while-playing',
+	'presentation-clock-stalled',
+	'presentation-stalled'
+]);
+
+/**
+ * At most one escalation per kind per window.
+ *
+ * A dropout is a SUSTAINED condition, not an event: the silence watchdog and
+ * the presentation-stall watchdog are edge-triggered, but the xrun sentinel
+ * reports every 2s for as long as the machine is struggling. Without this, a
+ * twenty-minute incident is 600 POSTs describing the same twenty minutes.
+ * Rate-limiting here rather than inside reportClientError keeps its 10s
+ * fingerprint dedupe (which keys on the exact message) doing its own job:
+ * these messages carry live numbers and so are never identical twice.
+ */
+const ESCALATION_WINDOW_MS = 60_000;
+
+const _lastEscalationAtMs = new Map<string, number>();
+
+/**
+ * Where an escalated row goes, injected at client boot.
+ *
+ * THIS MODULE HAS NO IMPORTS, AND THAT IS A HARD PROPERTY, not a style
+ * preference. It began as a pure module and a static import of
+ * `reportClientError` was added here on Wed 2 Sep 2026 (the import statement is
+ * deliberately not written out anywhere in this file: the quality gate's
+ * dependency graph is built by scanning module TEXT, so a realistic import line
+ * inside a comment is read as a real edge and reports a false cycle - which it
+ * duly did). That import reaches `$lib/api/client.ts`, which evaluates
+ * `import.meta.env.VITE_API_BASE` at module scope - and Playwright loads spec
+ * files under plain Node, where `import.meta.env` is undefined. Every
+ * Playwright config whose specs reach this module transitively died at CONFIG
+ * LOAD with `TypeError: Cannot read properties of undefined` followed by
+ * `Error: No tests found`, i.e. the gate reported zero tests rather than a
+ * failure. A sink injected at boot keeps the escalation and keeps the purity.
+ *
+ * `null` is a legitimate state, not an error: unit tests, Playwright's Node
+ * loader and any pre-boot code all run without a sink, and a row must never
+ * throw its way out of a logger.
+ */
+let _escalator: ((event: PerfEvent) => void) | null = null;
+let _warnedNoEscalator = false;
+
+/**
+ * Point escalated rows at a sink. Called once, at client boot.
+ *
+ * Takes the row rather than a pre-formatted message so this module keeps
+ * ownership of its own shape and the sink decides what to do with it. `null`
+ * unsets it, which is what lets a test exercise the unwired path rather than
+ * assume it.
+ */
+export function setPerfEventEscalator(sink: ((event: PerfEvent) => void) | null): void {
+	_escalator = sink;
+}
+
 export interface PerfEvent {
 	t: string;
 	kind: string;
@@ -216,6 +287,37 @@ function _stageSummary(stages: Record<string, number>): string {
  * is where somebody actually greps: a structured field nothing prints is a
  * field that only helps whoever already knew to open localStorage.
  */
+/**
+ * Forward one audio-liveness failure to the engine, at most once per window.
+ *
+ * Additive, never a re-route: the row is already in the ring and on the
+ * console before this runs, and a failure here cannot remove it.
+ * `reportClientError` owns its own durable retry queue, so a POST that fails
+ * is retried on the next report or page load rather than lost.
+ */
+function _escalate(entry: PerfEvent): void {
+	if (!ESCALATED_KINDS.has(entry.kind)) return;
+	if (_escalator === null) {
+		// Once per session, not per row: a sustained dropout would otherwise turn
+		// a missing sink into its own console flood. The row is already in the
+		// ring and on the console, so nothing is lost but the round trip.
+		if (!_warnedNoEscalator) {
+			_warnedNoEscalator = true;
+			console.warn(
+				'[perf-event] no escalator wired; audio-liveness failures stay in this browser. ' +
+					'setPerfEventEscalator() is called from installClientErrorReporting() at ' +
+					'client boot, so this is expected under tests and outside the browser.'
+			);
+		}
+		return;
+	}
+	const nowMs = Date.now();
+	const lastMs = _lastEscalationAtMs.get(entry.kind);
+	if (lastMs !== undefined && nowMs - lastMs < ESCALATION_WINDOW_MS) return;
+	_lastEscalationAtMs.set(entry.kind, nowMs);
+	_escalator(entry);
+}
+
 export function recordPerfEvent(
 	kind: string,
 	message: string,
@@ -234,6 +336,10 @@ export function recordPerfEvent(
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
 	const idBit = id === undefined ? '' : ` id=${id}`;
 	console[severity](`[perf-event] ${kind}${deckBit}${idBit}: ${message}`);
+	// AFTER the ring append and the console line, so an escalation that throws
+	// cannot cost the local record that is the last resort when the network is
+	// the thing that is broken.
+	if (severity === 'error') _escalate(entry);
 	return entry;
 }
 
