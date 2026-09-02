@@ -66,8 +66,10 @@ async function _throwRbApiError(r: Response): Promise<never> {
 	);
 }
 
-async function _fetchJson<T>(path: string): Promise<T> {
-	const r = await fetch(`${RB_API_BASE}${path}`, { headers: { Accept: 'application/json' } });
+async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
+	const init: RequestInit = { headers: { Accept: 'application/json' } };
+	if (cache !== undefined) init.cache = cache;
+	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
 }
@@ -458,6 +460,29 @@ export async function fetchAnlz(stable_id: string, points = 38400): Promise<Anlz
 	});
 	_inflightAnlz.set(key, tracked);
 	return tracked;
+}
+
+/** Like {@link fetchAnlz}, but for the one caller (`refreshHotCues`,
+ * audio-engine) that cannot accept a browser-HTTP-cache hit: the backend
+ * marks a decoded /anlz response `Cache-Control: public, max-age=3600`
+ * (`rb_assets.py` `_CACHE_ANLZ`), so a plain `fetch` of the same URL within
+ * that hour can be satisfied straight out of the HTTP cache with no network
+ * round trip - "fresh" in name only, right after the mutation it's meant to
+ * observe. `cache: 'reload'` forces the round trip and re-primes the HTTP
+ * cache with the new response, so ordinary reads right after this one still
+ * benefit from it. Deliberately bypasses the in-flight dedupe map above: an
+ * ordinary in-flight `fetchAnlz` for the same key must not be handed this
+ * stale-cache-tolerant promise, and vice versa. */
+export async function fetchAnlzBypassingHttpCache(
+	stable_id: string,
+	points = 38400
+): Promise<AnlzWithVocals> {
+	const data = await _fetchJson<AnlzWithVocals>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		'reload'
+	);
+	vocalsOf(data);
+	return data;
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */

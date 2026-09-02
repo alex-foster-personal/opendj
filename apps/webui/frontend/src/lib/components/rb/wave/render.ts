@@ -12,9 +12,18 @@
  * band arrays the server filled - bands are NEVER synthesised.
  */
 import { vocalsOf } from '$lib/rb/api-rb';
-import type { AnlzBeat, AnlzCue, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
+import { drawLoopCueBands, drawPointCueMarkers, MARKER_BAND_PX, type WavePalette } from './cues';
+
+// Cue-marker painting, the wavestack palette and its WCAG contrast floor
+// live in ./cues (issue #877) - readPalette/WavePalette re-exported here so
+// WaveRow.svelte keeps its one import path; contrastRatio/CUE_MIN_CONTRAST/
+// relativeLuminance have no caller outside ./cues itself, so they are not
+// re-exported (wave-cue-contrast.test.mjs loads ./cues directly).
+export { readPalette } from './cues';
+export type { WavePalette } from './cues';
 
 /** Vocal-region bar colour (SPIKE-B1 blue bars). A literal on purpose:
  * theme.css belongs to the shared theme unit and the canvas painters
@@ -52,9 +61,6 @@ export function vocalAlpha(intensity: number): number {
 /** Seconds of track visible across one row (window is centered on the
  * fixed playhead). 24s keeps the <=38400-point detail waveform dense. */
 export const WAVE_WINDOW_S = 24;
-
-/** Top strip reserved for beat ticks, cue triangles and phrase chevrons. */
-const MARKER_BAND_PX = 10;
 
 /** Playhead is pure white in the screenshot; not a themed surface colour. */
 /** Center 'now' line - red by default; Beat Sync followers override via tone. */
@@ -122,50 +128,6 @@ function _amp(v: number, norm: number): number {
 	return Math.pow(Math.min(1, v / norm), AMP_GAMMA);
 }
 
-export interface WavePalette {
-	/** Row background (--rb-bg). */
-	bg: string;
-	/** Lows band - orange (--rb-orange). */
-	low: string;
-	/** Mids band - blue (--rb-wave-mid). */
-	mid: string;
-	/** Highs band - near-white overlay (--rb-wave-high). */
-	high: string;
-	/** Beat/bar ticks (--rb-text). */
-	tick: string;
-	/** Cue/memory triangles - red (--rb-red). */
-	cue: string;
-	/** Phrase chevrons (--rb-text-dim). */
-	phrase: string;
-}
-
-const _PALETTE_VARS: Record<keyof WavePalette, string> = {
-	bg: '--rb-bg',
-	low: '--rb-orange',
-	mid: '--rb-wave-mid',
-	high: '--rb-wave-high',
-	tick: '--rb-text',
-	cue: '--rb-red',
-	phrase: '--rb-text-dim'
-};
-
-/** Resolve the palette from the .perf-root CSS vars. Fail-fast: a missing
- * var means the element is outside .perf-root - that is a wiring bug. */
-export function readPalette(el: HTMLElement): WavePalette {
-	const styles = getComputedStyle(el);
-	const out = {} as WavePalette;
-	for (const key of Object.keys(_PALETTE_VARS) as (keyof WavePalette)[]) {
-		const value = styles.getPropertyValue(_PALETTE_VARS[key]).trim();
-		if (value === '') {
-			throw new Error(
-				`wavestack palette: CSS var ${_PALETTE_VARS[key]} empty - element not under .perf-root?`
-			);
-		}
-		out[key] = value;
-	}
-	return out;
-}
-
 /** One frame's inputs. anlz null = loaded track without (or awaiting)
  * analysis: background + playhead only, never an invented waveform. */
 export interface WaveRowFrame {
@@ -209,9 +171,13 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	if (frame.anlz !== null && durS > 0) {
 		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
+		// Loop cue bands paint as background, before the beat grid/phrases they
+		// would otherwise blank out for their span; point cue markers stay in
+		// the foreground, after them (discussion_r3918219289).
+		drawLoopCueBands(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
-		_drawCues(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
+		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
 	}
 	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
@@ -320,28 +286,6 @@ function _drawBeatGrid(
 		ctx.fillRect(line.x, line.y, line.width, line.capHeight);
 	}
 	ctx.globalAlpha = 1;
-}
-
-function _drawCues(
-	ctx: CanvasRenderingContext2D,
-	cues: AnlzCue[],
-	tLeft: number,
-	pxPerS: number,
-	w: number,
-	palette: WavePalette
-): void {
-	ctx.fillStyle = palette.cue;
-	for (const cue of cues) {
-		const x = (cue.in_ms / 1000 - tLeft) * pxPerS;
-		if (x < -4 || x > w + 4) continue;
-		// Small red down-pointing triangle at the top edge.
-		ctx.beginPath();
-		ctx.moveTo(x - 4, 0);
-		ctx.lineTo(x + 4, 0);
-		ctx.lineTo(x, 7);
-		ctx.closePath();
-		ctx.fill();
-	}
 }
 
 /**

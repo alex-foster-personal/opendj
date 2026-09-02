@@ -47,13 +47,13 @@ afterEach(() => {
 	_pendingTimers.clear();
 });
 
-function anlzPayload(local_waveform) {
+function anlzPayload(local_waveform, cues = []) {
 	return {
 		stable_id: 'abc',
 		points: 38400,
 		waveform: { kind: 'mono', preview: { length: 0, low: [], mid: [], high: [] }, detail: { length: 0, low: [], mid: [], high: [] } },
 		beatgrid: { beat_count: 0, beats: [] },
-		cues: [],
+		cues,
 		phrases: [],
 		local_waveform,
 		vocals: { status: 'not_analyzed' }
@@ -471,6 +471,82 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz defers to a fresher cach
 	}
 	const resolved = cache.resolveDisplayedAnlz(retryable, 'landed-decode-track');
 	assert.equal(resolved.local_waveform.status, 'decoded');
+});
+
+test('refreshAnlzCacheEntry overwrites a stale published entry without fetching', async () => {
+	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		// Seed the shared cache the way a normal deck load does, standing in
+		// for the pre-mutation state a hot cue save leaves behind: the bank
+		// (always a live fetch) and the cached anlz agree here, before the
+		// mutation this test goes on to model.
+		cache.ensureAnlz('mutated-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const stale = cache.getAnlzEntry('mutated-track');
+		assert.equal(stale.status, 'ready');
+		assert.deepEqual(stale.data.cues, [], 'the seeded entry has no cues yet');
+
+		// refreshHotCues (audio-engine) fetches this fresh payload via its own
+		// fetchAnlz call, bypassing ensureAnlz/fetchAnlzForDeckLoad entirely -
+		// so nothing but an explicit refreshAnlzCacheEntry call can be the
+		// thing that lands it in the shared cache. No fetch mock swap here:
+		// this call must not perform a fetch of its own.
+		const freshCue = { slot: 'A', kind: 'hot_cue', is_loop: false, in_ms: 1000, out_ms: null };
+		cache.refreshAnlzCacheEntry('mutated-track', anlzPayload({
+			status: 'decoded',
+			reason: null,
+			preview_b64: 'AAAA',
+			preview_max: 200
+		}, [freshCue]));
+
+		const refreshed = cache.getAnlzEntry('mutated-track');
+		assert.equal(cache.isAnlzEntryUsable(refreshed), true);
+		assert.deepEqual(
+			refreshed.data.cues,
+			[freshCue],
+			'a later load() reusing this cache entry (isAnlzEntryUsable) must see the ' +
+				'post-mutation cue, matching what the hot cue bank already shows - ' +
+				'otherwise the bank and the waveform disagree after a reload, the ' +
+				'issue #877 failure shape reached via a mutate-then-reload path ' +
+				'(discussion_r3917488672)'
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('invalidateAnlzCacheEntry evicts a ready entry so a later ensureAnlz refetches it', async () => {
+	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		// Seed a ready entry, standing in for the pre-mutation cache state
+		// refreshHotCues finds itself unable to overwrite when one of its two
+		// post-write GETs fails (discussion_r3918817422): with no invalidation,
+		// this stale entry stays 'ready' and isAnlzEntryUsable forever, so a
+		// later load() of the track reuses it instead of refetching.
+		cache.ensureAnlz('partially-refreshed-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(cache.getAnlzEntry('partially-refreshed-track').status, 'ready');
+
+		cache.invalidateAnlzCacheEntry('partially-refreshed-track');
+		assert.equal(
+			cache.getAnlzEntry('partially-refreshed-track'),
+			undefined,
+			'an invalidated entry must read back as never-requested, not as a stale ready one'
+		);
+
+		let calls = 0;
+		globalThis.fetch = async () => {
+			calls += 1;
+			return jsonResponse(
+				anlzPayload({ status: 'decoded', reason: null, preview_b64: 'BBBB', preview_max: 200 })
+			);
+		};
+		cache.ensureAnlz('partially-refreshed-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(calls, 1, 'ensureAnlz must treat an invalidated entry as a cache miss');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });
 
 test('a decoded payload is terminal and never refetches', async () => {

@@ -298,6 +298,34 @@ export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
 	return _cache[stable_id];
 }
 
+/** Overwrites the shared cache entry with a known-fresh /anlz payload,
+ * without triggering a fetch of its own. `refreshHotCues` (audio-engine)
+ * calls this after a hot-cue save/clear/restore: it already fetches a fresh
+ * `/anlz` for the deck's OWN state, but that fetch bypassed this module
+ * (`fetchAnlz` direct, not `fetchAnlzForDeckLoad`/`ensureAnlz`), so the
+ * SHARED cache entry stayed at its pre-mutation value. `load()`'s cache hit
+ * (`isAnlzEntryUsable`) has no freshness check beyond "ready", so a later
+ * reload of the same track - on this deck or another - would reuse that
+ * stale entry: the hot cue bank (always a live fetch) would show the new
+ * cue while the waveform (from the stale cached anlz) would not. Same
+ * failure shape as issue #877's reported bug, just triggered by a reload
+ * instead of the original paint defect. */
+export function refreshAnlzCacheEntry(stable_id: string, data: AnlzData): void {
+	_publishAnlzResult(stable_id, data);
+}
+
+/** Evicts a cache entry outright, so it reads back as never-requested
+ * (`getAnlzEntry` -> undefined, `ensureAnlz` treats it as a miss). Used by
+ * `refreshHotCues` (audio-engine) when one of its two post-write GETs fails:
+ * `Promise.all` rejects before `refreshAnlzCacheEntry` runs, so without this
+ * the pre-mutation entry stays 'ready' and `isAnlzEntryUsable` keeps serving
+ * it to a later load() forever, reaching issue #877's same stale-waveform
+ * shape from a failed-refresh path instead of the original paint defect
+ * (discussion_r3918817422). */
+export function invalidateAnlzCacheEntry(stable_id: string): void {
+	delete _cache[stable_id];
+}
+
 /** Count of ready ANLZ entries for memory tracking. */
 export function anlzCacheEntryCount(): number {
 	let count = 0;

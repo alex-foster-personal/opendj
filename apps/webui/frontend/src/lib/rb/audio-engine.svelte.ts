@@ -90,6 +90,7 @@ import {
 import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
 import {
 	fetchAnlz,
+	fetchAnlzBypassingHttpCache,
 	fetchAudioArrayBuffer,
 	fetchHotCueSlots,
 	fetchStemAudioArrayBuffers,
@@ -102,7 +103,9 @@ import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$li
 import {
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
-	isAnlzEntryUsable
+	invalidateAnlzCacheEntry,
+	isAnlzEntryUsable,
+	refreshAnlzCacheEntry
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	computeFollowerSyncPlan,
@@ -3253,16 +3256,24 @@ class RbAudioEngine implements AudioEngine {
 		void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
 	}
 
-	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR
-	 * (rb_vendor.fetch_cues is always live-queried, never cached - see
-	 * build_anlz_payload's docstring) without touching the audio graph,
-	 * buffer, or transport state that a full load() would disturb. */
+	/** Re-read hot cues + display loop after a SAVE/CLEAR, without touching
+	 * the audio graph/buffer/transport a full load() would disturb. Forces
+	 * past the /anlz 1h HTTP cache and syncs the shared anlz-cache module
+	 * fetchAnlz bypasses, so a later load() sees the mutation (#877) - on a
+	 * partial failure that shared entry is evicted, not left stale. */
 	async refreshHotCues(deck: DeckId): Promise<void> {
 		const { st } = _requireLoaded(deck, 'refreshHotCues');
 		const stableId = st.stable_id;
 		if (stableId === null) throw new Error('refreshHotCues: deck has no stable_id');
-		const [fresh, slots] = await Promise.all([fetchAnlz(stableId), fetchHotCueSlots(stableId)]);
+		const [fresh, slots] = await Promise.all([
+			fetchAnlzBypassingHttpCache(stableId),
+			fetchHotCueSlots(stableId)
+		]).catch((err: unknown) => {
+			invalidateAnlzCacheEntry(stableId);
+			throw err;
+		});
 		if (st.stable_id !== stableId) return; // deck was swapped mid-request
+		refreshAnlzCacheEntry(stableId, fresh);
 		st.anlz = fresh;
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);

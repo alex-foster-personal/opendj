@@ -46,7 +46,10 @@ const PALETTE = {
 	mid: '#4f8fff',
 	high: '#f0f0f0',
 	tick: '#cccccc',
-	cue: '#ff3b30',
+	cueHotCue: '#35c04f',
+	cueLoop: '#e8a13a',
+	cueMemory: '#ff3b30',
+	cueOutline: '#c8cdd2',
 	phrase: '#888888'
 };
 
