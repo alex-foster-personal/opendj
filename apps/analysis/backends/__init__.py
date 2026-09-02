@@ -1,6 +1,7 @@
 """Backend registry.  Backends call :func:`register` at import-time."""
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -10,6 +11,26 @@ BACKENDS: dict[str, "type[AnalyzerBackend]"] = {}
 # Portable default: librosa + scipy install from PyPI wheels (`analysis`
 # extra), unlike the git-HEAD-only madmom dev backend.
 DEFAULT_BACKEND: str = "librosa"
+
+#: What ``DEFAULT_BACKEND`` needs importable at runtime. Kept in step with
+#: ``LibrosaBackend._require_deps``, which raises BackendNotAvailable on the
+#: same names; a test asserts the two agree.
+DEFAULT_BACKEND_MODULES: tuple[str, ...] = ("librosa", "scipy")
+
+
+def default_backend_installed() -> bool:
+    """True when the drain's default backend can actually run on this box.
+
+    ``find_spec`` rather than a real import: callers ask this while building
+    the daemon, and importing librosa costs seconds. It answers the question
+    ``_require_deps`` raises on, one step earlier and without the cost, so a
+    build that ships without the ``analysis`` extra can decline to arm a loop
+    whose every attempt would end in BackendNotAvailable.
+    """
+    return all(
+        importlib.util.find_spec(name) is not None
+        for name in DEFAULT_BACKEND_MODULES
+    )
 
 
 def register(name: str, cls: "type[AnalyzerBackend]") -> None:
@@ -43,4 +64,11 @@ def get_backend(name: str) -> "type[AnalyzerBackend]":
         ) from exc
 
 
-__all__ = ["BACKENDS", "DEFAULT_BACKEND", "register", "get_backend"]
+__all__ = [
+    "BACKENDS",
+    "DEFAULT_BACKEND",
+    "DEFAULT_BACKEND_MODULES",
+    "default_backend_installed",
+    "get_backend",
+    "register",
+]

@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 // E2E for the ingest feature pair (real backend on the claimed worktree
 // port, isolated MDT_DATA_DIR - see PR notes):
 //  * TopBar refresh-analysis button: visible, hover popover with coverage
-//    counts, click starts the refresh job and the popover reaches a
-//    terminal phase.
+//    counts and the analyze-on-import queue line, click starts the refresh
+//    job and the popover reaches a terminal phase.
 //  * Drag-in ingest modal: an external file drag opens the overlay, a drop
 //    opens the modal with the config checkbox list, Stage & run uploads and
 //    reports the staged file.
@@ -25,6 +25,21 @@ test.describe('refresh analysis button', () => {
 		await expect(pop).toBeInViewport();
 		await expect(pop).toContainText('Refresh analysis');
 		await expect(pop).toContainText('missing -');
+		// Analyze-on-import queue: locally imported tracks with no rekordbox
+		// twin. Rendered from the real /analysis-queue endpoint on the real
+		// backend, so this is where the endpoint's serialization is proven end
+		// to end. Assert the identity it promises survived the round trip:
+		// analyzed + unreachable + pending == unmapped.
+		const queueLine = page.getByTestId('analysis-queue-line');
+		await expect(queueLine).toContainText('local (no rekordbox)');
+		const rendered = (await queueLine.textContent()) ?? '';
+		const counts = /(\d+) pending\s*·\s*(\d+) analyzed\s*·\s*(\d+) unreachable of (\d+)/.exec(
+			rendered
+		);
+		expect(counts, `queue line did not render counts: ${rendered}`).not.toBeNull();
+		const [, pending, analyzed, unreachable, unmapped] = counts!.map(Number);
+		expect(pending + analyzed + unreachable).toBe(unmapped);
+		expect(rendered).toMatch(/auto\s+(on|off)/);
 
 		await btn.click();
 		// Empty seeded library: analysis has no targets and vocals from-stems

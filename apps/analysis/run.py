@@ -20,6 +20,30 @@ Flags
 ``--all``                Disable the only-missing filter (default is on).
 ``--stable-id-strategy`` ``file-path`` (default) or ``sha256``.
 ``--verbose``            Log per-track progress.
+
+Exit codes
+----------
+
+``0``  Every queued track was attempted and none failed.
+``1``  ``EXIT_TRACK_FAILURES`` -- at least one track was attempted and its
+       backend failed on it. The only status that says nothing about the
+       next chunk, so the only one a chunking caller may continue past.
+``2``  ``EXIT_USAGE`` -- bad flags, an unknown backend, a malformed handoff
+       file. Argparse's own convention, kept distinct from ``1`` so a
+       configuration mistake is not read as "some tracks failed".
+``3``  ``EXIT_MISSING_TARGETS`` -- one or more ``--pairs-json`` targets were
+       gone before they could be analyzed, either at the admission check or
+       later, when the backend opened the file. Never attempted either way.
+       Distinct from ``1`` on purpose: the caller must retry that queue
+       rather than record it as tried.
+``4``  ``EXIT_BACKEND_UNAVAILABLE`` -- nothing was analyzed and every failure
+       was ``BackendNotAvailable``. A fact about this machine, not these
+       files, so the caller must stop rather than work through the rest of
+       the library rediscovering it one chunk at a time.
+``5``  ``EXIT_INTERNAL_ERROR`` -- an exception escaped the run itself, so no
+       per-track verdict was reached at all. Also systemic: the caller must
+       stop. Exists because Python exits 1 for an escaping exception, which
+       would otherwise read as "some tracks failed".
 """
 from __future__ import annotations
 
@@ -37,7 +61,12 @@ from rich.console import Console
 from rich.table import Table
 
 from .backends import DEFAULT_BACKEND, get_backend
-from .backends.base import BackendNotAvailable, TrackTooLong
+from .backends.base import (
+    BackendNotAvailable,
+    TrackTooLong,
+    TrackUnreadable,
+    TrackVanished,
+)
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, open_conn, upsert_record
 
@@ -94,6 +123,85 @@ def build_queue(
     return refs
 
 
+#: Exit code for "some tracks failed, on their own merits". The only status
+#: a caller may keep going on: it says nothing about the next chunk.
+EXIT_TRACK_FAILURES: int = 1
+
+#: Exit code for a USAGE error: bad flags, an unknown backend, a malformed
+#: handoff file. Argparse's own convention, and distinct from 1 on purpose -
+#: a bare ``raise SystemExit("message")`` also exits 1, which would make a
+#: configuration mistake indistinguishable from "some tracks failed" and
+#: invite a chunking caller to retry it against the same bad configuration.
+EXIT_USAGE: int = 2
+
+#: Exit code for "the caller's targets were not all analyzed here". The pairs
+#: handoff names files the caller verified moments earlier, so one missing by
+#: the time this process reaches it means the drain never attempted it. That
+#: is a different fact from an analyzer failing on a file that IS present
+#: (exit 1): the caller must retry the queue rather than record it as tried.
+#: Covers both moments a target can be lost - the admission check in
+#: :func:`build_queue_from_pairs`, and the narrower race where the file
+#: survives admission and is gone when the backend opens it
+#: (:class:`~apps.analysis.backends.base.TrackVanished`).
+EXIT_MISSING_TARGETS: int = 3
+
+#: Exit code for "the BACKEND could not run, so nothing was analyzed". Every
+#: track failed and every failure was BackendNotAvailable, which is a
+#: capability fact about this machine, not a fact about these files. The
+#: caller must stop rather than work through the rest of the library
+#: discovering the same thing per chunk.
+EXIT_BACKEND_UNAVAILABLE: int = 4
+
+#: Exit code for "the run itself came apart", i.e. an exception escaped
+#: :func:`run` and no track ever got a verdict: the state DB could not be
+#: opened, the disk filled mid-write, the process pool died. Systemic, so the
+#: caller must stop.
+#:
+#: It exists because CPython's exit status for an escaping exception is 1,
+#: which is EXIT_TRACK_FAILURES - the one status a chunking caller is allowed
+#: to continue past. Without a distinct code, a full disk is indistinguishable
+#: from "some tracks failed" and the caller works through the whole library
+#: meeting the same wall once per chunk. The traceback is logged first, so
+#: nothing is swallowed: only the status is translated.
+EXIT_INTERNAL_ERROR: int = 5
+
+
+def vanished_count(summary: RunSummary) -> int:
+    """How many targets were gone by the time the backend opened them.
+
+    The admission check in :func:`build_queue_from_pairs` catches the common
+    case, but it is a check against a filesystem that keeps moving: a sync,
+    a rename or an unmount between that check and the decode leaves a target
+    that this process accepted and never attempted. Counted apart from the
+    rest of ``failed`` because the exit status turns on it - see
+    :data:`EXIT_MISSING_TARGETS`.
+
+    Keyed on the error text the same way :func:`backend_never_ran` is, but
+    derived from the class name rather than spelled out, so renaming the
+    exception cannot silently stop matching.
+    """
+    marker = f"{TrackVanished.__name__}:"
+    return sum(1 for _, msg in summary.errors if msg.startswith(marker))
+
+
+def backend_never_ran(summary: RunSummary) -> bool:
+    """True when nothing was analyzed and every failure was the backend.
+
+    Deliberately conjunctive. One successful track proves the backend works
+    on this box, so any failures alongside it are about the files and the
+    caller must keep going. ``skipped_existing`` counts as working too: the
+    run reached the store.
+    """
+    return (
+        summary.failed > 0
+        and summary.analysed == 0
+        and summary.skipped_existing == 0
+        and all(
+            msg.startswith("BackendNotAvailable:") for _, msg in summary.errors
+        )
+    )
+
+
 def build_queue_from_pairs(pairs: Iterable[tuple[str, str]]) -> list[TrackRef]:
     """Queue from caller-supplied canonical ``(stable_id, path)`` pairs.
 
@@ -137,14 +245,27 @@ def filter_missing(
 def _analyze_one(
     backend_name: str, stable_id: str, path_str: str
 ) -> tuple[str, AnalysisRecord | None, str | None]:
+    """Analyze one track, or say why this FILE could not be.
+
+    Only failures a backend has declared to be about the input are turned
+    into a per-track error here. Everything else propagates: a broad catch at
+    this level relabels a machine-wide fault - an unreadable analyzer config,
+    a backend that failed to initialize, a dead worker - as "this file
+    failed", which the CLI then reports as EXIT_TRACK_FAILURES, which is the
+    one status a chunking caller is allowed to continue past. The caller then
+    meets the identical fault once per chunk across the whole library.
+
+    ``get_backend`` is outside the guard for the same reason: an unresolvable
+    backend name is a configuration fact, not a property of this track.
+    """
+    backend = get_backend(backend_name)
     try:
-        backend = get_backend(backend_name)
         rec = backend.analyze(Path(path_str), stable_id)
-        return stable_id, rec, None
-    except (BackendNotAvailable, TrackTooLong) as exc:
+    except (
+        BackendNotAvailable, TrackTooLong, TrackUnreadable, TrackVanished
+    ) as exc:
         return stable_id, None, f"{type(exc).__name__}: {exc}"
-    except Exception as exc:  # pragma: no cover
-        return stable_id, None, f"{type(exc).__name__}: {exc}"
+    return stable_id, rec, None
 
 
 # ---------------------------------------------------------------------------
@@ -316,21 +437,93 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _is_pair(entry: object) -> bool:
+    """A two-element list of two STRINGS, which is the whole handoff schema.
+
+    The member types are checked here and not left to ``Path(...)`` or the
+    stable-id handling downstream, because those raise inside ``_dispatch()``
+    and ``main()`` translates an escaping exception into
+    :data:`EXIT_INTERNAL_ERROR`. A caller that wrote ``[["sid", 1]]`` would
+    then read a systemic-fault status for a malformed input file, and the
+    chunking caller in the ingest worker classifies those two very
+    differently: a usage error is the whole handoff being wrong, while a
+    systemic fault stops the run.
+    """
+    return (
+        isinstance(entry, list)
+        and len(entry) == 2
+        and all(isinstance(member, str) for member in entry)
+    )
+
+
+def _queue_from_pairs(pairs_json: Path) -> tuple[list[TrackRef], int]:
+    """Read the handoff file into a queue, and count what it could not admit.
+
+    The handoff file IS this CLI's interface, so everything wrong with it is a
+    usage error (:data:`EXIT_USAGE`) rather than an internal fault: a caller
+    that wrote a broken one gets told which part, and no chunking caller reads
+    it as "some tracks failed".
+
+    The second element is how many named targets were gone by the time
+    ``build_queue_from_pairs`` checked. Not an error here - the caller decides
+    what a shortfall means - but never zero silently.
+    """
+    try:
+        raw = json.loads(pairs_json.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        log.error("--pairs-json %s: %s", pairs_json, exc)
+        raise SystemExit(EXIT_USAGE) from exc
+    if not isinstance(raw, list) or not all(_is_pair(e) for e in raw):
+        log.error("--pairs-json %s: expected [[stable_id, path], ...]", pairs_json)
+        raise SystemExit(EXIT_USAGE)
+    pairs = [(sid, path) for sid, path in raw]
+    queue = build_queue_from_pairs(pairs)
+    return queue, len(pairs) - len(queue)
+
+
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point. Translates an escaping exception into a status.
+
+    The only broad catch in this module, and it is here because this is the
+    boundary where an exception stops being a Python object and becomes an
+    exit status that a caller has to classify. ``log.exception`` emits the
+    full traceback before the translation, so this hides nothing; it only
+    stops CPython from reporting a systemic fault as exit 1.
+
+    ``SystemExit`` derives from ``BaseException`` and passes straight
+    through, so the usage exits below keep their own status.
+    """
     args = _parse_args(argv)
+    try:
+        return _dispatch(args)
+    except Exception:
+        log.exception(
+            "the analysis run came apart before any per-track verdict was "
+            "reached; this is a fault of this process or this machine, not "
+            "of the queued files, so the caller must stop rather than retry "
+            "the remaining chunks into the same fault"
+        )
+        return EXIT_INTERNAL_ERROR
+
+
+def _dispatch(args: argparse.Namespace) -> int:
+    # Resolve the backend BEFORE the queue. An unknown name is a
+    # configuration error, and letting it reach _analyze_one turns it into a
+    # per-track KeyError repeated once per file, which reads to a chunking
+    # caller as "these files failed" and invites it to try the next chunk
+    # against the same bad name.
+    try:
+        get_backend(args.backend)
+    except KeyError as exc:
+        log.error("--backend %r: %s", args.backend, exc.args[0])
+        raise SystemExit(EXIT_USAGE) from exc
     if args.pairs_json is not None:
-        raw = json.loads(args.pairs_json.read_text())
-        if not isinstance(raw, list) or not all(
-            isinstance(e, list) and len(e) == 2 for e in raw
-        ):
-            raise SystemExit(
-                f"--pairs-json {args.pairs_json}: expected [[stable_id, path], ...]"
-            )
-        queue = build_queue_from_pairs([(sid, path) for sid, path in raw])
+        queue, dropped = _queue_from_pairs(args.pairs_json)
     else:
         queue = build_queue(
             [Path(p) for p in args.files], strategy=args.stable_id_strategy
         )
+        dropped = 0
     summary = run(
         queue,
         backend_name=args.backend,
@@ -340,7 +533,40 @@ def main(argv: list[str] | None = None) -> int:
         only_missing=args.only_missing,
         verbose=args.verbose,
     )
-    return 0 if summary.failed == 0 else 1
+    # Admission shortfall outranks the verdict on the targets that WERE
+    # admitted, and the order matters because only EXIT_MISSING_TARGETS makes
+    # the ingest worker clear `queue_signature`. A chunk that lost a target
+    # while the analysis install was also broken would otherwise report 4,
+    # the worker would book the original snapshot, and the dropped target -
+    # never attempted - would sit behind an `unchanged` verdict for as long
+    # as it kept its content token.
+    #
+    # A target can be lost at either of two moments and both mean the same
+    # thing here: `dropped` failed the admission check, `vanished` passed it
+    # and was gone when the backend opened it. The second is the narrower
+    # race, and it used to arrive as a per-track decode failure (exit 1),
+    # which books the queue as attempted. A file restored byte-identically
+    # then keeps its content token, so the signature never moves and the
+    # watcher answers `unchanged` for a track nothing ever analyzed.
+    vanished = vanished_count(summary)
+    if dropped or vanished:
+        log.error(
+            "%d of %d target(s) were gone before they could be analyzed "
+            "(%d never admitted, %d lost after admission); the caller must "
+            "retry rather than record this queue as attempted",
+            dropped + vanished, dropped + len(queue), dropped, vanished,
+        )
+        return EXIT_MISSING_TARGETS
+    if backend_never_ran(summary):
+        log.error(
+            "the %r backend could not run at all (%d/%d targets failed with "
+            "BackendNotAvailable), so nothing here was analyzed; this is a "
+            "capability failure on this machine, not a property of these "
+            "files, and the caller must stop rather than retry per chunk",
+            args.backend, summary.failed, summary.failed,
+        )
+        return EXIT_BACKEND_UNAVAILABLE
+    return 0 if summary.failed == 0 else EXIT_TRACK_FAILURES
 
 
 if __name__ == "__main__":  # pragma: no cover

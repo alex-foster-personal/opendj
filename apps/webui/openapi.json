@@ -283,6 +283,87 @@
         "title": "AiSearchOut",
         "type": "object"
       },
+      "AnalysisQueueItemOut": {
+        "description": "One queued track. ``file_path`` is what the runner decodes.\n\nNamed apart from ``models.QueueItemOut`` (the M3 triage queues) on\npurpose: two Pydantic models sharing a name collapse into one OpenAPI\nschema, and the loser is served under the winner's shape.",
+        "properties": {
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "file_path",
+          "title"
+        ],
+        "title": "AnalysisQueueItemOut",
+        "type": "object"
+      },
+      "AnalysisQueueOut": {
+        "description": "``analyzed + unreachable + pending`` always equals ``unmapped``.",
+        "properties": {
+          "analyzed": {
+            "title": "Analyzed",
+            "type": "integer"
+          },
+          "auto": {
+            "$ref": "#/components/schemas/AutoAnalyzeOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisQueueItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "job": {
+            "$ref": "#/components/schemas/RefreshStatusOut"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          },
+          "unmapped": {
+            "title": "Unmapped",
+            "type": "integer"
+          },
+          "unreachable": {
+            "title": "Unreachable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unmapped",
+          "pending",
+          "analyzed",
+          "unreachable",
+          "signature",
+          "items",
+          "job",
+          "auto"
+        ],
+        "title": "AnalysisQueueOut",
+        "type": "object"
+      },
       "AnlzCueOut": {
         "description": "Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).",
         "properties": {
@@ -455,6 +536,66 @@
           "model"
         ],
         "title": "AssistantStatusOut",
+        "type": "object"
+      },
+      "AutoAnalyzeOut": {
+        "description": "State of the daemon's auto-drain reconcile loop.",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "number"
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outcome"
+          },
+          "last_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Signature"
+          },
+          "last_started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Started At"
+          }
+        },
+        "required": [
+          "enabled",
+          "interval_s",
+          "attempts",
+          "last_started_at",
+          "last_signature",
+          "last_outcome"
+        ],
+        "title": "AutoAnalyzeOut",
         "type": "object"
       },
       "AutoCueOut": {
@@ -6374,6 +6515,15 @@
               }
             ],
             "title": "Batch Dir"
+          },
+          "scope": {
+            "default": "library",
+            "enum": [
+              "library",
+              "unmapped"
+            ],
+            "title": "Scope",
+            "type": "string"
           }
         },
         "title": "RefreshIn",
@@ -10933,6 +11083,76 @@
         "summary": "Get Quality Ratchet",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue": {
+      "get": {
+        "description": "The analyze-on-import queue, its denominators and the drain's progress.",
+        "operationId": "get_analysis_queue_api_v1_analysis_queue_get",
+        "parameters": [
+          {
+            "description": "Cap on listed items. Never caps the reported counts.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Cap on listed items. Never caps the reported counts.",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Analysis Queue",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-queue/run": {
+      "post": {
+        "description": "Drain the queue now, through the shared one-slot refresh job.",
+        "operationId": "run_analysis_queue_api_v1_analysis_queue_run_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Run Analysis Queue",
+        "tags": [
+          "analysis"
         ]
       }
     },

@@ -5,17 +5,20 @@
 	 * Click: POST /ingest/refresh - finds tracks missing any enabled
 	 * ingestion step (analysis / stems / vocals per /ingest/config) and runs
 	 * them; a second click while running is a no-op toast (backend 409s).
-	 * Hover: popover with the live coverage numbers, per-step progress bar
-	 * and the job log tail. Polls status at 1Hz while running or hovered.
+	 * Hover: popover with the live coverage numbers, the analyze-on-import
+	 * queue (locally imported tracks, no rekordbox twin), per-step progress
+	 * bar and the job log tail. Polls status at 1Hz while running or hovered.
 	 * As stable_ids complete they get jobProgress badges so the library
 	 * updates without a reload.
 	 */
 	import { onDestroy } from 'svelte';
 	import {
+		getAnalysisQueue,
 		getIngestConfig,
 		getIngestCoverage,
 		getIngestRefreshStatus,
 		startIngestRefresh,
+		type AnalysisQueue,
 		type IngestConfig,
 		type IngestCoverage,
 		type RefreshStatus
@@ -27,6 +30,7 @@
 	let status = $state<RefreshStatus | null>(null);
 	let coverage = $state<IngestCoverage | null>(null);
 	let config = $state<IngestConfig | null>(null);
+	let queue = $state<AnalysisQueue | null>(null);
 	let hovered = $state(false);
 	let fetchError = $state<string | null>(null);
 	let wrapEl: HTMLSpanElement | undefined = $state();
@@ -64,7 +68,7 @@
 				} else if (s.phase === 'error') {
 					pushToast(`Refresh failed: ${s.error}`, 'error');
 				}
-				coverage = await getIngestCoverage();
+				[coverage, queue] = await Promise.all([getIngestCoverage(), getAnalysisQueue()]);
 			}
 			_syncTimer();
 		} catch (e) {
@@ -91,7 +95,11 @@
 		_syncTimer();
 		void _poll();
 		try {
-			[coverage, config] = await Promise.all([getIngestCoverage(), getIngestConfig()]);
+			[coverage, config, queue] = await Promise.all([
+				getIngestCoverage(),
+				getIngestConfig(),
+				getAnalysisQueue()
+			]);
 			fetchError = null;
 		} catch (e) {
 			fetchError = e instanceof Error ? e.message : String(e);
@@ -155,6 +163,17 @@
 					<div class="pop-cov" title="tracks with a materialised file missing each artifact; unreachable = broken links, fix via /fix-links">
 						missing - analysis {coverage.missing.analysis} · stems {coverage.missing.stems} ·
 						vocals {coverage.missing.vocals} · unreachable {coverage.unreachable}
+					</div>
+				{/if}
+				{#if queue !== null}
+					<div
+						class="pop-queue"
+						data-testid="analysis-queue-line"
+						title="tracks imported locally with no rekordbox twin; the daemon analyzes these on import so the deck gets tempo, key, energy and auto-cue proposals, and auto is the reconcile loop that drives it. The shipped backend measures no downbeats, so these tracks have no fallback beatgrid"
+					>
+						local (no rekordbox) - {queue.pending} pending · {queue.analyzed} analyzed ·
+						{queue.unreachable} unreachable of {queue.unmapped} · auto
+						{queue.auto.enabled ? 'on' : 'off'}
 					</div>
 				{/if}
 				{#if config !== null}
@@ -233,6 +252,7 @@
 		color: #e8edf2;
 	}
 	.pop-cov,
+	.pop-queue,
 	.pop-steps,
 	.pop-phase {
 		margin-bottom: 4px;

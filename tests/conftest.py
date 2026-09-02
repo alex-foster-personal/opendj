@@ -45,7 +45,17 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     skip_madmom = pytest.mark.skip(
         reason="needs madmom (git HEAD; `pip install -r requirements.txt`)"
     )
-    skip_audio = pytest.mark.skip(reason="needs the analysis extra (soundfile/librosa)")
+    # UNAVAILABLE, not "fine": the analysis extra gates PARITY-03's only
+    # end-to-end acceptance test, the one proving a real drain decodes audio
+    # and writes a canonical analysis row. CI's pytest lane installs
+    # requirements.txt, so librosa and soundfile are always present there and
+    # that test really does gate every PR. On a bare `uv sync` dev venv it is
+    # unmeasured, and the reason has to say so rather than read as a pass.
+    skip_audio = pytest.mark.skip(
+        reason="UNAVAILABLE: needs the analysis extra (soundfile/librosa), so "
+               "the end-to-end drain is unmeasured here. This is a capability "
+               "report, not a pass. CI installs it via requirements.txt."
+    )
     skip_fpcalc = pytest.mark.skip(reason="needs chromaprint's fpcalc on PATH")
     skip_ffmpeg = pytest.mark.skip(reason="needs ffmpeg on PATH")
     for item in items:

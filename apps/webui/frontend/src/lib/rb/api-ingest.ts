@@ -1,5 +1,11 @@
 /**
- * Typed client for /api/v1/ingest (config, coverage, refresh job, upload).
+ * Typed client for /api/v1/ingest (config, coverage, refresh job, upload) and
+ * the analyze-on-import queue at GET /api/v1/analysis-queue.
+ *
+ * There is no client for POST /analysis-queue/run on purpose. The drain is
+ * started by the daemon's own reconcile loop, and the TopBar's existing
+ * "Refresh analysis" button already covers the manual case; the run endpoint
+ * stays mounted for agents driving the daemon over HTTP, which need no TS.
  *
  * Kept separate from api-rb.ts (fan-out hotspot). Same conventions: relative
  * API_BASE, fail-fast RbApiError on !ok, no invented data.
@@ -40,6 +46,38 @@ export type RefreshStatus = {
 	error: string | null;
 	log_tail: string[];
 	recently_done_ids: string[];
+};
+
+/** One track waiting to be analyzed because it has no vendor mapping. */
+export type AnalysisQueueItem = {
+	stable_id: string;
+	file_path: string;
+	title: string | null;
+};
+
+/** State of the daemon's analyze-on-import reconcile loop. */
+export type AutoAnalyze = {
+	enabled: boolean;
+	interval_s: number;
+	attempts: number;
+	last_started_at: number | null;
+	last_signature: string | null;
+	last_outcome: string | null;
+};
+
+/**
+ * The analyze-on-import queue. `analyzed + unreachable + pending` always
+ * equals `unmapped`; `items` is a page of `pending` and never moves a count.
+ */
+export type AnalysisQueue = {
+	unmapped: number;
+	pending: number;
+	analyzed: number;
+	unreachable: number;
+	signature: string;
+	items: AnalysisQueueItem[];
+	job: RefreshStatus;
+	auto: AutoAnalyze;
 };
 
 export type UploadFileResult = {
@@ -104,6 +142,14 @@ export async function getIngestRefreshStatus(): Promise<RefreshStatus> {
 	const r = await fetch(`${API_BASE}/api/v1/ingest/refresh/status`);
 	if (!r.ok) await _err(r);
 	return (await r.json()) as RefreshStatus;
+}
+
+export async function getAnalysisQueue(limit?: number): Promise<AnalysisQueue> {
+	// limit pages `items` only; the counts always describe the whole queue.
+	const query = limit === undefined ? '' : `?limit=${limit}`;
+	const r = await fetch(`${API_BASE}/api/v1/analysis-queue${query}`);
+	if (!r.ok) await _err(r);
+	return (await r.json()) as AnalysisQueue;
 }
 
 export async function uploadIngestFiles(

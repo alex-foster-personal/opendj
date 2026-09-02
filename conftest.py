@@ -34,6 +34,17 @@ assert_interpreter_satisfies_floor(Path(__file__).resolve().parent / "pyproject.
 # leak into resolution. Individual tests set remote explicitly.
 os.environ.setdefault("MDT_LIBRARY_MODE", "local")
 
+# The analyze-on-import reconcile loop shells out to apps.analysis.run, and
+# the real daemon entry points arm it from this variable. Building an app in
+# a test must never spawn an analyzer subprocess as a side effect, so the
+# suite forces it off rather than merely defaulting it: a developer who runs
+# the daemon in the same shell exports MUSIC_DJ_AUTO_ANALYZE=on, and
+# setdefault would honor that export and let a TestClient lifespan launch
+# real analyzer subprocesses. The loop's own tests do not read this variable
+# at all - they construct the watcher enabled by hand
+# (apps.webui.server.analysis_autostart.build(enabled=True)).
+os.environ["MUSIC_DJ_AUTO_ANALYZE"] = "off"
+
 import pytest
 
 # Register the reqs plugin (coverage-matrix.md writer + --live-db gate).

@@ -68,6 +68,7 @@ from apps.shared.paths import STATE_DB
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
+from apps.webui.server import analysis_autostart
 from apps.webui.server.app import FRONTEND_BUILD_DIR, _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
 from apps.webui.server.backend import StateBackend
@@ -232,6 +233,14 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # parallel lanes appending to one another's log.
         client_error_log_dir=cfg.logs_dir,
         client_event_log_dir=cfg.logs_dir,
+        # Analyze-on-import: the engine is the long-lived desktop daemon, so
+        # it is the process that reconciles the rekordbox-unmapped backlog.
+        # Same MUSIC_DJ_AUTO_ANALYZE contract as the standalone webui daemon,
+        # and arm_from_environ rather than enabled_from_environ because the
+        # PACKAGED engine ships the --no-dev closure: librosa and scipy stay
+        # in the optional analysis extra, so the installed app must decline to
+        # arm a loop whose every drain would raise BackendNotAvailable.
+        auto_analyze=analysis_autostart.arm_from_environ(os.environ),
     )
 
 

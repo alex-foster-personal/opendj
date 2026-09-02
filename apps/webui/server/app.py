@@ -36,6 +36,7 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
+from . import analysis_autostart
 from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
 from .errors import (
@@ -45,6 +46,7 @@ from .errors import (
     handle_rekordbox_writeback_disabled,
 )
 from .routes import analysis as analysis_routes
+from .routes import analysis_queue as analysis_queue_routes
 from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
@@ -151,8 +153,16 @@ def create_app(
     stem_roots: Sequence[Path] | None = None,
     usage_store: UsageStore | None = None,
     share_config: ShareConfig | None = None,
+    auto_analyze: bool = False,
 ) -> FastAPI:
-    """Build a configured FastAPI app."""
+    """Build a configured FastAPI app.
+
+    ``auto_analyze`` arms the analyze-on-import reconcile loop (see
+    :mod:`apps.webui.server.analysis_autostart`). It is OFF here on purpose:
+    the loop shells out to ``apps.analysis.run``, so only the real daemon
+    entry point (``_build_default_app``) turns it on, from
+    ``MUSIC_DJ_AUTO_ANALYZE``. Tests opt in explicitly.
+    """
 
     if port is None:
         try:
@@ -167,10 +177,24 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        yield
-        # playlist_write builds its PlaylistStore lazily from
-        # app.state.state_db_path; release its sqlite handle on shutdown.
-        playlist_write_routes.close_store(app)
+        # Kept ON THE APP, not rebuilt per lifespan. stop() joins with a
+        # timeout, so a shutdown that gives up on a slow scan leaves a live
+        # thread whose only handle is the watcher that owns it. A fresh
+        # watcher on the next start of the SAME app would know nothing about
+        # that thread and would start a second reconcile loop beside it,
+        # which is the one thing the retained handle exists to prevent.
+        watcher = getattr(app.state, "auto_analyze_watcher", None)
+        if watcher is None:
+            watcher = build_auto_analyze_watcher(app)
+            app.state.auto_analyze_watcher = watcher
+        watcher.start()
+        try:
+            yield
+        finally:
+            watcher.stop()
+            # playlist_write builds its PlaylistStore lazily from
+            # app.state.state_db_path; release its sqlite handle on shutdown.
+            playlist_write_routes.close_store(app)
 
     app = FastAPI(
         title="music-dj-tools webui",
@@ -191,6 +215,7 @@ def create_app(
     app.state.version = version
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
+    app.state.auto_analyze = analysis_autostart.build(enabled=auto_analyze)
     app.state.client_error_log_dir = (
         client_error_log_dir
         if client_error_log_dir is not None
@@ -319,6 +344,7 @@ def create_app(
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
+    app.include_router(analysis_queue_routes.router, prefix=api_prefix)
     app.include_router(auth_routes.router, prefix=api_prefix)
     app.include_router(ingest_routes.router, prefix=api_prefix)
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
@@ -360,6 +386,138 @@ def create_app(
     return app
 
 
+def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWatcher:
+    """Bind the reconcile loop to the one-slot ingest refresh job.
+
+    Public because it IS the wiring under test: a test that re-declares these
+    three callables would keep passing after the daemon started draining the
+    wrong scope. Call this instead.
+    """
+    def start_unmapped_drain(
+        guard: analysis_autostart.GuardFn,
+    ) -> analysis_autostart.ConsumedFn:
+        """Start the drain and hand back a reader bound to THAT job.
+
+        ``guard`` is the watcher's own refusal, and it is handed DOWN to the
+        locked start rather than run here, so the ledger read it judges and
+        the slot claim happen inside one hold of the registry lock. Run here
+        instead and there is a moment between them again - short, but a
+        parked thread is parked for as long as the scheduler says, and a
+        drain that finishes in it makes this start a repeat of one that
+        already attempted the same queue.
+
+        The job object comes back FROM the locked start, so it is the one
+        the registry just created and the reader survives a manual refresh
+        claiming the single slot. Reread off the registry instead and the
+        window is one statement wide - a short drain can finish and a library
+        refresh claim the slot in it - and a library job, which publishes no
+        queue signature, would then erase the booking.
+
+        The signature is reached through the job rather than
+        RefreshStatusOut because it is internal reconcile state, not part of
+        the wire contract the browser polls: putting it on the response model
+        would drift the OpenAPI schema for a value no client can use.
+        """
+        started = ingest_routes._start_refresh_job(
+            ingest_routes.RefreshIn(scope="unmapped"),
+            lambda: guard(last_attempted_queue()),
+        )
+
+        def consumed() -> str | None:
+            # The LATEST FINISHED unmapped drain, which is not necessarily
+            # ours: a manual POST /analysis-queue/run targets the same derived
+            # queue, and the queue IT just failed on is the one worth
+            # suppressing.
+            #
+            # Read off `last_unmapped` rather than the one slot, because the
+            # slot is replaceable and a library or batch refresh landing after
+            # that drain hides it completely. Its signature would then be read
+            # as a silence and OUR older one booked instead - and when the
+            # newer drain had deliberately CLEARED its signature, because the
+            # CLI reported a target it never admitted, that older booking is
+            # exactly the suppression the clearing existed to prevent. The
+            # lost target then sits behind `unchanged` for as long as it keeps
+            # its content token.
+            latest = ingest_routes._JOBS.last_unmapped
+            if (
+                latest is not None
+                and latest.phase not in ingest_routes.ACTIVE_PHASES
+            ):
+                return latest.queue_signature
+            # No unmapped drain has finished in this process, or the newest
+            # one is still running and its signature is not final. Fall back
+            # to what OUR drain read rather than booking None, which would
+            # drop the suppression entirely.
+            return started.queue_signature
+
+        return consumed
+
+    def last_attempted_queue() -> analysis_autostart.Attempt | None:
+        """The newest FINISHED drain, whoever started it.
+
+        The watcher only ever hears about its OWN drains through
+        ``start_unmapped_drain``. A manual POST /analysis-queue/run targets
+        the same derived queue and is invisible to it, which is the hole this
+        closes.
+
+        The job object goes back with the signature so the watcher can tell a
+        NEW attempt from the same finished job still sitting in the one-slot
+        registry, and the SCOPE goes with it because the watcher cannot read
+        a `None` signature without knowing whether the job was ever about this
+        backlog. Identity and scope are the caller's business; only the
+        signature is interpreted here.
+
+        FINISHED is load-bearing and is checked, not assumed. A manual drain
+        that claims the slot after ``running_fn`` said no publishes its
+        signature EARLY - ``_unmapped_targets`` writes it before the first
+        chunk runs - so a still-running job is visible here with a signature
+        that is not its final one. Adopting it would book a queue whose verdict
+        is not in yet, and the case that costs is the one the publish protocol
+        exists for: a CLI that then reports a vanished target clears
+        ``queue_signature`` precisely so the queue is NOT booked, and the
+        booking would already have happened. Restoring that file recreates the
+        same signature, the loop reports ``unchanged`` forever, and a track
+        nothing ever attempted is never analyzed.
+        """
+        current = ingest_routes._JOBS.current
+        if current is not None and current.scope == ingest_routes.UNMAPPED_SCOPE:
+            if current.phase in ingest_routes.ACTIVE_PHASES:
+                return None
+            return analysis_autostart.Attempt(
+                job=current,
+                signature=current.queue_signature,
+                targets_backlog=True,
+            )
+        # The slot holds a library or batch job, or nothing at all, and so
+        # says nothing about this backlog. A finished unmapped drain it
+        # REPLACED still does, and that statement has to outlive the slot for
+        # the same reason `consumed` reads it: a drain that cleared its
+        # signature is asking for its queue to be retried, and a library
+        # refresh landing after it must not be what silences that.
+        latest = ingest_routes._JOBS.last_unmapped
+        if latest is not None and latest.phase not in ingest_routes.ACTIVE_PHASES:
+            return analysis_autostart.Attempt(
+                job=latest,
+                signature=latest.queue_signature,
+                targets_backlog=True,
+            )
+        if current is None or current.phase in ingest_routes.ACTIVE_PHASES:
+            return None
+        return analysis_autostart.Attempt(
+            job=current,
+            signature=current.queue_signature,
+            targets_backlog=False,
+        )
+
+    return analysis_autostart.AutoAnalyzeWatcher(
+        app.state.auto_analyze,
+        scan_fn=ingest_routes.unmapped_backlog,
+        start_fn=start_unmapped_drain,
+        running_fn=lambda: ingest_routes.refresh_status().running,
+        attempted_fn=last_attempted_queue,
+    )
+
+
 def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
@@ -384,6 +542,7 @@ def _build_default_app() -> FastAPI:
         backend=backend, bind_host=bind_host, hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
         stem_roots=stems.roots,
+        auto_analyze=analysis_autostart.arm_from_environ(os.environ),
     )
 
 

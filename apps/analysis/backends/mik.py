@@ -15,7 +15,7 @@ from typing import Any
 
 from ..record import AnalysisRecord
 from . import register
-from .base import BackendNotAvailable
+from .base import BackendNotAvailable, TrackUnreadable
 
 _BIN = "mixed-in-key-cli"
 _TIMEOUT_S = 120
@@ -44,7 +44,9 @@ class MikBackend:
             timeout=_TIMEOUT_S,
         )
         if result.returncode != 0:
-            raise RuntimeError(
+            # The tool ran; it rejected this file. That is per-file, unlike a
+            # tool that is missing (BackendNotAvailable, above).
+            raise TrackUnreadable(
                 f"mixed-in-key-cli failed rc={result.returncode}: "
                 f"{result.stderr.strip()[:200]}"
             )

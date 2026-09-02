@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,12 @@ import numpy as np
 from .. import config as _analysis_config
 from ..record import AnalysisRecord
 from . import register
-from .base import BackendNotAvailable, TrackTooLong
+from .base import (
+    BackendNotAvailable,
+    TrackTooLong,
+    TrackUnreadable,
+    TrackVanished,
+)
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +96,67 @@ def _bpm_from_beats(beats_s: list[float]) -> tuple[float, float]:
     return bpm, confidence
 
 
+@lru_cache(maxsize=1)
+def _file_scoped_decode_errors() -> tuple[type[BaseException], ...]:
+    """Exception types measured to describe THIS FILE, not this machine.
+
+    Measured Tue 2 Sep 2026 by calling the real ``librosa.load`` on real bad
+    inputs under librosa 0.10.2 / soundfile 0.14 / audioread 3.0 with ffmpeg
+    on PATH. No stubs; each line is an observed result:
+
+      - non-audio bytes named ``.mp3``  -> audioread ``NoBackendError``
+      - a zero-byte ``.wav``            -> ``EOFError``
+      - a directory named ``.mp3``      -> ``IsADirectoryError``
+
+    Two measured types are deliberately NOT in this tuple, because neither
+    describes the CONTENT of the file:
+
+      - ``FileNotFoundError`` - the path is gone. "Unreadable" and "gone" are
+        different facts to the caller, so the decode site converts it to
+        ``TrackVanished`` before this allow-list is consulted.
+      - ``PermissionError`` - the process may not read this path. That is
+        almost never about one file: a share mounted without credentials, a
+        parent-directory ACL, or a macOS privacy grant that permits ``stat``
+        and denies ``open`` denies EVERY track the same way, and admitting it
+        here would report a whole library as individually corrupt one chunk
+        at a time. It propagates, which is the systemic exit.
+
+    Anything ABSENT here - ``ImportError``, ``MemoryError``, an ``OSError``
+    that is not about this path, a bare ``RuntimeError`` out of a
+    half-initialized decoder - propagates to the CLI boundary and exits
+    ``EXIT_INTERNAL_ERROR``, which stops the drain rather than meeting the
+    identical machine fault once per chunk.
+
+    ``NoBackendError`` reads like a systemic "nothing is installed", and an
+    earlier revision therefore admitted it only while ``available_backends``
+    held more than the standard-library wav reader. That guard was wrong for
+    this stack and CI proved it: the runner has no ffmpeg, so every
+    undecodable file there became a systemic stop. librosa reads through
+    libsndfile FIRST and only falls back to audioread once libsndfile has
+    already rejected the bytes, so arriving here at all is itself evidence
+    about the file. The residual is honest and stated: on a box with no
+    compressed-audio decoder, each compressed track is reported individually
+    rather than once - the job still ends in `error` either way.
+
+    Imported lazily: both modules ship with librosa, so they are only
+    importable once ``_require_deps`` has passed.
+    """
+    import audioread.exceptions  # type: ignore[import-not-found]
+    import soundfile
+
+    return (
+        IsADirectoryError,
+        EOFError,
+        soundfile.LibsndfileError,
+        audioread.exceptions.DecodeError,
+    )
+
+
+def _decode_failure_is_about_this_file(exc: BaseException) -> bool:
+    """Split a decode failure into per-file (skip it) or systemic (stop)."""
+    return isinstance(exc, _file_scoped_decode_errors())
+
+
 class LibrosaBackend:
     """Portable default backend. See module docstring for feature sources."""
 
@@ -116,9 +183,24 @@ class LibrosaBackend:
                 f"{path.name}: {duration_s:.1f}s > {max_minutes*60:.0f}s cap"
             )
 
-        y, sr = librosa.load(str(path), sr=sr, mono=True)
+        # The decode is the one step here that is about the FILE. Anything
+        # that fails above it (deps, config) or below it (the beat tracker
+        # operating on a valid ndarray) will fail the same way on the next
+        # file, so those propagate and the caller stops.
+        try:
+            y, sr = librosa.load(str(path), sr=sr, mono=True)
+        except FileNotFoundError as exc:
+            # The caller admitted this path moments ago, so it is gone rather
+            # than bad. Reported apart from TrackUnreadable because only the
+            # missing-target status makes the drain retry the queue instead
+            # of booking it as attempted; see TrackVanished.
+            raise TrackVanished(f"{path.name}: {exc}") from exc
+        except Exception as exc:
+            if not _decode_failure_is_about_this_file(exc):
+                raise
+            raise TrackUnreadable(f"{path.name}: {exc}") from exc
         if y.size == 0:
-            raise RuntimeError(f"Empty audio: {path}")
+            raise TrackUnreadable(f"empty audio: {path.name}")
         duration_s = float(len(y)) / float(sr)
 
         bpm, bpm_conf, beats_s, downbeats_s = cls._beats_and_bpm(y, sr)

@@ -26,7 +26,7 @@ import os
 import sqlite3
 import unicodedata
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -206,6 +206,22 @@ def list_locations(
     return [_row_to_location(row) for row in rows]
 
 
+#: Ids bound per statement in a bulk read. SQLite caps host parameters at
+#: ``SQLITE_LIMIT_VARIABLE_NUMBER``, which is 32766 on 3.32+ and **999** on
+#: everything older - including the sqlite3 that ships with some system
+#: Pythons and with the packaged desktop build. A caller that passes the
+#: whole library therefore works on the dev machine and raises "too many SQL
+#: variables" on a user's, which is the worst shape a limit can have. 500
+#: leaves room for the other bound values in any statement that uses this.
+ID_BIND_BATCH: int = 500
+
+
+def _batched(items: Sequence[str], size: int) -> Iterator[Sequence[str]]:
+    """Yield ``items`` in slices of at most ``size``. Never empty."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
 def list_location_paths(
     conn: sqlite3.Connection,
     stable_ids: Sequence[str],
@@ -222,16 +238,17 @@ def list_location_paths(
     if not stable_ids or not locations_table_ready(conn):
         return out
     owner = machine_id or _sync_stamp.local_machine_id(conn)
-    placeholders = ",".join("?" * len(stable_ids))
-    rows = conn.execute(
-        f"SELECT stable_id, file_path FROM track_locations "
-        f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
-        f"AND file_path IS NOT NULL",
-        (*stable_ids, owner),
-    ).fetchall()
-    for stable_id, file_path in rows:
-        if file_path:
-            out.setdefault(stable_id, []).append(str(file_path))
+    for batch in _batched(stable_ids, ID_BIND_BATCH):
+        placeholders = ",".join("?" * len(batch))
+        rows = conn.execute(
+            f"SELECT stable_id, file_path FROM track_locations "
+            f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
+            f"AND file_path IS NOT NULL",
+            (*batch, owner),
+        ).fetchall()
+        for stable_id, file_path in rows:
+            if file_path:
+                out.setdefault(stable_id, []).append(str(file_path))
     return out
 
 

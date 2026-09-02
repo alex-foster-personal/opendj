@@ -53,6 +53,7 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest_mod, "DEFAULT_STEMS_DIR", tmp_path / "stems")
     monkeypatch.setattr(ingest_mod, "open_ro", lambda: sqlite3.connect(state_db))
     monkeypatch.setattr(ingest_mod._JOBS, "current", None)
+    monkeypatch.setattr(ingest_mod._JOBS, "last_unmapped", None)
 
     app = FastAPI()
     app.include_router(ingest_mod.router, prefix="/api/v1")

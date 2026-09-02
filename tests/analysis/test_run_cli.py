@@ -1,6 +1,7 @@
 """``apps.analysis.run`` CLI tests (META-01)."""
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from apps.analysis import run as run_mod
+from apps.analysis.backends import DEFAULT_BACKEND, get_backend
 from apps.analysis.record import AnalysisRecord
 
 
@@ -104,3 +106,41 @@ def test_run_main_argparse(
     monkeypatch.setattr(_p, "STATE_DB", tmp_path / "state.db")
     rc = run_mod.main(["--backend", "mock", "--dry-run", "--files", str(audio)])
     assert rc == 0
+
+
+
+@pytest.mark.requirement("PARITY-06")
+def test_a_pairs_file_with_a_non_string_member_is_a_usage_error(
+    tmp_path: Path,
+) -> None:
+    """Malformed handoff, not a systemic fault - and the status has to say so.
+
+    The outer shape is right and only the member types are wrong, which is
+    what an encoder bug on the caller's side actually produces. Before the
+    members were checked, ``Path(1)`` raised inside ``_dispatch()``, ``main()``
+    translated it at its boundary, and the caller read EXIT_INTERNAL_ERROR (5)
+    - "stop, this machine is broken" - for a file it wrote wrong itself.
+
+    Nothing is patched. The backend is the SHIPPED default the drain really
+    uses, and the run really traverses ``get_backend`` before it reads the
+    handoff - which matters here, because an unresolvable backend exits 2 as
+    well, so a test that skipped that step could report this contract green
+    while proving only that the name was unknown. The precondition below
+    pins it: the default backend resolves, therefore the 2 came from the
+    file. The registry lookup needs no analysis extra installed; the CLI
+    rejects the handoff long before any decode is attempted.
+    """
+    assert get_backend(DEFAULT_BACKEND) is not None, (
+        "fixture precondition: the shipped default backend must resolve, or "
+        "the usage exit below could be about the backend name instead"
+    )
+    handoff = tmp_path / "pairs.json"
+    handoff.write_text(json.dumps([["sid00001", 1]]))
+
+    with pytest.raises(SystemExit) as caught:
+        run_mod.main(["--backend", DEFAULT_BACKEND, "--pairs-json", str(handoff)])
+
+    assert caught.value.code == run_mod.EXIT_USAGE, (
+        f"a malformed handoff file reported {caught.value.code}, which tells "
+        "the chunking caller its machine is broken rather than its input"
+    )

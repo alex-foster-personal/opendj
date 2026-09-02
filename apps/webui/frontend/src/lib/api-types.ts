@@ -271,6 +271,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Analysis Queue
+         * @description The analyze-on-import queue, its denominators and the drain's progress.
+         */
+        get: operations["get_analysis_queue_api_v1_analysis_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis-queue/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Analysis Queue
+         * @description Drain the queue now, through the shared one-slot refresh job.
+         */
+        post: operations["run_analysis_queue_api_v1_analysis_queue_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
@@ -2632,6 +2672,42 @@ export interface components {
             model: string;
         };
         /**
+         * AnalysisQueueItemOut
+         * @description One queued track. ``file_path`` is what the runner decodes.
+         *
+         *     Named apart from ``models.QueueItemOut`` (the M3 triage queues) on
+         *     purpose: two Pydantic models sharing a name collapse into one OpenAPI
+         *     schema, and the loser is served under the winner's shape.
+         */
+        AnalysisQueueItemOut: {
+            /** File Path */
+            file_path: string;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /**
+         * AnalysisQueueOut
+         * @description ``analyzed + unreachable + pending`` always equals ``unmapped``.
+         */
+        AnalysisQueueOut: {
+            /** Analyzed */
+            analyzed: number;
+            auto: components["schemas"]["AutoAnalyzeOut"];
+            /** Items */
+            items: components["schemas"]["AnalysisQueueItemOut"][];
+            job: components["schemas"]["RefreshStatusOut"];
+            /** Pending */
+            pending: number;
+            /** Signature */
+            signature: string;
+            /** Unmapped */
+            unmapped: number;
+            /** Unreachable */
+            unreachable: number;
+        };
+        /**
          * AnlzCueOut
          * @description Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).
          */
@@ -2694,6 +2770,24 @@ export interface components {
             configured: boolean;
             /** Model */
             model: string;
+        };
+        /**
+         * AutoAnalyzeOut
+         * @description State of the daemon's auto-drain reconcile loop.
+         */
+        AutoAnalyzeOut: {
+            /** Attempts */
+            attempts: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Interval S */
+            interval_s: number;
+            /** Last Outcome */
+            last_outcome: string | null;
+            /** Last Signature */
+            last_signature: string | null;
+            /** Last Started At */
+            last_started_at: number | null;
         };
         /**
          * AutoCueOut
@@ -4866,6 +4960,12 @@ export interface components {
         RefreshIn: {
             /** Batch Dir */
             batch_dir?: string | null;
+            /**
+             * Scope
+             * @default library
+             * @enum {string}
+             */
+            scope: "library" | "unmapped";
         };
         /** RefreshStatusOut */
         RefreshStatusOut: {
@@ -6802,6 +6902,58 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_analysis_queue_api_v1_analysis_queue_get: {
+        parameters: {
+            query?: {
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisQueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_analysis_queue_api_v1_analysis_queue_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStatusOut"];
                 };
             };
         };

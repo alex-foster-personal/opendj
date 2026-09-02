@@ -4,6 +4,8 @@ Backs two UI features and their agent-native parity:
 
   * "Refresh analysis" TopBar button  -> GET /ingest/coverage,
     POST /ingest/refresh, GET /ingest/refresh/status
+  * Analyze-on-import for local tracks -> POST /ingest/refresh
+    ``{"scope": "unmapped"}``; see routes/analysis_queue.py
   * Drag-in ingest modal              -> GET/PUT /ingest/config,
     POST /ingest/upload (moved to routes/ingest_upload.py; shared CFG here)
 
@@ -35,28 +37,43 @@ Requirements (mini-PRD):
     [if] a refresh is already running [then ⛔️] 409
     [if] a step subprocess exits non-zero [then] job phase "error" with the
     tail of its output, later steps not run
+  ✔︎ ✅ scope="unmapped": the same job restricted to tracks that landed with
+    no rekordbox mapping, so local-first tracks get analysis rows to serve.
+    [if] it carries a batch_dir, or runs with analysis disabled [then ⛔️] 422
+    [if] a target is already analyzed or rekordbox-mapped [then] it is skipped
   ✔︎ ✅ POST upload: moved to routes/ingest_upload.py with its own mini-PRD.
 """
 from __future__ import annotations
 
 import json
 import re
-import subprocess
 import sys
-import tempfile
 import threading
 import time
-from collections import deque
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, NoReturn
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from apps.analysis import backlog
+from apps.analysis import run as analysis_run
 from apps.shared import fs_residency
-from apps.shared.paths import AUDIO_EXTENSIONS, HOME, PROJECT_ROOT, STATE_DB
+from apps.shared.paths import AUDIO_EXTENSIONS, HOME, STATE_DB
 from apps.shared.state.db import open_ro
+from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
+from apps.webui.server.routes.ingest_job import (
+    _JOBS,
+    _PER_TARGET_EXITS,
+    ACTIVE_PHASES,
+    UNMAPPED_SCOPE,
+    _job_lock,
+    _log,
+    _RefreshJob,
+    _run_cli,
+    _systemic_message,
+)
 from apps.webui.server.stem_artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -74,8 +91,11 @@ DUP_DURATION_TOLERANCE_MS: int = 1_500
 DUP_FP_THRESHOLD: float = 0.92          # matches apps.dedup.find_clusters
 DUP_MAX_FP_CANDIDATES: int = 5          # fingerprinting candidates is O(seconds) each
 ANALYSIS_CHUNK: int = 25                # progress granularity for the analysis step
-STEMS_TRICKLE_LIMIT: int = 5            # local stems are ~104MB/track; keep small
-LOG_RING: int = 400
+#: Backend every drain chunk runs. Named here rather than left to the CLI's
+#: own default so the drain and the backlog's ``analyzed`` bucket, which is
+#: scoped to one backend, cannot drift apart.
+ANALYSIS_BACKEND: str = backlog.DRAIN_BACKEND
+STEMS_TRICKLE_LIMIT: int = 5
 BATCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$")
 
 StepId = Literal["analysis", "stems", "vocals"]
@@ -264,31 +284,6 @@ def get_coverage() -> CoverageOut:
 
 
 # ----- refresh job ----------------------------------------------------------
-@dataclass
-class _RefreshJob:
-    started_at: float
-    steps: list[str]
-    batch_dir: Path | None = None
-    phase: str = "queued"            # queued | running | done | error
-    current_step: str | None = None
-    step_done: int = 0
-    step_total: int = 0
-    steps_completed: list[str] = field(default_factory=list)
-    error: str | None = None
-    log: deque = field(default_factory=lambda: deque(maxlen=LOG_RING))
-    recently_done_ids: deque = field(default_factory=lambda: deque(maxlen=200))
-    finished_at: float | None = None
-
-
-_job_lock = threading.Lock()
-
-
-class _JOBS:
-    """One-slot registry for the running refresh job (no global statements)."""
-
-    current: _RefreshJob | None = None
-
-
 class RefreshStatusOut(BaseModel):
     running: bool
     phase: str
@@ -304,74 +299,73 @@ class RefreshStatusOut(BaseModel):
     recently_done_ids: list[str]
 
 
-def _log(job: _RefreshJob, line: str) -> None:
-    job.log.append(f"[{time.strftime('%H:%M:%S')}] {line}")
+def _run_analysis_chunk(
+    job: _RefreshJob, chunk: list[tuple[str, str]], *, backend: str = ANALYSIS_BACKEND
+) -> None:
+    """Run one chunk of (stable_id, path) targets through apps.analysis.run.
 
-
-def _run_cli(job: _RefreshJob, argv: list[str]) -> None:
-    """Run a pipeline CLI, streaming stdout into the job log. Raises on rc!=0."""
-    _log(job, "$ " + " ".join(argv[-6:]))
-    proc = subprocess.Popen(
-        argv,
-        cwd=PROJECT_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        stripped = line.rstrip()
-        if stripped:
-            _log(job, stripped)
-    rc = proc.wait()
-    if rc != 0:
-        raise RuntimeError(f"{argv[2] if len(argv) > 2 else argv[0]} exited {rc}")
-
-
-def _run_analysis_chunk(job: _RefreshJob, chunk: list[tuple[str, str]]) -> None:
-    """Invoke apps.analysis.run for one chunk of (stable_id, path) targets.
-
-    Library scope hands the runner the CANONICAL state-layer stable_ids via
-    --pairs-json: with --files it derives pathid_* keys, so the row lands
-    under a key coverage never matches and the track re-analyzes on every
-    refresh. Batch scope (empty sids: freshly staged files with no tracks
-    rows yet) keeps --files, where the pathid_* placeholder is the intended
-    pre-ingest identity.
+    ``backend`` is a parameter for the reason :func:`build_analysis_argv`
+    takes one: a caller can name a backend this machine genuinely cannot
+    run, which is how the capability-failure path gets exercised without
+    replacing this module's production choice underneath it.
     """
-    if all(sid for sid, _ in chunk):
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".pairs.json", delete=False
-        ) as fh:
-            json.dump([[sid, f] for sid, f in chunk], fh)
-            pairs_path = fh.name
-        try:
-            _run_cli(
-                job,
-                [sys.executable, "-m", "apps.analysis.run",
-                 "--workers", str(min(2, len(chunk))),
-                 "--pairs-json", pairs_path],
-            )
-        finally:
+    argv, pairs_path = build_analysis_argv(chunk, backend)
+    try:
+        _run_cli(job, argv)
+    finally:
+        if pairs_path is not None:
             Path(pairs_path).unlink(missing_ok=True)
-    else:
-        _run_cli(
-            job,
-            [sys.executable, "-m", "apps.analysis.run",
-             "--workers", str(min(2, len(chunk))),
-             "--files", *[f for _, f in chunk]],
-        )
 
 
-def _step_analysis(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+def _step_analysis(
+    job: _RefreshJob, targets: list[tuple[str, str]], *, backend: str = ANALYSIS_BACKEND
+) -> None:
+    """Give every chunk its turn, then fail if any of them did.
+
+    Aborting on the first non-zero chunk would starve every valid track
+    sorted behind a few permanently unanalyzable ones: nothing later runs, no
+    analysis rows appear, the backlog signature never moves, and the
+    reconcile loop reads that as "already tried this queue". Failures are
+    accumulated, never swallowed - the step still raises at the end.
+
+    Only a PER-TARGET exit earns that, which is why the CLI names its exit
+    codes. Anything else - no usable backend on this machine, an argparse or
+    configuration error, a signal, a crashed worker pool, a SQLITE_FULL on
+    the state DB - recurs identically on the next chunk, so continuing means
+    decoding the whole library to meet the same wall once per chunk.
+    """
     job.step_total = len(targets)
     job.step_done = 0
     _log(job, f"analysis: {len(targets)} tracks missing")
+    failures: list[str] = []
+    systemic: CliFailed | None = None
     for i in range(0, len(targets), ANALYSIS_CHUNK):
         chunk = targets[i : i + ANALYSIS_CHUNK]
-        _run_analysis_chunk(job, chunk)
+        try:
+            _run_analysis_chunk(job, chunk, backend=backend)
+        except CliFailed as exc:
+            failures.append(f"chunk at {i}: {exc}")
+            if exc.returncode == analysis_run.EXIT_MISSING_TARGETS:
+                # Targets vanished between the scan and the CLI's own check,
+                # so this queue was never really attempted. Publish nothing:
+                # the next tick has to retry it, not book it as tried.
+                job.queue_signature = None
+            if exc.returncode not in _PER_TARGET_EXITS:
+                _log(job, f"analysis: chunk at {i} failed systemically; stopping")
+                systemic = exc
+                job.step_done += len(chunk)
+                break
+            _log(job, f"analysis: chunk at {i} failed ({exc}); continuing")
+        else:
+            for sid, _ in chunk:
+                job.recently_done_ids.append(sid)
         job.step_done += len(chunk)
-        for sid, _ in chunk:
-            job.recently_done_ids.append(sid)
+    if systemic is not None:
+        raise RuntimeError(_systemic_message(systemic, len(targets), backend))
+    if failures:
+        raise RuntimeError(
+            f"analysis failed on {len(failures)} chunk(s): " + "; ".join(failures)
+        )
 
 
 def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
@@ -409,32 +403,78 @@ _STEP_RUNNERS = {
 }
 
 
+def unmapped_backlog(*, limit: int | None = None) -> backlog.Backlog:
+    """The analyze-on-import queue. One accessor for its three readers (the
+    drain, GET /analysis-queue, the auto-drain) so they cannot disagree about
+    which state DB it lives in."""
+    conn = open_ro()
+    try:
+        return backlog.scan(conn, limit=limit)
+    finally:
+        conn.close()
+
+
+def _log_id_keyed_skips(job: _RefreshJob, steps: list[str], scope: str) -> None:
+    """Say which steps this scope cannot run, and why. Never silently."""
+    for skipped in steps:
+        _log(job, f"{skipped}: skipped for {scope} scope - needs the "
+                  "Rekordbox import first (id-keyed)")
+
+
+def _batch_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+    """Freshly staged files with no state.db rows yet, so no ids either."""
+    assert job.batch_dir is not None
+    staged = sorted(
+        str(p) for p in job.batch_dir.rglob("*")
+        if p.suffix.lower() in AUDIO_EXTENSIONS
+    )
+    _log(job, f"batch scope: {len(staged)} staged files in {job.batch_dir}")
+    _log_id_keyed_skips(job, [s for s in job.steps if s != "analysis"], "batch")
+    job.steps = [s for s in job.steps if s == "analysis"]
+    return {"analysis": [("", f) for f in staged], "stems": [], "vocals": []}
+
+
+def _unmapped_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+    """Locally imported tracks: a tracks row, no live rekordbox twin."""
+    queue = unmapped_backlog()
+    job.queue_signature = queue.signature
+    _log(job, f"unmapped scope: {queue.pending_total} of {queue.unmapped} "
+              f"rekordbox-unmapped tracks need analysis ({queue.analyzed} already "
+              f"analyzed, {queue.unreachable} unreachable)")
+    _log_id_keyed_skips(job, job.skipped_steps, UNMAPPED_SCOPE)
+    return {
+        "analysis": [(i.stable_id, i.file_path) for i in queue.pending],
+        "stems": [],
+        "vocals": [],
+    }
+
+
+def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+    on_disk, unreachable = _tracks_on_disk()
+    _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
+    return _missing_by_step(on_disk)
+
+
+# Exhaustiveness guard in the dispatch, same as _STEP_RUNNERS below.
+_SCOPE_TARGETS = {
+    "batch": _batch_targets,
+    UNMAPPED_SCOPE: _unmapped_targets,
+    "library": _library_targets,
+}
+
+
+def _targets_for(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+    """Per-scope work list. An unknown scope is a programming error, not a run."""
+    build = _SCOPE_TARGETS.get(job.scope)
+    if build is None:  # pragma: no cover - start_refresh validates the scope
+        raise RuntimeError(f"unhandled refresh scope {job.scope!r}")
+    return build(job)
+
+
 def _refresh_worker(job: _RefreshJob) -> None:
     try:
         job.phase = "running"
-        if job.batch_dir is not None:
-            # Batch scope: freshly staged files that have no state.db rows
-            # yet. Only path-keyed steps can run; id-keyed ones (stems,
-            # vocals) explicitly wait for the Rekordbox import.
-            staged = sorted(
-                str(p) for p in job.batch_dir.rglob("*")
-                if p.suffix.lower() in AUDIO_EXTENSIONS
-            )
-            _log(job, f"batch scope: {len(staged)} staged files in {job.batch_dir}")
-            missing = {
-                "analysis": [("", f) for f in staged],
-                "stems": [],
-                "vocals": [],
-            }
-            for skipped in ("stems", "vocals"):
-                if skipped in job.steps:
-                    _log(job, f"{skipped}: skipped for batch scope - needs the "
-                              "Rekordbox import first (id-keyed)")
-            job.steps = [s for s in job.steps if s == "analysis"]
-        else:
-            on_disk, unreachable = _tracks_on_disk()
-            missing = _missing_by_step(on_disk)
-            _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
+        missing = _targets_for(job)
 
         for step in job.steps:
             job.current_step = step
@@ -456,36 +496,91 @@ class RefreshIn(BaseModel):
     # Optional scope: run only over freshly staged files in this dir (must
     # live under the ingest inbox). Absent = whole-library coverage sweep.
     batch_dir: str | None = None
+    # "library" sweeps everything missing an artifact; "unmapped" restricts
+    # analysis to tracks with no rekordbox mapping. Batch scope is
+    # selected by ``batch_dir``, not by this field.
+    scope: Literal["library", "unmapped"] = "library"
 
 
-@router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
-def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
-    batch_dir: Path | None = None
-    if body is not None and body.batch_dir is not None:
-        batch_dir = Path(body.batch_dir).resolve()
-        if not batch_dir.is_dir():
-            raise HTTPException(422, f"batch_dir not found: {batch_dir}")
-        if not batch_dir.is_relative_to(INGEST_INBOX.resolve()):
-            raise HTTPException(422, f"batch_dir must live under {INGEST_INBOX}")
+def _unmapped_steps(steps: list[str]) -> tuple[list[str], list[str]]:
+    """(runnable, dropped) for the unmapped scope: analysis only, or 422. The
+    id-keyed steps are impossible for a track with no rekordbox row."""
+    if "analysis" not in steps:
+        raise HTTPException(
+            422, "scope=unmapped runs the analysis step only, and analysis "
+                 "is disabled in the ingest config",
+        )
+    return ["analysis"], [s for s in steps if s != "analysis"]
+
+
+def _resolve_scope(body: RefreshIn | None) -> tuple[str, Path | None]:
+    """(scope, batch_dir). A staged batch_dir IS the batch scope, not a flag."""
+    if body is None:
+        return "library", None
+    if body.batch_dir is None:
+        return body.scope, None
+    if body.scope != "library":
+        raise HTTPException(422, f"batch_dir cannot be combined with scope="
+                            f"{body.scope!r}; a job has exactly one scope")
+    batch_dir = Path(body.batch_dir).resolve()
+    if not batch_dir.is_dir():
+        raise HTTPException(422, f"batch_dir not found: {batch_dir}")
+    if not batch_dir.is_relative_to(INGEST_INBOX.resolve()):
+        raise HTTPException(422, f"batch_dir must live under {INGEST_INBOX}")
+    return "batch", batch_dir
+
+
+def _start_refresh_job(
+    body: RefreshIn | None, guard: Callable[[], None] | None = None
+) -> _RefreshJob:
+    """Claim the one slot and hand back THE job created, not the slot.
+
+    A caller that needs its own job has to be given it here. Rereading
+    ``_JOBS.current`` afterwards is a race with a horizon of one statement: a
+    short drain can finish and a second request claim the slot in between,
+    leaving the caller holding somebody else's job.
+
+    ``guard`` runs UNDER the lock, so a caller whose decision to start depends
+    on the registry decides and claims in one step; it refuses by raising.
+    """
+    scope, batch_dir = _resolve_scope(body)
     with _job_lock:
-        if _JOBS.current is not None and _JOBS.current.phase in ("queued", "running"):
+        if _JOBS.current is not None and _JOBS.current.phase in ACTIVE_PHASES:
             raise HTTPException(409, "a refresh job is already running")
+        if guard is not None:
+            guard()
         enabled = _load_enabled()
         steps = [s["id"] for s in STEPS if enabled[s["id"]]]
         if not steps:
             raise HTTPException(422, "no steps enabled in ingest config")
-        _JOBS.current = _RefreshJob(
-            started_at=time.time(), steps=steps, batch_dir=batch_dir
-        )
-        threading.Thread(
-            target=_refresh_worker, args=(_JOBS.current,), daemon=True
-        ).start()
-    return refresh_status()
+        skipped: list[str] = []
+        if scope == UNMAPPED_SCOPE:
+            steps, skipped = _unmapped_steps(steps)
+        job = _RefreshJob(started_at=time.time(), steps=steps, scope=scope,
+                          batch_dir=batch_dir, skipped_steps=skipped)
+        _JOBS.current = job
+        if scope == UNMAPPED_SCOPE:
+            _JOBS.last_unmapped = job
+        threading.Thread(target=_refresh_worker, args=(job,), daemon=True).start()
+    return job
+
+
+@router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
+def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
+    return _status_of(_start_refresh_job(body))
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)
 def refresh_status() -> RefreshStatusOut:
-    job = _JOBS.current
+    return _status_of(_JOBS.current)
+
+
+def _status_of(job: _RefreshJob | None) -> RefreshStatusOut:
+    """Render one job as the wire status - the slot, or a job by name.
+
+    Split so the POST reports the job it started, not whatever holds the slot
+    when it renders: the same one-statement race closed above.
+    """
     if job is None:
         return RefreshStatusOut(
             running=False, phase="idle", steps=[], current_step=None,
@@ -493,16 +588,10 @@ def refresh_status() -> RefreshStatusOut:
             finished_at=None, error=None, log_tail=[], recently_done_ids=[],
         )
     return RefreshStatusOut(
-        running=job.phase in ("queued", "running"),
-        phase=job.phase,
-        steps=job.steps,
-        current_step=job.current_step,
-        step_done=job.step_done,
-        step_total=job.step_total,
-        steps_completed=job.steps_completed,
-        started_at=job.started_at,
-        finished_at=job.finished_at,
-        error=job.error,
+        running=job.phase in ACTIVE_PHASES, phase=job.phase, steps=job.steps,
+        current_step=job.current_step, step_done=job.step_done,
+        step_total=job.step_total, steps_completed=job.steps_completed,
+        started_at=job.started_at, finished_at=job.finished_at, error=job.error,
         log_tail=list(job.log)[-60:],
         recently_done_ids=list(job.recently_done_ids),
     )
