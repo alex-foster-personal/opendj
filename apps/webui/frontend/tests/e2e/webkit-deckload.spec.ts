@@ -124,6 +124,10 @@ const TRANSPORT_SAMPLE_MS = 1_500;
 
 /** Rate window. Long enough that scheduler jitter is a small fraction of it. */
 const RATE_WINDOW_MS = 2_000;
+/** A deck must hold "loaded and not pending" this many polls to count as settled. */
+const DECK_SETTLE_POLLS = 3;
+const DECK_SETTLE_POLL_MS = 100;
+const DECK_SETTLE_TIMEOUT_MS = 45_000;
 
 /**
  * Band the dominant-bin search runs over, matching MEASUREMENT_BAND_HZ in
@@ -612,18 +616,31 @@ async function _setToggle(
  * measurement cannot pick up Playwright round-trip latency, and both are read
  * from `decks[deck]`, so the number is always attributable to that deck.
  */
+/**
+ * Both ends of the interval are read INSIDE an animation frame, because the
+ * deck's reported `position_ms` only refreshes once per frame. Reading it at
+ * two arbitrary instants measures a step function against a smooth clock, and
+ * the error is the frame period - invisible at 60fps, but this suite also runs
+ * headless, where WebKit was measured serving frames every ~557ms. There the
+ * same 2s window aliased to 0.81x-1.18x on a deck that was playing at exactly
+ * 1.0x: sampling across whole frames over the same run gave 2206ms of playhead
+ * for 2205ms of wall clock, while a fresh AudioContext held 1.000x throughout.
+ * Frame-aligning removes the skew without touching a single tolerance.
+ */
 async function _measureRate(page: Page, deck: DeckId, windowMs: number): Promise<number> {
 	return page.evaluate(
 		async ({ deckId, ms }) => {
 			const ipc = window.musicDjToolsPerformance;
 			if (ipc === undefined) throw new Error('performance IPC is not installed');
-			const read = (): { pos: number; t: number } => ({
-				pos: ipc.query().decks[deckId].position_ms,
-				t: performance.now()
-			});
-			const first = read();
+			const read = (): Promise<{ pos: number; t: number }> =>
+				new Promise((resolve) =>
+					requestAnimationFrame(() =>
+						resolve({ pos: ipc.query().decks[deckId].position_ms, t: performance.now() })
+					)
+				);
+			const first = await read();
 			await new Promise((resolve) => setTimeout(resolve, ms));
-			const second = read();
+			const second = await read();
 			const wallMs = second.t - first.t;
 			if (wallMs <= 0) throw new Error(`non-positive wall interval ${wallMs}ms`);
 			return (second.pos - first.pos) / wallMs;
@@ -795,16 +812,41 @@ async function _pitchKey(page: Page, deck: DeckId, key: string, ratio: number): 
 	);
 }
 
+/**
+ * Wait until the deck has SETTLED on the incoming track (#774).
+ *
+ * `stable_id !== null` alone is not that wait. On a RE-load the OUTGOING track
+ * still satisfies it - and when the same row is loaded twice, even the id is
+ * identical - so the wait returned mid-swap, with `transport_pending` still
+ * true. Sampling deck 1 across a re-load showed the deck then passing through a
+ * ~370ms window reporting NOTHING loaded (stable_id null, duration_ms null,
+ * position 0) before the incoming track committed and auto-played. Whichever
+ * point of that swap the next test happened to sample decided its failure, so
+ * one race produced three unrelated-looking signatures.
+ *
+ * `transport_pending` is false inside the blank window too, so a single sample
+ * of "loaded and not pending" is not enough either. Requiring it to HOLD across
+ * consecutive polls is what distinguishes a settled deck from a deck caught
+ * mid-swap. A load onto an empty deck settles on the first poll and pays
+ * nothing for this.
+ */
 async function _waitForDeckLoaded(page: Page, deck: DeckId): Promise<void> {
-	await page.waitForFunction(
-		(deckId) => {
-			const ipc = window.musicDjToolsPerformance;
-			if (ipc === undefined) return false;
-			return ipc.query().decks[deckId].stable_id !== null;
-		},
-		deck,
-		{ timeout: 45_000 }
-	);
+	const deadline = Date.now() + DECK_SETTLE_TIMEOUT_MS;
+	let settled = 0;
+	for (;;) {
+		const state = (await _query(page)).decks[deck];
+		settled = state.stable_id !== null && !state.transport_pending ? settled + 1 : 0;
+		if (settled >= DECK_SETTLE_POLLS) return;
+		if (Date.now() > deadline) {
+			throw new Error(
+				`deck ${deck} never settled on a loaded track: ` +
+					`stable_id=${state.stable_id ?? 'null'}, ` +
+					`transport_pending=${state.transport_pending}, ` +
+					`duration_ms=${state.duration_ms ?? 'null'}`
+			);
+		}
+		await page.waitForTimeout(DECK_SETTLE_POLL_MS);
+	}
 }
 
 test.describe.configure({ mode: 'serial' });
