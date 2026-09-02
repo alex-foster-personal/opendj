@@ -132,6 +132,18 @@ class CommentOut(BaseModel):
     text: str
     created_at: str
     build: BuildStampOut
+    # Pin lifecycle (issue #858): absent on pins created before Wed 2 Sep 2026.
+    status: str | None = None  # open | issued | fixed | merged | archived
+    issue_url: str | None = None
+    agent_note: str | None = None
+    updated_at: str | None = None
+
+
+class CommentUpdateIn(BaseModel):
+    text: str | None = Field(default=None, min_length=1)
+    status: str | None = Field(default=None, pattern="^(open|issued|fixed|merged|archived)$")
+    issue_url: str | None = None
+    agent_note: str | None = None
 
 
 class CommentListOut(BaseModel):
@@ -358,6 +370,34 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
     items.append(comment.model_dump())
     _save(path, "comments", items)
     return comment
+
+
+@router.patch("/comments/{comment_id}", response_model=CommentOut)
+def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> CommentOut:
+    """Agent-native half of the pin lifecycle (issue #858, first slice).
+
+    A pin is never deleted by a fix. The agent that acts on it records what it
+    did here so the pin itself shows progress: ``status`` moves
+    open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
+    ``agent_note`` is the one-paragraph reply the widget renders under the
+    original text. Every write is a partial update; unset fields are untouched.
+    """
+    path = _dir(request) / _COMMENTS_FILE
+    items = _load(path, "comments")
+    for item in items:
+        if item.get("id") != comment_id:
+            continue
+        changes = body.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(status_code=422, detail={"code": "NO_CHANGES", "message": "body carries no field to update"})
+        item.update(changes)
+        item["updated_at"] = _now()
+        _save(path, "comments", items)
+        return CommentOut.model_validate(item)
+    raise HTTPException(
+        status_code=404,
+        detail={"code": "COMMENT_NOT_FOUND", "message": f"no comment with id {comment_id!r}"},
+    )
 
 
 # ----- general note -------------------------------------------------------
