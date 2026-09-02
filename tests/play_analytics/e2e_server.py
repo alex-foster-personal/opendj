@@ -9,13 +9,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
 
+from apps.engine_core.account.api import entitlements_router
+from apps.engine_core.build_info import MANIFEST_ENV, add_build_info_route
+from apps.engine_core.update_channel import add_update_check_route
 from apps.play_analytics.api import create_router
+from apps.shared import platform_paths
+from apps.webui.server.routes import client_events as client_events_routes
+from apps.webui.server.routes import ui_prefs as ui_prefs_routes
 
 
 def _seed_database(db_path: Path) -> None:
@@ -122,7 +129,28 @@ def _seed_database(db_path: Path) -> None:
 def create_app(db_path: Path) -> FastAPI:
     _seed_database(db_path)
     app = FastAPI()
+    # The page under test boots the whole app shell, so it calls the same
+    # start-up endpoints the real client does. Mount the REAL routers rather
+    # than hand-stubbing payloads: a hand-stub is what drifted here in the
+    # first place, and a router that moves takes this harness with it.
+    # data_dir keeps ui-prefs and client-events writing beside the throwaway
+    # e2e db instead of the developer's MDT_DATA_DIR.
+    app.state.data_dir = db_path.parent
+    app.state.client_event_log_dir = db_path.parent
     app.include_router(create_router(db_path=db_path))
+    app.include_router(entitlements_router, prefix="/api/v1")
+    app.include_router(ui_prefs_routes.router, prefix="/api/v1")
+    app.include_router(client_events_routes.router, prefix="/api/v1")
+    # Real routes, not a hand-stub: a dev checkout has no OPENDJ_PAYLOAD_MANIFEST,
+    # so build identity resolves from git but carries no app_version, and
+    # resolve_update_check faults "identity-unavailable" before it ever reaches
+    # the network (apps/engine_core/update_channel.py:388). Hermetic by the same
+    # mechanism CI runs under. Strip the manifest env so a Playwright server
+    # that inherits a real OPENDJ_PAYLOAD_MANIFEST from its launcher still
+    # resolves a repo identity, not a live payload's.
+    fixture_environ = {k: v for k, v in os.environ.items() if k != MANIFEST_ENV}
+    add_build_info_route(app, environ=fixture_environ, repo_root=platform_paths.PROJECT_ROOT)
+    add_update_check_route(app)
 
     @app.get("/health")
     def health() -> dict[str, str]:
