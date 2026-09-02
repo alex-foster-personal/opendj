@@ -14,11 +14,18 @@
 	// #736): every slot on such a deck (deck.has_rb_mapping false) always
 	// reads empty from the server and goes inert-with-tooltip rather than
 	// firing a write that would 404.
+	//
+	// An empty deck (deck.stable_id null - nothing loaded, or momentarily
+	// mid-reload) has no track to save onto either, and its has_rb_mapping
+	// defaults true (deck-state-types.ts), so that flag alone cannot gate
+	// this case. Same inert-with-tooltip treatment, gated on stable_id
+	// instead (issue #804).
 	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
+	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
 
 	let {
 		deck,
@@ -64,7 +71,11 @@
 
 	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
 		if (busySlot !== null) return;
-		if (entry.cue === null && !deck.has_rb_mapping) return; // inert: see MAPPING_TIP
+		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping
+		// defaults true on an empty deck (deck-state-types.ts), so it alone
+		// cannot gate the save - stable_id is the real "is there a deck to
+		// save onto" signal (#804).
+		if (entry.cue === null && (deck.stable_id === null || !deck.has_rb_mapping)) return;
 		busySlot = entry.slot;
 		try {
 			if (entry.cue !== null) {
@@ -80,6 +91,10 @@
 	async function onClearClick(slot: HotCueSlot, event: MouseEvent): Promise<void> {
 		event.stopPropagation();
 		if (busySlot !== null) return;
+		// Not reachable today (the x only renders for entry.cue !== null, and an
+		// empty deck's hot_cues is always []), closed defensively while this
+		// guard is already under review (#804 audit comment).
+		if (deck.stable_id === null) return;
 		busySlot = slot;
 		try {
 			setUndo(slot, await onDelete(slot));
@@ -115,13 +130,16 @@
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
-				class:inert-mapping={entry.cue === null && !deck.has_rb_mapping}
+				class:inert-mapping={entry.cue === null &&
+					(deck.stable_id === null || !deck.has_rb_mapping)}
 				disabled={busySlot !== null}
 				aria-busy={pending}
 				title={entry.cue === null
-					? deck.has_rb_mapping
-						? 'empty hot cue slot - click to save the current position'
-						: MAPPING_TIP
+					? deck.stable_id === null
+						? NOT_LOADED_TIP
+						: deck.has_rb_mapping
+							? 'empty hot cue slot - click to save the current position'
+							: MAPPING_TIP
 					: (entry.cue.comment ?? `hot cue ${entry.slot}`)}
 				onclick={() => onSlotClick(entry)}
 			>

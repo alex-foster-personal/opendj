@@ -18,6 +18,19 @@
  *     [then ⛔️].
  *   - [if] clicking that slot issues any request to
  *     /api/v1/tracks/*\/hot-cues/* [then ⛔️].
+ *
+ * A second block below covers #804: a deck with NOTHING loaded defaults
+ * `has_rb_mapping` true (`_emptyDeckState`, state.svelte.ts), so it looks
+ * mapped rather than unmapped, and its empty pads rendered as normal,
+ * live-looking controls that threw `Error: hot cue X: deck is not loaded`
+ * (unhandled - no toast, no banner) on click. Needs no track load at all,
+ * just a deck at rest.
+ *
+ * Acceptance:
+ *   - [if] a never-loaded deck's empty slots lack the inert-mapping class,
+ *     the dimmed opacity, or the "no track loaded" tooltip [then ⛔️].
+ *   - [if] clicking a never-loaded deck's empty slot throws a page error, or
+ *     issues any request to /api/v1/tracks/*\/hot-cues/* [then ⛔️].
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -25,6 +38,7 @@ import type { Page } from '@playwright/test';
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
 
 const MAPPING_TIP = 'cues need a rekordbox mapping';
+const NOT_LOADED_TIP = 'no track loaded - nothing to save';
 const DECK = 1;
 
 async function _query(page: Page): Promise<PerformanceState> {
@@ -103,4 +117,52 @@ test('an unmapped deck renders its empty hot-cue pads inert-with-tooltip and fir
 		path: 'test-results/hotcue-mapping-gate-after-click.png',
 		...(afterClickBox ? { clip: afterClickBox } : {})
 	});
+});
+
+test('a never-loaded deck renders its empty hot-cue pads inert-with-tooltip and fires nothing on click (#804)', async ({
+	page
+}) => {
+	const NEVER_LOADED_DECK = 2;
+
+	const hotCueWrites: string[] = [];
+	page.on('request', (request) => {
+		if (request.method() === 'PUT' && /\/api\/v1\/tracks\/[^/]+\/hot-cues\/[A-H]$/.test(request.url())) {
+			hotCueWrites.push(`${request.method()} ${request.url()}`);
+		}
+	});
+	const pageErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+
+	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+
+	// No load on this deck at all - the exact repro from the issue body:
+	// goto('/performance'), load nothing, click the deck's first pad.
+	const deck = (await _query(page)).decks[NEVER_LOADED_DECK];
+	expect(deck.stable_id, 'deck 2 must start with nothing loaded for this repro to be valid').toBeNull();
+	expect(
+		deck.has_rb_mapping,
+		'an empty deck defaults has_rb_mapping true (state.svelte.ts _emptyDeckState) - that is the ' +
+			'root cause this test guards: the mapping flag alone cannot tell an empty deck apart'
+	).toBe(true);
+
+	const deckPanel = page.locator(`section.rb-deck[data-deck="${NEVER_LOADED_DECK}"]`);
+	const pads = deckPanel.locator('.cue-area .bank .slot');
+	await expect(pads).toHaveCount(8);
+	await expect(deckPanel.locator('.cue-area .bank .slot:not(.inert-mapping)')).toHaveCount(0);
+	const firstPad = pads.first();
+	await expect(firstPad).toHaveAttribute('title', NOT_LOADED_TIP);
+	const opacity = await firstPad.evaluate((el) => Number(getComputedStyle(el).opacity));
+	expect(opacity, 'the inert pad must render visibly dimmed, not merely tagged').toBeLessThan(1);
+
+	await firstPad.click();
+	// Give a real click a real chance to reach the network / throw before
+	// asserting silence; onSlotClick's inert branch is synchronous, so this
+	// is slack, not a race.
+	await page.waitForTimeout(500);
+
+	expect(hotCueWrites, 'an inert pad must never reach the hot-cue write path').toEqual([]);
+	expect(pageErrors, 'clicking an inert empty-deck pad must not throw unhandled (#804)').toEqual([]);
+	const afterClick = (await _query(page)).decks[NEVER_LOADED_DECK];
+	expect(afterClick.command_error, 'an inert click must not surface a command error').toBeNull();
 });

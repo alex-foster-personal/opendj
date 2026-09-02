@@ -11,6 +11,12 @@ import { test } from 'node:test';
  * unmapped deck (`deck.has_rb_mapping === false`) goes inert-with-tooltip
  * instead (PARITY-TODO.md line 134).
  *
+ * Issue #804 - `has_rb_mapping` defaults `true` on an empty deck
+ * (`_emptyDeckState`, `state.svelte.ts`), so it alone cannot gate a deck with
+ * nothing loaded (or momentarily mid-reload, `stable_id === null`). The
+ * guard below also checks `deck.stable_id`, matching the precedent in
+ * `WaveRow.svelte`'s `onPointerDown` ("Empty deck rows are inert").
+ *
  * No DOM-mounting harness exists in this suite (see transport-visual-feedback
  * and library-row-hydration for the same convention), so the gate and the
  * tooltip text are pinned as source text, same as every other structural
@@ -19,9 +25,12 @@ import { test } from 'node:test';
  * Regression lines:
  * - if onSlotClick fires onSave for an empty slot while deck.has_rb_mapping is
  *   false then a SAVE request reaches the server and 404s
- * - if a FILLED slot is also gated on has_rb_mapping then jumping to an
- *   existing cue breaks on an unmapped deck, which is not the bug being fixed
- * - if the tooltip does not change for the inert case then the control is
+ * - if onSlotClick fires onSave for an empty slot while deck.stable_id is
+ *   null then a SAVE runs against a deck with nothing loaded and throws
+ *   "hot cue X: deck is not loaded" unhandled (#804)
+ * - if a FILLED slot is also gated on has_rb_mapping or stable_id then
+ *   jumping to an existing cue breaks, which is not the bug being fixed
+ * - if the tooltip does not change for either inert case then the control is
  *   inert with no explanation, which the repo's no-mocked-data rule forbids
  * - if DeckState drops has_rb_mapping, or a fresh/cleared deck does not
  *   default it true, then every empty deck reads as unmapped and every first
@@ -43,7 +52,10 @@ const DECK_STATE_TYPES = 'lib/rb/deck-state-types.ts';
 const STATE = 'lib/player/state.svelte.ts';
 const AUDIO_ENGINE = 'lib/rb/audio-engine.svelte.ts';
 
-test('onSlotClick refuses an empty slot on an unmapped deck before it can save', () => {
+const EMPTY_SLOT_GUARD =
+	/if\s*\(\s*entry\.cue\s*===\s*null\s*&&\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!deck\.has_rb_mapping\s*\)\s*\)\s*return/;
+
+test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before it can save', () => {
 	const text = source(HOT_CUE_BANK);
 	const fnStart = text.indexOf('async function onSlotClick');
 	assert.ok(fnStart >= 0, 'onSlotClick not found in HotCueBank.svelte');
@@ -52,25 +64,50 @@ test('onSlotClick refuses an empty slot on an unmapped deck before it can save',
 	const fnText = text.slice(fnStart, fnEnd);
 
 	assert.ok(
-		/if\s*\(\s*entry\.cue\s*===\s*null\s*&&\s*!deck\.has_rb_mapping\s*\)\s*return/.test(fnText),
-		'onSlotClick no longer refuses an empty slot on an unmapped deck - a click can reach ' +
-			'onSave and fire a djmdCue write that has no djmdContent row to land in (404)'
+		EMPTY_SLOT_GUARD.test(fnText),
+		'onSlotClick no longer refuses an empty slot on an unmapped-or-unloaded deck - a click can ' +
+			'reach onSave and either fire a djmdCue write with nowhere to land (404, #736) or save ' +
+			'onto a deck with nothing loaded, throwing "deck is not loaded" unhandled (#804)'
 	);
 
 	// The guard must be scoped to `entry.cue === null` (an EMPTY slot). A
-	// filled slot's onclick still needs to jump, regardless of has_rb_mapping.
-	const guardIndex = fnText.search(/if\s*\(\s*entry\.cue\s*===\s*null\s*&&\s*!deck\.has_rb_mapping/);
+	// filled slot's onclick still needs to jump, regardless of has_rb_mapping
+	// or stable_id (a filled slot cannot exist on an empty deck, but the
+	// jump branch must not be reachable-but-gated either).
+	const guardIndex = fnText.search(EMPTY_SLOT_GUARD);
 	const jumpIndex = fnText.indexOf('onJump(entry.cue.in_ms)');
-	assert.ok(jumpIndex > guardIndex, 'the jump branch must still run after the mapping guard');
+	assert.ok(jumpIndex > guardIndex, 'the jump branch must still run after the empty-slot guard');
 });
 
-test('an empty slot on an unmapped deck carries an explanatory tooltip, not a bare inert control', () => {
+test('onClearClick refuses to fire against a deck with nothing loaded', () => {
+	const text = source(HOT_CUE_BANK);
+	const fnStart = text.indexOf('async function onClearClick');
+	assert.ok(fnStart >= 0, 'onClearClick not found in HotCueBank.svelte');
+	const fnEnd = text.indexOf('\n\t}', fnStart);
+	assert.ok(fnEnd > fnStart, 'onClearClick body end not found');
+	const fnText = text.slice(fnStart, fnEnd);
+
+	assert.match(
+		fnText,
+		/if\s*\(\s*deck\.stable_id\s*===\s*null\s*\)\s*return/,
+		'onClearClick lost its stable_id guard - not reachable today (the x only renders for a ' +
+			'filled slot, which an empty deck never has), but closing it defensively is the point (#804)'
+	);
+});
+
+test('an empty slot on an unmapped or unloaded deck carries an explanatory tooltip, not a bare inert control', () => {
 	const text = source(HOT_CUE_BANK);
 
 	assert.match(
 		text,
 		/const MAPPING_TIP = ['"]cues need a rekordbox mapping['"]/,
 		'MAPPING_TIP constant missing or reworded - PARITY-TODO.md line 134 names this exact tooltip'
+	);
+	assert.match(
+		text,
+		/const NOT_LOADED_TIP = ['"]no track loaded - nothing to save['"]/,
+		'NOT_LOADED_TIP constant missing or reworded - #804 needs a distinct explanation for the ' +
+			'empty-deck case, not a reused mapping tooltip that would be factually wrong'
 	);
 
 	const titleStart = text.indexOf('title={entry.cue === null');
@@ -83,6 +120,18 @@ test('an empty slot on an unmapped deck carries an explanatory tooltip, not a ba
 		titleText.includes('deck.has_rb_mapping') && titleText.includes('MAPPING_TIP'),
 		'the empty-slot title no longer branches on deck.has_rb_mapping to show MAPPING_TIP - ' +
 			'an inert slot with no explanation is exactly what the no-mocked-data rule forbids'
+	);
+	assert.ok(
+		titleText.includes('deck.stable_id') && titleText.includes('NOT_LOADED_TIP'),
+		'the empty-slot title no longer branches on deck.stable_id to show NOT_LOADED_TIP - an ' +
+			'empty-deck pad would go back to promising a save it cannot perform (#804)'
+	);
+
+	assert.ok(
+		text.includes('class:inert-mapping={entry.cue === null &&') &&
+			text.includes('(deck.stable_id === null || !deck.has_rb_mapping)'),
+		'the inert-mapping CSS class no longer covers the empty-deck case - the pad would render ' +
+			'as a normal, live-looking control while still being unable to save (#804)'
 	);
 });
 
