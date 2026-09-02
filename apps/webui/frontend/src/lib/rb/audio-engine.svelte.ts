@@ -77,6 +77,7 @@ import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
 import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { notePresentationClock } from '$lib/rb/presentation-clock-report';
 import {
+	armAudioContextWatchdog,
 	armXrunSentinel,
 	disarmContextInstrumentation,
 	stampContextDeviceFloors
@@ -625,11 +626,11 @@ function _ensureGraph(): AudioContext {
 	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
-	// suspended is re-stamped here the moment it runs, whichever path resumed it.
-	const stampedContext = _ctx;
-	stampedContext.addEventListener('statechange', () => {
-		if (stampedContext.state === 'running') stampContextDeviceFloors(stampedContext);
-	});
+	// suspended is re-stamped the moment it runs, whichever path resumed it.
+	// The watchdog owns that re-stamp AND every non-running state: suspended,
+	// interrupted and closed used to fall through in silence, which is how
+	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
+	armAudioContextWatchdog(_ctx, () => DECK_IDS.some((deck) => deckStates[deck].playing));
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
 	// Silence belt for headless test agents (`?muted=1`): the LAST node before

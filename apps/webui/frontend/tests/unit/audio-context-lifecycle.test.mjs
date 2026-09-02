@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter } from './engine-source.mjs';
+import { engineBlockAfter, readFrontendSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -269,26 +269,33 @@ test('CONTROL: a resume that works stops the retries and says so', async () => {
 // wiring: the engine must actually be the thing that installs it
 //-----------------------------------------------------------------------------
 
-test('the engine handles states other than running on its one statechange listener', () => {
-	const body = engineBlockAfter("stampedContext.addEventListener('statechange', () => {");
-	assert.ok(
-		/suspended|interrupted|closed|Watchdog|watchdog/.test(body),
-		'if the engine statechange listener still acts on the running state alone then ' +
-			"broken - its whole body is `if (state === 'running') stamp(...)`, so a context " +
-			'that stops running mid-set is handled by nothing, which is what let Wed 2 Sep ' +
-			'2026 pass in complete silence'
-	);
+test('the watchdog module owns every non-running state, not just one of them', () => {
+	// A source guard rather than another behavioural test: the three states are
+	// already driven above, and what this pins is that no future edit narrows the
+	// set back down to whichever one somebody happened to reproduce.
+	const source = readFrontendSource(WATCHDOG_MODULE);
+	for (const state of NON_RUNNING_STATES) {
+		assert.ok(
+			source.includes(`'${state}'`),
+			`if the watchdog stops naming '${state}' then broken - that is the state WebKit ` +
+				'uses when a device is taken away, and it fell through in silence for ~24 ' +
+				'minutes on Wed 2 Sep 2026'
+		);
+	}
 });
 
-test('the audio clock is watched for advancing while a deck is playing', () => {
-	// waitForAdvancingContextTime already exists and is exactly the right probe,
-	// but it is called from ONE place: the pending-transport wait. A context whose
-	// clock stops after playback has started is observed by nobody.
+test('the graph arms the watchdog, so it is not merely written', () => {
 	const graph = engineBlockAfter('function _ensureGraph(): AudioContext {');
 	assert.ok(
-		/Watchdog|watchdog|advancing/i.test(graph),
-		'if the graph is built without arming a context watchdog then broken - a clock ' +
-			'that stops advancing mid-playback is the earliest available signal that audio ' +
-			'has died, and today nothing reads it once the transport wait has returned'
+		graph.includes('armAudioContextWatchdog('),
+		'if the graph is built without arming the context watchdog then broken - the module ' +
+			'exists and nothing calls it, which catches exactly as many incidents as not ' +
+			'having written it'
+	);
+	assert.ok(
+		!graph.includes("addEventListener('statechange'"),
+		'if the engine keeps its own statechange listener alongside the watchdog then broken ' +
+			'- two owners of one event is how the running-only branch survived in the first ' +
+			'place; the re-stamp now lives inside the watchdog arming'
 	);
 });
