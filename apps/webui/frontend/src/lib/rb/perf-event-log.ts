@@ -24,8 +24,6 @@
  *    localStorage is coalesced onto a timer and forced on pagehide.
  */
 
-import { reportClientError } from '$lib/client-error-reporting';
-
 /**
  * The perf kinds whose ERROR-severity rows leave this browser.
  *
@@ -60,6 +58,42 @@ const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 const ESCALATION_WINDOW_MS = 60_000;
 
 const _lastEscalationAtMs = new Map<string, number>();
+
+/**
+ * Where an escalated row goes, injected at client boot.
+ *
+ * THIS MODULE HAS NO IMPORTS, AND THAT IS A HARD PROPERTY, not a style
+ * preference. It began as a pure module and a static import of
+ * `reportClientError` was added here on Wed 2 Sep 2026 (the import statement is
+ * deliberately not written out anywhere in this file: the quality gate's
+ * dependency graph is built by scanning module TEXT, so a realistic import line
+ * inside a comment is read as a real edge and reports a false cycle - which it
+ * duly did). That import reaches `$lib/api/client.ts`, which evaluates
+ * `import.meta.env.VITE_API_BASE` at module scope - and Playwright loads spec
+ * files under plain Node, where `import.meta.env` is undefined. Every
+ * Playwright config whose specs reach this module transitively died at CONFIG
+ * LOAD with `TypeError: Cannot read properties of undefined` followed by
+ * `Error: No tests found`, i.e. the gate reported zero tests rather than a
+ * failure. A sink injected at boot keeps the escalation and keeps the purity.
+ *
+ * `null` is a legitimate state, not an error: unit tests, Playwright's Node
+ * loader and any pre-boot code all run without a sink, and a row must never
+ * throw its way out of a logger.
+ */
+let _escalator: ((event: PerfEvent) => void) | null = null;
+let _warnedNoEscalator = false;
+
+/**
+ * Point escalated rows at a sink. Called once, at client boot.
+ *
+ * Takes the row rather than a pre-formatted message so this module keeps
+ * ownership of its own shape and the sink decides what to do with it. `null`
+ * unsets it, which is what lets a test exercise the unwired path rather than
+ * assume it.
+ */
+export function setPerfEventEscalator(sink: ((event: PerfEvent) => void) | null): void {
+	_escalator = sink;
+}
 
 export interface PerfEvent {
 	t: string;
@@ -263,20 +297,25 @@ function _stageSummary(stages: Record<string, number>): string {
  */
 function _escalate(entry: PerfEvent): void {
 	if (!ESCALATED_KINDS.has(entry.kind)) return;
+	if (_escalator === null) {
+		// Once per session, not per row: a sustained dropout would otherwise turn
+		// a missing sink into its own console flood. The row is already in the
+		// ring and on the console, so nothing is lost but the round trip.
+		if (!_warnedNoEscalator) {
+			_warnedNoEscalator = true;
+			console.warn(
+				'[perf-event] no escalator wired; audio-liveness failures stay in this browser. ' +
+					'setPerfEventEscalator() is called from installClientErrorReporting() at ' +
+					'client boot, so this is expected under tests and outside the browser.'
+			);
+		}
+		return;
+	}
 	const nowMs = Date.now();
 	const lastMs = _lastEscalationAtMs.get(entry.kind);
 	if (lastMs !== undefined && nowMs - lastMs < ESCALATION_WINDOW_MS) return;
 	_lastEscalationAtMs.set(entry.kind, nowMs);
-	reportClientError(
-		`${entry.kind}: ${entry.message}`,
-		{
-			source: 'perf-event',
-			perf_kind: entry.kind,
-			deck: entry.deck,
-			...(entry.id === undefined ? {} : { perf_event_id: entry.id })
-		},
-		'ui-error'
-	);
+	_escalator(entry);
 }
 
 export function recordPerfEvent(

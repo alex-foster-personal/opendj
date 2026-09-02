@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { after, afterEach, before, test } from 'node:test';
+import { before, beforeEach, test } from 'node:test';
 
+import { readFrontendSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -19,11 +20,20 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * destroys. The whole point of a hardening instrument is that somebody other
  * than the person in the room can see it afterwards.
  *
- * WHY THE ASSERTION IS ON THE POST rather than on a spy: `perf-event-log.ts`
- * takes no injectable reporter today, so there is nothing to inject into. The
- * network boundary is the contract that actually matters and it is the one
- * thing a fix cannot fake - `reportClientError` is exercised here exactly as
- * client-error-reporting.test.mjs exercises it, through a fake `fetch`.
+ * THE SINK IS INJECTED, and the reason is a CI failure worth remembering.
+ * These tests originally asserted on the POST, which meant perf-event-log had
+ * to `import { reportClientError }` statically. That import reaches
+ * `$lib/api/client.ts`, which evaluates `import.meta.env.VITE_API_BASE` at
+ * module scope, and Playwright loads spec files under plain Node where
+ * `import.meta.env` is undefined. Every Playwright config whose specs reached
+ * this module transitively then died at CONFIG LOAD - `TypeError: Cannot read
+ * properties of undefined (reading 'VITE_API_BASE')` followed by `Error: No
+ * tests found`, so the gate reported ZERO TESTS rather than a failure, which
+ * is the worst shape a broken gate can take.
+ *
+ * So perf-event-log is import-free again and takes its sink through
+ * `setPerfEventEscalator`. These tests inject a fake sink; the guard test at
+ * the bottom is what stops the static import coming back.
  *
  * Regression lines:
  * - if an error-severity audio event never leaves the browser then the only
@@ -32,89 +42,20 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   a transport-schedule row per pointermove) floods /api/v1/client-errors
  */
 
-const API_BASE = 'https://perf-escalation.example.test';
-
 /** The three kinds this P0 is about. All three must escalate at error severity. */
 const ESCALATING_KINDS = ['xrun', 'audio-context', 'silent-while-playing'];
 
 let perfLog;
-let originalFetch;
-let posted;
-
-function defineGlobal(name, value) {
-	Object.defineProperty(globalThis, name, {
-		value,
-		configurable: true,
-		writable: true,
-		enumerable: true
-	});
-}
-
-function makeLocalStorage() {
-	const map = new Map();
-	return {
-		getItem: (key) => (map.has(key) ? map.get(key) : null),
-		setItem: (key, value) => map.set(key, String(value)),
-		removeItem: (key) => map.delete(key)
-	};
-}
-
-function installBrowserGlobals() {
-	const store = makeLocalStorage();
-	defineGlobal('window', {
-		location: { href: 'https://app.example.test/performance' },
-		isSecureContext: true,
-		localStorage: store,
-		addEventListener: () => {}
-	});
-	defineGlobal('localStorage', store);
-	defineGlobal('navigator', { userAgent: 'perf-escalation-test-agent' });
-	defineGlobal('crypto', { randomUUID: () => `perf-${Math.random().toString(36).slice(2)}` });
-	defineGlobal('AudioWorkletNode', function AudioWorkletNode() {});
-}
-
-/** Every POST body this test saw, in order. */
-function captureFetch() {
-	posted = [];
-	globalThis.fetch = async (input) => {
-		posted.push({ url: input.url, body: await input.clone().json() });
-		return new Response(JSON.stringify({ event_id: 'e', stored: true }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
-	};
-}
-
-/**
- * Wait for a POST that matches, or give up.
- *
- * Bounded rather than open-ended: the whole point of these tests today is that
- * the POST never comes, and a test that hangs is not a test that reports.
- */
-async function waitForPost(predicate, budgetMs = 600) {
-	const deadline = Date.now() + budgetMs;
-	while (Date.now() < deadline) {
-		const found = posted.find(predicate);
-		if (found !== undefined) return found;
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-	return null;
-}
+/** Every row handed to the sink, in order. */
+let escalated;
 
 before(async () => {
-	originalFetch = globalThis.fetch;
-	installBrowserGlobals();
-	captureFetch();
-	perfLog = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts', { viteApiBase: API_BASE });
+	perfLog = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts');
 });
 
-afterEach(() => {
-	installBrowserGlobals();
-	captureFetch();
-});
-
-after(() => {
-	globalThis.fetch = originalFetch;
+beforeEach(() => {
+	escalated = [];
+	perfLog.setPerfEventEscalator((event) => escalated.push(event));
 });
 
 //-----------------------------------------------------------------------------
@@ -122,71 +63,86 @@ after(() => {
 //-----------------------------------------------------------------------------
 
 for (const kind of ESCALATING_KINDS) {
-	test(`an error-severity ${kind} event reaches /api/v1/client-errors`, async () => {
+	test(`an error-severity ${kind} event is escalated off this browser`, () => {
 		const message = `${kind} escalation probe ${Math.random().toString(36).slice(2)}`;
 		perfLog.recordPerfEvent(kind, message, null, 'error');
-		const hit = await waitForPost((post) => post.body.message.includes(message));
+		const hit = escalated.find((event) => event.message === message);
 		assert.ok(
-			hit !== null,
-			`if an error-severity '${kind}' perf event is not forwarded to reportClientError ` +
-				'then broken - the row exists only in the LocalStorage of the browser profile ' +
-				'that failed, so a 24-minute audio outage leaves nothing anybody else can read ' +
-				`(POSTs seen: ${JSON.stringify(posted.map((p) => p.url))})`
+			hit !== undefined,
+			`if an error-severity '${kind}' perf event is not handed to the escalator then ` +
+				'broken - the row exists only in the LocalStorage of the browser profile that ' +
+				'failed, so a 24-minute audio outage leaves nothing anybody else can read ' +
+				`(escalated: ${JSON.stringify(escalated.map((e) => e.kind))})`
 		);
-		assert.ok(
-			hit.url.endsWith('/api/v1/client-errors'),
-			`if the escalation goes anywhere other than /api/v1/client-errors then broken`
-		);
-		assert.ok(
-			JSON.stringify(hit.body).includes(kind),
-			`if the forwarded payload does not carry the perf kind ('${kind}') then broken - ` +
-				'the engine cannot tell an audio dropout from any other client error'
+		assert.equal(
+			hit.kind,
+			kind,
+			'if the forwarded row does not carry the perf kind then broken - the engine ' +
+				'cannot tell an audio dropout from any other client error'
 		);
 	});
 }
+
+test('the boot wiring really points the sink at reportClientError', () => {
+	// The injected sink above proves the MECHANISM. This proves the PRODUCTION
+	// wiring exists, which the fake can never show: without it, every test here
+	// passes against an app that escalates nothing.
+	const boot = readFrontendSource('src/lib/client-error-reporting.ts');
+	assert.ok(
+		boot.includes('setPerfEventEscalator('),
+		'if nothing calls setPerfEventEscalator at boot then broken - the sink stays null ' +
+			'in the real app and audio-liveness failures never leave the browser'
+	);
+	assert.ok(
+		boot.slice(boot.indexOf('setPerfEventEscalator(')).includes('reportClientError('),
+		'if the sink is wired to something other than reportClientError then broken - only ' +
+			'that path carries the durable retry queue and the POST to /api/v1/client-errors'
+	);
+	assert.ok(
+		readFrontendSource('src/hooks.client.ts').includes('installClientErrorReporting()'),
+		'if client boot stops calling installClientErrorReporting then the wiring above ' +
+			'never runs, however correct it is'
+	);
+});
 
 //-----------------------------------------------------------------------------
 // what must NOT escalate
 //-----------------------------------------------------------------------------
 
-test('CONTROL: warn and info severity rows stay local', async () => {
-	// Passes today for the trivial reason that NOTHING escalates. It is here for
-	// the fix: `transport-schedule` is appended once per _scheduleDeck and
-	// PitchFader drives that from an unthrottled pointermove, so "forward every
-	// perf event" would put ~40 POSTs on the wire per fader drag, during a set,
-	// on the same main thread as the audio this P0 is trying to protect.
+test('CONTROL: warn and info severity rows stay local', () => {
+	// transport-schedule is appended once per _scheduleDeck and PitchFader drives
+	// that from an unthrottled pointermove, so "forward every perf event" would
+	// put ~40 POSTs on the wire per fader drag, during a set, on the same main
+	// thread as the audio this P0 is trying to protect.
 	perfLog.recordPerfEvent('transport-schedule', 'routine schedule row', 2, 'warn');
 	perfLog.recordPerfEvent('deck-load', 'routine load row', 1, 'info');
-	const leaked = await waitForPost(() => true, 200);
 	assert.equal(
-		leaked,
-		null,
-		'if a warn/info perf row is POSTed to the engine then broken - one PitchFader drag ' +
-			`would flood /api/v1/client-errors (leaked: ${JSON.stringify(leaked)})`
+		escalated.length,
+		0,
+		'if a warn/info perf row is escalated then broken - one PitchFader drag would flood ' +
+			`/api/v1/client-errors (escalated: ${JSON.stringify(escalated.map((e) => e.kind))})`
 	);
 });
 
-test('a sustained condition escalates once per window, not once per report', async () => {
-	// The xrun sentinel reports every 2s for as long as the machine struggles,
-	// so a twenty-minute incident is ~600 reports describing the same twenty
-	// minutes. reportClientError's own dedupe cannot absorb them: it fingerprints
-	// on the exact message, and these messages carry live numbers.
+test('a sustained condition escalates once per window, not once per report', () => {
+	// The xrun sentinel reports every 2s for as long as the machine struggles, so
+	// a twenty-minute incident is ~600 reports describing the same twenty minutes.
 	const kind = 'presentation-clock-stalled';
 	for (let report = 0; report < 25; report += 1) {
 		perfLog.recordPerfEvent(kind, `stall report ${report}, worst gap ${report}ms`, null, 'error');
 	}
-	await waitForPost(() => true, 200);
 	assert.equal(
-		posted.length,
+		escalated.length,
 		1,
-		`if a sustained condition POSTs ${posted.length} times then broken - one incident ` +
-			'must not become one round trip per report, on the same main thread as the audio'
+		`if a sustained condition escalates ${escalated.length} times then broken - one ` +
+			'incident must not become one round trip per report, on the same main thread as ' +
+			'the audio'
 	);
 });
 
-test('CONTROL: the ring still records the row it escalated', async () => {
-	// Escalation must be additive. If a fix routes the row to the engine INSTEAD
-	// of the ring, __mdtPerfLog() and the toast correlation ids both go dark.
+test('CONTROL: the ring still records the row it escalated', () => {
+	// Escalation must be additive. If it ever routes the row to the engine INSTEAD
+	// of the ring, __mdtPerfLog() and every toast correlation id go dark.
 	const message = `ring retention probe ${Math.random().toString(36).slice(2)}`;
 	perfLog.recordPerfEvent('xrun', message, null, 'error');
 	assert.ok(
@@ -194,4 +150,73 @@ test('CONTROL: the ring still records the row it escalated', async () => {
 		'if escalating a row drops it from the local ring then broken - the ring is what ' +
 			'__mdtPerfLog() and every toast correlation id read'
 	);
+});
+
+test('with no sink wired, an error row is kept locally and warns once, never throws', () => {
+	// The null-sink state is legitimate, not a fault: unit tests, Playwright's
+	// Node loader and all pre-boot code run without one. A logger that threw its
+	// way out of a dropout would be the dropout's second casualty.
+	const warnings = [];
+	const realWarn = console.warn;
+	console.warn = (...args) => warnings.push(args.join(' '));
+	try {
+		perfLog.setPerfEventEscalator(null);
+		for (let i = 0; i < 5; i += 1) {
+			assert.doesNotThrow(
+				() => perfLog.recordPerfEvent('xrun', `unwired probe ${i}`, null, 'error'),
+				'if a missing escalator throws then broken - a logger must never become the ' +
+					'failure it is reporting'
+			);
+		}
+	} finally {
+		console.warn = realWarn;
+	}
+	assert.ok(
+		perfLog.readPerfEvents().some((row) => row.message === 'unwired probe 4'),
+		'if an unwired row is not kept locally then broken - the ring is the last resort ' +
+			'precisely when the network path is the thing that is missing'
+	);
+	assert.equal(
+		warnings.length,
+		1,
+		`if a missing sink warns ${warnings.length} times then broken - a sustained dropout ` +
+			'would turn one missing wire into its own console flood'
+	);
+});
+
+//-----------------------------------------------------------------------------
+// the import that broke CI, and must not come back
+//-----------------------------------------------------------------------------
+
+test('the pure rb modules import nothing from the API layer', () => {
+	// SOURCE-LEVEL, and it has to be: what is being asserted is the absence of a
+	// STATIC IMPORT, which is a property of the module text. By the time a test
+	// could observe it at runtime the import has already been resolved, and under
+	// Playwright's Node loader resolving it is precisely the crash.
+	//
+	// Wed 2 Sep 2026: perf-event-log.ts gained
+	// `import { reportClientError } from '$lib/client-error-reporting'`, which
+	// reaches $lib/api/client.ts, which reads import.meta.env.VITE_API_BASE at
+	// module scope. Playwright loads spec files under plain Node, so the
+	// stretch-quality config died at CONFIG LOAD reporting "No tests found" -
+	// zero tests, not a failure, which is the worst way for a gate to break.
+	const PURE = [
+		'src/lib/rb/perf-event-log.ts',
+		'src/lib/rb/xrun-math.ts',
+		'src/lib/player/transport/presentation-stall.ts'
+	];
+	const FORBIDDEN = ['$lib/api', '$lib/client-error-reporting', 'api-rb'];
+	for (const modulePath of PURE) {
+		const source = readFrontendSource(modulePath);
+		const imports = source
+			.split('\n')
+			.filter((line) => /^\s*import\s/.test(line) || /^\s*}\s*from\s/.test(line));
+		for (const forbidden of FORBIDDEN) {
+			assert.ok(
+				!imports.some((line) => line.includes(forbidden)),
+				`if a pure rb module imports the API client then every Playwright config that ` +
+					`loads it under Node dies at config load (${modulePath} imports ${forbidden})`
+			);
+		}
+	}
 });
