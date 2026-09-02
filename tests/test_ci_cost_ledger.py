@@ -496,3 +496,41 @@ def test_empty_overflow_page_does_not_clobber_the_total(monkeypatch):
     _, total = ci_cost_ledger.fetch_runs("o/r", "2026-08-01", "t", 20)
 
     assert total == 1862
+
+
+def test_api_budget_stops_pricing_but_keeps_cached_rows(monkeypatch):
+    """The 2 Sep 2026 defect: `break` on budget dropped every cached row that
+    sat below the new runs in a newest-first listing, so the cache never
+    accumulated and every run reported '0 from cache'."""
+    from scripts import ci_cost_ledger
+
+    # Newest first: ids 10..1. Cache holds the OLD half (1..5).
+    runs = [
+        _run(i, "CI", "main", "success", f"2026-09-0{1 + (i > 5)}T00:00:00Z")
+        for i in range(10, 0, -1)
+    ]
+    cache = {i: _row(i) for i in range(1, 6)}
+    # Patch only the HTTP boundary (`_get`), as in
+    # `test_empty_overflow_page_does_not_clobber_the_total` above, so
+    # `fetch_runs`, `fetch_jobs`, the pagination walk, and the budget
+    # accounting all stay on the production path. Call order is deterministic:
+    # one page (10 runs < 100 stops pagination) then one jobs response per
+    # uncached run actually priced before the budget trips (ids 10, 9, 8).
+    responses = [
+        {"total_count": 10, "workflow_runs": runs},
+        *(
+            {"jobs": [_job(["ubuntu-latest"], "2026-09-02T00:00:00Z", "2026-09-02T00:01:00Z")]}
+            for _ in range(3)
+        ),
+    ]
+    monkeypatch.setattr(ci_cost_ledger, "_get", lambda *a, **k: responses.pop(0))
+
+    rows, cov = ci_cost_ledger.build_ledger(
+        "o/r", "2026-09-01", "token", 20, cache=cache, max_api_calls=3
+    )
+
+    assert cov.api_calls == 3, "budget honoured"
+    assert cov.api_budget_hit is True
+    cached_ids = {r.run_id for r in rows} & set(cache)
+    assert cached_ids == {1, 2, 3, 4, 5}, "cached rows must survive a budget stop"
+    assert len(rows) == 8, "3 freshly priced + 5 from cache"
