@@ -45,9 +45,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   noise and will be ignored when it matters
  * - if a non-finite performanceTime throws then a value the module itself
  *   calls diagnostic can kill the transport display permanently
+ * - if authority does not return when the output timestamp recovers then one
+ *   hiccup leaves the playhead permanently leading the audible position
  */
-
-const STALL_ASSERTION_FIELD = 'clock_stalled';
 
 let audio;
 
@@ -80,18 +80,34 @@ function playingTimeline() {
  * advances, because in the live incident it did - that is precisely why the
  * stall is detectable at all.
  */
-function driveFrames(timeline, frames, contextTimeAt, { durationSec = 600 } = {}) {
+function driveFrames(
+	timeline,
+	frames,
+	contextTimeAt,
+	{ durationSec = 600, sampleClockAt = null, fromFrame = 0 } = {}
+) {
 	const observations = [];
-	for (let frame = 0; frame < frames; frame += 1) {
+	for (let frame = fromFrame; frame < fromFrame + frames; frame += 1) {
 		observations.push(
 			audio.observePresentedTransportTimeline(
 				timeline,
 				{ contextTime: contextTimeAt(frame), performanceTime: 10_000 + frame * (1000 / 60) },
-				durationSec
+				durationSec,
+				sampleClockAt === null ? undefined : sampleClockAt(frame)
 			)
 		);
 	}
 	return observations;
+}
+
+/**
+ * The render-thread clock, which kept advancing throughout the live incident.
+ *
+ * Starts at 2s (where the fixtures below have the output clock when it dies)
+ * and runs at real time, one 60Hz frame per step.
+ */
+function sampleClockAt(frame) {
+	return 2 + frame / 60;
 }
 
 /**
@@ -116,19 +132,6 @@ function framesToOutlast(ms) {
 	return Math.ceil(ms / (1000 / 60)) + 5;
 }
 
-function assertStallReported(observations, scenario) {
-	const stalled = observations.filter((o) => o[STALL_ASSERTION_FIELD] === true);
-	assert.ok(
-		stalled.length >= 1,
-		`if ${scenario} then broken - the waveform freezes over live audio and the app has ` +
-			'no idea, which is exactly the twenty minutes of Wed 2 Sep 2026 13:22-13:42 CEST'
-	);
-}
-
-//-----------------------------------------------------------------------------
-// the three stale paths, all of which froze the waveform
-//-----------------------------------------------------------------------------
-
 test('the stall window is a declared constant, not a number in a test', () => {
 	assert.equal(
 		typeof audio.PRESENTATION_STALL_MS,
@@ -139,53 +142,114 @@ test('the stall window is a declared constant, not a number in a test', () => {
 	);
 });
 
-test('a contextTime that repeats unchanged is reported as a stalled clock', () => {
-	const timeline = playingTimeline();
-	// One good frame so output has definitely started, then the clock sticks.
-	driveFrames(timeline, 1, () => 2);
-	const stuck = driveFrames(timeline, framesToOutlast(stallWindowMs()), () => 2);
+function assertStallReported(observations, scenario) {
+	const stalled = observations.filter((o) => o.clock_stalled === true);
 	assert.ok(
-		stuck.every((o) => o.accepted),
-		'an exact repeat is currently ACCEPTED and recomputes a byte-identical position - ' +
-			'that is what makes this path invisible'
+		stalled.length >= 1,
+		`if ${scenario} then broken - the waveform freezes over live audio and the app has ` +
+			'no idea, which is exactly the twenty minutes of Wed 2 Sep 2026 13:22-13:42 CEST'
+	);
+}
+
+/**
+ * Drive one of the three stale paths and assert the whole contract on it.
+ *
+ * Every stale path gets the identical treatment, because the operator cannot
+ * tell them apart and should not have to: whichever way the output clock fails,
+ * the playhead keeps moving and the app says the clock is untrusted.
+ */
+function assertStaleClockHandled(scenario, contextTimeAt) {
+	const timeline = playingTimeline();
+	// One good frame so output has definitely started, then the clock fails.
+	driveFrames(timeline, 1, () => 2, { sampleClockAt });
+	const frames = framesToOutlast(stallWindowMs());
+	const stale = driveFrames(timeline, frames, contextTimeAt, {
+		sampleClockAt,
+		fromFrame: 1
+	});
+
+	assertStallReported(stale, scenario);
+
+	const during = stale.filter((o) => o.clock_stalled === true);
+	assert.ok(
+		during.every((o) => o.clock_source === 'sample'),
+		`if the position during a ${scenario} stall still comes from the output clock then ` +
+			'broken - that clock is the thing that stopped, so the playhead freezes'
+	);
+	const positions = during.map((o) => o.position_sec);
+	assert.ok(
+		positions.length >= 2 && positions[positions.length - 1] > positions[0],
+		`if the presented position does not advance during a ${scenario} stall then broken - ` +
+			'the waveform is frozen over live audio, which is the whole defect'
+	);
+	assert.ok(
+		during.every((o) => o.accepted),
+		'a frame the fallback painted must report as accepted, or the rAF loop stands down ' +
+			'and the fallback paints exactly once'
+	);
+	return timeline;
+}
+
+test('a contextTime that repeats unchanged keeps the playhead moving, and says so', () => {
+	assertStaleClockHandled('repeated contextTime', () => 2);
+});
+
+test('a contextTime that returns to 0 after output started keeps the playhead moving', () => {
+	assertStaleClockHandled('contextTime pinned at 0', () => 0);
+});
+
+test('a contextTime that regresses keeps the playhead moving', () => {
+	assertStaleClockHandled('regressing contextTime', () => 1.5);
+});
+
+test('authority returns to the output timestamp the moment it recovers', () => {
+	const timeline = assertStaleClockHandled('repeated contextTime', () => 2);
+	// The device comes back. The output clock resumes from where it really is,
+	// which is BEHIND the sample clock by the output latency - the recovery must
+	// be judged against the last value the output clock was trusted at, not
+	// against how far the fallback ran.
+	const recovered = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 2.5, performanceTime: 99_000 },
+		600,
+		sampleClockAt(400)
 	);
 	assert.equal(
-		new Set(stuck.map((o) => o.position_sec)).size,
-		1,
-		'the painted position really is identical every frame, which is the freeze'
+		recovered.clock_stalled,
+		false,
+		'if the stall verdict sticks after the output clock advances then broken - the ' +
+			'indicator would stay lit for the rest of the session'
 	);
-	assertStallReported(
-		stuck,
-		'a contextTime repeating unchanged for longer than the stall window reports no stall'
+	assert.equal(
+		recovered.clock_source,
+		'output',
+		'if authority does not return to the output timestamp then broken - the playhead ' +
+			'would lead the audible position permanently after one hiccup'
+	);
+	// The schedule starts at contextTime 1 / position 0 at 1x, so an output clock
+	// reading 2.5 is position 1.5. The fallback had run the position well past
+	// that; snapping back is the POINT - it is the playhead ceasing to lead.
+	assert.ok(
+		Math.abs(recovered.position_sec - 1.5) < 0.001,
+		`if the recovered position is ${recovered.position_sec} rather than the 1.5 the ` +
+			'output clock reports then broken - the fallback would have left a permanent ' +
+			'offset behind it'
 	);
 });
 
-test('a contextTime that returns to 0 after output started is reported as a stalled clock', () => {
+test('detection still works with no sample clock to fall back to', () => {
+	// A caller that cannot supply ctx.currentTime must degrade to detection, not
+	// to silence. This is also what keeps every pre-existing 3-argument call site
+	// behaving exactly as it did.
 	const timeline = playingTimeline();
 	driveFrames(timeline, 1, () => 2);
-	const zeroed = driveFrames(timeline, framesToOutlast(stallWindowMs()), () => 0);
+	const stale = driveFrames(timeline, framesToOutlast(stallWindowMs()), () => 2, {
+		fromFrame: 1
+	});
+	assertStallReported(stale, 'a stall with no sample clock available reports nothing');
 	assert.ok(
-		zeroed.every((o) => !o.accepted),
-		'contextTime 0 is rejected outright, so the position is not even recomputed'
-	);
-	assertStallReported(
-		zeroed,
-		'a contextTime pinned at 0 for longer than the stall window AFTER output started ' +
-			'reports no stall'
-	);
-});
-
-test('a contextTime that regresses is reported as a stalled clock', () => {
-	const timeline = playingTimeline();
-	driveFrames(timeline, 1, () => 5);
-	const regressed = driveFrames(timeline, framesToOutlast(stallWindowMs()), () => 4);
-	assert.ok(
-		regressed.every((o) => !o.accepted),
-		'a regressing contextTime is rejected, and the position is left frozen'
-	);
-	assertStallReported(
-		regressed,
-		'a contextTime regressing for longer than the stall window reports no stall'
+		stale.every((o) => o.clock_source === 'output'),
+		'if a fallback is claimed with no clock to fall back to then broken'
 	);
 });
 
@@ -205,8 +269,12 @@ test('CONTROL: a healthy advancing clock is never reported as stalled', () => {
 		240,
 		'a healthy clock paints a new position every frame'
 	);
+	assert.ok(
+		healthy.every((o) => o.clock_source === 'output'),
+		'a healthy clock must never hand authority to the fallback'
+	);
 	assert.equal(
-		healthy.filter((o) => o[STALL_ASSERTION_FIELD] === true).length,
+		healthy.filter((o) => o.clock_stalled === true).length,
 		0,
 		'if a healthy advancing clock reports a stall then broken - the operator learns to ' +
 			'ignore the signal before the real freeze arrives'
@@ -218,9 +286,12 @@ test('CONTROL: a stall shorter than the window is not reported', () => {
 	driveFrames(timeline, 1, () => 2);
 	// Deliberately half the window: a single dropped frame or a scheduler hiccup
 	// must not raise an alarm, or every loaded moment becomes an incident.
-	const brief = driveFrames(timeline, Math.floor(framesToOutlast(stallWindowMs()) / 2), () => 2);
+	const brief = driveFrames(timeline, Math.floor(framesToOutlast(stallWindowMs()) / 2), () => 2, {
+		sampleClockAt,
+		fromFrame: 1
+	});
 	assert.equal(
-		brief.filter((o) => o[STALL_ASSERTION_FIELD] === true).length,
+		brief.filter((o) => o.clock_stalled === true).length,
 		0,
 		'if a sub-window stall is reported then broken - one late frame on a busy machine ' +
 			'would fire the alarm continuously'
@@ -294,7 +365,7 @@ test('a bad performanceTime yields "not known", never a claimed stall', () => {
 		}
 	}
 	assert.ok(
-		blind.every((o) => o[STALL_ASSERTION_FIELD] !== true),
+		blind.every((o) => o.clock_stalled !== true),
 		'if a stall is CLAIMED while the clock used to measure it is unreadable then broken ' +
 			'- "I cannot tell" and "it has stalled" are different answers, and collapsing ' +
 			'them raises alarms on evidence that does not exist'

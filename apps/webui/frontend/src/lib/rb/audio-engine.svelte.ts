@@ -75,6 +75,7 @@ import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
 import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { notePresentationClock } from '$lib/rb/presentation-clock-report';
 import {
 	armXrunSentinel,
 	disarmContextInstrumentation,
@@ -2053,11 +2054,16 @@ function _publishPresentedTransport(
 ): PresentedTransportObservation | null {
 	const rt = _rt[deck];
 	if (rt.processor === null || rt.durationSec <= 0) return null;
+	// The sample clock is handed over so a stalled HAL output position falls back
+	// to it rather than freezing the waveform. See
+	// .planning/hardening-ledger/decisions/presentation-clock-fallback.md.
 	const observation = observePresentedTransportTimeline(
 		rt.presentation,
 		outputTimestamp,
-		rt.durationSec
+		rt.durationSec,
+		_ctx === null ? undefined : _ctx.currentTime
 	);
+	notePresentationClock(deck, observation.clock_stalled);
 	if (!observation.accepted) return observation;
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
