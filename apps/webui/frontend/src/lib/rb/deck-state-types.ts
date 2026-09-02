@@ -102,6 +102,12 @@ export interface DeckState {
 	hot_cues: HotCue[];
 	/** Server-issued CAS revisions for every A-H slot, including empty slots. */
 	hot_cue_revisions: Record<HotCueSlot, string>;
+	/** Track.has_rb_mapping for the loaded track. False means hot-cue SAVE
+	 * would 404 (djmdCue is keyed by djmdContent.ID, which a locally
+	 * imported track has none of) - the bank goes inert-with-tooltip rather
+	 * than let the pad fire a write that cannot succeed (PARITY-TODO,
+	 * issue #736). True on an empty deck: nothing is loaded to gate. */
+	has_rb_mapping: boolean;
 	/** Analysis payload once fetched; null while absent. */
 	anlz: AnlzData | null;
 	/** Explicit no-analysis state: the error code (e.g. ANALYSIS_NOT_FOUND)

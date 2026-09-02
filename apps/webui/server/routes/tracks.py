@@ -10,7 +10,7 @@ from apps.shared import audio_quality
 from apps.shared.events import publish
 
 from .. import rb_vendor
-from ..backend import StateBackend, Track, TrackFilter
+from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
@@ -41,7 +41,13 @@ def keep_by_availability(available: AvailableFilter, file_exists: bool) -> bool:
     raise AssertionError(f"unhandled available filter: {available}")
 
 
-def _track_to_out(track: Track) -> TrackOut:
+def _has_rb_mapping(stable_id: str) -> bool:
+    """Same criteria build_track_rows uses: a live vendor mapping AND a live
+    djmdContent row (rb_vendor.bulk_rb_meta yields a row only for both)."""
+    return stable_id in rb_vendor.bulk_rb_meta([stable_id])
+
+
+def _track_to_out(track: Track, has_rb_mapping: bool) -> TrackOut:
     prov_out = {
         k: ProvenanceOut(
             value=v.value,
@@ -67,6 +73,7 @@ def _track_to_out(track: Track) -> TrackOut:
         created_at=track.created_at,
         updated_at=track.updated_at,
         provenance=prov_out,
+        has_rb_mapping=has_rb_mapping,
     )
 
 
@@ -107,7 +114,7 @@ def list_tracks(
     for track, row in zip(page.items, rows):
         if not keep_by_availability(available, row["file_exists"]):
             continue
-        base = _track_to_out(track).model_dump()
+        base = _track_to_out(track, has_rb_mapping=row["has_rb_mapping"]).model_dump()
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
             TrackListItemOut(
@@ -118,7 +125,6 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
-                has_rb_mapping=row["has_rb_mapping"],
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)
@@ -140,7 +146,7 @@ def get_track(
     # NotFoundError -> handle_not_found (errors.py).
     track = backend.get_track(stable_id)
     response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at)
-    return _track_to_out(track)
+    return _track_to_out(track, has_rb_mapping=_has_rb_mapping(stable_id))
 
 
 @router.patch("/{stable_id}", response_model=TrackOut)
@@ -164,9 +170,18 @@ def patch_track(
         patch_dict["tags_add"] = patch.tags_add
     if patch.tags_remove is not None:
         patch_dict["tags_remove"] = patch.tags_remove
-    updated = backend.update_track(
-        stable_id, patch_dict, expected_etag=if_match, source="webui"
-    )
+    try:
+        updated = backend.update_track(
+            stable_id, patch_dict, expected_etag=if_match, source="webui"
+        )
+    except ConflictError as exc:
+        # update_track raises straight from the backend layer (current.to_dict()),
+        # bypassing _track_to_out, so the 409 payload never picks up has_rb_mapping
+        # on its own; the track page's "Take theirs" reads this field off it (#736
+        # review). Same criteria as every other TrackOut response, computed here
+        # since only the route layer has _has_rb_mapping.
+        exc.current["has_rb_mapping"] = _has_rb_mapping(stable_id)
+        raise
     response.headers["ETag"] = compute_etag(updated.stable_id, updated.updated_at)
     publish("library.changed", {"kind": "tracks", "ids": [updated.stable_id]})
-    return _track_to_out(updated)
+    return _track_to_out(updated, has_rb_mapping=_has_rb_mapping(stable_id))

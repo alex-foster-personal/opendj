@@ -32,6 +32,13 @@ class TrackOut(BaseModel):
     created_at: str
     updated_at: str
     provenance: dict[str, ProvenanceOut] = {}
+    # Whether GET /tracks/{sid}/rb-meta can resolve this row (live rekordbox
+    # track_vendor_ids mapping AND djmdContent row). False for a locally
+    # imported or djay-only track. See TrackListItemOut's longer note --
+    # same flag, same semantics, now on the single-track shape too so the
+    # deck-load path (GET /tracks/{sid}, never the listing row) can gate
+    # hot-cue SAVE without guessing (PARITY-TODO, issue #736).
+    has_rb_mapping: bool
 
 
 class QualityOut(BaseModel):
@@ -83,7 +90,6 @@ class TrackListItemOut(TrackOut):
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
-    has_rb_mapping: bool
 
 
 class TracksPage(BaseModel):

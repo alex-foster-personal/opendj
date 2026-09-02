@@ -2185,6 +2185,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	_rt[st.deck_id].keySyncBaselineSemitones = null;
 	_rt[st.deck_id].reanchorRampActive = false;
 	st.hot_cues = [];
+	st.has_rb_mapping = true;
 	st.anlz = null;
 	st.anlz_error = null;
 }
@@ -3192,6 +3193,7 @@ class RbAudioEngine implements AudioEngine {
 			st.stems = candidateStemState;
 			st.hot_cues = _hotCuesFromSlots(hotCueSlots);
 			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
+			st.has_rb_mapping = candidateTrack.has_rb_mapping;
 			st.loop = _displayLoopFrom(candidateAnlz.cues);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);

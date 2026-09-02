@@ -15,6 +15,8 @@ mean the `local` payload (nothing lost by skipping) and true must mean the
 Regression one-liners:
   - if has_rb_mapping is true for a track with no rekordbox vendor mapping then broken
   - if has_rb_mapping is true for a mapping whose djmdContent row is deleted then broken
+  - if has_rb_mapping is true for a tombstoned mapping whose djmdContent row is still
+    live then broken (resolve_content's write path already excludes it)
   - if has_rb_mapping is true for a track mapped only under a non-rekordbox vendor then broken
   - if a row reporting has_rb_mapping true does not serve vendor 'rekordbox' then broken
   - if a row reporting has_rb_mapping false does not serve vendor 'local' then broken
@@ -38,13 +40,15 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
-# Four tracks covering every real reason a mapping can be absent.
+# Five tracks covering every real reason a mapping can be absent.
 MAPPED = "a" * 40  # rekordbox mapping + live djmdContent row
 LOCAL_ONLY = "b" * 40  # locally imported: no vendor mapping at all
 DELETED_RB = "c" * 40  # mapping present, djmdContent row soft-deleted
 DJAY_ONLY = "d" * 40  # mapped, but under a different vendor
+TOMBSTONED_MAPPING = "e" * 40  # mapping itself soft-deleted, djmdContent row still live
 VENDOR_MAPPED = "126790091"
 VENDOR_DELETED = "126790092"
+VENDOR_TOMBSTONED = "126790093"
 
 
 def _make_master_plain_db(path: Path) -> None:
@@ -79,6 +83,14 @@ def _make_master_plain_db(path: Path) -> None:
             "VALUES (?, '/music/deleted.mp3', 300, 1)",
             (VENDOR_DELETED,),
         )
+        # The djmdContent row is LIVE here -- the tombstone is on the state.db
+        # side (track_vendor_ids.deleted_at), a re-import/re-map case where the
+        # old rekordbox row was never touched.
+        conn.execute(
+            "INSERT INTO djmdContent (ID, FolderPath, Length, rb_local_deleted) "
+            "VALUES (?, '/music/tombstoned.mp3', 300, 0)",
+            (VENDOR_TOMBSTONED,),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -87,7 +99,7 @@ def _make_master_plain_db(path: Path) -> None:
 def _make_state_db(path: Path) -> None:
     conn = state_db.open_rw(path)
     try:
-        for sid in (MAPPED, LOCAL_ONLY, DELETED_RB, DJAY_ONLY):
+        for sid in (MAPPED, LOCAL_ONLY, DELETED_RB, DJAY_ONLY, TOMBSTONED_MAPPING):
             conn.execute(
                 "INSERT INTO tracks (stable_id, stable_id_tier, title, "
                 "file_path, created_at, updated_at) VALUES "
@@ -110,6 +122,15 @@ def _make_state_db(path: Path) -> None:
             "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
             "VALUES (?, 'djay', 'djay-0001')",
             (DJAY_ONLY,),
+        )
+        # The mapping row itself is tombstoned (re-import/re-map case): the
+        # djmdContent row it points at is still live, so resolve_content's own
+        # `deleted_at IS NULL` predicate is the only thing standing between
+        # this and a false-positive has_rb_mapping (#736 review).
+        conn.execute(
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id, deleted_at) "
+            "VALUES (?, 'rekordbox', ?, '2026-01-01')",
+            (TOMBSTONED_MAPPING, VENDOR_TOMBSTONED),
         )
         # One mapped + one unmapped member, so playlist detail proves both
         # values on the TrackRowOut wire shape.
@@ -156,11 +177,12 @@ def _rows_by_id(client: TestClient) -> dict[str, dict]:
 
 def test_listing_flags_only_the_live_rekordbox_mapping(client: TestClient) -> None:
     rows = _rows_by_id(client)
-    assert set(rows) == {MAPPED, LOCAL_ONLY, DELETED_RB, DJAY_ONLY}
+    assert set(rows) == {MAPPED, LOCAL_ONLY, DELETED_RB, DJAY_ONLY, TOMBSTONED_MAPPING}
     assert rows[MAPPED]["has_rb_mapping"] is True
     assert rows[LOCAL_ONLY]["has_rb_mapping"] is False
     assert rows[DELETED_RB]["has_rb_mapping"] is False
     assert rows[DJAY_ONLY]["has_rb_mapping"] is False
+    assert rows[TOMBSTONED_MAPPING]["has_rb_mapping"] is False
 
 
 @pytest.mark.parametrize(
@@ -170,6 +192,7 @@ def test_listing_flags_only_the_live_rekordbox_mapping(client: TestClient) -> No
         (LOCAL_ONLY, False),
         (DELETED_RB, False),
         (DJAY_ONLY, False),
+        (TOMBSTONED_MAPPING, False),
     ],
 )
 def test_flag_agrees_with_rb_meta_vendor(
@@ -235,3 +258,64 @@ def test_playlist_detail_rows_carry_the_flag_too(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     flags = {row["stable_id"]: row["has_rb_mapping"] for row in response.json()["tracks"]}
     assert flags == {MAPPED: True, LOCAL_ONLY: False}
+
+
+@pytest.mark.parametrize(
+    ("stable_id", "expected_flag"),
+    [
+        (MAPPED, True),
+        (LOCAL_ONLY, False),
+        (DELETED_RB, False),
+        (DJAY_ONLY, False),
+        (TOMBSTONED_MAPPING, False),
+    ],
+)
+def test_single_track_get_carries_the_flag_too(
+    client: TestClient, stable_id: str, expected_flag: bool
+) -> None:
+    """GET /tracks/{sid} is the ONE fetch the deck-load path makes -- the
+    hot-cue SAVE inert-with-tooltip state (PARITY-TODO, issue #736) reads
+    this field off the loaded deck's track, not off a listing row it may
+    never have hydrated (e.g. a track loaded via search or a bare deep link).
+    TrackOut, not TrackListItemOut -- a third wire shape from the other two.
+    """
+    response = client.get(f"/api/v1/tracks/{stable_id}")
+    assert response.status_code == 200, response.text
+    assert response.json()["has_rb_mapping"] is expected_flag
+
+
+def test_patch_track_response_carries_the_flag_too(client: TestClient) -> None:
+    """PATCH also returns TrackOut, so it must not regress to a stale/absent flag."""
+    get_response = client.get(f"/api/v1/tracks/{LOCAL_ONLY}")
+    etag = get_response.headers["etag"]
+    response = client.patch(
+        f"/api/v1/tracks/{LOCAL_ONLY}",
+        json={"rating": 3},
+        headers={"If-Match": etag},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["has_rb_mapping"] is False
+
+
+@pytest.mark.parametrize(
+    ("stable_id", "expected_flag"),
+    [(MAPPED, True), (LOCAL_ONLY, False)],
+)
+def test_patch_conflict_response_carries_the_flag_too(
+    client: TestClient, stable_id: str, expected_flag: bool
+) -> None:
+    """A 409's `current` payload is a track view too (errors.py ConflictBody),
+    and the track page can "Take theirs" straight from it (#736 review). A
+    stale If-Match raises ConflictError(current.to_dict(), ...) straight from
+    the backend layer, bypassing _track_to_out entirely, so this must be
+    proven separately from the 200 case above rather than assumed to follow.
+    """
+    response = client.patch(
+        f"/api/v1/tracks/{stable_id}",
+        json={"rating": 3},
+        headers={"If-Match": '"stale-etag"'},
+    )
+    assert response.status_code == 409, response.text
+    current = response.json()["current"]
+    assert current["stable_id"] == stable_id
+    assert current["has_rb_mapping"] is expected_flag

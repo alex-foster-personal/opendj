@@ -8654,13 +8654,13 @@
           "stable_id",
           "created_at",
           "updated_at",
+          "has_rb_mapping",
           "preview_b64",
           "preview_max",
           "file_exists",
           "quality",
           "vocals",
-          "stems",
-          "has_rb_mapping"
+          "stems"
         ],
         "title": "TrackListItemOut",
         "type": "object"
@@ -8725,6 +8725,10 @@
               }
             ],
             "title": "File Path"
+          },
+          "has_rb_mapping": {
+            "title": "Has Rb Mapping",
+            "type": "boolean"
           },
           "key": {
             "anyOf": [
@@ -8814,7 +8818,8 @@
         "required": [
           "stable_id",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "has_rb_mapping"
         ],
         "title": "TrackOut",
         "type": "object"

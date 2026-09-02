@@ -20,6 +20,9 @@
  *       before invoking the engine or recreating an off-route audio graph ⛔️
  *     [if] a new route session starts while old work settles [then] its commands
  *       use fresh scheduler tails and clean pending counters
+ *   ✔︎ ✅ 🎯 hot_cue_save is gated on has_rb_mapping for every caller (#736).
+ *     [if] a browser/CLI agent dispatches hot_cue_save for an unmapped deck
+ *       [then] it rejects before reaching saveHotCue, same as the UI click ⛔️
  */
 
 import {
@@ -103,6 +106,10 @@ export type PerformanceCommand =
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
 	stable_id: string | null;
+	/** Track.has_rb_mapping carried onto the deck (#736); a browser/CLI agent
+	 * driving hot_cue_save checks this before dispatching, the same signal
+	 * HotCueBank reads to go inert-with-tooltip. */
+	has_rb_mapping: boolean;
 	title: string | null;
 	artist: string | null;
 	bpm: number | null;
@@ -251,11 +258,16 @@ const hotCueReversals: Record<DeckId, { slot: HotCueSlot; revision: string; reve
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
 	refresh(deck: DeckId): Promise<void>;
+	/** Same `DeckState.has_rb_mapping` HotCueBank gates its click on (#736) -
+	 * read here too so a non-UI caller (browser IPC, a preset transaction)
+	 * hits the identical guard rather than only the component seeing it. */
+	hasRbMapping(deck: DeckId): boolean;
 }
 
 const _defaultHotCueDriver: PerformanceHotCueDriver = {
 	stableId: (deck) => getDeckState(deck).stable_id,
-	refresh: (deck) => engine.refreshHotCues(deck)
+	refresh: (deck) => engine.refreshHotCues(deck),
+	hasRbMapping: (deck) => getDeckState(deck).has_rb_mapping
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
@@ -574,6 +586,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	return {
 		deck_id: deckId,
 		stable_id: deck.stable_id,
+		has_rb_mapping: deck.has_rb_mapping,
 		title: deck.title,
 		artist: deck.artist,
 		bpm: deck.bpm,
@@ -814,6 +827,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'hot_cue_save') {
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
+		if (!_hotCueDriver.hasRbMapping(command.deck)) {
+			throw new Error(
+				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
+			);
+		}
 		const result = await saveHotCue(stableId, command.slot, command.in_ms, command.revision);
 		if (result.reversal === undefined) throw new Error(`hot cue ${command.slot}: server omitted reversal token`);
 		hotCueReversals[command.deck] = {

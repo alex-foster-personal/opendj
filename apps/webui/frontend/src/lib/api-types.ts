@@ -5757,6 +5757,8 @@ export interface components {
             duration_ms?: number | null;
             /** File Path */
             file_path?: string | null;
+            /** Has Rb Mapping */
+            has_rb_mapping: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */

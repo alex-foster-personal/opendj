@@ -163,7 +163,8 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 	globalThis.window = {};
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
-		refresh: async () => {}
+		refresh: async () => {},
+		hasRbMapping: () => true
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -195,6 +196,48 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 		resetDriver();
 		delete globalThis.window;
 		globalThis.fetch = originalFetch;
+	}
+});
+
+test('hot_cue_save rejects for an unmapped deck before reaching the network, same as HotCueBank (#736)', async () => {
+	const originalFetch = globalThis.fetch;
+	let fetchCalls = 0;
+	globalThis.fetch = async () => {
+		fetchCalls += 1;
+		throw new Error('saveHotCue must not reach the network for an unmapped deck');
+	};
+	globalThis.window = {};
+	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
+		stableId: () => 'loaded-track',
+		refresh: async () => {},
+		hasRbMapping: () => false
+	});
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag'
+			}),
+			/no live rekordbox mapping/i
+		);
+		assert.equal(fetchCalls, 0, 'hot_cue_save must reject before calling saveHotCue');
+	} finally {
+		uninstall();
+		resetDriver();
+		delete globalThis.window;
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('queryPerformanceState serializes has_rb_mapping so a browser/CLI agent can gate on it (#736)', () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const initial = ipc.queryPerformanceState().decks[1];
+		assert.equal(initial.has_rb_mapping, true, 'a fresh unloaded deck defaults has_rb_mapping true');
+	} finally {
+		uninstall();
+		delete globalThis.window;
 	}
 });
 

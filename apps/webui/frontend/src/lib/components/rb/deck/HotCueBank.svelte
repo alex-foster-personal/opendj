@@ -8,9 +8,17 @@
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
 	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
 	// dropdown selector below-left is visual-only (inert).
+	//
+	// A locally imported track has no djmdContent row for djmdCue to key
+	// off, so SAVE has nowhere to write (PARITY-TODO v1 blocker, issue
+	// #736): every slot on such a deck (deck.has_rb_mapping false) always
+	// reads empty from the server and goes inert-with-tooltip rather than
+	// firing a write that would 404.
 	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
+
+	const MAPPING_TIP = 'cues need a rekordbox mapping';
 
 	let {
 		deck,
@@ -56,6 +64,7 @@
 
 	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
 		if (busySlot !== null) return;
+		if (entry.cue === null && !deck.has_rb_mapping) return; // inert: see MAPPING_TIP
 		busySlot = entry.slot;
 		try {
 			if (entry.cue !== null) {
@@ -106,10 +115,13 @@
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
+				class:inert-mapping={entry.cue === null && !deck.has_rb_mapping}
 				disabled={busySlot !== null}
 				aria-busy={pending}
 				title={entry.cue === null
-					? 'empty hot cue slot - click to save the current position'
+					? deck.has_rb_mapping
+						? 'empty hot cue slot - click to save the current position'
+						: MAPPING_TIP
 					: (entry.cue.comment ?? `hot cue ${entry.slot}`)}
 				onclick={() => onSlotClick(entry)}
 			>
@@ -205,6 +217,10 @@
 	}
 	.slot.filled.loop .letter {
 		color: var(--rb-orange);
+	}
+	.slot.inert-mapping {
+		cursor: default;
+		opacity: 0.35;
 	}
 	.cue-label {
 		flex: 1 1 auto;

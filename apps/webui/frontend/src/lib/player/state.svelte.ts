@@ -59,6 +59,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		safety_loop: null,
 		hot_cues: [],
 		hot_cue_revisions: _emptyHotCueRevisions(),
+		has_rb_mapping: true,
 		anlz: null,
 		anlz_error: null,
 		last_load_latency_ms: null,
