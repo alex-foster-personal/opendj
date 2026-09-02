@@ -23,7 +23,10 @@
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
 	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
-	import { foldPresentationSample } from '$lib/player/transport/presentation-stall';
+	import {
+		foldPresentationSample,
+		type PresentationStallState
+	} from '$lib/player/transport/presentation-stall';
 	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
@@ -232,7 +235,7 @@
 	// Wed 2 Sep 2026. Nothing here can fix a frozen clock; what it can do is stop
 	// lying about it. See .planning/hardening-ledger/items/
 	// waveform-freezes-on-stale-output-timestamp.md.
-	let stallState = $state.raw(undefined);
+	let stallState = $state.raw<PresentationStallState | undefined>(undefined);
 	let playheadFrozen = $state(false);
 	// Either the device clock stalled (presentation.ts is coasting on the sample
 	// clock) or the painted number itself stopped moving for any other reason.
@@ -251,8 +254,9 @@
 				position_ms: deck.position_ms,
 				tMs: performance.now()
 			});
-			if (stallState.verdict === 'presentation-stalled') playheadFrozen = true;
-			else if (stallState.frozenSinceMs === null) playheadFrozen = false;
+			const stall = stallState;
+			if (stall !== undefined && stall.verdict === 'presentation-stalled') playheadFrozen = true;
+			else if (stall !== undefined && stall.frozenSinceMs === null) playheadFrozen = false;
 			raf = requestAnimationFrame(loop);
 		});
 		return () => cancelAnimationFrame(raf);

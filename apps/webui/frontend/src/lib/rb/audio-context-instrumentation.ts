@@ -11,10 +11,7 @@
  * measure must never become a failure to play.
  */
 
-import {
-	installAudioContextWatchdog,
-	type WatchableAudioContext
-} from '$lib/rb/audio-context-watchdog';
+import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -120,8 +117,11 @@ export function armAudioContextWatchdog(
 	ctx.addEventListener('statechange', () => {
 		if (ctx.state === 'running') stampContextDeviceFloors(ctx);
 	});
+	// No cast of any kind: WatchableAudioContext is declared narrowly enough that
+	// a real AudioContext structurally satisfies it, which is the point of
+	// declaring it that way rather than reaching for a double assertion.
 	installAudioContextWatchdog(
-		ctx as unknown as WatchableAudioContext,
+		ctx,
 		{
 			pushToast,
 			recordPerfTiming: (kind, stages) => recordPerfTiming(kind, stages),

@@ -39,8 +39,8 @@ import {
 	foldXrunReport,
 	isXrunReport,
 	quantumDurationMs,
-	xrunGapThresholdMs,
 	xrunReportMessage,
+	xrunThresholdFromCadenceMs,
 	type XrunSessionCounter
 } from '$lib/rb/xrun-math';
 import xrunSentinelModuleUrl from '$lib/rb/xrun-sentinel-processor.js?url';
@@ -103,10 +103,15 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 		throw new Error('AudioWorklet is unavailable; the xrun sentinel cannot start');
 	}
 	await ctx.audioWorklet.addModule(xrunSentinelModuleUrl);
-	const thresholdMs = xrunGapThresholdMs(
-		quantumDurationMs(RENDER_QUANTUM_FRAMES, ctx.sampleRate),
-		ctx.baseLatency * 1000
-	);
+	// The best cadence estimate available on THIS side of the port: one period,
+	// from baseLatency, floored at the render quantum because baseLatency reads 0
+	// before a device is attached. Derived through the same function the worklet's
+	// own measurement uses, so the seed and the measurement cannot drift apart in
+	// how they turn a period into a threshold - only in the period itself, which
+	// is the whole point of measuring it over there.
+	const thresholdMs = xrunThresholdFromCadenceMs([
+		Math.max(ctx.baseLatency * 1000, quantumDurationMs(RENDER_QUANTUM_FRAMES, ctx.sampleRate))
+	]);
 	const node = new AudioWorkletNode(ctx, XRUN_SENTINEL_PROCESSOR_NAME, {
 		...XRUN_SENTINEL_NODE_OPTIONS,
 		processorOptions: {

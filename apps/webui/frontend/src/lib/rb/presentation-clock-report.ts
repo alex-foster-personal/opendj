@@ -14,8 +14,18 @@
  */
 
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
-import type { DeckId } from '$lib/rb/deck-slots';
 import { pushToast } from '$lib/stores.svelte';
+
+/**
+ * The deck id, declared inline rather than imported.
+ *
+ * Deliberate, and the same call perf-event-log.ts makes for the same reason:
+ * `deck-slots.ts` is the tree's fan-in ceiling and the quality ratchet holds
+ * that key at its measured floor with ZERO headroom on purpose, so the next
+ * importer reds the gate for every lane at once. A four-member union is not
+ * worth doing that to whoever rebases next.
+ */
+type DeckId = 1 | 2 | 3 | 4;
 
 /** Per-deck: was the output clock stalled on the previous observation. */
 const _stalled: Record<DeckId, boolean> = { 1: false, 2: false, 3: false, 4: false };
