@@ -56,3 +56,44 @@ export function notePresentationClock(deck: DeckId, clockStalled: boolean | null
 		'info'
 	);
 }
+
+/**
+ * Report a presentation frame that threw.
+ *
+ * Lives here rather than inline in `_tick` purely for the engine's line budget:
+ * `audio-engine.svelte.ts` is AT the ratchet's `file_size.max_frontend` cap, so
+ * the catch block is a call rather than a paragraph.
+ */
+export function notePresentationTickFailure(error: unknown): void {
+	recordPerfEvent(
+		'presentation-tick-failed',
+		'the presentation frame threw, so the waveform would have frozen over live audio ' +
+			`while the decks kept playing: ${String(error)}`,
+		null,
+		'error'
+	);
+}
+
+/**
+ * The raw output timestamp, validated.
+ *
+ * Moved out of `audio-engine.svelte.ts` with the tick guard, for the engine's
+ * line budget (it is AT the ratchet's `file_size.max_frontend` cap). Both
+ * throws are deliberate and unchanged: a browser with no `getOutputTimestamp`
+ * cannot drive presented transport at all, and a partial timestamp is not
+ * something to guess at. They are now caught by `_tick`, recorded, and the next
+ * frame is re-armed - which is what makes them safe to keep throwing.
+ */
+export function readOutputTimestamp(context: AudioContext): {
+	contextTime: number;
+	performanceTime: number;
+} {
+	if (typeof context.getOutputTimestamp !== 'function') {
+		throw new Error('AudioContext.getOutputTimestamp is required for presented transport');
+	}
+	const { contextTime, performanceTime } = context.getOutputTimestamp();
+	if (contextTime === undefined || performanceTime === undefined) {
+		throw new Error('AudioContext.getOutputTimestamp returned an incomplete timestamp');
+	}
+	return { contextTime, performanceTime };
+}
