@@ -115,6 +115,12 @@ from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
     cached_beatgrid_issue,
 )
 from apps.webui.server.rb_vendor_pkg.db import count_cues, fetch_cues, playlist_order_index
+from apps.webui.server.rb_vendor_pkg.local_waveform import (
+    LocalDecodeUnavailable,
+    ensure_local_peaks,
+    local_anlz_payload,
+    local_preview_strip,
+)
 from apps.webui.server.rb_vendor_pkg.row_hydration_cache import (
     _PREVIEW_CACHE,
     _VOCALS_CACHE,
@@ -247,6 +253,7 @@ __all__ = [
     "_WAVEFORM_NATIVE",
     "_WAVEFORM_NATIVE_IMPORT_ERROR",
     "HotCueSlotError",
+    "LocalDecodeUnavailable",
     "RbContent",
     "RbRowMeta",
     "_anlz_mtime",
@@ -292,12 +299,15 @@ __all__ = [
     "demucs_vocals_payload",
     "empty_anlz_payload",
     "empty_hot_cue_slots",
+    "ensure_local_peaks",
     "fetch_cues",
     "fetch_hot_cue_slots",
     "is_streaming_path",
+    "local_anlz_payload",
     "local_artwork",
     "local_artwork_available",
     "local_audio_file",
+    "local_preview_strip",
     "local_track_row",
     "merge_demucs_vocals",
     "not_found",

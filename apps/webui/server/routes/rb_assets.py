@@ -25,6 +25,7 @@ router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 _CACHE_AUDIO = "no-store"  # files can move (apps/reconcile repairs)
 _CACHE_ARTWORK = "public, max-age=86400"
 _CACHE_ANLZ = "public, max-age=3600"
+_CACHE_ANLZ_RETRYABLE = "no-store"  # transient decoder saturation, not a fact about the track
 _CACHE_RB_META = "no-store"  # file_exists must reflect disk truth
 
 
@@ -136,6 +137,7 @@ def get_track_artwork(
 
 @router.get("/{stable_id}/anlz")
 def get_track_anlz(
+    request: Request,
     stable_id: str,
     points: int = Query(
         38400,
@@ -159,10 +161,20 @@ def get_track_anlz(
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
             raise
-        # Locally imported track (no rekordbox analysis): empty-but-valid
-        # payload so a deck can still load + play, no synthesised waveform.
-        payload = rb_vendor.empty_anlz_payload(stable_id, points)
-    return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ})
+        # Locally imported track (no rekordbox analysis). Everything rekordbox
+        # owns stays empty, but the waveform is decodable from the audio
+        # itself, so serve OUR peaks (ffmpeg, cached under
+        # data/state/local-waveform-cache) and say so in ``local_waveform``.
+        # A decode that has not and cannot run yields empty bands plus the
+        # reason - never a synthesised shape.
+        # Same audience GET /audio resolves for this request, so a Share
+        # listener's lane is drawn from the rung they actually hear.
+        share = getattr(request.state, "share_audience", "local") == "share"
+        payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+    local_waveform = payload.get("local_waveform")
+    retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
+    cache_control = _CACHE_ANLZ_RETRYABLE if retryable else _CACHE_ANLZ
+    return JSONResponse(payload, headers={"Cache-Control": cache_control})
 
 
 def _local_rb_meta(stable_id: str) -> RbMetaOut:

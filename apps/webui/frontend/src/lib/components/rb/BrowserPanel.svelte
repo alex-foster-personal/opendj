@@ -93,6 +93,7 @@
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
 	import {
+		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
 		createPaneStore,
 		filterRows,
@@ -114,7 +115,13 @@
 	import TrackTable from './browser/TrackTable.svelte';
 	import { fetchAllPages } from './browser/virtual-window';
 	import { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
-	import { ensureAnlz, getAnlzEntry } from './wave/anlz-cache.svelte';
+	import {
+		ensureAnlz,
+		getAnlzEntry,
+		isAnlzEntryUsable,
+		registerAnlzConsumer,
+		unregisterAnlzConsumer
+	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
 
@@ -234,6 +241,76 @@
 			}
 		})
 	);
+	/** Reactively copies a decoded local waveform strip into the selected
+	 * row(s), across every pane and every row loaded there. Reads the shared
+	 * anlz cache (same pattern as `vocalsById` above) instead of fetching
+	 * directly, so a decode that only resolves after `ensureAnlz`'s ambient
+	 * retry (issue #735 follow-up) still reaches the row. The old one-shot
+	 * fetch-and-adopt stopped watching the moment its OWN fetch settled
+	 * retryable, so a track needing a second or third retry never got its
+	 * strip until the row was reselected or the page reloaded (Codex
+	 * finding, issue #735 follow-up, discussion_r3908286630). Applies to
+	 * EVERY row matching a selected stable_id in EVERY pane, not just the
+	 * pane whose own selection triggered the decode: the same track can be
+	 * loaded as a row in more than one pane, and a copy that isn't the
+	 * active selection still shares the one cache entry
+	 * (discussion_r3908503574, discussion_r3909752654). Watches each pane's
+	 * full `selected_ids` multi-selection, not just its singular
+	 * `selected_id` (the last-clicked anchor): a Cmd/Ctrl-click adds to
+	 * `selected_ids` without moving `selected_id` off the new anchor, so an
+	 * earlier multi-selected row's still-pending decode needs its own id
+	 * watched too (discussion_r3910053530). */
+	$effect(() => {
+		const selectedIds = new Set<string>();
+		for (const p of panes) {
+			for (const sid of p.selected_ids) selectedIds.add(sid);
+			if (p.selected_id !== null) selectedIds.add(p.selected_id);
+		}
+		for (const sid of selectedIds) {
+			const entry = getAnlzEntry(sid);
+			if (!isAnlzEntryUsable(entry) || entry.data.local_waveform?.status !== 'decoded') continue;
+			applyDecodedStripAcrossPanes(
+				panes,
+				sid,
+				decodePreviewStrip(
+					entry.data.local_waveform.preview_b64,
+					entry.data.local_waveform.preview_max
+				)
+			);
+		}
+	});
+	/** Keeps anlz-cache's ambient retry alive only while a track is actually
+	 * being looked at here - selected in some pane, or loaded on some deck -
+	 * and releases it the moment neither is true. Without this, arrow-key
+	 * navigation across many uncached rows leaves every one of them retrying
+	 * every cooldown forever, each still holding a decoder slot the user's
+	 * ACTUAL selection needs (Codex finding, issue #735 follow-up,
+	 * discussion_r3908644098). Diffed against the previous run rather than
+	 * unregister-all-then-reregister-all, so a selection that merely moves
+	 * within the same set of ids (e.g. two panes both still pointing at
+	 * loaded decks) does not thrash tokens on every unrelated rerun. */
+	let _heldAnlzConsumers = new Map<string, symbol>();
+	$effect(() => {
+		const active = new Set<string>(loadedIds);
+		for (const p of panes) {
+			if (p.selected_id !== null) active.add(p.selected_id);
+		}
+		for (const [sid, token] of _heldAnlzConsumers) {
+			if (!active.has(sid)) {
+				unregisterAnlzConsumer(sid, token);
+				_heldAnlzConsumers.delete(sid);
+			}
+		}
+		for (const sid of active) {
+			if (!_heldAnlzConsumers.has(sid)) {
+				_heldAnlzConsumers.set(sid, registerAnlzConsumer(sid));
+			}
+		}
+		return () => {
+			for (const [sid, token] of _heldAnlzConsumers) unregisterAnlzConsumer(sid, token);
+			_heldAnlzConsumers.clear();
+		};
+	});
 	const treeNodes = $derived(
 		playlists
 			.slice()
@@ -1460,6 +1537,9 @@
 			: [];
 		p.select(row.stable_id, extend, range, orderedIds);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
+		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
+		// runs (issue #735); the strip-adoption effect below picks up the
+		// result (including a later ambient retry) once it lands in the cache.
 		ensureAnlz(row.stable_id);
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.

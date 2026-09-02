@@ -25,6 +25,11 @@ _HAS_AUDIO_STACK: bool = (
     and importlib.util.find_spec("librosa") is not None
 )
 _HAS_FPCALC: bool = shutil.which("fpcalc") is not None
+# ffmpeg is the local waveform decoder (apps.webui.server.rb_vendor_pkg.
+# local_waveform). Absence is a real, tested runtime state -- the tests that
+# assert what a MISSING ffmpeg produces run everywhere; only the ones that
+# need a real decode are gated here.
+_HAS_FFMPEG: bool = shutil.which("ffmpeg") is not None
 # madmom is not installable from PyPI on Python 3.10+ (0.16.1 imports the
 # long-removed collections.MutableSequence), so requirements.txt pulls the
 # git HEAD with --no-build-isolation and no pyproject extra can supply it.
@@ -42,6 +47,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     )
     skip_audio = pytest.mark.skip(reason="needs the analysis extra (soundfile/librosa)")
     skip_fpcalc = pytest.mark.skip(reason="needs chromaprint's fpcalc on PATH")
+    skip_ffmpeg = pytest.mark.skip(reason="needs ffmpeg on PATH")
     for item in items:
         if sys.platform != "darwin" and "requires_darwin" in item.keywords:
             item.add_marker(skip_darwin)
@@ -55,3 +61,5 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_audio)
         if not _HAS_FPCALC and "requires_fpcalc" in item.keywords:
             item.add_marker(skip_fpcalc)
+        if not _HAS_FFMPEG and "requires_ffmpeg" in item.keywords:
+            item.add_marker(skip_ffmpeg)

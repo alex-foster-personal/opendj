@@ -88,6 +88,27 @@ export interface AnlzPhrase {
 	mood: number;
 }
 
+/** Our own ffmpeg-decoded waveform status for a track with NO rekordbox
+ * mapping (issue #735). Present ONLY on that branch - a rekordbox-mapped
+ * track's response has no ``local_waveform`` key at all. */
+export interface AnlzLocalWaveform {
+	/** 'decoded' once our ffmpeg path produced peaks; 'not_decoded' names why
+	 * in `reason` (no ffmpeg, no audio, saturated decoder, etc) - never a
+	 * synthesised shape. */
+	status: 'decoded' | 'not_decoded';
+	reason: string | null;
+	/** 120x3-band browser strip, same 360-byte contract as a listing row's
+	 * preview_b64 - present only once status is 'decoded'. */
+	preview_b64: string | null;
+	preview_max: number | null;
+	/** True only on a 'not_decoded' caused by a TRANSIENT condition (decoder
+	 * momentarily saturated) - the caller should retry, and the response is
+	 * sent with `Cache-Control: no-store` so it never sticks. Absent/false
+	 * means a fact about the track itself (no ffmpeg, corrupt audio, missing
+	 * file); retrying will not help. */
+	retryable?: boolean;
+}
+
 /** Full GET /tracks/{stable_id}/anlz response. */
 export interface AnlzData {
 	/** 40-hex stable id the payload belongs to. */
@@ -102,4 +123,6 @@ export interface AnlzData {
 	cues: AnlzCue[];
 	/** Phrases; empty array when PSSI absent. */
 	phrases: AnlzPhrase[];
+	/** See AnlzLocalWaveform; absent for a rekordbox-mapped track. */
+	local_waveform?: AnlzLocalWaveform;
 }

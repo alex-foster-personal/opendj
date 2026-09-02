@@ -13,13 +13,15 @@ primary checkout's ``data/``. This module builds a throwaway one instead:
    (``python -m apps.shared.state.cli ingest-folder``), not by hand. That
    adapter reads tags and writes NO bpm, NO key and NO beatgrid, and says so.
    The engine has a first-class path for exactly those rows
-   (``empty_anlz_payload``: "a deck can load and play with no grid/waveform").
+   (``local_anlz_payload``: "a deck can load and play with no grid").
 
 What that honestly leaves OUT is named rather than faked: these tracks have no
-rekordbox vendor mapping, so ``/anlz`` serves an empty-but-valid payload and
-there is no beatgrid. The only in-repo beatgrid producer for arbitrary audio
-is ``apps.analysis`` (librosa+madmom), which is deliberately absent from the
-repo venv, so nothing here invents one.
+rekordbox vendor mapping, so ``/anlz`` serves a payload whose beatgrid, cues
+and phrases are all empty. Since Tue 1 Sep 2026 its WAVEFORM is not: those
+peaks come from our own ffmpeg decode of the fixture audio (PARITY-03), so a
+lane drawn here describes the real tone. The only in-repo beatgrid producer
+for arbitrary audio is ``apps.analysis`` (librosa+madmom), which is
+deliberately absent from the repo venv, so nothing here invents a grid.
 
 SPECTRAL LANDMARK. The tempo, key and master-tempo tests assert the effect on
 the AUDIO, read back through the app's own post-processor AnalyserNode. That

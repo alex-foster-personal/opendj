@@ -46,6 +46,16 @@ ANLZ_CACHE_DIR: Path = DATA_DIR / "state" / "anlz-cache"
 # routes/rb_assets.get_track_rb_meta) can read it as cheaply as the
 # analysis_available file-existence stat it already does.
 BEATGRID_ISSUE_CACHE_DIR: Path = DATA_DIR / "state" / "beatgrid-issue-cache"
+# Peaks this repo decoded ITSELF (ffmpeg), for tracks with no rekordbox ANLZ
+# to read. Same on-disk contract as ANLZ_CACHE_DIR -- schema-versioned,
+# source-revalidated, atomically published -- but split in two per track:
+# ``{stable_id}.json`` holds the full detail envelope (tens of KB) that only
+# the single-track /anlz fetch wants, and ``{stable_id}.strip.json`` holds the
+# 120-column browser strip (a few hundred bytes) that the library row
+# hydration reads once per visible row. Same reasoning as
+# BEATGRID_ISSUE_CACHE_DIR above: a per-row read must not drag a waveform
+# payload through JSON.
+LOCAL_WAVEFORM_CACHE_DIR: Path = DATA_DIR / "state" / "local-waveform-cache"
 # demucs gap-fill cache written by ``python -m apps.vocals`` (SPIKE-B2).
 VOCAL_CACHE_DIR: Path = vocal_cache.cache_dir(DATA_DIR)
 # Matches apps.shared.paths' STATE_DIR/STATE_DB formula exactly, so this
@@ -75,6 +85,10 @@ ARTWORK_FILENAMES: dict[str, str] = {
 ANLZ_CACHE_SCHEMA: int = 2
 # Bump whenever beatgrid_diagnostics' output shape or thresholds change.
 BEATGRID_ISSUE_CACHE_SCHEMA: int = 1
+# Bump whenever the local decode changes what the peaks MEAN (sample rate,
+# column density, value scale), so stale entries recompute instead of being
+# rendered against a different convention.
+LOCAL_WAVEFORM_CACHE_SCHEMA: int = 1
 
 # --- file-existence cache ---
 # file_exists is disk truth (FR-1 item 4): playable local bytes, not merely
@@ -99,6 +113,8 @@ __all__ = [
     "BEATGRID_ISSUE_CACHE_SCHEMA",
     "DATA_DIR",
     "FILE_EXISTS_TTL_S",
+    "LOCAL_WAVEFORM_CACHE_DIR",
+    "LOCAL_WAVEFORM_CACHE_SCHEMA",
     "MASTER_PLAIN_DB",
     "STATE_DB",
     "STREAMING_PREFIXES",

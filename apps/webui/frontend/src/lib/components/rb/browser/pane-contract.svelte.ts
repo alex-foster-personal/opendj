@@ -489,6 +489,19 @@ export function visibleRowsOf(pane: PaneStore, hideBroken: boolean): BrowserRow[
 	return sortRows(filterRows(pane.rows, pane.search, hideBroken), pane.sort_key, pane.sort_dir);
 }
 
+/** Writes a decoded strip into every matching row in every pane, ALWAYS overwriting - the audience-ambiguous sidecar (TECH-DEBT.md) never outranks /anlz's own audience-scoped decode. */
+export function applyDecodedStripAcrossPanes(
+	panes: readonly PaneStore[],
+	stable_id: string,
+	strip: PreviewStripData | null
+): void {
+	for (const pane of panes) {
+		for (const row of pane.rows) {
+			if (row.stable_id === stable_id) row.strip = strip;
+		}
+	}
+}
+
 // ---------------------------------------------------------------- pane tabs
 // RECOVERED, not designed. `BrowserPanel.svelte` has imported both of these
 // since cfbfe55 ("wip(spike)", Fri 24 Jul 2026 01:19) but they were never

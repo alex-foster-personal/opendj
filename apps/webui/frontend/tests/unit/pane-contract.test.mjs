@@ -17,6 +17,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   a stale/wrong playlist -- broken
 // - if a truncated playlist is write-enabled then a full-list replace can
 //   discard unrendered members beyond the browser's fetch cap -- broken
+// - if a decoded strip only reaches the pane whose selection triggered the
+//   decode, and not a matching row's copy loaded in another pane, then broken
+// - if a row's audience-ambiguous, listing-hydrated strip survives a fresh
+//   audience-scoped /anlz decode for the same selected track then broken
 
 let contract;
 
@@ -481,4 +485,52 @@ test('playlist drag payloads round-trip, and junk decodes to null', () => {
 	]) {
 		assert.equal(contract.decodePlaylistDrag(junk), null, `should reject ${junk}`);
 	}
+});
+
+
+// ------------------------------------------------------ strip propagation
+
+test('a decoded strip reaches every pane holding a matching row, not only the selecting pane', () => {
+	const stripA = { columns: 'aGVsbG8=', max: 200 };
+	const paneOne = contract.createPaneStore();
+	paneOne.rows = [_row({ stable_id: 'track-a', strip: null })];
+	paneOne.selected_id = 'track-a';
+	const paneTwo = contract.createPaneStore();
+	paneTwo.rows = [_row({ stable_id: 'track-a', strip: null })];
+	paneTwo.selected_id = 'track-b'; // a DIFFERENT selection, same track loaded as a row
+
+	contract.applyDecodedStripAcrossPanes([paneOne, paneTwo], 'track-a', stripA);
+
+	assert.deepEqual(paneOne.rows[0].strip, stripA);
+	assert.deepEqual(
+		paneTwo.rows[0].strip,
+		stripA,
+		'pane 2 never selected track-a, but its copy shares the same cache entry'
+	);
+});
+
+test('a fresh audience-scoped decode overwrites a stale, sidecar-hydrated strip', () => {
+	// The only other source of a strip on a locally-decoded track is listing
+	// hydration's audience-ambiguous sidecar (TECH-DEBT.md,
+	// discussion_r3907125683) - once the selected track's own /anlz returns
+	// the audience-correct decode, it must win over that stale value
+	// (discussion_r3909987026), not be silently preserved forever.
+	const staleFromWrongAudience = { columns: 'c3RhbGU=', max: 30 };
+	const freshCorrectDecode = { columns: 'ZnJlc2g=', max: 220 };
+	const p = contract.createPaneStore();
+	p.rows = [_row({ stable_id: 'track-a', strip: staleFromWrongAudience })];
+
+	contract.applyDecodedStripAcrossPanes([p], 'track-a', freshCorrectDecode);
+
+	assert.deepEqual(p.rows[0].strip, freshCorrectDecode);
+});
+
+test('applyDecodedStripAcrossPanes leaves rows for a different stable_id alone', () => {
+	const strip = { columns: 'b3RoZXI=', max: 10 };
+	const p = contract.createPaneStore();
+	p.rows = [_row({ stable_id: 'track-unrelated', strip: null })];
+
+	contract.applyDecodedStripAcrossPanes([p], 'track-a', strip);
+
+	assert.equal(p.rows[0].strip, null);
 });

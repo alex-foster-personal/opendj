@@ -12,9 +12,17 @@
 	import { getDeckState, DECK_IDS, mixerState } from './engine-accessor';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
-	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
+	import {
+		deckAnlzNeedsFetch,
+		ensureAnlz,
+		getAnlzEntry,
+		registerAnlzConsumer,
+		resolveDisplayedAnlz,
+		unregisterAnlzConsumer
+	} from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
 	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
+	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
 		drawPlayhead,
@@ -39,20 +47,32 @@
 	// cached /anlz fetch keyed by the deck's stable_id (deck-load event).
 	$effect(() => {
 		const sid = deck.stable_id;
-		if (sid !== null && deck.anlz === null && deck.anlz_error === null) ensureAnlz(sid);
+		if (sid !== null && deckAnlzNeedsFetch(deck.anlz, deck.anlz_error)) ensureAnlz(sid);
 	});
-	const anlzData = $derived.by(() => {
-		if (deck.anlz !== null) return deck.anlz;
-		if (deck.stable_id === null) return null;
-		const entry = getAnlzEntry(deck.stable_id);
-		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
+	// Keeps a retryable anlz's ambient retry (anlz-cache.svelte.ts) alive for
+	// as long as THIS deck holds the track, and releases it the moment the
+	// deck unloads or swaps tracks - a bare `ensureAnlz` call carries no such
+	// lifetime on its own (issue #735 follow-up, discussion_r3908644098).
+	// Deliberately keyed on `deck.stable_id` alone, not `deck.anlz`/
+	// `anlz_error`: those change on every retry tick and would otherwise
+	// churn the registration for no reason.
+	$effect(() => {
+		const sid = deck.stable_id;
+		if (sid === null) return;
+		const token = registerAnlzConsumer(sid);
+		return () => unregisterAnlzConsumer(sid, token);
 	});
+	const anlzData = $derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id));
 	const anlzErrorCode = $derived.by(() => {
 		if (deck.anlz_error !== null) return deck.anlz_error;
 		if (deck.stable_id === null) return null;
 		const entry = getAnlzEntry(deck.stable_id);
 		return entry !== undefined && entry.status === 'error' ? entry.code : null;
 	});
+	// A permanent local-decode failure (issue #735 follow-up): the deck lane
+	// otherwise renders blank with no label, since local_waveform never feeds
+	// `waveform` and the HTTP response is a normal 200 (discussion_r3908337231).
+	const localDecodeFailure = $derived.by(() => localDecodeFailureReason(anlzData));
 
 	// ---- beatgrid fallback: only reached once /anlz has confirmed no
 	// rekordbox ANLZ exists (anlz-fallback-beatgrid, LANE analysis-router).
@@ -380,6 +400,8 @@
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
 			</span>
+		{:else if deck.stable_id !== null && localDecodeFailure !== null && beatgridFallback === null}
+			<span class="anlz-state" title={localDecodeFailure}>NOT DECODED</span>
 		{:else if beatgridFallback !== null}
 			<span
 				class="anlz-state"

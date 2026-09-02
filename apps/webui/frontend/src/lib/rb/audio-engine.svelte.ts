@@ -92,7 +92,11 @@ import {
 	RbApiError
 } from '$lib/rb/api-rb';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
-import { getAnlzEntry } from '$lib/components/rb/wave/anlz-cache.svelte';
+import {
+	fetchAnlzForDeckLoad,
+	getAnlzEntry,
+	isAnlzEntryUsable
+} from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	computeFollowerSyncPlan,
 	planTempoRatioRamp,
@@ -3049,10 +3053,18 @@ class RbAudioEngine implements AudioEngine {
 		try {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
-			const anlzCached = cachedAnlz !== undefined && cachedAnlz.status === 'ready';
+			const anlzCached = isAnlzEntryUsable(cachedAnlz);
+			// A direct (uncached) fetch never blocks the load out waiting on a
+			// momentarily saturated decoder (Codex finding, issue #735 follow-up,
+			// discussion_r3907610439): `anlz` below must be non-null for this
+			// load to publish at all, so accepting even a retryable reject here
+			// is required to finish the load. WaveRow's own effect keeps asking
+			// for a fetch while the published anlz is still the retryable class
+			// (deckAnlzNeedsFetch), and resolveDisplayedAnlz picks up the
+			// eventual terminal answer from the shared cache once it lands.
 			const anlzPromise: Promise<AnlzWithVocals> = anlzCached
 				? Promise.resolve(cachedAnlz.data as AnlzWithVocals)
-				: fetchAnlz(stable_id);
+				: (fetchAnlzForDeckLoad(stable_id) as Promise<AnlzWithVocals>);
 			// Prefetch hit: copyPrefetchedAudio (slice) so decode cannot detach cache.
 			const prefetchedAudio = copyPrefetchedAudio(stable_id);
 			const audioPromise =
