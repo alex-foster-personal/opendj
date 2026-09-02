@@ -221,6 +221,27 @@ check_rust_toolchain() {
     ok "cargo and cargo-tauri present ($tauri_version)"
 }
 
+#----- D2. Apple xattr ----------------------------------------------------
+
+check_apple_xattr() {
+    section "D2. Apple xattr (bundler runs xattr -cr before codesign)"
+    local probe
+    probe=$(mktemp -d /tmp/opendj-xattr-probe.XXXXXX)
+    touch "$probe/f"
+    if ! PATH="/usr/bin:$PATH" xattr -cr "$probe" 2>/dev/null; then
+        rm -rf "$probe"
+        fail "apple xattr" "/usr/bin/xattr -cr failed; the bundler cannot strip extended attributes before signing" \
+             "This is Apple's xattr; check macOS tooling (xcode-select --install)."
+        return
+    fi
+    rm -rf "$probe"
+    if ! xattr -cr /dev/null 2>/dev/null && [ "$(command -v xattr)" != "/usr/bin/xattr" ]; then
+        ok "a non-Apple xattr ($(command -v xattr)) shadows /usr/bin/xattr; the dmg recipe puts /usr/bin first for the bundle step"
+    else
+        ok "xattr supports -cr"
+    fi
+}
+
 #----- E. python runner ---------------------------------------------------
 
 check_uv() {
@@ -595,6 +616,7 @@ check_platform
 check_working_tree
 check_signing_config
 check_rust_toolchain
+check_apple_xattr
 check_uv
 check_pnpm_pin
 check_spa_built
