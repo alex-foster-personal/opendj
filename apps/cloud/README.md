@@ -1,5 +1,31 @@
 # apps/cloud -- music-dj-tools cloud sync (Phase 11)
 
+## Read this first: three different things are called "cloud" or "sync"
+
+They are separate components with separate jobs, and conflating them costs
+real time. Wed 2 Sep 2026 an agent read the cloudsync sync protocol, found no
+file surface, and reported "CloudSync cannot host files" -- while the file
+surface sat in this package the whole time. Use this table before reading
+anything else.
+
+| You want to... | Component | Where |
+| --- | --- | --- |
+| Store or fetch a **file** (stem bundle, HQ audio, test fixture, any large artifact) | **R2 asset store**, content-addressed `assets/<sha256[:2]>/<sha256>`, immutable | `apps/cloud/asset_store.py`, ADR 06 `specs/design_decision_06.md` |
+| Replicate **`state.db` itself** to R2 so another machine can restore it byte-identical | **Litestream** WAL streaming | `apps/cloud/litestream.yml`, `s3://music-dj-state/wal/` |
+| Converge **library rows** (tracks, playlists, cues) between a hub and several spokes, with tombstones and conflict rules | **CloudSync protocol** (hub/spoke row sync) | `apps/sync_hub/service.py` (`/sync/hello`, `/sync/push`, `/sync/pull`), `apps/webui/server/routes/cloudsync.py` (policy/machine configuration), `specs/cloudsync-spec.md`, ADR 04 |
+| Keep raw **audio folders** in step between two laptops peer-to-peer | **Syncthing** bootstrap | this README, section 2 below |
+| Stop two machines replicating at once | **Single-writer lock** | `apps/cloud/lock.py`, `s3://music-dj-state/LOCK.json` |
+
+The CloudSync **protocol** has no file surface by design: it moves rows. The
+**asset store** has no row semantics by design: it moves bytes by hash. A
+feature that needs both (a stem bundle plus the row that points at it) uses
+both, which is what `track_locations` rows with `kind='remote'` are for.
+
+Credentials for every R2 path come from Doppler `general/dev_personal`
+(`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`); see
+`apps/cloud/config.py`. Never from `.env`.
+
+
 Litestream-based SQLite replication to Cloudflare R2, plus a cooperative
 single-writer lock (D2) and a Syncthing bootstrap for audio files.
 
