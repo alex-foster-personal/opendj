@@ -55,10 +55,10 @@
 		 * highlighting desyncs the moment the user switches panes or selects
 		 * a row in TrackTable instead. */
 		selectedId: string | null;
-		onselecttrack?: (row: ColumnTrackRow) => void;
+		onselecttrack?: ((row: ColumnTrackRow) => void) | undefined;
 		/** deck null = load onto lowest free deck (double-click), matching
 		 * TrackTable's convention. */
-		onloadtrack?: (row: ColumnTrackRow, deck: DeckId | null) => void;
+		onloadtrack?: ((row: ColumnTrackRow, deck: DeckId | null) => void) | undefined;
 	} = $props();
 
 	let rows = $state<ColumnTrackRow[] | null>(null); // null = still loading

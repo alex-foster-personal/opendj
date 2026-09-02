@@ -117,7 +117,7 @@ export async function getSmartlistTracks(id: string, limit?: number): Promise<Sm
 	try {
 		const data = await unwrap(
 			api.GET('/api/v1/smartlists/{smartlist_id}/tracks', {
-				params: { path: { smartlist_id: id }, query: { limit } }
+				params: { path: { smartlist_id: id }, query: { limit: limit ?? null } }
 			})
 		);
 		return data as unknown as SmartlistTracks;

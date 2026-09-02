@@ -111,7 +111,7 @@ export async function fetchPlayAnalytics(
 	try {
 		data = await unwrap(
 			api.GET('/api/play-analytics', {
-				params: { query: { share_state: shareState ?? undefined, limit } }
+				params: { query: { share_state: shareState, limit } }
 			})
 		);
 	} catch (error) {

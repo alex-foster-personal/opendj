@@ -271,7 +271,7 @@ function _ingest(remote: ApiVolume[]): void {
 			const row: UsbVolumeKnown = {
 				id: api.id,
 				name: api.name,
-				mount_path: api.mount_path ?? undefined,
+				...(api.mount_path == null ? {} : { mount_path: api.mount_path }),
 				is_music: autoNonMusic ? false : api.is_music,
 				forgotten: false,
 				forgotten_at: null,
@@ -292,7 +292,7 @@ function _ingest(remote: ApiVolume[]): void {
 		} else {
 			prev.last_seen = now;
 			prev.present = true;
-			prev.mount_path = api.mount_path ?? prev.mount_path;
+			if (api.mount_path != null) prev.mount_path = api.mount_path;
 			prev.kind = api.kind;
 			prev.role = role;
 			prev.protocol = api.protocol ?? prev.protocol ?? null;

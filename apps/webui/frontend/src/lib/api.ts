@@ -192,10 +192,13 @@ export async function replacePlaylistTracks(
 }
 
 export async function listPairings(source?: string): Promise<Pairing[]> {
-	// `source || undefined` keeps the empty string off the wire, matching the
-	// old `source ? '?source=...' : ''`.
+	// `source || null` keeps the empty string off the wire, matching the old
+	// `source ? '?source=...' : ''`. null rather than undefined because the
+	// generated query type is `source?: string | null` and
+	// exactOptionalPropertyTypes takes an optional key at its word; the two
+	// are wire-identical, openapi-fetch's serializer skips both.
 	return unwrap(
-		api.GET('/api/v1/pairings', { params: { query: { source: source || undefined } } })
+		api.GET('/api/v1/pairings', { params: { query: { source: source || null } } })
 	);
 }
 
@@ -327,8 +330,10 @@ export async function updateSmartlist(
 			params: { path: { smartlist_id: id }, header: { 'If-Match': etag } },
 			// A spread, not an assertion: `RuleAst` is a closed union of
 			// interfaces and the schema's `rule` is an open record, so the AST
-			// has to widen into one rather than be asserted onto it.
-			body: { rule: { ...body.rule }, order_by: body.order_by }
+			// has to widen into one rather than be asserted onto it. `?? null`
+			// for the same exactOptionalPropertyTypes reason as listPairings
+			// above: the generated type is `order_by?: string | null`.
+			body: { rule: { ...body.rule }, order_by: body.order_by ?? null }
 		});
 	} catch (error) {
 		if (error instanceof ApiError && error.status === 409) {

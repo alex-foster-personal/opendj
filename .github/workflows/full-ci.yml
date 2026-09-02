@@ -78,9 +78,18 @@ jobs:
         #
         # --collect-floor 3700 is the FULL-SUITE floor. Raise it, never
         # lower it. (ci.yml's fast lane carries its own scoped floor.)
+        #
+        # tests/quality/test_frontend_typing_gate.py and
+        # tests/quality/test_frontend_typing_directives.py (split off it,
+        # Issue #724) are excluded here for the same reason as ci.yml's fast
+        # lane: their `any`/directive detection needs
+        # apps/webui/frontend/node_modules/typescript, which this job never
+        # installs. Both are a hard gate in ci.yml's `quality` job instead.
         run: |
           pytest \
             --collect-floor 3700 \
+            --ignore=tests/quality/test_frontend_typing_gate.py \
+            --ignore=tests/quality/test_frontend_typing_directives.py \
             --cov=apps --cov-branch \
             --cov-report=term-missing \
             --cov-report=html \

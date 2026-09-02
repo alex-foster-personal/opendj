@@ -89,7 +89,7 @@ async function _putJson<T>(path: string, body: unknown, ifMatch?: string): Promi
 async function _deleteRequest<T>(path: string, ifMatch?: string): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, {
 		method: 'DELETE',
-		headers: ifMatch === undefined ? undefined : { 'If-Match': ifMatch }
+		...(ifMatch === undefined ? {} : { headers: { 'If-Match': ifMatch } })
 	});
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
@@ -261,10 +261,9 @@ export function parseStemSummary(raw: unknown): StemSummary {
 	if (s.status === 'none') return { status: 'none' };
 	if (s.status === 'invalid') {
 		const err = (raw as { error?: unknown }).error;
-		return {
-			status: 'invalid',
-			error: typeof err === 'string' ? err : undefined
-		};
+		return typeof err === 'string'
+			? { status: 'invalid', error: err }
+			: { status: 'invalid' };
 	}
 	if (s.status !== 'ready') {
 		throw new Error(`stems summary: unknown status ${JSON.stringify(s.status)}`);
@@ -407,7 +406,7 @@ export interface TracksPageHydrated {
  * and the ?available filter (contract 3, default all). */
 export async function listTracksHydrated(params: {
 	limit?: number;
-	cursor?: string;
+	cursor?: string | undefined;
 	available?: 'all' | 'true' | 'false';
 }): Promise<TracksPageHydrated> {
 	const qs = Object.entries(params)
@@ -550,7 +549,13 @@ export function artworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
 	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/artwork?size=${size}`;
 }
 
-/** Human label for rb_meta.artwork_status when the art cell is empty. */
+/** Human label for rb_meta.artwork_status when the art cell is empty.
+ *
+ * `ok`, null and undefined are all "no label", and undefined is the common
+ * case rather than a defensive one: RbMetaOut (apps/webui/server/routes/
+ * rb_assets.py) does not carry artwork_status at all, so every live row
+ * arrives here without it. Anything OUTSIDE the declared union is a server
+ * that grew a fifth status without telling the client, and that throws. */
 export function artworkStatusLabel(
 	status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing' | null | undefined
 ): string | null {
@@ -562,9 +567,13 @@ export function artworkStatusLabel(
 		case 'file_missing':
 			return 'artwork file missing';
 		case 'ok':
+		case null:
+		case undefined:
 			return null;
-		default:
-			return null;
+		default: {
+			const _exhaustive: never = status;
+			throw new Error(`unhandled artwork status: ${String(_exhaustive)}`);
+		}
 	}
 }
 

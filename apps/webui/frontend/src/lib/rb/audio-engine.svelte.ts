@@ -1593,7 +1593,7 @@ async function _scheduleDeckSerial(
 		baseLatencySec: _ctx.baseLatency,
 		outputLatencySec: _ctx.outputLatency,
 		active,
-		pressToScheduleMs
+		...(pressToScheduleMs === undefined ? {} : { pressToScheduleMs })
 	});
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =

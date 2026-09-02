@@ -341,8 +341,8 @@ export const jobProgress = {
 				kind: job.kind,
 				phase,
 				progress,
-				label: job.label,
-				error: job.error,
+				...(job.label === undefined ? {} : { label: job.label }),
+				...(job.error === undefined ? {} : { error: job.error }),
 				real,
 				started_at,
 				updated_at: job.updated_at ?? now

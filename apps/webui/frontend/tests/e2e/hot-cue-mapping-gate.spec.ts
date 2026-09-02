@@ -82,9 +82,10 @@ test('an unmapped deck renders its empty hot-cue pads inert-with-tooltip and fir
 	const opacity = await firstPad.evaluate((el) => Number(getComputedStyle(el).opacity));
 	expect(opacity, 'the inert pad must render visibly dimmed, not merely tagged').toBeLessThan(1);
 
+	const beforeClickBox = await deckPanel.boundingBox();
 	await page.screenshot({
 		path: 'test-results/hotcue-mapping-gate-before-click.png',
-		clip: (await deckPanel.boundingBox()) ?? undefined
+		...(beforeClickBox ? { clip: beforeClickBox } : {})
 	});
 
 	await firstPad.click();
@@ -97,8 +98,9 @@ test('an unmapped deck renders its empty hot-cue pads inert-with-tooltip and fir
 	const afterClick = (await _query(page)).decks[DECK];
 	expect(afterClick.command_error, 'an inert click must not surface a command error').toBeNull();
 
+	const afterClickBox = await deckPanel.boundingBox();
 	await page.screenshot({
 		path: 'test-results/hotcue-mapping-gate-after-click.png',
-		clip: (await deckPanel.boundingBox()) ?? undefined
+		...(afterClickBox ? { clip: afterClickBox } : {})
 	});
 });

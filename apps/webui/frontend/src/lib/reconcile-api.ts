@@ -33,7 +33,9 @@ export class RelocateApplyError extends Error {
 
 export async function listBroken(playlistId?: string): Promise<BrokenTrackList> {
 	return unwrap(
-		api.GET('/api/v1/reconcile/broken', { params: { query: { playlist_id: playlistId } } })
+		api.GET('/api/v1/reconcile/broken', {
+			params: { query: { playlist_id: playlistId ?? null } }
+		})
 	);
 }
 

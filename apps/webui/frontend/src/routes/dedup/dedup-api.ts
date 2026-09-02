@@ -174,7 +174,7 @@ export async function fetchDedupClusters(signal?: AbortSignal): Promise<Clusters
 	let data: unknown;
 	let response: Response;
 	try {
-		({ data, response } = await api.GET('/api/v1/dedup/clusters', { signal }));
+		({ data, response } = await api.GET('/api/v1/dedup/clusters', { signal: signal ?? null }));
 	} catch (error) {
 		throw asDedupError(error, 'GET /api/v1/dedup/clusters');
 	}
@@ -197,7 +197,7 @@ export async function postDedupDecision(
 		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/decision', {
 			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
 			body: { cluster_key: clusterKey, survivor, action },
-			signal
+			signal: signal ?? null
 		}));
 	} catch (error) {
 		// 409 is the CAS outcome, not a fault: the caller refreshes and retries

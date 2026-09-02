@@ -195,6 +195,7 @@ HARD_ZERO: frozenset[str] = frozenset({
     "shell.pipeline_status",
     "shell.gh_api_arg",
     "shell.zsh_modifier_path",
+    "frontend.ts_escape_hatches",
 })
 
 # Metrics that are measured and printed but never gated, because their value
@@ -353,6 +354,100 @@ def _python_files() -> list[Path]:
     return out
 
 
+# TypeScript constructs that turn the compiler off for a line, a file, or a
+# value. Hard zero for the same reason as the shell rules above: a suppressed
+# error is not a smaller error, it is an unmeasured one, so "we are allowed
+# four of them" is not a position anyone would defend out loud. The Tue 1 Sep
+# 2026 typing audit measured the tree at zero of every rule below; this is
+# what keeps it there.
+#
+# Both the suppression directives (@ts-ignore/@ts-expect-error/@ts-nocheck)
+# and explicit `any` used to be matched here in Python, the first by raw-line
+# regex and the second by token-adjacency regex. Review of PR #731 found gaps
+# in both, in the same shape: `type X = [any]` and friends landed green
+# because adjacency regex cannot enumerate every syntactic position a grammar
+# allows, and `const help = "Never use @ts-ignore here";` counted as a
+# suppression because a raw-line regex cannot tell a string literal from a
+# comment. Both are now found by one real parse in
+# apps/webui/frontend/scripts/ts-any-scan.mjs, which also parses `.svelte`
+# files with `svelte/compiler` itself so a markup-embedded `any`
+# (`on:click={(e) => e.target as any}`) is found the same way a script-block
+# one is, instead of only ever reading `<script>` text.
+_TS_ANY_SCAN = FRONTEND / "scripts" / "ts-any-scan.mjs"
+
+
+def _ts_scan_hits(files: list[Path]) -> dict[Path, list[tuple[int, str]]]:
+    """Run the real parser over `files`, once, batched.
+
+    Returns (line, rule) pairs per file for every `any` and every compiler
+    suppression directive. A failed parse must not render as zero hits
+    (verification.md: a tool that cannot measure must report UNKNOWN, never a
+    verdict), so a parse error in any file aborts the whole run via `_run`'s
+    default fail-fast rather than silently reporting that file clean.
+    """
+    if not files:
+        return {}
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", delete=False, encoding="utf-8"
+    ) as fh:
+        json.dump([str(p) for p in files], fh)
+        manifest = Path(fh.name)
+    try:
+        _, out = _run(["node", str(_TS_ANY_SCAN), str(manifest)], cwd=FRONTEND)
+    finally:
+        manifest.unlink(missing_ok=True)
+    result = json.loads(out)
+    if result["filesScanned"] != len(files):
+        raise RuntimeError(
+            f"ts-any-scan.mjs scanned {result['filesScanned']} of {len(files)} "
+            "files given; a silent drop would report a false clean"
+        )
+    if result["svelteFilesTotal"] > 0 and result["svelteFilesWithScript"] == 0:
+        raise RuntimeError(
+            "ts-any-scan.mjs found a <script> block in none of the .svelte "
+            "files scanned; that is a broken extraction reporting as a "
+            "clean tree, not a project with no script content"
+        )
+    by_file: dict[Path, list[tuple[int, str]]] = collections.defaultdict(list)
+    for hit in result["hits"]:
+        by_file[Path(hit["file"])].append((hit["line"], hit["rule"]))
+    return by_file
+
+
+def _ts_escape_hatch_hits(source: str, suffix: str = ".ts") -> list[tuple[int, str]]:
+    """(line number, rule) for every compiler suppression in one source file.
+
+    `source` is written to a real probe file and run through the actual
+    parser, so a unit test exercises the same code path as the live gate
+    rather than an approximation of it.
+    """
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=suffix, delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write(source)
+        probe = Path(fh.name)
+    try:
+        hits = _ts_scan_hits([probe])
+    finally:
+        probe.unlink(missing_ok=True)
+    return sorted(hits.get(probe, []))
+
+
+def _ts_escape_hatches() -> tuple[int, str]:
+    """Count suppressions across every hand-written frontend source, worst named."""
+    files = _ts_project_files()
+    if not files:
+        raise RuntimeError(
+            "frontend escape-hatch scan found no .ts/.svelte files; that is a "
+            "broken scan reporting as a clean tree"
+        )
+    hits: list[str] = []
+    for path, file_hits in _ts_scan_hits(files).items():
+        rel = path.relative_to(REPO).as_posix()
+        hits += [f"{rel}:{lineno} {rule}" for lineno, rule in file_hits]
+    return len(hits), "; ".join(hits[:3])
+
+
 def _frontend_files() -> list[Path]:
     src = FRONTEND / "src"
     # api-types.ts is emitted by openapi-typescript ("Do not make direct
@@ -400,6 +495,43 @@ def _fe_unknown_casts() -> tuple[int, str]:
             per_file[path.relative_to(REPO).as_posix()] = hits
     detail = ", ".join(f"{rel}={n}" for rel, n in per_file.most_common(3))
     return sum(per_file.values()), detail
+
+
+# Directories under apps/webui/frontend that are generated or vendored, per
+# apps/webui/frontend/.gitignore. Excluded so the scan below stays a scan of
+# hand-written, compiler-checked sources rather than build output.
+_TS_PROJECT_EXCLUDED_DIRS: frozenset[str] = frozenset(
+    {
+        "node_modules",
+        "build",
+        ".svelte-kit",
+        ".vite",
+        "storybook-static",
+        "test-results",
+        "playwright-report",
+    }
+)
+
+
+def _ts_project_files() -> list[Path]:
+    """Every hand-written TS/JS/Svelte file the frontend project compiles.
+
+    `_frontend_files()` only walks src/, so config and tooling files that
+    TypeScript checks just as strictly -- vite.config.ts, webui-port-config.ts,
+    .storybook/*.ts, tests/e2e/playwright.performance.config.ts -- were never
+    scanned for escape hatches. This walks the whole frontend project instead,
+    excluding only generated/vendored directories, so an `any` planted outside
+    src/ is caught the same as one inside it.
+    """
+    generated = {FRONTEND / "src" / "lib" / "api-types.ts"}
+    return [
+        p
+        for p in FRONTEND.rglob("*")
+        if p.suffix in {".ts", ".svelte", ".js"}
+        and p.is_file()
+        and p not in generated
+        and _TS_PROJECT_EXCLUDED_DIRS.isdisjoint(p.relative_to(FRONTEND).parts)
+    ]
 
 
 # ----- evaluator: ruff -----------------------------------------------------
@@ -800,7 +932,11 @@ def _eval_frontend() -> list[Metric]:
                       for i in knip["issues"])
     casts, cast_detail = _fe_unknown_casts()
 
+    hatches, hatch_detail = _ts_escape_hatches()
+
     return [
+        Metric("frontend.ts_escape_hatches", hatches, "compiler suppressions",
+               hatch_detail),
         Metric(
             "frontend.import_cycles",
             len(cycles),

@@ -36,10 +36,10 @@ export default defineConfig(({ command, mode }) => {
 			// module and causes processor creation to time out.
 			exclude: ['signalsmith-stretch']
 		},
-		server:
-			devConfig === null
-				? undefined
-				: {
+		...(devConfig === null
+			? {}
+			: {
+					server: {
 						port: devConfig.frontendPort,
 						strictPort: true,
 						allowedHosts: resolveAllowedHosts(process.env, rootEnv),
@@ -47,5 +47,6 @@ export default defineConfig(({ command, mode }) => {
 							'/api': devConfig.apiProxyTarget
 						}
 					}
+				})
 	};
 });

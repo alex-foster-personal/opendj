@@ -101,7 +101,9 @@ async function _refusal(response: Response): Promise<AssistantError> {
  * notice rather than a text field that fails on the first Enter.
  */
 export async function getAssistantStatus(signal?: AbortSignal): Promise<AssistantStatus> {
-	const response = await fetch(`${API_BASE}${ASSISTANT_STATUS_PATH}`, { signal });
+	const response = await fetch(`${API_BASE}${ASSISTANT_STATUS_PATH}`, {
+		signal: signal ?? null
+	});
 	if (!response.ok) throw await _refusal(response);
 	return (await response.json()) as AssistantStatus;
 }

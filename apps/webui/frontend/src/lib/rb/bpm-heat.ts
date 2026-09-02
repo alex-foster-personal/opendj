@@ -129,8 +129,10 @@ export function bpmHeatLabel(heat: BpmHeat | null, masterBpm: number | null): st
 			return `BPM mid-range vs master ${master}`;
 		case 'far':
 			return `BPM far from master ${master}`;
-		default:
-			return null;
+		default: {
+			const _exhaustive: never = heat.lane;
+			throw new Error(`unhandled BPM heat lane: ${String(_exhaustive)}`);
+		}
 	}
 }
 
