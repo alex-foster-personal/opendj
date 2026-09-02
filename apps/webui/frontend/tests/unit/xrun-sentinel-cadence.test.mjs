@@ -127,7 +127,12 @@ function runSentinel(gapsMs, thresholdMs) {
 		processorOptions: {
 			thresholdMs,
 			parkedGapMs: xrun.XRUN_PARKED_GAP_MS,
-			reportIntervalMs: xrun.XRUN_REPORT_INTERVAL_MS
+			reportIntervalMs: xrun.XRUN_REPORT_INTERVAL_MS,
+			cadenceQuantile: xrun.XRUN_CADENCE_QUANTILE,
+			cadenceWindow: xrun.XRUN_CADENCE_WINDOW,
+			warmupCallbacks: xrun.XRUN_CADENCE_WARMUP_CALLBACKS,
+			gapFactor: xrun.XRUN_GAP_FACTOR,
+			gapFloorMs: xrun.XRUN_GAP_FLOOR_MS
 		}
 	});
 	processor.process();
@@ -215,17 +220,34 @@ test('a healthy device cadence reports zero xruns, whatever its buffer size', ()
 
 test('the live Wed 2 Sep 2026 report is reproduced exactly, so the fixture is honest', () => {
 	// Not an acceptance criterion - a proof that the stream above IS the machine
-	// that failed, rather than a scenario invented to make a point. If this
-	// stops matching, the other tests here are arguing about a different device.
+	// that failed, rather than a scenario invented to make a point. If this stops
+	// matching, every other test here is arguing about a different device.
+	//
+	// Asserted against the PURE FOLD, not the processor, and the difference is
+	// the fix: the processor no longer produces these numbers, because it now
+	// measures the cadence instead of being told a wrong one. What is pinned here
+	// is that the old INPUT, fed to arithmetic that never changed, reproduces the
+	// live line to the digit - which is what makes the fixture the real machine.
 	const device = DEVICES[2];
-	const observed = runSentinel(healthyCadenceGapsMs(device, 200), shippedThresholdMs(device));
-	// The FIRST posted window, not the sum: the live line quoted one 2009ms window.
-	const first = observed.reports[0];
-	assert.equal(Math.round(shippedThresholdMs(device) * 1000) / 1000, 5.354);
-	assert.equal(first.xruns, 173);
-	assert.equal(first.callbacks, 692);
-	assert.ok(Math.abs(first.window_ms - 2009) < 1);
-	assert.ok(Math.abs(first.worst_gap_ms - 11.46) < 0.1);
+	const gaps = healthyCadenceGapsMs(device, 200);
+	const oldThresholdMs = shippedThresholdMs(device);
+	assert.equal(Math.round(oldThresholdMs * 1000) / 1000, 5.354, 'the threshold that shipped');
+
+	let tally;
+	let windowMs = 0;
+	// 692 callbacks is the count the live line quoted; the window it spans falls
+	// out of the cadence rather than being asserted independently.
+	for (const gapMs of gaps.slice(0, 692)) {
+		tally = xrun.foldXrunGap(tally, gapMs, oldThresholdMs);
+		windowMs += gapMs;
+	}
+	assert.equal(tally.callbacks, 692);
+	assert.equal(tally.xruns, 173, 'exactly one in four, which is the burst-render group size');
+	assert.ok(Math.abs(windowMs - 2009) < 1);
+	assert.ok(Math.abs(tally.worstGapMs - 11.46) < 0.1);
+
+	// And the fixed processor, on the identical stream, reports none of it.
+	assert.equal(runSentinel(gaps, oldThresholdMs).xruns, 0);
 });
 
 //-----------------------------------------------------------------------------
@@ -291,7 +313,10 @@ test('the threshold is derived from the observed callback cadence, not from base
 			'than the period the audio thread is actually driven at'
 	);
 	const device = DEVICES[2];
-	const gaps = healthyCadenceGapsMs(device, 20);
+	// Comfortably past XRUN_CADENCE_WARMUP_CALLBACKS: a stream shorter than the
+	// warmup would report zero xruns because nothing was judged, and would pass
+	// this test while proving nothing at all.
+	const gaps = healthyCadenceGapsMs(device, 200);
 	const derived = xrun.xrunThresholdFromCadenceMs(gaps);
 	const cadencePeriodMs = (device.halBufferFrames / device.sampleRateHz) * 1000;
 	assert.ok(
@@ -303,5 +328,30 @@ test('the threshold is derived from the observed callback cadence, not from base
 		runSentinel(gaps, derived).xruns,
 		0,
 		'if a threshold derived from a stream still flags that same stream then broken'
+	);
+});
+
+test('SABOTAGE: the worklet measures the cadence the same way the pure module does', () => {
+	// The processor cannot import, so the quantile exists twice. Pinned against
+	// each other: if either side is edited alone, the cadence the audio thread
+	// measures stops being the cadence the tested module describes.
+	const processor = readFrontendSource(PROCESSOR_PATH);
+	const math = readFrontendSource('src/lib/rb/xrun-math.ts');
+	for (const rule of [
+		'Math.floor(',
+		'.sort((a, b) => a - b)'
+	]) {
+		assert.ok(processor.includes(rule), `the worklet cadence rule moved: ${rule}`);
+		assert.ok(math.includes(rule), `the pure cadence rule moved: ${rule}`);
+	}
+	assert.ok(
+		processor.includes('gapMs < this.parkedGapMs'),
+		'the worklet must exclude parked gaps from the cadence, or one hidden tab pushes ' +
+			'the estimate past every real dropout'
+	);
+	assert.ok(
+		!processor.includes('XRUN_CADENCE_QUANTILE'),
+		'the quantile must arrive from the main thread; a second copy in the worklet is a ' +
+			'policy number nobody can see or test'
 	);
 });

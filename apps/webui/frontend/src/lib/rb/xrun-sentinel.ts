@@ -29,6 +29,11 @@ import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import {
 	EMPTY_XRUN_SESSION,
 	RENDER_QUANTUM_FRAMES,
+	XRUN_CADENCE_QUANTILE,
+	XRUN_CADENCE_WARMUP_CALLBACKS,
+	XRUN_CADENCE_WINDOW,
+	XRUN_GAP_FACTOR,
+	XRUN_GAP_FLOOR_MS,
 	XRUN_PARKED_GAP_MS,
 	XRUN_REPORT_INTERVAL_MS,
 	foldXrunReport,
@@ -81,7 +86,10 @@ function _onReport(data: unknown): void {
 		return;
 	}
 	_session = foldXrunReport(_session, data);
-	recordPerfEvent('xrun', xrunReportMessage(data));
+	// error severity, so perf-event-log escalates it to /api/v1/client-errors
+	// (rate-limited there to one POST per kind per minute). A window the audio
+	// thread reports as late is an audio-liveness failure, not a notice.
+	recordPerfEvent('xrun', xrunReportMessage(data), null, 'error');
 }
 
 /**
@@ -102,9 +110,21 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 	const node = new AudioWorkletNode(ctx, XRUN_SENTINEL_PROCESSOR_NAME, {
 		...XRUN_SENTINEL_NODE_OPTIONS,
 		processorOptions: {
+			// A SEED ONLY. No gap is ever classified against it: the processor
+			// measures the device's real callback period and replaces this before
+			// it judges anything. It is derived from baseLatency, which is the
+			// number that was wrong on Wed 2 Sep 2026, and it is kept solely so a
+			// report that somehow escapes before warmup carries a finite figure.
 			thresholdMs,
 			parkedGapMs: XRUN_PARKED_GAP_MS,
-			reportIntervalMs: XRUN_REPORT_INTERVAL_MS
+			reportIntervalMs: XRUN_REPORT_INTERVAL_MS,
+			// Policy still lives on this side: the worklet measures, it does not
+			// decide what a healthy multiple of the measured period is.
+			cadenceQuantile: XRUN_CADENCE_QUANTILE,
+			cadenceWindow: XRUN_CADENCE_WINDOW,
+			warmupCallbacks: XRUN_CADENCE_WARMUP_CALLBACKS,
+			gapFactor: XRUN_GAP_FACTOR,
+			gapFloorMs: XRUN_GAP_FLOOR_MS
 		}
 	});
 	node.port.onmessage = (event: MessageEvent) => _onReport(event.data);
@@ -124,8 +144,10 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 	_node = node;
 	recordPerfEvent(
 		'xrun-sentinel-armed',
-		`glitch detection armed: gaps over ${Math.round(thresholdMs * 1000) / 1000}ms count as ` +
-			`xruns, reported at most every ${XRUN_REPORT_INTERVAL_MS}ms`
+		`glitch detection armed: measuring the device's own callback cadence over ` +
+			`${XRUN_CADENCE_WARMUP_CALLBACKS} callbacks before judging any of them (seed ` +
+			`threshold ${Math.round(thresholdMs * 1000) / 1000}ms from baseLatency, never ` +
+			`judged against), reported at most every ${XRUN_REPORT_INTERVAL_MS}ms`
 	);
 }
 
