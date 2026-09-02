@@ -84,11 +84,22 @@ test('SOURCE: a failing frame still re-arms the next one', () => {
 test('SOURCE: a throw inside the tick is recorded, not swallowed', () => {
 	const tick = engineBlockAfter(TICK_ANCHOR);
 	assert.ok(
-		/recordPerfEvent|reportClientError|recordPerfTiming/.test(tick),
+		/notePresentationTickFailure|recordPerfEvent|reportClientError/.test(tick),
 		'if the tick catches and says nothing then broken - a silently swallowed throw is ' +
 			'strictly worse than the crash, because the waveform still freezes and now there ' +
 			'is no evidence at all; 13:22-13:42 CEST Wed 2 Sep 2026 was reconstructed from ' +
 			'CoreAudio logs precisely because the app recorded nothing'
+	);
+	// ...and the thing it calls must really record, at a severity that escalates.
+	// Following the call one hop is what stops this passing on a no-op named
+	// convincingly.
+	const reporter = readFrontendSource('src/lib/rb/presentation-clock-report.ts');
+	const body = reporter.slice(reporter.indexOf('export function notePresentationTickFailure'));
+	assert.ok(
+		body.includes("recordPerfEvent(") && body.includes("'error'"),
+		'if notePresentationTickFailure does not record at error severity then broken - a ' +
+			'warn-severity row never reaches /api/v1/client-errors and the incident stays ' +
+			'inside the browser that suffered it'
 	);
 });
 
