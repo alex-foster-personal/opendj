@@ -779,6 +779,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Comment
+         * @description Agent-native half of the pin lifecycle (issue #858, first slice).
+         *
+         *     A pin is never deleted by a fix. The agent that acts on it records what it
+         *     did here so the pin itself shows progress: ``status`` moves
+         *     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
+         *     ``agent_note`` is the one-paragraph reply the widget renders under the
+         *     original text. Every write is a partial update; unset fields are untouched.
+         */
+        patch: operations["update_comment_api_v1_feedback_comments__comment_id__patch"];
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -3253,6 +3279,8 @@ export interface components {
         };
         /** CommentOut */
         CommentOut: {
+            /** Agent Note */
+            agent_note?: string | null;
             /** Anchor */
             anchor: string | null;
             build: components["schemas"]["BuildStampOut"];
@@ -3260,14 +3288,31 @@ export interface components {
             created_at: string;
             /** Id */
             id: string;
+            /** Issue Url */
+            issue_url?: string | null;
             /** Page */
             page: string;
+            /** Status */
+            status?: string | null;
             /** Text */
             text: string;
+            /** Updated At */
+            updated_at?: string | null;
             /** X Pct */
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /** CommentUpdateIn */
+        CommentUpdateIn: {
+            /** Agent Note */
+            agent_note?: string | null;
+            /** Issue Url */
+            issue_url?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Text */
+            text?: string | null;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -7764,6 +7809,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_comment_api_v1_feedback_comments__comment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
