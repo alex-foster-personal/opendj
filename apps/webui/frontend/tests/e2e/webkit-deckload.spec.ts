@@ -849,6 +849,38 @@ async function _waitForDeckLoaded(page: Page, deck: DeckId): Promise<void> {
 	}
 }
 
+/**
+ * Wait for a deck that ALREADY HELD A TRACK to finish loading the next one.
+ *
+ * `_waitForDeckLoaded` cannot express this. It waits for `stable_id !== null`,
+ * which on a reload is already true from the PREVIOUS load, so it returns
+ * before the new load has even started; the caller then reads the old track's
+ * telemetry, or reads inside the gap and sees nulls.
+ *
+ * A load clears `stable_id` and `last_load_stages` together and restores them
+ * together (sampled on the fixture at 5ms: cleared 226ms after the double
+ * click, restored at 276ms). So the honest wait is the two-edge one below: see
+ * the deck go empty, which is this load starting, then see it come back
+ * carrying this load's own stage telemetry. Both edges are required - waiting
+ * only for the second would latch the previous load's numbers without ever
+ * blocking.
+ */
+async function _waitForDeckReloaded(page: Page, deck: DeckId): Promise<void> {
+	await page.waitForFunction(
+		(deckId) => window.musicDjToolsPerformance?.query().decks[deckId].stable_id === null,
+		deck,
+		{ timeout: 45_000, polling: 1 }
+	);
+	await page.waitForFunction(
+		(deckId) => {
+			const state = window.musicDjToolsPerformance?.query().decks[deckId];
+			return state !== undefined && state.stable_id !== null && state.last_load_stages !== null;
+		},
+		deck,
+		{ timeout: 45_000, polling: 1 }
+	);
+}
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('webkit performance controls on the engine-served build', () => {
@@ -957,8 +989,10 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		// The fixture library carries no stem bundles, so the settled answer here
 		// is `unavailable`. That is the point: the deck must reach a PLAYABLE
 		// state without ever having asked, and only then find out.
+		// Deck 1 already holds this track from the previous test, so this is a
+		// RELOAD and needs the two-edge wait. See _waitForDeckReloaded.
 		await _dblClickLoad(page, 0);
-		await _waitForDeckLoaded(page, 1);
+		await _waitForDeckReloaded(page, 1);
 
 		const state = await _query(page);
 		const stages = state.decks[1].last_load_stages;

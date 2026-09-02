@@ -20,7 +20,6 @@
  *     [if] decoded audio has more than two channels [then] loading rejects
  */
 
-import createSignalsmithStretch from 'signalsmith-stretch';
 import type {
 	SignalsmithStretchNode,
 	SignalsmithStretchSchedule
@@ -36,7 +35,70 @@ import stretchWorkletModuleUrl from '../../../node_modules/signalsmith-stretch/S
 // the untransformed package file (relative path because the package exports
 // map blocks subpaths) removes every toString round-trip; the file
 // self-registers when it detects a worklet scope.
-createSignalsmithStretch.moduleUrl = stretchWorkletModuleUrl;
+//
+// SHIPPED ONCE, NOT TWICE. That `?url` import already emits the whole package
+// as a build asset, because the worklet must have a real file to fetch. A
+// second `import createSignalsmithStretch from 'signalsmith-stretch'` used to
+// bundle a transformed COPY of the same 114KB file into the main-thread chunk,
+// including its 86KB base64-inlined WASM -- measured at 39,441 bytes gzip on
+// the /performance surface alone. The main thread needs exactly one thing out
+// of that file: `createNode`, about a hundred lines of AudioWorkletNode glue.
+// It never needs the WASM, which is instantiated only inside the worklet, and
+// it never needs the emscripten Module value either: on the main thread the
+// package reads `Module` in one place, the `if (!moduleUrl)` Blob fallback
+// above, which this app disables by construction on the very next line.
+// So the factory is loaded at runtime from the asset the build already emits.
+// Same file, same URL, same bytes on the wire, one copy instead of two.
+type CreateSignalsmithStretch = typeof import('signalsmith-stretch').default;
+
+let stretchFactory: Promise<CreateSignalsmithStretch> | null = null;
+let stretchImportAttempt = 0;
+
+/** Clear the memoized stretch-factory promise if it is still `attempt`,
+ * bumping the retry counter to bust the module-map cache on the next import.
+ * Guards against clearing a newer attempt that has since replaced this one. */
+function _forgetStretchAttempt(attempt: Promise<CreateSignalsmithStretch>): void {
+	if (stretchFactory === attempt) {
+		stretchImportAttempt += 1;
+		stretchFactory = null;
+	}
+}
+
+/** Resolve the package's main-thread node factory, fetching the emitted
+ * worklet asset once per document and reusing that module thereafter. */
+function _loadStretchFactory(): Promise<CreateSignalsmithStretch> {
+	if (stretchFactory === null) {
+		const importSpecifier =
+			stretchImportAttempt === 0
+				? stretchWorkletModuleUrl
+				: `${stretchWorkletModuleUrl}?retry=${stretchImportAttempt}`;
+		// @vite-ignore: the specifier is an emitted asset URL, so this must stay
+		// a runtime import. Letting Vite analyze it would re-bundle the copy this
+		// whole arrangement exists to delete.
+		const attempt: Promise<CreateSignalsmithStretch> = import(/* @vite-ignore */ importSpecifier)
+			.then((loaded) => {
+				const factory = (loaded as { default?: CreateSignalsmithStretch }).default;
+				if (typeof factory !== 'function') {
+					throw new StretchProcessorError(
+						`${stretchWorkletModuleUrl} did not default-export the Signalsmith factory`
+					);
+				}
+				factory.moduleUrl = stretchWorkletModuleUrl;
+				return factory;
+			})
+			.catch((error) => {
+				// A transient fetch/eval failure must not permanently wedge every
+				// deck: clear the memo so the next create() re-imports instead of
+				// reusing this rejection forever. The browser's module map still
+				// caches a failed fetch against the exact specifier though, so bump
+				// the retry counter to bust that cache on the next import too.
+				_forgetStretchAttempt(attempt);
+				throw error;
+			});
+		stretchFactory = attempt;
+	}
+	return stretchFactory;
+}
 
 export const STRETCH_CREATE_TIMEOUT_MS = 15_000;
 export const STRETCH_COMMAND_TIMEOUT_MS = 5_000;
@@ -375,6 +437,33 @@ export class StretchDeckProcessor {
 		if (context.audioWorklet === undefined) {
 			throw new StretchProcessorError('AudioWorklet is unavailable; Signalsmith cannot start');
 		}
+		// Awaited BEFORE the 'processor creation' timer starts, deliberately.
+		// This resolves the package's node factory from its emitted asset,
+		// which is a module fetch and not a worklet round trip; timing it in
+		// that metric would silently redefine what 'processor creation'
+		// measures. It is memoized, so only the first deck load in a document
+		// pays it, and that document was going to fetch this exact URL anyway
+		// the moment addModule ran.
+		//
+		// Bounded by its own timeout race, separate from the metric below: a
+		// stalled chunk load (network hang fetching the emitted asset) must
+		// reject with a typed error rather than hang this call forever. Because
+		// `stretchFactory` is memoized as the pending promise, an unbounded
+		// hang here would wedge every later deck creation in the document too,
+		// not just this one.
+		const stretchFactoryAttempt = _loadStretchFactory();
+		const createSignalsmithStretch = await withStretchCommandTimeout(
+			stretchFactoryAttempt,
+			'stretch factory import',
+			STRETCH_CREATE_TIMEOUT_MS
+		).catch((error) => {
+			// The timeout can win while `stretchFactoryAttempt` is still pending,
+			// so `_loadStretchFactory`'s own .catch never runs: clear the memo here
+			// too, or every later deck load reuses the same pending promise, waits
+			// out the timeout again, and fails until the original request settles.
+			_forgetStretchAttempt(stretchFactoryAttempt);
+			throw error;
+		});
 		// Q2: creation is the one worklet round trip that bypasses
 		// StretchCommandGate.run, and it is both the slowest (a measured ~1.35s
 		// across four serialized stem creates) and the owner of the separate

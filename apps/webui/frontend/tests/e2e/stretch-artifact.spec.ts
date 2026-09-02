@@ -25,6 +25,15 @@
  *     [if] `addModule` rejects [then] no deck can ever load
  *     [if] the processor constructor throws [then] no ready message arrives
  *       within the handshake budget
+ * - ✔︎ ✅ 🎯 The same asset imports as an ES module on the MAIN thread.
+ *     The adapter reads its node factory from this file rather than bundling a
+ *     second transformed copy of the package. `addModule` passing proves only
+ *     the worklet side; the main-thread side is a separate loader with its own
+ *     failure modes, so it gets its own assertion.
+ *     [if] the file is served with a MIME type the module loader refuses
+ *       [then] `import()` rejects and no deck can load
+ *     [if] the package stops default-exporting the factory [then] the adapter
+ *       throws before it ever reaches the worklet
  */
 import { readFileSync, globSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -80,6 +89,41 @@ test.describe('signalsmith worklet asset', () => {
 			`no built chunk mentions ${assetName}, so the adapter's moduleUrl wiring did ` +
 				'not survive bundling and the app still reaches for the blob'
 		).not.toHaveLength(0);
+	});
+
+	test('the emitted asset is importable on the main thread and exports the node factory', async ({
+		page
+	}) => {
+		// The main thread loads this same asset with a plain `import()` to get
+		// the package's `createNode`, rather than bundling a second transformed
+		// copy of the 114KB package (whose 86KB inlined WASM cost 39,441 bytes
+		// gzip on /performance, and which the main thread never executes).
+		// Two ways that arrangement can break without any other test noticing:
+		// the file is served with a MIME type the module loader refuses, or the
+		// package stops default-exporting the factory. Both are asserted here
+		// because both make every deck load fail and nothing else covers them.
+		const assetUrl = `/${resolveEmittedWorkletAsset()}`;
+		await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+		const shape = await page.evaluate<
+			{ hasDefault: boolean; defaultType: string },
+			{ assetUrl: string }
+		>(
+			async ({ assetUrl: url }) => {
+				const loaded = (await import(url)) as { default?: unknown };
+				return {
+					hasDefault: 'default' in loaded,
+					defaultType: typeof loaded.default
+				};
+			},
+			{ assetUrl }
+		);
+
+		expect(shape.hasDefault, `${assetUrl} has no default export`).toBe(true);
+		expect(
+			shape.defaultType,
+			'the default export is not callable, so the adapter cannot create a node'
+		).toBe('function');
 	});
 
 	test('the emitted asset registers a processor that reaches its ready handshake', async ({
