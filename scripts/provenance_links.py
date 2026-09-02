@@ -43,12 +43,31 @@ def branch_windows(repo: Path) -> list[tuple[str, float, float]]:
         vals = [float(s) for s in stamps]
         windows.append((br, min(vals), max(vals)))
     return windows
+class GhUnavailable(RuntimeError):
+    """`gh` is not on PATH at all, so no branch can be linked to its PR.
+
+    Distinct from `gh` running and answering badly, which already degrades to
+    an empty map: that is a measurement (this repo has no PRs visible to this
+    checkout). An ABSENT `gh` measured nothing, and the two must not look the
+    same to a caller deciding whether to advance a watermark. Codex found the
+    crash this replaces on #708: the harvest reached `pr_map` only when it had
+    prompts, so every test hit the empty path and the exception went to the
+    Stop hook's /dev/null every turn.
+    """
+
+
 def pr_map(repo: Path) -> dict[str, dict]:
-    p = subprocess.run(
-        ("gh", "pr", "list", "--state", "all", "--limit", "300",
-         "--json", "number,headRefName,state,url,title"),
-        capture_output=True, text=True, cwd=str(repo), check=False,
-    )
+    try:
+        p = subprocess.run(
+            ("gh", "pr", "list", "--state", "all", "--limit", "300",
+             "--json", "number,headRefName,state,url,title"),
+            capture_output=True, text=True, cwd=str(repo), check=False,
+        )
+    except FileNotFoundError as exc:
+        raise GhUnavailable(
+            "`gh` is not on PATH, so no harvested prompt can be linked to the "
+            "PR it belongs to"
+        ) from exc
     if p.returncode != 0:
         return {}
     try:

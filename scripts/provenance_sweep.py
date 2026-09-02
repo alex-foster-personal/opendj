@@ -38,24 +38,39 @@ Requirements (mini-PRD)
 Usage (run as a module: it imports its sibling modules by package path, so a
 direct `./provenance_sweep.py` cannot resolve them and no shebang pretends it
 can)
-  uv run --no-project python -m scripts.provenance_sweep --repo <path>
+  uv run --no-project python -m scripts.provenance_cli --repo <path>
+
+This module is the LIBRARY half: harvesting, the tracked ledger, and the write
+guard. The command lives in :mod:`scripts.provenance_cli`, which owns argument
+parsing, the refusal protocol and the entry point. Split there when this file
+crossed 600 lines a second time, on the seam the tests were already split on.
   ... --repo <path> --full           # re-harvest everything, still unions
   ... --repo <path> --stats          # report, write nothing
 """
 
 from __future__ import annotations
 
-import argparse
-import hashlib
 import json
-import re
 import subprocess
-import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.provenance_links import TRUNK_BRANCH, attach_links, branch_windows, pr_map
-from scripts.provenance_sources import _git, harvest_claude, harvest_codex, harvest_cursor
+from scripts.provenance_index import (
+    INDEX,
+    INDEX_PATH,
+    _comparable,
+    _index_view,
+    _without_swept_stamp,
+    index_rows,
+    render_index,
+)
+from scripts.provenance_links import TRUNK_BRANCH
+from scripts.provenance_sources import (
+    KEY_PREFIX,
+    _git,
+)
+from scripts.provenance_state import (
+    _write_atomic,
+)
 
 # -----------------------------------------------------------------------------
 # CFG
@@ -63,28 +78,13 @@ from scripts.provenance_sources import _git, harvest_claude, harvest_codex, harv
 
 OUT_DIRNAME = "docs/threads"
 LEDGER = "prompts.jsonl"
-INDEX = "PROMPT-INDEX.md"
 WATERMARK = ".provenance-watermark.json"
+LOCKFILE = ".provenance-lock"
 LEDGER_PATH = f"{OUT_DIRNAME}/{LEDGER}"
-INDEX_PATH = f"{OUT_DIRNAME}/{INDEX}"
-
-
-# How many rows the markdown table renders. The ledger is the complete store; the
-# index is a newest-first WINDOW over it, and says so in its own header so the
-# window is never mistaken for the whole.
-INDEX_WINDOW = 400
-
-# How many characters of a prompt identify it. The ledger was built at 80, so
-# widening it would re-admit rows the existing file already deduplicated away.
-KEY_PREFIX = 80
 
 # Fields that define WHICH prompt a row is. A re-harvest may refresh anything
 # else on a known row, but never these.
 IDENTITY_FIELDS = frozenset({"tool", "at", "text"})
-
-
-# Markdown cell boundary: a pipe that is not backslash-escaped.
-CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
 
 # -----------------------------------------------------------------------------
@@ -105,29 +105,47 @@ def row_key(rec: dict) -> str:
 def tag_forks(prompts: list[dict]) -> None:
     """Mark replayed prompts as forks instead of letting them inflate the count.
 
-    Resuming or forking a session copies the earlier turns into a NEW jsonl, so
-    the same typed sentence legitimately appears under several ssids. The first
-    occurrence by timestamp is the original; the rest are `fork: true` and carry
-    `fork_of` so the lineage stays visible.
+    Resuming or forking a session copies the earlier turns into a NEW jsonl
+    VERBATIM, timestamp included, so the same typed sentence appears under
+    several ssids at the SAME instant. The first occurrence is the original; the
+    rest are `fork: true` and carry `fork_of` so the lineage stays visible.
+
+    The timestamp is what makes this a lineage test rather than a text test.
+    Keyed on text alone, a human retyping a short request - "check then merge" is
+    in this ledger four times - had every later occurrence marked a fork, and
+    `render_index` drops fork rows from both the table and the prompt count, so
+    genuine prompts vanished from the readable record. A replay carries the
+    original instant; a retype cannot.
 
     Run over the WHOLE union, never over one incremental batch: a batch-local
     answer flips as sessions are re-touched, so the same row would toggle between
     original and fork run to run.
+
+    KNOWN DEAD, and said here rather than left to be rediscovered: with `at` in
+    the key this function can no longer flag anything, because `write_out`
+    deduplicates on `row_key` (tool|at|text[:80]) BEFORE it runs, and that is
+    the same shape. A true replay is collapsed into one row upstream and never
+    reaches the loop below. Measured on the 1,660-row ledger: 0 surviving
+    row_key collisions, 556 flags under the old text-only key, 0 under this one.
+    Those 556 were not replays - 173 were a cron voice prompt under 173 distinct
+    ssids at 173 distinct instants, spanning a month - so clearing them is the
+    point, and `render_index` stops hiding them. Making genuine replays
+    detectable needs replay-distinguishing identity to survive deduplication,
+    which changes ledger identity: .planning/TECH-DEBT.md#pr-708.
     """
     for p in prompts:
         p.pop("fork", None)
         p.pop("fork_of", None)
     first: dict[str, dict] = {}
     for p in sorted(prompts, key=lambda r: (r.get("at") or "", r.get("ssid", ""))):
-        key = f"{p['tool']}|{p['text'][:160]}"
+        # `at` in the key is the lineage evidence: same text at the same instant
+        # under a different ssid is a replayed turn, not a second typing.
+        key = f"{p['tool']}|{p.get('at')}|{p['text'][:160]}"
         origin = first.get(key)
         if origin is None:
             first[key] = p
-        elif origin.get("ssid") != p.get("ssid"):
-            p["fork"] = True
-            p["fork_of"] = origin.get("ssid")
         else:
-            p["fork"] = True  # same session replayed the line
+            p["fork"] = True
             p["fork_of"] = origin.get("ssid")
 
 
@@ -222,96 +240,9 @@ def committed_rows(repo: Path) -> dict[str, dict]:
     return found
 
 
-def index_rows(text: str) -> set[tuple[str, str, str]]:
-    """(when, tool, truncated-text) for each data row of a rendered index table.
-
-    The index stores truncated fields, so a row cannot be turned back into a
-    ledger key. Comparison therefore happens in this lossy view, which both
-    sides can be projected into.
-    """
-    out: set[tuple[str, str, str]] = set()
-    for line in text.splitlines():
-        if not line.startswith("| ") or line.startswith("| when "):
-            continue
-        # Split on UNESCAPED pipes only. A prompt containing "|" is rendered as
-        # "\|", and a naive split truncates that cell, so the guard would report
-        # the row missing from its own output and abort every sweep forever.
-        cells = [c.strip() for c in CELL_SPLIT.split(line.strip().strip("|"))]
-        if len(cells) < 3:
-            continue
-        out.add((cells[0], cells[1], cells[2]))
-    return out
-
-
-def _comparable(row: tuple[str, str, str]) -> tuple[str, str, str]:
-    """Narrow a rendered index row to the granularity the ledger can answer at.
-
-    `row_key` identifies a prompt by its first 80 characters; the table renders
-    96. Comparing at 96 asks a finer question than the store keeps an answer to,
-    so two rows the ledger considers the same can render differently and read as
-    a loss. Truncating both sides to KEY_PREFIX asks the answerable question.
-    """
-    when, tool, text = row
-    return (when, tool, text[:KEY_PREFIX].strip())
-
-
-def _index_view(rec: dict) -> tuple[str, str, str]:
-    when = (rec.get("at") or "")[:16].replace("T", " ") or "-"
-    # .strip() AFTER truncation, not before: a 96-char cut lands on a space often
-    # enough, and a markdown cell reader strips it back off. Without this the
-    # rendered row no longer matches its own source row, and the superset guard
-    # reports 46 present rows as lost (measured against the real index).
-    text = rec.get("text", "").replace("|", "\\|").replace("\n", " ")[:96].strip()
-    return (when, rec.get("tool", "?"), text)
-
-
 # -----------------------------------------------------------------------------
 # output
 # -----------------------------------------------------------------------------
-
-
-def _without_swept_stamp(text: str) -> list[str]:
-    """Index content minus the volatile 'Swept ...' line, for change detection."""
-    return [ln for ln in text.splitlines() if not ln.startswith("Swept ")]
-
-
-def render_index(allrecs: list[dict]) -> str:
-    originals = [r for r in allrecs if not r.get("fork")]
-    forks = len(allrecs) - len(originals)
-    by_tool: dict[str, int] = {}
-    for r in originals:
-        by_tool[r.get("tool", "?")] = by_tool.get(r.get("tool", "?"), 0) + 1
-
-    shown = originals[:INDEX_WINDOW]
-    window_note = (
-        f"Showing the newest {len(shown)} of {len(originals)}. "
-        f"The complete record is `{LEDGER}`; this table is a window over it."
-    )
-    lines = [
-        "# Prompt index (all agents)",
-        "",
-        "Every human prompt across Claude Code, Codex and Cursor for this repo,",
-        "newest first, linked to the branch and PR live at the time.",
-        "",
-        f"Swept {datetime.now().astimezone().strftime('%a %d %b %Y %H:%M')}. ",
-        f"{len(originals)} prompts typed: "
-        + ", ".join(f"{k} {v}" for k, v in sorted(by_tool.items()))
-        + (f"  (+{forks} fork replays, excluded)" if forks else ""),
-        "",
-        window_note,
-        "",
-        "| when | tool | prompt | branch / PR |",
-        "|---|---|---|---|",
-    ]
-    for r in shown:
-        when, tool, text = _index_view(r)
-        link = ""
-        if r.get("prs"):
-            link = " ".join(f"[#{p['number']}]({p['url']})" for p in r["prs"])
-        elif r.get("branches"):
-            link = f"`{r['branches'][0]}`"
-        lines.append(f"| {when} | {tool} | {text} | {link} |")
-    return "\n".join(lines) + "\n"
 
 
 class RegressionError(RuntimeError):
@@ -391,7 +322,7 @@ def write_out(repo: Path, prompts: list[dict], prior: dict[str, dict]) -> tuple[
 
     body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in allrecs)
     if not ledger.exists() or ledger.read_text(errors="ignore") != body:
-        ledger.write_text(body)
+        _write_atomic(ledger, body)
 
     content = render_index(allrecs)
     index_file = out_dir / INDEX
@@ -402,137 +333,10 @@ def write_out(repo: Path, prompts: list[dict], prior: dict[str, dict]) -> tuple[
     # gitignored watermark file.
     if (not index_file.exists()
             or _without_swept_stamp(index_file.read_text()) != _without_swept_stamp(content)):
-        index_file.write_text(content)
+        _write_atomic(index_file, content)
     return fresh, len(allrecs)
 
 
 # -----------------------------------------------------------------------------
 # watermark
 # -----------------------------------------------------------------------------
-
-
-def _fingerprint(ledger: Path) -> tuple[int, str]:
-    if not ledger.exists():
-        return 0, ""
-    raw = ledger.read_bytes()
-    return raw.count(b"\n"), hashlib.sha256(raw).hexdigest()[:16]
-
-
-def read_watermark(repo: Path) -> tuple[float, str]:
-    """(since, reason). `since` is 0 whenever the checkout cannot be trusted.
-
-    The watermark says "every source older than T is already recorded". That
-    claim is only true of the ledger the watermark was WRITTEN against. A branch
-    cut before a sweep commit, or a rebase that dropped one, leaves a fresh
-    watermark sitting on a ledger that never received those rows, and the mtime
-    filter then hides their sources forever. Fingerprinting the ledger turns
-    that silent, permanent loss into a one-off full re-harvest.
-    """
-    wm_path = repo / OUT_DIRNAME / WATERMARK
-    if not wm_path.exists():
-        return 0.0, "no watermark: full harvest"
-    try:
-        wm = json.loads(wm_path.read_text())
-        since = float(wm.get("swept_at", 0))
-    except (json.JSONDecodeError, ValueError, TypeError, OSError):
-        return 0.0, "unreadable watermark: full harvest"
-    rows, digest = _fingerprint(repo / OUT_DIRNAME / LEDGER)
-    if wm.get("ledger_rows") is None or wm.get("ledger_digest") is None:
-        return 0.0, "watermark predates fingerprinting: full harvest"
-    if rows < int(wm["ledger_rows"]) or digest != wm["ledger_digest"]:
-        return 0.0, (
-            f"ledger moved under the watermark ({wm['ledger_rows']} rows -> {rows}): "
-            "checkout is stale, full harvest"
-        )
-    return since, "incremental"
-
-
-def write_watermark(repo: Path) -> None:
-    rows, digest = _fingerprint(repo / OUT_DIRNAME / LEDGER)
-    (repo / OUT_DIRNAME / WATERMARK).write_text(json.dumps({
-        "swept_at": datetime.now(UTC).timestamp(),
-        "ledger_rows": rows,
-        "ledger_digest": digest,
-    }, indent=2))
-
-
-def record_error(repo: Path, message: str) -> None:
-    """Leave a readable trace of a refused write, without advancing freshness.
-
-    The Stop hook sends stdout and stderr to /dev/null, so an abort that only
-    printed would make the sweep a silent no-op forever -- the same class of
-    invisible failure this whole change exists to remove. `--stats` reads this
-    back, and the watermark is deliberately NOT advanced, so the next run
-    retries rather than treating the skipped work as done.
-    """
-    wm_path = repo / OUT_DIRNAME / WATERMARK
-    try:
-        wm = json.loads(wm_path.read_text()) if wm_path.exists() else {}
-    except (json.JSONDecodeError, OSError):
-        wm = {}
-    wm["last_error"] = message
-    wm["last_error_at"] = datetime.now(UTC).isoformat()
-    wm_path.parent.mkdir(parents=True, exist_ok=True)
-    wm_path.write_text(json.dumps(wm, indent=2))
-
-
-# -----------------------------------------------------------------------------
-# main
-# -----------------------------------------------------------------------------
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--repo", type=Path, required=True)
-    ap.add_argument("--full", action="store_true",
-                    help="ignore the watermark and re-harvest")
-    ap.add_argument("--stats", action="store_true", help="report only, write nothing")
-    args = ap.parse_args()
-
-    repo = args.repo.resolve()
-    if not (repo / ".git").exists():
-        print(f"[ERROR] not a git repo: {repo}", file=sys.stderr)
-        return 1
-
-    since, why = (0.0, "--full") if args.full else read_watermark(repo)
-
-    prompts = (
-        harvest_claude(repo, since)
-        + harvest_codex(repo, since)
-        + harvest_cursor(repo, since)
-    )
-
-    if prompts:
-        attach_links(prompts, branch_windows(repo), pr_map(repo))
-
-    if args.stats:
-        by: dict[str, int] = {}
-        for p in prompts:
-            by[p["tool"]] = by.get(p["tool"], 0) + 1
-        prior = committed_rows(repo)
-        print(f"[stats] {why} (since={since:.0f}) new prompts: {by or 'none'}; "
-              f"{len(prior)} rows guarded from HEAD/trunk")
-        wm_path = repo / OUT_DIRNAME / WATERMARK
-        if wm_path.exists():
-            try:
-                last = json.loads(wm_path.read_text()).get("last_error")
-            except (json.JSONDecodeError, OSError):
-                last = None
-            if last:
-                print(f"[stats] last refused write: {last}")
-        return 0
-
-    try:
-        fresh, total = write_out(repo, prompts, committed_rows(repo))
-    except RegressionError as exc:
-        record_error(repo, str(exc))
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        return 2
-    write_watermark(repo)
-    print(f"[OK] {why}: +{fresh} new, {total} total -> {repo / INDEX_PATH}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
