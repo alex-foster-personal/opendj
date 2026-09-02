@@ -5,6 +5,8 @@
 [if] the id is unknown [then] 404 COMMENT_NOT_FOUND, nothing written
 [if] the body carries no field [then] 422 NO_CHANGES
 [if] status is not one of the lifecycle states [then] 422
+[if] a patch is rejected by CommentOut validation [then] comments.json is untouched and
+    GET /comments still lists every pin
 """
 from __future__ import annotations
 
@@ -24,6 +26,17 @@ def client(tmp_path: Path) -> TestClient:
     app = create_app(mount_frontend=False)
     app.state.data_dir = tmp_path
     return TestClient(app)
+
+
+@pytest.fixture()
+def http_client(tmp_path: Path) -> TestClient:
+    """Same app, but surfacing server errors as responses like a real client does,
+    instead of re-raising them into the test."""
+    from apps.webui.server.app import create_app
+
+    app = create_app(mount_frontend=False)
+    app.state.data_dir = tmp_path
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def _create(client: TestClient) -> dict:
@@ -64,3 +77,27 @@ def test_patch_rejects_empty_body_and_unknown_status(client: TestClient) -> None
     pin = _create(client)
     assert client.patch(f"/api/v1/feedback/comments/{pin['id']}", json={}).status_code == 422
     assert client.patch(f"/api/v1/feedback/comments/{pin['id']}", json={"status": "done"}).status_code == 422
+
+
+def test_rejected_patch_leaves_the_store_readable(http_client: TestClient, tmp_path: Path) -> None:
+    """A patch the response model refuses must not reach disk.
+
+    comments.json is read back through CommentOut on every list, so a single
+    unvalidated write makes GET /comments fail for EVERY pin in the file, not
+    just the patched one. ``text: null`` is the reachable trigger: the published
+    contract types it ``text?: string | null``, so a typed client can send it.
+    """
+    bystander = _create(http_client)
+    victim = _create(http_client)
+    before = (tmp_path / "feedback" / "comments.json").read_text()
+
+    r = http_client.patch(f"/api/v1/feedback/comments/{victim['id']}", json={"text": None})
+    assert r.status_code != 200, "if a null text is accepted then CommentOut.text is a lie - broken"
+
+    after = (tmp_path / "feedback" / "comments.json").read_text()
+    assert after == before, "if a rejected patch still writes then one bad request corrupts the store - broken"
+
+    listed = http_client.get("/api/v1/feedback/comments")
+    assert listed.status_code == 200, "if the list 500s after a rejected patch then the widget is bricked - broken"
+    ids = {c["id"] for c in listed.json()["comments"]}
+    assert bystander["id"] in ids and victim["id"] in ids, "if a pin vanished then the rejected patch ate data - broken"

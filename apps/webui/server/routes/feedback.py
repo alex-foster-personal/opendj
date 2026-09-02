@@ -384,16 +384,21 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
     """
     path = _dir(request) / _COMMENTS_FILE
     items = _load(path, "comments")
-    for item in items:
+    for i, item in enumerate(items):
         if item.get("id") != comment_id:
             continue
         changes = body.model_dump(exclude_unset=True)
         if not changes:
             raise HTTPException(status_code=422, detail={"code": "NO_CHANGES", "message": "body carries no field to update"})
-        item.update(changes)
-        item["updated_at"] = _now()
+        # Validate BEFORE persisting, as patch_todo above does. A rejected patch
+        # must leave the store exactly as it was: comments.json is read back
+        # through CommentOut on every list, so one unvalidated write would make
+        # GET /comments fail for every pin in the file, not just this one.
+        merged = {**item, **changes, "updated_at": _now()}
+        validated = CommentOut.model_validate(merged)
+        items[i] = validated.model_dump()
         _save(path, "comments", items)
-        return CommentOut.model_validate(item)
+        return validated
     raise HTTPException(
         status_code=404,
         detail={"code": "COMMENT_NOT_FOUND", "message": f"no comment with id {comment_id!r}"},
