@@ -45,7 +45,8 @@ import {
 	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap,
 	type AutoPlayHandoffPhase,
-	type AutoPlayMasterPromotion
+	type AutoPlayMasterPromotion,
+	chartedOrderKey
 } from '$lib/rb/auto-play';
 import {
 	computeFollowerSyncPlan,
@@ -59,6 +60,13 @@ import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
+/**
+ * Rows of upcoming order the library column charts. The picker itself only ever
+ * needs the next track; walking the whole playlist under maximize_reach cost
+ * 6.9 s per simulation on 8558 rows (Wed 2 Sep 2026), so the column shows the
+ * near future and ranks beyond it are simply absent.
+ */
+const CHARTED_ORDER_HORIZON = 64;
 /** Synthetic schedule horizon for preflight only (plan needs syncAt > now). */
 const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 /** Failed load/play attempts per source track before stopping. */
@@ -71,6 +79,8 @@ let _inFlight = false;
 let _triggeredFor: string | null = null;
 let _playedIds = new Set<string>();
 let _playedFeedEpoch = -1;
+/** Inputs of the last charted-order simulation; equal key = skip the tick's simulate. */
+let _chartedOrderKey: string | null = null;
 /** Candidates that failed load/play; cleared when playlist membership changes. */
 let _unplayableIds = new Set<string>();
 let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
@@ -126,6 +136,21 @@ function _refreshChartedOrder(
 	}
 	_syncPlayedSet();
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[source.id] ?? 16);
+	// The poll fires every 250 ms; simulating the chain over the open playlist
+	// is O(rows^2) (1.5 s on 8558 rows). Nothing about the order can change
+	// unless one of these inputs did, so an unchanged key is a no-op tick.
+	const key = chartedOrderKey({
+		feed_epoch: _playedFeedEpoch,
+		source_stable_id: source.stable_id,
+		enforce_play_order: uiPrefs.auto_play_enforce_order,
+		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
+		min_tempo_ratio: bounds.min,
+		max_tempo_ratio: bounds.max,
+		exclude_ids: excludeIds,
+		played_ids: _playedIds
+	});
+	if (key === _chartedOrderKey) return;
+	_chartedOrderKey = key;
 	const full = simulateAutoPlayChain({
 		playlist: getAutoPlayPlaylist(),
 		start_stable_id: source.stable_id,
@@ -134,7 +159,8 @@ function _refreshChartedOrder(
 		min_tempo_ratio: bounds.min,
 		max_tempo_ratio: bounds.max,
 		exclude_ids: excludeIds,
-		played_ids: _playedIds
+		played_ids: _playedIds,
+		max_chain_length: CHARTED_ORDER_HORIZON + 1
 	});
 	// Upcoming only - source is already playing, not "next".
 	_publishOrder(full.slice(1));
