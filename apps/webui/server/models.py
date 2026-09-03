@@ -33,7 +33,7 @@ class TempoPrefPatch(BaseModel):
     max: float | None = None
 
     @model_validator(mode="after")
-    def _min_less_than_max(self) -> "TempoPrefPatch":
+    def _min_less_than_max(self) -> TempoPrefPatch:
         if self.min is not None and self.max is not None and self.min >= self.max:
             raise ValueError("tempo_pref.min must be less than tempo_pref.max")
         return self
