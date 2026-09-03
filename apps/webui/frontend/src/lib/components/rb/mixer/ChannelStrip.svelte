@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * One mixer channel strip (SCREENSHOT-SPEC 4), top-down:
-	 * channel number, TRIM, HI/MID/LOW, FILTER (visual stub),
+	 * channel number, TRIM, HI/MID/LOW, FILTER,
 	 * headphone CUE, vertical fader (fills remaining height), STEM label.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
@@ -24,17 +24,33 @@
 		eqMid: number;
 		/** LOW knob 0..1; 0.5 = flat. */
 		eqLow: number;
+		/** FILTER knob 0..1; 0.5 = bypass. */
+		filter: number;
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
 		ontrim: (value: number) => void;
 		oneq: (band: EqBand, value: number) => void;
+		onfilter: (value: number) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 	}
 
-	let { deckId, trim, eqHigh, eqMid, eqLow, fader, cueEnabled, ontrim, oneq, onfader, oncue }: Props =
-		$props();
+	let {
+		deckId,
+		trim,
+		eqHigh,
+		eqMid,
+		eqLow,
+		filter,
+		fader,
+		cueEnabled,
+		ontrim,
+		oneq,
+		onfilter,
+		onfader,
+		oncue
+	}: Props = $props();
 
 	/** Decks 3/4 are secondary; lighten strip so 1/2 draw the eye. */
 	const secondary = $derived(deckId === 3 || deckId === 4);
@@ -45,7 +61,7 @@
 
 	/** 70% of the Knob default (30px) diameter = 30% smaller circumference (MIXUX-03). */
 	const TRIM_SIZE = 21;
-	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
+	/** FILTER remains visually larger than the EQ stack, matching the mixer layout contract. */
 	const FILTER_SLOT_SIZE = 39;
 </script>
 
@@ -79,10 +95,9 @@
 		<Knob
 			knobId={knobId(deckId, 'filter')}
 			label="FILTER"
-			value={0.5}
-			tone="rainbow"
+			value={filter}
 			size={FILTER_SLOT_SIZE}
-			inert
+			onchange={onfilter}
 		/>
 	</div>
 	<button

@@ -49,6 +49,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'filter', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 });
 
@@ -315,6 +316,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 	try {
 		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.7 });
 		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.25 });
+		await ipc.dispatchPerformanceCommand({ type: 'filter', deck: 2, value: 0.9 });
 		await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 0.8 });
 		await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'THRU' });
 		await ipc.dispatchPerformanceCommand({ type: 'channel_cue', deck: 2, enabled: true });
@@ -345,6 +347,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.5,
 				eq_low: 0.5,
+				filter: 0.5,
 				fader: 1,
 				assign: 'A',
 				cue_enabled: false
@@ -355,6 +358,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.25,
 				eq_low: 0.5,
+				filter: 0.9,
 				fader: 0.8,
 				assign: 'THRU',
 				cue_enabled: true
@@ -365,6 +369,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.5,
 				eq_low: 0.5,
+				filter: 0.5,
 				fader: 1,
 				assign: 'A',
 				cue_enabled: false
@@ -375,6 +380,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				eq_high: 0.5,
 				eq_mid: 0.5,
 				eq_low: 0.5,
+				filter: 0.5,
 				fader: 1,
 				assign: 'B',
 				cue_enabled: false
@@ -384,6 +390,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 
 		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.5 });
 		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.5 });
+		await ipc.dispatchPerformanceCommand({ type: 'filter', deck: 2, value: 0.5 });
 		await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 1 });
 		await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'B' });
 		await ipc.dispatchPerformanceCommand({ type: 'channel_cue', deck: 2, enabled: false });

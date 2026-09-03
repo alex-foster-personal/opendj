@@ -89,6 +89,7 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 		eq_high: 0.5,
 		eq_mid: 0.5,
 		eq_low: 0.5,
+		filter: 0.5,
 		fader: 1,
 		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
 		assign: deck_id % 2 === 1 ? 'A' : 'B',

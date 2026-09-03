@@ -24,6 +24,22 @@ export const EQ_MIN_DB = -26;
 export const EQ_MAX_DB = 6;
 /** TRIM knob 0..1 maps linearly to 0..2x amplitude (0.5 = unity). */
 export const TRIM_MAX_GAIN = 2;
+/**
+ * FILTER knob law: one BiquadFilterNode per side (lowpass for CCW, highpass
+ * for CW), swept exponential-in-Hz (== linear-in-octaves, the L2 law from
+ * `docs/research/filter-taper-laws.md` section 1/6). Endpoints are that
+ * doc's recommended constants, chosen so full travel never reaches silence
+ * (LP floor keeps kick/sub, HP ceiling keeps hats/air) -- doc section on
+ * calibration finding 4. This is the mechanism only: fixed Butterworth Q,
+ * no resonance/onset-taper character shaping, which is MIXUX-05 and needs
+ * the maintainer's ear calibration before it is built.
+ */
+export const FILTER_DEADZONE_FRAC = 0.02;
+export const FILTER_LP_CEILING_HZ = 20000;
+export const FILTER_LP_FLOOR_HZ = 130;
+export const FILTER_HP_FLOOR_HZ = 30;
+export const FILTER_HP_CEILING_HZ = 6300;
+export const FILTER_Q = 0.707;
 /** Smoothing time-constant for AudioParam changes (anti-zipper). */
 export const PARAM_SMOOTH_S = 0.01;
 /**

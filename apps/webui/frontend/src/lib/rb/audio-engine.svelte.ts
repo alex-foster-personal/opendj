@@ -160,6 +160,12 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
+	FILTER_DEADZONE_FRAC,
+	FILTER_HP_CEILING_HZ,
+	FILTER_HP_FLOOR_HZ,
+	FILTER_LP_CEILING_HZ,
+	FILTER_LP_FLOOR_HZ,
+	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -328,6 +334,8 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
+	filterLp: BiquadFilterNode;
+	filterHp: BiquadFilterNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -540,6 +548,28 @@ function _eqDbFromKnob(value: number): number {
 	return EQ_MAX_DB * (value * 2 - 1);
 }
 
+/**
+ * FILTER knob -> {lpHz, hpHz} corner frequencies for the two always-in-chain
+ * biquads (see FILTER_* constants). `colour` is bipolar travel away from the
+ * 0.5 detent; below FILTER_DEADZONE_FRAC of it is a true dry bypass (both
+ * filters left fully open). Sweeps are exponential in Hz, i.e. linear in
+ * octaves (L2 in docs/research/filter-taper-laws.md), so equal knob motion
+ * covers equal perceived distance anywhere in the travel.
+ */
+function _filterFreqsFromKnob(value: number): { lpHz: number; hpHz: number } {
+	const colour = (value - 0.5) * 2; // -1 (full CCW) .. 1 (full CW)
+	if (Math.abs(colour) < FILTER_DEADZONE_FRAC) {
+		return { lpHz: FILTER_LP_CEILING_HZ, hpHz: FILTER_HP_FLOOR_HZ };
+	}
+	const u = (Math.abs(colour) - FILTER_DEADZONE_FRAC) / (1 - FILTER_DEADZONE_FRAC);
+	if (colour < 0) {
+		const lpHz = FILTER_LP_CEILING_HZ * (FILTER_LP_FLOOR_HZ / FILTER_LP_CEILING_HZ) ** u;
+		return { lpHz, hpHz: FILTER_HP_FLOOR_HZ };
+	}
+	const hpHz = FILTER_HP_FLOOR_HZ * (FILTER_HP_CEILING_HZ / FILTER_HP_FLOOR_HZ) ** u;
+	return { lpHz: FILTER_LP_CEILING_HZ, hpHz };
+}
+
 function _setParam(param: AudioParam, value: number): void {
 	if (_ctx === null) throw new Error('audio graph not initialised');
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
@@ -632,6 +662,15 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		const { lpHz, hpHz } = _filterFreqsFromKnob(ch.filter);
+		const filterLp = _ctx.createBiquadFilter();
+		filterLp.type = 'lowpass';
+		filterLp.Q.value = FILTER_Q;
+		filterLp.frequency.value = lpHz;
+		const filterHp = _ctx.createBiquadFilter();
+		filterHp.type = 'highpass';
+		filterHp.Q.value = FILTER_Q;
+		filterHp.frequency.value = hpHz;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -642,9 +681,11 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
-		high.connect(cue);
+		high.connect(filterLp);
+		filterLp.connect(filterHp);
+		filterHp.connect(cue);
 		cue.connect(headphones.cueSum);
-		high.connect(fader);
+		filterHp.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
@@ -656,7 +697,7 @@ function _ensureGraph(): AudioContext {
 			fader.connect(xf);
 			xf.connect(_masterGain);
 		}
-		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
+		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, cue, fader, xf, extsplit };
 	}
 	armXrunSentinel(_ctx);
 	return _ctx;
@@ -3985,6 +4026,17 @@ class RbAudioEngine implements AudioEngine {
 		} else {
 			const _exhaustive: never = band;
 			throw new Error(`Unhandled EQ band: ${_exhaustive}`);
+		}
+	}
+
+	setFilter(deck: DeckId, value: number): void {
+		_assertUnit('setFilter value', value);
+		mixerState.channels[deck].filter = value;
+		const nodes = _rt[deck].nodes;
+		if (nodes !== null) {
+			const { lpHz, hpHz } = _filterFreqsFromKnob(value);
+			_setParam(nodes.filterLp.frequency, lpHz);
+			_setParam(nodes.filterHp.frequency, hpHz);
 		}
 	}
 
