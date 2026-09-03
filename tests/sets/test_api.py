@@ -39,7 +39,14 @@ def _seed_api_session(sets_root: Path, session_id: str = "s1", *, private: bool 
             share_state=share,
             event_count=2,
             deck_sources=["djay_monitor"],
-            mp3_segments=[AudioSegment(name=mp3.name, start_t_s=0.0, duration_s=300.0, size_bytes=mp3.stat().st_size)],
+            mp3_segments=[
+                AudioSegment(
+                    name=mp3.name,
+                    start_t_s=0.0,
+                    duration_s=300.0,
+                    size_bytes=mp3.stat().st_size,
+                )
+            ],
         ),
     )
     # timeline.jsonl
@@ -241,6 +248,58 @@ def test_api_audio_forbidden_on_non_localhost_when_private(
     with TestClient(app) as client:
         resp = client.get("/api/sets/s1/audio/audio_2026-04-17T21-30-00.mp3")
     assert resp.status_code == 403
+
+
+@pytest.mark.requirement("SET-08")
+def test_api_metadata_share_requires_explicit_consent_and_https_host(
+    api_test_client, monkeypatch
+) -> None:
+    """A share link cannot turn on from a private set or an unsafe host."""
+    client, sets_root = api_test_client
+    session_dir = _seed_api_session(sets_root)
+
+    missing_consent = client.post("/api/sets/s1/share", json={})
+    assert missing_consent.status_code == 422
+    assert json.loads((session_dir / "manifest.json").read_text())["share_state"] == "private"
+
+    monkeypatch.setenv("MUSIC_DJ_SET_SHARE_BASE_URL", "http://sets.example.test")
+    unsafe_host = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
+    assert unsafe_host.status_code == 409
+    assert json.loads((session_dir / "manifest.json").read_text())["share_state"] == "private"
+
+
+@pytest.mark.requirement("SET-08")
+def test_api_metadata_share_publishes_real_set_without_audio(
+    api_test_client, monkeypatch
+) -> None:
+    """A finalized set gets one HTTPS shared-view URL and no remote MP3 route."""
+    client, sets_root = api_test_client
+    _seed_api_session(sets_root)
+    monkeypatch.setenv(
+        "MUSIC_DJ_SET_SHARE_BASE_URL", "https://sets.example.test/opendj"
+    )
+
+    published = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
+
+    assert published.status_code == 200
+    assert published.json() == {
+        "session_id": "s1",
+        "share_state": "shared_cloud",
+        "share_url": "https://sets.example.test/opendj/sets/shared/s1",
+        "content": "metadata_only",
+    }
+    fetched = client.get("/api/sets/s1/share")
+    assert fetched.status_code == 200
+    assert fetched.json() == published.json()
+
+    app = FastAPI()
+    app.include_router(api_mod.router)
+    monkeypatch.setattr(api_mod, "_LOCALHOST_HOSTS", frozenset({"127.0.0.1"}))
+    with TestClient(app) as remote_client:
+        audio = remote_client.get(
+            "/api/sets/s1/audio/audio_2026-04-17T21-30-00.mp3"
+        )
+    assert audio.status_code == 403
 
 
 @pytest.mark.requirement("SET-03")

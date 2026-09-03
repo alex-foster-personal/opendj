@@ -18,9 +18,10 @@ Endpoints::
 from __future__ import annotations
 
 import threading
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from typing import Any, AsyncIterator, Iterable, Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi import Path as FPath
@@ -37,6 +38,7 @@ from .classify import CLASS_LIST, read_transitions
 from .label import append_label
 from .recorder_service import RecorderConflict, RecorderService
 from .sessions import Session, get_session, list_sessions, summary_to_dict
+from .share import SetShareError, configured_share_base_url, publish_metadata_only, share_url
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
 
@@ -117,6 +119,21 @@ class RecorderRecoveryRequest(BaseModel):
     expected_pid: int = Field(gt=0)
 
 
+class MetadataShareRequest(BaseModel):
+    """Explicit acknowledgement that the resulting web view excludes audio."""
+
+    confirm_metadata_only: Literal[True]
+
+
+class MetadataShareResponse(BaseModel):
+    """A browser URL for the non-audio set history presentation."""
+
+    session_id: str
+    share_state: Literal["shared_cloud"]
+    share_url: str
+    content: Literal["metadata_only"]
+
+
 class DeckObservationsRequest(BaseModel):
     """A batch of Open DJ deck-state snapshots, oldest first.
 
@@ -162,7 +179,7 @@ def _recorder_service(request: Request) -> RecorderService:
                 service = RecorderService()
                 request.app.state.sets_recorder_service = service
     if not isinstance(service, RecorderService):
-        raise RuntimeError("app.state.sets_recorder_service must be RecorderService")
+        raise TypeError("app.state.sets_recorder_service must be RecorderService")
     return service
 
 
@@ -322,8 +339,7 @@ async def api_timeline_stream(session_id: str) -> StreamingResponse:
 
     def _stream() -> Iterable[bytes]:
         with jsonl.open("rb") as fh:
-            for line in fh:
-                yield line
+            yield from fh
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
@@ -333,6 +349,46 @@ async def api_transitions(session_id: str) -> JSONResponse:
     _session_or_not_found(session_id)
     rows = read_transitions(session_id)
     return JSONResponse(rows)
+
+
+def _metadata_share_response(session: Session) -> MetadataShareResponse:
+    if session.summary.share_state != "shared_cloud":
+        raise HTTPException(
+            status_code=409,
+            detail="metadata sharing has not been enabled for this set",
+        )
+    try:
+        base_url = configured_share_base_url()
+    except SetShareError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return MetadataShareResponse(
+        session_id=session.summary.session_id,
+        share_state="shared_cloud",
+        share_url=share_url(session.summary.session_id, base_url),
+        content="metadata_only",
+    )
+
+
+@router.get("/{session_id}/share", response_model=MetadataShareResponse)
+async def api_get_metadata_share(session_id: str) -> MetadataShareResponse:
+    """Get an existing metadata-only share link for a finalized published set."""
+    return _metadata_share_response(_session_or_not_found(session_id))
+
+
+@router.post("/{session_id}/share", response_model=MetadataShareResponse)
+async def api_publish_metadata_share(
+    session_id: str,
+    body: MetadataShareRequest,
+) -> MetadataShareResponse:
+    """Publish timeline metadata after explicit acknowledgement, never MP3 audio."""
+    del body
+    session = _session_or_not_found(session_id)
+    try:
+        configured_share_base_url()
+        publish_metadata_only(sets_paths.session_dir(session.summary.session_id))
+    except SetShareError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _metadata_share_response(_session_or_not_found(session_id))
 
 
 @router.post("/{session_id}/transitions/{idx}/label")
@@ -360,12 +416,11 @@ async def api_audio(
     session_id: str,
     segment: str = FPath(..., description="audio_<iso>.mp3"),
 ) -> FileResponse:
-    session = _session_or_not_found(session_id)
-    share_state = session.summary.share_state
-    if share_state == "private" and not _is_localhost(request):
+    _session_or_not_found(session_id)
+    if not _is_localhost(request):
         raise HTTPException(
             status_code=403,
-            detail="session is private; audio only available to localhost clients",
+            detail="recorded audio is personal-review-only and unavailable to remote clients",
         )
     try:
         path = resolve_segment_path(session_id, segment)
@@ -378,8 +433,10 @@ async def api_audio(
 
 __all__ = [
     "LabelRequest",
-    "RecorderStartRequest",
+    "MetadataShareRequest",
+    "MetadataShareResponse",
     "RecorderRecoveryRequest",
+    "RecorderStartRequest",
     "RecorderStatus",
     "router",
 ]
