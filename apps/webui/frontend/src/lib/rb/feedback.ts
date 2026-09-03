@@ -6,7 +6,8 @@
  * math are the parts most worth unit-testing, so they live where node:test
  * can bundle them without a DOM or a Svelte runtime.
  *
- * localStorage carries ONLY the panel position - a per-viewer convenience.
+ * localStorage carries ONLY the panel position and, since #858, which pin
+ * updates this viewer has already read - both per-viewer conveniences.
  * Feedback CONTENT never touches client storage; it goes straight to
  * /api/v1/feedback so an agent harvest can never miss it.
  *
@@ -24,6 +25,15 @@
  *     [if] flush() drops a pending value [then ⛔️] broken
  *   ✔︎ 🎯 pinFromClient: a viewport click becomes 0..100 percents, clamped.
  *     [if] a click at the exact bottom-right corner exceeds 100 [then ⛔️] broken
+ *   ✔︎ 🎯 pinStatus/isPinDrawn/pinIsDone: a pin with no status is open, an
+ *     unknown status is open, only archived leaves the canvas, and only a
+ *     fixed/merged pin offers Archive and Follow-on.
+ *     [if] a pre-#858 pin (status null) stops being drawn [then ⛔️] broken
+ *     [if] an open pin offers Archive [then ⛔️] broken
+ *   ✔︎ 🎯 isPinUnread/markPinSeen/parsePinSeen: stamp-compared unread marker;
+ *     junk in storage reads as an empty map.
+ *     [if] a pin no agent touched wears a blue dot [then ⛔️] broken
+ *     [if] a SECOND update after a read leaves no dot [then ⛔️] broken
  *   ✔︎ 🎯 describeAnchor: nearest stable identifier (id > data-testid >
  *     aria-label > class), null when nothing stable exists - never a guess.
  *     [if] an anonymous div chain yields a fabricated selector [then ⛔️] broken
@@ -184,6 +194,136 @@ export function pinFromClient(
 
 export function pinStyle(pin: PinPoint): string {
   return `left:${pin.x_pct}%;top:${pin.y_pct}%`;
+}
+
+/**
+ * Where a pin's BODY sits. The marker itself is centred on its point, but the
+ * body hangs down and right from it, so a pin near an edge would open its
+ * Archive and Follow-on buttons off-screen - and one of the pins on this
+ * machine sits at 98.48%. min() holds it inside the viewport in CSS, which
+ * costs no measuring pass and no resize listener.
+ *
+ * The vertical clamp uses `.fb-pin-body`'s CSS `max-height: 320px`, not a
+ * guess: `box-sizing: border-box` (app.css) means the padding is already
+ * INSIDE that 320px, so it is also the actual rendered height cap. A long
+ * agent note can grow the body all the way to it, and clamping to less than
+ * the actual maximum still lets Archive/Follow-on/Close render below the
+ * fold.
+ *
+ * Each calc() is floored at `max(0px, ...)`: below a 252px-wide or
+ * 320px-tall viewport the calc alone goes negative and min() would place
+ * the body off-screen instead of just against the edge.
+ */
+export function pinBodyStyle(pin: PinPoint): string {
+  return (
+    `left:min(${pin.x_pct}%, max(0px, calc(100vw - 252px)));` +
+    `top:min(${pin.y_pct}%, max(0px, calc(100vh - 320px)))`
+  );
+}
+
+// ----- pin lifecycle (issue #858) ----------------------------------------
+/**
+ * The five states a comment pin moves through. A pin NEVER disappears on its
+ * own: only `archived` leaves the canvas, and only because the maintainer pressed
+ * Archive on a pin whose work is done.
+ */
+export type PinStatus = "open" | "issued" | "fixed" | "merged" | "archived";
+
+const PIN_STATUSES: readonly string[] = [
+  "open",
+  "issued",
+  "fixed",
+  "merged",
+  "archived",
+];
+
+/** The one localStorage key this feature owns: {pin id: updated_at seen}. */
+export const PIN_SEEN_KEY = "mdt.feedback.pinSeen.v1";
+
+/** What the lifecycle reads off a pin. A subset of CommentOut so node:test
+ * can drive these with plain objects and no generated client types. */
+export interface LifecyclePin {
+  id: string;
+  status?: string | null;
+  issue_url?: string | null;
+  updated_at?: string | null;
+}
+
+/**
+ * A pin's status, defaulted and validated.
+ *
+ * Pins created before Wed 2 Sep 2026 carry no status at all (22 of the 35 on
+ * this machine), and an unrecognised string is a typo'd PATCH rather than a
+ * new state. Both read as `open`: the amber default is the honest answer, and
+ * it is the state that hides nothing.
+ */
+export function pinStatus(pin: LifecyclePin): PinStatus {
+  const raw = pin.status ?? "open";
+  return (PIN_STATUSES.includes(raw) ? raw : "open") as PinStatus;
+}
+
+/** Archived pins leave the canvas; everything else stays on it forever. */
+export function isPinDrawn(pin: LifecyclePin): boolean {
+  return pinStatus(pin) !== "archived";
+}
+
+/** True once the work behind a pin is done, which is what unlocks Archive and
+ * Follow-on. Offering them earlier invites archiving work still in flight. */
+export function pinIsDone(pin: LifecyclePin): boolean {
+  const status = pinStatus(pin);
+  return status === "fixed" || status === "merged";
+}
+
+/** The prefix a follow-on pin opens with, naming the parent it came from. */
+export function followOnText(pin: LifecyclePin): string {
+  return `Follow-on to ${pin.issue_url ?? pin.id}: `;
+}
+
+// ----- the unread marker (the maintainer, Wed 2 Sep 2026 17:12) --------------------
+/** Per-viewer, per-pin: the `updated_at` this viewer has already read. */
+export type PinSeen = Record<string, string>;
+
+/**
+ * True when an agent has touched this pin since this viewer last opened it.
+ *
+ * Stamps are compared, not a read flag: a second agent update after a read
+ * must raise the dot again, which a boolean cannot express. The stamps are
+ * fixed-width UTC with microseconds (`%Y-%m-%dT%H:%M:%S.%fZ`), so string
+ * order IS time order and no Date parsing is needed - and two writes inside
+ * the same second still compare unequal.
+ */
+export function isPinUnread(pin: LifecyclePin, seen: PinSeen): boolean {
+  const updated = pin.updated_at;
+  if (!updated) return false; // no agent has ever written to it
+  const at = seen[pin.id];
+  return at === undefined || at < updated;
+}
+
+/** Record that this viewer has read the pin AS IT STANDS NOW. */
+export function markPinSeen(seen: PinSeen, pin: LifecyclePin): PinSeen {
+  if (!pin.updated_at) return seen;
+  return { ...seen, [pin.id]: pin.updated_at };
+}
+
+export function parsePinSeen(raw: string | null): PinSeen {
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    return {};
+  const seen: PinSeen = {};
+  for (const [id, at] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof at === "string") seen[id] = at;
+  }
+  return seen;
+}
+
+export function serializePinSeen(seen: PinSeen): string {
+  return JSON.stringify(seen);
 }
 
 // ----- nearest stable anchor ---------------------------------------------

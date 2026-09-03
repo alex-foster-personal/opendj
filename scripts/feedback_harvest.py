@@ -48,6 +48,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -82,14 +83,26 @@ class Target:
     base: str  # http://127.0.0.1:<port>
     ssh_host: str | None  # None = local
 
-    def request(self, method: str, path: str) -> dict:
+    def request(self, method: str, path: str, body: dict | None = None) -> dict:
         url = f"{self.base}{path}"
+        data = json.dumps(body).encode("utf-8") if body is not None else None
         if self.ssh_host is None:
-            req = urllib.request.Request(url, method=method)
+            req = urllib.request.Request(
+                url,
+                data=data,
+                method=method,
+                headers={"Content-Type": "application/json"} if data else {},
+            )
             with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        cmd = f"curl -sf -m {TIMEOUT_S} -X {method} {url}"
+        if data is not None:
+            cmd = (
+                f"curl -sf -m {TIMEOUT_S} -X {method} -H 'Content-Type: application/json' "
+                f"-d {shlex.quote(data.decode('utf-8'))} {url}"
+            )
         out = subprocess.run(
-            ["ssh", self.ssh_host, f"curl -sf -m {TIMEOUT_S} -X {method} {url}"],
+            ["ssh", self.ssh_host, cmd],
             capture_output=True,
             text=True,
             timeout=TIMEOUT_S * 5,

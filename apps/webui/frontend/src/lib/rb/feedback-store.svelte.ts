@@ -28,6 +28,15 @@
  *     pagehide is dropped [then ⛔️] broken
  *   ✔︎ 🎯 addPin: POST the pin, then re-render pins from the response.
  *     [if] a pin renders that the daemon never stored [then ⛔️] broken
+ *   ✔︎ 🎯 archivePin: POST, and only then drop it from the canvas.
+ *     [if] a pin leaves the canvas that the archive never received [then ⛔️] broken
+ *   ✔︎ 🎯 submitFollowOn: POST the dedicated /follow-on endpoint so the
+ *     parent reference is server-generated, never client-typed text.
+ *     [if] a follow-on pin can lose its parent link [then ⛔️] broken
+ *   ✔︎ 🎯 refreshPins: discards a snapshot that started before a local
+ *     mutation landed, and retires the poll on a 404.
+ *     [if] a poll in flight during an archive/add overwrites it with stale
+ *     data, or a 404 polls forever [then ⛔️] broken
  */
 
 import type { components } from "../api-types";
@@ -41,6 +50,11 @@ export type FeedbackGeneralNote = components["schemas"]["GeneralNoteOut"];
 export type FeedbackAvailability = "unknown" | "ok" | "missing";
 
 export const AUTOSAVE_DEBOUNCE_MS = 600;
+// Same-tab pin-status polling (issue #914 review, Wed 2 Sep 2026): hydrate
+// runs once and never again, so an agent's PATCH while the reviewer keeps
+// the app open never appeared until a full page reload. Matches
+// usb-tracker.svelte.ts's POLL_MS for a live-but-not-noisy interval.
+const PIN_POLL_MS = 5000;
 
 interface FeedbackState {
   availability: FeedbackAvailability;
@@ -193,16 +207,133 @@ export function flushFeedbackSaves(): void {
 }
 
 // ----- pins ---------------------------------------------------------------
+// Bumped on every local pin mutation (add/archive/follow-on). refreshPins()
+// captures this before its GET and discards the response if it moved, so a
+// poll that started before a mutation can never overwrite it with a stale
+// snapshot once the mutation's own response has already landed.
+let _pinGeneration = 0;
+
+/** Insert `pin`, replacing any existing entry with the same id instead of
+ * appending a second copy. A follow-on's own POST response can lose the race
+ * with a `refreshPins()` GET that already picked up the same server-created
+ * child (issue #914 review, Wed 3 Sep 2026): without this, the keyed pin loop
+ * would render the same id twice until the next poll happened to repair it. */
+function _upsertPin(pin: FeedbackPin): void {
+  const idx = feedbackState.pins.findIndex((p) => p.id === pin.id);
+  feedbackState.pins =
+    idx === -1
+      ? [...feedbackState.pins, pin]
+      : feedbackState.pins.map((p, i) => (i === idx ? pin : p));
+}
+
 export async function addPin(
   pin: components["schemas"]["CommentCreateIn"],
 ): Promise<boolean> {
   try {
     const { data } = await api.POST("/api/v1/feedback/comments", { body: pin });
-    if (data) feedbackState.pins = [...feedbackState.pins, data];
+    if (data) {
+      _pinGeneration++;
+      _upsertPin(data);
+    }
     feedbackState.error = null;
     return true;
   } catch (err) {
     feedbackState.error = err instanceof Error ? err.message : String(err);
     return false;
+  }
+}
+
+/**
+ * Archive ONE pin (issue #858). The daemon moves it into the archive file
+ * with its full history; only once that returns does it leave the canvas -
+ * dropping it locally first would hide a pin the archive never received.
+ */
+export async function archivePin(pinId: string): Promise<boolean> {
+  try {
+    await api.POST("/api/v1/feedback/comments/{comment_id}/archive", {
+      params: { path: { comment_id: pinId } },
+    });
+    _pinGeneration++;
+    feedbackState.pins = feedbackState.pins.filter((p) => p.id !== pinId);
+    feedbackState.error = null;
+    return true;
+  } catch (err) {
+    feedbackState.error = err instanceof Error ? err.message : String(err);
+    return false;
+  }
+}
+
+/**
+ * Open a follow-on pin through the dedicated daemon endpoint (issue #914
+ * review): the parent reference is generated server-side from the parent's
+ * own issue_url/id, so it is never lost to whatever the reviewer typed or
+ * deleted in the draft textarea. `text` is the reviewer's own addition,
+ * appended after that generated reference; it may be empty.
+ */
+export async function submitFollowOn(
+  parentId: string,
+  text: string,
+): Promise<boolean> {
+  try {
+    const { data } = await api.POST(
+      "/api/v1/feedback/comments/{comment_id}/follow-on",
+      {
+        params: { path: { comment_id: parentId } },
+        body: { text: text === "" ? null : text },
+      },
+    );
+    if (data) {
+      _pinGeneration++;
+      _upsertPin(data);
+    }
+    feedbackState.error = null;
+    return true;
+  } catch (err) {
+    feedbackState.error = err instanceof Error ? err.message : String(err);
+    return false;
+  }
+}
+
+// ----- pin polling (same-tab live refresh, issue #914 review) -------------
+let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Re-GET pins and re-render. A transient miss leaves the board as it was;
+ * the next tick retries, so one bad poll is silent rather than an error. A
+ * 404 means the daemon no longer serves feedback at all (an older backend
+ * attached mid-session) and retires the watch the same way hydrateFeedback
+ * does, rather than polling a missing route forever. */
+export async function refreshPins(): Promise<void> {
+  if (feedbackState.availability !== "ok") return;
+  const generation = _pinGeneration;
+  try {
+    const { data } = await api.GET("/api/v1/feedback/comments");
+    // A mutation landed while this GET was in flight: its response is newer
+    // than what this GET started from, so applying this snapshot now would
+    // roll the board back.
+    if (data && generation === _pinGeneration) feedbackState.pins = data.comments;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      feedbackState.availability = "missing";
+      return;
+    }
+    // stays on the last-known board; polling itself never surfaces an error
+  }
+}
+
+export function startPinWatch(): void {
+  if (_pinPollTimer !== null) return;
+  _pinPollTimer = setInterval(() => {
+    if (feedbackState.availability === "missing") {
+      stopPinWatch();
+      return;
+    }
+    void refreshPins();
+  }, PIN_POLL_MS);
+}
+
+export function stopPinWatch(): void {
+  if (_pinPollTimer !== null) {
+    clearInterval(_pinPollTimer);
+    _pinPollTimer = null;
   }
 }

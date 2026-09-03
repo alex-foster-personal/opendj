@@ -20,6 +20,10 @@ Endpoints (all under /api/v1/feedback, agent-native parity with the widget):
     PUT    /feedback/general          replace it (debounced client auto-save)
     POST   /feedback/archive          move harvested feedback to an archive file
 
+The pin lifecycle routes (PATCH a pin, archive one, open a follow-on) live in
+``feedback_pins.py`` on the same ``/feedback`` prefix; this module stays the
+owner of the comment store they write through.
+
 Build stamping: every write is stamped with the serving build's identity so
 feedback maps to the version it was given on. On an engine boot the identity
 is read from ``app.state`` (mounted by apps/engine_core/build_info.py under
@@ -39,6 +43,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -55,6 +60,14 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 _TODOS_FILE = "review-todos.json"
 _COMMENTS_FILE = "comments.json"
 _GENERAL_FILE = "general-note.json"
+
+# Every read/modify/write of comments.json, in THIS module and feedback_pins.py,
+# holds this lock (issue #914 review, Wed 2 Sep 2026: a per-endpoint lock only
+# serialized single-pin archives against each other, so a PATCH or follow-on
+# could still race a concurrent archive - both report success and one write is
+# silently lost, since FastAPI runs sync handlers in a threadpool). One lock
+# for one file, held for the whole read-modify-write, not one lock per route.
+_COMMENTS_LOCK = threading.Lock()
 
 # Mirrors apps.engine_core.build_info.BUILD_IDENTITY_STATE_ATTR. Spelled here
 # because importing the engine chassis from a legacy router is the package
@@ -139,13 +152,6 @@ class CommentOut(BaseModel):
     updated_at: str | None = None
 
 
-class CommentUpdateIn(BaseModel):
-    text: str | None = Field(default=None, min_length=1)
-    status: str | None = Field(default=None, pattern="^(open|issued|fixed|merged|archived)$")
-    issue_url: str | None = None
-    agent_note: str | None = None
-
-
 class CommentListOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -194,7 +200,11 @@ def _dir(request: Request) -> Path:
 
 
 def _now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Microsecond resolution, not just seconds: two agent writes to the same
+    # pin inside one second must still produce a strictly later `updated_at`,
+    # or the frontend's string-order unread comparison cannot tell the second
+    # write happened at all.
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _load(path: Path, root_key: str) -> list[dict[str, Any]]:
@@ -356,7 +366,6 @@ def list_comments(request: Request) -> CommentListOut:
 @router.post("/comments", response_model=CommentOut, status_code=201)
 def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
     path = _dir(request) / _COMMENTS_FILE
-    items = _load(path, "comments")
     comment = CommentOut(
         id=uuid.uuid4().hex[:12],
         x_pct=body.x_pct,
@@ -367,42 +376,11 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
         created_at=_now(),
         build=_build_stamp(request),
     )
-    items.append(comment.model_dump())
-    _save(path, "comments", items)
-    return comment
-
-
-@router.patch("/comments/{comment_id}", response_model=CommentOut)
-def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> CommentOut:
-    """Agent-native half of the pin lifecycle (issue #858, first slice).
-
-    A pin is never deleted by a fix. The agent that acts on it records what it
-    did here so the pin itself shows progress: ``status`` moves
-    open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
-    ``agent_note`` is the one-paragraph reply the widget renders under the
-    original text. Every write is a partial update; unset fields are untouched.
-    """
-    path = _dir(request) / _COMMENTS_FILE
-    items = _load(path, "comments")
-    for i, item in enumerate(items):
-        if item.get("id") != comment_id:
-            continue
-        changes = body.model_dump(exclude_unset=True)
-        if not changes:
-            raise HTTPException(status_code=422, detail={"code": "NO_CHANGES", "message": "body carries no field to update"})
-        # Validate BEFORE persisting, as patch_todo above does. A rejected patch
-        # must leave the store exactly as it was: comments.json is read back
-        # through CommentOut on every list, so one unvalidated write would make
-        # GET /comments fail for every pin in the file, not just this one.
-        merged = {**item, **changes, "updated_at": _now()}
-        validated = CommentOut.model_validate(merged)
-        items[i] = validated.model_dump()
+    with _COMMENTS_LOCK:
+        items = _load(path, "comments")
+        items.append(comment.model_dump())
         _save(path, "comments", items)
-        return validated
-    raise HTTPException(
-        status_code=404,
-        detail={"code": "COMMENT_NOT_FOUND", "message": f"no comment with id {comment_id!r}"},
-    )
+    return comment
 
 
 # ----- general note -------------------------------------------------------
@@ -434,82 +412,83 @@ def archive_feedback(request: Request) -> ArchiveOut:
     comments_path = root / _COMMENTS_FILE
     general_path = root / _GENERAL_FILE
 
-    todos = _load(todos_path, "todos")
-    comments = _load(comments_path, "comments")
-    general = _load_general(general_path)
+    with _COMMENTS_LOCK:
+        todos = _load(todos_path, "todos")
+        comments = _load(comments_path, "comments")
+        general = _load_general(general_path)
 
-    kept_todos: list[dict[str, Any]] = []
-    archived_todos: list[dict[str, Any]] = []
-    archived_feedback: list[dict[str, Any]] = []
-    for todo in todos:
-        if todo.get("done"):
-            archived_todos.append(todo)
-        elif todo.get("feedback"):
-            archived_feedback.append(
-                {
-                    "todo_id": todo.get("id"),
-                    "title": todo.get("title"),
-                    "feedback": todo["feedback"],
-                    "chosen_option": todo.get("chosen_option"),
-                }
+        kept_todos: list[dict[str, Any]] = []
+        archived_todos: list[dict[str, Any]] = []
+        archived_feedback: list[dict[str, Any]] = []
+        for todo in todos:
+            if todo.get("done"):
+                archived_todos.append(todo)
+            elif todo.get("feedback"):
+                archived_feedback.append(
+                    {
+                        "todo_id": todo.get("id"),
+                        "title": todo.get("title"),
+                        "feedback": todo["feedback"],
+                        "chosen_option": todo.get("chosen_option"),
+                    }
+                )
+                kept_todos.append({**todo, "feedback": "", "updated_at": _now()})
+            else:
+                kept_todos.append(todo)
+
+        general_archived = bool(general["text"])
+        nothing_to_do = (
+            not archived_todos
+            and not archived_feedback
+            and not comments
+            and not general_archived
+        )
+        if nothing_to_do:
+            return ArchiveOut(
+                archived_to=None,
+                todos_archived=0,
+                todo_feedback_archived=0,
+                comments_archived=0,
+                general_archived=False,
             )
-            kept_todos.append({**todo, "feedback": "", "updated_at": _now()})
-        else:
-            kept_todos.append(todo)
 
-    general_archived = bool(general["text"])
-    nothing_to_do = (
-        not archived_todos
-        and not archived_feedback
-        and not comments
-        and not general_archived
-    )
-    if nothing_to_do:
-        return ArchiveOut(
-            archived_to=None,
-            todos_archived=0,
-            todo_feedback_archived=0,
-            comments_archived=0,
-            general_archived=False,
-        )
-
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    archive_path = root / f"archive-{stamp}.json"
-    if archive_path.exists():
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "FEEDBACK_ARCHIVE_COLLISION",
-                "message": f"{archive_path} already exists; retry in 1s",
-            },
-        )
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    archive_path.write_text(
-        json.dumps(
-            {
-                "archived_at": _now(),
-                "todos": archived_todos,
-                "todo_feedback": archived_feedback,
-                "comments": comments,
-                "general": general if general_archived else None,
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    _save(todos_path, "todos", kept_todos)
-    _save(comments_path, "comments", [])
-    if general_archived:
-        general_path.write_text(
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        archive_path = root / f"archive-{stamp}.json"
+        if archive_path.exists():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "FEEDBACK_ARCHIVE_COLLISION",
+                    "message": f"{archive_path} already exists; retry in 1s",
+                },
+            )
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_path.write_text(
             json.dumps(
-                {"text": "", "updated_at": _now(), "build": general.get("build")},
+                {
+                    "archived_at": _now(),
+                    "todos": archived_todos,
+                    "todo_feedback": archived_feedback,
+                    "comments": comments,
+                    "general": general if general_archived else None,
+                },
                 indent=2,
             )
             + "\n",
             encoding="utf-8",
         )
+
+        _save(todos_path, "todos", kept_todos)
+        _save(comments_path, "comments", [])
+        if general_archived:
+            general_path.write_text(
+                json.dumps(
+                    {"text": "", "updated_at": _now(), "build": general.get("build")},
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
     return ArchiveOut(
         archived_to=str(archive_path),

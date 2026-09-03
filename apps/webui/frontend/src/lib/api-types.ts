@@ -805,6 +805,69 @@ export interface paths {
         patch: operations["update_comment_api_v1_feedback_comments__comment_id__patch"];
         trace?: never;
     };
+    "/api/v1/feedback/comments/{comment_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Comment
+         * @description Archive ONE pin, with its full history (issue #858).
+         *
+         *     The bulk ``POST /feedback/archive`` empties the board at harvest time.
+         *     This is the button on a pin whose work is done: it moves that pin alone
+         *     into the archive, keeping every field it accumulated (status, issue_url,
+         *     agent_note, build stamp, created_at) so the archive answers "what was
+         *     this, and what happened to it" without the live board.
+         *
+         *     It APPENDS to the newest existing archive file rather than writing one
+         *     file per press, which would scatter a review pass across dozens of files.
+         *
+         *     Rejects an `open` or `issued` pin: this endpoint is agent-facing (not
+         *     just the widget, which already hides the button before `fixed`/`merged`),
+         *     so the lifecycle invariant - only DONE work is archived - has to be
+         *     enforced here too, or an agent PATCHing straight to this route can drop
+         *     an unfinished item off the live board.
+         *
+         *     The whole read/append/delete/save sequence holds `_COMMENTS_LOCK`, the
+         *     same lock every other comments.json writer holds, so this cannot
+         *     interleave with a concurrent archive, PATCH, follow-on, or new pin.
+         */
+        post: operations["archive_comment_api_v1_feedback_comments__comment_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/comments/{comment_id}/follow-on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Follow On Comment
+         * @description Open a new pin at the same anchor, referencing the parent (issue #858).
+         *
+         *     "More work is needed here" is a new pin, not an edit: the parent keeps its
+         *     own status and history. The text opens with the parent's issue URL when
+         *     one was filed and its pin id otherwise, so a follow-on is never an orphan.
+         */
+        post: operations["follow_on_comment_api_v1_feedback_comments__comment_id__follow_on_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/general": {
         parameters: {
             query?: never;
@@ -3259,6 +3322,12 @@ export interface components {
             /** Revision */
             revision: string;
         };
+        /** CommentArchiveOut */
+        CommentArchiveOut: {
+            /** Archived To */
+            archived_to: string;
+            comment: components["schemas"]["CommentOut"];
+        };
         /** CommentCreateIn */
         CommentCreateIn: {
             /** Anchor */
@@ -3271,6 +3340,14 @@ export interface components {
             x_pct: number;
             /** Y Pct */
             y_pct: number;
+        };
+        /**
+         * CommentFollowOnIn
+         * @description Optional extra text appended after the generated parent reference.
+         */
+        CommentFollowOnIn: {
+            /** Text */
+            text?: string | null;
         };
         /** CommentListOut */
         CommentListOut: {
@@ -7851,6 +7928,72 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_comment_api_v1_feedback_comments__comment_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentArchiveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    follow_on_comment_api_v1_feedback_comments__comment_id__follow_on_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CommentFollowOnIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
