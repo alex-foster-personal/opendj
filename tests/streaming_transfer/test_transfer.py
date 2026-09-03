@@ -12,6 +12,7 @@ validation, duration checks, and reporting consume them here without API mocks.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -101,6 +102,24 @@ SOUNDCLOUD_LIVE_PREVIEW = {
         }
     ]
 }
+
+
+def test_deterministic_match_cannot_skip_duration_gate() -> None:
+    source_capture = parse_playlist_payload(SPOTIFY_CAPTURE)
+    source = replace(source_capture, tracks=(source_capture.tracks[0],))
+    target = replace(
+        parse_tracks_payload(SOUNDCLOUD_STUDIO_WITH_ISRC)[0], duration_ms=899_999
+    )
+    plan = plan_transfer(
+        source, target_service="soundcloud", candidates={source.tracks[0].spotify_uri: (target,)},
+        confidence_threshold=0.70, duration_tolerance_ms=2_000,
+    )
+    record = resolve_transfer(plan, decisions=()).unmatched[0]
+    assert plan.deterministic_matches == ()
+    assert record.match_pass == "deterministic"
+    assert record.reason == "duration_mismatch"
+    assert record.duration_delta_ms == 699_959
+    assert record.duration_within_tolerance is False
 
 
 @pytest.mark.requirement("META-05")

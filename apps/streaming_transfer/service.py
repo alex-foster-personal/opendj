@@ -119,6 +119,7 @@ class TransferPlan:
     confidence_threshold: float
     duration_tolerance_ms: int
     deterministic_matches: tuple[TransferRecord, ...]
+    deterministic_unmatched: tuple[TransferRecord, ...]
     escalations: tuple[Escalation, ...]
     ungradable: tuple[TransferRecord, ...]
 
@@ -216,6 +217,7 @@ def plan_transfer(
         )
 
     deterministic: list[TransferRecord] = []
+    deterministic_unmatched: list[TransferRecord] = []
     escalations: list[Escalation] = []
     ungradable: list[TransferRecord] = []
     for track in source.tracks:
@@ -237,20 +239,24 @@ def plan_transfer(
             key=lambda row: (-row[0], row[2].urn),
         )[0]
         if confidence >= confidence_threshold:
-            deterministic.append(
-                TransferRecord(
-                    source=track,
-                    target=best,
-                    status="matched",
-                    confidence=confidence,
-                    match_pass="deterministic",
-                    signals=signals,
-                    duration_tolerance_ms=duration_tolerance_ms,
-                    evidence_urls=(best.permalink_url,),
-                    web_search_batch_id=None,
-                    web_search_requests=None,
-                )
+            record = TransferRecord(
+                source=track,
+                target=best,
+                status="matched",
+                confidence=confidence,
+                match_pass="deterministic",
+                signals=signals,
+                duration_tolerance_ms=duration_tolerance_ms,
+                evidence_urls=(best.permalink_url,),
+                web_search_batch_id=None,
+                web_search_requests=None,
             )
+            if record.duration_within_tolerance is True:
+                deterministic.append(record)
+            elif record.duration_within_tolerance is False:
+                deterministic_unmatched.append(
+                    replace(record, status="unmatched", reason="duration_mismatch")
+                )
         elif confidence < confidence_threshold:
             escalations.append(
                 Escalation(
@@ -268,6 +274,7 @@ def plan_transfer(
         confidence_threshold=confidence_threshold,
         duration_tolerance_ms=duration_tolerance_ms,
         deterministic_matches=tuple(deterministic),
+        deterministic_unmatched=tuple(deterministic_unmatched),
         escalations=tuple(escalations),
         ungradable=tuple(ungradable),
     )
@@ -289,62 +296,40 @@ def resolve_transfer(
         raise TransferContractError("LLM decision ids do not exactly match the escalation batch")
 
     matched = list(plan.deterministic_matches)
-    unmatched: list[TransferRecord] = []
+    unmatched = list(plan.deterministic_unmatched)
     for escalation in plan.escalations:
         decision = by_source[escalation.source_uri]
         targets = {candidate.urn: candidate for candidate in escalation.candidates}
         selected = targets.get(decision.target_id) if decision.target_id else None
         if decision.target_id is not None and selected is None:
             raise TransferContractError(f"LLM selected an unoffered target: {decision.target_id!r}")
-        duration_delta_ms = (
-            abs(escalation.source.duration_ms - selected.duration_ms) if selected else None
+        duration_mismatch = selected is not None and (
+            abs(escalation.source.duration_ms - selected.duration_ms)
+            > plan.duration_tolerance_ms
         )
-        duration_within_tolerance = (
-            duration_delta_ms <= plan.duration_tolerance_ms
-            if duration_delta_ms is not None
-            else None
+        accepted = selected is not None and not duration_mismatch and (
+            decision.confidence >= plan.confidence_threshold
         )
-        accepted = (
-            selected is not None
-            and duration_within_tolerance is True
-            and decision.confidence >= plan.confidence_threshold
+        reason = None if accepted else "llm_rejected_or_below_threshold"
+        if duration_mismatch:
+            reason = "duration_mismatch"
+        record = TransferRecord(
+            source=escalation.source,
+            target=selected,
+            status="matched" if accepted else "unmatched",
+            confidence=decision.confidence,
+            match_pass="llm_web_search",
+            signals=escalation.deterministic_signals,
+            duration_tolerance_ms=plan.duration_tolerance_ms,
+            evidence_urls=decision.evidence_urls,
+            web_search_batch_id=decision.web_search_batch_id,
+            web_search_requests=decision.web_search_requests,
+            reason=reason,
         )
         if accepted:
-            assert selected is not None
-            matched.append(
-                TransferRecord(
-                    source=escalation.source,
-                    target=selected,
-                    status="matched",
-                    confidence=decision.confidence,
-                    match_pass="llm_web_search",
-                    signals=escalation.deterministic_signals,
-                    duration_tolerance_ms=plan.duration_tolerance_ms,
-                    evidence_urls=decision.evidence_urls,
-                    web_search_batch_id=decision.web_search_batch_id,
-                    web_search_requests=decision.web_search_requests,
-                )
-            )
+            matched.append(record)
         elif not accepted:
-            unmatched.append(
-                TransferRecord(
-                    source=escalation.source,
-                    target=selected,
-                    status="unmatched",
-                    confidence=decision.confidence,
-                    match_pass="llm_web_search",
-                    signals=escalation.deterministic_signals,
-                    duration_tolerance_ms=plan.duration_tolerance_ms,
-                    evidence_urls=decision.evidence_urls,
-                    web_search_batch_id=decision.web_search_batch_id,
-                    web_search_requests=decision.web_search_requests,
-                    reason=(
-                        "duration_mismatch"
-                        if duration_within_tolerance is False
-                        else "llm_rejected_or_below_threshold"
-                    ),
-                )
-            )
+            unmatched.append(record)
     return TransferReport(
         source_service=plan.source_service,
         target_service=plan.target_service,
