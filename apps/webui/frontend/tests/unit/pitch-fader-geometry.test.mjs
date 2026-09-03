@@ -227,7 +227,7 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 	);
 
 	it('renders exactly ten segments split into six green, two yellow, and two red', () => {
-		const segments = meter.match(/^\s*'(green|yellow|red)', 'gm') ?? [];
+		const segments = meter.match(/^\s*'(green|yellow|red)'/gm) ?? [];
 		assert.equal(segments.length, 10);
 		assert.equal(segments.filter((segment) => segment.includes('green')).length, 6);
 		assert.equal(segments.filter((segment) => segment.includes('yellow')).length, 2);
