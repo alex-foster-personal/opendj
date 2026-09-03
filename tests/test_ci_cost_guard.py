@@ -1,6 +1,8 @@
+import json
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.ci_cost_guard import infer_standard_sku, price_jobs, render_markdown
@@ -145,6 +147,52 @@ def _ceiling_usd(doc: dict) -> float:
     return sum(_job_ceiling_usd(i, j) for i, j in (doc.get("jobs") or {}).items())
 
 
+#: The runner-switch expression `runs-on` carries since CI moved to self-hosted
+#: runners: `${{ fromJSON(vars.CI_RUNS_ON_X || '"ubuntu-latest"') }}`. Only this
+#: exact shape is read; see `_runner_labels`.
+_RUNNER_SWITCH = re.compile(
+    r"\$\{\{\s*fromJSON\(\s*vars\.[A-Z0-9_]+\s*\|\|\s*'(?P<fallback>.+?)'\s*\)\s*\}\}"
+)
+
+
+def _runner_labels(job_id: str, runs_on: object) -> list[str]:
+    """The labels to price `runs-on` at, resolving the runner-switch expression.
+
+    `runs-on` stopped being a literal label when runner selection became a repo
+    variable, so the same workflow file bills at two different rates depending
+    on a value that is not in the repository. The ceiling has to be the WORST
+    case the switch can select, and the only candidate this file can read is
+    the literal fallback baked into the `||`.
+
+    That is also the expensive one, which is why resolving to it is safe rather
+    than convenient: `infer_standard_sku` prices self-hosted at $0, so pricing
+    the hosted fallback leaves every ceiling exactly where it stood before the
+    switch existed and cannot drop a workflow off the watch list. A variable
+    pointing at some OTHER hosted SKU is priced at RUN time by `price_jobs`,
+    which reads the labels the API reports and never sees this expression.
+
+    Fail-closed on anything else, for the same reason `_event_set` refuses a
+    clause it cannot read: an expression resolved by guesswork could name a
+    cheap runner for an expensive job and the missing alert would look green.
+    """
+    labels = [runs_on] if isinstance(runs_on, str) else list(runs_on or [])
+    if not any("${{" in label for label in labels):
+        return labels
+    assert len(labels) == 1, (
+        f"{job_id} mixes an expression with literal labels ({labels}), so which "
+        "runner it selects cannot be read here"
+    )
+    match = _RUNNER_SWITCH.fullmatch(labels[0].strip())
+    assert match, (
+        f"{job_id} runs on the expression {labels[0]!r}, which this test cannot "
+        "price. Only the `fromJSON(vars.X || '<json>')` runner switch is "
+        "understood; widen this deliberately rather than letting an unreadable "
+        "expression be priced by guesswork."
+    )
+    fallback = json.loads(match.group("fallback"))
+    return [fallback] if isinstance(fallback, str) else list(fallback)
+
+
 def _job_ceiling_usd(job_id: str, job: dict) -> float:
     """One job's worst-case cost, priced through the guard's own SKU table."""
     assert "strategy" not in job, (
@@ -156,8 +204,7 @@ def _job_ceiling_usd(job_id: str, job: dict) -> float:
         f"{job_id} has no explicit timeout-minutes, so its ceiling is "
         "GitHub's 360-minute default and this arithmetic is meaningless"
     )
-    runs_on = job.get("runs-on")
-    labels = [runs_on] if isinstance(runs_on, str) else list(runs_on or [])
+    labels = _runner_labels(job_id, job.get("runs-on"))
     sku = infer_standard_sku(labels)
     assert sku is not None, f"{job_id} runs on {labels}, which has no known rate"
     # One billed minute MORE than the timeout, because that is what production
@@ -169,6 +216,49 @@ def _job_ceiling_usd(job_id: str, job: dict) -> float:
     # unable to trip and dropped from the watch list. Codex found this on #713:
     # Windows Parity priced at exactly $0.30 against a `> $0.30` alert.
     return (timeout + 1) * sku.rate_usd_per_minute
+
+
+def test_a_runner_switch_is_priced_at_the_hosted_fallback_it_can_select() -> None:
+    """The ceiling has to survive the variable being unset, which is hosted.
+
+    Self-hosted is $0 in the SKU table, so resolving the switch the other way
+    would silently zero every Linux ceiling on disk and drop workflows off the
+    watch list without a single assertion going red - the exact fail-open this
+    module exists to prevent.
+    """
+    switch = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+
+    assert _runner_labels("test", switch) == ["ubuntu-latest"]
+    assert infer_standard_sku(_runner_labels("test", switch)).rate_usd_per_minute > 0
+
+
+def test_a_runner_switch_falling_back_to_a_label_list_keeps_every_label() -> None:
+    """The fallback is JSON, and GitHub accepts a list there as well as a string."""
+    switch = "${{ fromJSON(vars.CI_RUNS_ON_E2E || '[\"macos-latest\",\"large\"]') }}"
+
+    assert _runner_labels("gate", switch) == ["macos-latest", "large"]
+
+
+def test_a_runs_on_expression_this_test_cannot_read_is_refused_not_guessed() -> None:
+    """Fail-closed, like `_event_set`: an unpriced runner must redden, not vanish.
+
+    A `runs-on` resolved by guesswork could name self-hosted ($0) for a job
+    that really runs on macOS, and the workflow would leave the watch list with
+    every assertion still green.
+    """
+    for unreadable in (
+        "${{ vars.CI_RUNS_ON_LINUX }}",
+        "${{ fromJSON(inputs.runner) }}",
+        "${{ fromJSON(vars.CI_RUNS_ON_LINUX) }}",
+    ):
+        with pytest.raises(AssertionError, match="cannot"):
+            _runner_labels("test", unreadable)
+
+
+def test_a_literal_runs_on_is_still_read_exactly_as_written() -> None:
+    """CONTROL: the resolver must not start rewriting runners that need no help."""
+    assert _runner_labels("test", "ubuntu-latest") == ["ubuntu-latest"]
+    assert _runner_labels("test", ["self-hosted", "linux"]) == ["self-hosted", "linux"]
 
 
 def _guard_threshold() -> float:
