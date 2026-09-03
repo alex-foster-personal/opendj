@@ -1261,7 +1261,7 @@
 			<svg
 				class="ap-curve"
 				aria-hidden="true"
-				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.err + colWidths.cloud + colWidths.order}px`}
+				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.funnel + colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
 					<path

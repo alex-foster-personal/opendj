@@ -14,7 +14,7 @@ describe('autoplay-curve', () => {
 		const source = readFileSync(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url), 'utf8');
 		assert.match(source, /onpointerenter=\{\(\) => \(hoveredApId = row.stable_id\)\}/);
 		assert.match(source, /onfocus=\{\(\) => \(hoveredApId = row.stable_id\)\}/);
-		assert.match(source, /--ap-curve-left:\$\{colWidths.err \+ colWidths.cloud \+ colWidths.order\}px/);
+		assert.match(source, /--ap-curve-left:\$\{colWidths.funnel \+ colWidths.err \+ colWidths.cloud \+ colWidths.order\}px/);
 		assert.match(source, /left: var\(--ap-curve-left\)/);
 	});
 	it('assignLanes packs non-overlapping spans into lane 0', () => {
