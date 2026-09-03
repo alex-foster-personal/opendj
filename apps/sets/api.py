@@ -208,6 +208,15 @@ def _session_or_not_found(session_id: str) -> Session:
     return session
 
 
+def _share_visible_session(request: Request, session_id: str) -> Session:
+    """Keep private set metadata invisible to a configured share host."""
+    session = _session_or_not_found(session_id)
+    audience = getattr(request.state, "share_audience", "local")
+    if audience == "share" and session.summary.share_state != "shared_cloud":
+        raise HTTPException(status_code=404, detail="session not found")
+    return session
+
+
 # ---------------------------------------------------------------------------
 # endpoints
 # ---------------------------------------------------------------------------
@@ -309,14 +318,16 @@ async def api_deck_observation_status(request: Request) -> dict[str, Any]:
 
 
 @router.get("")
-async def api_list_sessions() -> JSONResponse:
+async def api_list_sessions(request: Request) -> JSONResponse:
     summaries = list_sessions()
+    if getattr(request.state, "share_audience", "local") == "share":
+        summaries = [summary for summary in summaries if summary.share_state == "shared_cloud"]
     return JSONResponse([summary_to_dict(s) for s in summaries])
 
 
 @router.get("/{session_id}")
-async def api_get_session(session_id: str) -> JSONResponse:
-    session = _session_or_not_found(session_id)
+async def api_get_session(request: Request, session_id: str) -> JSONResponse:
+    session = _share_visible_session(request, session_id)
     payload: dict[str, Any] = {
         "summary": summary_to_dict(session.summary),
         "manifest": session.manifest,
@@ -326,8 +337,8 @@ async def api_get_session(session_id: str) -> JSONResponse:
 
 
 @router.get("/{session_id}/timeline")
-async def api_timeline_stream(session_id: str) -> StreamingResponse:
-    _session_or_not_found(session_id)
+async def api_timeline_stream(request: Request, session_id: str) -> StreamingResponse:
+    _share_visible_session(request, session_id)
 
     session_dir = sets_paths.session_dir(session_id)
     jsonl = session_dir / "timeline.jsonl"
@@ -345,8 +356,8 @@ async def api_timeline_stream(session_id: str) -> StreamingResponse:
 
 
 @router.get("/{session_id}/transitions")
-async def api_transitions(session_id: str) -> JSONResponse:
-    _session_or_not_found(session_id)
+async def api_transitions(request: Request, session_id: str) -> JSONResponse:
+    _share_visible_session(request, session_id)
     rows = read_transitions(session_id)
     return JSONResponse(rows)
 
@@ -370,9 +381,11 @@ def _metadata_share_response(session: Session) -> MetadataShareResponse:
 
 
 @router.get("/{session_id}/share", response_model=MetadataShareResponse)
-async def api_get_metadata_share(session_id: str) -> MetadataShareResponse:
+async def api_get_metadata_share(
+    request: Request, session_id: str
+) -> MetadataShareResponse:
     """Get an existing metadata-only share link for a finalized published set."""
-    return _metadata_share_response(_session_or_not_found(session_id))
+    return _metadata_share_response(_share_visible_session(request, session_id))
 
 
 @router.post("/{session_id}/share", response_model=MetadataShareResponse)
@@ -416,7 +429,7 @@ async def api_audio(
     session_id: str,
     segment: str = FPath(..., description="audio_<iso>.mp3"),
 ) -> FileResponse:
-    _session_or_not_found(session_id)
+    _share_visible_session(request, session_id)
     if not _is_localhost(request):
         raise HTTPException(
             status_code=403,

@@ -302,6 +302,35 @@ def test_api_metadata_share_publishes_real_set_without_audio(
     assert audio.status_code == 403
 
 
+@pytest.mark.requirement("SET-08")
+def test_api_share_audience_can_only_read_published_metadata(
+    api_test_client, monkeypatch
+) -> None:
+    """A share host cannot enumerate or fetch a private set by guessing its ID."""
+    client, sets_root = api_test_client
+    _seed_api_session(sets_root)
+    monkeypatch.setenv("MUSIC_DJ_SET_SHARE_BASE_URL", "https://sets.example.test")
+
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def share_audience(request, call_next):
+        request.state.share_audience = "share"
+        return await call_next(request)
+
+    app.include_router(api_mod.router)
+    with TestClient(app) as shared_client:
+        assert shared_client.get("/api/sets").json() == []
+        assert shared_client.get("/api/sets/s1").status_code == 404
+        assert shared_client.get("/api/sets/s1/timeline").status_code == 404
+        assert shared_client.get("/api/sets/s1/transitions").status_code == 404
+
+        published = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
+        assert published.status_code == 200
+        assert shared_client.get("/api/sets").json()[0]["session_id"] == "s1"
+        assert shared_client.get("/api/sets/s1").status_code == 200
+
+
 @pytest.mark.requirement("SET-03")
 def test_api_audio_rejects_non_audio_name(api_test_client):
     """Any segment that doesn't match ``audio_*.mp3`` is 400'd by the helper."""

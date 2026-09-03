@@ -59,6 +59,8 @@ export interface SessionDetail {
 	segments: AudioSegment[];
 }
 
+export type MetadataShare = components['schemas']['MetadataShareResponse'];
+
 export interface TimelineEvent {
 	session_id: string;
 	timestamp_s: number;
@@ -175,6 +177,31 @@ export async function getTransitions(sessionId: string): Promise<Transition[]> {
 				params: { path: { session_id: sessionId } }
 			})
 		)) as Transition[];
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}
+
+export async function getMetadataShare(sessionId: string): Promise<MetadataShare> {
+	try {
+		return await unwrap(
+			api.GET('/api/sets/{session_id}/share', {
+				params: { path: { session_id: sessionId } }
+			})
+		);
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}
+
+export async function publishMetadataShare(sessionId: string): Promise<MetadataShare> {
+	try {
+		return await unwrap(
+			api.POST('/api/sets/{session_id}/share', {
+				params: { path: { session_id: sessionId } },
+				body: { confirm_metadata_only: true }
+			})
+		);
 	} catch (error) {
 		rethrowSetsError(error);
 	}

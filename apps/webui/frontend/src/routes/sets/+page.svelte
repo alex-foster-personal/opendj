@@ -3,15 +3,18 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import {
 		getRecorderStatus,
+		getMetadataShare,
 		getSession,
 		getTimeline,
 		getTransitions,
 		listSessions,
+		publishMetadataShare,
 		recoverRecorder,
 		sessionAudioUrl,
 		startRecorder,
 		stopRecorder,
 		type RecorderStatus,
+		type MetadataShare,
 		type SessionDetail,
 		type SessionSummary,
 		type TimelineEvent,
@@ -32,6 +35,7 @@
 	let timeline = $state<TimelineEvent[]>([]);
 	let busy = $state(false);
 	let deviceIndex = $state('');
+	let shareLink = $state<string | null>(null);
 	let selectionRequest = 0;
 
 	onMount(loadSurface);
@@ -68,9 +72,42 @@
 			if (requestId === selectionRequest) {
 				selected = { ...nextSession, transitions: nextTransitions };
 				timeline = nextTimeline;
+				shareLink = null;
+				if (nextSession.summary.share_state === 'shared_cloud') {
+					void loadExistingShare(sessionId, requestId);
+				}
 			}
 		} catch (error) {
 			pushToast(`Failed to open session: ${error}`, 'error');
+		}
+	}
+
+	async function loadExistingShare(sessionId: string, requestId: number): Promise<void> {
+		try {
+			const existing = await getMetadataShare(sessionId);
+			if (requestId === selectionRequest) shareLink = existing.share_url;
+		} catch (error) {
+			pushToast(`Failed to load share link: ${error}`, 'error');
+		}
+	}
+
+	async function publishShare(): Promise<void> {
+		if (!selected) return;
+		busy = true;
+		try {
+			const metadataShare: MetadataShare = await publishMetadataShare(
+				selected.summary.session_id
+			);
+			selected = {
+				...selected,
+				summary: { ...selected.summary, share_state: metadataShare.share_state }
+			};
+			shareLink = metadataShare.share_url;
+			pushToast('Metadata-only share link is ready. Recorded audio stays local.');
+		} catch (error) {
+			pushToast(`Failed to create share link: ${error}`, 'error');
+		} finally {
+			busy = false;
 		}
 	}
 
@@ -136,7 +173,13 @@
 
 	function eventTitle(event: TimelineEvent): string {
 		const title = event.value.title;
-		return typeof title === 'string' ? title : event.action.replaceAll('_', ' ');
+		if (typeof title === 'string' && title.trim() !== '') return title;
+		if (event.track_stable_id) return event.track_stable_id;
+		return event.action.replaceAll('_', ' ');
+	}
+
+	function trackEvents(): TimelineEvent[] {
+		return timeline.filter((event) => event.action === 'track_loaded');
 	}
 </script>
 
@@ -206,6 +249,30 @@
 				<span class="privacy">{selected.summary.share_state}</span>
 			</div>
 
+			<section class="set-summary" aria-label="Set summary">
+				<div><strong>{trackEvents().length}</strong><span>tracks played</span></div>
+				<div><strong>{selected.transitions.length}</strong><span>transitions detected</span></div>
+				<div><strong>{formatDuration(selected.summary.duration_s)}</strong><span>on the floor</span></div>
+			</section>
+
+			<section class="share-panel" aria-label="Metadata-only sharing">
+				<div>
+					<h4>Share this set</h4>
+					<p>Publish the real track order, timings, and transitions. Recorded audio never leaves this machine.</p>
+				</div>
+				{#if shareLink}
+					<label class="share-url">
+						<span>Share link</span>
+						<input aria-label="Share link" readonly value={shareLink} onclick={(event) => event.currentTarget.select()} />
+					</label>
+					<a class="share-open" href={shareLink} target="_blank" rel="noreferrer">Open shared view</a>
+				{:else}
+					<button class="share-create" onclick={publishShare} disabled={busy}>
+						Create metadata-only share link
+					</button>
+				{/if}
+			</section>
+
 			<section class="replay" aria-label="Session replay">
 				<h4>Replay</h4>
 				{#if selected.segments.length === 0}
@@ -234,6 +301,25 @@
 						<div>
 							<strong>{eventTitle(event)}</strong>
 							<small>{event.deck ? `Deck ${event.deck} · ` : ''}{event.source}</small>
+						</div>
+					</div>
+				{/each}
+			</section>
+
+			<section class="transitions" aria-label="Detected transitions">
+				<div class="section-title">
+					<h4>Detected transitions</h4>
+					<span>{selected.transitions.length}</span>
+				</div>
+				{#if selected.transitions.length === 0}
+					<p class="empty">No transitions were recorded for this set.</p>
+				{/if}
+				{#each selected.transitions as transition (transition.idx)}
+					<div class="transition-row">
+						<time>{transition.t_change_s.toFixed(1)}s</time>
+						<div>
+							<strong>{transition.from_track ?? transition.from_deck ?? 'Unknown'} → {transition.to_track ?? transition.to_deck ?? 'Unknown'}</strong>
+							<small>{transition.predicted_class} · {Math.round(transition.confidence * 100)}% confidence</small>
 						</div>
 					</div>
 				{/each}
@@ -274,7 +360,19 @@
 	.session-card.selected { background: #202731; border-color: var(--accent-dim); box-shadow: inset 3px 0 var(--accent); }
 	.session-detail { padding: 1.2rem 1.35rem; }
 	.detail-heading { border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
-	.replay, .timeline { margin-top: 1.25rem; }
+	.set-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.65rem; margin-top: 1.25rem; }
+	.set-summary div { background: #171d26; border: 1px solid #29313c; border-radius: 9px; padding: 0.75rem; }
+	.set-summary strong, .set-summary span { display: block; }
+	.set-summary strong { font-size: 1.15rem; color: #edf3ff; }
+	.set-summary span { color: var(--muted); font-size: 0.74rem; margin-top: 0.2rem; }
+	.share-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.8rem 1rem; background: linear-gradient(110deg, #152a32, #111a24); border: 1px solid #31505c; border-radius: 10px; padding: 0.9rem 1rem; margin-top: 1.25rem; }
+	.share-panel h4, .share-panel p { margin: 0; }
+	.share-panel p { color: #b7c8d2; font-size: 0.8rem; margin-top: 0.3rem; }
+	.share-create, .share-open { background: #276e86; border-color: #5aaeca; color: white; font-weight: 700; text-decoration: none; white-space: nowrap; }
+	.share-url { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.6rem; }
+	.share-url span { color: var(--muted); font-size: 0.75rem; }
+	.share-url input { min-width: 0; width: 100%; color: #cce9f4; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+	.replay, .timeline, .transitions { margin-top: 1.25rem; }
 	.replay h4 { margin-bottom: 0.65rem; }
 	.segment { border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.8rem; margin-top: 0.5rem; }
 	.segment audio { height: 34px; max-width: 55%; }
@@ -283,11 +381,17 @@
 	.event-marker { position: relative; width: 8px; height: 8px; margin-top: 0.28rem; border-radius: 50%; background: var(--accent); }
 	.event-marker::after { content: ''; position: absolute; top: 10px; bottom: -38px; left: 3px; width: 1px; background: #303744; }
 	.event-row:last-child .event-marker::after { display: none; }
+	.transition-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 0.65rem; padding: 0.55rem 0; border-top: 1px solid #28303a; }
+	.transition-row time { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.75rem; text-align: right; }
+	.transition-row small { margin-top: 0.25rem; }
 	.detail-empty { display: grid; place-items: center; min-height: 420px; }
 	@media (max-width: 850px) {
 		.session-layout { grid-template-columns: 1fr; }
 		.rec-panel { align-items: flex-end; flex-wrap: wrap; }
 		.segment { align-items: flex-start; flex-direction: column; }
 		.segment audio { max-width: 100%; width: 100%; }
+		.set-summary { grid-template-columns: 1fr; }
+		.share-panel { grid-template-columns: 1fr; }
+		.share-create, .share-open { justify-self: start; }
 	}
 </style>

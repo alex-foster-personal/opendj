@@ -16,5 +16,7 @@ def test_create_app_registers_session_rec_http_contract() -> None:
     assert "/api/sets/recorder/{session_id}/recover" in schema["paths"]
     assert "/api/sets/{session_id}/timeline" in schema["paths"]
     assert "/api/sets/{session_id}/audio/{segment}" in schema["paths"]
+    assert "/api/sets/{session_id}/share" in schema["paths"]
+
 
 pytestmark = pytest.mark.rb_parity

@@ -4402,6 +4402,52 @@
         "title": "MembershipReplaceIn",
         "type": "object"
       },
+      "MetadataShareRequest": {
+        "description": "Explicit acknowledgement that the resulting web view excludes audio.",
+        "properties": {
+          "confirm_metadata_only": {
+            "const": true,
+            "title": "Confirm Metadata Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_metadata_only"
+        ],
+        "title": "MetadataShareRequest",
+        "type": "object"
+      },
+      "MetadataShareResponse": {
+        "description": "A browser URL for the non-audio set history presentation.",
+        "properties": {
+          "content": {
+            "const": "metadata_only",
+            "title": "Content",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "share_state": {
+            "const": "shared_cloud",
+            "title": "Share State",
+            "type": "string"
+          },
+          "share_url": {
+            "title": "Share Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "share_state",
+          "share_url",
+          "content"
+        ],
+        "title": "MetadataShareResponse",
+        "type": "object"
+      },
       "MyTagAssignIn": {
         "properties": {
           "add": {
@@ -10991,6 +11037,100 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/share": {
+      "get": {
+        "description": "Get an existing metadata-only share link for a finalized published set.",
+        "operationId": "api_get_metadata_share_api_sets__session_id__share_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Publish timeline metadata after explicit acknowledgement, never MP3 audio.",
+        "operationId": "api_publish_metadata_share_api_sets__session_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Publish Metadata Share",
         "tags": [
           "sets"
         ]
