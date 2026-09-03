@@ -50,9 +50,22 @@ SAMPLES_PER_PHASE = 7
 #: busy: a run on an idle Mac needs far fewer, but the machine this defect
 #: actually bites on carries a load average in the 40s to 60s, and 2x the core
 #: count barely moves wall time there (measured 1.33x, which tripped the UNKNOWN
-#: skip below rather than testing anything). Capped so a 4-vCPU CI runner is
-#: saturated rather than buried: 4x already moved its wall time 9.71x.
-HOG_COUNT = min(4 * (os.cpu_count() or 4), 32)
+#: skip below rather than testing anything). 4x is what a 4-vCPU CI runner
+#: needed to move its wall time 9.71x.
+#:
+#: The MULTIPLE is the experimental condition, so a cap that cuts into it does
+#: not merely spawn fewer hogs, it changes what is being measured. The old cap
+#: of 32 did that on anything above 8 cores, and CI's move to a 16-core
+#: self-hosted runner made it bite: 32 hogs there is 2x, not 4x, and the verdict
+#: became a coin flip on an IDLE box (3/5 pass, median 3.4x against the 3.0x
+#: claimed below). Restoring 4x on that same box: 5/5 pass, median 7.4x. CPU
+#: swing measured 2.46-2.52x in BOTH conditions, so the cap never moved the
+#: quantity under test - it starved the wall-side contrast the claim is measured
+#: AGAINST, and the UNKNOWN control below does not catch that because wall still
+#: swung 5x, far above its floor. The cap that remains is a resource guard for a
+#: machine much larger than any in this fleet, placed where it cannot silently
+#: eat the multiple again at the sizes actually in use.
+HOG_COUNT = min(4 * (os.cpu_count() or 4), 256)
 
 #: The hog itself. A shell spin loop, split out so a test can spawn the same real
 #: loop under a unique marker and count it with pgrep.
@@ -295,6 +308,7 @@ def test_cpu_time_holds_while_wall_time_swings_with_the_machine() -> None:
     [
         # Real measurements, so this table is evidence rather than illustration.
         ("4-vCPU ubuntu runner, 4x oversubscribed", 1.87, 9.71, True),
+        ("16-core self-hosted runner, 4x oversubscribed", 2.50, 12.08, True),
         ("10-core Mac under fleet load", 1.04, 1.86, True),
         # A wall-clock instrument reads one number and reports it on both sides.
         ("pre-fix instrument, busy CI", 9.71, 9.71, False),

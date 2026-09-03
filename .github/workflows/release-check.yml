@@ -12,6 +12,9 @@ on:
     tags: ["v*"]
   pull_request:
     branches: ["release/*"]
+  # Lets the macos-native-companion job below be run by hand while
+  # vars.CI_HOSTED_OS_JOBS is unset; see that job's comment.
+  workflow_dispatch:
 
 concurrency:
   group: release-check-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
@@ -31,12 +34,16 @@ concurrency:
 jobs:
   release-check:
     name: make release-check
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 30
 
     steps:
       # SHA-pinned to the v4 tag commit (matches ci.yml).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          clean: true
 
       - name: Setup Python
         # SHA-pinned to the v5 tag commit (matches ci.yml).
@@ -51,8 +58,7 @@ jobs:
 
       - name: System deps for pyrekordbox (SQLCipher)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
 
       - name: Create project venv
         # The Makefile expects VENV=.venv with python and pytest inside it.
@@ -94,9 +100,19 @@ jobs:
     name: macOS native companion wheel
     runs-on: macos-14
     timeout-minutes: 20
+    # Hosted spend is the maintainer-gated since Thu 3 Sep 2026: GitHub-hosted billing
+    # is blocked, and there is no self-hosted macOS runner to fall back to,
+    # so this job is skipped rather than moved. It still runs on a real
+    # release cut (v* tag) or a manual dispatch; vars.CI_HOSTED_OS_JOBS
+    # flips it back on for every push/PR once that spend is unblocked. See
+    # "Switching CI between self-hosted and GitHub-hosted" in
+    # docs/ci-actions-cost-review-2026-08-16.md.
+    if: vars.CI_HOSTED_OS_JOBS == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          clean: true
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5

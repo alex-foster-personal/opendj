@@ -24,6 +24,7 @@ Acceptance criteria, one assertion block each:
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -189,6 +190,53 @@ def test_a_rewritten_machine_id_file_is_not_served_stale(tmp_path: Path) -> None
 
         assert sync_stamp.local_machine_id(conn) == rewritten, (
             "the cache kept serving the id read on the FIRST call"
+        )
+    finally:
+        conn.close()
+        sync_stamp.reset_machine_id_cache()
+
+
+def test_a_rewrite_that_lands_on_the_SAME_mtime_is_still_not_served_stale(
+    tmp_path: Path,
+) -> None:
+    """The sibling above, with the clock's help taken away.
+
+    That test only discriminates while the rewrite happens to land on a
+    different mtime, and inode timestamps come from the kernel's COARSE clock,
+    which advances once per timer tick. On fast hardware the read and the
+    rewrite fall inside one tick, the mtime comes back IDENTICAL, and an
+    mtime-keyed cache serves the first id exactly as the bare
+    ``functools.cache`` did before finding N8c was ever fixed. That is how the
+    sibling failed the first time this suite ran on self-hosted CI
+    (Thu 3 Sep 2026), and nothing in the suite could tell that apart from the
+    machine being quick.
+
+    So the identical mtime is arranged here rather than waited for: with the
+    field the old key read held still, only a key that reads the BYTES can
+    pass. Mutate ``_CachedId`` back to ``mtime_ns`` and this goes red on every
+    machine, fast or slow.
+    """
+    conn = state_db.open_rw(tmp_path / "state" / "state.db")
+    try:
+        sync_stamp.reset_machine_id_cache()
+        first = sync_stamp.local_machine_id(conn)
+
+        rewritten = "5" * 32
+        assert rewritten != first
+        id_path = mid.machine_id_path(tmp_path)
+        before = id_path.stat()
+        id_path.unlink()
+        id_path.write_text(rewritten, encoding="utf-8")
+        id_path.chmod(mid.MACHINE_ID_MODE)
+        os.utime(id_path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert id_path.stat().st_mtime_ns == before.st_mtime_ns, (
+            "fixture precondition: the mtime must be identical, or this is "
+            "just the sibling test again and proves nothing extra"
+        )
+
+        assert sync_stamp.local_machine_id(conn) == rewritten, (
+            "the cache read a clock instead of the file, so a rewrite inside "
+            "one timer tick is invisible to it"
         )
     finally:
         conn.close()

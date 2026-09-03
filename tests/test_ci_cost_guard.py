@@ -1,6 +1,8 @@
+import json
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.ci_cost_guard import infer_standard_sku, price_jobs, render_markdown
@@ -145,6 +147,62 @@ def _ceiling_usd(doc: dict) -> float:
     return sum(_job_ceiling_usd(i, j) for i, j in (doc.get("jobs") or {}).items())
 
 
+#: The runner-switch expression `runs-on` carries since CI moved to self-hosted
+#: runners: `${{ fromJSON(vars.CI_RUNS_ON_X || '"ubuntu-latest"') }}`. Only this
+#: exact shape is read; see `_runner_labels`.
+_RUNNER_SWITCH = re.compile(
+    r"\$\{\{\s*fromJSON\(\s*vars\.[A-Z0-9_]+\s*\|\|\s*'(?P<fallback>.+?)'\s*\)\s*\}\}"
+)
+
+
+def _runner_labels(job_id: str, runs_on: object) -> list[str]:
+    """The labels to price `runs-on` at, resolving the runner-switch expression.
+
+    `runs-on` stopped being a literal label when runner selection became a repo
+    variable, so the same workflow file bills at two different rates depending
+    on a value that is not in the repository. The ceiling has to be the WORST
+    case the switch can select, and the only candidate this file can read is
+    the literal fallback baked into the `||`.
+
+    That is also the expensive one, which is why resolving to it is safe rather
+    than convenient: `infer_standard_sku` prices self-hosted at $0, so pricing
+    the hosted fallback leaves every ceiling exactly where it stood before the
+    switch existed and cannot drop a workflow off the watch list. A variable
+    pointing at some OTHER hosted SKU is priced at RUN time by `price_jobs`,
+    which reads the labels the API reports and never sees this expression.
+
+    Fail-closed on anything else, for the same reason `_event_set` refuses a
+    clause it cannot read: an expression resolved by guesswork could name a
+    cheap runner for an expensive job and the missing alert would look green.
+    """
+    if isinstance(runs_on, str):
+        labels = [runs_on]
+    elif isinstance(runs_on, list):
+        labels = [str(label) for label in runs_on]
+    elif runs_on is None:
+        labels = []
+    else:
+        raise AssertionError(
+            f"{job_id} has a runs-on of type {type(runs_on).__name__}, which is "
+            "neither a label, a list of labels nor absent, so it cannot be priced"
+        )
+    if not any("${{" in label for label in labels):
+        return labels
+    assert len(labels) == 1, (
+        f"{job_id} mixes an expression with literal labels ({labels}), so which "
+        "runner it selects cannot be read here"
+    )
+    match = _RUNNER_SWITCH.fullmatch(labels[0].strip())
+    assert match, (
+        f"{job_id} runs on the expression {labels[0]!r}, which this test cannot "
+        "price. Only the `fromJSON(vars.X || '<json>')` runner switch is "
+        "understood; widen this deliberately rather than letting an unreadable "
+        "expression be priced by guesswork."
+    )
+    fallback = json.loads(match.group("fallback"))
+    return [fallback] if isinstance(fallback, str) else list(fallback)
+
+
 def _job_ceiling_usd(job_id: str, job: dict) -> float:
     """One job's worst-case cost, priced through the guard's own SKU table."""
     assert "strategy" not in job, (
@@ -156,8 +214,7 @@ def _job_ceiling_usd(job_id: str, job: dict) -> float:
         f"{job_id} has no explicit timeout-minutes, so its ceiling is "
         "GitHub's 360-minute default and this arithmetic is meaningless"
     )
-    runs_on = job.get("runs-on")
-    labels = [runs_on] if isinstance(runs_on, str) else list(runs_on or [])
+    labels = _runner_labels(job_id, job.get("runs-on"))
     sku = infer_standard_sku(labels)
     assert sku is not None, f"{job_id} runs on {labels}, which has no known rate"
     # One billed minute MORE than the timeout, because that is what production
@@ -169,6 +226,51 @@ def _job_ceiling_usd(job_id: str, job: dict) -> float:
     # unable to trip and dropped from the watch list. Codex found this on #713:
     # Windows Parity priced at exactly $0.30 against a `> $0.30` alert.
     return (timeout + 1) * sku.rate_usd_per_minute
+
+
+def test_a_runner_switch_is_priced_at_the_hosted_fallback_it_can_select() -> None:
+    """The ceiling has to survive the variable being unset, which is hosted.
+
+    Self-hosted is $0 in the SKU table, so resolving the switch the other way
+    would silently zero every Linux ceiling on disk and drop workflows off the
+    watch list without a single assertion going red - the exact fail-open this
+    module exists to prevent.
+    """
+    switch = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+
+    assert _runner_labels("test", switch) == ["ubuntu-latest"]
+    sku = infer_standard_sku(_runner_labels("test", switch))
+    assert sku is not None, "the hosted fallback must price through the SKU table"
+    assert sku.rate_usd_per_minute > 0
+
+
+def test_a_runner_switch_falling_back_to_a_label_list_keeps_every_label() -> None:
+    """The fallback is JSON, and GitHub accepts a list there as well as a string."""
+    switch = "${{ fromJSON(vars.CI_RUNS_ON_E2E || '[\"macos-latest\",\"large\"]') }}"
+
+    assert _runner_labels("gate", switch) == ["macos-latest", "large"]
+
+
+def test_a_runs_on_expression_this_test_cannot_read_is_refused_not_guessed() -> None:
+    """Fail-closed, like `_event_set`: an unpriced runner must redden, not vanish.
+
+    A `runs-on` resolved by guesswork could name self-hosted ($0) for a job
+    that really runs on macOS, and the workflow would leave the watch list with
+    every assertion still green.
+    """
+    for unreadable in (
+        "${{ vars.CI_RUNS_ON_LINUX }}",
+        "${{ fromJSON(inputs.runner) }}",
+        "${{ fromJSON(vars.CI_RUNS_ON_LINUX) }}",
+    ):
+        with pytest.raises(AssertionError, match="cannot"):
+            _runner_labels("test", unreadable)
+
+
+def test_a_literal_runs_on_is_still_read_exactly_as_written() -> None:
+    """CONTROL: the resolver must not start rewriting runners that need no help."""
+    assert _runner_labels("test", "ubuntu-latest") == ["ubuntu-latest"]
+    assert _runner_labels("test", ["self-hosted", "linux"]) == ["self-hosted", "linux"]
 
 
 def _guard_threshold() -> float:
@@ -229,8 +331,21 @@ def _event_set(condition: str, variable: str) -> set[str]:
     every containment, which is the failure it exists to prevent.
     """
     stripped = re.sub(r"\s+", " ", condition).strip()
+
+    # ONE widening, and only one: a leading `!cancelled() &&` around a
+    # parenthesized disjunction is stripped. A status function decides whether
+    # a run happens at all, so it can REMOVE runs and can never add an event -
+    # which is the only property that makes widening a fail-closed parser safe.
+    # e2e.yml's `extended` gained that guard when it was ordered after `gate`
+    # (#1014). Any other unreadable clause still refuses below.
+    guarded = re.fullmatch(r"!cancelled\(\) && \((.+)\)", stripped)
+    if guarded:
+        stripped = guarded.group(1)
+
     events: set[str] = set()
-    for clause in (c.strip() for c in stripped.split("||")):
+    # Depth-aware, so a parenthesized clause is never cut into fragments that
+    # each read as a weaker claim than the clause they came from.
+    for clause in _top_level_disjuncts(stripped):
         match = re.fullmatch(rf"{re.escape(variable)} == \'([A-Za-z_]+)\'", clause)
         assert match, (
             f"cannot compute the event set: clause {clause!r} is not a "
@@ -332,3 +447,115 @@ def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
         f"no priced E2E event can reach ${threshold:.2f} ({reachable}), so this "
         "test cannot tell a correct skip from an arithmetic that never bites"
     )
+
+
+MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
+
+
+def _top_level_disjuncts(condition: str) -> list[str]:
+    """`condition` split on `||` at bracket depth zero.
+
+    A plain `str.split("||")` would cut inside a parenthesized clause and hand
+    back fragments, and a fragment reads as a weaker claim than the clause it
+    came from - the same fail-open shape `_event_set` refuses above.
+    """
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    parts, depth, start = [], 0, 0
+    index = 0
+    while index < len(stripped):
+        char = stripped[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "|" and depth == 0 and stripped[index : index + 2] == "||":
+            parts.append(stripped[start:index].strip())
+            index += 2
+            start = index
+            continue
+        index += 1
+    parts.append(stripped[start:].strip())
+    return [part for part in parts if part]
+
+
+def test_enabling_hosted_os_jobs_cannot_bill_macos_minutes_for_a_branch_creation() -> None:
+    """if the variable arm stands alone then creating any branch bills 16 macOS minutes"""
+    doc = yaml.safe_load(MACOS_PACKAGING.read_text())
+    triggers = doc[True] if True in doc else doc["on"]
+
+    # CONTROL: this test only guards anything because the workflow subscribes to
+    # `create`, which fires on every branch and tag creation and takes no ref
+    # filter. If that trigger goes away the assertions below would pass for a
+    # reason that has nothing to do with the property.
+    assert "create" in triggers, (
+        "macos-packaging.yml no longer triggers on `create`, so a branch "
+        "creation cannot reach this job and this test proves nothing. Re-derive "
+        f"the risk against the triggers it actually declares: {sorted(triggers)}"
+    )
+
+    condition = doc["jobs"]["packaging"]["if"]
+    disjuncts = _top_level_disjuncts(condition)
+
+    # A bare `vars.X == 'true'` disjunct is true for EVERY event the workflow
+    # triggers on, `create` included, so flipping the variable would put a
+    # 16-minute macOS job (0.062 USD/min) on every branch anyone pushes.
+    for clause in disjuncts:
+        if "CI_HOSTED_OS_JOBS" not in clause:
+            continue
+        assert "github.event_name" in clause, (
+            f"disjunct {clause!r} enables the hosted macOS job on the strength "
+            "of the variable alone, so it admits `create` too and every branch "
+            "creation would bill 16 macOS minutes. Conjoin it with the events "
+            "it is meant for."
+        )
+        assert "'create'" not in clause, (
+            f"disjunct {clause!r} names `create` explicitly, which is the event "
+            "this test exists to keep off a paid runner"
+        )
+
+    # PRESENCE, not just absence: the two paths that must keep working. Without
+    # these, deleting the variable arm outright would satisfy everything above
+    # and silently take release cuts and manual runs down with it.
+    assert any("refs/tags/v" in clause for clause in disjuncts), (
+        f"a v* release cut can no longer reach the packaging gates: {condition}"
+    )
+    assert any("workflow_dispatch" in clause for clause in disjuncts), (
+        f"the manual escape hatch is gone: {condition}"
+    )
+
+    # And the switch must still BE a switch. Deleting the variable arm outright
+    # satisfies every assertion above - the loop iterates nothing - and would
+    # leave a documented repo variable that turns nothing on. That overshoot is
+    # the plausible over-correction to the finding this test came from, so it
+    # gets its own assertion rather than being left to review.
+    enabling = [clause for clause in disjuncts if "CI_HOSTED_OS_JOBS" in clause]
+    assert len(enabling) == 1, (
+        f"expected exactly one disjunct to read CI_HOSTED_OS_JOBS, found "
+        f"{len(enabling)}; the switch documented in "
+        f"docs/ci-actions-cost-review-2026-08-16.md must still enable this job: "
+        f"{condition}"
+    )
+    assert "'push'" in enabling[0] and "'pull_request'" in enabling[0], (
+        f"the variable no longer re-enables the job for push and pull_request, "
+        f"which is the whole point of the switch: {enabling[0]}"
+    )
+
+
+def test_a_status_guarded_event_gate_is_read_and_any_other_shape_still_refuses() -> None:
+    """if the widening leaks then an unreadable clause prices as a small event set"""
+    guarded = (
+        "!cancelled() && (github.event_name == 'schedule' "
+        "|| github.event_name == 'workflow_dispatch')"
+    )
+    assert _event_set(guarded, "github.event_name") == {"schedule", "workflow_dispatch"}
+
+    # The widening must not have become "skip whatever you cannot read". A ref
+    # comparison admits every event the workflow triggers on, and returning a
+    # small set for it is the exact fail-open this parser exists to prevent.
+    with pytest.raises(AssertionError, match="cannot compute the event set"):
+        _event_set("github.ref == 'refs/heads/main'", "github.event_name")
+
+    # And a status guard around something unreadable is still unreadable.
+    with pytest.raises(AssertionError, match="cannot compute the event set"):
+        _event_set("!cancelled() && (github.ref == 'refs/heads/main')", "github.event_name")
+

@@ -72,11 +72,15 @@ jobs:
       github.event.workflow_run.name != 'E2E'
       || github.event.workflow_run.event == 'schedule'
       || github.event.workflow_run.event == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
 
       - name: Calculate gross runner cost
         id: guard

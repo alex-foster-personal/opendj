@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 
 from apps.analysis import backlog as backlog_mod
+from tests import fs_clock
 
 
 def _audio(tmp_path: Path, name: str) -> Path:
@@ -51,7 +52,19 @@ def test_the_token_digests_the_bytes_where_ctime_cannot_see_a_repair(tmp_path):
     repaired.write_bytes(b"\x03" * before_stat.st_size)   # same length, new bytes
     os.utime(repaired, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
 
-    after_stat = repaired.stat()
+    # The last assertion reads "the token does not carry st_ctime_ns", which
+    # only discriminates while ctime and the restored mtime are different
+    # numbers. Inode times come from the kernel's coarse clock, so on a fast
+    # machine the whole write-and-restore cycle lands inside one tick, ctime
+    # comes back EQUAL to the restored mtime the token legitimately carries,
+    # and the test reddens over a coincidence. Re-asserting the same restored
+    # mtime separates them without touching what is being asserted.
+    after_stat = fs_clock.stamp_until(
+        repaired,
+        lambda stat: stat.st_ctime_ns != stat.st_mtime_ns,
+        "ctime distinguishable from the restored mtime",
+        times_ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns),
+    )
     assert after_stat.st_size == before_stat.st_size
     assert after_stat.st_mtime_ns == before_stat.st_mtime_ns, (
         "fixture precondition: the mtime must be restored exactly, or the "

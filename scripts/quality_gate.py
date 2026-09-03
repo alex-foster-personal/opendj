@@ -690,15 +690,28 @@ print(json.dumps(cycles))
 def _eval_deps() -> list[Metric]:
     # deptry writes its human report to stdout and structured findings to the
     # --json-output path, so read the file rather than parsing the console.
-    out_path = Path("/tmp/quality-gate-deptry.json")
-    out_path.unlink(missing_ok=True)
-    # ROOT must be "." not "apps": given "apps" deptry treats the package's own
-    # modules as third party and reports 400+ phantom DEP001s for `import apps.x`.
-    # Scope and name mapping live in [tool.deptry] in pyproject.toml.
-    _uv("deptry", ".", "--json-output", str(out_path), allow_fail=True)
-    if not out_path.exists():
-        raise RuntimeError("deptry produced no JSON output; the invocation is wrong")
-    issues = json.loads(out_path.read_text())
+    #
+    # Fresh mkdtemp per call, for the reason spelled out on `_eval_types`, plus
+    # one a hosted runner never showed: /tmp survives the job on a self-hosted
+    # runner and is sticky, so a file left at a fixed path by a DIFFERENT user
+    # cannot be rewritten or even unlinked, and the gate dies on the leftover.
+    #
+    # Removed in a `finally`, like `_eval_mypy`'s, and for the other half of the
+    # same fact: a persistent runner does not tidy /tmp when the job ends, so a
+    # per-run directory that is never removed trades one leftover for unbounded
+    # many. Codex caught this on PR #1014 (P2, discussion_r3923714170).
+    report_dir = Path(tempfile.mkdtemp(prefix="quality-gate-deptry-"))
+    out_path = report_dir / "deptry.json"
+    try:
+        # ROOT must be "." not "apps": given "apps" deptry treats the package's own
+        # modules as third party and reports 400+ phantom DEP001s for `import apps.x`.
+        # Scope and name mapping live in [tool.deptry] in pyproject.toml.
+        _uv("deptry", ".", "--json-output", str(out_path), allow_fail=True)
+        if not out_path.exists():
+            raise RuntimeError("deptry produced no JSON output; the invocation is wrong")
+        issues = json.loads(out_path.read_text())
+    finally:
+        shutil.rmtree(report_dir, ignore_errors=True)
     by_code: collections.Counter[str] = collections.Counter(i["error"]["code"] for i in issues)
     return [
         Metric(
@@ -976,14 +989,20 @@ def _eval_size() -> list[Metric]:
     py_max, py_worst, py_over = _measure(_python_files(), CFG.PY_FILE_LIMIT)
     fe_max, fe_worst, fe_over = _measure(_frontend_files(), CFG.FE_FILE_LIMIT)
 
-    _pnpm_dlx(
-        CFG.JSCPD,
-        "--reporters", "json", "--output", "/tmp/jscpd-quality-gate", "--silent",
-        "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
-        str(REPO / "apps"),
-        allow_fail=True,
-    )
-    report = json.loads((Path("/tmp/jscpd-quality-gate") / "jscpd-report.json").read_text())
+    # Fresh per call AND removed after, both for the reasons on the deptry
+    # report above.
+    jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
+    try:
+        _pnpm_dlx(
+            CFG.JSCPD,
+            "--reporters", "json", "--output", str(jscpd_dir), "--silent",
+            "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
+            str(REPO / "apps"),
+            allow_fail=True,
+        )
+        report = json.loads((jscpd_dir / "jscpd-report.json").read_text())
+    finally:
+        shutil.rmtree(jscpd_dir, ignore_errors=True)
     percent = round(float(report["statistics"]["total"]["percentage"]), 2)
     clones = int(report["statistics"]["total"]["clones"])
 

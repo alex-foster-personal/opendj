@@ -56,6 +56,7 @@ from apps.webui.server.backend import Track
 from apps.webui.server.rb_vendor_pkg import local_waveform
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
+from tests import fs_clock
 
 pytestmark = pytest.mark.requirement("PARITY-03")
 
@@ -392,7 +393,18 @@ def test_an_in_place_overwrite_with_restored_mtime_is_still_detected_via_ctime(
     with open(source, "r+b") as fh:
         fh.write(b"\x00")
     os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
-    new_stat = source.stat()
+    # The ctime this test is ABOUT has to have actually moved. Inode times come
+    # from the kernel's coarse clock, so on a fast machine the seed, the
+    # overwrite and the restore can all land inside one timer tick and leave
+    # ctime numerically unchanged - the cache then hits for a reason that has
+    # nothing to do with the code under test. Re-asserting the SAME restored
+    # mtime keeps the precondition below exact while ctime advances.
+    new_stat = fs_clock.stamp_until(
+        source,
+        lambda stat: stat.st_ctime_ns != original_stat.st_ctime_ns,
+        "ctime moved while the restored mtime stayed put",
+        times_ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+    )
     assert new_stat.st_mtime_ns == original_stat.st_mtime_ns
     assert new_stat.st_size == original_stat.st_size
     assert new_stat.st_ino == original_stat.st_ino, "same inode: testing the in-place gap"

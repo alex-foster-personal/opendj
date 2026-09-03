@@ -87,12 +87,27 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: e2e gate (webkit artifact + hermetic chromium)
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch (see ci.yml's `test` job for the full
+    # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
+    # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
+    # only self-hosted runner carrying the `e2e` label and the apt access
+    # `playwright install --with-deps` needs.
+    #
+    # That access is now sudo rather than root: agentbox's runners were moved
+    # off root on Thu 3 Sep 2026 because the pytest lane's permission tests
+    # cannot be arranged as a user who bypasses permissions (see "Self-hosted
+    # runner provisioning" in docs/ci-actions-cost-review-2026-08-16.md).
+    # --with-deps below stays unconditional because it is safe either way:
+    # Playwright runs its apt step directly when uid 0 and through `sudo`
+    # otherwise, and the runner user has NOPASSWD sudo.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
 
     steps:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
 
       - name: Enable pinned pnpm
         # Order matters: corepack before setup-node, so a `pnpm` shim exists on
@@ -124,8 +139,7 @@ jobs:
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
 
       - name: Install Python deps into the project venv
         # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
@@ -161,6 +175,10 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
+        # Hosted-only: this uploads to GitHub's cache storage, which still
+        # costs and buys nothing on agentbox, whose ~/.cache/ms-playwright
+        # already persists locally between runs. Empty var means hosted.
+        if: vars.CI_RUNS_ON_E2E == ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -186,7 +204,9 @@ jobs:
         #
         # --with-deps even on a cache hit: the apt libraries live outside
         # ~/.cache/ms-playwright and are not restored by it.
-        run: pnpm exec playwright install --with-deps webkit chromium
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
+            pnpm exec playwright install --with-deps webkit chromium
 
       - name: Virtual audio sink (PulseAudio null sink)
         # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
@@ -205,7 +225,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          sudo apt-get install -y pulseaudio
+          scripts/ci_host_lock.sh packages sudo apt-get install -y pulseaudio
           pulseaudio --start --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=DummyOutput
           pactl set-default-sink DummyOutput
@@ -263,7 +283,8 @@ jobs:
         # and the end state once #637 and #680 are fixed is the whole suite
         # blocking and this --grep deleted.
         run: |
-          pnpm exec playwright test \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --grep "setup entry points" \
             --output test-results/setup-entry-points
@@ -306,7 +327,8 @@ jobs:
         # failure here would ship with no diagnosable artifact (flagged on
         # review, PR #860).
         run: |
-          pnpm exec playwright test \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --project chromium --grep "deck-load smoke" \
             --output test-results/deckload-smoke
@@ -365,12 +387,31 @@ jobs:
   # ---------------------------------------------------------------------------
   extended:
     name: e2e extended (nightly)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # ORDERED AFTER `gate`, not merely locked against it. Both jobs run the
+    # webkit-deckload suite on the same fixed port, and on a schedule or
+    # dispatch run both are eligible at once, so on a host with two runner
+    # services they would start together. The host lock below would then make
+    # one of them WAIT on the other, and this one runs the full 23-test suite:
+    # a `gate` blocked behind it for up to 45 minutes would hit its own
+    # 30-minute job timeout and report a red that means nothing.
+    # `needs` removes the contention instead of queueing it (Codex P1 on
+    # #1014, discussion_r3924582000).
+    #
+    # `!cancelled()` rather than `success()`: a failing gate is exactly when the
+    # nightly full suite is most worth having, and quarantined is not the same
+    # as unwatched.
+    needs: gate
+    if: >-
+      !cancelled()
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # See the `gate` job above for the runner-selection and --with-deps note.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
 
       - name: Enable pinned pnpm
         run: |
@@ -399,8 +440,7 @@ jobs:
         # throwaway library. Without it that suite fails on a missing binary,
         # which reads as a product failure and is not one.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev ffmpeg
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
         run: uv sync
@@ -415,6 +455,8 @@ jobs:
         run: echo "version=$(pnpm exec playwright --version | tr -d '\n' | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
+        # Hosted-only; see the `gate` job's identical step above.
+        if: vars.CI_RUNS_ON_E2E == ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -422,7 +464,9 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright install --with-deps webkit chromium
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
+            pnpm exec playwright install --with-deps webkit chromium
 
       - name: Virtual audio sink (PulseAudio null sink)
         # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
@@ -441,7 +485,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          sudo apt-get install -y pulseaudio
+          scripts/ci_host_lock.sh packages sudo apt-get install -y pulseaudio
           pulseaudio --start --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=DummyOutput
           pactl set-default-sink DummyOutput
@@ -458,7 +502,14 @@ jobs:
         # All 23 tests, including the four rate-measurement tests the
         # blocking gate quarantines under issue #637. Nightly is where that
         # failure stays visible: quarantined is not the same as unwatched.
-        run: pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
+        # 1800s, not the 900s default: this is the FULL 23-test suite and a
+        # PR gate waiting behind it needs a bound longer than the suite, or the
+        # wait itself becomes the failure.
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: 1800
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
 
       - name: Extended - desktop setup page
         working-directory: apps/webui/frontend

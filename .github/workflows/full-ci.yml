@@ -33,7 +33,9 @@ concurrency:
 jobs:
   test:
     name: full pytest + coverage
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 20
 
     steps:
@@ -42,6 +44,7 @@ jobs:
         with:
           # Progress-tree provenance validates historical feature commit SHAs.
           fetch-depth: 0
+          clean: true
 
       - name: Setup Python
         # SHA-pinned to the v5 tag commit (resolved 2026-04-17).
@@ -56,8 +59,7 @@ jobs:
         # See ci.yml: libsqlcipher-dev ships the runtime shared library on
         # Ubuntu noble.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
 
       - name: Install Python deps
         # modal is a CI test-environment tool, not a package dependency;
