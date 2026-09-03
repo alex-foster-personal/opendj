@@ -1,20 +1,20 @@
 # Live fix sizing and integration decisions
 
-## Current authorization and counting rule
+## Current authorization and accepted method
 
 the maintainer authorized expedited integration of the current live fixes on 2026-09-03.
-The discussion used a 100 net new Python/TypeScript line budget per fix,
-excluding tests, documentation, and genuine moves or file splits. His later
-clarification also excludes new files from that change limit because they
-usually have little direct textual overlap with incoming work. Count Svelte
-script blocks as TypeScript; report markup and CSS separately under this rule.
+The discussion initially used a 100 net new Python/TypeScript line budget per
+fix. the maintainer then accepted manual triage based on churn and likely overlap,
+including the exclusion of genuinely new files from the direct-overlap
+budget. This supersedes the original net-line budget as the sole eligibility
+measure. The method includes existing-file markup and CSS, not only scripts.
 
 This records the current instruction and its scope. It grants no standing
 permission for future protected-branch operations, changes no branch
 protection or hook policy, and does not alter issue evidence requirements.
 Authorization must come from the actual task instructions, not this document.
 
-## Recommended assessment of likely clashes
+## Accepted manual assessment of likely clashes
 
 Net new lines are a size measure, not a reliable conflict measure. Replacing
 100 existing lines with 100 different lines has zero net growth but can
@@ -35,9 +35,9 @@ how to group, sequence, or isolate fixes:
   for competing additions at the same path and reviewing its behavior,
   complexity, dependencies, and integration edits normally.
 
-This churn-and-overlap assessment is a recommendation. No numeric score,
-replacement threshold, automated classifier, or enforcement gate is
-implemented by this decision record.
+This churn-and-overlap assessment is the user-accepted manual triage method.
+No replacement numeric score or hard threshold has been agreed, and no
+automated scorer or enforcement gate is implemented by this decision record.
 
 ## Keeping small fixes maintainable
 
@@ -52,3 +52,8 @@ or splitting code solely to qualify for the limit. Review the logical change
 across all affected files. Report both the existing-file edits and the added
 module's purpose so the integration cost remains visible. Existing import
 fan-in/fan-out caps and other quality gates remain unchanged.
+
+Keep import caps hard; do not raise them or add suppressions to qualify a
+change. A zero direct-overlap budget is not automatic merge approval. Focused
+correctness checks, agent parity, and validation through real production
+paths remain necessary. See the UPDATE-3 block in the live review loop skill.
