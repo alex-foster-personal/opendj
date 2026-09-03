@@ -20,6 +20,7 @@
 		setAutoPlayEnforceOrder,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
+		toggleTheme,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
@@ -416,6 +417,21 @@
 	</button>
 
 	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
+
+	<button
+		type="button"
+		class="tb-icon theme-toggle"
+		class:on={uiPrefs.theme === 'light'}
+		title={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+		onclick={toggleTheme}
+	>
+		{#if uiPrefs.theme === 'dark'}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
+		{:else}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
+		{/if}
+	</button>
 
 	<button
 		type="button"
