@@ -346,6 +346,89 @@ class TestFallbackPaths:
         # Real persistence: sqlite (not the fallback) carries the edit.
         assert backend.get_track("sid-001").notes == "updated from webui"
 
+    def test_update_track_tempo_pref_round_trips_and_defaults_null(
+        self, fresh_state_db: Path,
+    ) -> None:
+        """PREF-01: unset is a real null, not a fabricated {regular: None, ...}."""
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        before = backend.get_track("sid-001")
+        assert before.tempo_pref is None
+        etag = compute_etag(before.stable_id, before.updated_at)
+        updated = backend.update_track(
+            "sid-001",
+            {"tempo_pref": {"regular": 140.0, "min": 138.0, "max": 142.0}},
+            expected_etag=etag, source="webui",
+        )
+        assert updated.tempo_pref == {"regular": 140.0, "min": 138.0, "max": 142.0}
+        # Real persistence, not the InMemory fallback.
+        assert backend.get_track("sid-001").tempo_pref == {
+            "regular": 140.0, "min": 138.0, "max": 142.0,
+        }
+
+    def test_update_track_tempo_pref_min_gte_max_rejected(
+        self, fresh_state_db: Path,
+    ) -> None:
+        from apps.webui.server.backend import BackendError
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        before = backend.get_track("sid-001")
+        etag = compute_etag(before.stable_id, before.updated_at)
+        with pytest.raises(BackendError):
+            backend.update_track(
+                "sid-001",
+                {"tempo_pref": {"regular": 140.0, "min": 145.0, "max": 145.0}},
+                expected_etag=etag, source="webui",
+            )
+        # Nothing persisted: the reject happens before any write.
+        assert backend.get_track("sid-001").tempo_pref is None
+
+    def test_update_track_tempo_pref_clamps_regular_into_new_range(
+        self, fresh_state_db: Path,
+    ) -> None:
+        """A regular tempo now outside a newly-set range is clamped into it,
+        never left out of bounds (PREF-01 trap case)."""
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        etag = compute_etag("sid-001", backend.get_track("sid-001").updated_at)
+        below = backend.update_track(
+            "sid-001",
+            {"tempo_pref": {"regular": 130.0, "min": 138.0, "max": 142.0}},
+            expected_etag=etag, source="webui",
+        )
+        assert below.tempo_pref == {"regular": 138.0, "min": 138.0, "max": 142.0}
+
+        etag2 = compute_etag("sid-001", below.updated_at)
+        above = backend.update_track(
+            "sid-001",
+            {"tempo_pref": {"regular": 150.0, "min": 138.0, "max": 142.0}},
+            expected_etag=etag2, source="webui",
+        )
+        assert above.tempo_pref == {"regular": 142.0, "min": 138.0, "max": 142.0}
+
+    def test_update_track_tempo_pref_clear_to_null(
+        self, fresh_state_db: Path,
+    ) -> None:
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        etag = compute_etag("sid-001", backend.get_track("sid-001").updated_at)
+        set_ = backend.update_track(
+            "sid-001",
+            {"tempo_pref": {"regular": 140.0, "min": None, "max": None}},
+            expected_etag=etag, source="webui",
+        )
+        assert set_.tempo_pref == {"regular": 140.0, "min": None, "max": None}
+        etag2 = compute_etag("sid-001", set_.updated_at)
+        cleared = backend.update_track(
+            "sid-001", {"tempo_pref": None},
+            expected_etag=etag2, source="webui",
+        )
+        assert cleared.tempo_pref is None
+
     def test_update_track_writes_file_path_via_upsert(
         self, fresh_state_db: Path,
     ) -> None:

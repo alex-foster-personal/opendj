@@ -41,6 +41,8 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # source='webui', confidence=1.0 so edits survive restart.
         "notes",
         "tags",
+        # PREF-01: {"regular": float|None, "min": float|None, "max": float|None}.
+        "tempo_pref",
     }
 )
 
