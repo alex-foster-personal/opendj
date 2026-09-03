@@ -96,10 +96,18 @@ export async function getTrack(stable_id: string): Promise<{ track: Track; etag:
 	return { track: data, etag: response.headers.get('etag') ?? '' };
 }
 
+export type TempoPrefPatch = components['schemas']['TempoPrefPatch'];
+
 export async function patchTrack(
 	stable_id: string,
 	etag: string,
-	patch: { rating?: number; tags_add?: string[]; tags_remove?: string[]; notes?: string }
+	patch: {
+		rating?: number;
+		tags_add?: string[];
+		tags_remove?: string[];
+		notes?: string;
+		tempo_pref?: TempoPrefPatch | null;
+	}
 ): Promise<{ track: Track; etag: string }> {
 	let call: { data?: Track; response: Response };
 	try {
