@@ -42,6 +42,11 @@
 	const playing = $derived(deck.playing);
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverUi.deckId === deckId);
+
+	/** 70% of the Knob default (30px) diameter = 30% smaller circumference (MIXUX-03). */
+	const TRIM_SIZE = 21;
+	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
+	const FILTER_SLOT_SIZE = 39;
 </script>
 
 <div
@@ -56,7 +61,14 @@
 >
 	<span class="ch-num">{deckId}</span>
 	<div class="trim-slot">
-		<Knob knobId={knobId(deckId, 'trim')} label="TRIM" value={trim} tone="white" onchange={ontrim} />
+		<Knob
+			knobId={knobId(deckId, 'trim')}
+			label="TRIM"
+			value={trim}
+			tone="white"
+			size={TRIM_SIZE}
+			onchange={ontrim}
+		/>
 	</div>
 	<div class="eq-stack">
 		<Knob knobId={knobId(deckId, 'high')} label="HI" value={eqHigh} onchange={(v) => oneq('high', v)} />
@@ -64,7 +76,14 @@
 		<Knob knobId={knobId(deckId, 'low')} label="LOW" value={eqLow} onchange={(v) => oneq('low', v)} />
 	</div>
 	<div class="filter-slot">
-		<Knob knobId={knobId(deckId, 'filter')} label="FILTER" value={0.5} tone="rainbow" inert />
+		<Knob
+			knobId={knobId(deckId, 'filter')}
+			label="FILTER"
+			value={0.5}
+			tone="rainbow"
+			size={FILTER_SLOT_SIZE}
+			inert
+		/>
 	</div>
 	<button
 		class:enabled={cueEnabled}

@@ -41,13 +41,32 @@
 		inert?: boolean;
 		/** Indicator stroke tone. */
 		tone?: 'accent' | 'white' | 'rainbow';
+		/** Rendered dial diameter in px. The caption-inclusive wrapper is the hit area and scales with the dial. */
+		size?: number;
 	}
 
-	let { knobId, label, value, onchange, inert = false, tone = 'accent' }: Props = $props();
+	let { knobId, label, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
+		$props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
-	const SIZE = 30;
+	const KNOB_BASE_SIZE = 30;
+	const RAINBOW_STOPS = ['#e23a32', '#e8a13a', '#d7d83a', '#35c04f'] as const;
+	const visualStyle = $derived.by(() => {
+		if (!Number.isFinite(size) || size <= 0) {
+			throw new Error(`Knob size must be a positive finite number, got ${size}`);
+		}
+		const scale = size / KNOB_BASE_SIZE;
+		return (
+			`--knob-dial-size: ${size}px; ` +
+			`--knob-caption-size: ${8 * scale}px; ` +
+			`--knob-caption-gap: ${scale}px; ` +
+			`--knob-rainbow-0: ${RAINBOW_STOPS[0]}; ` +
+			`--knob-rainbow-1: ${RAINBOW_STOPS[1]}; ` +
+			`--knob-rainbow-2: ${RAINBOW_STOPS[2]}; ` +
+			`--knob-rainbow-3: ${RAINBOW_STOPS[3]};`
+		);
+	});
 
 	const live = $derived(!inert && onchange !== undefined);
 
@@ -144,35 +163,37 @@
 	class:warn-orange={warn === 'orange'}
 	class:warn-red={warn === 'red'}
 	data-knob-id={knobId}
+	role="slider"
+	aria-label={label}
+	aria-valuemin={0}
+	aria-valuemax={1}
+	aria-valuenow={value}
+	aria-disabled={inert}
+	tabindex={inert ? -1 : 0}
+	style={visualStyle}
 	onpointerenter={() => setKnobHovered(live ? knobId : null)}
 	onpointerleave={() => setKnobHovered(null)}
+	onpointerdown={handlePointerDown}
+	onpointermove={handlePointerMove}
+	onpointerup={handlePointerUp}
+	ondblclick={handleDblClick}
+	onkeydown={handleKeyDown}
+	use:wheelAdjust={{
+		step: KNOB_CFG.scrollStep,
+		get: () => value,
+		// Through the registry, so a linked partner moves with it.
+		set: (next) => setKnobAbsolute(knobId, next),
+		disabled: !live
+	}}
 	title={inert
 		? INERT_TITLE
 		: `${label}${selected ? ' - selected: the scroll wheel nudges this dial from anywhere' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
 >
 	<svg
-		width={SIZE}
-		height={SIZE}
+		width={size}
+		height={size}
 		viewBox="0 0 30 30"
-		role="slider"
-		aria-label={label}
-		aria-valuemin={0}
-		aria-valuemax={1}
-		aria-valuenow={value}
-		aria-disabled={inert}
-		tabindex={inert ? -1 : 0}
-		onpointerdown={handlePointerDown}
-		onpointermove={handlePointerMove}
-		onpointerup={handlePointerUp}
-		ondblclick={handleDblClick}
-		onkeydown={handleKeyDown}
-		use:wheelAdjust={{
-			step: KNOB_CFG.scrollStep,
-			get: () => value,
-			// Through the registry, so a linked partner moves with it.
-			set: (next) => setKnobAbsolute(knobId, next),
-			disabled: !live
-		}}
+		aria-hidden="true"
 	>
 		<circle cx="15" cy="15" r="14" class="ring" />
 		<circle cx="15" cy="15" r="11" class="cap" />
@@ -196,7 +217,12 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 1px;
+		gap: var(--knob-caption-gap);
+		width: max-content;
+		min-width: var(--knob-dial-size);
+		cursor: ns-resize;
+		touch-action: none;
+		outline: none;
 	}
 	.knob.warn-orange .cap {
 		stroke: color-mix(in srgb, var(--rb-orange) 70%, #101318);
@@ -212,16 +238,13 @@
 	.knob.warn-red .indicator:not(.white):not(.rainbow) {
 		stroke: var(--rb-red);
 	}
-	svg {
-		cursor: ns-resize;
-		touch-action: none;
-		outline: none;
-		display: block;
-	}
-	svg:focus-visible {
+	.knob:focus-visible {
 		filter: drop-shadow(0 0 3px var(--rb-accent-glow));
 	}
-	.rb-inert svg {
+	svg {
+		display: block;
+	}
+	.rb-inert {
 		cursor: default;
 	}
 	/* Selected (shift+click) and linked (alt+click) must read without hovering,
@@ -253,34 +276,25 @@
 		stroke: #f0f2f5;
 	}
 	.indicator.rainbow {
-		stroke: #e23a32;
-		animation: knob-rainbow 4.5s linear infinite;
+		stroke: var(--knob-rainbow-0);
+		animation: knob-rainbow 4.5s ease-in-out infinite alternate;
 	}
 	@keyframes knob-rainbow {
 		0% {
-			stroke: #e23a32;
-		}
-		16% {
-			stroke: #e8a13a;
+			stroke: var(--knob-rainbow-0);
 		}
 		33% {
-			stroke: #35c04f;
-		}
-		50% {
-			stroke: #2f6fd6;
+			stroke: var(--knob-rainbow-1);
 		}
 		66% {
-			stroke: #7b5cff;
-		}
-		83% {
-			stroke: #d0348a;
+			stroke: var(--knob-rainbow-2);
 		}
 		100% {
-			stroke: #e23a32;
+			stroke: var(--knob-rainbow-3);
 		}
 	}
 	.label {
-		font-size: 8px;
+		font-size: var(--knob-caption-size);
 		letter-spacing: 0.04em;
 		color: var(--rb-text-dim);
 		line-height: 1;
