@@ -69,6 +69,7 @@ def _track_to_out(track: Track, has_rb_mapping: bool) -> TrackOut:
         tags=list(track.tags or []),
         notes=track.notes,
         last_played_at=track.last_played_at,
+        tempo_pref=track.tempo_pref,
         file_path=track.file_path,
         created_at=track.created_at,
         updated_at=track.updated_at,
