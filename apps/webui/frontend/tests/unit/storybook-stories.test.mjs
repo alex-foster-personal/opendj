@@ -293,7 +293,8 @@ test('preview keeps the perf-root theme scope and does not fork the palette', ()
 
 test('theme.css centralizes the warm light palette with token contrast guidance', () => {
 	const theme = read(join(SRC, 'lib', 'rb', 'theme.css'));
-	assert.match(theme, /html\[data-theme='light'\]\)\s+\.perf-root/);
+	assert.match(theme, /(?:^|\n)html\[data-theme='light'\]\s+\.perf-root/);
+	assert.doesNotMatch(theme, /:global\(/, 'standalone CSS must use browser-valid selectors');
 	assert.match(theme, /--rb-bg: #f7f3eb/);
 	assert.match(theme, /--rb-text: #27241f/);
 	assert.match(theme, /token level: --rb-text on --rb-bg/);

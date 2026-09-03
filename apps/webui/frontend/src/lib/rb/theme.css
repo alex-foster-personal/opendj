@@ -50,7 +50,7 @@
  * token level: --rb-text on --rb-bg/panel and --rb-text-dim on --rb-bg meet
  * 4.5:1. User scheme overrides must preserve those pairs, rather than adding
  * component-local colours that can become unreadable. */
-:global(html[data-theme='light']) .perf-root {
+html[data-theme='light'] .perf-root {
 	--rb-bg: #f7f3eb;
 	--rb-panel: #fffdf8;
 	--rb-panel-raised: #eee8dd;
