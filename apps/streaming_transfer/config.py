@@ -20,9 +20,7 @@ class TransferConfig:
     def require_secret(self, env_name: str) -> str:
         value = os.environ.get(env_name, "").strip()
         if not value:
-            raise TransferConfigurationError(
-                f"{env_name} is required for streaming-library transfer"
-            )
+            raise TransferConfigurationError(f"{env_name} is required for streaming transfer")
         return value
 
 

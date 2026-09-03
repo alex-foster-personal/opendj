@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import tempfile
@@ -48,48 +49,40 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     transfer.add_argument("source", help="Spotify playlist URL, URI, or bare id")
     transfer.add_argument(
-        "--confidence-threshold",
-        type=float,
-        required=True,
+        "--confidence-threshold", type=float, required=True,
         help="minimum (0, 1] confidence for deterministic and LLM matches",
     )
     transfer.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="destination for the complete JSON transfer report",
+        "--output", type=Path, required=True, help="complete JSON transfer report destination"
     )
     transfer.add_argument(
-        "--sharing",
-        choices=("private", "public"),
-        required=True,
+        "--duration-tolerance-ms", type=int, required=True,
+        help="maximum deterministic source-to-target duration difference",
+    )
+    transfer.add_argument(
+        "--sharing", choices=("private", "public"), required=True,
         help="sharing mode if --live creates the SoundCloud playlist",
     )
     mode = transfer.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="search and match without target writes",
-    )
+    mode.add_argument("--dry-run", action="store_true", help="search without target writes")
     mode.add_argument("--live", action="store_true", help="create the matched SoundCloud playlist")
     transfer.add_argument(
-        "--i-understand-the-risks",
-        action="store_true",
-        help="required with --live",
+        "--i-understand-the-risks", action="store_true", help="required with --live"
     )
     transfer.add_argument(
-        "--confirm-playlist-id",
-        help="required with --live and must exactly equal the parsed Spotify id",
+        "--confirm-playlist-id", help="required with --live; must equal the Spotify id"
     )
     transfer.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="replace an existing report file atomically",
+        "--overwrite", action="store_true", help="atomically replace an existing report"
     )
     return parser
 
 
 def _validate_safety(args: argparse.Namespace, playlist_id: str) -> str | None:
+    if not math.isfinite(args.confidence_threshold) or not 0 < args.confidence_threshold <= 1:
+        return "confidence threshold must be finite and within (0, 1]"
+    if args.duration_tolerance_ms <= 0:
+        return "duration tolerance must be a positive integer"
     if args.live and not args.i_understand_the_risks:
         return "--live requires --i-understand-the-risks"
     if args.live and args.confirm_playlist_id != playlist_id:
@@ -148,16 +141,14 @@ def _run_spotify_to_soundcloud(args: argparse.Namespace) -> int:
     try:
         source = spotify.fetch_playlist(playlist_id, use_cache=False)
         if not source.tracks:
-            print(
-                "ERROR: Spotify source playlist contains no transferable tracks",
-                file=sys.stderr,
-            )
+            print("ERROR: Spotify source playlist has no transferable tracks", file=sys.stderr)
             return EXIT_PROVIDER
         report = execute_transfer(
             source,
             target=soundcloud,
             llm=llm,
             confidence_threshold=args.confidence_threshold,
+            duration_tolerance_ms=args.duration_tolerance_ms,
             live=args.live,
             sharing=args.sharing,
         )

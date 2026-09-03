@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Sequence
@@ -25,8 +26,9 @@ class LlmDecision:
     source_id: str
     target_id: str | None
     confidence: float
-    length_verified: bool
     evidence_urls: tuple[str, ...]
+    web_search_batch_id: str
+    web_search_requests: int
 
     def __post_init__(self) -> None:
         if not isinstance(self.source_id, str) or not self.source_id.strip():
@@ -35,29 +37,36 @@ class LlmDecision:
             not isinstance(self.target_id, str) or not self.target_id.strip()
         ):
             raise LlmMatchError("LLM decision target_id must be null or non-empty")
-        if not isinstance(self.confidence, (int, float)) or isinstance(self.confidence, bool):
-            raise LlmMatchError("LLM confidence must be numeric")
-        if not math.isfinite(self.confidence) or not 0.0 <= self.confidence <= 1.0:
-            raise LlmMatchError(
-                f"LLM confidence must be finite and within 0..1: {self.confidence!r}"
-            )
-        object.__setattr__(self, "confidence", float(self.confidence))
-        if not isinstance(self.length_verified, bool):
-            raise LlmMatchError("LLM length_verified must be boolean")
         if (
-            not isinstance(self.evidence_urls, tuple)
-            or not self.evidence_urls
+            not isinstance(self.confidence, (int, float))
+            or isinstance(self.confidence, bool)
+            or not math.isfinite(self.confidence)
+            or not 0.0 <= self.confidence <= 1.0
+        ):
+            raise LlmMatchError(f"invalid LLM confidence: {self.confidence!r}")
+        object.__setattr__(self, "confidence", float(self.confidence))
+        if (
+            not self.evidence_urls
             or any(
                 not isinstance(url, str) or not url.startswith(("https://", "http://"))
                 for url in self.evidence_urls
             )
         ):
             raise LlmMatchError("LLM decision requires HTTP evidence URLs")
+        if len(self.web_search_batch_id) != 64:
+            raise LlmMatchError("LLM decision requires a SHA-256 web-search batch id")
+        if (
+            not isinstance(self.web_search_requests, int)
+            or isinstance(self.web_search_requests, bool)
+            or self.web_search_requests < 1
+        ):
+            raise LlmMatchError("LLM decision requires a positive web-search request count")
 
 
 _DECISION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "batch_id": {"type": "string"},
         "decisions": {
             "type": "array",
             "items": {
@@ -66,39 +75,35 @@ _DECISION_SCHEMA: dict[str, Any] = {
                     "source_id": {"type": "string"},
                     "target_id": {"type": ["string", "null"]},
                     "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                    "length_verified": {"type": "boolean"},
                     "evidence_urls": {
                         "type": "array",
                         "items": {"type": "string"},
                         "minItems": 1,
                     },
                 },
-                "required": [
-                    "source_id",
-                    "target_id",
-                    "confidence",
-                    "length_verified",
-                    "evidence_urls",
-                ],
+                "required": ["source_id", "target_id", "confidence", "evidence_urls"],
                 "additionalProperties": False,
             },
         }
     },
-    "required": ["decisions"],
+    "required": ["batch_id", "decisions"],
     "additionalProperties": False,
 }
 
 
-def build_batch_request(
-    escalations: Sequence[Escalation],
-    *,
-    model: str,
-) -> dict[str, Any]:
+def batch_id_for(escalations: Sequence[Escalation]) -> str:
+    batch = [row.as_prompt_dict() for row in escalations]
+    canonical = json.dumps(batch, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def build_batch_request(escalations: Sequence[Escalation], *, model: str) -> dict[str, Any]:
     if not escalations:
         raise LlmMatchError("cannot build an empty LLM match batch")
     if not model.strip():
         raise LlmMatchError("LLM model must be explicitly configured")
     batch = [row.as_prompt_dict() for row in escalations]
+    batch_id = batch_id_for(escalations)
     return {
         "model": model.strip(),
         "messages": [
@@ -106,12 +111,16 @@ def build_batch_request(
                 "role": "system",
                 "content": (
                     "Resolve streaming-catalog candidates as the same recording or no "
-                    "match. Use web search for every source. Track length verification "
-                    "is mandatory before selecting a target. Never equate a remix, "
-                    "live version, edit, or cover with the source recording."
+                    "match. Use web search for every source and copy cited URLs exactly "
+                    "into evidence_urls. Echo batch_id exactly. Never equate a remix, "
+                    "live version, edit, or cover with the source recording. The caller "
+                    "will verify track lengths deterministically."
                 ),
             },
-            {"role": "user", "content": json.dumps({"candidates": batch})},
+            {
+                "role": "user",
+                "content": json.dumps({"batch_id": batch_id, "candidates": batch}),
+            },
         ],
         "tools": [{"type": "openrouter:web_search"}],
         "response_format": {
@@ -124,35 +133,67 @@ def build_batch_request(
         },
         "provider": {"require_parameters": True},
         "temperature": 0,
-    }
+}
 
 
-def parse_batch_response(payload: object) -> tuple[LlmDecision, ...]:
+def parse_batch_response(payload: object, *, expected_batch_id: str) -> tuple[LlmDecision, ...]:
     try:
         choices = payload["choices"]  # type: ignore[index]
-        content = choices[0]["message"]["content"]
+        message = choices[0]["message"]
+        content = message["content"]
+        annotations = message["annotations"]
+        web_search_requests = payload["usage"]["server_tool_use"]["web_search_requests"]  # type: ignore[index]
         decoded = json.loads(content)
+        response_batch_id = decoded["batch_id"]
         rows = decoded["decisions"]
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise LlmMatchError("OpenRouter response does not contain decisions JSON") from exc
+        raise LlmMatchError(
+            "OpenRouter response lacks decisions, citations, or web_search_requests"
+        ) from exc
+    if (
+        not isinstance(web_search_requests, int)
+        or isinstance(web_search_requests, bool)
+        or web_search_requests < 1
+    ):
+        raise LlmMatchError("OpenRouter web_search_requests must be positive")
+    if response_batch_id != expected_batch_id:
+        raise LlmMatchError("OpenRouter response batch_id does not match the request")
+    if not isinstance(annotations, list):
+        raise LlmMatchError("OpenRouter response annotations must be a list")
+    citation_urls = {
+        annotation.get("url_citation", {}).get("url")
+        for annotation in annotations
+        if isinstance(annotation, dict) and annotation.get("type") == "url_citation"
+    }
+    citation_urls = {
+        url
+        for url in citation_urls
+        if isinstance(url, str) and url.startswith(("http://", "https://"))
+    }
+    if not citation_urls:
+        raise LlmMatchError("OpenRouter response contains no URL citation evidence")
     if not isinstance(rows, list):
         raise LlmMatchError("OpenRouter decisions must be a list")
     decisions: list[LlmDecision] = []
     for row in rows:
         if not isinstance(row, dict):
             raise LlmMatchError("OpenRouter decision must be an object")
-        try:
-            decisions.append(
-                LlmDecision(
-                    source_id=row["source_id"],
-                    target_id=row["target_id"],
-                    confidence=row["confidence"],
-                    length_verified=row["length_verified"],
-                    evidence_urls=tuple(row["evidence_urls"]),
-                )
+        expected_fields = {"source_id", "target_id", "confidence", "evidence_urls"}
+        if set(row) != expected_fields or not isinstance(row["evidence_urls"], list):
+            raise LlmMatchError("OpenRouter decision fields violate the strict schema")
+        evidence_urls = tuple(row["evidence_urls"])
+        if not evidence_urls or not set(evidence_urls) <= citation_urls:
+            raise LlmMatchError("decision evidence is not proven by URL citations")
+        decisions.append(
+            LlmDecision(
+                source_id=row["source_id"],
+                target_id=row["target_id"],
+                confidence=row["confidence"],
+                evidence_urls=evidence_urls,
+                web_search_batch_id=expected_batch_id,
+                web_search_requests=web_search_requests,
             )
-        except (KeyError, LlmMatchError, TypeError, ValueError) as exc:
-            raise LlmMatchError(f"invalid OpenRouter decision: {row!r}") from exc
+        )
     return tuple(decisions)
 
 
@@ -174,10 +215,7 @@ class OpenRouterBatchMatcher:
 
     def resolve(self, escalations: Sequence[Escalation]) -> tuple[LlmDecision, ...]:
         timeout = httpx.Timeout(
-            connect=CFG.connect_timeout_s,
-            read=CFG.read_timeout_s,
-            write=30.0,
-            pool=10.0,
+            connect=CFG.connect_timeout_s, read=CFG.read_timeout_s, write=30.0, pool=10.0
         )
         response = httpx.post(
             f"{CFG.openrouter_api_base}/chat/completions",
@@ -190,7 +228,8 @@ class OpenRouterBatchMatcher:
             timeout=timeout,
         )
         if response.status_code != 200:
-            raise LlmMatchError(
-                f"OpenRouter match batch returned HTTP {response.status_code}"
-            )
-        return parse_batch_response(response.json())
+            raise LlmMatchError(f"OpenRouter match batch returned HTTP {response.status_code}")
+        return parse_batch_response(
+            response.json(),
+            expected_batch_id=batch_id_for(escalations),
+        )

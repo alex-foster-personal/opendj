@@ -1,14 +1,8 @@
-"""META-05 transfer planning, escalation, reporting, and target write.
-
-Requirements:
-✔︎ ✅ 🎯 A Spotify playlist is searched against the official SoundCloud API.
-✔︎ ✅ 🎯 Every source resolves to matched, unmatched, or ungradable.
-✔︎ ✅ 🎯 Below-threshold candidates take one batched LLM web-search path with a
-  mandatory length check before any optional target playlist write.
+"""META-05 Spotify-to-SoundCloud transfer contract.
 
 - if one source disappears from the report then the transfer is broken
 - if a low-confidence row reaches a live write before LLM resolution then it is broken
-- if a selected LLM target lacks a verified length then acceptance is broken
+- if selected provider durations exceed tolerance then acceptance is broken
 """
 
 from __future__ import annotations
@@ -31,30 +25,53 @@ class TransferContractError(RuntimeError):
 
 @dataclass(frozen=True)
 class TransferRecord:
-    source_uri: str
-    source_title: str
-    target_uri: str | None
-    target_title: str | None
+    source: SpotifyTrack
+    target: SoundCloudTrack | None
     status: str
     confidence: float | None
     match_pass: str
     signals: tuple[str, ...]
-    length_verified: bool
+    duration_tolerance_ms: int
     evidence_urls: tuple[str, ...]
+    web_search_batch_id: str | None
+    web_search_requests: int | None
     reason: str | None = None
+
+    @property
+    def source_uri(self) -> str:
+        return self.source.spotify_uri
+
+    @property
+    def target_uri(self) -> str | None:
+        return self.target.urn if self.target else None
+
+    @property
+    def duration_delta_ms(self) -> int | None:
+        return abs(self.source.duration_ms - self.target.duration_ms) if self.target else None
+
+    @property
+    def duration_within_tolerance(self) -> bool | None:
+        delta = self.duration_delta_ms
+        return delta <= self.duration_tolerance_ms if delta is not None else None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "source_uri": self.source_uri,
-            "source_title": self.source_title,
+            "source_title": self.source.title,
             "target_uri": self.target_uri,
-            "target_title": self.target_title,
+            "target_title": self.target.title if self.target else None,
             "status": self.status,
             "confidence": self.confidence,
             "match_pass": self.match_pass,
             "signals": list(self.signals),
-            "length_verified": self.length_verified,
+            "source_duration_ms": self.source.duration_ms,
+            "target_duration_ms": self.target.duration_ms if self.target else None,
+            "duration_delta_ms": self.duration_delta_ms,
+            "duration_tolerance_ms": self.duration_tolerance_ms,
+            "duration_within_tolerance": self.duration_within_tolerance,
             "evidence_urls": list(self.evidence_urls),
+            "web_search_batch_id": self.web_search_batch_id,
+            "web_search_requests": self.web_search_requests,
             "reason": self.reason,
         }
 
@@ -100,6 +117,7 @@ class TransferPlan:
     source_playlist_id: str
     playlist_name: str
     confidence_threshold: float
+    duration_tolerance_ms: int
     deterministic_matches: tuple[TransferRecord, ...]
     escalations: tuple[Escalation, ...]
     ungradable: tuple[TransferRecord, ...]
@@ -112,6 +130,7 @@ class TransferReport:
     source_playlist_id: str
     playlist_name: str
     confidence_threshold: float
+    duration_tolerance_ms: int
     matched: tuple[TransferRecord, ...]
     unmatched: tuple[TransferRecord, ...]
     ungradable: tuple[TransferRecord, ...]
@@ -124,6 +143,7 @@ class TransferReport:
             "source_playlist_id": self.source_playlist_id,
             "playlist_name": self.playlist_name,
             "confidence_threshold": self.confidence_threshold,
+            "duration_tolerance_ms": self.duration_tolerance_ms,
             "target_playlist_id": self.target_playlist_id,
             "counts": {
                 "matched": len(self.matched),
@@ -148,18 +168,22 @@ def _target_as_local(target: SoundCloudTrack) -> LocalTrack:
     )
 
 
-def _ungradable(source: SpotifyTrack, reason: str) -> TransferRecord:
+def _ungradable(
+    source: SpotifyTrack,
+    reason: str,
+    duration_tolerance_ms: int,
+) -> TransferRecord:
     return TransferRecord(
-        source_uri=source.spotify_uri,
-        source_title=source.title,
-        target_uri=None,
-        target_title=None,
+        source=source,
+        target=None,
         status="ungradable",
         confidence=None,
         match_pass="none",
         signals=(),
-        length_verified=False,
+        duration_tolerance_ms=duration_tolerance_ms,
         evidence_urls=(),
+        web_search_batch_id=None,
+        web_search_requests=None,
         reason=reason,
     )
 
@@ -170,12 +194,19 @@ def plan_transfer(
     target_service: str,
     candidates: Mapping[str, Sequence[SoundCloudTrack]],
     confidence_threshold: float,
+    duration_tolerance_ms: int,
 ) -> TransferPlan:
     """Score every source and explicitly queue every below-threshold candidate."""
     if target_service != "soundcloud":
         raise TransferContractError(f"unsupported transfer target: {target_service!r}")
     if not math.isfinite(confidence_threshold) or not 0 < confidence_threshold <= 1:
         raise TransferContractError("confidence threshold must be finite and within (0, 1]")
+    if (
+        not isinstance(duration_tolerance_ms, int)
+        or isinstance(duration_tolerance_ms, bool)
+        or duration_tolerance_ms <= 0
+    ):
+        raise TransferContractError("duration tolerance must be a positive integer")
     expected = {track.spotify_uri for track in source.tracks}
     missing = expected - set(candidates)
     extras = set(candidates) - expected
@@ -189,11 +220,13 @@ def plan_transfer(
     ungradable: list[TransferRecord] = []
     for track in source.tracks:
         if not track.title.strip() or not track.artists or track.duration_ms <= 0:
-            ungradable.append(_ungradable(track, "source_metadata_incomplete"))
+            ungradable.append(
+                _ungradable(track, "source_metadata_incomplete", duration_tolerance_ms)
+            )
             continue
         target_rows = tuple(candidates[track.spotify_uri])
         if not target_rows:
-            ungradable.append(_ungradable(track, "no_target_candidates"))
+            ungradable.append(_ungradable(track, "no_target_candidates", duration_tolerance_ms))
             continue
         scored = [
             (*score_spotify_candidate(track, _target_as_local(target)), target)
@@ -206,16 +239,16 @@ def plan_transfer(
         if confidence >= confidence_threshold:
             deterministic.append(
                 TransferRecord(
-                    source_uri=track.spotify_uri,
-                    source_title=track.title,
-                    target_uri=best.urn,
-                    target_title=best.title,
+                    source=track,
+                    target=best,
                     status="matched",
                     confidence=confidence,
                     match_pass="deterministic",
                     signals=signals,
-                    length_verified="duration" in signals,
+                    duration_tolerance_ms=duration_tolerance_ms,
                     evidence_urls=(best.permalink_url,),
+                    web_search_batch_id=None,
+                    web_search_requests=None,
                 )
             )
         elif confidence < confidence_threshold:
@@ -233,6 +266,7 @@ def plan_transfer(
         source_playlist_id=source.id,
         playlist_name=source.name,
         confidence_threshold=confidence_threshold,
+        duration_tolerance_ms=duration_tolerance_ms,
         deterministic_matches=tuple(deterministic),
         escalations=tuple(escalations),
         ungradable=tuple(ungradable),
@@ -262,41 +296,53 @@ def resolve_transfer(
         selected = targets.get(decision.target_id) if decision.target_id else None
         if decision.target_id is not None and selected is None:
             raise TransferContractError(f"LLM selected an unoffered target: {decision.target_id!r}")
+        duration_delta_ms = (
+            abs(escalation.source.duration_ms - selected.duration_ms) if selected else None
+        )
+        duration_within_tolerance = (
+            duration_delta_ms <= plan.duration_tolerance_ms
+            if duration_delta_ms is not None
+            else None
+        )
         accepted = (
             selected is not None
-            and decision.length_verified
+            and duration_within_tolerance is True
             and decision.confidence >= plan.confidence_threshold
         )
         if accepted:
             assert selected is not None
             matched.append(
                 TransferRecord(
-                    source_uri=escalation.source_uri,
-                    source_title=escalation.source.title,
-                    target_uri=selected.urn,
-                    target_title=selected.title,
+                    source=escalation.source,
+                    target=selected,
                     status="matched",
                     confidence=decision.confidence,
                     match_pass="llm_web_search",
                     signals=escalation.deterministic_signals,
-                    length_verified=True,
+                    duration_tolerance_ms=plan.duration_tolerance_ms,
                     evidence_urls=decision.evidence_urls,
+                    web_search_batch_id=decision.web_search_batch_id,
+                    web_search_requests=decision.web_search_requests,
                 )
             )
         elif not accepted:
             unmatched.append(
                 TransferRecord(
-                    source_uri=escalation.source_uri,
-                    source_title=escalation.source.title,
-                    target_uri=selected.urn if selected else None,
-                    target_title=selected.title if selected else None,
+                    source=escalation.source,
+                    target=selected,
                     status="unmatched",
                     confidence=decision.confidence,
                     match_pass="llm_web_search",
                     signals=escalation.deterministic_signals,
-                    length_verified=decision.length_verified,
+                    duration_tolerance_ms=plan.duration_tolerance_ms,
                     evidence_urls=decision.evidence_urls,
-                    reason="llm_rejected_or_below_threshold",
+                    web_search_batch_id=decision.web_search_batch_id,
+                    web_search_requests=decision.web_search_requests,
+                    reason=(
+                        "duration_mismatch"
+                        if duration_within_tolerance is False
+                        else "llm_rejected_or_below_threshold"
+                    ),
                 )
             )
     return TransferReport(
@@ -305,6 +351,7 @@ def resolve_transfer(
         source_playlist_id=plan.source_playlist_id,
         playlist_name=plan.playlist_name,
         confidence_threshold=plan.confidence_threshold,
+        duration_tolerance_ms=plan.duration_tolerance_ms,
         matched=tuple(matched),
         unmatched=tuple(unmatched),
         ungradable=plan.ungradable,
@@ -317,6 +364,7 @@ def execute_transfer(
     target: SoundCloudClient,
     llm: OpenRouterBatchMatcher,
     confidence_threshold: float,
+    duration_tolerance_ms: int,
     live: bool,
     sharing: str,
 ) -> TransferReport:
@@ -327,6 +375,7 @@ def execute_transfer(
         target_service="soundcloud",
         candidates=candidates,
         confidence_threshold=confidence_threshold,
+        duration_tolerance_ms=duration_tolerance_ms,
     )
     decisions = llm.resolve(plan.escalations) if plan.escalations else ()
     report = resolve_transfer(plan, decisions=decisions)
