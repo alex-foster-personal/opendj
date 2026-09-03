@@ -108,6 +108,8 @@ import {
 	refreshAnlzCacheEntry
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
+	beatJumpTargetMs,
+	beatJumpTargetWithinDurationMs,
 	computeFollowerSyncPlan,
 	planTempoRatioRamp,
 	playbackBpm,
@@ -139,9 +141,10 @@ import {
 } from '$lib/rb/stem-graph';
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
 import type { AudioEngine } from '$lib/rb/audio-engine-types';
-import type { DeckId } from '$lib/rb/deck-slots';
+import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import type { DeckAudioSnapshot, DeckState, LoopState, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
+import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
@@ -292,7 +295,7 @@ export type {
 //
 // T4 S4: PerformanceState now lives in player/state.svelte.ts. Re-exported
 // below at the same names so every UI consumer keeps importing it from here.
-// _hotCuesFromSlots stays until S11: it maps through _hotCuesFrom, which is
+// _hotCuesFromSlots stays until S11: it maps through hotCuesFromAnlz, which is
 // deck-load's ANLZ cue mapper, and state must not import deck/load.
 
 export {
@@ -311,7 +314,7 @@ export {
 export { isMasterMuted, setMasterMuted };
 
 function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
-	return _hotCuesFrom(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
+	return hotCuesFromAnlz(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
 }
 
 // -------------------------------------------- non-reactive audio runtime
@@ -605,25 +608,6 @@ function _setParam(param: AudioParam, value: number): void {
 // belong to the hardware mixer. Unrouted decks stay on the internal master,
 // which in this mode feeds ONLY the headphone monitor.
 
-function _parseExternalRouting(): Map<DeckId, number> | null {
-	if (typeof window === 'undefined') return null;
-	const raw = new URLSearchParams(window.location.search).get('extroute');
-	if (raw === null || raw === '') return null;
-	const routing = new Map<DeckId, number>();
-	for (const part of raw.split(',')) {
-		const match = part.match(/^([1-4]):(\d{1,2})$/);
-		if (match === null) {
-			throw new Error(`extroute: bad segment '${part}' (want deck:usbLeft, e.g. 1:1,2:7)`);
-		}
-		const deck = Number(match[1]) as DeckId;
-		const usbLeft = Number(match[2]);
-		if (usbLeft < 1) throw new Error(`extroute: usbLeft must be >= 1 in '${part}'`);
-		if (routing.has(deck)) throw new Error(`extroute: deck ${deck} routed twice`);
-		routing.set(deck, usbLeft);
-	}
-	return routing;
-}
-
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -653,7 +637,7 @@ function _ensureGraph(): AudioContext {
 	// identically. See player/master-mute.svelte.ts.
 	_masterMuteGain = _ctx.createGain();
 	attachMasterMuteNode(_masterMuteGain);
-	const routing = _parseExternalRouting();
+	const routing = parseExternalRouting();
 	if (routing === null) {
 		_masterMuteGain.connect(_ctx.destination);
 		_masterGain.connect(_masterMuteGain);
@@ -2161,21 +2145,6 @@ function _ensureRaf(): void {
 	if (_rafId === null) _rafId = requestAnimationFrame(_tick);
 }
 
-function _hotCuesFrom(cues: AnlzCue[]): HotCue[] {
-	return cues
-		.filter((c): c is AnlzCue & { slot: NonNullable<AnlzCue['slot']> } => c.slot !== null)
-		.map((c) => ({
-			slot: c.slot,
-			in_ms: c.in_ms,
-			out_ms: c.out_ms,
-			is_loop: c.is_loop,
-			beat_loop_size: c.beat_loop_size,
-			color_table_index: c.color_table_index,
-			comment: c.comment
-		}))
-		.sort((a, b) => a.slot.localeCompare(b.slot));
-}
-
 /** Display-only stored loop (COMPONENT-MAP 1.3: loop chips are display at
  * v1): the rekordbox active loop when one exists, engaged: false. */
 function _displayLoopFrom(cues: AnlzCue[]): LoopState | null {
@@ -3637,6 +3606,19 @@ class RbAudioEngine implements AudioEngine {
 		if (pendingLoop !== null && pendingLoop !== undefined) {
 			pendingLoop.beat_length = beats;
 		}
+	}
+
+	/** Jump whole PQTZ beats, anchored on the playhead projected to the next
+	 * safe schedule time so back-to-back jumps compound, including when a
+	 * pending mutation (e.g. a not-yet-presented pause) has not landed yet;
+	 * math + duration clamp live in beat-sync-math.ts. */
+	async beatJump(deck: DeckId, beats: number): Promise<void> {
+		const { st } = _requireLoaded(deck, 'beatJump');
+		const grid = _requireBeatGrid(st, 'beatJump');
+		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
+		const rawTargetMs = beatJumpTargetMs(grid, anchorMs, beats);
+		const targetMs = beatJumpTargetWithinDurationMs(grid, rawTargetMs, _durationSec(deck) * 1000);
+		await this.quantizedSeek(deck, targetMs);
 	}
 
 	/** Capture the current engaged loop as the one-slot safety loop (armed). */

@@ -12,6 +12,7 @@ const REAL_PQTZ_BEATS = [
 let audio;
 let headphones;
 let computeFollowerSyncPlan;
+let beatLoopFitsWithinDuration;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
 // builds a `new Request(url)` before any stub sees it. Node has no document to
@@ -26,6 +27,7 @@ before(async () => {
 	});
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
+	({ beatLoopFitsWithinDuration } = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
 test('controller defaults enable quantize, Beat Sync, and Master Tempo with no static master', () => {
@@ -1375,6 +1377,20 @@ test('exact beat-loop resize preserves the supplied real PQTZ loop-in anchor', (
 		out_ms: 1553
 	});
 	assert.throws(() => audio.exactBeatLoopRangeMs(REAL_PQTZ_BEATS, 1080, 4, 1080), /do not fit/i);
+});
+
+test('beatLoopFitsWithinDuration answers the same fit question without throwing, plus duration', () => {
+	// Mirrors the two cases above: a length that fits from the anchor, and
+	// one that runs past the end of the grid because too few beats remain.
+	assert.equal(beatLoopFitsWithinDuration(REAL_PQTZ_BEATS, 1080, 2, 2000, 608), true);
+	assert.equal(beatLoopFitsWithinDuration(REAL_PQTZ_BEATS, 1080, 4, 2000, 1080), false);
+	// A grid-only fit that would still get clipped by the decoded duration
+	// (the loop's own out_ms of 1553ms lands past a 1000ms duration) must
+	// also report false, not just a bare grid-length fit.
+	assert.equal(beatLoopFitsWithinDuration(REAL_PQTZ_BEATS, 1080, 2, 1000, 608), false);
+	// An unusable grid disables the choice rather than throwing mid-render,
+	// matching beatJumpMovesTransportWithinDuration's contract for the same class of call.
+	assert.equal(beatLoopFitsWithinDuration([], 0, 4, 1000), false);
 });
 
 test('only engaged loops suppress end-of-track and the final playing master clears', () => {

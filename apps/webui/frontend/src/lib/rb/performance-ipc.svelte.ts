@@ -48,6 +48,13 @@ import {
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
 import {
+	assertLoopGridBase,
+	loopIntervalChoices,
+	loopIntervalView,
+	setLoopIntervalBase,
+	setLoopIntervalMode
+} from '$lib/rb/loop-interval-view.svelte';
+import {
 	ScopedCommandInvalidatedError,
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
@@ -78,6 +85,9 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
 	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
+	| { type: 'beat_jump'; deck: DeckId; beats: number }
+	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
+	| { type: 'loop_interval_base'; deck: DeckId; base: number }
 	| { type: 'tempo'; deck: DeckId; ratio: number }
 	| { type: 'pitch_range'; deck: DeckId; range: PitchRange }
 	| { type: 'quantize'; deck: DeckId; enabled: boolean }
@@ -148,6 +158,9 @@ export interface PerformanceDeckSnapshot {
 	last_load_stages: Record<string, number> | null;
 	stems: StemDeckState;
 	loop: LoopState | null;
+	/** Loop cluster view state, so an agent that can drive the interval grid
+	 * can also read back which mode and window it landed on. */
+	loop_interval: { grid_mode: boolean; grid_base: number; choices: number[] };
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
 	hot_cue_slots: Array<{ slot: HotCueSlot; cue: HotCue | null; revision: string }>;
@@ -463,6 +476,23 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		const start_ms = _finite('start_ms', record.start_ms);
 		if (start_ms < 0) throw new RangeError('start_ms must be >= 0');
 		return { type, deck, beats, start_ms };
+	} else if (type === 'beat_jump') {
+		_exactKeys(record, ['type', 'deck', 'beats']);
+		const beats = _finite('beats', record.beats);
+		if (!Number.isInteger(beats) || beats === 0) {
+			throw new RangeError(`beats must be a non-zero integer; got ${beats}`);
+		}
+		return { type, deck, beats };
+	} else if (type === 'loop_interval_mode') {
+		_exactKeys(record, ['type', 'deck', 'enabled']);
+		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'loop_interval_base') {
+		_exactKeys(record, ['type', 'deck', 'base']);
+		const base = _finite('base', record.base);
+		// assertLoopGridBase owns the bounds; parsing only guarantees a number
+		// reaches it, so the legal-window rule lives in exactly one place.
+		assertLoopGridBase(base);
+		return { type, deck, base };
 	} else if (type === 'tempo') {
 		_exactKeys(record, ['type', 'deck', 'ratio']);
 		return { type, deck, ratio: _finite('ratio', record.ratio) };
@@ -634,6 +664,11 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
+		loop_interval: {
+			grid_mode: loopIntervalView[deckId].gridMode,
+			grid_base: loopIntervalView[deckId].gridBase,
+			choices: loopIntervalChoices(loopIntervalView[deckId].gridBase)
+		},
 		beatgrid: beatgrid.beatgrid,
 		beatgrid_ms: beatgrid.beatgrid_ms,
 		hot_cue_slots: (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as HotCueSlot[]).map((slot) => ({
@@ -711,7 +746,12 @@ export function performanceCommandQueueScopes(
 		command.type === 'crossfader' ||
 		command.type === 'master_volume' ||
 		command.type === 'headphone_mix' ||
-		command.type === 'headphone_level'
+		command.type === 'headphone_level' ||
+		// View state only: no engine write to serialize, so queueing these
+		// behind a deck's command scope would stall a control that cannot
+		// conflict with anything.
+		command.type === 'loop_interval_mode' ||
+		command.type === 'loop_interval_base'
 	) {
 		return null;
 	}
@@ -720,6 +760,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'play' ||
 		command.type === 'cue' ||
 		command.type === 'seek' ||
+		command.type === 'beat_jump' ||
 		command.type === 'tempo' ||
 		command.type === 'beat_sync' ||
 		command.type === 'sync_mode' ||
@@ -802,6 +843,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.setLoop(command.deck, command.loop);
 	} else if (command.type === 'beat_loop') {
 		await engine.engageBeatLoop(command.deck, command.beats, command.start_ms);
+	} else if (command.type === 'beat_jump') {
+		await engine.beatJump(command.deck, command.beats);
+	} else if (command.type === 'loop_interval_mode') {
+		setLoopIntervalMode(command.deck, command.enabled);
+	} else if (command.type === 'loop_interval_base') {
+		setLoopIntervalBase(command.deck, command.base);
 	} else if (command.type === 'tempo') {
 		await engine.setTempoRatio(command.deck, command.ratio);
 	} else if (command.type === 'pitch_range') {

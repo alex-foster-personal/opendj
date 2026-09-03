@@ -47,10 +47,12 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import type { StemControl } from '$lib/rb/stem-types';
+	import BeatJump from './deck/BeatJump.svelte';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
 	import JogDial from './deck/JogDial.svelte';
 	import LoopCluster from './deck/LoopCluster.svelte';
+	import PadStrip from './deck/PadStrip.svelte';
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
@@ -98,7 +100,6 @@
 	);
 
 	const INERT_TIP = 'not implemented - see PARITY-TODO';
-	const PAD_LETTERS: string[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 	// ------------------------------------------------- engine call plumbing
 	// Engine methods throw loudly on empty decks (fail-fast contract);
@@ -126,6 +127,18 @@
 
 	async function disengageLoop(): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop: null });
+	}
+
+	async function beatJump(beats: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'beat_jump', deck: deckId, beats });
+	}
+
+	async function setLoopIntervalMode(enabled: boolean): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'loop_interval_mode', deck: deckId, enabled });
+	}
+
+	async function setLoopIntervalBase(base: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'loop_interval_base', deck: deckId, base });
 	}
 
 	async function saveSafetyLoop(): Promise<void> {
@@ -353,16 +366,7 @@
 	ondragleave={onTrackDragLeave}
 	ondrop={(e) => void onTrackDrop(e)}
 >
-	<!-- Decorative A-H pad letter strip (hidden by default via
-	     --rb-pad-strip-display: none in theme.css). -->
-	<div class="pad-strip" aria-hidden="true">
-		{#each PAD_LETTERS as letter, i (letter)}
-			{#if i === 4}
-				<span class="pad-sep">|</span>
-			{/if}
-			<span class="pad-letter">{letter}</span>
-		{/each}
-	</div>
+	<PadStrip />
 
 	<DeckHeader
 		{deck}
@@ -403,17 +407,25 @@
 			/>
 		</div>
 
-		<LoopCluster
-			{deck}
-			{deckId}
-			{pending}
-			onEngage={engageBeatLoop}
-			onDisengage={disengageLoop}
-			onSafetySave={saveSafetyLoop}
-			onSafetyArm={armSafetyLoop}
-			onSafetyClear={clearSafetyLoop}
-			inertTip={INERT_TIP}
-		/>
+		<!-- Loop column. Beat jump rides the spare height already sitting
+		     under the loop cluster (the jog and pitch fader set this row's
+		     height), so hosting it costs the deck box nothing. -->
+		<div class="loop-col">
+			<LoopCluster
+				{deck}
+				{deckId}
+				{pending}
+				onEngage={engageBeatLoop}
+				onDisengage={disengageLoop}
+				onSafetySave={saveSafetyLoop}
+				onSafetyArm={armSafetyLoop}
+				onSafetyClear={clearSafetyLoop}
+				onIntervalMode={setLoopIntervalMode}
+				onIntervalBase={setLoopIntervalBase}
+				inertTip={INERT_TIP}
+			/>
+			<BeatJump {deck} {pending} onJump={beatJump} />
+		</div>
 
 		<TransportCluster {deck} {pending} onCue={returnToCue} onPlayPause={playPause} />
 
@@ -546,20 +558,6 @@
 	.rb-deck.is-master.deck-focus {
 		box-shadow: inset 0 0 0 2px var(--rb-yellow);
 	}
-	.pad-strip {
-		/* Toggle: set --rb-pad-strip-display: none on .perf-root to hide. */
-		display: var(--rb-pad-strip-display, flex);
-		align-items: center;
-		justify-content: center;
-		gap: 10px;
-		font-size: var(--rb-fs-label);
-		color: var(--rb-text-dim);
-		line-height: 1;
-		flex: 0 0 auto;
-	}
-	.pad-sep {
-		color: var(--rb-border);
-	}
 	.main-row {
 		display: flex;
 		align-items: flex-start;
@@ -581,6 +579,14 @@
 	.ticks {
 		font-size: 8px;
 		letter-spacing: 1px;
+	}
+	.loop-col {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 3px;
+		flex: 0 0 auto;
+		min-height: 0;
 	}
 	.cue-flex {
 		flex: 1 1 0;

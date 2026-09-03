@@ -67,6 +67,32 @@ export function loopEndpointsWithinDurationMs(
 	return { in_ms: loop.in_ms, out_ms };
 }
 
+/**
+ * Whether `beatCount` beats fit from the anchor AND the resulting loop ends
+ * at or before the decoded audio duration, without throwing. A grid-only fit
+ * check can still land past duration, at which point
+ * `loopEndpointsWithinDurationMs` clips the engaged loop shorter than the
+ * requested beat count; a render-path gate must use this instead, so a
+ * choice is only enabled when engaging it will not silently clip. Mirrors
+ * `beatJumpMovesTransportWithinDuration`'s try/catch predicate shape: a
+ * render-path gate needs a boolean, not a thrown edge case, while the actual
+ * engage command still fails loudly on a bad grid.
+ */
+export function beatLoopFitsWithinDuration(
+	beats: readonly AnlzBeat[],
+	positionMs: number,
+	beatCount: number,
+	durationMs: number,
+	startMs?: number
+): boolean {
+	try {
+		const range = exactBeatLoopRangeMs(beats, positionMs, beatCount, startMs);
+		return range.out_ms <= durationMs;
+	} catch {
+		return false;
+	}
+}
+
 export function exactBeatLoopRangeMs(
 	beats: readonly AnlzBeat[],
 	positionMs: number,

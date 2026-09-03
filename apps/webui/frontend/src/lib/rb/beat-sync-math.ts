@@ -331,6 +331,103 @@ export function quantizeToNearestBeat(
 	return beats[_nearestBeatIndex(beats, positionSec)].t;
 }
 
+/**
+ * Target position (ms) for a beat jump measured across exact PQTZ beats.
+ *
+ * The anchor snaps to the nearest real grid beat, then the jump counts whole
+ * grid beats - never a BPM-derived duration, so a track whose tempo drifts
+ * still lands exactly on a beat. A jump that would run past either end of the
+ * grid lands on the first or last real beat: a track boundary is a defined
+ * edge, not a masked failure, and callers render the control inert (with a
+ * reason) when no movement is left.
+ *
+ * `positionMs` is the caller's anchor, and the engine passes the LIVE playhead
+ * while a deck is playing rather than its stored `position_ms`, which only
+ * advances on state pushes. Anchoring a moving deck to a stale position would
+ * jump from where it was, not from where the operator hears it. The routing
+ * side of that call (loop exit, follower phase sync, presentation clock) is
+ * `quantizedSeek`'s, so this module stays pure and testable.
+ */
+export function beatJumpTargetMs(
+	beats: readonly AnlzBeat[],
+	positionMs: number,
+	deltaBeats: number
+): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionMs', positionMs);
+	if (!Number.isInteger(deltaBeats) || deltaBeats === 0) {
+		throw new RangeError(`deltaBeats must be a non-zero integer, got ${deltaBeats}`);
+	}
+	const anchorIndex = _nearestBeatIndex(beats, positionMs / 1000);
+	const targetIndex = Math.min(Math.max(anchorIndex + deltaBeats, 0), beats.length - 1);
+	return beats[targetIndex].t * 1000;
+}
+
+/**
+ * Clamp a beat-jump target to the last real grid beat at or before the
+ * decoded audio duration.
+ *
+ * `beatJumpTargetMs` always lands on beat data from the analyzed grid, but
+ * an ANLZ beatgrid can be extrapolated slightly past the decoded buffer
+ * boundary for the final interval - the same overshoot
+ * `loopEndpointsWithinDurationMs` documents for loops. Clamping to
+ * `durationMs` itself would park the transport at an arbitrary off-grid
+ * instant; clamping to the exact time of the last in-range beat keeps the
+ * target ON the grid, so a caller's own re-quantization (e.g.
+ * `quantizedSeek`) snaps it back to itself rather than re-selecting a beat
+ * past the boundary.
+ */
+export function beatJumpTargetWithinDurationMs(
+	beats: readonly AnlzBeat[],
+	targetMs: number,
+	durationMs: number
+): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('targetMs', targetMs);
+	_assertFiniteNonNegative('durationMs', durationMs);
+	if (targetMs <= durationMs) return targetMs;
+	for (let index = beats.length - 1; index >= 0; index--) {
+		if (beats[index].t * 1000 <= durationMs) return beats[index].t * 1000;
+	}
+	throw new RangeError(
+		`no PQTZ beat at or before decoded duration ${durationMs}ms among ${beats.length} beats`
+	);
+}
+
+/**
+ * Whether a beat jump would actually move the transport once its target is
+ * clamped to the decoded audio duration, the same clamp the engine applies
+ * (`beatJumpTargetWithinDurationMs`).
+ *
+ * The unclamped target alone (`beatJumpTargetMs`) can differ from the anchor
+ * when the only grid movement available is to a final beat that sits past
+ * the decoded buffer boundary: the engine then clamps that jump back to the
+ * same already-current beat, so a render-path gate using the unclamped
+ * comparison would enable a button that silently no-ops. Both the anchor and
+ * the target are clamped before comparing, so an anchor that itself sits
+ * past duration (an edge case, but not one to assume away) is judged on the
+ * same terms as its target.
+ */
+export function beatJumpMovesTransportWithinDuration(
+	beats: readonly AnlzBeat[],
+	positionMs: number,
+	deltaBeats: number,
+	durationMs: number
+): boolean {
+	try {
+		const anchorIndex = _nearestBeatIndex(beats, positionMs / 1000);
+		const anchorMs = beatJumpTargetWithinDurationMs(beats, beats[anchorIndex].t * 1000, durationMs);
+		const targetMs = beatJumpTargetWithinDurationMs(
+			beats,
+			beatJumpTargetMs(beats, positionMs, deltaBeats),
+			durationMs
+		);
+		return targetMs !== anchorMs;
+	} catch {
+		return false;
+	}
+}
+
 /** Local tempo (BPM) from the nearest beat's interval; null when unusable. */
 export function gridBpmAt(
 	beats: readonly AnlzBeat[],
