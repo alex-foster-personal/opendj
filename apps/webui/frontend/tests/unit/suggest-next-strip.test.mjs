@@ -13,6 +13,8 @@
  * - the 422 insufficient-data outcome is mapped off ApiError
  * - the body carries explain: false (required by the generated SuggestNextIn;
  *   false is the server default the old raw fetch relied on)
+ * - every load control exposes the current destination channel, preserves its
+ *   explanation, and explicitly disables itself with no free deck
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -40,4 +42,27 @@ test('the 422 insufficient-data outcome is mapped off ApiError', () => {
 
 test('the request body sends the explicit explain: false server default', () => {
 	assert.match(source, /explain: false/);
+});
+
+test('candidate load controls retain their channel and explanation in accessible labels', () => {
+	assert.match(source, /targetDeck: DeckId \| null;/);
+	assert.match(source, /`CH \$\{targetDeck\}`/);
+	assert.match(source, /` - \$\{candidate\.explain_text\}`/);
+	assert.match(source, /title=\{_loadControlLabel\(cand, false\)\}/);
+	assert.match(source, /aria-label=\{_loadControlLabel\(cand, true\)\}/);
+});
+
+test('candidate controls explicitly disable when no deck is free', () => {
+	assert.match(source, /no free deck available/);
+	assert.match(source, /disabled=\{targetDeck === null\}/);
+});
+
+test('BrowserPanel wires the current lowest free deck into SuggestNextStrip', () => {
+	const browser = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(browser, /const suggestTargetDeck = \$derived\(_lowestFreeDeck\(\)\);/);
+	assert.match(browser, /<SuggestNextStrip[\s\S]*?targetDeck=\{suggestTargetDeck\}[\s\S]*?onload=/);
+	assert.match(browser, /function loadSuggest\(sid: string/);
 });

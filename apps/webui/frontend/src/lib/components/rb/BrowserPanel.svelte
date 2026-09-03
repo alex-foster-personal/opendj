@@ -1379,6 +1379,7 @@
 	}
 
 	const playlistMemberIds = $derived(new Set(pane.rows.map((r) => r.stable_id)));
+	const suggestTargetDeck = $derived(_lowestFreeDeck());
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
@@ -2164,6 +2165,7 @@
 		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 		<SuggestNextStrip
 			stableId={decks[1].stable_id}
+			targetDeck={suggestTargetDeck}
 			onload={(sid) => loadSuggest(sid)}
 			onplay={(sid) => loadSuggest(sid, { play: true })}
 			onhover={(sid) => (suggestHoverId = sid)}
