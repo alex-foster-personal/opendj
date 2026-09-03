@@ -30,9 +30,15 @@ EXCISED_RE='^(\.planning/bifrost2-handoff/|tests/fixtures/rekordbox/|tests/fixtu
 map_new() { awk -v o="$1" '$1==o{print $2; exit}' "$map"; }
 
 # 1. old base: the newest ancestor of the branch that appears in the map.
+# filter-repo maps a commit that became EMPTY (it only touched excised paths)
+# to the all-zero SHA. Such a commit is a valid map entry but not a valid
+# rebase target, so keep walking to the next ancestor that maps to a real
+# commit. Found on the Air re-point, Thu 3 Sep 2026: 27 branches whose newest
+# mapped ancestor was one of those.
 old_base=""
 while read -r sha; do
-  if [[ -n "$(map_new "$sha")" ]]; then old_base="$sha"; break; fi
+  new="$(map_new "$sha")"
+  if [[ -n "$new" && "$new" != 0000000000000000000000000000000000000000 ]]; then old_base="$sha"; break; fi
 done < <(git rev-list --first-parent "$branch" | head -500)
 [[ -n "$old_base" ]] || { echo "[ERROR] no ancestor of $branch is in the commit-map; is this branch already rewritten?" >&2; exit 2; }
 new_base="$(map_new "$old_base")"
