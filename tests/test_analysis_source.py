@@ -1,11 +1,14 @@
 """Regression tests for PARITY-02 (in-app rbx-vs-own analysis source toggle).
 
 Self-contained: the store/routes half needs nothing but a bare FastAPI app;
-the /anlz beatgrid-override half builds a tmp state.db through the
-documented writer path (apps.analysis.store.upsert_record), same fixture
-shape as tests/test_analysis_route.py, and exercises the override helper
-directly so it needs no real rekordbox data (data/master.plain.db /
-data/state/state.db, both gitignored and absent in CI).
+the /anlz beatgrid-override half builds a real, production-migrated state.db
+(apps.analysis.store.upsert_record, same fixture shape as
+tests/test_analysis_route.py) with deliberately UNMAPPED tracks, rebinds it
+onto apps.adapters.rekordbox.config.STATE_DB, and drives the real
+GET /api/v1/tracks/{stable_id}/anlz route end to end -- so it needs no real
+rekordbox data (data/master.plain.db / data/state/state.db, both gitignored
+and absent in CI) while still exercising production code, not a fabricated
+request (AGENTS.md:L55-L63).
 
 Regression one-liners:
   - if GET /analysis-source doesn't default every feature to rekordbox then broken
@@ -21,20 +24,23 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
 from apps.webui.server.analysis_source import AnalysisSourceStore
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis import router as analysis_router
 from apps.webui.server.routes.analysis_source import router as analysis_source_router
-from apps.webui.server.routes.rb_assets import _resolve_beatgrid_source
+from apps.webui.server.routes.rb_assets import router as rb_assets_router
 
 DURATION_S = 60.0
 BPM = 120.0
@@ -113,27 +119,43 @@ def test_a_fresh_store_never_inherits_a_prior_selection() -> None:
     assert second.get("beatgrid") == "rekordbox"
 
 
-# ----- _resolve_beatgrid_source (the /anlz value-swap) -------------------------
+# ----- _resolve_beatgrid_source, exercised through the real /anlz route ------
+#
+# AGENTS.md:L55-L63 (no mocks and locked real fixtures): these used to drive
+# `_resolve_beatgrid_source` directly against `_FakeRequest`/`_FakeApp`/
+# `_FakeAppState` duck-types -- fabricated application state that never
+# touches FastAPI routing, dependency injection, or `get_track_anlz`'s own
+# exception handling. Real production `/api/v1/tracks/{stable_id}/anlz` is
+# hit instead, via a real, production-migrated state.db (`apps.analysis.store
+# .open_conn` runs the same Phase 5 migrations `apps.shared.state.db.open_rw`
+# does, then layers the analysis tables on top) rebound onto
+# `apps.adapters.rekordbox.config.STATE_DB` -- the sanctioned override seam
+# documented on that module ("Every constant here is a rebindable module
+# attribute, on purpose").
+#
+# Every track here is deliberately UNMAPPED (no track_vendor_ids row), so
+# `resolve_content` takes its real VENDOR_MAPPING_NOT_FOUND branch and the
+# route serves `rb_vendor.local_anlz_payload` as its base payload -- this
+# needs no data/master.plain.db (gitignored, absent in CI), matching this
+# module's existing no-real-rekordbox-data contract. `file_path` points at a
+# location that genuinely does not exist, so the waveform decode fails
+# closed (AUDIO_FILE_MISSING -> LocalDecodeUnavailable -> `not_decoded`)
+# rather than fabricating a decode.
 
 
-class _FakeAppState:
-    def __init__(self, db_path, source: str) -> None:
-        self.analysis_db_path = db_path
-        self.analysis_source = AnalysisSourceStore()
-        self.analysis_source.set("beatgrid", source)
+_TS = "2026-09-01T00:00:00Z"
 
 
-class _FakeApp:
-    def __init__(self, db_path, source: str) -> None:
-        self.state = _FakeAppState(db_path, source)
-
-
-class _FakeRequest:
-    """Duck-types the ``request.app.state.X`` reads _resolve_beatgrid_source
-    and analysis._analysis_db_path need -- no real HTTP layer required."""
-
-    def __init__(self, db_path, source: str) -> None:
-        self.app = _FakeApp(db_path, source)
+def _add_unmapped_track(db: Path, sid: str) -> None:
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
+        "file_path, created_at, updated_at, deleted_at) VALUES (?,?,?,?,?,?,?,?)",
+        (sid, "inferred", f"title-{sid}", "[]", str(db.parent / f"{sid}.flac"),
+         _TS, _TS, None),
+    )
+    conn.commit()
+    conn.close()
 
 
 @pytest.fixture(scope="module")
@@ -144,73 +166,105 @@ def analysis_db(tmp_path_factory: pytest.TempPathFactory):
     return db
 
 
-@pytest.mark.requirement("PARITY-02")
-def test_rekordbox_source_leaves_payload_beatgrid_untouched(analysis_db) -> None:
-    request = _FakeRequest(analysis_db, "rekordbox")
-    payload = {"beatgrid": {"beat_count": 1, "beats": [{"n": 1, "bpm": BPM, "t": 0.0}]}}
-    _resolve_beatgrid_source(request, SID_WITH_OWN, payload)
-    assert payload["beatgrid_source"] == "rekordbox"
-    assert payload["beatgrid_own_unavailable_reason"] is None
-    assert payload["beatgrid"] == {"beat_count": 1, "beats": [{"n": 1, "bpm": BPM, "t": 0.0}]}
+@pytest.fixture(scope="module")
+def anlz_state_db(analysis_db: Path) -> Path:
+    for sid in (SID_WITH_OWN, SID_NO_DOWNBEATS, SID_UNANALYZED):
+        _add_unmapped_track(analysis_db, sid)
+    return analysis_db
+
+
+@pytest.fixture()
+def anlz_client(
+    anlz_state_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    monkeypatch.setattr(rb_config, "STATE_DB", anlz_state_db)
+    app = FastAPI()
+    app.state.backend = InMemoryBackend()
+    app.state.analysis_db_path = anlz_state_db
+    app.state.analysis_source = AnalysisSourceStore()
+    app.include_router(rb_assets_router, prefix="/api/v1")
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def _set_source(client: TestClient, source: str) -> None:
+    client.app.state.analysis_source.set("beatgrid", source)
 
 
 @pytest.mark.requirement("PARITY-02")
-def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(analysis_db) -> None:
-    request = _FakeRequest(analysis_db, "own")
-    payload = {"beatgrid": {"beat_count": 1, "beats": [{"n": 1, "bpm": 999.0, "t": 0.0}]}}
-    _resolve_beatgrid_source(request, SID_WITH_OWN, payload)
-    assert payload["beatgrid_source"] == "own"
-    assert payload["beatgrid_own_unavailable_reason"] is None
-    grid = payload["beatgrid"]
+def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestClient) -> None:
+    r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["beatgrid_source"] == "rekordbox"
+    assert body["beatgrid_own_unavailable_reason"] is None
+    # No rekordbox mapping exists for this track, so the rekordbox-owned
+    # beatgrid is genuinely empty -- same shape empty_anlz_payload always
+    # produces, left untouched by the source swap.
+    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
+
+
+@pytest.mark.requirement("PARITY-02")
+def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
+    anlz_client: TestClient,
+) -> None:
+    _set_source(anlz_client, "own")
+    r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["beatgrid_source"] == "own"
+    assert body["beatgrid_own_unavailable_reason"] is None
+    grid = body["beatgrid"]
     assert grid["beat_count"] == len(grid["beats"]) > 0
     for beat in grid["beats"]:
         assert set(beat) == {"n", "bpm", "t"}
         assert beat["bpm"] == pytest.approx(BPM, abs=0.01)
-    # The rekordbox value that was in the payload before the swap is gone.
-    assert 999.0 not in {b["bpm"] for b in grid["beats"]}
 
 
 @pytest.mark.requirement("PARITY-02")
 def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbox(
-    analysis_db,
+    anlz_client: TestClient,
 ) -> None:
-    request = _FakeRequest(analysis_db, "own")
-    payload = {"beatgrid": {"beat_count": 4, "beats": [{"n": 1, "bpm": BPM, "t": 0.0}] * 4}}
-    _resolve_beatgrid_source(request, "sid-totally-unknown", payload)
-    assert payload["beatgrid_source"] == "own"
-    assert payload["beatgrid"] == {"beat_count": 0, "beats": []}
-    assert payload["beatgrid_own_unavailable_reason"] == "no own analysis for this track"
+    _set_source(anlz_client, "own")
+    r = anlz_client.get(f"/api/v1/tracks/{SID_UNANALYZED}/anlz")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["beatgrid_source"] == "own"
+    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
+    assert body["beatgrid_own_unavailable_reason"] == "no own analysis for this track"
 
 
 @pytest.mark.requirement("PARITY-02")
-def test_no_analysis_source_on_app_state_defaults_to_rekordbox(analysis_db) -> None:
+def test_no_analysis_source_on_app_state_defaults_to_rekordbox(
+    anlz_state_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A test app that mounts only the rb-assets router (test_rb_assets.py's
     own fixture shape) never sets app.state.analysis_source. That must not
     AttributeError -- it is the same 'test app is a subset of the real one'
     convention routes.analysis already honors for analysis_db_path."""
-
-    class _BareState:
-        pass
-
-    class _BareApp:
-        state = _BareState()
-
-    class _BareRequest:
-        app = _BareApp()
-
-    payload = {"beatgrid": {"beat_count": 1, "beats": [{"n": 1, "bpm": BPM, "t": 0.0}]}}
-    _resolve_beatgrid_source(_BareRequest(), SID_WITH_OWN, payload)
-    assert payload["beatgrid_source"] == "rekordbox"
-    assert payload["beatgrid"] == {"beat_count": 1, "beats": [{"n": 1, "bpm": BPM, "t": 0.0}]}
+    monkeypatch.setattr(rb_config, "STATE_DB", anlz_state_db)
+    app = FastAPI()
+    app.state.backend = InMemoryBackend()
+    app.state.analysis_db_path = anlz_state_db
+    app.include_router(rb_assets_router, prefix="/api/v1")
+    with TestClient(app) as client:
+        r = client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["beatgrid_source"] == "rekordbox"
+    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
 
 
 @pytest.mark.requirement("PARITY-02")
-def test_own_source_with_downbeat_less_record_names_that_reason(analysis_db) -> None:
-    request = _FakeRequest(analysis_db, "own")
-    payload = {"beatgrid": {"beat_count": 1, "beats": [{"n": 1, "bpm": BPM, "t": 0.0}]}}
-    _resolve_beatgrid_source(request, SID_NO_DOWNBEATS, payload)
-    assert payload["beatgrid"] == {"beat_count": 0, "beats": []}
-    assert payload["beatgrid_own_unavailable_reason"] == "own analysis has no usable downbeats"
+def test_own_source_with_downbeat_less_record_names_that_reason(
+    anlz_client: TestClient,
+) -> None:
+    _set_source(anlz_client, "own")
+    r = anlz_client.get(f"/api/v1/tracks/{SID_NO_DOWNBEATS}/anlz")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
+    assert body["beatgrid_own_unavailable_reason"] == "own analysis has no usable downbeats"
 
 
 def test_analysis_router_still_wires_up_alongside_the_new_router(analysis_db) -> None:
