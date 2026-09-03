@@ -149,3 +149,17 @@ test('no header inlines its own copy of a tip string', () => {
 		}
 	}
 });
+
+test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable dynamic analysis', () => {
+	assert.match(source, /key: 36/);
+	assert.match(source, /bpm: 42/);
+	assert.match(source, /camelot-suffix/);
+	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
+	assert.match(source, /Dynamic key.*not analyzed/);
+	assert.match(source, /Dynamic tempo analysis: not analyzed/);
+	assert.match(source, /#each hl\(row.key\) as part/, 'compact key cells must retain active search highlighting');
+});
+
+test('key hover reserves only honest optional musical-mode and chord-progression detail', () => {
+	assert.match(source, /musical mode, and chord progression analysis: not analyzed/);
+});

@@ -46,6 +46,28 @@
 	user-select: none;
 }
 
+/* Warm light palette. Every foreground/background token pair is AA at the
+ * token level: --rb-text on --rb-bg/panel and --rb-text-dim on --rb-bg meet
+ * 4.5:1. User scheme overrides must preserve those pairs, rather than adding
+ * component-local colours that can become unreadable. */
+html[data-theme='light'] .perf-root {
+	--rb-bg: #f7f3eb;
+	--rb-panel: #fffdf8;
+	--rb-panel-raised: #eee8dd;
+	--rb-border: #b8b0a3;
+	--rb-text: #27241f;
+	--rb-text-dim: #5d574e;
+	--rb-accent: #175ea8;
+	--rb-accent-glow: rgba(23, 94, 168, 0.35);
+	--rb-green: #1d7035;
+	--rb-orange: #a44b11;
+	--rb-wave-mid: #2166b1;
+	--rb-wave-high: #3a4653;
+	--rb-red: #ad2420;
+	--rb-yellow: #927000;
+	--rb-select: #d6e5f5;
+}
+
 /* -------- panel chrome -------- */
 .perf-root .rb-panel {
 	background: var(--rb-panel);

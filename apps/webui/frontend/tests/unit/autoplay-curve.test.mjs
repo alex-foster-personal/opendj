@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
@@ -9,6 +10,18 @@ before(async () => {
 });
 
 describe('autoplay-curve', () => {
+	it('the charted order uses the same production picker as the live handoff', () => {
+		const source = readFileSync(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url), 'utf8');
+		assert.match(source, /const full = simulateAutoPlayChain\(\{[^}]*select_next: pickNextStableId,/);
+		assert.match(source, /const nextId = pickNextStableId\(/);
+	});
+	it('keeps hover and keyboard tracing attached to the relocated rank column', () => {
+		const source = readFileSync(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url), 'utf8');
+		assert.match(source, /onpointerenter=\{\(\) => \(hoveredApId = row.stable_id\)\}/);
+		assert.match(source, /onfocus=\{\(\) => \(hoveredApId = row.stable_id\)\}/);
+		assert.match(source, /--ap-curve-left:\$\{colWidths.funnel \+ colWidths.err \+ colWidths.cloud \+ colWidths.order\}px/);
+		assert.match(source, /left: var\(--ap-curve-left\)/);
+	});
 	it('assignLanes packs non-overlapping spans into lane 0', () => {
 		const { assignLanes } = mod;
 		assert.deepEqual(assignLanes([{ minY: 0, maxY: 10 }, { minY: 20, maxY: 30 }]), [0, 0]);

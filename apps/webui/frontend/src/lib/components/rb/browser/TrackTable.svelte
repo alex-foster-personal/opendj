@@ -98,8 +98,8 @@
 		art: 54,
 		title: 220,
 		artist: 140,
-		key: 48,
-		bpm: 54,
+		key: 36,
+		bpm: 42,
 		plays: 36,
 		rating: 80,
 		comments: 110,
@@ -640,7 +640,7 @@
 
 	function _fmtBpm(bpm: number | null): string {
 		// Screenshot truncates to '132.' - one decimal is the sanctioned improvement.
-		return bpm === null ? '' : bpm.toFixed(1);
+		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
 	function _hideBrokenImg(event: Event): void {
@@ -781,6 +781,7 @@
 				<col style={`width:${colWidths.err}px`} />
 				<col style={`width:${colWidths.cloud}px`} />
 				<col style={`width:${colWidths.order}px`} />
+				{#if autoPlayMode !== 'off'}<col style={`width:${colWidths.autoplay}px`} />{/if}
 				<col style={`width:${colWidths.preview}px`} />
 				<col style={`width:${colWidths.art}px`} />
 				<col style={`width:${colWidths.title}px`} />
@@ -794,7 +795,6 @@
 				<col style={`width:${colWidths.quality}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
-				<col style={`width:${colWidths.autoplay}px`} />
 			</colgroup>
 			<thead>
 				<tr>
@@ -843,6 +843,16 @@
 						></span>
 					</th>
 					{@render sortableTh('order', '#', 'order')}
+					{#if autoPlayMode !== 'off'}
+						<th class="h-icon h-autoplay" style={`width:${colWidths.autoplay}px`} title="AutoPlay order - rank in AutoPlay's next handoffs for the open playlist">
+							<AutoPlayExplainer>
+								{#snippet demo()}
+									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
+								{/snippet}
+								<span aria-hidden="true">🤖</span>
+							</AutoPlayExplainer>
+						</th>
+					{/if}
 					<th
 						class="h-preview"
 						style={`width:${colWidths.preview}px`}
@@ -986,51 +996,12 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					<th
-						class="h-icon h-autoplay"
-						style={`width:${colWidths.autoplay}px`}
-						title="AutoPlay order - rank in AutoPlay's next handoffs for the open playlist"
-					>
-						{#if autoPlayMode !== 'off'}
-							<AutoPlayExplainer>
-								{#snippet demo()}
-									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}
-										<AutoPlayWalkthrough mode={autoPlayMode} />
-									{/if}
-								{/snippet}
-								<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-									<!-- robot head -->
-									<rect x="3" y="4" width="10" height="8" rx="1.5" fill="currentColor" />
-									<circle cx="6" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
-									<circle cx="10" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
-									<rect x="7.25" y="1.5" width="1.5" height="2.5" fill="currentColor" />
-									<circle cx="8" cy="1.5" r="1" fill="currentColor" />
-								</svg>
-							</AutoPlayExplainer>
-						{:else}
-							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-								<rect x="3" y="4" width="10" height="8" rx="1.5" fill="currentColor" />
-								<circle cx="6" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
-								<circle cx="10" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
-								<rect x="7.25" y="1.5" width="1.5" height="2.5" fill="currentColor" />
-								<circle cx="8" cy="1.5" r="1" fill="currentColor" />
-							</svg>
-						{/if}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<span
-							class="col-resize"
-							onpointerdown={(e) => onColResizeStart(e, 'autoplay')}
-							onpointermove={onColResizeMove}
-							onpointerup={onColResizeEnd}
-							onpointercancel={onColResizeEnd}
-						></span>
-					</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan={AUTOPLAY_COL_COUNT}></td>
+						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
@@ -1131,6 +1102,23 @@
 							{/if}
 							{row.order}
 						</td>
+						{#if autoPlayMode !== 'off'}
+							<td class="c-autoplay">
+								{#if _autoPlayRank(row.stable_id) !== null}
+									{@const rank = _autoPlayRank(row.stable_id)!}
+									<span
+										class="ap-rank"
+										class:ap-rank-hot={hoveredApId === row.stable_id}
+										tabindex="0"
+										title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}
+										onpointerenter={() => (hoveredApId = row.stable_id)}
+										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
+										onfocus={() => (hoveredApId = row.stable_id)}
+										onblur={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
+									>{rank}{AUTOPLAY_ARROW}</span>
+								{/if}
+							</td>
+						{/if}
 						<td class="c-preview">
 							<PreviewStrip
 								strip={row.strip}
@@ -1201,10 +1189,13 @@
 							class="c-key"
 							class:key-compat={keyCompat(row.key)}
 							style={keyCompatStyle(row.key)}
-							title={camelotKeyHoverLabel(row.key) ?? undefined}
+							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`}
 						>
+							{#snippet keyCharacters(text: string)}
+								{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
+							{/snippet}
 							{#each hl(row.key) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
+								{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
 							{/each}
 						</td>
 						<td
@@ -1213,7 +1204,7 @@
 							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
 							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
 							style={bpmCellStyle(row.bpm)}
-							title={bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? undefined}
+							title={`${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`}
 						>{_fmtBpm(row.bpm)}</td>
 						<td
 							class="c-plays"
@@ -1259,30 +1250,11 @@
 						<td class="c-stems">
 							<StemTags stems={row.stems} />
 						</td>
-						<td class="c-autoplay">
-							{#if _autoPlayRank(row.stable_id) !== null}
-								{@const rank = _autoPlayRank(row.stable_id)!}
-								<span
-									class="ap-rank"
-									class:ap-rank-hot={hoveredApId === row.stable_id}
-									tabindex="0"
-									title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}
-									onpointerenter={() => (hoveredApId = row.stable_id)}
-									onpointerleave={() => {
-										if (hoveredApId === row.stable_id) hoveredApId = null;
-									}}
-									onfocus={() => (hoveredApId = row.stable_id)}
-									onblur={() => {
-										if (hoveredApId === row.stable_id) hoveredApId = null;
-									}}
-								>{rank}{AUTOPLAY_ARROW}</span>
-							{/if}
-						</td>
 					</tr>
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan={AUTOPLAY_COL_COUNT}></td>
+						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
 			</tbody>
@@ -1294,7 +1266,7 @@
 			<svg
 				class="ap-curve"
 				aria-hidden="true"
-				style={`--ap-curve-w:${colWidths.autoplay}px`}
+				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.funnel + colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
 					<path
@@ -1400,7 +1372,7 @@
 	.ap-curve {
 		position: absolute;
 		top: 0;
-		right: 0;
+		left: var(--ap-curve-left);
 		bottom: 0;
 		width: var(--ap-curve-w, 46px);
 		pointer-events: none;
@@ -1753,6 +1725,7 @@
 		color: var(--rb-text-dim);
 		box-sizing: border-box;
 	}
+	.camelot-suffix { font-size: 0.67em; }
 	.c-key.key-compat {
 		border-radius: 2px;
 		padding-left: 4px;

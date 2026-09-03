@@ -20,6 +20,7 @@
 		setAutoPlayEnforceOrder,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
+		toggleTheme,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
@@ -287,14 +288,14 @@
 	<FeedbackWidget />
 
 	<!-- dead-center vibe meter: mouse movement tops it up; history in localStorage -->
-	<div class="vibe-slot">
+	<div class="vibe-slot topbar-slot-vibe">
 		<VibeMeter />
 	</div>
 
 	<!-- right cluster -->
 	<button
 		type="button"
-		class="bsm-toggle"
+		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
 		onclick={() => (pairingOpen = true)}
 	>
@@ -303,7 +304,7 @@
 
 	<button
 		type="button"
-		class="bsm-toggle"
+		class="bsm-toggle topbar-slot-bsm"
 		class:on={uiPrefs.beat_sync_max}
 		aria-pressed={uiPrefs.beat_sync_max}
 		title={uiPrefs.beat_sync_max
@@ -316,7 +317,7 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<span
-		class="ap-wrap"
+		class="ap-wrap topbar-slot-autoplay"
 		bind:this={autoPlayWrapEl}
 		onpointerenter={_showAutoPlayMenu}
 		onpointerleave={_hideAutoPlayMenu}
@@ -372,7 +373,7 @@
 		{/if}
 	</span>
 
-	<span class="dim-label" title={plannedTitle('pad')}>PAD</span>
+	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
 	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
 	<button
 		class="midi-label"
@@ -416,6 +417,21 @@
 	</button>
 
 	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
+
+	<button
+		type="button"
+		class="tb-icon theme-toggle"
+		class:on={uiPrefs.theme === 'light'}
+		title={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+		onclick={toggleTheme}
+	>
+		{#if uiPrefs.theme === 'dark'}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
+		{:else}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
+		{/if}
+	</button>
 
 	<button
 		type="button"
@@ -548,6 +564,29 @@
 		top: 50%;
 		transform: translate(-50%, -50%);
 		z-index: 1;
+	}
+
+	/* Wide chrome leaves VIBE centered; before controls can collide beneath
+	 * it, VIBE joins the flow in DOM order between the left and right clusters.
+	 * Then labels abbreviate, finally VIBE yields.
+	 * CommandEntry and JOBS are intentionally never hidden. */
+	@media (max-width: 1180px) {
+		.vibe-slot {
+			position: static;
+			transform: none;
+			margin-inline: 2px;
+		}
+	}
+	@media (max-width: 980px) {
+		.topbar-slot-pairing { display: none; }
+		.topbar-slot-bsm { font-size: 0; }
+		.topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
+		.topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
+		.topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
+	}
+	@media (max-width: 820px) {
+		.topbar-slot-vibe { display: none; }
+		.topbar-slot-pad, .free-badge, .link-btn { display: none; }
 	}
 
 	.ap-wrap {
