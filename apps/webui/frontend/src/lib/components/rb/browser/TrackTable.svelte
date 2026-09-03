@@ -247,6 +247,7 @@
 		removable = false,
 		reorderable = false,
 		onscrollcursor,
+		onrenderedrowcapacity,
 		onsort,
 		onselectrow,
 		onloadrow,
@@ -290,6 +291,9 @@
 		reorderable?: boolean;
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
+		/** Reports the number of actual rows the viewport can show after its
+		 * header and current density are accounted for. */
+		onrenderedrowcapacity?: (count: number) => void;
 		onsort: (key: SortKey) => void;
 		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
@@ -524,6 +528,16 @@
 		})
 	);
 	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
+	const renderedRowCapacity = $derived(
+		Math.min(
+			rows.length,
+			Math.max(0, Math.floor((viewportHeight - AUTOPLAY_THEAD_H) / rowHeight))
+		)
+	);
+
+	$effect(() => {
+		onrenderedrowcapacity?.(renderedRowCapacity);
+	});
 
 	/** Jump to first in-place find match when the query becomes active. */
 	$effect(() => {

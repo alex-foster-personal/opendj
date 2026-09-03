@@ -87,6 +87,11 @@
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
+	import {
+		isLibraryPanelsCollapsed,
+		noteVisibleLibraryRowCount,
+		toggleLibraryPanels
+	} from '$lib/rb/library-panels.svelte';
 	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
 	import { pickDoubleClickDeck, type DeckSlotState } from '$lib/rb/deck-slots';
 	import BulkEditModal from './BulkEditModal.svelte';
@@ -441,6 +446,17 @@
 		const rows = _computeVisibleRows();
 		_lastVisibleComputeMs = performance.now() - startedAt;
 		return rows;
+	});
+	function noteRenderedLibraryRowCapacity(count: number): void {
+		// PaneStore starts with an intentional empty array before onMount begins
+		// its first fetch. That is not a settled library result and must not
+		// collapse the panels for a normal relaunch.
+		if (!pane.has_settled_result || pane.loading) return;
+		noteVisibleLibraryRowCount(count);
+	}
+
+	$effect(() => {
+		if (isLibraryPanelsCollapsed()) suggestHoverId = null;
 	});
 	// Read contract handed to TrackTable (getters stay reactive through
 	// visibleRows/pane). The virtualization lane replaces THIS provider,
@@ -2222,6 +2238,7 @@
 				_noteLibraryInteraction();
 				panes[activePane].rememberScroll(top);
 			}}
+			onrenderedrowcapacity={noteRenderedLibraryRowCapacity}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
@@ -2239,26 +2256,51 @@
 			findQuery={findHighlightQuery}
 			{suggestHoverId}
 		/>
-		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
-		<SuggestNextStrip
-			stableId={decks[1].stable_id}
-			targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
-			playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
-			onload={(sid) => loadSuggest(sid)}
-			onplay={(sid) => loadSuggest(sid, { play: true })}
-			onhover={(sid) => (suggestHoverId = sid)}
-			oncandidates={(cands) => (suggestCandidates = cands)}
-		/>
-		<RecommendedSection
-			candidates={suggestCandidates}
-			currentPlaylistId={pane.playlist_id}
-			currentPlaylistMemberIds={playlistMemberIds}
-			referenceBpm={masterRef?.bpm ?? null}
-			referenceKey={masterRef?.key ?? null}
-			onload={(sid) => loadSuggest(sid)}
-			onplay={(sid) => loadSuggest(sid, { play: true })}
-			onhover={(sid) => (suggestHoverId = sid)}
-		/>
+		<!-- LIBUX-02: one chevron collapses/restores both panels together, so
+		     TrackTable (flex: 1 in this column) reclaims their vertical space
+		     the instant they stop rendering. -->
+		<div
+			class="library-panels-collapse-bar"
+			class:collapsed={isLibraryPanelsCollapsed()}
+			data-testid="library-panels-collapse-bar"
+		>
+			<button
+				type="button"
+				class="panels-chevron"
+				title={isLibraryPanelsCollapsed()
+					? 'Show Next / Recommended panels'
+					: 'Hide Next / Recommended panels'}
+				aria-label={isLibraryPanelsCollapsed()
+					? 'Show Next / Recommended panels'
+					: 'Hide Next / Recommended panels'}
+				aria-pressed={isLibraryPanelsCollapsed()}
+				onclick={() => toggleLibraryPanels()}
+			>
+				{isLibraryPanelsCollapsed() ? '‹' : '›'}
+			</button>
+		</div>
+		{#if !isLibraryPanelsCollapsed()}
+			<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
+			<SuggestNextStrip
+				stableId={decks[1].stable_id}
+				targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+				playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid) => loadSuggest(sid, { play: true })}
+				onhover={(sid) => (suggestHoverId = sid)}
+				oncandidates={(cands) => (suggestCandidates = cands)}
+			/>
+			<RecommendedSection
+				candidates={suggestCandidates}
+				currentPlaylistId={pane.playlist_id}
+				currentPlaylistMemberIds={playlistMemberIds}
+				referenceBpm={masterRef?.bpm ?? null}
+				referenceKey={masterRef?.key ?? null}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid) => loadSuggest(sid, { play: true })}
+				onhover={(sid) => (suggestHoverId = sid)}
+			/>
+		{/if}
 	</div>
 	<div class="library-health" aria-label="library processing health">
 		{#each [libraryHealth, vocalsCompletion, stemsCompletion] as dot (dot.label)}
@@ -2459,6 +2501,34 @@
 		cursor: default;
 	}
 	.icon-btn.active {
+		color: var(--rb-accent);
+	}
+	.library-panels-collapse-bar {
+		flex: none;
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		min-height: 12px;
+		background: var(--rb-panel);
+	}
+	.library-panels-collapse-bar.collapsed {
+		justify-content: flex-end;
+	}
+	.panels-chevron {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 12px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.panels-chevron:hover {
 		color: var(--rb-accent);
 	}
 	.bottom-bar {
