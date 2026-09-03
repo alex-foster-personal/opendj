@@ -96,3 +96,11 @@ def test_first_install_assessment_is_real_and_runs_once(tmp_path: Path) -> None:
 
     assert first == second
     assert load_capability(tmp_path) == first
+
+
+@pytest.mark.requirement("LATENCY-04")
+def test_committed_engine_openapi_exposes_live_capability() -> None:
+    schema_path = Path(__file__).resolve().parents[2] / "apps/webui/openapi.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    assert LIVE_STEMS_CAPABILITY_PATH in schema["paths"]
