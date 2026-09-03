@@ -149,6 +149,8 @@ export interface PlaylistNode {
 	name: string;
 	/** Right-aligned track count - OUR real count, never the screenshot's. */
 	track_count: number;
+	/** Broken tracks omitted from the displayed playable count. */
+	broken_count: number;
 	/** Node flavour; 'folder' reserved for future hierarchy, unused v1. */
 	kind: 'all_tracks' | 'playlist' | 'folder';
 	/** Fewer than 30% of tracks exist on disk; tree row renders dimmed. */

@@ -83,15 +83,14 @@
 </div>
 
 <style>
-	/* A single row of 4, not a 2x2 grid: the loop column only budgets one
-	 * row's worth of spare height below LoopCluster (fixed deck height,
-	 * clipped by main-row's overflow: hidden), so a second row is clipped.
-	 * Widening trades width for height; Deck.svelte's cue-flex is sized to
-	 * absorb exactly this kind of width change (see its own comment). */
+	/* Two compact columns keep BeatJump to the left of LoopCluster without
+	 * borrowing any hot-cue-bank space. The local group is horizontal, so the
+	 * grid's second row uses the loop cluster's existing vertical footprint. */
 	.beat-jump {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(20px, 1fr));
+		grid-template-columns: repeat(2, minmax(18px, 1fr));
 		gap: 2px;
+		width: 38px;
 		flex: 0 0 auto;
 	}
 	.beat-jump button {

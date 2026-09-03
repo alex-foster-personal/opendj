@@ -15,6 +15,8 @@
 
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
+import type { components } from '$lib/api-types';
+import { api, unwrap } from '$lib/api/client';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
@@ -374,13 +376,39 @@ export interface PlaylistSummaryHydrated extends PlaylistSummary {
 export async function listPlaylistsHydrated(): Promise<PlaylistSummaryHydrated[]> {
 	const lists = await _fetchJson<PlaylistSummaryHydrated[]>('/api/v1/playlists');
 	for (const p of lists) {
-		if (typeof p.available_count !== 'number') {
+		if (
+			typeof p.available_count !== 'number' ||
+			!Number.isInteger(p.available_count) ||
+			p.available_count < 0 ||
+			p.available_count > p.track_count
+		) {
 			throw new Error(
-				`playlist ${p.playlist_id}: no available_count - backend contract point 2 not met`
+				`playlist ${p.playlist_id}: invalid available_count - backend contract point 2 not met`
 			);
 		}
 	}
 	return lists;
+}
+
+/** Validated generated-contract summary of playable and broken library rows. */
+export type ReconcileSummary = components['schemas']['ReconcileSummary'];
+
+/** Fetch aggregate reconciliation counts without inventing a usable library state. */
+export async function getReconcileSummary(): Promise<ReconcileSummary> {
+	const summary = await unwrap(api.GET('/api/v1/reconcile/summary'));
+	const { total_tracks, total_broken } = summary;
+	if (
+		typeof total_tracks !== 'number' ||
+		typeof total_broken !== 'number' ||
+		!Number.isInteger(total_tracks) ||
+		!Number.isInteger(total_broken) ||
+		total_tracks < 0 ||
+		total_broken < 0 ||
+		total_broken > total_tracks
+	) {
+		throw new Error('reconcile summary has invalid total_tracks or total_broken counts');
+	}
+	return summary;
 }
 
 /** Track listing item + contract point 1's per-row fields. is_streaming
