@@ -26,6 +26,7 @@
 		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
+	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -172,10 +173,26 @@
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
-	/** Bottom-left connectivity: lib = state.db tracks, BE = API, FE = Vite. */
-	let libUp = $state(false);
-	let beUp = $state(false);
-	let feUp = $state(false);
+	type LibraryHealthDot = {
+		label: 'Library health' | 'Vocals completion' | 'Stems completion';
+		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
+		detail: string;
+	};
+	let libraryHealth = $state<LibraryHealthDot>({
+		label: 'Library health',
+		state: 'loading',
+		detail: 'checking library health'
+	});
+	let vocalsCompletion = $state<LibraryHealthDot>({
+		label: 'Vocals completion',
+		state: 'loading',
+		detail: 'checking vocals coverage'
+	});
+	let stemsCompletion = $state<LibraryHealthDot>({
+		label: 'Stems completion',
+		state: 'loading',
+		detail: 'checking stems coverage'
+	});
 	/** Suggest-next hover → temporary table scroll/highlight. */
 	let suggestHoverId = $state<string | null>(null);
 	/** Candidates for Recommended (outside-playlist) grouping. */
@@ -496,16 +513,6 @@
 		window.addEventListener('keydown', onKey);
 		void _init();
 		void hydrateConfirmPrefsFromDisk();
-		let connAlive = true;
-		const pingConn = async (): Promise<void> => {
-			const [health, fe] = await Promise.all([_pingHealth(), _pingFe()]);
-			if (!connAlive) return;
-			beUp = health.be;
-			libUp = health.lib;
-			feUp = fe;
-		};
-		void pingConn();
-		const connTimer = setInterval(() => void pingConn(), 2500);
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -536,8 +543,6 @@
 		}, LIBRARY_FALLBACK_POLL_MS);
 
 		return () => {
-			connAlive = false;
-			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
@@ -547,30 +552,39 @@
 		};
 	});
 
-	async function _pingHealth(): Promise<{ be: boolean; lib: boolean }> {
-		try {
-			const body = await unwrap(
-				api.GET('/api/v1/health', {
-					cache: 'no-store',
-					signal: AbortSignal.timeout(2000)
-				})
-			);
-			return { be: true, lib: (body.state_db?.tracks ?? 0) > 0 };
-		} catch {
-			return { be: false, lib: false };
+
+	function _coverageDot(
+		label: LibraryHealthDot['label'],
+		coverage: IngestCoverage,
+		step: 'vocals' | 'stems'
+	): LibraryHealthDot {
+		const missing = coverage.missing[step];
+		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
+			return { label, state: 'unavailable', detail: `${step} coverage is unavailable` };
 		}
+		if (coverage.total_tracks <= 0) {
+			return { label, state: 'unavailable', detail: 'no library tracks to measure' };
+		}
+		const completed = coverage.total_tracks - missing;
+		if (completed < 0) {
+			throw new Error(`${step} coverage missing count exceeds total tracks`);
+		}
+		return {
+			label,
+			state: missing === 0 ? 'complete' : 'incomplete',
+			detail: `${completed}/${coverage.total_tracks} complete, ${missing} missing`
+		};
 	}
 
-	async function _pingFe(): Promise<boolean> {
+	async function _loadIngestCoverage(): Promise<void> {
 		try {
-			const r = await fetch(`${window.location.origin}/`, {
-				method: 'GET',
-				cache: 'no-store',
-				signal: AbortSignal.timeout(2000)
-			});
-			return r.ok;
-		} catch {
-			return false;
+			const coverage = await getIngestCoverage();
+			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
+			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
+		} catch (error: unknown) {
+			const detail = error instanceof Error ? error.message : String(error);
+			vocalsCompletion = { label: 'Vocals completion', state: 'error', detail };
+			stemsCompletion = { label: 'Stems completion', state: 'error', detail };
 		}
 	}
 
@@ -580,6 +594,11 @@
 		try {
 			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
 			allTracksCount = healthRes.health.state_db.tracks;
+			libraryHealth = {
+				label: 'Library health',
+				state: allTracksCount > 0 ? 'complete' : 'unavailable',
+				detail: allTracksCount > 0 ? `${allTracksCount} tracks available` : 'no tracks available'
+			};
 			playlists = lists;
 			await _sweepBlankPlaylists(lists);
 			if (source === 'spotify' && spotifySelectedId !== null) {
@@ -596,12 +615,20 @@
 				await _restoreBootPane();
 			}
 		} catch (exc) {
+			libraryHealth = {
+				label: 'Library health',
+				state: 'error',
+				detail: exc instanceof Error ? exc.message : String(exc)
+			};
 			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
 			throw exc;
 		} finally {
 			playlistsLoading = false;
 		}
+		// This coverage request is deliberately after primary browser initialization:
+		// tree and first track pane must never wait on ingestion accounting.
+		void _loadIngestCoverage();
 	}
 
 	/**
@@ -2153,14 +2180,21 @@
 			onhover={(sid) => (suggestHoverId = sid)}
 		/>
 	</div>
-	<div
-		class="conn-dots"
-		aria-label="server connectivity"
-		title={`LIB ${libUp ? 'loaded' : 'empty'} · BE ${beUp ? 'up' : 'down'} · FE ${feUp ? 'up' : 'down'}`}
-	>
-		<span class="conn-dot" class:up={libUp} data-server="lib" aria-label={libUp ? 'library loaded' : 'library empty'}></span>
-		<span class="conn-dot" class:up={beUp} data-server="be" aria-label={beUp ? 'backend up' : 'backend down'}></span>
-		<span class="conn-dot" class:up={feUp} data-server="fe" aria-label={feUp ? 'frontend up' : 'frontend down'}></span>
+	<div class="library-health" aria-label="library processing health">
+		{#each [libraryHealth, vocalsCompletion, stemsCompletion] as dot (dot.label)}
+			<button
+				type="button"
+				class:complete={dot.state === 'complete'}
+				class:incomplete={dot.state === 'incomplete'}
+				class:unavailable={dot.state === 'unavailable'}
+				class:error={dot.state === 'error'}
+				class="health-dot"
+				aria-label={`${dot.label}: ${dot.detail}`}
+			>
+				<span aria-hidden="true"></span>
+				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
+			</button>
+		{/each}
 	</div>
 	<div class="bottom-bar">
 		<button
@@ -2227,7 +2261,6 @@
 		grid-area: tree;
 		min-height: 0;
 		background: var(--rb-panel);
-		border-right: 1px solid var(--rb-border);
 	}
 	.list-panel {
 		grid-area: list;
@@ -2376,27 +2409,56 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.conn-dots {
+	.library-health {
 		position: absolute;
-		left: 10px;
+		right: 8px;
 		bottom: 22px;
 		display: flex;
-		flex-direction: column;
 		gap: 3px;
 		z-index: 6;
-		pointer-events: none;
 	}
-	.conn-dot {
+	.health-dot {
+		position: relative;
+		width: 12px;
+		height: 12px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		cursor: help;
+	}
+	.health-dot > span:first-child {
+		display: block;
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
 		background: #3a4048;
 		box-shadow: inset 0 0 0 1px #23282f;
 	}
-	.conn-dot.up {
+	.health-dot.complete > span:first-child {
 		background: var(--rb-green, #35c04f);
 		box-shadow: 0 0 4px color-mix(in srgb, var(--rb-green, #35c04f) 70%, transparent);
 	}
+	.health-dot.incomplete > span:first-child { background: var(--rb-orange); }
+	.health-dot.unavailable > span:first-child { background: var(--rb-text-dim); }
+	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }
+	.health-popover {
+		display: none;
+		position: absolute;
+		right: 0;
+		bottom: 16px;
+		min-width: 180px;
+		padding: 6px 8px;
+		border: 1px solid var(--rb-border);
+		background: var(--rb-panel-raised);
+		color: var(--rb-text);
+		font: inherit;
+		font-size: var(--rb-fs-label);
+		text-align: left;
+		white-space: nowrap;
+		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
+	}
+	.health-dot:hover .health-popover,
+	.health-dot:focus-visible .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
