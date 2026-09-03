@@ -97,6 +97,10 @@
 	});
 </script>
 
+<svelte:head>
+	<title>Open DJ</title>
+</svelte:head>
+
 {#if health.bindWarning}
 	<BannerWarning message={health.bindWarning} />
 {/if}
@@ -106,7 +110,7 @@
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
-		<h1>music-dj-tools</h1>
+		<h1>Open DJ</h1>
 		<nav>
 			<a href="/">Library</a>
 			<a href="/pairings">Pairings</a>

@@ -335,7 +335,7 @@ export class AlignedStemDeckProcessor {
 			const cleanupFailures: unknown[] = [];
 			for (const part of parts) {
 				try {
-					processors[part]?.disconnect();
+					await processors[part]?.dispose();
 				} catch (cleanupError) {
 					cleanupFailures.push(cleanupError);
 				}
@@ -377,6 +377,25 @@ export class AlignedStemDeckProcessor {
 		if (failures.length > 1) throw new AggregateError(failures, 'stem graph disconnect failed');
 	}
 
+	async dispose(): Promise<void> {
+		const failures: unknown[] = [];
+		for (const part of this.#parts) {
+			try {
+				this.#gains[part]?.disconnect();
+			} catch (error) {
+				failures.push(error);
+			}
+		}
+		const outcomes = await Promise.allSettled(
+			this.#parts.map((part) => (this.#processors[part] as StretchDeckProcessor).dispose())
+		);
+		for (const outcome of outcomes) {
+			if (outcome.status === 'rejected') failures.push(outcome.reason);
+		}
+		if (failures.length === 1) throw failures[0];
+		if (failures.length > 1) throw new AggregateError(failures, 'stem graph disposal failed');
+	}
+
 	async latencySec(): Promise<number> {
 		return this.#latencySec;
 	}
@@ -388,7 +407,7 @@ export class AlignedStemDeckProcessor {
 			);
 		} catch (error) {
 			try {
-				this.disconnect();
+				await this.dispose();
 			} catch (disconnectError) {
 				throw new AggregateError(
 					[error, disconnectError],

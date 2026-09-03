@@ -388,6 +388,22 @@ def create_app(
     return app
 
 
+def create_process_app() -> FastAPI:
+    """Uvicorn factory that names reload workers before they accept traffic.
+
+    A reload worker re-imports this module fresh in a new process, so the
+    lazy ``app`` singleton has not been built yet here. Call ``__getattr__``
+    directly rather than reading the bare name ``app``: LOAD_GLOBAL resolves
+    bare names from module globals without going through PEP 562, so it would
+    raise ``NameError`` instead of building the app.
+    """
+    from apps.shared.process_identity import set_process_identity
+    from apps.webui.port_config import resolve_backend_port
+
+    set_process_identity("Backend", resolve_backend_port(None))
+    return __getattr__("app")
+
+
 def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWatcher:
     """Bind the reconcile loop to the one-slot ingest refresh job.
 
@@ -569,4 +585,4 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["FRONTEND_BUILD_DIR", "app", "create_app"]  # noqa: F822 -- "app" is a PEP 562 lazy attribute, not a real binding
+__all__ = ["FRONTEND_BUILD_DIR", "app", "create_app", "create_process_app"]  # noqa: F822 -- "app" is a PEP 562 lazy attribute, not a real binding

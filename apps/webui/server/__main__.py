@@ -103,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
 
     os.environ[BACKEND_ENV] = str(resolved_port)
 
+    from apps.shared.process_identity import set_process_identity
+
+    set_process_identity("Backend", resolved_port)
+
     from apps.webui.server.app import app
 
     app.state.port = resolved_port
@@ -123,9 +127,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     uvicorn.run(  # pragma: no cover - io
-        "apps.webui.server.app:app",
+        "apps.webui.server.app:create_process_app",
         host=args.host, port=resolved_port,
         reload=args.reload and not args.prod,
+        factory=True,
     )
     return 0
 

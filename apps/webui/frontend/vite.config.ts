@@ -18,6 +18,7 @@ export default defineConfig(({ command, mode }) => {
 	const devConfig = isDevServer
 		? claimAndCheckWebuiDevConfig(REPOSITORY_ROOT, 'frontend')
 		: null;
+	if (devConfig !== null) process.title = `Open DJ · Frontend :${devConfig.frontendPort}`;
 	return {
 		envDir: REPOSITORY_ROOT,
 		plugins: [sveltekit()],

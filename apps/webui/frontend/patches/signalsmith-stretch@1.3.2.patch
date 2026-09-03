@@ -1,8 +1,16 @@
 diff --git a/SignalsmithStretch.js b/SignalsmithStretch.js
-index 7b39b2ae500c8563500c20a4f951878e309d845f..148614b7f3761d8b87cd0795723c47f431051f2e 100644
+index 7b39b2ae500c8563500c20a4f951878e309d845f..33712aac9325b10074ee8dd7342286e3874567f3 100644
 --- a/SignalsmithStretch.js
 +++ b/SignalsmithStretch.js
-@@ -84,17 +84,17 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+@@ -23,6 +23,7 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 			super(options);
+ 			this.wasmReady = false;
+ 			this.wasmModule = null;
++			this.disposed = false;
+ 			this.channels = 0;
+ 			this.buffersIn = [];
+ 			this.buffersOut = [];
+@@ -84,17 +85,17 @@ function registerWorkletProcessor(Module, audioNodeKey) {
  					return result;
  				},
  				schedule: (objIn, adjustPrevious) => {
@@ -23,7 +31,7 @@ index 7b39b2ae500c8563500c20a4f951878e309d845f..148614b7f3761d8b87cd0795723c47f4
  					});
  					Object.assign(obj, objIn);
  					if (obj.input === null) {
-@@ -114,12 +114,12 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+@@ -114,12 +115,12 @@ function registerWorkletProcessor(Module, audioNodeKey) {
  					}
  	
  					let currentMapSegment = this.timeMap[0];
@@ -38,11 +46,44 @@ index 7b39b2ae500c8563500c20a4f951878e309d845f..148614b7f3761d8b87cd0795723c47f4
  					this.timeIntervalCounter = this.timeIntervalSamples;
  					this.port.postMessage(['time', inputTime]);
  					
+@@ -154,6 +155,16 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 						transfer: transfer
+ 					};
+ 				},
++				dispose: _ => {
++					let buffers = this.audioBuffers.flat(1).map(b => b.buffer);
++					this.audioBuffers = [];
++					this.audioBuffersStart = this.audioBuffersEnd = 0;
++					this.disposed = true;
++					return {
++						value: undefined,
++						transfer: buffers
++					};
++				},
+ 				addBuffers: sampleBuffers => {
+ 					sampleBuffers = [].concat(sampleBuffers);
+ 					this.audioBuffers.push(sampleBuffers);
+@@ -232,6 +243,7 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 		}
+ 
+ 		process(inputList, outputList, parameters) {
++			if (this.disposed) return false;
+ 			if (!this.wasmReady) {
+ 				outputList.forEach(output => {
+ 					output.forEach(channel => {
 diff --git a/SignalsmithStretch.mjs b/SignalsmithStretch.mjs
-index 7d5cae72e77a84143ed91ba12fc91b806dc4d9d1..fb421976aca16729ffa9ba22f8cd477c673c9b36 100644
+index 7d5cae72e77a84143ed91ba12fc91b806dc4d9d1..d73cd992ec37d6fa3cc6d8bc2e81755d490e3969 100644
 --- a/SignalsmithStretch.mjs
 +++ b/SignalsmithStretch.mjs
-@@ -85,17 +85,17 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+@@ -24,6 +24,7 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 			super(options);
+ 			this.wasmReady = false;
+ 			this.wasmModule = null;
++			this.disposed = false;
+ 			this.channels = 0;
+ 			this.buffersIn = [];
+ 			this.buffersOut = [];
+@@ -85,17 +86,17 @@ function registerWorkletProcessor(Module, audioNodeKey) {
  					return result;
  				},
  				schedule: (objIn, adjustPrevious) => {
@@ -63,7 +104,7 @@ index 7d5cae72e77a84143ed91ba12fc91b806dc4d9d1..fb421976aca16729ffa9ba22f8cd477c
  					});
  					Object.assign(obj, objIn);
  					if (obj.input === null) {
-@@ -115,12 +115,12 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+@@ -115,12 +116,12 @@ function registerWorkletProcessor(Module, audioNodeKey) {
  					}
  	
  					let currentMapSegment = this.timeMap[0];
@@ -78,3 +119,28 @@ index 7d5cae72e77a84143ed91ba12fc91b806dc4d9d1..fb421976aca16729ffa9ba22f8cd477c
  					this.timeIntervalCounter = this.timeIntervalSamples;
  					this.port.postMessage(['time', inputTime]);
  					
+@@ -155,6 +156,16 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 						transfer: transfer
+ 					};
+ 				},
++				dispose: _ => {
++					let buffers = this.audioBuffers.flat(1).map(b => b.buffer);
++					this.audioBuffers = [];
++					this.audioBuffersStart = this.audioBuffersEnd = 0;
++					this.disposed = true;
++					return {
++						value: undefined,
++						transfer: buffers
++					};
++				},
+ 				addBuffers: sampleBuffers => {
+ 					sampleBuffers = [].concat(sampleBuffers);
+ 					this.audioBuffers.push(sampleBuffers);
+@@ -233,6 +244,7 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 		}
+ 
+ 		process(inputList, outputList, parameters) {
++			if (this.disposed) return false;
+ 			if (!this.wasmReady) {
+ 				outputList.forEach(output => {
+ 					output.forEach(channel => {

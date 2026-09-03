@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  signalsmith-stretch@1.3.2: 119ce9cba82b7e5faf83394fd824d656bd96c9f2f77f5a8b77030165b2c6abe0
+  signalsmith-stretch@1.3.2: 0c08dbce10be884c30a97ea87c0e6b9d12b5c0ea5632e06b1eda98dacde379cb
 
 importers:
 
@@ -22,7 +22,7 @@ importers:
         version: 0.17.0
       signalsmith-stretch:
         specifier: 1.3.2
-        version: 1.3.2(patch_hash=119ce9cba82b7e5faf83394fd824d656bd96c9f2f77f5a8b77030165b2c6abe0)
+        version: 1.3.2(patch_hash=0c08dbce10be884c30a97ea87c0e6b9d12b5c0ea5632e06b1eda98dacde379cb)
     devDependencies:
       '@playwright/test':
         specifier: ^1.48.0
@@ -2395,7 +2395,7 @@ snapshots:
 
   set-cookie-parser@3.1.2: {}
 
-  signalsmith-stretch@1.3.2(patch_hash=119ce9cba82b7e5faf83394fd824d656bd96c9f2f77f5a8b77030165b2c6abe0): {}
+  signalsmith-stretch@1.3.2(patch_hash=0c08dbce10be884c30a97ea87c0e6b9d12b5c0ea5632e06b1eda98dacde379cb): {}
 
   sirv@3.0.2:
     dependencies:

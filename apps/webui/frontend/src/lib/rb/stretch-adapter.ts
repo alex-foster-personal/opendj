@@ -18,6 +18,8 @@
  *       commands reject before invoking the worklet
  *   ✔︎ Transfer copied mono/stereo PCM into the processor.
  *     [if] decoded audio has more than two channels [then] loading rejects
+ *   ✔︎ Retiring a deck terminates its source worklet and releases transferred PCM.
+ *     [if] dispose completes [then] the port is closed and later commands fail
  */
 
 import type {
@@ -407,8 +409,10 @@ export class StretchDeckProcessor {
 	readonly #gate = new StretchCommandGate();
 	readonly #node: SignalsmithStretchNode;
 	readonly #commandTimeoutMs: number;
+	readonly #processorErrorListener: EventListener;
 	#loadedDurationSec = 0;
 	#loadedSampleRateHz = 0;
+	#disposed = false;
 
 	private constructor(
 		context: AudioContext,
@@ -423,11 +427,12 @@ export class StretchDeckProcessor {
 				`commandTimeoutMs must be a finite positive number, got ${this.#commandTimeoutMs}`
 			);
 		}
-		this.#node.addEventListener('processorerror', (event) => {
+		this.#processorErrorListener = (event) => {
 			const error = stretchProcessorError(event);
 			this.#gate.poison(error);
 			options.onProcessorError(error);
-		});
+		};
+		this.#node.addEventListener('processorerror', this.#processorErrorListener);
 	}
 
 	static async create(
@@ -511,6 +516,29 @@ export class StretchDeckProcessor {
 		this.#node.disconnect();
 	}
 
+	/** Permanently retire this one-shot processor: disconnect first for
+	 * synchronous silence, then let the patched worklet transfer retained PCM
+	 * back and mark itself finished so WebKit can collect it. Bypasses the
+	 * poisoned command gate so a failed processor can still release memory. */
+	async dispose(): Promise<void> {
+		if (this.#disposed) return;
+		this.#disposed = true;
+		this.#node.disconnect();
+		this.#node.removeEventListener('processorerror', this.#processorErrorListener);
+		try {
+			await withStretchCommandTimeout(
+				this.#node.dispose(),
+				'processor disposal',
+				this.#commandTimeoutMs
+			);
+		} finally {
+			this.#node.port.onmessage = null;
+			this.#node.port.close();
+			this.#loadedDurationSec = 0;
+			this.#loadedSampleRateHz = 0;
+		}
+	}
+
 	async load(buffer: AudioBuffer): Promise<void> {
 		this.#assertOperational();
 		assertStretchLoadIsFresh(this.#loadedDurationSec);
@@ -561,6 +589,7 @@ export class StretchDeckProcessor {
 	}
 
 	#assertOperational(): void {
+		if (this.#disposed) throw new StretchProcessorError('Signalsmith processor is disposed');
 		this.#gate.assertOperational();
 	}
 

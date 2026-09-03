@@ -64,10 +64,11 @@ def test_server_uses_worktree_backend_port_when_cli_port_is_absent(
     assert server_cli.main([]) == 0
     assert calls == [
         {
-            "application": "apps.webui.server.app:app",
+            "application": "apps.webui.server.app:create_process_app",
             "host": "127.0.0.1",
             "port": 8697,
             "reload": False,
+            "factory": True,
         }
     ]
 

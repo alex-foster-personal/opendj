@@ -12,6 +12,7 @@ const REAL_PQTZ_BEATS = [
 let audio;
 let headphones;
 let computeFollowerSyncPlan;
+let disposeAudioResources;
 let beatLoopFitsWithinDuration;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
@@ -26,6 +27,9 @@ before(async () => {
 		viteApiBase: API_BASE
 	});
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
+	({ disposeAudioResources } = await loadTypeScriptModule(
+		'src/lib/rb/audio-resource-disposal.ts'
+	));
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
 	({ beatLoopFitsWithinDuration } = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
@@ -51,6 +55,10 @@ test('controller defaults enable quantize, Beat Sync, and Master Tempo with no s
 test('route teardown cancels animation, disconnects every graph resource, and closes context', async () => {
 	const calls = [];
 	const disconnectable = (name) => ({ disconnect: () => calls.push(`disconnect:${name}`) });
+	const processor = (name) => ({
+		...disconnectable(name),
+		dispose: async () => calls.push(`dispose:${name}`)
+	});
 	const context = {
 		state: 'running',
 		close: async () => {
@@ -58,10 +66,10 @@ test('route teardown cancels animation, disconnects every graph resource, and cl
 		}
 	};
 
-	await audio.disposeAudioResources(
+	await disposeAudioResources(
 		{
 			rafId: 17,
-			processors: [disconnectable('processor-1'), disconnectable('processor-2')],
+			processors: [processor('processor-1'), processor('processor-2')],
 			nodes: [disconnectable('deck-nodes')],
 			masterGain: disconnectable('master'),
 			context
@@ -75,6 +83,8 @@ test('route teardown cancels animation, disconnects every graph resource, and cl
 		'disconnect:processor-2',
 		'disconnect:deck-nodes',
 		'disconnect:master',
+		'dispose:processor-1',
+		'dispose:processor-2',
 		'close:context'
 	]);
 });
@@ -99,10 +109,13 @@ test('route teardown propagates AudioContext close failures after audio is disco
 	};
 
 	await assert.rejects(
-		audio.disposeAudioResources(
+		disposeAudioResources(
 			{
 				rafId: null,
-				processors: [{ disconnect: () => calls.push('disconnect') }],
+				processors: [{
+					disconnect: () => calls.push('disconnect'),
+					dispose: async () => calls.push('dispose')
+				}],
 				nodes: [],
 				masterGain: null,
 				context
@@ -111,7 +124,7 @@ test('route teardown propagates AudioContext close failures after audio is disco
 		),
 		failure
 	);
-	assert.deepEqual(calls, ['disconnect', 'close']);
+	assert.deepEqual(calls, ['disconnect', 'dispose', 'close']);
 });
 
 test('one teardown failure cannot prevent later audio resources from being silenced', async () => {
@@ -119,17 +132,21 @@ test('one teardown failure cannot prevent later audio resources from being silen
 	const failure = new Error('processor disconnect failed');
 
 	await assert.rejects(
-		audio.disposeAudioResources(
+		disposeAudioResources(
 			{
 				rafId: null,
 				processors: [
 					{
-						disconnect: () => {
-							calls.push('disconnect:failed');
-							throw failure;
+							disconnect: () => {
+								calls.push('disconnect:failed');
+								throw failure;
+							},
+							dispose: async () => calls.push('dispose:failed')
+						},
+						{
+							disconnect: () => calls.push('disconnect:later'),
+							dispose: async () => calls.push('dispose:later')
 						}
-					},
-					{ disconnect: () => calls.push('disconnect:later') }
 				],
 				nodes: [{ disconnect: () => calls.push('disconnect:node') }],
 				masterGain: { disconnect: () => calls.push('disconnect:master') },
@@ -147,6 +164,8 @@ test('one teardown failure cannot prevent later audio resources from being silen
 		'disconnect:later',
 		'disconnect:node',
 		'disconnect:master',
+		'dispose:failed',
+		'dispose:later',
 		'close'
 	]);
 });

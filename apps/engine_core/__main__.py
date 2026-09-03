@@ -159,6 +159,11 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return EXIT_LOCKED
     try:
+        from apps.shared.process_identity import set_process_identity
+
+        set_process_identity(
+            "Engine", cfg.port, invocation_marker="apps.engine_core serve"
+        )
         # Imported here, never at module scope: this pulls in apps.webui,
         # which reads MDT_DATA_DIR at import time.
         import uvicorn

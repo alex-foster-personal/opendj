@@ -156,19 +156,32 @@ test('processor errors become terminal typed failures', () => {
 	assert.match(error.message, /Signalsmith processor failed/);
 });
 
-function fakeStretchNode() {
+function fakeStretchNode({ disposeImpl } = {}) {
 	let processorErrorListener;
 	let scheduleCalls = 0;
+	let disposeCalls = 0;
+	let portClosed = false;
 	return {
 		node: {
 			addEventListener(type, listener) {
 				if (type === 'processorerror') processorErrorListener = listener;
 			},
+			removeEventListener() {},
 			connect() {},
 			disconnect() {},
 			schedule() {
 				scheduleCalls += 1;
 				return new Promise(() => {});
+			},
+			dispose() {
+				disposeCalls += 1;
+				return disposeImpl ? disposeImpl() : Promise.resolve();
+			},
+			port: {
+				onmessage: null,
+				close() {
+					portClosed = true;
+				}
 			}
 		},
 		processorError() {
@@ -177,6 +190,12 @@ function fakeStretchNode() {
 		},
 		scheduleCalls() {
 			return scheduleCalls;
+		},
+		disposeCalls() {
+			return disposeCalls;
+		},
+		portClosed() {
+			return portClosed;
 		}
 	};
 }
@@ -208,4 +227,47 @@ test('command timeout is terminal and prevents a second worklet invocation', asy
 		name: 'StretchCommandTimeoutError'
 	});
 	assert.equal(fake.scheduleCalls(), 1);
+});
+
+test('dispose disconnects synchronously, retires the worklet through a real command, and releases the port', async () => {
+	const fake = fakeStretchNode();
+	const processor = new adapter.StretchDeckProcessor({ sampleRate: 48_000 }, fake.node, {
+		onProcessorError() {}
+	});
+
+	await processor.dispose();
+
+	assert.equal(
+		fake.disposeCalls(),
+		1,
+		'if dispose() never invokes the worklet node then the patched Signalsmith RPC that retires it and transfers back retained PCM never runs - broken'
+	);
+	assert.ok(
+		fake.portClosed(),
+		'if the MessagePort is never closed then a disposed deck keeps leaking it - broken'
+	);
+
+	// Idempotent: a second dispose() must not re-issue the worklet command.
+	await processor.dispose();
+	assert.equal(fake.disposeCalls(), 1);
+
+	// The real #assertOperational guard, not a stand-in for it: a disposed
+	// processor must refuse further commands.
+	await assert.rejects(processor.schedule(1, { active: true }), /disposed/);
+});
+
+test('dispose still releases the port when the worklet dispose command times out', async () => {
+	const fake = fakeStretchNode({ disposeImpl: () => new Promise(() => {}) });
+	const processor = new adapter.StretchDeckProcessor({ sampleRate: 48_000 }, fake.node, {
+		commandTimeoutMs: 5,
+		onProcessorError() {}
+	});
+
+	await assert.rejects(processor.dispose(), { name: 'StretchCommandTimeoutError' });
+
+	assert.equal(fake.disposeCalls(), 1);
+	assert.ok(
+		fake.portClosed(),
+		'if a stalled worklet dispose command still leaves the port open then a hung Signalsmith RPC leaks a MessagePort and the real AudioWorklet forever - broken'
+	);
 });

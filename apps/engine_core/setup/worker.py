@@ -101,6 +101,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_FAILED
 
     os.environ["MDT_DATA_DIR"] = str(data_dir)
+    # No set_process_identity() here, deliberately: apps.engine_core.jobs.reap
+    # verifies a live pid is still OUR worker by comparing its CURRENT
+    # psutil.Process.cmdline() against the argv WorkerIdentity.capture()
+    # recorded at spawn (apps/engine_core/jobs/runner.py::_run). setproctitle
+    # overwrites that argv wholesale -- confirmed empirically, it does not
+    # relabel argv[0], it replaces the entire cmdline with the title string
+    # padded by NULs -- so a renamed worker can never match its recorded
+    # identity again and reap.py's three-way gate refuses to kill it,
+    # blocking cancellation and boot recovery on this job kind. The reaper's
+    # kill-safety on a supervised worker takes priority over an Activity
+    # Monitor label for it.
     from apps.engine_core.setup.importer import (
         SetupImportError,
         run_folder_import,

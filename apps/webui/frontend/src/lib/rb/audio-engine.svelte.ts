@@ -73,6 +73,7 @@
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
 import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
@@ -515,61 +516,6 @@ export function deckPcmEstimatedBytes(): number {
 
 interface AudioDisconnectable {
 	disconnect(): void;
-}
-
-interface AudioContextDisposable {
-	readonly state: AudioContextState;
-	close(): Promise<void>;
-}
-
-interface AudioResources {
-	rafId: number | null;
-	processors: readonly AudioDisconnectable[];
-	nodes: readonly AudioDisconnectable[];
-	masterGain: AudioDisconnectable | null;
-	context: AudioContextDisposable | null;
-}
-
-/**
- * Synchronously silence an owned audio graph, then await context shutdown.
- * Disconnection happens before the first await so route teardown can never
- * leave playback running invisibly while AudioContext.close() settles.
- */
-export async function disposeAudioResources(
-	resources: AudioResources,
-	cancelFrame?: (rafId: number) => void
-): Promise<void> {
-	const failures: unknown[] = [];
-	const attempt = (operation: () => void): void => {
-		try {
-			operation();
-		} catch (error) {
-			failures.push(error);
-		}
-	};
-	const rafId = resources.rafId;
-	if (rafId !== null) {
-		attempt(() => {
-			const cancel = cancelFrame ?? globalThis.cancelAnimationFrame;
-			if (cancel === undefined) {
-				throw new Error('cannot dispose active audio clock: cancelAnimationFrame is unavailable');
-			}
-			cancel(rafId);
-		});
-	}
-	for (const processor of resources.processors) attempt(() => processor.disconnect());
-	for (const node of resources.nodes) attempt(() => node.disconnect());
-	const masterGain = resources.masterGain;
-	if (masterGain !== null) attempt(() => masterGain.disconnect());
-	if (resources.context !== null && resources.context.state !== 'closed') {
-		try {
-			await resources.context.close();
-		} catch (error) {
-			failures.push(error);
-		}
-	}
-	if (failures.length === 1) throw failures[0];
-	if (failures.length > 1) throw new AggregateError(failures, 'multiple audio teardown operations failed');
 }
 
 export function detachProcessorForDisposal<T extends AudioDisconnectable>(owner: {
@@ -1392,12 +1338,26 @@ function _handleAudibleTransition(deck: DeckId, wasAudible: boolean, audible: bo
 	}
 }
 
+/** Disconnect for synchronous silence, then let the worklet transfer its
+ * retained PCM back and mark itself finished (see StretchDeckProcessor.dispose's
+ * docstring). Every path that retires a processor must call this, not just
+ * `.disconnect()`: `.disconnect()` alone leaves the retired worklet and its
+ * PCM alive until the whole AudioContext is torn down. */
+function _retireProcessor(processor: _DeckProcessor): void {
+	processor.disconnect();
+	void processor.dispose().catch(() => {
+		// Retirement already proceeds regardless of outcome; dispose() still
+		// closes the MessagePort in its finally block even on rejection.
+	});
+}
+
 function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	const st = deckStates[deck];
 	const rt = _rt[deck];
 	const message = error instanceof Error ? error.message : String(error);
-	if (rt.processor !== null) rt.processor.disconnect();
+	const failedProcessor = rt.processor;
 	rt.processor = null;
+	if (failedProcessor !== null) _retireProcessor(failedProcessor);
 	rt.audioBuffer = null;
 	rt.durationSec = 0;
 	rt.latencySec = 0;
@@ -2785,7 +2745,7 @@ function _adoptStemProcessor(
 	upgrade.processor.connect(rt.nodes.analyser);
 	rt.processor = upgrade.processor;
 	st.stems = upgrade.state;
-	if (retired !== null) retired.disconnect();
+	if (retired !== null) _retireProcessor(retired);
 }
 
 /** LAZY-STEMS. Detach and silence a held stem upgrade that will never land
@@ -2797,7 +2757,7 @@ function _releasePendingStemUpgrade(rt: _DeckRuntime): void {
 	const pending = rt.pendingStemUpgrade;
 	if (pending === null) return;
 	rt.pendingStemUpgrade = null;
-	pending.processor.disconnect();
+	_retireProcessor(pending.processor);
 }
 
 /** LAZY-STEMS. Called wherever a deck comes to rest, to land a stem upgrade
@@ -2809,7 +2769,7 @@ function _drainPendingStemUpgrade(deck: DeckId): void {
 	if (pending.token !== rt.loadToken) {
 		// The deck moved on to another track while these stems were decoding.
 		rt.pendingStemUpgrade = null;
-		pending.processor.disconnect();
+		_retireProcessor(pending.processor);
 		return;
 	}
 	if (!_deckIsReplaceable(deck)) return;
@@ -2888,7 +2848,7 @@ async function _upgradeDeckStems(
 		);
 		built = created.processor;
 		if (stale()) {
-			built.disconnect();
+			_retireProcessor(built);
 			return;
 		}
 		if (
@@ -2897,7 +2857,7 @@ async function _upgradeDeckStems(
 			Math.abs(created.alignment.duration_ms - mixBuffer.duration * 1000) >
 				1000 / mixBuffer.sampleRate
 		) {
-			built.disconnect();
+			_retireProcessor(built);
 			throw new Error(
 				`stem/source alignment mismatch: source ${mixBuffer.sampleRate}Hz, ` +
 					`${mixBuffer.length} frames, ${mixBuffer.duration}s; stems ` +
@@ -2911,7 +2871,7 @@ async function _upgradeDeckStems(
 		);
 		await _withDeckSwap(rt, async () => {
 			if (stale()) {
-				built?.disconnect();
+				if (built !== null) _retireProcessor(built);
 				built = null;
 				return;
 			}
@@ -2934,7 +2894,7 @@ async function _upgradeDeckStems(
 		stages.total = Math.round(performance.now() - t0);
 		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck);
 	} catch (error) {
-		if (built !== null) built.disconnect();
+		if (built !== null) _retireProcessor(built);
 		if (stale()) return;
 		const message = error instanceof Error ? error.message : String(error);
 		st.stems = { ...unavailableStemDeckState(message), status: 'error' };
@@ -3112,7 +3072,13 @@ class RbAudioEngine implements AudioEngine {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
 			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
-			if (processor !== null) processor.disconnect();
+			if (processor !== null) {
+				try {
+					await processor.dispose();
+				} catch {
+					// Preserve the load failure; dispose() closes the port in finally.
+				}
+			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			const msg =
@@ -3135,17 +3101,17 @@ class RbAudioEngine implements AudioEngine {
 			// Winner check through state publication is one synchronous JS turn.
 			// Do not insert an await before rt.processor receives the candidate.
 			if (!loadCandidateCanPublish(token, rt.loadToken)) {
-				candidateProcessor.disconnect();
+				await candidateProcessor.dispose();
 				return;
 			}
 			try {
 				_assertCurrentDeckReplacementAllowed(deck);
 			} catch (error) {
-				candidateProcessor.disconnect();
+				await candidateProcessor.dispose();
 				throw error;
 			}
 			if (rt.nodes === null || _ctx === null) {
-				candidateProcessor.disconnect();
+				await candidateProcessor.dispose();
 				throw new Error(`load: deck ${deck} audio graph is missing`);
 			}
 			const context = _ctx;
@@ -3154,7 +3120,7 @@ class RbAudioEngine implements AudioEngine {
 			try {
 				candidateProcessor.connect(rt.nodes.analyser);
 			} catch (error) {
-				candidateProcessor.disconnect();
+				await candidateProcessor.dispose();
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
 					const message = String(error);
 					deckLoadErrors[deck] = message;
@@ -3207,7 +3173,13 @@ class RbAudioEngine implements AudioEngine {
 				incumbentProcessor.disconnect();
 				try {
 					await incumbentProcessor.stop(context.currentTime);
+					await incumbentProcessor.dispose();
 				} catch (error) {
+					try {
+						await incumbentProcessor.dispose();
+					} catch {
+						// The original cleanup error remains the useful diagnostic.
+					}
 					const message = error instanceof Error ? error.message : String(error);
 					pushToast(`Deck ${deck} retired processor cleanup failed - ${message}`, 'error');
 				}
@@ -3826,6 +3798,12 @@ class RbAudioEngine implements AudioEngine {
 					const message = error instanceof Error ? error.message : String(error);
 					pushToast(`Deck ${deck} unload cleanup failed - ${message}`, 'error');
 				}
+			}
+			try {
+				await processor.dispose();
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : String(error);
+				pushToast(`Deck ${deck} processor disposal failed - ${message}`, 'error');
 			}
 		}
 		const wasMaster = _masterDeck === deck;
