@@ -288,14 +288,14 @@
 	<FeedbackWidget />
 
 	<!-- dead-center vibe meter: mouse movement tops it up; history in localStorage -->
-	<div class="vibe-slot">
+	<div class="vibe-slot topbar-slot-vibe">
 		<VibeMeter />
 	</div>
 
 	<!-- right cluster -->
 	<button
 		type="button"
-		class="bsm-toggle"
+		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
 		onclick={() => (pairingOpen = true)}
 	>
@@ -304,7 +304,7 @@
 
 	<button
 		type="button"
-		class="bsm-toggle"
+		class="bsm-toggle topbar-slot-bsm"
 		class:on={uiPrefs.beat_sync_max}
 		aria-pressed={uiPrefs.beat_sync_max}
 		title={uiPrefs.beat_sync_max
@@ -317,7 +317,7 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<span
-		class="ap-wrap"
+		class="ap-wrap topbar-slot-autoplay"
 		bind:this={autoPlayWrapEl}
 		onpointerenter={_showAutoPlayMenu}
 		onpointerleave={_hideAutoPlayMenu}
@@ -373,7 +373,7 @@
 		{/if}
 	</span>
 
-	<span class="dim-label" title={plannedTitle('pad')}>PAD</span>
+	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
 	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
 	<button
 		class="midi-label"
@@ -564,6 +564,32 @@
 		top: 50%;
 		transform: translate(-50%, -50%);
 		z-index: 1;
+	}
+
+	/* Ranked responsive slots: wide chrome leaves VIBE centered; before any
+	 * command/status control can collide beneath it, VIBE joins the flow and
+	 * controls occupy either side. Then labels abbreviate, finally VIBE yields.
+	 * CommandEntry and JOBS are intentionally never hidden. */
+	@media (max-width: 1180px) {
+		.vibe-slot {
+			position: static;
+			transform: none;
+			order: 1;
+			margin-inline: 2px;
+		}
+		.topbar-slot-pairing { order: 0; }
+		.topbar-slot-bsm, .topbar-slot-autoplay { order: 2; }
+	}
+	@media (max-width: 980px) {
+		.topbar-slot-pairing { display: none; }
+		.topbar-slot-bsm { font-size: 0; }
+		.topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
+		.topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
+		.topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
+	}
+	@media (max-width: 820px) {
+		.topbar-slot-vibe { display: none; }
+		.topbar-slot-pad, .free-badge, .link-btn { display: none; }
 	}
 
 	.ap-wrap {
