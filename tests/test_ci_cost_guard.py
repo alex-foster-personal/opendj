@@ -331,8 +331,21 @@ def _event_set(condition: str, variable: str) -> set[str]:
     every containment, which is the failure it exists to prevent.
     """
     stripped = re.sub(r"\s+", " ", condition).strip()
+
+    # ONE widening, and only one: a leading `!cancelled() &&` around a
+    # parenthesized disjunction is stripped. A status function decides whether
+    # a run happens at all, so it can REMOVE runs and can never add an event -
+    # which is the only property that makes widening a fail-closed parser safe.
+    # e2e.yml's `extended` gained that guard when it was ordered after `gate`
+    # (#1014). Any other unreadable clause still refuses below.
+    guarded = re.fullmatch(r"!cancelled\(\) && \((.+)\)", stripped)
+    if guarded:
+        stripped = guarded.group(1)
+
     events: set[str] = set()
-    for clause in (c.strip() for c in stripped.split("||")):
+    # Depth-aware, so a parenthesized clause is never cut into fragments that
+    # each read as a weaker claim than the clause they came from.
+    for clause in _top_level_disjuncts(stripped):
         match = re.fullmatch(rf"{re.escape(variable)} == \'([A-Za-z_]+)\'", clause)
         assert match, (
             f"cannot compute the event set: clause {clause!r} is not a "
@@ -526,3 +539,23 @@ def test_enabling_hosted_os_jobs_cannot_bill_macos_minutes_for_a_branch_creation
         f"the variable no longer re-enables the job for push and pull_request, "
         f"which is the whole point of the switch: {enabling[0]}"
     )
+
+
+def test_a_status_guarded_event_gate_is_read_and_any_other_shape_still_refuses() -> None:
+    """if the widening leaks then an unreadable clause prices as a small event set"""
+    guarded = (
+        "!cancelled() && (github.event_name == 'schedule' "
+        "|| github.event_name == 'workflow_dispatch')"
+    )
+    assert _event_set(guarded, "github.event_name") == {"schedule", "workflow_dispatch"}
+
+    # The widening must not have become "skip whatever you cannot read". A ref
+    # comparison admits every event the workflow triggers on, and returning a
+    # small set for it is the exact fail-open this parser exists to prevent.
+    with pytest.raises(AssertionError, match="cannot compute the event set"):
+        _event_set("github.ref == 'refs/heads/main'", "github.event_name")
+
+    # And a status guard around something unreadable is still unreadable.
+    with pytest.raises(AssertionError, match="cannot compute the event set"):
+        _event_set("!cancelled() && (github.ref == 'refs/heads/main')", "github.event_name")
+

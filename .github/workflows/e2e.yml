@@ -139,7 +139,7 @@ jobs:
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
         run: |
-          scripts/ci_host_package_lock.sh sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
 
       - name: Install Python deps into the project venv
         # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
@@ -205,7 +205,7 @@ jobs:
         # --with-deps even on a cache hit: the apt libraries live outside
         # ~/.cache/ms-playwright and are not restored by it.
         run: |
-          "$GITHUB_WORKSPACE/scripts/ci_host_package_lock.sh" \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
             pnpm exec playwright install --with-deps webkit chromium
 
       - name: Virtual audio sink (PulseAudio null sink)
@@ -225,7 +225,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          scripts/ci_host_package_lock.sh sudo apt-get install -y pulseaudio
+          scripts/ci_host_lock.sh packages sudo apt-get install -y pulseaudio
           pulseaudio --start --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=DummyOutput
           pactl set-default-sink DummyOutput
@@ -283,7 +283,8 @@ jobs:
         # and the end state once #637 and #680 are fixed is the whole suite
         # blocking and this --grep deleted.
         run: |
-          pnpm exec playwright test \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --grep "setup entry points" \
             --output test-results/setup-entry-points
@@ -326,7 +327,8 @@ jobs:
         # failure here would ship with no diagnosable artifact (flagged on
         # review, PR #860).
         run: |
-          pnpm exec playwright test \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --project chromium --grep "deck-load smoke" \
             --output test-results/deckload-smoke
@@ -385,7 +387,23 @@ jobs:
   # ---------------------------------------------------------------------------
   extended:
     name: e2e extended (nightly)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ORDERED AFTER `gate`, not merely locked against it. Both jobs run the
+    # webkit-deckload suite on the same fixed port, and on a schedule or
+    # dispatch run both are eligible at once, so on a host with two runner
+    # services they would start together. The host lock below would then make
+    # one of them WAIT on the other, and this one runs the full 23-test suite:
+    # a `gate` blocked behind it for up to 45 minutes would hit its own
+    # 30-minute job timeout and report a red that means nothing.
+    # `needs` removes the contention instead of queueing it (Codex P1 on
+    # #1014, discussion_r3924582000).
+    #
+    # `!cancelled()` rather than `success()`: a failing gate is exactly when the
+    # nightly full suite is most worth having, and quarantined is not the same
+    # as unwatched.
+    needs: gate
+    if: >-
+      !cancelled()
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     # See the `gate` job above for the runner-selection and --with-deps note.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
@@ -422,7 +440,7 @@ jobs:
         # throwaway library. Without it that suite fails on a missing binary,
         # which reads as a product failure and is not one.
         run: |
-          scripts/ci_host_package_lock.sh sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
         run: uv sync
@@ -447,7 +465,7 @@ jobs:
       - name: Install Playwright browsers
         working-directory: apps/webui/frontend
         run: |
-          "$GITHUB_WORKSPACE/scripts/ci_host_package_lock.sh" \
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
             pnpm exec playwright install --with-deps webkit chromium
 
       - name: Virtual audio sink (PulseAudio null sink)
@@ -467,7 +485,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          scripts/ci_host_package_lock.sh sudo apt-get install -y pulseaudio
+          scripts/ci_host_lock.sh packages sudo apt-get install -y pulseaudio
           pulseaudio --start --exit-idle-time=-1
           pactl load-module module-null-sink sink_name=DummyOutput
           pactl set-default-sink DummyOutput
@@ -484,7 +502,14 @@ jobs:
         # All 23 tests, including the four rate-measurement tests the
         # blocking gate quarantines under issue #637. Nightly is where that
         # failure stays visible: quarantined is not the same as unwatched.
-        run: pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
+        # 1800s, not the 900s default: this is the FULL 23-test suite and a
+        # PR gate waiting behind it needs a bound longer than the suite, or the
+        # wait itself becomes the failure.
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: 1800
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
 
       - name: Extended - desktop setup page
         working-directory: apps/webui/frontend
