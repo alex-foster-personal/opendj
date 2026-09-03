@@ -2242,8 +2242,8 @@
 		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 		<SuggestNextStrip
 			stableId={decks[1].stable_id}
-			targetDeck={suggestTargetDeck}
-			playTargetDeck={suggestPlayTargetDeck}
+			targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+			playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
 			onload={(sid) => loadSuggest(sid)}
 			onplay={(sid) => loadSuggest(sid, { play: true })}
 			onhover={(sid) => (suggestHoverId = sid)}

@@ -44,7 +44,6 @@
 	// {error, message, ...} bodies (ErrorBody, not the detail envelope),
 	// so the mapping below reads them off ApiError.body.
 	import { ApiError, api, unwrap } from '$lib/api/client';
-	import type { DeckId } from '$lib/rb/deck-slots';
 	import { visibleRationaleTags } from '$lib/rb/suggest-tags';
 
 	interface SuggestionWire {
@@ -82,8 +81,8 @@
 		stableId,
 		sessionIds = [],
 		topN = 8,
-		targetDeck,
-		playTargetDeck,
+		targetLabel,
+		playTargetLabel,
 		onload,
 		onplay,
 		onhover,
@@ -92,10 +91,9 @@
 		stableId: string | null;
 		sessionIds?: string[];
 		topN?: number;
-		/** Lowest currently free deck, or null when every channel is occupied. */
-		targetDeck: DeckId | null;
-		/** Reservation-aware smart-load destination for the play action. */
-		playTargetDeck: DeckId | null;
+		/** Owner-formatted destination, or null when that action is unavailable. */
+		targetLabel: string | null;
+		playTargetLabel: string | null;
 		/** Click handling revalidates deck availability at execution time. */
 		onload?: (stableId: string) => void;
 		/** Load a candidate and start it playing. */
@@ -180,8 +178,7 @@
 	function _loadControlLabel(candidate: SuggestionWire, play: boolean): string {
 		const track = candidate.title ?? candidate.stable_id;
 		const action = play ? 'Load and play' : 'Load';
-		const destinationDeck = play ? playTargetDeck : targetDeck;
-		const destination = destinationDeck === null ? 'no free deck available' : `CH ${destinationDeck}`;
+		const destination = (play ? playTargetLabel : targetLabel) ?? 'no free deck available';
 		const explanation = candidate.explain_text === null ? '' : ` - ${candidate.explain_text}`;
 		return `${action} ${track} to ${destination}${explanation}`;
 	}
@@ -215,7 +212,7 @@
 						data-stable-id={cand.stable_id}
 						title={_loadControlLabel(cand, false)}
 						aria-label={_loadControlLabel(cand, false)}
-						disabled={targetDeck === null}
+						disabled={targetLabel === null}
 						onclick={() => onload?.(cand.stable_id)}
 					>
 						<span class="title">{cand.title ?? cand.stable_id}</span>
@@ -244,7 +241,7 @@
 						data-stable-id={cand.stable_id}
 						title={_loadControlLabel(cand, true)}
 						aria-label={_loadControlLabel(cand, true)}
-						disabled={playTargetDeck === null}
+						disabled={playTargetLabel === null}
 						onclick={() => onplay?.(cand.stable_id)}
 					>
 						<svg viewBox="0 0 8 10" width="8" height="10" aria-hidden="true">
