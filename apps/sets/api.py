@@ -429,6 +429,8 @@ async def api_audio(
     session_id: str,
     segment: str = FPath(..., description="audio_<iso>.mp3"),
 ) -> FileResponse:
+    if getattr(request.state, "share_audience", "local") == "share":
+        raise HTTPException(status_code=404, detail="segment not found")
     _share_visible_session(request, session_id)
     if not _is_localhost(request):
         raise HTTPException(

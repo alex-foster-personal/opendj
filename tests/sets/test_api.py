@@ -275,9 +275,7 @@ def test_api_metadata_share_publishes_real_set_without_audio(
     """A finalized set gets one HTTPS shared-view URL and no remote MP3 route."""
     client, sets_root = api_test_client
     _seed_api_session(sets_root)
-    monkeypatch.setenv(
-        "MUSIC_DJ_SET_SHARE_BASE_URL", "https://sets.example.test/opendj"
-    )
+    monkeypatch.setenv("MUSIC_DJ_SET_SHARE_BASE_URL", "https://sets.example.test")
 
     published = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
 
@@ -285,7 +283,7 @@ def test_api_metadata_share_publishes_real_set_without_audio(
     assert published.json() == {
         "session_id": "s1",
         "share_state": "shared_cloud",
-        "share_url": "https://sets.example.test/opendj/sets/shared/s1",
+        "share_url": "https://sets.example.test/sets/shared/s1",
         "content": "metadata_only",
     }
     fetched = client.get("/api/sets/s1/share")
@@ -329,6 +327,28 @@ def test_api_share_audience_can_only_read_published_metadata(
         assert published.status_code == 200
         assert shared_client.get("/api/sets").json()[0]["session_id"] == "s1"
         assert shared_client.get("/api/sets/s1").status_code == 200
+        audio = shared_client.get("/api/sets/s1/audio/audio_2026-04-17T21-30-00.mp3")
+        assert audio.status_code == 404
+
+
+@pytest.mark.requirement("SET-08")
+def test_api_metadata_share_rejects_unsupported_share_routing(
+    api_test_client, monkeypatch
+) -> None:
+    """A shared-set URL is only issued for Access-protected origin routing."""
+    client, sets_root = api_test_client
+    _seed_api_session(sets_root)
+
+    monkeypatch.setenv(
+        "MUSIC_DJ_SET_SHARE_BASE_URL", "https://sets.example.test/opendj"
+    )
+    path_prefixed = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
+    assert path_prefixed.status_code == 409
+
+    monkeypatch.setenv("MUSIC_DJ_SET_SHARE_BASE_URL", "https://sets.example.test")
+    monkeypatch.setenv("MUSIC_DJ_SHARE_AUTH", "token")
+    token_gated = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
+    assert token_gated.status_code == 409
 
 
 @pytest.mark.requirement("SET-03")

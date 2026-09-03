@@ -13,6 +13,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from .manifest import read_manifest, write_manifest
 
 SET_SHARE_BASE_URL_ENV = "MUSIC_DJ_SET_SHARE_BASE_URL"
+SHARE_AUTH_ENV = "MUSIC_DJ_SHARE_AUTH"
 
 
 class SetShareError(ValueError):
@@ -28,16 +29,21 @@ def configured_share_base_url(environ: Mapping[str, str] = os.environ) -> str:
     if (
         parsed.scheme != "https"
         or not parsed.netloc
+        or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
         or parsed.username
         or parsed.password
     ):
         raise SetShareError(
-            f"{SET_SHARE_BASE_URL_ENV} must be an HTTPS origin or path without "
+            f"{SET_SHARE_BASE_URL_ENV} must be an HTTPS origin without "
             "credentials, query, or fragment"
         )
-    return urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    if environ.get(SHARE_AUTH_ENV, "").strip().lower() == "token":
+        raise SetShareError(
+            f"{SHARE_AUTH_ENV}=token cannot issue set links without exposing the token"
+        )
+    return urlunsplit(("https", parsed.netloc, "", "", ""))
 
 
 def share_url(session_id: str, base_url: str) -> str:
@@ -56,6 +62,7 @@ def publish_metadata_only(session_dir: Path) -> None:
 
 __all__ = [
     "SET_SHARE_BASE_URL_ENV",
+    "SHARE_AUTH_ENV",
     "SetShareError",
     "configured_share_base_url",
     "publish_metadata_only",
