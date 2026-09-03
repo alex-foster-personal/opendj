@@ -94,6 +94,10 @@ export interface AnlzPerformanceHints {
 	dynamic_key?: boolean;
 	/** Tempo shifts detected across the track; absent until a real analyzer emits them. */
 	dynamic_tempo?: boolean;
+	/** Detected musical mode, e.g. major or minor; absent until truly analyzed. */
+	musical_mode?: 'major' | 'minor';
+	/** Named harmonic progression, e.g. I-V-vi-IV; absent until truly analyzed. */
+	chord_progression?: string;
 }
 
 /** Our own ffmpeg-decoded waveform status for a track with NO rekordbox

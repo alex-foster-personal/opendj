@@ -155,6 +155,10 @@ test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable
 	assert.match(source, /bpm: 42/);
 	assert.match(source, /camelot-suffix/);
 	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
-	assert.match(source, /Dynamic key analysis: not analyzed/);
+	assert.match(source, /Dynamic key.*not analyzed/);
 	assert.match(source, /Dynamic tempo analysis: not analyzed/);
+});
+
+test('key hover reserves only honest optional musical-mode and chord-progression detail', () => {
+	assert.match(source, /musical mode, and chord progression analysis: not analyzed/);
 });

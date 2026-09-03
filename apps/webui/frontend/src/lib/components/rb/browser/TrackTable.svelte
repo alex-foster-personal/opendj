@@ -1180,7 +1180,7 @@
 							class="c-key"
 							class:key-compat={keyCompat(row.key)}
 							style={keyCompatStyle(row.key)}
-							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key analysis: not analyzed.`}
+							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`}
 						>
 							{#if row.key !== null}<span class="camelot-number">{row.key.slice(0, -1)}</span><span class="camelot-suffix">{row.key.slice(-1)}</span>{/if}
 						</td>

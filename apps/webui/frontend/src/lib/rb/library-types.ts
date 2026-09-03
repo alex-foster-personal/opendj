@@ -15,6 +15,8 @@ import type { AnlzWaveformBands } from './anlz-types';
 export interface TrackAnalysisHints {
 	dynamic_key?: boolean;
 	dynamic_tempo?: boolean;
+	musical_mode?: 'major' | 'minor';
+	chord_progression?: string;
 }
 
 /** Artwork size enum for GET /tracks/{sid}/artwork (COMPONENT-MAP 2.2). */
