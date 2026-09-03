@@ -218,6 +218,24 @@ describe('auto-play track pick', () => {
 		row('e', '8A', 160)
 	];
 
+	it('falls back to the earliest unplayed playable row when compatibility candidates are exhausted', () => {
+		const { pickNextStableId } = mod;
+		assert.equal(
+			pickNextStableId({
+				playlist: [row('source', '8A', 120), row('incompatible', '1A', 90), row('broken', '8A', 122, false)],
+				current_stable_id: 'source',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'incompatible'
+		);
+	});
+
 	it('enforce order: next membership row after current, skipping played/excluded', () => {
 		const { pickNextStableId } = mod;
 		assert.equal(
