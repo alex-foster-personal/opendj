@@ -82,6 +82,48 @@ test('BrowserPanel routes keystrokes through the filter debounce', () => {
 	}
 });
 
+test('BrowserPanel loads ingestion coverage after primary browser initialization', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /import \{ getIngestCoverage, type IngestCoverage \} from '\$lib\/rb\/api-ingest';/);
+	assert.match(
+		src,
+		/await _restoreBootPane\(\);[\s\S]*?finally \{[\s\S]*?playlistsLoading = false;[\s\S]*?\}[\s\S]*?void _loadIngestCoverage\(\);/,
+		'ingest coverage must start only after the playlists and initial pane settle, never on boot critical path'
+	);
+	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
+		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
+	}
+	assert.match(src, /state: missing === 0 \? 'complete' : 'incomplete'/);
+	assert.match(src, /state: 'unavailable'/);
+	assert.match(src, /state: 'error'/);
+});
+
+test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /const completed = coverage\.on_disk - missing;/);
+	assert.match(src, /\$\{coverage\.unreachable\} unreachable/);
+	assert.match(src, /async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\)\]\);/);
+	assert.doesNotMatch(src, /import \{ api, unwrap \} from '\$lib\/api\/client';/);
+	const ingest = source('../server/routes/ingest.py');
+	assert.match(ingest, /finally:\s*job\.current_step = None\s*job\.finished_at = time\.time\(\)\s*publish\("library\.changed", \{"kind": "tracks", "ids": \[\]\}\)/);
+});
+
+test('BrowserPanel renders reconciled playable counts without delaying initial playlist rendering', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /getReconcileSummary/);
+	assert.match(src, /allTracksPlayableCount = summary\.total_tracks - summary\.total_broken/);
+	assert.match(src, /broken_count: p\.track_count - p\.available_count/);
+	assert.match(src, /void _loadReconcileSummary\(\);/);
+	assert.match(src, /allTracksCount=\{allTracksPlayableCount\}/);
+
+	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	assert.match(tree, /playable tracks, \$\{node\.broken_count\} broken tracks/);
+	assert.match(tree, /loading playable and broken track counts/);
+	assert.match(tree, /playable count unavailable:/);
+	assert.match(tree, /\$\{node\.track_count - node\.broken_count\} playable tracks/);
+	assert.match(tree, /title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}/);
+});
+
 test('the row-select prefetch caches emit sampled timings', () => {
 	assert.match(
 		source('src/lib/components/rb/wave/anlz-cache.svelte.ts'),

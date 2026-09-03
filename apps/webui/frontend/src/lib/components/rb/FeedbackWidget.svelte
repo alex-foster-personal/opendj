@@ -12,7 +12,7 @@
 	 * comment icon render inert with the standard PARITY-TODO tooltip, never
 	 * a broken panel.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import {
 		describeAnchor,
 		followOnText,
@@ -64,6 +64,7 @@
 		text: string;
 		followOn: { parentId: string; label: string } | null;
 	} | null = $state(null);
+	let pinDraftTextarea: HTMLTextAreaElement | null = $state(null);
 
 	let pathname = $state('/');
 
@@ -177,6 +178,15 @@
 			text: '',
 			followOn: { parentId: pin.id, label: followOnText(pin).trim() }
 		};
+		void focusPinDraftTextarea();
+	}
+
+	async function focusPinDraftTextarea(): Promise<void> {
+		await tick();
+		if (pinDraftTextarea === null) {
+			throw new Error('pin draft textarea did not render before focus');
+		}
+		pinDraftTextarea.focus();
 	}
 
 	// ----- pin placement --------------------------------------------------
@@ -198,6 +208,7 @@
 			text: '',
 			followOn: null
 		};
+		void focusPinDraftTextarea();
 	}
 
 	async function savePinDraft(): Promise<void> {
@@ -365,6 +376,7 @@
 			class="fb-bubble-text"
 			rows="3"
 			placeholder="What is wrong / right here?"
+			bind:this={pinDraftTextarea}
 			bind:value={pinDraft.text}
 		></textarea>
 		{#if pinDraft.anchor !== null}

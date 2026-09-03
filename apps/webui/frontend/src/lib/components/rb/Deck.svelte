@@ -407,10 +407,11 @@
 			/>
 		</div>
 
-		<!-- Loop column. Beat jump rides the spare height already sitting
-		     under the loop cluster (the jog and pitch fader set this row's
-		     height), so hosting it costs the deck box nothing. -->
+		<!-- Keep the compact transport modifiers together, outside the cue
+		     bank. Beat jump leads the horizontal group so the hot-cue bank
+		     retains its full region. -->
 		<div class="loop-col">
+			<BeatJump {deck} {pending} onJump={beatJump} />
 			<LoopCluster
 				{deck}
 				{deckId}
@@ -424,7 +425,6 @@
 				onIntervalBase={setLoopIntervalBase}
 				inertTip={INERT_TIP}
 			/>
-			<BeatJump {deck} {pending} onJump={beatJump} />
 		</div>
 
 		<TransportCluster {deck} {pending} onCue={returnToCue} onPlayPause={playPause} />
@@ -582,11 +582,14 @@
 	}
 	.loop-col {
 		display: flex;
-		flex-direction: column;
-		align-items: stretch;
+		flex-direction: row;
+		align-items: flex-start;
 		gap: 3px;
 		flex: 0 0 auto;
 		min-height: 0;
+		/* This group stays beside the cue bank within main-row's fixed height.
+		 * BeatJump is a compact 2x2 grid, while LoopCluster keeps its own
+		 * fixed 44px width and vertical controls. */
 	}
 	.cue-flex {
 		flex: 1 1 0;
