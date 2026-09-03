@@ -11,6 +11,12 @@
 
 import type { AnlzWaveformBands } from './anlz-types';
 
+/** Optional analysis metadata reserved for future key and tempo-aware sync. */
+export interface TrackAnalysisHints {
+	dynamic_key?: boolean;
+	dynamic_tempo?: boolean;
+}
+
 /** Artwork size enum for GET /tracks/{sid}/artwork (COMPONENT-MAP 2.2). */
 export type ArtworkSize = 's' | 'm' | 'orig';
 
@@ -114,6 +120,8 @@ export interface TrackRow {
 	key: string | null;
 	/** B column - BPM; null renders empty. */
 	bpm: number | null;
+	/** Analyzer-only dynamic key/tempo facts. Absence is explicitly not analyzed. */
+	analysis_hints?: TrackAnalysisHints;
 	/** Rating column 0..5 stars, editable via existing PATCH + If-Match etag. */
 	rating: number | null;
 	/** Current etag for optimistic-concurrency PATCH; from GET /tracks/{sid}. */

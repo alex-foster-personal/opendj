@@ -98,8 +98,8 @@
 		art: 54,
 		title: 220,
 		artist: 140,
-		key: 48,
-		bpm: 54,
+		key: 36,
+		bpm: 42,
 		plays: 36,
 		rating: 80,
 		comments: 110,
@@ -640,7 +640,7 @@
 
 	function _fmtBpm(bpm: number | null): string {
 		// Screenshot truncates to '132.' - one decimal is the sanctioned improvement.
-		return bpm === null ? '' : bpm.toFixed(1);
+		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
 	function _hideBrokenImg(event: Event): void {
@@ -1180,11 +1180,9 @@
 							class="c-key"
 							class:key-compat={keyCompat(row.key)}
 							style={keyCompatStyle(row.key)}
-							title={camelotKeyHoverLabel(row.key) ?? undefined}
+							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key analysis: not analyzed.`}
 						>
-							{#each hl(row.key) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-							{/each}
+							{#if row.key !== null}<span class="camelot-number">{row.key.slice(0, -1)}</span><span class="camelot-suffix">{row.key.slice(-1)}</span>{/if}
 						</td>
 						<td
 							class="c-bpm"
@@ -1192,7 +1190,7 @@
 							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
 							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
 							style={bpmCellStyle(row.bpm)}
-							title={bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? undefined}
+							title={`${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`}
 						>{_fmtBpm(row.bpm)}</td>
 						<td
 							class="c-plays"
@@ -1713,6 +1711,7 @@
 		color: var(--rb-text-dim);
 		box-sizing: border-box;
 	}
+	.camelot-suffix { font-size: 0.67em; }
 	.c-key.key-compat {
 		border-radius: 2px;
 		padding-left: 4px;

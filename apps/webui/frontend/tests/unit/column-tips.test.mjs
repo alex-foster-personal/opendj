@@ -149,3 +149,12 @@ test('no header inlines its own copy of a tip string', () => {
 		}
 	}
 });
+
+test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable dynamic analysis', () => {
+	assert.match(source, /key: 36/);
+	assert.match(source, /bpm: 42/);
+	assert.match(source, /camelot-suffix/);
+	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
+	assert.match(source, /Dynamic key analysis: not analyzed/);
+	assert.match(source, /Dynamic tempo analysis: not analyzed/);
+});
