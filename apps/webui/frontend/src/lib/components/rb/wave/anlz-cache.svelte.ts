@@ -326,6 +326,18 @@ export function invalidateAnlzCacheEntry(stable_id: string): void {
 	delete _cache[stable_id];
 }
 
+/** Evicts every cached entry outright, so each reads back as never-requested
+ * exactly like `invalidateAnlzCacheEntry`, all at once. Used when a change
+ * invalidates a field embedded in EVERY track's /anlz payload rather than one
+ * stable_id's - the PARITY-02 rbx-vs-own analysis source toggle changes which
+ * beatgrid a fresh /anlz response carries for every track, not just whichever
+ * ones happen to be cached at switch time, so a per-id invalidation loop at
+ * the call site would miss any track not already cached and still serve it a
+ * stale hit later (discussion_r3921666943). */
+export function invalidateAllAnlzCacheEntries(): void {
+	for (const stable_id of Object.keys(_cache)) delete _cache[stable_id];
+}
+
 /** Count of ready ANLZ entries for memory tracking. */
 export function anlzCacheEntryCount(): number {
 	let count = 0;

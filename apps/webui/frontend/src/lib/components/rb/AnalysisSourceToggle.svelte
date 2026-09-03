@@ -5,7 +5,6 @@
 	 * by GET/PUT /api/v1/analysis-source (analysis-source.svelte.ts). Never
 	 * persisted: every feature starts (and always restarts) on 'rekordbox'.
 	 */
-	import { onMount } from 'svelte';
 	import {
 		ANALYSIS_SOURCE_FEATURES,
 		type AnalysisSource,
@@ -18,11 +17,21 @@
 		beatgrid: 'Beatgrid'
 	};
 
+	// Live-but-not-noisy, matching usb-tracker.svelte.ts / feedback-store.svelte.ts's
+	// POLL_MS. An agent driving PUT /api/v1/analysis-source directly (this
+	// endpoint's whole agent-native-parity point) mutates the daemon with no
+	// event this tab hears - a one-shot mount fetch would leave the visible
+	// control mislabeling whichever source is actually being served
+	// (discussion_r3921666947).
+	const POLL_MS = 5000;
+
 	let menuOpen = $state(false);
 	let wrapEl: HTMLSpanElement | undefined = $state();
 
-	onMount(() => {
+	$effect(() => {
 		void loadAnalysisSource();
+		const id = setInterval(() => void loadAnalysisSource(), POLL_MS);
+		return () => clearInterval(id);
 	});
 
 	const anyOwn = $derived(

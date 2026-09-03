@@ -104,6 +104,7 @@ import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$li
 import {
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
+	invalidateAllAnlzCacheEntries,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
 	refreshAnlzCacheEntry
@@ -3219,6 +3220,37 @@ class RbAudioEngine implements AudioEngine {
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 		st.loop = _displayLoopFrom(fresh.cues);
+	}
+
+	/** Forces every loaded deck and the shared ANLZ cache off whatever they
+	 * read before an rbx-vs-own analysis source switch (PARITY-02,
+	 * analysis-source.svelte.ts loadAnalysisSource/setAnalysisSource). The
+	 * switch changes what the SAME /anlz URL returns (beatgrid_source), and
+	 * without this the one-fetch-per-session shared cache plus each deck's
+	 * terminal st.anlz would keep serving the pre-switch payload - the 1h
+	 * Cache-Control on that route (_CACHE_ANLZ, rb_assets.py) can even serve
+	 * it straight out of the browser HTTP cache with no network round trip
+	 * (discussion_r3921666943). Evicts every cached entry outright, since the
+	 * field lives inside every track's payload, not just the loaded ones, and
+	 * republishes a fresh, cache-bypassing fetch onto each deck that
+	 * currently has a track loaded. Guards the same deck-swap race
+	 * refreshHotCues does: a load() that lands mid-request wins, this never
+	 * overwrites it. */
+	async refreshDecksForAnalysisSourceChange(): Promise<void> {
+		invalidateAllAnlzCacheEntries();
+		await Promise.all(
+			DECK_IDS.map(async (deck) => {
+				const stableId = deckStates[deck].stable_id;
+				if (stableId === null) return;
+				const fresh = await fetchAnlzBypassingHttpCache(stableId).catch((err: unknown) => {
+					invalidateAnlzCacheEntry(stableId);
+					throw err;
+				});
+				if (deckStates[deck].stable_id !== stableId) return; // deck was swapped mid-request
+				refreshAnlzCacheEntry(stableId, fresh);
+				deckStates[deck].anlz = fresh;
+			})
+		);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
