@@ -17,6 +17,7 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
+		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -164,6 +165,9 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
+	let allTracksPlayableCount = $state<number | null>(null);
+	let allTracksBrokenCount = $state<number | null>(null);
+	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -355,6 +359,7 @@
 					playlist_id: p.playlist_id,
 					name: p.name,
 					track_count: p.track_count,
+					broken_count: p.track_count - p.available_count,
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
 					children: []
@@ -591,6 +596,17 @@
 		}
 	}
 
+	async function _loadReconcileSummary(): Promise<void> {
+		try {
+			const summary = await getReconcileSummary();
+			allTracksPlayableCount = summary.total_tracks - summary.total_broken;
+			allTracksBrokenCount = summary.total_broken;
+			allTracksReconcileError = null;
+		} catch (error: unknown) {
+			allTracksReconcileError = error instanceof Error ? error.message : String(error);
+		}
+	}
+
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
@@ -632,6 +648,9 @@
 		// This coverage request is deliberately after primary browser initialization:
 		// tree and first track pane must never wait on ingestion accounting.
 		void _loadIngestCoverage();
+		// Reconcile accounting is likewise post-render: playlist navigation stays
+		// available while the authoritative playable totals settle.
+		void _loadReconcileSummary();
 	}
 
 	/**
@@ -692,6 +711,7 @@
 			playlist_id: playlist.playlist_id,
 			name: playlist.name,
 			track_count: playlist.track_count,
+			broken_count: playlist.track_count - playlist.available_count,
 			kind: 'playlist',
 			children: []
 		};
@@ -767,6 +787,7 @@
 				playlist_id: 'all',
 				name: 'All Tracks',
 				track_count: allTracksCount ?? 0,
+				broken_count: allTracksBrokenCount ?? 0,
 				kind: 'all_tracks',
 				children: []
 			};
@@ -777,6 +798,7 @@
 			playlist_id: snap.playlist_id,
 			name: snap.playlist_name,
 			track_count: 0,
+			broken_count: 0,
 			kind: 'playlist',
 			children: []
 		};
@@ -845,6 +867,7 @@
 			playlist_id: payload.playlist_id,
 			name: payload.name,
 			track_count: payload.track_count,
+			broken_count: 0,
 			kind: payload.kind,
 			children: []
 		};
@@ -878,6 +901,7 @@
 				playlist_id: created.playlist_id,
 				name: created.name,
 				track_count: stableIds.length,
+				broken_count: 0,
 				kind: 'playlist',
 				children: []
 			});
@@ -1149,6 +1173,7 @@
 			playlist_id: p.playlist_id,
 			name: p.title,
 			track_count: p.rows.length,
+			broken_count: 0,
 			kind: 'playlist',
 			children: []
 		};
@@ -1878,7 +1903,7 @@
 	function onEditApplied(): void {
 		openModal = null;
 		const node = pane.playlist_id === 'all'
-			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, kind: 'all_tracks' as const, children: [] }
+			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, broken_count: 0, kind: 'all_tracks' as const, children: [] }
 			: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
 		if (node !== undefined) void _loadPane(pane, node);
 	}
@@ -2015,7 +2040,9 @@
 		{:else}
 			<PlaylistTree
 				nodes={treeNodes}
-				{allTracksCount}
+				allTracksCount={allTracksPlayableCount}
+				allTracksBrokenCount={allTracksBrokenCount}
+				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
 				trackSelectedId={pane.selected_id}
 				onselect={selectPlaylist}

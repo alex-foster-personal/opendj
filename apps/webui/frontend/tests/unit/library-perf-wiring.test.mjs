@@ -98,6 +98,20 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 	assert.match(src, /state: 'error'/);
 });
 
+test('BrowserPanel renders reconciled playable counts without delaying initial playlist rendering', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /getReconcileSummary/);
+	assert.match(src, /allTracksPlayableCount = summary\.total_tracks - summary\.total_broken/);
+	assert.match(src, /broken_count: p\.track_count - p\.available_count/);
+	assert.match(src, /void _loadReconcileSummary\(\);/);
+	assert.match(src, /allTracksCount=\{allTracksPlayableCount\}/);
+
+	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	assert.match(tree, /playable tracks, \$\{node\.broken_count\} broken tracks/);
+	assert.match(tree, /loading playable and broken track counts/);
+	assert.match(tree, /playable count unavailable:/);
+});
+
 test('the row-select prefetch caches emit sampled timings', () => {
 	assert.match(
 		source('src/lib/components/rb/wave/anlz-cache.svelte.ts'),
