@@ -83,6 +83,7 @@
 		sessionIds = [],
 		topN = 8,
 		targetDeck,
+		playTargetDeck,
 		onload,
 		onplay,
 		onhover,
@@ -93,6 +94,8 @@
 		topN?: number;
 		/** Lowest currently free deck, or null when every channel is occupied. */
 		targetDeck: DeckId | null;
+		/** Reservation-aware smart-load destination for the play action. */
+		playTargetDeck: DeckId | null;
 		/** Click handling revalidates deck availability at execution time. */
 		onload?: (stableId: string) => void;
 		/** Load a candidate and start it playing. */
@@ -177,7 +180,8 @@
 	function _loadControlLabel(candidate: SuggestionWire, play: boolean): string {
 		const track = candidate.title ?? candidate.stable_id;
 		const action = play ? 'Load and play' : 'Load';
-		const destination = targetDeck === null ? 'no free deck available' : `CH ${targetDeck}`;
+		const destinationDeck = play ? playTargetDeck : targetDeck;
+		const destination = destinationDeck === null ? 'no free deck available' : `CH ${destinationDeck}`;
 		const explanation = candidate.explain_text === null ? '' : ` - ${candidate.explain_text}`;
 		return `${action} ${track} to ${destination}${explanation}`;
 	}
@@ -240,7 +244,7 @@
 						data-stable-id={cand.stable_id}
 						title={_loadControlLabel(cand, true)}
 						aria-label={_loadControlLabel(cand, true)}
-						disabled={targetDeck === null}
+						disabled={playTargetDeck === null}
 						onclick={() => onplay?.(cand.stable_id)}
 					>
 						<svg viewBox="0 0 8 10" width="8" height="10" aria-hidden="true">

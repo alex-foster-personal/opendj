@@ -416,9 +416,9 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 		assert.match(panel, /<TrackTable[\s\S]{0,2000}?onpickdoubledeck=\{pickDoubleDeck\}/);
 	});
 
-	it('pickDoubleDeck reads every DeckSlotState field from live reactive state', () => {
+	it('the shared pick target reads every DeckSlotState field from live reactive state', () => {
 		const fn = panel.slice(
-			panel.indexOf('function pickDoubleDeck('),
+			panel.indexOf('function _pickDoubleDeckTarget('),
 			panel.indexOf('function ', panel.indexOf('function pickDoubleDeck(') + 1)
 		);
 		assert.match(fn, /stable_id:\s*decks\[d\]\.stable_id/, 'stable_id is not read from live decks');

@@ -1409,6 +1409,7 @@
 
 	const playlistMemberIds = $derived(new Set(pane.rows.map((r) => r.stable_id)));
 	const suggestTargetDeck = $derived(_lowestFreeDeck());
+	const suggestPlayTargetDeck = $derived(_pickDoubleDeckTarget().deck);
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
@@ -1522,12 +1523,10 @@
 		deckReservationPending = { ...deckReservationPending, [deck]: false };
 	}
 
-	/** Wires the pure picker (deck-slots.ts) to live deck state. Returns the
-	 * reservation's generation alongside the deck - see _releaseDeckReservation. */
-	function pickDoubleDeck(
-		_row: LoadableRow,
+	/** Shared read-only decision for the play label and the click reservation. */
+	function _pickDoubleDeckTarget(
 		opts: { shift?: boolean; replace?: boolean } = {}
-	): { deck: DeckId; reservation: number } | null {
+	): ReturnType<typeof pickDoubleClickDeck> {
 		// The picker needs master, playing and fader now, not just a load
 		// counter: it used to be able to take the live master (pin
 		// d2c156a503bb) precisely because those were invisible to it.
@@ -1542,12 +1541,20 @@
 				reservationPending: deckReservationPending[d]
 			};
 		}
-		const result = pickDoubleClickDeck({
+		return pickDoubleClickDeck({
 			shift: opts.shift === true,
 			replace: opts.replace === true,
 			decks: slots,
 			lastDoubleClickDeck
 		});
+	}
+
+	/** Reserve the published picker decision synchronously before loading. */
+	function pickDoubleDeck(
+		_row: LoadableRow,
+		opts: { shift?: boolean; replace?: boolean } = {}
+	): { deck: DeckId; reservation: number } | null {
+		const result = _pickDoubleDeckTarget(opts);
 		if (result.deck === null) {
 			if (result.error !== null) pushToast(result.error, 'error');
 			return null;
@@ -2236,6 +2243,7 @@
 		<SuggestNextStrip
 			stableId={decks[1].stable_id}
 			targetDeck={suggestTargetDeck}
+			playTargetDeck={suggestPlayTargetDeck}
 			onload={(sid) => loadSuggest(sid)}
 			onplay={(sid) => loadSuggest(sid, { play: true })}
 			onhover={(sid) => (suggestHoverId = sid)}

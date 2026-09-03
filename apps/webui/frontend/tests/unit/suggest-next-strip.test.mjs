@@ -46,7 +46,7 @@ test('the request body sends the explicit explain: false server default', () => 
 
 test('candidate load controls retain their channel and explanation in accessible labels', () => {
 	assert.match(source, /targetDeck: DeckId \| null;/);
-	assert.match(source, /`CH \$\{targetDeck\}`/);
+	assert.match(source, /`CH \$\{destinationDeck\}`/);
 	assert.match(source, /` - \$\{candidate\.explain_text\}`/);
 	assert.match(source, /title=\{_loadControlLabel\(cand, false\)\}/);
 	assert.match(source, /aria-label=\{_loadControlLabel\(cand, true\)\}/);
@@ -65,4 +65,15 @@ test('BrowserPanel wires the current lowest free deck into SuggestNextStrip', ()
 	assert.match(browser, /const suggestTargetDeck = \$derived\(_lowestFreeDeck\(\)\);/);
 	assert.match(browser, /<SuggestNextStrip[\s\S]*?targetDeck=\{suggestTargetDeck\}[\s\S]*?onload=/);
 	assert.match(browser, /function loadSuggest\(sid: string/);
+});
+
+test('play label and dispatch share the reservation-aware picker', () => {
+	const browser = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)), 'utf8'
+	);
+	assert.match(browser, /const suggestPlayTargetDeck = \$derived\(_pickDoubleDeckTarget\(\)\.deck\);/);
+	assert.match(browser, /playTargetDeck=\{suggestPlayTargetDeck\}/);
+	assert.match(browser, /const result = _pickDoubleDeckTarget\(opts\);/);
+	assert.match(source, /const destinationDeck = play \? playTargetDeck : targetDeck;/);
+	assert.match(source, /disabled=\{playTargetDeck === null\}/);
 });
