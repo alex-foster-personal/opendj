@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import platform
 import re
 import subprocess
@@ -214,11 +215,6 @@ def run_install_benchmark() -> int:
     return int(BENCHMARK_ITERATIONS * 1_000_000_000 / elapsed_ns)
 
 
-def assess_installed_machine() -> LiveStemsCapability:
-    """Gather real local facts and produce the first-run install decision."""
-    return assess_machine(detect_installed_machine_name(), run_install_benchmark())
-
-
 # ----- persistence --------------------------------------------------------
 def capability_path(data_dir: Path) -> Path:
     """The state-owned record path for one installed application profile."""
@@ -281,13 +277,36 @@ def load_capability(data_dir: Path) -> LiveStemsCapability:
 
 
 def assess_install_once(data_dir: Path) -> LiveStemsCapability:
-    """Reuse a valid first-install measurement, otherwise make one now."""
+    """Reuse an assessment only when this host remains in the same class."""
+    machine_name = detect_installed_machine_name()
     try:
-        return load_capability(data_dir)
+        stored = load_capability(data_dir)
     except LiveStemsCapabilityError:
         if capability_path(data_dir).exists():
             raise
-    capability = assess_installed_machine()
+        capability = assess_machine(machine_name, run_install_benchmark())
+        persist_capability(data_dir, capability)
+        return capability
+    if stored.machine_class is classify_machine(machine_name):
+        return stored
+    return reassess_persisted_capability(
+        data_dir,
+        machine_name=machine_name,
+        benchmark_hashes_per_second=run_install_benchmark(),
+    )
+
+
+def reassess_persisted_capability(
+    data_dir: Path,
+    *,
+    machine_name: str,
+    benchmark_hashes_per_second: int,
+) -> LiveStemsCapability:
+    """Replace a copied record when it belongs to another machine class."""
+    stored = load_capability(data_dir)
+    if stored.machine_class is classify_machine(machine_name):
+        return stored
+    capability = assess_machine(machine_name, benchmark_hashes_per_second)
     persist_capability(data_dir, capability)
     return capability
 
@@ -303,6 +322,8 @@ def plan_live_stems(
         raise LiveStemsCapabilityError(
             f"live stems supports deck_count {sorted(SUPPORTED_DECK_COUNTS)}, got {deck_count}"
         )
+    if not math.isfinite(bpm):
+        raise LiveStemsCapabilityError(f"BPM must be finite, got {bpm}")
     if bpm <= 0:
         raise LiveStemsCapabilityError(f"BPM must be positive, got {bpm}")
     lookahead_bars = (

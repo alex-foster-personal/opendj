@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from apps.stems.live_capability import (
     BENCHMARK_MIN_HASHES_PER_SECOND,
     LIVE_STEMS_CAPABILITY_PATH,
+    LiveStemsCapabilityError,
     LiveStemsQuality,
     assess_install_once,
     assess_machine,
@@ -30,6 +31,7 @@ from apps.stems.live_capability import (
     main,
     persist_capability,
     plan_live_stems,
+    reassess_persisted_capability,
 )
 from apps.stems.live_capability_api import router
 
@@ -96,6 +98,31 @@ def test_first_install_assessment_is_real_and_runs_once(tmp_path: Path) -> None:
 
     assert first == second
     assert load_capability(tmp_path) == first
+
+
+@pytest.mark.requirement("LATENCY-04")
+def test_machine_class_change_reassesses_a_copied_install_record(tmp_path: Path) -> None:
+    persist_capability(
+        tmp_path, assess_machine("Apple M3 Max", BENCHMARK_MIN_HASHES_PER_SECOND)
+    )
+
+    refreshed = reassess_persisted_capability(
+        tmp_path,
+        machine_name="Intel Mac",
+        benchmark_hashes_per_second=BENCHMARK_MIN_HASHES_PER_SECOND,
+    )
+
+    assert refreshed.enabled is False
+    assert refreshed.machine_name == "Intel Mac"
+
+
+@pytest.mark.requirement("LATENCY-04")
+@pytest.mark.parametrize("bpm", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_bpm_is_a_named_refusal(bpm: float) -> None:
+    capability = assess_machine("Apple M3", BENCHMARK_MIN_HASHES_PER_SECOND)
+
+    with pytest.raises(LiveStemsCapabilityError, match="BPM must be finite"):
+        plan_live_stems(capability, deck_count=2, bpm=bpm)
 
 
 @pytest.mark.requirement("LATENCY-04")
