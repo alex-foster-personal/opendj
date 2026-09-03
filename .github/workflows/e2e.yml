@@ -90,10 +90,16 @@ jobs:
     # Runner is a repo-variable switch (see ci.yml's `test` job for the full
     # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
     # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
-    # only self-hosted runner carrying the `e2e` label and root (needed for
-    # `playwright install --with-deps`). Because that label gate is exactly
-    # what keeps this off the non-root nucbox-wsl runner, --with-deps below
-    # stays unconditional: it is root-safe on both possible targets.
+    # only self-hosted runner carrying the `e2e` label and the apt access
+    # `playwright install --with-deps` needs.
+    #
+    # That access is now sudo rather than root: agentbox's runners were moved
+    # off root on Thu 3 Sep 2026 because the pytest lane's permission tests
+    # cannot be arranged as a user who bypasses permissions (see "Self-hosted
+    # runner provisioning" in docs/ci-actions-cost-review-2026-08-16.md).
+    # --with-deps below stays unconditional because it is safe either way:
+    # Playwright runs its apt step directly when uid 0 and through `sudo`
+    # otherwise, and the runner user has NOPASSWD sudo.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
 
