@@ -10,7 +10,6 @@
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { onMount, tick, untrack } from 'svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
-	import { api, unwrap } from '$lib/api/client';
 	import {
 		ConflictError,
 		RbApiError,
@@ -570,17 +569,17 @@
 		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
 			return { label, state: 'unavailable', detail: `${step} coverage is unavailable` };
 		}
-		if (coverage.total_tracks <= 0) {
-			return { label, state: 'unavailable', detail: 'no library tracks to measure' };
+		if (coverage.on_disk <= 0) {
+			return { label, state: 'unavailable', detail: `no reachable tracks to measure, ${coverage.unreachable} unreachable` };
 		}
-		const completed = coverage.total_tracks - missing;
+		const completed = coverage.on_disk - missing;
 		if (completed < 0) {
-			throw new Error(`${step} coverage missing count exceeds total tracks`);
+			throw new Error(`${step} coverage missing count exceeds on-disk tracks`);
 		}
 		return {
 			label,
 			state: missing === 0 ? 'complete' : 'incomplete',
-			detail: `${completed}/${coverage.total_tracks} complete, ${missing} missing`
+			detail: `${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
 		};
 	}
 
@@ -938,6 +937,7 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
+		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary()]);
 		try {
 			const healthRes = await getHealth();
 			allTracksCount = healthRes.health.state_db.tracks;

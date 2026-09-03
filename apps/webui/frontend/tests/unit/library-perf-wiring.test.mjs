@@ -98,6 +98,16 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 	assert.match(src, /state: 'error'/);
 });
 
+test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /const completed = coverage\.on_disk - missing;/);
+	assert.match(src, /\$\{coverage\.unreachable\} unreachable/);
+	assert.match(src, /async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\)\]\);/);
+	assert.doesNotMatch(src, /import \{ api, unwrap \} from '\$lib\/api\/client';/);
+	const ingest = source('../server/routes/ingest.py');
+	assert.match(ingest, /finally:\s*job\.current_step = None\s*job\.finished_at = time\.time\(\)\s*publish\("library\.changed", \{"kind": "tracks", "ids": \[\]\}\)/);
+});
+
 test('BrowserPanel renders reconciled playable counts without delaying initial playlist rendering', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /getReconcileSummary/);
