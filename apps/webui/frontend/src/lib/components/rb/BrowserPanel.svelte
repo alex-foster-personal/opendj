@@ -75,8 +75,11 @@
 		setHideBrokenLinks,
 		setLastPlaylist,
 		setLibraryDensity,
+		setPlaylistTreeWidth,
 		setNextOnlyFilter,
-		uiPrefs
+		uiPrefs,
+		PLAYLIST_TREE_WIDTH_MAX,
+		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
 	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
@@ -1653,6 +1656,31 @@
 		return null;
 	}
 
+	let playlistTreeResizePointerId = $state<number | null>(null);
+
+	function _resizePlaylistTree(event: PointerEvent): void {
+		if (playlistTreeResizePointerId !== event.pointerId) return;
+		const separator = event.currentTarget as HTMLElement;
+		const browser = separator.closest<HTMLElement>('.rb-browser');
+		if (browser === null) throw new Error('playlist tree resize separator is outside the browser panel');
+		const requestedWidth = event.clientX - browser.getBoundingClientRect().left - 30;
+		uiPrefs.playlist_tree_width = Math.round(
+			Math.min(PLAYLIST_TREE_WIDTH_MAX, Math.max(PLAYLIST_TREE_WIDTH_MIN, requestedWidth))
+		);
+	}
+
+	function _startPlaylistTreeResize(event: PointerEvent): void {
+		playlistTreeResizePointerId = event.pointerId;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		_resizePlaylistTree(event);
+	}
+
+	function _finishPlaylistTreeResize(event: PointerEvent): void {
+		if (playlistTreeResizePointerId !== event.pointerId) return;
+		playlistTreeResizePointerId = null;
+		setPlaylistTreeWidth(uiPrefs.playlist_tree_width);
+	}
+
 	// ---------------------------------------------- client sort + search
 	// The filter/sort pipeline itself lives in the pane contract
 	// (filterRows/sortRows/visibleRowsOf) - lane members extend it there.
@@ -1965,7 +1993,11 @@
 	}
 </script>
 
-<section class="rb-browser" data-testid="browser-panel">
+<section
+	class="rb-browser"
+	data-testid="browser-panel"
+	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
+>
 	<IconRail {source} onspotify={selectSpotifySource} />
 	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
@@ -1996,6 +2028,16 @@
 			/>
 		{/if}
 	</div>
+	<div
+		class="playlist-tree-resize"
+		role="separator"
+		aria-orientation="vertical"
+		aria-label="Resize playlist tree"
+		onpointerdown={_startPlaylistTreeResize}
+		onpointermove={_resizePlaylistTree}
+		onpointerup={_finishPlaylistTreeResize}
+		onpointercancel={_finishPlaylistTreeResize}
+	></div>
 	<div class="list-panel">
 		{#if unloadOffer !== null}
 			<button class="unload-offer" onclick={() => void _acceptUnloadOffer()}>
@@ -2250,9 +2292,9 @@
 		position: relative;
 		display: grid;
 		grid-template-areas:
-			'rail tree list'
-			'bottom bottom bottom';
-		grid-template-columns: 30px 300px minmax(0, 1fr);
+			'rail tree divider list'
+			'bottom bottom bottom bottom';
+		grid-template-columns: 30px var(--playlist-tree-width) 6px minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr) 18px;
 		min-height: 0;
 		background: var(--rb-bg);
@@ -2264,6 +2306,14 @@
 		min-height: 0;
 		background: var(--rb-panel);
 	}
+	.playlist-tree-resize {
+		grid-area: divider;
+		cursor: col-resize;
+		background: var(--rb-border);
+		touch-action: none;
+	}
+	.playlist-tree-resize:hover,
+	.playlist-tree-resize:active { background: var(--rb-accent); }
 	.list-panel {
 		grid-area: list;
 		display: flex;
