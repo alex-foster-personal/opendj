@@ -44,6 +44,30 @@ test('the request body sends the explicit explain: false server default', () => 
 	assert.match(source, /explain: false/);
 });
 
+// LIBUX-03: "Next does not need to be so tall. remove bpm match and camelot
+// step." The wire types and oncandidates plumbing still carry bpm/key_camelot
+// (RecommendedSection depends on that data) -- only the tile's OWN template
+// markup drops the readouts. Scope every check to the template, i.e.
+// everything after the last </script>, so the still-legitimate script-side
+// references (interfaces, _toCandidates) do not false-positive the test.
+const template = source.slice(source.lastIndexOf('</script>'));
+
+test('the candidate tile renders no bpm readout', () => {
+	assert.doesNotMatch(template, /cand\.bpm/);
+});
+
+test('the candidate tile renders no camelot step readout', () => {
+	assert.doesNotMatch(template, /cand\.key_camelot/);
+});
+
+test('the meta row is removed entirely, not just trimmed, so the tile height drops', () => {
+	// A trimmed-but-present meta row would still cost the tile a whole
+	// flex row of height. LIBUX-03's acceptance test is explicit that
+	// hiding the readouts without the height dropping is a fail, so the
+	// row itself -- not just the bpm/camelot text inside it -- must go.
+	assert.doesNotMatch(template, /class="meta"/);
+});
+
 test('candidate load controls retain their channel and explanation in accessible labels', () => {
 	assert.match(source, /targetLabel: string \| null;/);
 	assert.doesNotMatch(source, /from '\$lib\/rb\/deck-slots'/);
