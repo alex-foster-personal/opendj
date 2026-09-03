@@ -52,11 +52,23 @@ function _hasLiveChange(next: Record<string, AnalysisSource>): boolean {
  * the response's own 1h HTTP cache header would otherwise notice
  * (discussion_r3921666943). Runs for a poll-detected external PUT exactly
  * like a local one -- an agent driving the endpoint directly must get the
- * same live effect as clicking the UI control. */
+ * same live effect as clicking the UI control.
+ *
+ * `analysisSourceState.features` is only written AFTER the refresh settles,
+ * not before: if a loaded deck's cache-bypassing /anlz refresh rejects (a
+ * transient network error, an ANALYSIS_NOT_FOUND from the new source), the
+ * local mirror must stay on the OLD value so `_hasLiveChange` still sees a
+ * disagreement against the next poll's `next` and retries the refresh --
+ * publishing the new value before the refresh is confirmed would make that
+ * poll compare next-against-next, read no change, and leave the failed
+ * deck's stale pre-switch anlz in place indefinitely while the toggle
+ * reports the new source (discussion_r3921666943 follow-up). Throws through
+ * to the caller (setAnalysisSource/loadAnalysisSource) on failure -- no
+ * silent partial adoption. */
 async function _adopt(features: Record<string, AnalysisSource>): Promise<void> {
 	const changed = _hasLiveChange(features);
-	analysisSourceState.features = features;
 	if (changed) await engine.refreshDecksForAnalysisSourceChange();
+	analysisSourceState.features = features;
 }
 
 /** Pulls the daemon's current per-feature selection. Call on mount and on a
