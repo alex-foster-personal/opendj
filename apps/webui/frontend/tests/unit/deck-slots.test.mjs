@@ -416,10 +416,10 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 		assert.match(panel, /<TrackTable[\s\S]{0,2000}?onpickdoubledeck=\{pickDoubleDeck\}/);
 	});
 
-	it('pickDoubleDeck reads every DeckSlotState field from live reactive state', () => {
+	it('the shared pick target reads every DeckSlotState field from live reactive state', () => {
 		const fn = panel.slice(
-			panel.indexOf('function pickDoubleDeck('),
-			panel.indexOf('function ', panel.indexOf('function pickDoubleDeck(') + 1)
+			panel.indexOf('function _pickDoubleDeckTarget('),
+			panel.indexOf('function ', panel.indexOf('function _pickDoubleDeckTarget(') + 1)
 		);
 		assert.match(fn, /stable_id:\s*decks\[d\]\.stable_id/, 'stable_id is not read from live decks');
 		assert.match(fn, /playing:\s*decks\[d\]\.playing/, 'playing is not read from live decks');
@@ -441,8 +441,8 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 		);
 		assert.match(fn, /pickDoubleClickDeck\(\{/, 'the wired glue no longer calls the tested picker');
 		assert.match(
-			fn,
-			/_reserveDeckSlot\(result\.deck\)/,
+			panel.slice(panel.indexOf('function pickDoubleDeck('), panel.indexOf('function previewSeek(')),
+			/const result = _pickDoubleDeckTarget\(opts\);[\s\S]*?_reserveDeckSlot\(result\.deck\)/,
 			'the returned deck is not reserved synchronously - see the race this guards against above'
 		);
 	});

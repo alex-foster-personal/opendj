@@ -22,6 +22,8 @@
 	let {
 		nodes,
 		allTracksCount,
+		allTracksBrokenCount,
+		allTracksError,
 		selectedId,
 		trackSelectedId,
 		onselect,
@@ -35,6 +37,8 @@
 	}: {
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
+		allTracksBrokenCount: number | null;
+		allTracksError: string | null;
 		selectedId: string | null;
 		/** The active pane's PaneStore.selected_id, forwarded to ColumnBrowser
 		 * so its track highlight reflects the current pane rather than an
@@ -151,9 +155,20 @@
 		playlist_id: 'all',
 		name: 'All Tracks',
 		track_count: allTracksCount ?? 0,
+		broken_count: allTracksBrokenCount ?? 0,
 		kind: 'all_tracks',
 		children: []
 	});
+
+	function _allTracksCountTitle(): string {
+		if (allTracksError !== null) return `playable count unavailable: ${allTracksError}`;
+		if (allTracksCount === null || allTracksBrokenCount === null) return 'loading playable and broken track counts';
+		return `${allTracksCount} playable tracks, ${allTracksBrokenCount} broken tracks`;
+	}
+
+	function _playlistCountTitle(node: PlaylistNode): string {
+		return `${node.track_count - node.broken_count} playable tracks, ${node.broken_count} broken tracks`;
+	}
 
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
 		if (event.key === 'Enter') onselect(node);
@@ -242,7 +257,7 @@
 				/>
 			</svg>
 			<span class="name">All Tracks</span>
-			<span class="count">{allTracksCount ?? '...'}</span>
+			<span class="count" title={_allTracksCountTitle()}>{allTracksError === null ? allTracksCount ?? '...' : '!'}</span>
 		</div>
 		<div
 			class="row folder"
@@ -308,7 +323,7 @@
 					{:else}
 						<span class="name" title={node.name}>{node.name}</span>
 					{/if}
-					<span class="count">{node.track_count}</span>
+					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
 					{#if onrenameplaylist}
 						<button
 							type="button"

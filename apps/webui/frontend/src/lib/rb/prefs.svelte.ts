@@ -15,6 +15,12 @@ import { api, unwrap } from '../api/client';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
+/** Playlist tree width bounds in CSS pixels. Keep enough room for hierarchy
+ * labels while preserving a useful track pane on compact displays. */
+export const PLAYLIST_TREE_WIDTH_MIN = 220;
+export const PLAYLIST_TREE_WIDTH_MAX = 520;
+export const PLAYLIST_TREE_WIDTH_DEFAULT = 300;
+
 /** Library track-table row density (browser list only - not decks/mixer). */
 export type LibraryDensity = 'compact' | 'cosy';
 
@@ -31,6 +37,8 @@ export interface AutoSyncPrefs {
 }
 
 export interface RbUiPrefs {
+	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
+	playlist_tree_width: number;
 	/** FR-1: when true, missing-file tracks are hidden from every pane's
 	 * track list AND playlists with available_count == 0 are hidden from
 	 * the tree. Default OFF (broken rows render grayed-out but visible). */
@@ -108,6 +116,7 @@ export interface LastPlaylistPref {
 }
 
 const DEFAULTS: RbUiPrefs = {
+	playlist_tree_width: PLAYLIST_TREE_WIDTH_DEFAULT,
 	hide_broken_links: false,
 	library_density: 'compact',
 	beat_sync_max: true,
@@ -154,6 +163,20 @@ function _load(): RbUiPrefs {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (library_density must be 'compact'|'cosy') - ` +
 				'clear the localStorage key to recover'
+		);
+	}
+	const treeWidth = parsed.playlist_tree_width;
+	if (
+		treeWidth !== undefined &&
+		(typeof treeWidth !== 'number' ||
+			!Number.isFinite(treeWidth) ||
+			!Number.isInteger(treeWidth) ||
+			treeWidth < PLAYLIST_TREE_WIDTH_MIN ||
+			treeWidth > PLAYLIST_TREE_WIDTH_MAX)
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (playlist_tree_width must be an integer from ` +
+				`${PLAYLIST_TREE_WIDTH_MIN} through ${PLAYLIST_TREE_WIDTH_MAX}) - clear the localStorage key to recover`
 		);
 	}
 	if (parsed.beat_sync_max !== undefined && typeof parsed.beat_sync_max !== 'boolean') {
@@ -248,6 +271,7 @@ function _load(): RbUiPrefs {
 		);
 	}
 	return {
+		playlist_tree_width: treeWidth ?? DEFAULTS.playlist_tree_width,
 		hide_broken_links: parsed.hide_broken_links,
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
@@ -355,6 +379,17 @@ _applyThemeDom(uiPrefs.theme);
 
 export function setHideBrokenLinks(next: boolean): void {
 	uiPrefs.hide_broken_links = next;
+	_persist();
+}
+
+/** Persist the tree width after clamping it to its documented 220-520px range. */
+export function setPlaylistTreeWidth(next: number): void {
+	if (!Number.isFinite(next)) {
+		throw new Error('playlist tree width must be a finite number');
+	}
+	uiPrefs.playlist_tree_width = Math.round(
+		Math.min(PLAYLIST_TREE_WIDTH_MAX, Math.max(PLAYLIST_TREE_WIDTH_MIN, next))
+	);
 	_persist();
 }
 

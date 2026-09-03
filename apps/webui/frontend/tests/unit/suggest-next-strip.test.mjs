@@ -13,6 +13,8 @@
  * - the 422 insufficient-data outcome is mapped off ApiError
  * - the body carries explain: false (required by the generated SuggestNextIn;
  *   false is the server default the old raw fetch relied on)
+ * - every load control exposes the current destination channel, preserves its
+ *   explanation, and explicitly disables itself with no free deck
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -66,3 +68,36 @@ test('the meta row is removed entirely, not just trimmed, so the tile height dro
 	assert.doesNotMatch(template, /class="meta"/);
 });
 
+test('candidate load controls retain their channel and explanation in accessible labels', () => {
+	assert.match(source, /targetLabel: string \| null;/);
+	assert.doesNotMatch(source, /from '\$lib\/rb\/deck-slots'/);
+	assert.match(source, /` - \$\{candidate\.explain_text\}`/);
+	assert.match(source, /title=\{_loadControlLabel\(cand, false\)\}/);
+	assert.match(source, /aria-label=\{_loadControlLabel\(cand, true\)\}/);
+});
+
+test('candidate controls explicitly disable when no deck is free', () => {
+	assert.match(source, /no free deck available/);
+	assert.match(source, /disabled=\{targetLabel === null\}/);
+});
+
+test('BrowserPanel wires the current lowest free deck into SuggestNextStrip', () => {
+	const browser = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(browser, /const suggestTargetDeck = \$derived\(_lowestFreeDeck\(\)\);/);
+	assert.match(browser, /<SuggestNextStrip[\s\S]*?targetLabel=\{suggestTargetDeck === null \? null : `CH \$\{suggestTargetDeck\}`\}[\s\S]*?onload=/);
+	assert.match(browser, /function loadSuggest\(sid: string/);
+});
+
+test('play label and dispatch share the reservation-aware picker', () => {
+	const browser = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)), 'utf8'
+	);
+	assert.match(browser, /const suggestPlayTargetDeck = \$derived\(suggestTargetDeck === null \? null : _pickDoubleDeckTarget\(\)\.deck\);/);
+	assert.match(browser, /playTargetLabel=\{suggestPlayTargetDeck === null \? null : `CH \$\{suggestPlayTargetDeck\}`\}/);
+	assert.match(browser, /const result = _pickDoubleDeckTarget\(opts\);/);
+	assert.match(source, /const destination = \(play \? playTargetLabel : targetLabel\)/);
+	assert.match(source, /disabled=\{playTargetLabel === null\}/);
+});

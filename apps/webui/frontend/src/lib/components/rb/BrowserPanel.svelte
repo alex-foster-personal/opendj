@@ -10,13 +10,13 @@
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { onMount, tick, untrack } from 'svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
-	import { api, unwrap } from '$lib/api/client';
 	import {
 		ConflictError,
 		RbApiError,
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
+		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -26,6 +26,7 @@
 		parseVocals,
 		vocalsOf
 	} from '$lib/rb/api-rb';
+	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -74,8 +75,11 @@
 		setHideBrokenLinks,
 		setLastPlaylist,
 		setLibraryDensity,
+		setPlaylistTreeWidth,
 		setNextOnlyFilter,
-		uiPrefs
+		uiPrefs,
+		PLAYLIST_TREE_WIDTH_MAX,
+		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
 	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
@@ -160,6 +164,9 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
+	let allTracksPlayableCount = $state<number | null>(null);
+	let allTracksBrokenCount = $state<number | null>(null);
+	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -172,10 +179,26 @@
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
-	/** Bottom-left connectivity: lib = state.db tracks, BE = API, FE = Vite. */
-	let libUp = $state(false);
-	let beUp = $state(false);
-	let feUp = $state(false);
+	type LibraryHealthDot = {
+		label: 'Library health' | 'Vocals completion' | 'Stems completion';
+		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
+		detail: string;
+	};
+	let libraryHealth = $state<LibraryHealthDot>({
+		label: 'Library health',
+		state: 'loading',
+		detail: 'checking library health'
+	});
+	let vocalsCompletion = $state<LibraryHealthDot>({
+		label: 'Vocals completion',
+		state: 'loading',
+		detail: 'checking vocals coverage'
+	});
+	let stemsCompletion = $state<LibraryHealthDot>({
+		label: 'Stems completion',
+		state: 'loading',
+		detail: 'checking stems coverage'
+	});
 	/** Suggest-next hover → temporary table scroll/highlight. */
 	let suggestHoverId = $state<string | null>(null);
 	/** Candidates for Recommended (outside-playlist) grouping. */
@@ -335,6 +358,7 @@
 					playlist_id: p.playlist_id,
 					name: p.name,
 					track_count: p.track_count,
+					broken_count: p.track_count - p.available_count,
 					kind: 'playlist',
 					mostly_broken: playlistMostlyBroken(p),
 					children: []
@@ -496,16 +520,6 @@
 		window.addEventListener('keydown', onKey);
 		void _init();
 		void hydrateConfirmPrefsFromDisk();
-		let connAlive = true;
-		const pingConn = async (): Promise<void> => {
-			const [health, fe] = await Promise.all([_pingHealth(), _pingFe()]);
-			if (!connAlive) return;
-			beUp = health.be;
-			libUp = health.lib;
-			feUp = fe;
-		};
-		void pingConn();
-		const connTimer = setInterval(() => void pingConn(), 2500);
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
@@ -536,8 +550,6 @@
 		}, LIBRARY_FALLBACK_POLL_MS);
 
 		return () => {
-			connAlive = false;
-			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
@@ -547,30 +559,50 @@
 		};
 	});
 
-	async function _pingHealth(): Promise<{ be: boolean; lib: boolean }> {
+
+	function _coverageDot(
+		label: LibraryHealthDot['label'],
+		coverage: IngestCoverage,
+		step: 'vocals' | 'stems'
+	): LibraryHealthDot {
+		const missing = coverage.missing[step];
+		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
+			return { label, state: 'unavailable', detail: `${step} coverage is unavailable` };
+		}
+		if (coverage.on_disk <= 0) {
+			return { label, state: 'unavailable', detail: `no reachable tracks to measure, ${coverage.unreachable} unreachable` };
+		}
+		const completed = coverage.on_disk - missing;
+		if (completed < 0) {
+			throw new Error(`${step} coverage missing count exceeds on-disk tracks`);
+		}
+		return {
+			label,
+			state: missing === 0 ? 'complete' : 'incomplete',
+			detail: `${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+		};
+	}
+
+	async function _loadIngestCoverage(): Promise<void> {
 		try {
-			const body = await unwrap(
-				api.GET('/api/v1/health', {
-					cache: 'no-store',
-					signal: AbortSignal.timeout(2000)
-				})
-			);
-			return { be: true, lib: (body.state_db?.tracks ?? 0) > 0 };
-		} catch {
-			return { be: false, lib: false };
+			const coverage = await getIngestCoverage();
+			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
+			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
+		} catch (error: unknown) {
+			const detail = error instanceof Error ? error.message : String(error);
+			vocalsCompletion = { label: 'Vocals completion', state: 'error', detail };
+			stemsCompletion = { label: 'Stems completion', state: 'error', detail };
 		}
 	}
 
-	async function _pingFe(): Promise<boolean> {
+	async function _loadReconcileSummary(): Promise<void> {
 		try {
-			const r = await fetch(`${window.location.origin}/`, {
-				method: 'GET',
-				cache: 'no-store',
-				signal: AbortSignal.timeout(2000)
-			});
-			return r.ok;
-		} catch {
-			return false;
+			const summary = await getReconcileSummary();
+			allTracksPlayableCount = summary.total_tracks - summary.total_broken;
+			allTracksBrokenCount = summary.total_broken;
+			allTracksReconcileError = null;
+		} catch (error: unknown) {
+			allTracksReconcileError = error instanceof Error ? error.message : String(error);
 		}
 	}
 
@@ -580,6 +612,11 @@
 		try {
 			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
 			allTracksCount = healthRes.health.state_db.tracks;
+			libraryHealth = {
+				label: 'Library health',
+				state: allTracksCount > 0 ? 'complete' : 'unavailable',
+				detail: allTracksCount > 0 ? `${allTracksCount} tracks available` : 'no tracks available'
+			};
 			playlists = lists;
 			await _sweepBlankPlaylists(lists);
 			if (source === 'spotify' && spotifySelectedId !== null) {
@@ -596,12 +633,23 @@
 				await _restoreBootPane();
 			}
 		} catch (exc) {
+			libraryHealth = {
+				label: 'Library health',
+				state: 'error',
+				detail: exc instanceof Error ? exc.message : String(exc)
+			};
 			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
 			throw exc;
 		} finally {
 			playlistsLoading = false;
 		}
+		// This coverage request is deliberately after primary browser initialization:
+		// tree and first track pane must never wait on ingestion accounting.
+		void _loadIngestCoverage();
+		// Reconcile accounting is likewise post-render: playlist navigation stays
+		// available while the authoritative playable totals settle.
+		void _loadReconcileSummary();
 	}
 
 	/**
@@ -631,6 +679,7 @@
 				playlist_id: choice.playlist_id,
 				name: choice.name,
 				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : 0,
+				broken_count: choice.kind === 'all_tracks' ? (allTracksBrokenCount ?? 0) : 0,
 				kind: choice.kind,
 				children: []
 			});
@@ -662,6 +711,7 @@
 			playlist_id: playlist.playlist_id,
 			name: playlist.name,
 			track_count: playlist.track_count,
+			broken_count: playlist.track_count - playlist.available_count,
 			kind: 'playlist',
 			children: []
 		};
@@ -737,6 +787,7 @@
 				playlist_id: 'all',
 				name: 'All Tracks',
 				track_count: allTracksCount ?? 0,
+				broken_count: allTracksBrokenCount ?? 0,
 				kind: 'all_tracks',
 				children: []
 			};
@@ -747,6 +798,7 @@
 			playlist_id: snap.playlist_id,
 			name: snap.playlist_name,
 			track_count: 0,
+			broken_count: 0,
 			kind: 'playlist',
 			children: []
 		};
@@ -815,6 +867,7 @@
 			playlist_id: payload.playlist_id,
 			name: payload.name,
 			track_count: payload.track_count,
+			broken_count: 0,
 			kind: payload.kind,
 			children: []
 		};
@@ -848,6 +901,7 @@
 				playlist_id: created.playlist_id,
 				name: created.name,
 				track_count: stableIds.length,
+				broken_count: 0,
 				kind: 'playlist',
 				children: []
 			});
@@ -883,6 +937,7 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
+		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary()]);
 		try {
 			const healthRes = await getHealth();
 			allTracksCount = healthRes.health.state_db.tracks;
@@ -1119,6 +1174,7 @@
 			playlist_id: p.playlist_id,
 			name: p.title,
 			track_count: p.rows.length,
+			broken_count: 0,
 			kind: 'playlist',
 			children: []
 		};
@@ -1352,6 +1408,8 @@
 	}
 
 	const playlistMemberIds = $derived(new Set(pane.rows.map((r) => r.stable_id)));
+	const suggestTargetDeck = $derived(_lowestFreeDeck());
+	const suggestPlayTargetDeck = $derived(suggestTargetDeck === null ? null : _pickDoubleDeckTarget().deck);
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
@@ -1465,12 +1523,10 @@
 		deckReservationPending = { ...deckReservationPending, [deck]: false };
 	}
 
-	/** Wires the pure picker (deck-slots.ts) to live deck state. Returns the
-	 * reservation's generation alongside the deck - see _releaseDeckReservation. */
-	function pickDoubleDeck(
-		_row: LoadableRow,
+	/** Shared read-only decision for the play label and the click reservation. */
+	function _pickDoubleDeckTarget(
 		opts: { shift?: boolean; replace?: boolean } = {}
-	): { deck: DeckId; reservation: number } | null {
+	): ReturnType<typeof pickDoubleClickDeck> {
 		// The picker needs master, playing and fader now, not just a load
 		// counter: it used to be able to take the live master (pin
 		// d2c156a503bb) precisely because those were invisible to it.
@@ -1485,12 +1541,20 @@
 				reservationPending: deckReservationPending[d]
 			};
 		}
-		const result = pickDoubleClickDeck({
+		return pickDoubleClickDeck({
 			shift: opts.shift === true,
 			replace: opts.replace === true,
 			decks: slots,
 			lastDoubleClickDeck
 		});
+	}
+
+	/** Reserve the published picker decision synchronously before loading. */
+	function pickDoubleDeck(
+		_row: LoadableRow,
+		opts: { shift?: boolean; replace?: boolean } = {}
+	): { deck: DeckId; reservation: number } | null {
+		const result = _pickDoubleDeckTarget(opts);
 		if (result.deck === null) {
 			if (result.error !== null) pushToast(result.error, 'error');
 			return null;
@@ -1623,6 +1687,31 @@
 			if (decks[d].stable_id === null) return d;
 		}
 		return null;
+	}
+
+	let playlistTreeResizePointerId = $state<number | null>(null);
+
+	function _resizePlaylistTree(event: PointerEvent): void {
+		if (playlistTreeResizePointerId !== event.pointerId) return;
+		const separator = event.currentTarget as HTMLElement;
+		const browser = separator.closest<HTMLElement>('.rb-browser');
+		if (browser === null) throw new Error('playlist tree resize separator is outside the browser panel');
+		const requestedWidth = event.clientX - browser.getBoundingClientRect().left - 30;
+		uiPrefs.playlist_tree_width = Math.round(
+			Math.min(PLAYLIST_TREE_WIDTH_MAX, Math.max(PLAYLIST_TREE_WIDTH_MIN, requestedWidth))
+		);
+	}
+
+	function _startPlaylistTreeResize(event: PointerEvent): void {
+		playlistTreeResizePointerId = event.pointerId;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		_resizePlaylistTree(event);
+	}
+
+	function _finishPlaylistTreeResize(event: PointerEvent): void {
+		if (playlistTreeResizePointerId !== event.pointerId) return;
+		playlistTreeResizePointerId = null;
+		setPlaylistTreeWidth(uiPrefs.playlist_tree_width);
 	}
 
 	// ---------------------------------------------- client sort + search
@@ -1822,7 +1911,7 @@
 	function onEditApplied(): void {
 		openModal = null;
 		const node = pane.playlist_id === 'all'
-			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, kind: 'all_tracks' as const, children: [] }
+			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, broken_count: 0, kind: 'all_tracks' as const, children: [] }
 			: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
 		if (node !== undefined) void _loadPane(pane, node);
 	}
@@ -1937,7 +2026,11 @@
 	}
 </script>
 
-<section class="rb-browser" data-testid="browser-panel">
+<section
+	class="rb-browser"
+	data-testid="browser-panel"
+	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
+>
 	<IconRail {source} onspotify={selectSpotifySource} />
 	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
@@ -1955,7 +2048,9 @@
 		{:else}
 			<PlaylistTree
 				nodes={treeNodes}
-				{allTracksCount}
+				allTracksCount={allTracksPlayableCount}
+				allTracksBrokenCount={allTracksBrokenCount}
+				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
 				trackSelectedId={pane.selected_id}
 				onselect={selectPlaylist}
@@ -1968,6 +2063,16 @@
 			/>
 		{/if}
 	</div>
+	<div
+		class="playlist-tree-resize"
+		role="separator"
+		aria-orientation="vertical"
+		aria-label="Resize playlist tree"
+		onpointerdown={_startPlaylistTreeResize}
+		onpointermove={_resizePlaylistTree}
+		onpointerup={_finishPlaylistTreeResize}
+		onpointercancel={_finishPlaylistTreeResize}
+	></div>
 	<div class="list-panel">
 		{#if unloadOffer !== null}
 			<button class="unload-offer" onclick={() => void _acceptUnloadOffer()}>
@@ -2137,6 +2242,8 @@
 		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 		<SuggestNextStrip
 			stableId={decks[1].stable_id}
+			targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+			playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
 			onload={(sid) => loadSuggest(sid)}
 			onplay={(sid) => loadSuggest(sid, { play: true })}
 			onhover={(sid) => (suggestHoverId = sid)}
@@ -2153,14 +2260,21 @@
 			onhover={(sid) => (suggestHoverId = sid)}
 		/>
 	</div>
-	<div
-		class="conn-dots"
-		aria-label="server connectivity"
-		title={`LIB ${libUp ? 'loaded' : 'empty'} · BE ${beUp ? 'up' : 'down'} · FE ${feUp ? 'up' : 'down'}`}
-	>
-		<span class="conn-dot" class:up={libUp} data-server="lib" aria-label={libUp ? 'library loaded' : 'library empty'}></span>
-		<span class="conn-dot" class:up={beUp} data-server="be" aria-label={beUp ? 'backend up' : 'backend down'}></span>
-		<span class="conn-dot" class:up={feUp} data-server="fe" aria-label={feUp ? 'frontend up' : 'frontend down'}></span>
+	<div class="library-health" aria-label="library processing health">
+		{#each [libraryHealth, vocalsCompletion, stemsCompletion] as dot (dot.label)}
+			<button
+				type="button"
+				class:complete={dot.state === 'complete'}
+				class:incomplete={dot.state === 'incomplete'}
+				class:unavailable={dot.state === 'unavailable'}
+				class:error={dot.state === 'error'}
+				class="health-dot"
+				aria-label={`${dot.label}: ${dot.detail}`}
+			>
+				<span aria-hidden="true"></span>
+				<span class="health-popover" role="tooltip"><strong>{dot.label}</strong><br />{dot.detail}</span>
+			</button>
+		{/each}
 	</div>
 	<div class="bottom-bar">
 		<button
@@ -2214,9 +2328,9 @@
 		position: relative;
 		display: grid;
 		grid-template-areas:
-			'rail tree list'
-			'bottom bottom bottom';
-		grid-template-columns: 30px 300px minmax(0, 1fr);
+			'rail tree divider list'
+			'bottom bottom bottom bottom';
+		grid-template-columns: 30px var(--playlist-tree-width) 6px minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr) 18px;
 		min-height: 0;
 		background: var(--rb-bg);
@@ -2227,8 +2341,15 @@
 		grid-area: tree;
 		min-height: 0;
 		background: var(--rb-panel);
-		border-right: 1px solid var(--rb-border);
 	}
+	.playlist-tree-resize {
+		grid-area: divider;
+		cursor: col-resize;
+		background: var(--rb-border);
+		touch-action: none;
+	}
+	.playlist-tree-resize:hover,
+	.playlist-tree-resize:active { background: var(--rb-accent); }
 	.list-panel {
 		grid-area: list;
 		display: flex;
@@ -2376,27 +2497,56 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.conn-dots {
+	.library-health {
 		position: absolute;
-		left: 10px;
+		right: 8px;
 		bottom: 22px;
 		display: flex;
-		flex-direction: column;
 		gap: 3px;
 		z-index: 6;
-		pointer-events: none;
 	}
-	.conn-dot {
+	.health-dot {
+		position: relative;
+		width: 12px;
+		height: 12px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		cursor: help;
+	}
+	.health-dot > span:first-child {
+		display: block;
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
 		background: #3a4048;
 		box-shadow: inset 0 0 0 1px #23282f;
 	}
-	.conn-dot.up {
+	.health-dot.complete > span:first-child {
 		background: var(--rb-green, #35c04f);
 		box-shadow: 0 0 4px color-mix(in srgb, var(--rb-green, #35c04f) 70%, transparent);
 	}
+	.health-dot.incomplete > span:first-child { background: var(--rb-orange); }
+	.health-dot.unavailable > span:first-child { background: var(--rb-text-dim); }
+	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }
+	.health-popover {
+		display: none;
+		position: absolute;
+		right: 0;
+		bottom: 16px;
+		min-width: 180px;
+		padding: 6px 8px;
+		border: 1px solid var(--rb-border);
+		background: var(--rb-panel-raised);
+		color: var(--rb-text);
+		font: inherit;
+		font-size: var(--rb-fs-label);
+		text-align: left;
+		white-space: nowrap;
+		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
+	}
+	.health-dot:hover .health-popover,
+	.health-dot:focus-visible .health-popover { display: block; }
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
