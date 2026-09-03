@@ -30,10 +30,9 @@ this eventually writes to one by accident, so there are none here; the ban is
 enforced by ``test_no_gate_test_can_name_a_real_library_location`` in
 tests/test_rekordbox_writeback_surfaces.py.
 
-NO @pytest.mark.requirement markers here on purpose: the proposed requirement
-lines (SYNC-ONEWAY-01..04, see the W1-D handoff) are not in reqs.json yet, and
-a marker for an unknown ID lands in coverage-matrix.md as an orphan. Add the
-markers in the same change that adds the requirement lines.
+Requirement markers live on the module-level ``pytestmark`` below. They were
+added alongside the SYNC-ONEWAY requirement lines in e192ee9a; this docstring
+described them as still pending long after that landed.
 
 Regression lines:
   - if a gated surface stops calling require_writeback_enabled then broken
