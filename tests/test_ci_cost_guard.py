@@ -434,3 +434,95 @@ def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
         f"no priced E2E event can reach ${threshold:.2f} ({reachable}), so this "
         "test cannot tell a correct skip from an arithmetic that never bites"
     )
+
+
+MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
+
+
+def _top_level_disjuncts(condition: str) -> list[str]:
+    """`condition` split on `||` at bracket depth zero.
+
+    A plain `str.split("||")` would cut inside a parenthesized clause and hand
+    back fragments, and a fragment reads as a weaker claim than the clause it
+    came from - the same fail-open shape `_event_set` refuses above.
+    """
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    parts, depth, start = [], 0, 0
+    index = 0
+    while index < len(stripped):
+        char = stripped[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "|" and depth == 0 and stripped[index : index + 2] == "||":
+            parts.append(stripped[start:index].strip())
+            index += 2
+            start = index
+            continue
+        index += 1
+    parts.append(stripped[start:].strip())
+    return [part for part in parts if part]
+
+
+def test_enabling_hosted_os_jobs_cannot_bill_macos_minutes_for_a_branch_creation() -> None:
+    """if the variable arm stands alone then creating any branch bills 16 macOS minutes"""
+    doc = yaml.safe_load(MACOS_PACKAGING.read_text())
+    triggers = doc[True] if True in doc else doc["on"]
+
+    # CONTROL: this test only guards anything because the workflow subscribes to
+    # `create`, which fires on every branch and tag creation and takes no ref
+    # filter. If that trigger goes away the assertions below would pass for a
+    # reason that has nothing to do with the property.
+    assert "create" in triggers, (
+        "macos-packaging.yml no longer triggers on `create`, so a branch "
+        "creation cannot reach this job and this test proves nothing. Re-derive "
+        f"the risk against the triggers it actually declares: {sorted(triggers)}"
+    )
+
+    condition = doc["jobs"]["packaging"]["if"]
+    disjuncts = _top_level_disjuncts(condition)
+
+    # A bare `vars.X == 'true'` disjunct is true for EVERY event the workflow
+    # triggers on, `create` included, so flipping the variable would put a
+    # 16-minute macOS job (0.062 USD/min) on every branch anyone pushes.
+    for clause in disjuncts:
+        if "CI_HOSTED_OS_JOBS" not in clause:
+            continue
+        assert "github.event_name" in clause, (
+            f"disjunct {clause!r} enables the hosted macOS job on the strength "
+            "of the variable alone, so it admits `create` too and every branch "
+            "creation would bill 16 macOS minutes. Conjoin it with the events "
+            "it is meant for."
+        )
+        assert "'create'" not in clause, (
+            f"disjunct {clause!r} names `create` explicitly, which is the event "
+            "this test exists to keep off a paid runner"
+        )
+
+    # PRESENCE, not just absence: the two paths that must keep working. Without
+    # these, deleting the variable arm outright would satisfy everything above
+    # and silently take release cuts and manual runs down with it.
+    assert any("refs/tags/v" in clause for clause in disjuncts), (
+        f"a v* release cut can no longer reach the packaging gates: {condition}"
+    )
+    assert any("workflow_dispatch" in clause for clause in disjuncts), (
+        f"the manual escape hatch is gone: {condition}"
+    )
+
+    # And the switch must still BE a switch. Deleting the variable arm outright
+    # satisfies every assertion above - the loop iterates nothing - and would
+    # leave a documented repo variable that turns nothing on. That overshoot is
+    # the plausible over-correction to the finding this test came from, so it
+    # gets its own assertion rather than being left to review.
+    enabling = [clause for clause in disjuncts if "CI_HOSTED_OS_JOBS" in clause]
+    assert len(enabling) == 1, (
+        f"expected exactly one disjunct to read CI_HOSTED_OS_JOBS, found "
+        f"{len(enabling)}; the switch documented in "
+        f"docs/ci-actions-cost-review-2026-08-16.md must still enable this job: "
+        f"{condition}"
+    )
+    assert "'push'" in enabling[0] and "'pull_request'" in enabling[0], (
+        f"the variable no longer re-enables the job for push and pull_request, "
+        f"which is the whole point of the switch: {enabling[0]}"
+    )
