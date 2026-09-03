@@ -156,9 +156,37 @@ def repo_scope_reason(cwd: str | None, main: Path, live_roots: frozenset[str]) -
     for live in live_roots:
         if _within(here, Path(live)):
             return ADMITTED_LIVE
-    if here.exists():
+    if _is_on_this_machine(here):
         return None
     return ADMITTED_RETIRED if _is_retired_worktree_of(here, main) else None
+
+
+def _is_on_this_machine(here: Path) -> bool:
+    """Is `here` present on this host, when it may not be readable?
+
+    `Path.exists()` returns False for a path that is missing and RAISES for one
+    whose parent denies traversal. That raise leaves this function, reaches the
+    `except OSError` in `provenance_cli`, and refuses the WHOLE sweep with the
+    watermark left where it was, so every later run refuses in the same place.
+    Permanently, on a machine that keeps the unreadable directory.
+
+    Found on agentbox, Thu 3 Sep 2026: a self-hosted CI runner holding a
+    restored macOS home at `/Users/dev` (mode 750, another uid) against
+    transcripts whose recorded cwd is `/Users/dev/code/afmac`. Ten provenance
+    tests failed on it, none of them naming a permission.
+
+    A path this process cannot traverse is PRESENT and not ours, which is what
+    this returns. That is not a guess dressed up as a fact: the harvest reads
+    the checkout it runs in, so a directory it cannot enter is not a live
+    worktree of this repo, and it is the conservative arm besides - the
+    alternative branch invents `retired-path` provenance for a cwd nobody on
+    this host can see. Narrow on purpose: only EACCES is answered this way, and
+    any other OSError is still a defect that must surface.
+    """
+    try:
+        return here.exists()
+    except PermissionError:
+        return True
 
 
 def _within(cwd: PurePath, root: PurePath) -> bool:
