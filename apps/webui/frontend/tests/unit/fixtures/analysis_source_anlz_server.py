@@ -7,42 +7,37 @@ claims to verify - `_resolve_beatgrid_source`, the exact function the
 production `/anlz` route calls (rb_assets.py) - never actually ran under the
 old test, so a regression in that function would not have failed it.
 
-This binds a REAL uvicorn server on an OS-assigned loopback port, serving
-`/api/v1/tracks/{stable_id}/anlz` through the production
-`_resolve_beatgrid_source` against a real analysis state.db built the same
-way tests/test_analysis_source.py builds one (apps.analysis.store.upsert_record,
-no mocked records). The base payload this endpoint starts from (waveform/cues/
-phrases) is the one part no real rekordbox or audio fixture can supply without
-the full e2e harness (tests/e2e/support/deckload_fixture.py) - it stays a
-fixed, honestly-empty template exactly like the payload shape
-tests/test_rb_assets.py exercises against real vendor data; only the beatgrid
-swap under test runs through the real production function. `/test/requests`
-exposes every URL this process has actually served, over real ASGI middleware,
-so the JS test can assert an unloaded deck made no real network call without
-touching `globalThis.fetch` at all.
+This binds a REAL uvicorn server on an OS-assigned loopback port, mounting the
+production ``rb_assets_router`` and its actual ``get_track_anlz`` route against
+a real analysis state.db built the same way tests/test_analysis_source.py builds
+one (apps.analysis.store.upsert_record, no mocked records). The seeded tracks
+are deliberately unmapped, so the production route's real local-track path
+supplies its honest empty vendor payload before the selected own beatgrid is
+applied. `/test/requests` exposes every URL this process has actually served,
+over real ASGI middleware, so the JS test can assert an unloaded deck made no
+real network call without touching `globalThis.fetch` at all.
 
 Usage: `uv run --no-sync python analysis_source_anlz_server.py`, then read the
 single `READY <port>` stdout line.
 """
 from __future__ import annotations
 
+import asyncio
 import socket
-import sys
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(REPOSITORY_ROOT))
-
-from apps.analysis.record import AnalysisRecord  # noqa: E402
-from apps.analysis.store import upsert_record  # noqa: E402
-from apps.webui.server.analysis_source import AnalysisSourceStore  # noqa: E402
-from apps.webui.server.routes.analysis_source import router as analysis_source_router  # noqa: E402
-from apps.webui.server.routes.rb_assets import _resolve_beatgrid_source  # noqa: E402
+from apps.adapters.rekordbox import config as rb_config
+from apps.analysis.record import AnalysisRecord
+from apps.analysis.store import upsert_record
+from apps.webui.server.analysis_source import AnalysisSourceStore
+from apps.webui.server.backend import InMemoryBackend
+from apps.webui.server.routes.analysis_source import router as analysis_source_router
+from apps.webui.server.routes.rb_assets import router as rb_assets_router
 
 BPM = 120.0
 BAR_S = 240.0 / BPM
@@ -58,18 +53,6 @@ SID_NO_OWN_ANALYSIS = "real-track-c-no-own-analysis"
 SID_SLOW = "real-track-slow-own-grid"
 
 _DB_PATH = Path(__file__).resolve().parent / ".analysis-source-anlz-server.tmp.db"
-
-
-class _RequestShim:
-    """Duck-types the one attribute path `_resolve_beatgrid_source` and
-    `analysis._analysis_db_path` read (`request.app.state.X`) - same
-    convention as test_analysis_source.py's `_FakeRequest`, pointed at the
-    REAL app instance instead of a fake one, since this server's app.state
-    genuinely carries a live AnalysisSourceStore and analysis_db_path."""
-
-    def __init__(self, app: FastAPI) -> None:
-        self.app = app
-
 
 def _record(sid: str, bar_count: int) -> AnalysisRecord:
     return AnalysisRecord(
@@ -94,35 +77,42 @@ def _seed_db(db_path: Path) -> None:
     upsert_record(_record(SID_TRACK_A, bar_count=10), db_path=db_path)
     upsert_record(_record(SID_TRACK_B, bar_count=20), db_path=db_path)
     upsert_record(_record(SID_SLOW, bar_count=3), db_path=db_path)
+    for stable_id in (SID_TRACK_A, SID_TRACK_B, SID_SLOW, SID_NO_OWN_ANALYSIS):
+        _add_unmapped_track(db_path, stable_id)
     # SID_NO_OWN_ANALYSIS is intentionally never written: real "no record" case.
 
 
-def _base_payload(stable_id: str) -> dict:
-    """Honest placeholder for the parts no fixture here can supply for real
-    (waveform samples, cues, phrases) - see module docstring. Only the
-    beatgrid/beatgrid_source/beatgrid_own_unavailable_reason fields this test
-    cares about are then overwritten by the REAL production function below."""
-    return {
-        "stable_id": stable_id,
-        "points": 38400,
-        "waveform": {
-            "kind": "mono",
-            "preview": {"length": 0, "low": [], "mid": [], "high": []},
-            "detail": {"length": 0, "low": [], "mid": [], "high": []},
-        },
-        "beatgrid": {"beat_count": 0, "beats": []},
-        "cues": [],
-        "phrases": [],
-        "vocals": {"status": "not_analyzed"},
-    }
+def _add_unmapped_track(db_path: Path, stable_id: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, "
+            "file_path, created_at, updated_at, deleted_at) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                stable_id,
+                "inferred",
+                f"title-{stable_id}",
+                "[]",
+                str(db_path.parent / f"{stable_id}.flac"),
+                "2026-09-01T00:00:00Z",
+                "2026-09-01T00:00:00Z",
+                None,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def create_app() -> FastAPI:
     app = FastAPI()
+    rb_config.STATE_DB = _DB_PATH
+    app.state.backend = InMemoryBackend()
     app.state.analysis_source = AnalysisSourceStore()
     app.state.analysis_db_path = _DB_PATH
     app.state.requests: list[str] = []
     app.include_router(analysis_source_router, prefix="/api/v1")
+    app.include_router(rb_assets_router, prefix="/api/v1")
 
     @app.middleware("http")
     async def _record_request(request: Request, call_next):
@@ -132,24 +122,13 @@ def create_app() -> FastAPI:
         # test's own before/after delta was off by exactly the poll count).
         if request.url.path != "/test/requests":
             app.state.requests.append(str(request.url))
+        if request.url.path.endswith(f"/{SID_SLOW}/anlz"):
+            await asyncio.sleep(0.15)
         return await call_next(request)
 
     @app.get("/test/requests")
     def _get_requests() -> list[str]:
         return app.state.requests
-
-    @app.get("/api/v1/tracks/{stable_id}/anlz")
-    async def get_anlz(stable_id: str, points: int = 38400) -> JSONResponse:
-        if stable_id == SID_SLOW:
-            import asyncio
-
-            await asyncio.sleep(0.15)
-        payload = _base_payload(stable_id)
-        payload["points"] = points
-        # THE call under test: the exact function the production /anlz route
-        # (rb_assets.py get_track_anlz) uses to apply the rbx-vs-own swap.
-        _resolve_beatgrid_source(_RequestShim(app), stable_id, payload)
-        return JSONResponse(payload)
 
     return app
 

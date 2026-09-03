@@ -23,6 +23,8 @@
  *   agent-driven PUT never reaches the visible toggle
  * - if a poll timer is added with no matching clearInterval cleanup then
  *   broken (a leaked timer per mount, compounding across route navigations)
+ * - if the source menu is positioned inside the overflow-hidden top bar then
+ *   broken (the RBX and OWN controls are clipped and cannot be selected)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -56,5 +58,16 @@ test('the poll timer is cleared, so it does not outlive the component', () => {
 		text,
 		/clearInterval\(/,
 		'a setInterval with no matching clearInterval leaks a timer per mount'
+	);
+});
+
+test('the source menu is viewport-positioned outside the clipped top bar', () => {
+	const text = _source();
+	assert.match(text, /getBoundingClientRect\(\)/, 'menu placement must measure its trigger');
+	assert.match(text, /style=\{menuStyle\}/, 'the measured viewport placement must reach the menu');
+	assert.match(
+		text,
+		/\.src-menu\s*\{\s*position:\s*fixed/s,
+		'a menu below an overflow-hidden top bar must use fixed positioning'
 	);
 });

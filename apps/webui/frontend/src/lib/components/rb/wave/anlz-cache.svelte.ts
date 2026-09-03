@@ -277,17 +277,19 @@ export function resolveDisplayedAnlz(
  * finding, issue #735 follow-up, discussion_r3907928251 fix review); one
  * retry mechanism for a given stable_id, not two.
  *
- * Same generation guard as `_fetchAndPublish`: captured before the await, so a
- * switch that lands while this fetch is in flight is detected at publish
- * time and the shared-cache write is discarded (the caller's own returned
- * `data` still lands on ITS deck via the loadToken-guarded transaction in
- * `load()` - only the shared cache write is at risk of resurrecting a stale
- * entry for OTHER callers). */
+ * Same generation guard as `_fetchAndPublish`, but a deck-load candidate
+ * cannot merely discard the cache write: `load()` would still publish its
+ * returned payload after audio decoding. Re-fetch until the result belongs to
+ * the current generation, so a source switch during a load never publishes a
+ * superseded grid onto that deck (discussion_r3923866060). */
 export async function fetchAnlzForDeckLoad(stable_id: string): Promise<AnlzData> {
-	const generation = currentAnlzFetchGeneration();
-	const data = await fetchAnlz(stable_id);
-	if (generation === currentAnlzFetchGeneration()) _publishAnlzResult(stable_id, data);
-	return data;
+	for (;;) {
+		const generation = currentAnlzFetchGeneration();
+		const data = await fetchAnlz(stable_id);
+		if (generation !== currentAnlzFetchGeneration()) continue;
+		_publishAnlzResult(stable_id, data);
+		return data;
+	}
 }
 
 /** True only for a 'ready' entry that is safe to reuse as a cache HIT (deck

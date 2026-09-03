@@ -27,6 +27,7 @@
 
 	let menuOpen = $state(false);
 	let wrapEl: HTMLSpanElement | undefined = $state();
+	let menuStyle = $state('');
 
 	$effect(() => {
 		void loadAnalysisSource();
@@ -39,6 +40,10 @@
 	);
 
 	function _show(): void {
+		if (wrapEl !== undefined) {
+			const rect = wrapEl.getBoundingClientRect();
+			menuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 6)}px`;
+		}
 		menuOpen = true;
 	}
 
@@ -46,6 +51,7 @@
 		const next =
 			e instanceof FocusEvent ? e.relatedTarget : (e as PointerEvent).relatedTarget;
 		if (next instanceof Node && wrapEl?.contains(next)) return;
+		if (next instanceof Element && next.closest?.('.src-menu')) return;
 		menuOpen = false;
 	}
 
@@ -80,6 +86,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="src-menu"
+			style={menuStyle}
 			role="menu"
 			tabindex="-1"
 			aria-label="Analysis source"
@@ -139,10 +146,7 @@
 		border-color: color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
 	}
 	.src-menu {
-		position: absolute;
-		left: 0;
-		top: 100%;
-		margin-top: 6px;
+		position: fixed;
 		z-index: 90;
 		width: 190px;
 		padding: 8px 9px 9px;

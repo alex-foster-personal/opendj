@@ -475,18 +475,19 @@ export async function listTracksHydrated(params: {
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
 export async function fetchAnlz(stable_id: string, points = 38400): Promise<AnlzWithVocals> {
-	// `gen` is a client-only cache-buster (anlz-fetch-generation.ts): the
-	// backend ignores unrecognized query params, but the browser HTTP cache
-	// and the dedupe map below both key on the full URL, so bumping it on an
-	// analysis-source switch forces every fetch after the switch - not just
-	// the currently-loaded decks refreshDecksForAnalysisSourceChange touches
-	// - past the route's 1h Cache-Control (discussion_r3921839825).
+	// The daemon's selected source is authoritative and can outlive this
+	// document. Never permit the browser's shared HTTP cache to reuse an
+	// /anlz payload from another tab or a prior reload, whose document-local
+	// generation might coincidentally be the same (discussion_r3923593660).
+	// `gen` remains part of the in-flight key so a live source switch still
+	// splits concurrent requests within this document.
 	const gen = currentAnlzFetchGeneration();
 	const key = `${stable_id}:${points}:${gen}`;
 	const existing = _inflightAnlz.get(key);
 	if (existing !== undefined) return existing;
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		'no-store'
 	).then((data) => {
 		vocalsOf(data);
 		return data;

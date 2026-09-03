@@ -51,6 +51,7 @@ async function requestLog() {
 before(async () => {
 	serverProcess = spawn('uv', ['run', '--no-sync', 'python', SERVER_SCRIPT], {
 		cwd: REPOSITORY_ROOT,
+		env: { ...process.env, MDT_LIBRARY_MODE: 'local' },
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const port = await new Promise((resolve, reject) => {
