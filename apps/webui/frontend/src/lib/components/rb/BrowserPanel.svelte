@@ -680,6 +680,7 @@
 				playlist_id: choice.playlist_id,
 				name: choice.name,
 				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : 0,
+				broken_count: choice.kind === 'all_tracks' ? (allTracksBrokenCount ?? 0) : 0,
 				kind: choice.kind,
 				children: []
 			});
