@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProvenanceOut(BaseModel):
@@ -12,6 +12,31 @@ class ProvenanceOut(BaseModel):
     source: str
     confidence: float | None = None
     modified_at: str
+
+
+class TempoPrefOut(BaseModel):
+    """PREF-01: a track's user-set preferred tempo plus its playable range.
+
+    Any of the three may be null (unset). Never fabricated on read - a track
+    with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
+    not this shape with all-null members (see sqlite_backend._row_to_track).
+    """
+
+    regular: float | None = None
+    min: float | None = None
+    max: float | None = None
+
+
+class TempoPrefPatch(BaseModel):
+    regular: float | None = None
+    min: float | None = None
+    max: float | None = None
+
+    @model_validator(mode="after")
+    def _min_less_than_max(self) -> "TempoPrefPatch":
+        if self.min is not None and self.max is not None and self.min >= self.max:
+            raise ValueError("tempo_pref.min must be less than tempo_pref.max")
+        return self
 
 
 class TrackOut(BaseModel):
@@ -26,6 +51,9 @@ class TrackOut(BaseModel):
     tags: list[str] = []
     notes: str | None = None
     last_played_at: str | None = None
+    # PREF-01: user-set preferred tempo + playable range, keyed by stable_id
+    # (not vendor bpm). Null when never set for this track.
+    tempo_pref: TempoPrefOut | None = None
     file_path: str | None = None
     # Rekordbox djmdContent.DJPlayCount when hydrated via rb_vendor; 0 if unknown.
     play_count: int = 0
@@ -102,6 +130,9 @@ class TrackPatch(BaseModel):
     tags_add: list[str] | None = None
     tags_remove: list[str] | None = None
     notes: str | None = None
+    # PREF-01: send null to clear, omit to leave untouched (model_fields_set
+    # distinguishes the two - see routes/tracks.py patch_track).
+    tempo_pref: TempoPrefPatch | None = None
 
     @field_validator("rating")
     @classmethod

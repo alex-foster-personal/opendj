@@ -71,6 +71,7 @@ from .backend import (
     TrackFilter,
     TrackUpdate,
     compute_mytag_catalog_revision,
+    resolve_tempo_pref_write,
 )
 from .etag import compute_etag, strip_quotes
 
@@ -147,7 +148,7 @@ def _reset_warnings_for_tests() -> None:
 # Fields the webui Track exposes that live in track_fields (EAV). Any field
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
-    "bpm", "key", "rating", "tags", "notes", "last_played_at",
+    "bpm", "key", "rating", "tags", "notes", "last_played_at", "tempo_pref",
 )
 
 
@@ -211,6 +212,7 @@ def _row_to_track(
     tags_val = fields.get("tags", (None,))[0]
     notes = fields.get("notes", (None,))[0]
     last_played_at = fields.get("last_played_at", (None,))[0]
+    tempo_pref_val = fields.get("tempo_pref", (None,))[0]
 
     if isinstance(bpm, (int, float)):
         bpm = float(bpm)
@@ -231,6 +233,14 @@ def _row_to_track(
         last_played_at = str(last_played_at)
     if key is not None and not isinstance(key, str):
         key = str(key)
+    if isinstance(tempo_pref_val, dict):
+        tempo_pref: dict[str, float | None] | None = {
+            "regular": tempo_pref_val.get("regular"),
+            "min": tempo_pref_val.get("min"),
+            "max": tempo_pref_val.get("max"),
+        }
+    else:
+        tempo_pref = None
 
     provenance: dict[str, Provenance] = {}
     for fname, (value, source, confidence, modified_at) in fields.items():
@@ -251,6 +261,7 @@ def _row_to_track(
         tags=tags,
         notes=notes,
         last_played_at=last_played_at,
+        tempo_pref=tempo_pref,
         file_path=row["file_path"],
         created_at=row["created_at"],
         updated_at=_effective_updated_at(row["updated_at"], fields),
@@ -307,6 +318,8 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
         writes["rating"] = rating
     if "notes" in patch:
         writes["notes"] = patch["notes"]
+    if "tempo_pref" in patch:
+        writes["tempo_pref"] = resolve_tempo_pref_write(patch["tempo_pref"])
     if "tags_add" in patch or "tags_remove" in patch:
         tags = list(current.tags or [])
         for tag in patch.get("tags_add") or []:

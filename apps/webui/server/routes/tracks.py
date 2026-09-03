@@ -170,6 +170,10 @@ def patch_track(
         patch_dict["tags_add"] = patch.tags_add
     if patch.tags_remove is not None:
         patch_dict["tags_remove"] = patch.tags_remove
+    if patch.tempo_pref is not None or "tempo_pref" in patch.model_fields_set:
+        patch_dict["tempo_pref"] = (
+            patch.tempo_pref.model_dump() if patch.tempo_pref is not None else None
+        )
     try:
         updated = backend.update_track(
             stable_id, patch_dict, expected_etag=if_match, source="webui"
