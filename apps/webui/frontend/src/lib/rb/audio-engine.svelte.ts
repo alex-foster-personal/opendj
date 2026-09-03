@@ -89,6 +89,7 @@ import {
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
 import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
+import { bumpAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import {
 	fetchAnlz,
 	fetchAnlzBypassingHttpCache,
@@ -3235,8 +3236,18 @@ class RbAudioEngine implements AudioEngine {
 	 * republishes a fresh, cache-bypassing fetch onto each deck that
 	 * currently has a track loaded. Guards the same deck-swap race
 	 * refreshHotCues does: a load() that lands mid-request wins, this never
-	 * overwrites it. */
+	 * overwrites it.
+	 *
+	 * Bumps the shared fetch generation (anlz-fetch-generation.ts) FIRST, so
+	 * every /anlz request issued anywhere after this point - not just the
+	 * cache-bypassing ones below for currently-loaded decks - addresses a
+	 * query string the browser's own HTTP cache has never served. Without
+	 * this, a track only prefetched (library hover, an unloaded deck slot)
+	 * could still `load()` straight out of the stale pre-switch HTTP cache
+	 * entry via the ordinary `fetchAnlz` path, since this loop never touches
+	 * anything outside `DECK_IDS` (discussion_r3921839825). */
 	async refreshDecksForAnalysisSourceChange(): Promise<void> {
+		bumpAnlzFetchGeneration();
 		invalidateAllAnlzCacheEntries();
 		await Promise.all(
 			DECK_IDS.map(async (deck) => {

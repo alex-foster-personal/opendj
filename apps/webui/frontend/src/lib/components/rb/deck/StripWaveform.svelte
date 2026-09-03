@@ -60,6 +60,15 @@
 			: deck.anlz.cues.filter((c) => c.kind === 'memory').map((c) => c.in_ms)
 	);
 
+	// PARITY-02: OWN selected but this track has no own analysis to serve -
+	// the backend already returns the real empty grid plus this reason
+	// (rb_assets.py _resolve_beatgrid_source); nothing previously read it, so
+	// the strip went inert with no explanation beyond the toggle itself
+	// (discussion_r3921839841).
+	const ownGridUnavailable: string | null = $derived(
+		deck.anlz?.beatgrid_source === 'own' ? deck.anlz.beatgrid_own_unavailable_reason : null
+	);
+
 	// First stored loop in the hot-cue bank -> in/out time chips (display-only
 	// at v1 per COMPONENT-MAP 1.3; sparse coverage is real).
 	const loopCue: { slot: HotCueSlot; in_ms: number; out_ms: number } | null = $derived.by(() => {
@@ -146,6 +155,8 @@
 
 		{#if deck.anlz_error !== null}
 			<span class="no-anlz">NO ANALYSIS</span>
+		{:else if ownGridUnavailable !== null}
+			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>
 		{/if}
 
 		{#each memoryCuesMs as ms, i (i)}

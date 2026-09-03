@@ -17,6 +17,7 @@ import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
+import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
@@ -474,11 +475,18 @@ export async function listTracksHydrated(params: {
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
 export async function fetchAnlz(stable_id: string, points = 38400): Promise<AnlzWithVocals> {
-	const key = `${stable_id}:${points}`;
+	// `gen` is a client-only cache-buster (anlz-fetch-generation.ts): the
+	// backend ignores unrecognized query params, but the browser HTTP cache
+	// and the dedupe map below both key on the full URL, so bumping it on an
+	// analysis-source switch forces every fetch after the switch - not just
+	// the currently-loaded decks refreshDecksForAnalysisSourceChange touches
+	// - past the route's 1h Cache-Control (discussion_r3921839825).
+	const gen = currentAnlzFetchGeneration();
+	const key = `${stable_id}:${points}:${gen}`;
 	const existing = _inflightAnlz.get(key);
 	if (existing !== undefined) return existing;
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`
 	).then((data) => {
 		vocalsOf(data);
 		return data;
@@ -500,13 +508,20 @@ export async function fetchAnlz(stable_id: string, points = 38400): Promise<Anlz
  * cache with the new response, so ordinary reads right after this one still
  * benefit from it. Deliberately bypasses the in-flight dedupe map above: an
  * ordinary in-flight `fetchAnlz` for the same key must not be handed this
- * stale-cache-tolerant promise, and vice versa. */
+ * stale-cache-tolerant promise, and vice versa.
+ *
+ * Includes the same `gen` cache-buster `fetchAnlz` reads (anlz-fetch-
+ * generation.ts) so the URL it re-primes is the EXACT one an ordinary
+ * `fetchAnlz` call issued after the same switch will request - without it,
+ * this would prime a `gen`-less URL nothing else ever asks for, and every
+ * subsequent read would still take a real round trip instead of benefiting
+ * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
 	points = 38400
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
 		'reload'
 	);
 	vocalsOf(data);
