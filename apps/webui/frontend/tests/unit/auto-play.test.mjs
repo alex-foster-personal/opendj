@@ -218,6 +218,24 @@ describe('auto-play track pick', () => {
 		row('e', '8A', 160)
 	];
 
+	it('falls back to the earliest unplayed playable row when compatibility candidates are exhausted', () => {
+		const { pickNextStableId } = mod;
+		assert.equal(
+			pickNextStableId({
+				playlist: [row('source', '8A', 120), row('incompatible', '1A', 90), row('broken', '8A', 122, false)],
+				current_stable_id: 'source',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'incompatible'
+		);
+	});
+
 	it('enforce order: next membership row after current, skipping played/excluded', () => {
 		const { pickNextStableId } = mod;
 		assert.equal(
@@ -333,7 +351,8 @@ describe('auto-play track pick', () => {
 			}),
 			'd'
 		);
-		// nothing left in range
+		// No compatible rows remain; keep playback moving with the first
+		// unplayed row, as requested by pin 2e6a9258927c.
 		assert.equal(
 			pickNextStableId({
 				playlist,
@@ -346,7 +365,7 @@ describe('auto-play track pick', () => {
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			null
+			'c'
 		);
 	});
 
@@ -449,6 +468,40 @@ describe('auto-play maximize reach (slack path)', () => {
 		assert.deepEqual([...slack], ['a', 'c', 'd']);
 		assert.equal(slack[slack.length - 1], 'd');
 		assert.equal(slack.length > greedy.length, true);
+	});
+
+	it('charted replay includes the live fallback after compatible tracks are exhausted', () => {
+		for (const [maximize_reach, expected] of [
+			[false, ['a', 'b', 'c', 'd']],
+			[true, ['a', 'c', 'd', 'b']]
+		]) {
+			const result = mod.simulateAutoPlayChain({
+				playlist: strand,
+				start_stable_id: 'a',
+				enforce_play_order: false,
+				maximize_reach,
+				select_next: mod.pickNextStableId,
+				...tight
+			});
+			assert.deepEqual([...result], expected);
+			assert.equal(new Set(result).size, result.length, 'fallback must never repeat a row');
+		}
+	});
+
+	it('charted fallback retains exclusions, played rows, and the visible horizon', () => {
+		const input = {
+			playlist: strand,
+			start_stable_id: 'a',
+			enforce_play_order: false,
+			maximize_reach: false,
+			select_next: mod.pickNextStableId,
+			...tight
+		};
+		assert.deepEqual([...mod.simulateAutoPlayChain({
+			...input, exclude_ids: new Set(['c']), played_ids: new Set(['d'])
+		})], ['a', 'b']);
+		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, max_chain_length: 3 })], ['a', 'b', 'c']);
+		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, enforce_play_order: true })], ['a', 'b', 'c', 'd']);
 	});
 
 	it('no-stranding fixture: greedy and slack produce identical order', () => {

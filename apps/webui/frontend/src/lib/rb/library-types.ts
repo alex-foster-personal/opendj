@@ -11,6 +11,14 @@
 
 import type { AnlzWaveformBands } from './anlz-types';
 
+/** Optional analysis metadata reserved for future key and tempo-aware sync. */
+export interface TrackAnalysisHints {
+	dynamic_key?: boolean;
+	dynamic_tempo?: boolean;
+	musical_mode?: 'major' | 'minor';
+	chord_progression?: string;
+}
+
 /** Artwork size enum for GET /tracks/{sid}/artwork (COMPONENT-MAP 2.2). */
 export type ArtworkSize = 's' | 'm' | 'orig';
 
@@ -114,6 +122,8 @@ export interface TrackRow {
 	key: string | null;
 	/** B column - BPM; null renders empty. */
 	bpm: number | null;
+	/** Analyzer-only dynamic key/tempo facts. Absence is explicitly not analyzed. */
+	analysis_hints?: TrackAnalysisHints;
 	/** Rating column 0..5 stars, editable via existing PATCH + If-Match etag. */
 	rating: number | null;
 	/** Current etag for optimistic-concurrency PATCH; from GET /tracks/{sid}. */
@@ -139,6 +149,8 @@ export interface PlaylistNode {
 	name: string;
 	/** Right-aligned track count - OUR real count, never the screenshot's. */
 	track_count: number;
+	/** Broken tracks omitted from the displayed playable count. */
+	broken_count: number;
 	/** Node flavour; 'folder' reserved for future hierarchy, unused v1. */
 	kind: 'all_tracks' | 'playlist' | 'folder';
 	/** Fewer than 30% of tracks exist on disk; tree row renders dimmed. */

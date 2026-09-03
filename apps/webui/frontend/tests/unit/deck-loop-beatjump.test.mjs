@@ -307,9 +307,33 @@ test('beat jump reaches the engine only through the typed dispatcher', async () 
 	assert.match(jumpSource, /onJump\(delta\)/);
 });
 
+test('beat jump leads the compact horizontal loop control group', async () => {
+	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
+	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
+	// The controls remain out of cue-flex, with BeatJump first in the shared
+	// horizontal loop-col so the cue bank keeps its full region.
+	assert.match(
+		deckSource,
+		/<div class="loop-col">\s*<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>\s*<LoopCluster\b/s
+	);
+	const cueRegionStart = deckSource.indexOf('<div class="cue-flex">');
+	const cueRegionEnd = deckSource.indexOf('\n\t\t</div>', cueRegionStart);
+	assert.ok(cueRegionStart >= 0 && cueRegionEnd > cueRegionStart, 'cue-flex region is present');
+	assert.doesNotMatch(deckSource.slice(cueRegionStart, cueRegionEnd), /<BeatJump\b/);
+	assert.match(
+		deckSource,
+		/\.loop-col \{[\s\S]*?display: flex;[\s\S]*?flex-direction: row;[\s\S]*?align-items: flex-start;/
+	);
+	assert.match(jumpSource, /grid-template-columns: repeat\(2, minmax\(18px, 1fr\)\)/);
+	assert.match(jumpSource, /width: 38px;/);
+});
+
 test('every beat jump control offers the four -8 -4 +4 +8 steps', async () => {
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
 	assert.match(jumpSource, /JUMPS: readonly number\[\] = \[-8, -4, 4, 8\]/);
+	assert.match(jumpSource, /\{#each JUMPS as delta \(delta\)\}/);
+	assert.match(jumpSource, /data-beats=\{delta\}/);
+	assert.match(jumpSource, /\{_label\(delta\)\}/);
 });
 
 test('an inert beat jump explains itself rather than silently doing nothing', async () => {

@@ -22,7 +22,7 @@
 	);
 </script>
 
-<div class="vibe-wrap">
+	<div class="vibe-wrap" data-topbar-priority="low">
 	<button
 		type="button"
 		class="vibe-thumb down"

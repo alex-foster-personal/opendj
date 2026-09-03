@@ -60,6 +60,7 @@ from pydantic import BaseModel
 from apps.analysis import backlog
 from apps.analysis import run as analysis_run
 from apps.shared import fs_residency
+from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, HOME, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
@@ -490,6 +491,7 @@ def _refresh_worker(job: _RefreshJob) -> None:
     finally:
         job.current_step = None
         job.finished_at = time.time()
+        publish("library.changed", {"kind": "tracks", "ids": []})
 
 
 class RefreshIn(BaseModel):

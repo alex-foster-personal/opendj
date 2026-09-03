@@ -152,6 +152,7 @@ function _refreshChartedOrder(
 	if (key === _chartedOrderKey) return;
 	_chartedOrderKey = key;
 	const full = simulateAutoPlayChain({
+		select_next: pickNextStableId,
 		playlist: getAutoPlayPlaylist(),
 		start_stable_id: source.stable_id,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
