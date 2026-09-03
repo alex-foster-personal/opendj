@@ -47,7 +47,8 @@
 	// re-runs if a later probe finally identifies an engine, so a daemon that
 	// was down at page load still gets a bus without any polling here.
 	$effect(() => {
-		if (isSharedSet || !capabilities.events) return;
+		if (!capabilities.events) return;
+		if (isSharedSet) return;
 		// One bus for the page lifetime: never torn down on navigation.
 		connectEventsBus();
 	});
