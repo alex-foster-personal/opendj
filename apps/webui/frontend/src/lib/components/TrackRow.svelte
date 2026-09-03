@@ -19,7 +19,7 @@
 	}
 </script>
 
-<tr onclick={onclick} class:selected>
+<tr onclick={onclick} class:selected data-stable-id={track.stable_id}>
 	<td>{track.title ?? '(untitled)'}</td>
 	<td>{track.artist ?? ''}</td>
 	<td
