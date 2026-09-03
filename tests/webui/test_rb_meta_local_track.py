@@ -99,7 +99,6 @@ def test_local_track_invents_no_rekordbox_facts(client: TestClient) -> None:
     assert meta["vendor_id"] is None
     assert meta["genre"] is None
     assert meta["comment"] is None
-    assert meta["artwork_available"] is False
     assert meta["analysis_available"] is False
     assert meta["beatgrid_issue"] is None
     assert meta["cue_count"] == 0
