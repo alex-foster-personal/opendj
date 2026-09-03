@@ -208,3 +208,38 @@ describe('PitchFader double-click reset matches its own tooltip', () => {
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Pin 5a5c3b8033d8: the channel meter is intentionally discrete so it has a
+// readable green/yellow/red status rather than implying a smooth calibration.
+// Source-level coverage is appropriate here because this node:test suite does
+// not mount Svelte components, like the PitchFader wiring coverage above.
+describe('ChannelLevelMeter discrete live channel display', () => {
+	const meter = readFileSync(
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/mixer/ChannelLevelMeter.svelte', import.meta.url)
+		),
+		'utf8'
+	);
+	const fader = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/mixer/VFader.svelte', import.meta.url)),
+		'utf8'
+	);
+
+	it('renders exactly ten segments split into six green, two yellow, and two red', () => {
+		const segments = meter.match(/^\s*'(green|yellow|red)', 'gm') ?? [];
+		assert.equal(segments.length, 10);
+		assert.equal(segments.filter((segment) => segment.includes('green')).length, 6);
+		assert.equal(segments.filter((segment) => segment.includes('yellow')).length, 2);
+		assert.equal(segments.filter((segment) => segment.includes('red')).length, 2);
+	});
+
+	it('keeps real analyser sampling in the extracted component and does not use a gradient', () => {
+		assert.match(meter, /peekDeckMeter\(deckId\)/);
+		assert.match(meter, /requestAnimationFrame\(tick\)/);
+		assert.doesNotMatch(meter, /linear-gradient/);
+		assert.match(fader, /import ChannelLevelMeter from '\.\/ChannelLevelMeter\.svelte'/);
+		assert.match(fader, /<ChannelLevelMeter \{deckId\} \{playing\} \/>/);
+		assert.doesNotMatch(fader, /peekDeckMeter/);
+	});
+});
