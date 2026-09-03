@@ -88,6 +88,18 @@ export interface AnlzPhrase {
 	mood: number;
 }
 
+/** Optional analyzer hints for future dynamic key and tempo-aware sync. */
+export interface AnlzPerformanceHints {
+	/** Key changes detected across the track; absent until a real analyzer emits them. */
+	dynamic_key?: boolean;
+	/** Tempo shifts detected across the track; absent until a real analyzer emits them. */
+	dynamic_tempo?: boolean;
+	/** Detected musical mode, e.g. major or minor; absent until truly analyzed. */
+	musical_mode?: 'major' | 'minor';
+	/** Named harmonic progression, e.g. I-V-vi-IV; absent until truly analyzed. */
+	chord_progression?: string;
+}
+
 /** Our own ffmpeg-decoded waveform status for a track with NO rekordbox
  * mapping (issue #735). Present ONLY on that branch - a rekordbox-mapped
  * track's response has no ``local_waveform`` key at all. */
@@ -123,6 +135,8 @@ export interface AnlzData {
 	cues: AnlzCue[];
 	/** Phrases; empty array when PSSI absent. */
 	phrases: AnlzPhrase[];
+	/** Optional, real analyzer-only detail. Absence means not analyzed. */
+	performance_hints?: AnlzPerformanceHints;
 	/** See AnlzLocalWaveform; absent for a rekordbox-mapped track. */
 	local_waveform?: AnlzLocalWaveform;
 }
