@@ -200,17 +200,20 @@
 						title={cand.explain_text ?? `Load ${cand.title ?? cand.stable_id}`}
 						onclick={() => onload?.(cand.stable_id)}
 					>
-						<span class="title">{cand.title ?? cand.stable_id}</span>
-						<span class="meta">
-							{cand.artist ?? '?'}
-							· {cand.bpm === null ? '?' : cand.bpm.toFixed(1)}
-							· {cand.key_camelot ?? '?'}
+						<span class="title">
+							{cand.title ?? cand.stable_id}
+							{#if cand.artist}· {cand.artist}{/if}
 							{#if cand.energy !== null}· E{cand.energy}{/if}
 						</span>
-						<!-- Only tags that say something the meta row above does not.
-						     bpm / camelot / energy are already printed there, so
-						     they cost a line for nothing (pin 407a1601defe). The
-						     span itself is gone when nothing survives, which is
+						<!-- LIBUX-03: the bpm/camelot readouts lived in a dedicated
+						     .meta row; a trimmed-but-present row still costs a full
+						     line of height, so the row is gone, not just its text.
+						     Artist/energy moved onto the title line.
+
+						     Tags below: only ones the line above does not already
+						     say. bpm / camelot / energy are redundant there too
+						     (pin 407a1601defe), so they cost a line for nothing.
+						     The span itself is gone when nothing survives, which is
 						     where the vertical space comes back. -->
 						{#if visibleRationaleTags(cand.rationale_tags).length > 0}
 							<span class="tags">
@@ -319,11 +322,6 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-	.meta {
-		color: var(--rb-text-dim);
-		font-size: var(--rb-fs-label);
-		white-space: nowrap;
 	}
 	.tags {
 		display: flex;
