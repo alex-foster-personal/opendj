@@ -41,13 +41,15 @@
 		inert?: boolean;
 		/** Indicator stroke tone. */
 		tone?: 'accent' | 'white' | 'rainbow';
+		/** Rendered diameter in px. viewBox stays fixed at 30x30, so this scales the whole ring/cap/indicator (and hit area, since the svg IS the hit area) uniformly. */
+		size?: number;
 	}
 
-	let { knobId, label, value, onchange, inert = false, tone = 'accent' }: Props = $props();
+	let { knobId, label, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
+		$props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
-	const SIZE = 30;
 
 	const live = $derived(!inert && onchange !== undefined);
 
@@ -151,8 +153,8 @@
 		: `${label}${selected ? ' - selected: the scroll wheel nudges this dial from anywhere' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
 >
 	<svg
-		width={SIZE}
-		height={SIZE}
+		width={size}
+		height={size}
 		viewBox="0 0 30 30"
 		role="slider"
 		aria-label={label}
