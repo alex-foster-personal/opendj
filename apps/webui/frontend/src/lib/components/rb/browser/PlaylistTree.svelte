@@ -144,13 +144,6 @@
 		if (onselectsmartlist) onselectsmartlist(sl);
 	}
 
-	/** Static chrome per SCREENSHOT-SPEC 5b: the CUE Analysis Playlist row
-	 * carries an "extra" badge in the reference screenshot; not tied to any
-	 * real analysis state. */
-	function _hasExtraBadge(name: string): boolean {
-		return name === 'CUE Analysis Playlist';
-	}
-
 	const allNode = $derived<PlaylistNode>({
 		playlist_id: 'all',
 		name: 'All Tracks',
@@ -323,7 +316,6 @@
 					{:else}
 						<span class="name" title={node.name}>{node.name}</span>
 					{/if}
-					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
 					{#if onrenameplaylist}
 						<button
 							type="button"
@@ -350,12 +342,10 @@
 							×
 						</button>
 					{/if}
-					{#if _hasExtraBadge(node.name)}
-						<span class="badge badge-extra" aria-hidden="true">extra</span>
-					{/if}
 					{#if selectedId === node.playlist_id}
 						<span class="badge badge-plus" aria-hidden="true">+</span>
 					{/if}
+					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
 				</div>
 			{/each}
 		{/if}
@@ -533,6 +523,11 @@
 	}
 	.count {
 		flex: none;
+		min-width: 4ch;
+		align-self: stretch;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
 		color: var(--rb-text-dim);
 		font-variant-numeric: tabular-nums;
 	}
@@ -552,13 +547,6 @@
 		line-height: 1.3;
 		border-radius: 2px;
 		padding: 0 3px;
-	}
-	.badge-extra {
-		color: var(--rb-text-dim);
-		border: 1px solid var(--rb-border);
-		background: var(--rb-panel-raised);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
 	}
 	.badge-plus {
 		color: var(--rb-text);
