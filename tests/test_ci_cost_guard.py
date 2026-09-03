@@ -175,7 +175,17 @@ def _runner_labels(job_id: str, runs_on: object) -> list[str]:
     clause it cannot read: an expression resolved by guesswork could name a
     cheap runner for an expensive job and the missing alert would look green.
     """
-    labels = [runs_on] if isinstance(runs_on, str) else list(runs_on or [])
+    if isinstance(runs_on, str):
+        labels = [runs_on]
+    elif isinstance(runs_on, list):
+        labels = [str(label) for label in runs_on]
+    elif runs_on is None:
+        labels = []
+    else:
+        raise AssertionError(
+            f"{job_id} has a runs-on of type {type(runs_on).__name__}, which is "
+            "neither a label, a list of labels nor absent, so it cannot be priced"
+        )
     if not any("${{" in label for label in labels):
         return labels
     assert len(labels) == 1, (
@@ -229,7 +239,9 @@ def test_a_runner_switch_is_priced_at_the_hosted_fallback_it_can_select() -> Non
     switch = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 
     assert _runner_labels("test", switch) == ["ubuntu-latest"]
-    assert infer_standard_sku(_runner_labels("test", switch)).rate_usd_per_minute > 0
+    sku = infer_standard_sku(_runner_labels("test", switch))
+    assert sku is not None, "the hosted fallback must price through the SKU table"
+    assert sku.rate_usd_per_minute > 0
 
 
 def test_a_runner_switch_falling_back_to_a_label_list_keeps_every_label() -> None:
