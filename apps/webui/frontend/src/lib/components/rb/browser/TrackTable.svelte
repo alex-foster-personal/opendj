@@ -1191,7 +1191,12 @@
 							style={keyCompatStyle(row.key)}
 							title={`${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`}
 						>
-							{#if row.key !== null}<span class="camelot-number">{row.key.slice(0, -1)}</span><span class="camelot-suffix">{row.key.slice(-1)}</span>{/if}
+							{#snippet keyCharacters(text: string)}
+								{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
+							{/snippet}
+							{#each hl(row.key) as part, i (i)}
+								{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
+							{/each}
 						</td>
 						<td
 							class="c-bpm"
