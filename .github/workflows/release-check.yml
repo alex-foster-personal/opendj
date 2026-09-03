@@ -58,8 +58,7 @@ jobs:
 
       - name: System deps for pyrekordbox (SQLCipher)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev
+          scripts/ci_host_package_lock.sh sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
 
       - name: Create project venv
         # The Makefile expects VENV=.venv with python and pytest inside it.

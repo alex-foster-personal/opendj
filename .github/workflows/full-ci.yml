@@ -59,8 +59,7 @@ jobs:
         # See ci.yml: libsqlcipher-dev ships the runtime shared library on
         # Ubuntu noble.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsqlcipher-dev
+          scripts/ci_host_package_lock.sh sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
 
       - name: Install Python deps
         # modal is a CI test-environment tool, not a package dependency;
