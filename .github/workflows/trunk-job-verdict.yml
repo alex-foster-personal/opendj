@@ -56,6 +56,14 @@ jobs:
         with:
           clean: true
 
+      # #1041: this job calls bare `python` below with no actions/setup-python
+      # step (this watchdog is deliberately lightweight, like ci-cost-guard.yml).
+      # A self-hosted box need not alias python -> python3 the way GitHub-hosted
+      # images do. Fail HERE, naming the runner and the missing binary, rather
+      # than mid-classification with a bare exit 127.
+      - name: Preflight - required runner executables present
+        run: scripts/ci_runner_preflight.sh python
+
       - name: Classify the completed run by its jobs
         id: verdict
         env:

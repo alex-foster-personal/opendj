@@ -82,6 +82,16 @@ jobs:
         with:
           clean: true
 
+      # #1041: this job calls bare `python` below with no actions/setup-python
+      # step (deliberately -- a watcher that costs setup time to price a run
+      # is its own bug). GitHub-hosted images alias python -> python3; a
+      # self-hosted box need not, and Ubuntu 24.04 does not unless
+      # python-is-python3 is installed. Fail HERE, naming the runner and the
+      # missing binary, rather than 20 steps into the cost calculation with a
+      # bare exit 127.
+      - name: Preflight - required runner executables present
+        run: scripts/ci_runner_preflight.sh python
+
       - name: Calculate gross runner cost
         id: guard
         env:
