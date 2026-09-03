@@ -62,8 +62,16 @@
 		saving = true;
 		saveError = null;
 		try {
+			const parsedRegular = _parseOrNull(regular);
+			// All three unset means "no preference" - the API models that as
+			// tempo_pref: null, not an object of nulls (a non-null object with
+			// no values still shows as a set preference + provenance on reread).
+			const tempoPref =
+				parsedRegular === null && parsedMin === null && parsedMax === null
+					? null
+					: { regular: parsedRegular, min: parsedMin, max: parsedMax };
 			const { etag: fresh } = await patchTrack(stableId, etag, {
-				tempo_pref: { regular: _parseOrNull(regular), min: parsedMin, max: parsedMax }
+				tempo_pref: tempoPref
 			});
 			etag = fresh;
 			onclose();
