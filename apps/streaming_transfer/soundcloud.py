@@ -84,6 +84,27 @@ def parse_tracks_payload(payload: object) -> tuple[SoundCloudTrack, ...]:
     return tuple(tracks)
 
 
+def build_playlist_payload(
+    title: str,
+    tracks: tuple[SoundCloudTrack, ...],
+    *,
+    sharing: str,
+) -> dict[str, object]:
+    """Build the documented JSON body while preserving source membership order."""
+    if sharing not in {"private", "public"}:
+        raise SoundCloudError(f"invalid SoundCloud sharing value: {sharing!r}")
+    if not title.strip() or not tracks:
+        raise SoundCloudError("SoundCloud playlist needs a title and at least one track")
+    return {
+        "playlist": {
+            "title": title.strip(),
+            "description": "Transferred by Open DJ",
+            "sharing": sharing,
+            "tracks": [{"id": track.numeric_id} for track in tracks],
+        }
+    }
+
+
 class SoundCloudClient:
     """Synchronous client for search and one atomic playlist creation request."""
 
@@ -135,23 +156,9 @@ class SoundCloudClient:
         *,
         sharing: str,
     ) -> str:
-        if sharing not in {"private", "public"}:
-            raise SoundCloudError(f"invalid SoundCloud sharing value: {sharing!r}")
-        if not title.strip() or not tracks:
-            raise SoundCloudError("SoundCloud playlist needs a title and at least one track")
-        ids = [track.numeric_id for track in tracks]
-        if len(ids) != len(set(ids)):
-            raise SoundCloudError("SoundCloud playlist contains duplicate target tracks")
         response = self._client.post(
             "/playlists",
-            json={
-                "playlist": {
-                    "title": title.strip(),
-                    "description": "Transferred by Open DJ",
-                    "sharing": sharing,
-                    "tracks": [{"id": track_id} for track_id in ids],
-                }
-            },
+            json=build_playlist_payload(title, tracks, sharing=sharing),
         )
         self._raise_for_status(response, "playlist creation")
         body = response.json()

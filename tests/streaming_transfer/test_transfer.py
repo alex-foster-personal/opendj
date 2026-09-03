@@ -19,7 +19,7 @@ import pytest
 from apps.spotify.client import parse_playlist_payload
 from apps.streaming_transfer.llm import LlmDecision, build_batch_request
 from apps.streaming_transfer.service import plan_transfer, resolve_transfer
-from apps.streaming_transfer.soundcloud import parse_tracks_payload
+from apps.streaming_transfer.soundcloud import build_playlist_payload, parse_tracks_payload
 
 SPOTIFY_CAPTURE = {
     "id": "captured-search",
@@ -196,3 +196,14 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
     assert payload["buckets"]["matched"][1]["match_pass"] == "llm_web_search"
     assert payload["buckets"]["matched"][1]["length_verified"] is True
     assert payload["buckets"]["unmatched"][0]["match_pass"] == "llm_web_search"
+
+    target = parse_tracks_payload(SOUNDCLOUD_STUDIO_WITH_ISRC)[0]
+    playlist_payload = build_playlist_payload(
+        "Captured Spotify search results",
+        (target, target),
+        sharing="private",
+    )
+    assert playlist_payload["playlist"]["tracks"] == [
+        {"id": 718846078},
+        {"id": 718846078},
+    ]
