@@ -311,6 +311,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Analysis Source */
+        get: operations["get_analysis_source_api_v1_analysis_source_get"];
+        /** Put Analysis Source */
+        put: operations["put_analysis_source_api_v1_analysis_source_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
@@ -2795,6 +2813,23 @@ export interface components {
             unmapped: number;
             /** Unreachable */
             unreachable: number;
+        };
+        /** AnalysisSourceOut */
+        AnalysisSourceOut: {
+            /** Features */
+            features: {
+                [key: string]: "rekordbox" | "own";
+            };
+        };
+        /** AnalysisSourceSet */
+        AnalysisSourceSet: {
+            /** Feature */
+            feature: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "rekordbox" | "own";
         };
         /**
          * AnlzCueOut
@@ -7083,6 +7118,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+        };
+    };
+    get_analysis_source_api_v1_analysis_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisSourceOut"];
+                };
+            };
+        };
+    };
+    put_analysis_source_api_v1_analysis_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisSourceSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisSourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

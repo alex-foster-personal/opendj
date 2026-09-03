@@ -33,6 +33,11 @@ export function toSyntheticAnlzData(
 		beatgrid: fallback.beatgrid,
 		cues: [],
 		phrases: [],
-		vocals: { status: 'not_analyzed' }
+		vocals: { status: 'not_analyzed' },
+		// This bridge always carries the apps.analysis grid (that's the whole
+		// point of /beatgrid-fallback) - independent of the PARITY-02 rbx-vs-own
+		// selection, which only affects live /anlz responses.
+		beatgrid_source: 'own',
+		beatgrid_own_unavailable_reason: null
 	};
 }

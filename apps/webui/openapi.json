@@ -364,6 +364,48 @@
         "title": "AnalysisQueueOut",
         "type": "object"
       },
+      "AnalysisSourceOut": {
+        "properties": {
+          "features": {
+            "additionalProperties": {
+              "enum": [
+                "rekordbox",
+                "own"
+              ],
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "object"
+          }
+        },
+        "required": [
+          "features"
+        ],
+        "title": "AnalysisSourceOut",
+        "type": "object"
+      },
+      "AnalysisSourceSet": {
+        "properties": {
+          "feature": {
+            "title": "Feature",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "rekordbox",
+              "own"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feature",
+          "source"
+        ],
+        "title": "AnalysisSourceSet",
+        "type": "object"
+      },
       "AnlzCueOut": {
         "description": "Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).",
         "properties": {
@@ -11291,6 +11333,66 @@
         "summary": "Run Analysis Queue",
         "tags": [
           "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis-source": {
+      "get": {
+        "operationId": "get_analysis_source_api_v1_analysis_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Analysis Source",
+        "tags": [
+          "analysis-source"
+        ]
+      },
+      "put": {
+        "operationId": "put_analysis_source_api_v1_analysis_source_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisSourceSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Analysis Source",
+        "tags": [
+          "analysis-source"
         ]
       }
     },

@@ -28,6 +28,7 @@
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
@@ -187,7 +188,10 @@
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
->	<!-- left: live audio health + prefetch count, then mode dropdown -->
+>	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
+	     ahead of the live audio health + prefetch count and mode dropdown. -->
+	<AnalysisSourceToggle />
+
 	<PerfMeters />
 
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing

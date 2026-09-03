@@ -139,4 +139,13 @@ export interface AnlzData {
 	performance_hints?: AnlzPerformanceHints;
 	/** See AnlzLocalWaveform; absent for a rekordbox-mapped track. */
 	local_waveform?: AnlzLocalWaveform;
+	/** PARITY-02: which lane `beatgrid` above actually came from for this
+	 * response. 'own' means the apps.analysis-derived grid (identical
+	 * {n,bpm,t} shape) was swapped in per the current rbx-vs-own selection -
+	 * see analysis-source.svelte.ts. */
+	beatgrid_source: 'rekordbox' | 'own';
+	/** Set only when beatgrid_source is 'own' and no own analysis exists for
+	 * this track: `beatgrid` is then the real empty grid, never a silent
+	 * fallback to the rekordbox one, and this names why. */
+	beatgrid_own_unavailable_reason: string | null;
 }

@@ -37,6 +37,7 @@ from apps.webui.port_config import (
 )
 
 from . import analysis_autostart
+from .analysis_source import AnalysisSourceStore
 from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
 from .errors import (
@@ -47,6 +48,7 @@ from .errors import (
 )
 from .routes import analysis as analysis_routes
 from .routes import analysis_queue as analysis_queue_routes
+from .routes import analysis_source as analysis_source_routes
 from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
@@ -233,6 +235,10 @@ def create_app(
     # question about now, so a restart honestly resets it to "nobody has
     # checked in yet". Tests inject a store with a fake clock.
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
+    # PARITY-02: per-feature rbx-vs-own selection, in-memory only (see
+    # analysis_source.py) -- a relaunch is a fresh process, so this is
+    # deliberately never seeded from anywhere and never persisted.
+    app.state.analysis_source = AnalysisSourceStore()
 
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(
@@ -334,6 +340,7 @@ def create_app(
     app.include_router(feedback_pins_routes.router, prefix=api_prefix)
     app.include_router(share_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
+    app.include_router(analysis_source_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)
     app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)

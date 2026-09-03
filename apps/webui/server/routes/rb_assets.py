@@ -16,9 +16,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .. import rb_vendor
+from ..analysis_source import DEFAULT_SOURCE, AnalysisSourceStore
 from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import QualityOut
+from . import analysis as analysis_routes
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -142,6 +144,46 @@ def get_track_artwork(
     )
 
 
+def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) -> None:
+    """Mutate ``payload`` per the PARITY-02 rbx-vs-own selection (in place).
+
+    A value-only swap, never a schema branch: ``"own"`` replaces
+    ``payload["beatgrid"]`` with the apps.analysis-derived grid in the
+    identical ``/anlz`` shape (:func:`analysis_routes.synthesize_fallback_beats`,
+    the same function ``/beatgrid-fallback`` already serves from). When no
+    own analysis exists for this track, the grid goes explicitly empty with
+    a stated reason -- it is never silently served the rekordbox grid while
+    still claiming ``"own"``.
+
+    ``app.state.analysis_source`` is set by :func:`apps.webui.server.app.create_app`;
+    a test app that mounts only this router (same convention as
+    ``app.state.analysis_db_path`` in ``routes.analysis``) gets the
+    documented ``"rekordbox"`` default rather than an AttributeError.
+    """
+    store: AnalysisSourceStore | None = getattr(request.app.state, "analysis_source", None)
+    source = store.get("beatgrid") if store is not None else DEFAULT_SOURCE
+    payload["beatgrid_source"] = source
+    if source == "rekordbox":
+        payload["beatgrid_own_unavailable_reason"] = None
+        return
+    db_path = analysis_routes._analysis_db_path(request)
+    record = analysis_routes._load_latest_record(db_path, stable_id, None)
+    beats = analysis_routes.synthesize_fallback_beats(record) if record is not None else None
+    if record is None or beats is None:
+        payload["beatgrid"] = {"beat_count": 0, "beats": []}
+        payload["beatgrid_own_unavailable_reason"] = (
+            "no own analysis for this track"
+            if record is None
+            else "own analysis has no usable downbeats"
+        )
+        return
+    payload["beatgrid"] = {
+        "beat_count": len(beats),
+        "beats": [beat.model_dump() for beat in beats],
+    }
+    payload["beatgrid_own_unavailable_reason"] = None
+
+
 @router.get("/{stable_id}/anlz")
 def get_track_anlz(
     request: Request,
@@ -178,6 +220,7 @@ def get_track_anlz(
         # listener's lane is drawn from the rung they actually hear.
         share = getattr(request.state, "share_audience", "local") == "share"
         payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+    _resolve_beatgrid_source(request, stable_id, payload)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     cache_control = _CACHE_ANLZ_RETRYABLE if retryable else _CACHE_ANLZ
