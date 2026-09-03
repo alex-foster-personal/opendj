@@ -1106,7 +1106,16 @@
 							<td class="c-autoplay">
 								{#if _autoPlayRank(row.stable_id) !== null}
 									{@const rank = _autoPlayRank(row.stable_id)!}
-									<span class="ap-rank" title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}>{rank}{AUTOPLAY_ARROW}</span>
+									<span
+										class="ap-rank"
+										class:ap-rank-hot={hoveredApId === row.stable_id}
+										tabindex="0"
+										title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}
+										onpointerenter={() => (hoveredApId = row.stable_id)}
+										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
+										onfocus={() => (hoveredApId = row.stable_id)}
+										onblur={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
+									>{rank}{AUTOPLAY_ARROW}</span>
 								{/if}
 							</td>
 						{/if}
@@ -1252,7 +1261,7 @@
 			<svg
 				class="ap-curve"
 				aria-hidden="true"
-				style={`--ap-curve-w:${colWidths.autoplay}px`}
+				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
 					<path
@@ -1358,7 +1367,7 @@
 	.ap-curve {
 		position: absolute;
 		top: 0;
-		right: 0;
+		left: var(--ap-curve-left);
 		bottom: 0;
 		width: var(--ap-curve-w, 46px);
 		pointer-events: none;

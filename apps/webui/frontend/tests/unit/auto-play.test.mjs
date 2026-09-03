@@ -351,7 +351,8 @@ describe('auto-play track pick', () => {
 			}),
 			'd'
 		);
-		// nothing left in range
+		// No compatible rows remain; keep playback moving with the first
+		// unplayed row, as requested by pin 2e6a9258927c.
 		assert.equal(
 			pickNextStableId({
 				playlist,
@@ -364,7 +365,7 @@ describe('auto-play track pick', () => {
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			null
+			'c'
 		);
 	});
 
