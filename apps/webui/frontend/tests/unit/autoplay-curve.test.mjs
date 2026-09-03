@@ -10,6 +10,11 @@ before(async () => {
 });
 
 describe('autoplay-curve', () => {
+	it('the charted order uses the same production picker as the live handoff', () => {
+		const source = readFileSync(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url), 'utf8');
+		assert.match(source, /const full = simulateAutoPlayChain\(\{[^}]*select_next: pickNextStableId,/);
+		assert.match(source, /const nextId = pickNextStableId\(/);
+	});
 	it('keeps hover and keyboard tracing attached to the relocated rank column', () => {
 		const source = readFileSync(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url), 'utf8');
 		assert.match(source, /onpointerenter=\{\(\) => \(hoveredApId = row.stable_id\)\}/);
