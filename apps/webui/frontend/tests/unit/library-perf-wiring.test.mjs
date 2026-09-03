@@ -120,6 +120,8 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	assert.match(tree, /playable tracks, \$\{node\.broken_count\} broken tracks/);
 	assert.match(tree, /loading playable and broken track counts/);
 	assert.match(tree, /playable count unavailable:/);
+	assert.match(tree, /\$\{node\.track_count - node\.broken_count\} playable tracks/);
+	assert.match(tree, /title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}/);
 });
 
 test('the row-select prefetch caches emit sampled timings', () => {

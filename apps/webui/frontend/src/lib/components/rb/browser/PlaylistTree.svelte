@@ -167,7 +167,7 @@
 	}
 
 	function _playlistCountTitle(node: PlaylistNode): string {
-		return `${node.track_count} playable tracks, ${node.broken_count} broken tracks`;
+		return `${node.track_count - node.broken_count} playable tracks, ${node.broken_count} broken tracks`;
 	}
 
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
@@ -323,7 +323,7 @@
 					{:else}
 						<span class="name" title={node.name}>{node.name}</span>
 					{/if}
-					<span class="count" title={_playlistCountTitle(node)}>{node.track_count}</span>
+					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
 					{#if onrenameplaylist}
 						<button
 							type="button"
