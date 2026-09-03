@@ -12,6 +12,7 @@
  */
 import { fetchAnlz, RbApiError } from '$lib/rb/api-rb';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
+import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import type { AnlzData } from '$lib/rb/anlz-types';
 
 export type AnlzEntry =
@@ -75,17 +76,31 @@ export function isRetryableAnlzData(data: AnlzData): boolean {
  * microseconds earlier) - confirmed live: this silently killed the retry
  * chain outright, not just delayed it, since the fired-early callback both
  * skips the fetch AND schedules no successor (Codex finding, issue #735
- * follow-up, discussion_r3907928251 fix review). */
+ * follow-up, discussion_r3907928251 fix review).
+ *
+ * Captures the analysis-source fetch generation (anlz-fetch-generation.ts)
+ * at the moment the fetch is ISSUED, not when it settles: a switch mid-flight
+ * (PARITY-02) calls `invalidateAllAnlzCacheEntries` to wipe this cache, but an
+ * already-in-flight fetch started under the OLD generation has no way to
+ * cancel, and would otherwise resurrect a fresh 'ready' entry carrying the
+ * pre-switch source right after the wipe - a later cache hit
+ * (`isAnlzEntryUsable`) then serves that stale payload to a load/prefetch
+ * that happens entirely after the switch (discussion_r3921839825 follow-up).
+ * A mismatch at settle time means a newer switch superseded this request:
+ * discard the write outright rather than publish it. */
 function _fetchAndPublish(stable_id: string): void {
 	_cache[stable_id] = { status: 'loading' };
 	const startedAt = performance.now();
+	const generation = currentAnlzFetchGeneration();
 	void fetchAnlz(stable_id).then(
 		(data: AnlzData) => {
-			_publishAnlzResult(stable_id, data);
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
+			if (generation !== currentAnlzFetchGeneration()) return; // superseded, discard
+			_publishAnlzResult(stable_id, data);
 		},
 		(err: unknown) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
+			if (generation !== currentAnlzFetchGeneration()) return; // superseded, discard
 			if (err instanceof RbApiError) {
 				// Explicit backend state (e.g. ANALYSIS_NOT_FOUND, 0.1% of tracks).
 				_cache[stable_id] = { status: 'error', code: err.code };
@@ -260,10 +275,18 @@ export function resolveDisplayedAnlz(
  * added, that second mechanism raced it for the exact same cooldown from
  * the exact same starting instant and double-fired the retry (Codex
  * finding, issue #735 follow-up, discussion_r3907928251 fix review); one
- * retry mechanism for a given stable_id, not two. */
+ * retry mechanism for a given stable_id, not two.
+ *
+ * Same generation guard as `_fetchAndPublish`: captured before the await, so a
+ * switch that lands while this fetch is in flight is detected at publish
+ * time and the shared-cache write is discarded (the caller's own returned
+ * `data` still lands on ITS deck via the loadToken-guarded transaction in
+ * `load()` - only the shared cache write is at risk of resurrecting a stale
+ * entry for OTHER callers). */
 export async function fetchAnlzForDeckLoad(stable_id: string): Promise<AnlzData> {
+	const generation = currentAnlzFetchGeneration();
 	const data = await fetchAnlz(stable_id);
-	_publishAnlzResult(stable_id, data);
+	if (generation === currentAnlzFetchGeneration()) _publishAnlzResult(stable_id, data);
 	return data;
 }
 
