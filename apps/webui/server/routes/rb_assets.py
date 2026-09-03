@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from apps.adapters.rekordbox.paths import empty_anlz_payload
+
 from .. import rb_vendor
 from ..analysis_source import DEFAULT_SOURCE, AnalysisSourceStore
 from ..backend import StateBackend
@@ -144,6 +146,18 @@ def get_track_artwork(
     )
 
 
+def _current_beatgrid_source(request: Request) -> str:
+    """The PARITY-02 rbx-vs-own selection currently in effect for beatgrids.
+
+    ``app.state.analysis_source`` is set by :func:`apps.webui.server.app.create_app`;
+    a test app that mounts only this router (same convention as
+    ``app.state.analysis_db_path`` in ``routes.analysis``) gets the
+    documented ``"rekordbox"`` default rather than an AttributeError.
+    """
+    store: AnalysisSourceStore | None = getattr(request.app.state, "analysis_source", None)
+    return store.get("beatgrid") if store is not None else DEFAULT_SOURCE
+
+
 def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) -> None:
     """Mutate ``payload`` per the PARITY-02 rbx-vs-own selection (in place).
 
@@ -154,14 +168,8 @@ def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) ->
     own analysis exists for this track, the grid goes explicitly empty with
     a stated reason -- it is never silently served the rekordbox grid while
     still claiming ``"own"``.
-
-    ``app.state.analysis_source`` is set by :func:`apps.webui.server.app.create_app`;
-    a test app that mounts only this router (same convention as
-    ``app.state.analysis_db_path`` in ``routes.analysis``) gets the
-    documented ``"rekordbox"`` default rather than an AttributeError.
     """
-    store: AnalysisSourceStore | None = getattr(request.app.state, "analysis_source", None)
-    source = store.get("beatgrid") if store is not None else DEFAULT_SOURCE
+    source = _current_beatgrid_source(request)
     payload["beatgrid_source"] = source
     if source == "rekordbox":
         payload["beatgrid_own_unavailable_reason"] = None
@@ -208,18 +216,32 @@ def get_track_anlz(
         payload = rb_vendor.build_anlz_payload(content, points)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+        code = detail.get("code")
+        if code == "VENDOR_MAPPING_NOT_FOUND":
+            # Locally imported track (no rekordbox analysis). Everything
+            # rekordbox owns stays empty, but the waveform is decodable from
+            # the audio itself, so serve OUR peaks (ffmpeg, cached under
+            # data/state/local-waveform-cache) and say so in
+            # ``local_waveform``. A decode that has not and cannot run
+            # yields empty bands plus the reason - never a synthesised shape.
+            # Same audience GET /audio resolves for this request, so a Share
+            # listener's lane is drawn from the rung they actually hear.
+            share = getattr(request.state, "share_audience", "local") == "share"
+            payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+        elif code == "ANALYSIS_NOT_FOUND" and _current_beatgrid_source(request) == "own":
+            # The track IS rekordbox-mapped, but its ANLZ directory is
+            # missing, unsafe, or wholly unparseable -- ordinarily a hard
+            # 404. OWN is selected, though, and an own-rolled apps.analysis
+            # record can exist for this stable_id regardless of whether
+            # rekordbox's own analysis is readable (the same cohort
+            # /beatgrid-fallback already serves). Build the same honest
+            # empty base payload the no-mapping branch above uses, so
+            # `_resolve_beatgrid_source` gets a chance to overlay the real
+            # OWN grid instead of the whole request dying before OWN is
+            # even consulted.
+            payload = empty_anlz_payload(stable_id, points)
+        else:
             raise
-        # Locally imported track (no rekordbox analysis). Everything rekordbox
-        # owns stays empty, but the waveform is decodable from the audio
-        # itself, so serve OUR peaks (ffmpeg, cached under
-        # data/state/local-waveform-cache) and say so in ``local_waveform``.
-        # A decode that has not and cannot run yields empty bands plus the
-        # reason - never a synthesised shape.
-        # Same audience GET /audio resolves for this request, so a Share
-        # listener's lane is drawn from the rung they actually hear.
-        share = getattr(request.state, "share_audience", "local") == "share"
-        payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
     _resolve_beatgrid_source(request, stable_id, payload)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
