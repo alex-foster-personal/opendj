@@ -566,19 +566,16 @@
 		z-index: 1;
 	}
 
-	/* Ranked responsive slots: wide chrome leaves VIBE centered; before any
-	 * command/status control can collide beneath it, VIBE joins the flow and
-	 * controls occupy either side. Then labels abbreviate, finally VIBE yields.
+	/* Wide chrome leaves VIBE centered; before controls can collide beneath
+	 * it, VIBE joins the flow in DOM order between the left and right clusters.
+	 * Then labels abbreviate, finally VIBE yields.
 	 * CommandEntry and JOBS are intentionally never hidden. */
 	@media (max-width: 1180px) {
 		.vibe-slot {
 			position: static;
 			transform: none;
-			order: 1;
 			margin-inline: 2px;
 		}
-		.topbar-slot-pairing { order: 0; }
-		.topbar-slot-bsm, .topbar-slot-autoplay { order: 2; }
 	}
 	@media (max-width: 980px) {
 		.topbar-slot-pairing { display: none; }
