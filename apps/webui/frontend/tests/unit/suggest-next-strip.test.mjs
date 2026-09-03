@@ -71,7 +71,7 @@ test('play label and dispatch share the reservation-aware picker', () => {
 	const browser = readFileSync(
 		fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)), 'utf8'
 	);
-	assert.match(browser, /const suggestPlayTargetDeck = \$derived\(_pickDoubleDeckTarget\(\)\.deck\);/);
+	assert.match(browser, /const suggestPlayTargetDeck = \$derived\(suggestTargetDeck === null \? null : _pickDoubleDeckTarget\(\)\.deck\);/);
 	assert.match(browser, /playTargetLabel=\{suggestPlayTargetDeck === null \? null : `CH \$\{suggestPlayTargetDeck\}`\}/);
 	assert.match(browser, /const result = _pickDoubleDeckTarget\(opts\);/);
 	assert.match(source, /const destination = \(play \? playTargetLabel : targetLabel\)/);

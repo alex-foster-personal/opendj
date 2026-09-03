@@ -1409,7 +1409,7 @@
 
 	const playlistMemberIds = $derived(new Set(pane.rows.map((r) => r.stable_id)));
 	const suggestTargetDeck = $derived(_lowestFreeDeck());
-	const suggestPlayTargetDeck = $derived(_pickDoubleDeckTarget().deck);
+	const suggestPlayTargetDeck = $derived(suggestTargetDeck === null ? null : _pickDoubleDeckTarget().deck);
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
