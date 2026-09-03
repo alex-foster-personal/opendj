@@ -87,12 +87,21 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: e2e gate (webkit artifact + hermetic chromium)
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch (see ci.yml's `test` job for the full
+    # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
+    # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
+    # only self-hosted runner carrying the `e2e` label and root (needed for
+    # `playwright install --with-deps`). Because that label gate is exactly
+    # what keeps this off the non-root nucbox-wsl runner, --with-deps below
+    # stays unconditional: it is root-safe on both possible targets.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
 
     steps:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
 
       - name: Enable pinned pnpm
         # Order matters: corepack before setup-node, so a `pnpm` shim exists on
@@ -161,6 +170,10 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
+        # Hosted-only: this uploads to GitHub's cache storage, which still
+        # costs and buys nothing on agentbox, whose ~/.cache/ms-playwright
+        # already persists locally between runs. Empty var means hosted.
+        if: vars.CI_RUNS_ON_E2E == ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
@@ -366,11 +379,14 @@ jobs:
   extended:
     name: e2e extended (nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # See the `gate` job above for the runner-selection and --with-deps note.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
 
       - name: Enable pinned pnpm
         run: |
@@ -415,6 +431,8 @@ jobs:
         run: echo "version=$(pnpm exec playwright --version | tr -d '\n' | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
+        # Hosted-only; see the `gate` job's identical step above.
+        if: vars.CI_RUNS_ON_E2E == ''
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright

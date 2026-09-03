@@ -43,7 +43,9 @@ concurrency:
 jobs:
   verdict:
     name: Verdict from per-job conclusions
-    runs-on: ubuntu-latest
+    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     # Trunk only. PR runs are still legitimately cancel-in-progress, so alerting on them
     # would manufacture the alert fatigue this work exists to prevent.
@@ -51,6 +53,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          clean: true
 
       - name: Classify the completed run by its jobs
         id: verdict
