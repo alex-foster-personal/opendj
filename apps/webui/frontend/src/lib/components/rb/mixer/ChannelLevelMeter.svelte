@@ -8,10 +8,9 @@
 	 */
 	import { onDestroy } from 'svelte';
 	import { peekDeckMeter } from '$lib/rb/audio-engine.svelte';
-	import type { DeckId } from '$lib/rb/deck-slots';
 
 	interface Props {
-		deckId: DeckId;
+		deckId: Parameters<typeof peekDeckMeter>[0];
 		playing?: boolean;
 	}
 

@@ -242,4 +242,9 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		assert.match(fader, /<ChannelLevelMeter \{deckId\} \{playing\} \/>/);
 		assert.doesNotMatch(fader, /peekDeckMeter/);
 	});
+
+	it('accepts exactly the deck identifier type supported by the meter API', () => {
+		assert.match(meter, /deckId: Parameters<typeof peekDeckMeter>\[0\]/);
+		assert.doesNotMatch(meter, /from '\$lib\/rb\/deck-slots'/);
+	});
 });
