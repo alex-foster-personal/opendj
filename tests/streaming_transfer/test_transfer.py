@@ -11,6 +11,7 @@ the production HTTP orchestration.
 - if a below-threshold candidate bypasses the batched LLM pass then META-05 is broken
 - if matched, unmatched, and ungradable are not separate buckets then META-05 is broken
 """
+
 from __future__ import annotations
 
 import pytest
@@ -19,7 +20,6 @@ from apps.spotify.client import parse_playlist_payload
 from apps.streaming_transfer.llm import LlmDecision, build_batch_request
 from apps.streaming_transfer.service import plan_transfer, resolve_transfer
 from apps.streaming_transfer.soundcloud import parse_tracks_payload
-
 
 SPOTIFY_CAPTURE = {
     "id": "captured-search",
@@ -114,9 +114,7 @@ SOUNDCLOUD_LIVE_PREVIEW = {
             "urn": "soundcloud:tracks:1455360826",
             "isrc": None,
             "metadata_artist": "The Weeknd",
-            "permalink_url": (
-                "https://soundcloud.com/theweeknd/the-weeknd-blinding-lights-1"
-            ),
+            "permalink_url": ("https://soundcloud.com/theweeknd/the-weeknd-blinding-lights-1"),
             "access": "preview",
             "streamable": True,
             "user": {"username": "The Weeknd"},
@@ -129,15 +127,9 @@ SOUNDCLOUD_LIVE_PREVIEW = {
 def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
     source = parse_playlist_payload(SPOTIFY_CAPTURE)
     target_candidates = {
-        source.tracks[0].spotify_uri: parse_tracks_payload(
-            SOUNDCLOUD_STUDIO_WITH_ISRC
-        ),
-        source.tracks[1].spotify_uri: parse_tracks_payload(
-            SOUNDCLOUD_STUDIO_WITHOUT_ISRC
-        ),
-        source.tracks[2].spotify_uri: parse_tracks_payload(
-            SOUNDCLOUD_LIVE_PREVIEW
-        ),
+        source.tracks[0].spotify_uri: parse_tracks_payload(SOUNDCLOUD_STUDIO_WITH_ISRC),
+        source.tracks[1].spotify_uri: parse_tracks_payload(SOUNDCLOUD_STUDIO_WITHOUT_ISRC),
+        source.tracks[2].spotify_uri: parse_tracks_payload(SOUNDCLOUD_LIVE_PREVIEW),
         source.tracks[3].spotify_uri: (),
     }
 
@@ -151,23 +143,21 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
     assert [row.source_uri for row in plan.deterministic_matches] == [
         "spotify:track:0VjIjW4GlUZAMYd2vXMi3b"
     ]
-    assert plan.deterministic_matches[0].confidence == pytest.approx(0.90)
+    # The provider captures differ by 1,579 ms, just outside CAT-01's 1,500 ms
+    # duration tolerance. ISRC + title + artist therefore produce exactly 0.70.
+    assert plan.deterministic_matches[0].confidence == pytest.approx(0.70)
     assert plan.deterministic_matches[0].match_pass == "deterministic"
     assert [row.source_uri for row in plan.escalations] == [
         "spotify:track:6qYkmqFsXbj8CQjAdbYz07",
         "spotify:track:5OGxg1400HmCYVRHuccZWw",
     ]
-    assert [row.source_uri for row in plan.ungradable] == [
-        "spotify:track:2D4dV2KXDTszzJ3p3cFqhA"
-    ]
+    assert [row.source_uri for row in plan.ungradable] == ["spotify:track:2D4dV2KXDTszzJ3p3cFqhA"]
 
     request = build_batch_request(plan.escalations, model="operator-supplied")
     assert request["tools"] == [{"type": "openrouter:web_search"}]
     assert len(request["messages"]) == 2
     assert "duration_ms" in request["messages"][1]["content"]
-    assert "Track length verification is mandatory" in request["messages"][0][
-        "content"
-    ]
+    assert "Track length verification is mandatory" in request["messages"][0]["content"]
 
     report = resolve_transfer(
         plan,
@@ -189,10 +179,7 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
                 length_verified=False,
                 evidence_urls=(
                     "https://open.spotify.com/track/5OGxg1400HmCYVRHuccZWw",
-                    (
-                        "https://soundcloud.com/theweeknd/"
-                        "the-weeknd-blinding-lights-1"
-                    ),
+                    ("https://soundcloud.com/theweeknd/the-weeknd-blinding-lights-1"),
                 ),
             ),
         ),
@@ -203,10 +190,7 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
     assert len(payload["buckets"]["matched"]) == 2
     assert len(payload["buckets"]["unmatched"]) == 1
     assert len(payload["buckets"]["ungradable"]) == 1
-    assert all(
-        isinstance(row["confidence"], float)
-        for row in payload["buckets"]["matched"]
-    )
+    assert all(isinstance(row["confidence"], float) for row in payload["buckets"]["matched"])
     assert payload["buckets"]["matched"][1]["match_pass"] == "llm_web_search"
     assert payload["buckets"]["matched"][1]["length_verified"] is True
     assert payload["buckets"]["unmatched"][0]["match_pass"] == "llm_web_search"
