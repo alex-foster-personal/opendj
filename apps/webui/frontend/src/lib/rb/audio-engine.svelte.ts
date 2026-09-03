@@ -336,6 +336,8 @@ interface _ChannelNodes {
 	high: BiquadFilterNode;
 	filterLp: BiquadFilterNode;
 	filterHp: BiquadFilterNode;
+	filterDry: GainNode;
+	filterWet: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -550,24 +552,34 @@ function _eqDbFromKnob(value: number): number {
 
 /**
  * FILTER knob -> {lpHz, hpHz} corner frequencies for the two always-in-chain
- * biquads (see FILTER_* constants). `colour` is bipolar travel away from the
- * 0.5 detent; below FILTER_DEADZONE_FRAC of it is a true dry bypass (both
- * filters left fully open). Sweeps are exponential in Hz, i.e. linear in
- * octaves (L2 in docs/research/filter-taper-laws.md), so equal knob motion
- * covers equal perceived distance anywhere in the travel.
+ * biquads (see FILTER_* constants) plus real dry/wet gains. `colour` is
+ * bipolar travel away from the 0.5 detent; below FILTER_DEADZONE_FRAC it is a
+ * true dry bypass around both filters. Sweeps are exponential in Hz, i.e.
+ * linear in octaves (L2 in docs/research/filter-taper-laws.md), so equal knob
+ * motion covers equal perceived distance anywhere in the travel.
  */
-function _filterFreqsFromKnob(value: number): { lpHz: number; hpHz: number } {
+function _filterParamsFromKnob(value: number): {
+	lpHz: number;
+	hpHz: number;
+	dryGain: number;
+	wetGain: number;
+} {
 	const colour = (value - 0.5) * 2; // -1 (full CCW) .. 1 (full CW)
 	if (Math.abs(colour) < FILTER_DEADZONE_FRAC) {
-		return { lpHz: FILTER_LP_CEILING_HZ, hpHz: FILTER_HP_FLOOR_HZ };
+		return {
+			lpHz: FILTER_LP_CEILING_HZ,
+			hpHz: FILTER_HP_FLOOR_HZ,
+			dryGain: 1,
+			wetGain: 0
+		};
 	}
 	const u = (Math.abs(colour) - FILTER_DEADZONE_FRAC) / (1 - FILTER_DEADZONE_FRAC);
 	if (colour < 0) {
 		const lpHz = FILTER_LP_CEILING_HZ * (FILTER_LP_FLOOR_HZ / FILTER_LP_CEILING_HZ) ** u;
-		return { lpHz, hpHz: FILTER_HP_FLOOR_HZ };
+		return { lpHz, hpHz: FILTER_HP_FLOOR_HZ, dryGain: 0, wetGain: 1 };
 	}
 	const hpHz = FILTER_HP_FLOOR_HZ * (FILTER_HP_CEILING_HZ / FILTER_HP_FLOOR_HZ) ** u;
-	return { lpHz: FILTER_LP_CEILING_HZ, hpHz };
+	return { lpHz: FILTER_LP_CEILING_HZ, hpHz, dryGain: 0, wetGain: 1 };
 }
 
 function _setParam(param: AudioParam, value: number): void {
@@ -662,7 +674,7 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz } = _filterFreqsFromKnob(ch.filter);
+		const { lpHz, hpHz, dryGain, wetGain } = _filterParamsFromKnob(ch.filter);
 		const filterLp = _ctx.createBiquadFilter();
 		filterLp.type = 'lowpass';
 		filterLp.Q.value = FILTER_Q;
@@ -671,6 +683,10 @@ function _ensureGraph(): AudioContext {
 		filterHp.type = 'highpass';
 		filterHp.Q.value = FILTER_Q;
 		filterHp.frequency.value = hpHz;
+		const filterDry = _ctx.createGain();
+		filterDry.gain.value = dryGain;
+		const filterWet = _ctx.createGain();
+		filterWet.gain.value = wetGain;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -681,11 +697,15 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
+		high.connect(filterDry);
 		high.connect(filterLp);
 		filterLp.connect(filterHp);
-		filterHp.connect(cue);
+		filterHp.connect(filterWet);
+		filterDry.connect(cue);
+		filterWet.connect(cue);
 		cue.connect(headphones.cueSum);
-		filterHp.connect(fader);
+		filterDry.connect(fader);
+		filterWet.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
@@ -697,7 +717,21 @@ function _ensureGraph(): AudioContext {
 			fader.connect(xf);
 			xf.connect(_masterGain);
 		}
-		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, cue, fader, xf, extsplit };
+		_rt[deck].nodes = {
+			analyser,
+			trim,
+			low,
+			mid,
+			high,
+			filterLp,
+			filterHp,
+			filterDry,
+			filterWet,
+			cue,
+			fader,
+			xf,
+			extsplit
+		};
 	}
 	armXrunSentinel(_ctx);
 	return _ctx;
@@ -4034,9 +4068,11 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.channels[deck].filter = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) {
-			const { lpHz, hpHz } = _filterFreqsFromKnob(value);
+			const { lpHz, hpHz, dryGain, wetGain } = _filterParamsFromKnob(value);
 			_setParam(nodes.filterLp.frequency, lpHz);
 			_setParam(nodes.filterHp.frequency, hpHz);
+			_setParam(nodes.filterDry.gain, dryGain);
+			_setParam(nodes.filterWet.gain, wetGain);
 		}
 	}
 
