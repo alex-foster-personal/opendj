@@ -169,5 +169,4 @@ class SoundCloudClient:
     def _raise_for_status(response: httpx.Response, operation: str) -> None:
         if 200 <= response.status_code < 300:
             return
-        detail = response.text[:500]
-        raise SoundCloudError(f"SoundCloud {operation} returned {response.status_code}: {detail}")
+        raise SoundCloudError(f"SoundCloud {operation} returned HTTP {response.status_code}")

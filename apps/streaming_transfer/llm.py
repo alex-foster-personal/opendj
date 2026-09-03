@@ -191,6 +191,6 @@ class OpenRouterBatchMatcher:
         )
         if response.status_code != 200:
             raise LlmMatchError(
-                f"OpenRouter match batch returned {response.status_code}: {response.text[:500]}"
+                f"OpenRouter match batch returned HTTP {response.status_code}"
             )
         return parse_batch_response(response.json())

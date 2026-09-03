@@ -186,6 +186,8 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
     )
     payload = report.as_dict()
 
+    assert payload["source_playlist_id"] == "captured-search"
+    assert payload["counts"] == {"matched": 2, "unmatched": 1, "ungradable": 1}
     assert set(payload["buckets"]) == {"matched", "unmatched", "ungradable"}
     assert len(payload["buckets"]["matched"]) == 2
     assert len(payload["buckets"]["unmatched"]) == 1

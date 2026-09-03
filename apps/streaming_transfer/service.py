@@ -97,6 +97,7 @@ class Escalation:
 class TransferPlan:
     source_service: str
     target_service: str
+    source_playlist_id: str
     playlist_name: str
     confidence_threshold: float
     deterministic_matches: tuple[TransferRecord, ...]
@@ -108,6 +109,7 @@ class TransferPlan:
 class TransferReport:
     source_service: str
     target_service: str
+    source_playlist_id: str
     playlist_name: str
     confidence_threshold: float
     matched: tuple[TransferRecord, ...]
@@ -119,9 +121,15 @@ class TransferReport:
         return {
             "source_service": self.source_service,
             "target_service": self.target_service,
+            "source_playlist_id": self.source_playlist_id,
             "playlist_name": self.playlist_name,
             "confidence_threshold": self.confidence_threshold,
             "target_playlist_id": self.target_playlist_id,
+            "counts": {
+                "matched": len(self.matched),
+                "unmatched": len(self.unmatched),
+                "ungradable": len(self.ungradable),
+            },
             "buckets": {
                 "matched": [row.as_dict() for row in self.matched],
                 "unmatched": [row.as_dict() for row in self.unmatched],
@@ -222,6 +230,7 @@ def plan_transfer(
     return TransferPlan(
         source_service="spotify",
         target_service=target_service,
+        source_playlist_id=source.id,
         playlist_name=source.name,
         confidence_threshold=confidence_threshold,
         deterministic_matches=tuple(deterministic),
@@ -293,6 +302,7 @@ def resolve_transfer(
     return TransferReport(
         source_service=plan.source_service,
         target_service=plan.target_service,
+        source_playlist_id=plan.source_playlist_id,
         playlist_name=plan.playlist_name,
         confidence_threshold=plan.confidence_threshold,
         matched=tuple(matched),
