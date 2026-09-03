@@ -8355,6 +8355,85 @@
         "title": "SyncPolicyPut",
         "type": "object"
       },
+      "TempoPrefOut": {
+        "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefOut",
+        "type": "object"
+      },
+      "TempoPrefPatch": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "regular": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular"
+          }
+        },
+        "title": "TempoPrefPatch",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -8917,6 +8996,16 @@
             "title": "Tags",
             "type": "array"
           },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -9087,6 +9176,16 @@
             "title": "Tags",
             "type": "array"
           },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -9163,6 +9262,16 @@
               }
             ],
             "title": "Tags Remove"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "TrackPatch",
