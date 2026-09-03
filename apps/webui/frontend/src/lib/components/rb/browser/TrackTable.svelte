@@ -55,6 +55,7 @@
 		type AnalysisIssues
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
+	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
@@ -116,6 +117,13 @@
 	let loadConfirm = $state<{
 		row: BrowserRow;
 		deck: DeckId;
+		/** Set only when `deck` came from onpickdoubledeck (it reserved this
+		 * deck, at this generation); null for the shift-with-no-picker
+		 * fallback below, which never reserved anything. Passed straight
+		 * through to onloadrow/onloadconfirmcancelled so a release matches
+		 * the exact reservation this dialog owns - see BrowserPanel's
+		 * _releaseDeckReservation for why a generation, not a boolean. */
+		reservation: number | null;
 		x: number;
 		y: number;
 	} | null>(null);
@@ -243,8 +251,10 @@
 		onselectrow,
 		onloadrow,
 		onpickdoubledeck,
+		onloadconfirmcancelled,
 		onpreviewseek,
 		onrate,
+		onrefused,
 		onrowvisible,
 		onremoverow,
 		onreorder,
@@ -282,17 +292,30 @@
 		onscrollcursor: (top: number) => void;
 		onsort: (key: SortKey) => void;
 		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
-		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick. */
-		onloadrow: (row: BrowserRow, deck: DeckId | null, opts?: { play?: boolean }) => void;
+		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
+		 * `reservation` must be set only when `deck` came from onpickdoubledeck
+		 * (it reserved that deck, at that generation) - never for an explicit
+		 * "Load onto deck N" pick, which owns no reservation to release. */
+		onloadrow: (
+			row: BrowserRow,
+			deck: DeckId | null,
+			opts?: { play?: boolean; reservation?: number }
+		) => void;
 		/**
 		 * Preferred deck for double-click load+play. Shift -> CH3/CH4 when
 		 * free/stopped. Cmd/Ctrl -> replace whatever deck the last plain
 		 * double-click targeted, instead of advancing to the next deck.
+		 * Returns the reservation's generation alongside the deck - see
+		 * BrowserPanel's _releaseDeckReservation.
 		 */
 		onpickdoubledeck?: (
 			row: BrowserRow,
 			opts?: { shift?: boolean; replace?: boolean }
-		) => DeckId | null;
+		) => { deck: DeckId; reservation: number } | null;
+		/** The load+play confirm dialog was dismissed WITHOUT loading -
+		 * onpickdoubledeck already reserved this deck, and no onloadrow call
+		 * is coming to release it, so the caller must release it itself. */
+		onloadconfirmcancelled?: (deck: DeckId, reservation: number) => void;
 		/** Preview strip click: 0..1 ratio along the track. */
 		onpreviewseek?: (row: BrowserRow, ratio: number) => void;
 		onrate: (row: BrowserRow, next: number) => void;
@@ -301,6 +324,10 @@
 		onremoverow?: (row: BrowserRow) => void;
 		/** Move the track at `fromOrder` (1-based) to `toOrder`'s slot. */
 		onreorder?: (fromOrder: number, toOrder: number) => void;
+		/** A drag the table refused, with the reason. The table does not own a
+		 * toast channel, so the panel says it (pins 8ba0b15d975b /
+		 * 72be3e505510: a silent refusal reads as a broken feature). */
+		onrefused?: (reason: string) => void;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -381,21 +408,33 @@
 		if (genreWindowOpen()) return;
 		const target = event.target as HTMLElement | null;
 		if (target === null || target.closest(LOAD_DBLCLICK_SEL) === null) return;
-		const deck =
-			onpickdoubledeck?.(row, {
-				shift: event.shiftKey,
-				replace: event.metaKey || event.ctrlKey
-			}) ?? (event.shiftKey ? null : 1);
+		const picked = onpickdoubledeck?.(row, {
+			shift: event.shiftKey,
+			replace: event.metaKey || event.ctrlKey
+		});
+		const deck = picked?.deck ?? (event.shiftKey ? null : 1);
 		if (deck === null) return;
+		// onpickdoubledeck reserved this deck (and returned its generation);
+		// the shift-with-no-picker fallback above never did, so it owns
+		// nothing to release later.
+		const reservation = picked != null ? picked.reservation : null;
 		// Missing key = ask; false = skip (remembered "do this every time").
 		if (uiPrefs.confirm.dblclick_load_play === false) {
-			onloadrow(row, deck, { play: true });
+			onloadrow(row, deck, reservation !== null ? { play: true, reservation } : { play: true });
 			return;
+		}
+		// A second double-click before the first confirm is answered
+		// overwrites `loadConfirm` below - the No button's release only fires
+		// for the VISIBLE dialog, so the reservation this is about to
+		// discard would otherwise stay pending forever.
+		if (loadConfirm !== null && loadConfirm.reservation !== null) {
+			onloadconfirmcancelled?.(loadConfirm.deck, loadConfirm.reservation);
 		}
 		loadConfirmEveryTime = false;
 		loadConfirm = {
 			row,
 			deck,
+			reservation,
 			x: event.clientX,
 			y: Math.max(8, event.clientY - 20)
 		};
@@ -615,8 +654,20 @@
 	let _dragSourceOrder: number | null = null;
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
-		if (!row.file_exists || row.is_streaming) {
+		// A refused drag used to just preventDefault and return: no cursor
+		// change, no message, nothing - indistinguishable from drag-to-deck
+		// being broken, which is how it was reported. Same reasons, same
+		// wording as the double-click path (pins 8ba0b15d975b, 72be3e505510).
+		const refusal = trackDragRefusal({
+			file_exists: row.file_exists,
+			// All Tracks rows start row.is_streaming at null and hydrate the
+			// real value into row.rb_meta later - same effective flag
+			// _loadOntoDeck already checks, so the two refusal paths agree.
+			is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
+		});
+		if (refusal !== null) {
 			event.preventDefault();
+			onrefused?.(refusal);
 			return;
 		}
 		const ids =
@@ -1299,15 +1350,25 @@
 				loadConfirmEveryTime = false;
 				if (pending === null) return;
 				if (remember) setConfirmPref('dblclick_load_play', false);
-				onloadrow(pending.row, pending.deck, { play: true });
+				onloadrow(
+					pending.row,
+					pending.deck,
+					pending.reservation !== null
+						? { play: true, reservation: pending.reservation }
+						: { play: true }
+				);
 			}}>Yes</button
 		>
 		<button
 			type="button"
 			class="load-confirm-no"
 			onclick={() => {
+				const pending = loadConfirm;
 				loadConfirm = null;
 				loadConfirmEveryTime = false;
+				if (pending !== null && pending.reservation !== null) {
+					onloadconfirmcancelled?.(pending.deck, pending.reservation);
+				}
 			}}>No</button
 		>
 	</div>

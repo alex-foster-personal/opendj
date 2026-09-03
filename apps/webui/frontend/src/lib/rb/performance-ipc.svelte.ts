@@ -65,8 +65,14 @@ import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
 
 export type PerformanceCommand =
-	| { type: 'load'; deck: DeckId; stable_id: string }
-	| { type: 'unload'; deck: DeckId }
+	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
+	// UI dispatch boundary - see the 'load'/'unload' branches of _execute.
+	// Deliberately NOT the default: a standalone eject (Deck.svelte's Unload
+	// button, Quick Draw's unload action) must still be able to unload the
+	// live master with no other deck to reassign to (r3920297846) - only a
+	// destructive REPLACE (BrowserPanel's _loadOntoDeck) opts in.
+	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
+	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
 	| { type: 'play'; deck: DeckId; playing: boolean }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
@@ -407,14 +413,16 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
-		_exactKeys(record, ['type', 'deck', 'stable_id']);
+		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
 		}
-		return { type, deck, stable_id: record.stable_id };
+		if (record.refuseIfMaster === undefined) return { type, deck, stable_id: record.stable_id };
+		return { type, deck, stable_id: record.stable_id, refuseIfMaster: _boolean('refuseIfMaster', record.refuseIfMaster) };
 	} else if (type === 'unload') {
-		_exactKeys(record, ['type', 'deck']);
-		return { type, deck };
+		_exactKeys(record, ['type', 'deck', 'refuseIfMaster']);
+		if (record.refuseIfMaster === undefined) return { type, deck };
+		return { type, deck, refuseIfMaster: _boolean('refuseIfMaster', record.refuseIfMaster) };
 	} else if (type === 'play') {
 		_exactKeys(record, ['type', 'deck', 'playing']);
 		return { type, deck, playing: _boolean('playing', record.playing) };
@@ -738,6 +746,21 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	if (command.type === 'load') {
+		// refuseIfMaster, rechecked here inside the queued run() slot for
+		// this deck's scope, not just at the UI dispatch boundary: 'master'
+		// shares this deck's scope ([deck, 'sync']), so a MASTER command
+		// queued moments before this load can complete BETWEEN the UI-layer
+		// is_master check and this command's own turn, making the deck
+		// master out from under a check that already passed (r3920224754).
+		// getDeckState reads engine state directly, which is authoritative
+		// by the time this command's scope has been acquired - any
+		// same-scope command queued earlier is guaranteed to have already
+		// settled. Opt-in only (see the PerformanceCommand union comment):
+		// a standalone load must stay able to target the master, same as
+		// unload below.
+		if (command.refuseIfMaster === true && getDeckState(command.deck).is_master) {
+			throw new Error(`cannot load: CH${command.deck} is the live master - unload or reassign it first`);
+		}
 		// THE deck-load entry point from every UI surface, so it is also the
 		// one place the boot scheduler has to be told a load is in flight:
 		// deferred boot work waits for this to settle rather than racing it
@@ -753,6 +776,17 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		hotCueReversals[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'unload') {
+		// See the 'load' branch above for why this is rechecked here rather
+		// than trusted from the UI-layer check (r3920224754). Opt-in only:
+		// engine.unload already supports unloading the live master (it
+		// elects another playing master afterward), which a standalone
+		// eject (Deck.svelte's Unload button, Quick Draw's unload action)
+		// relies on, including when it is the only loaded deck and there is
+		// nothing to "reassign master to" first (r3920297846). Only
+		// BrowserPanel's destructive-replace path opts in.
+		if (command.refuseIfMaster === true && getDeckState(command.deck).is_master) {
+			throw new Error(`cannot unload: CH${command.deck} is the live master - unload or reassign it first`);
+		}
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 	} else if (command.type === 'play') {

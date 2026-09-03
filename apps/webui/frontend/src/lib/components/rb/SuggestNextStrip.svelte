@@ -44,6 +44,7 @@
 	// {error, message, ...} bodies (ErrorBody, not the detail envelope),
 	// so the mapping below reads them off ApiError.body.
 	import { ApiError, api, unwrap } from '$lib/api/client';
+	import { visibleRationaleTags } from '$lib/rb/suggest-tags';
 
 	interface SuggestionWire {
 		stable_id: string;
@@ -206,11 +207,18 @@
 							· {cand.key_camelot ?? '?'}
 							{#if cand.energy !== null}· E{cand.energy}{/if}
 						</span>
-						<span class="tags">
-							{#each cand.rationale_tags as tag (tag)}
-								<span class="tag" class:pair={tag.startsWith('pair_')}>{_tagLabel(tag)}</span>
-							{/each}
-						</span>
+						<!-- Only tags that say something the meta row above does not.
+						     bpm / camelot / energy are already printed there, so
+						     they cost a line for nothing (pin 407a1601defe). The
+						     span itself is gone when nothing survives, which is
+						     where the vertical space comes back. -->
+						{#if visibleRationaleTags(cand.rationale_tags).length > 0}
+							<span class="tags">
+								{#each visibleRationaleTags(cand.rationale_tags) as tag (tag)}
+									<span class="tag" class:pair={tag.startsWith('pair_')}>{_tagLabel(tag)}</span>
+								{/each}
+							</span>
+						{/if}
 					</button>
 					<button
 						type="button"

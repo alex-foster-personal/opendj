@@ -37,7 +37,7 @@
 	import type { PlaylistNode, RbMeta } from '$lib/rb/library-types';
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
-	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
+	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
 	import { resolveRowVocals } from '$lib/rb/row-vocals';
 	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
 	import {
@@ -84,7 +84,7 @@
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
-	import { pickDoubleClickDeck } from '$lib/rb/deck-slots';
+	import { pickDoubleClickDeck, type DeckSlotState } from '$lib/rb/deck-slots';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
@@ -1333,7 +1333,7 @@
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean } = {}
+		opts: { play?: boolean; reservation?: number } = {}
 	): void {
 		void _loadOntoDeck(row, deck, opts);
 	}
@@ -1341,9 +1341,11 @@
 	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
 		const row = { stable_id: sid, file_exists: true, is_streaming: false };
 		if (opts.play) {
-			const deck = pickDoubleDeck(row);
-			if (deck === null) return;
-			loadRow(row, deck, { play: true });
+			const picked = pickDoubleDeck(row);
+			if (picked === null) return;
+			// pickDoubleDeck already reserved this deck - see _loadOntoDeck's
+			// reservation gate.
+			loadRow(row, picked.deck, { play: true, reservation: picked.reservation });
 			return;
 		}
 		loadRow(row, null);
@@ -1389,6 +1391,33 @@
 	let deckLoadTick = 0;
 	/** Last deck a plain (non-replace) double-click targeted; cmd/ctrl+dblclick reuses it. */
 	let lastDoubleClickDeck = $state<DeckId | null>(null);
+	/**
+	 * True from the instant a deck is reserved until its load/unload settles
+	 * or the confirm-before-load dialog is dismissed without loading.
+	 * loadSeq alone cannot tell a still-in-flight reservation apart from one
+	 * that settled long ago and is now legitimately idle again - both just
+	 * read as "touched more recently than 0". A picker call that lands
+	 * mid-flight needs the sharper signal to exclude that deck outright
+	 * rather than merely rank it lower within its tier.
+	 */
+	let deckReservationPending = $state<Record<DeckId, boolean>>({
+		1: false,
+		2: false,
+		3: false,
+		4: false
+	});
+	/**
+	 * Reservation identity, deliberately separate from deckLoadSeq: a
+	 * successful load bumps deckLoadSeq itself (recency for the picker), and
+	 * gating release on THAT counter meant every successful load bumped it
+	 * out from under its own reservation's finally, so the equality check in
+	 * _releaseDeckReservation always failed and deckReservationPending never
+	 * cleared after a successful load (r3920224748). This counter changes
+	 * only at reservation time, never at load-settle time, so it stays
+	 * stable across the reservation's own load.
+	 */
+	let deckReservationTick = 0;
+	let deckReservationGen = $state<Record<DeckId, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
 
 	/**
 	 * Reserve a deck slot the instant it is chosen, synchronously, before
@@ -1399,33 +1428,76 @@
 	 * and pick the SAME deck - the second track silently replaced the first
 	 * instead of landing on the other deck.
 	 */
-	function _reserveDeckSlot(deck: DeckId): void {
+	// Returns the reservation's generation (deckReservationTick at the moment
+	// of reservation) so the caller can release EXACTLY this reservation
+	// later, not whichever one happens to be live on the deck by then - see
+	// _releaseDeckReservation.
+	function _reserveDeckSlot(deck: DeckId): number {
 		deckLoadTick += 1;
 		deckLoadSeq = { ...deckLoadSeq, [deck]: deckLoadTick };
+		deckReservationPending = { ...deckReservationPending, [deck]: true };
+		deckReservationTick += 1;
+		deckReservationGen = { ...deckReservationGen, [deck]: deckReservationTick };
+		return deckReservationTick;
 	}
 
-	/** Wires the pure picker (deck-slots.ts) to live deck state. */
+	/**
+	 * Releases a reservation once its load/unload settles (_loadOntoDeck's
+	 * finally) or its confirm-before-load dialog is dismissed without
+	 * loading (onloadconfirmcancelled) - the two ways a reservation can end
+	 * without ever changing stable_id/playing/fader.
+	 *
+	 * Gated on `generation` matching the deck's CURRENT deckReservationGen,
+	 * not just "this deck has a pending flag" - deck-slots.ts's all-pending
+	 * fallback deliberately lets a later double-click re-reserve an
+	 * already-reserved deck (refusing every gesture once all 4 decks are
+	 * mid-load would be worse), which creates two in-flight owners of one
+	 * deck. Without this check, the EARLIER owner's finally clears the flag
+	 * while the LATER owner is still loading, exposing the deck to a third
+	 * gesture that collides with the still-in-flight load (r3919940011).
+	 * Checked against deckReservationGen, NOT deckLoadSeq: deckLoadSeq is
+	 * also bumped on load SUCCESS (recency for the picker), so gating on it
+	 * meant a reservation's own successful load invalidated its own release
+	 * (r3920224748).
+	 */
+	function _releaseDeckReservation(deck: DeckId, generation: number): void {
+		if (deckReservationGen[deck] !== generation) return;
+		deckReservationPending = { ...deckReservationPending, [deck]: false };
+	}
+
+	/** Wires the pure picker (deck-slots.ts) to live deck state. Returns the
+	 * reservation's generation alongside the deck - see _releaseDeckReservation. */
 	function pickDoubleDeck(
 		_row: LoadableRow,
 		opts: { shift?: boolean; replace?: boolean } = {}
-	): DeckId | null {
+	): { deck: DeckId; reservation: number } | null {
+		// The picker needs master, playing and fader now, not just a load
+		// counter: it used to be able to take the live master (pin
+		// d2c156a503bb) precisely because those were invisible to it.
+		const slots = {} as Record<DeckId, DeckSlotState>;
+		for (const d of DECK_IDS) {
+			slots[d] = {
+				stable_id: decks[d].stable_id,
+				playing: decks[d].playing,
+				is_master: decks[d].is_master,
+				fader: mixerState.channels[d].fader,
+				loadSeq: deckLoadSeq[d],
+				reservationPending: deckReservationPending[d]
+			};
+		}
 		const result = pickDoubleClickDeck({
 			shift: opts.shift === true,
 			replace: opts.replace === true,
-			deckLoadSeq,
-			lastDoubleClickDeck,
-			pair: {
-				3: { stable_id: decks[3].stable_id, playing: decks[3].playing },
-				4: { stable_id: decks[4].stable_id, playing: decks[4].playing }
-			}
+			decks: slots,
+			lastDoubleClickDeck
 		});
 		if (result.deck === null) {
 			if (result.error !== null) pushToast(result.error, 'error');
 			return null;
 		}
-		_reserveDeckSlot(result.deck);
+		const reservation = _reserveDeckSlot(result.deck);
 		if (opts.replace !== true) lastDoubleClickDeck = result.deck;
-		return result.deck;
+		return { deck: result.deck, reservation };
 	}
 
 	function previewSeek(row: LoadableRow, ratio: number): void {
@@ -1452,39 +1524,77 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean } = {}
+		opts: { play?: boolean; reservation?: number } = {}
 	): Promise<void> {
-		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
-			pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
-			return;
-		}
-		if (!row.file_exists) {
-			// FR-1: broken-link rows stay selectable but never load.
-			pushToast('cannot load: audio file missing on disk (broken link)', 'error');
-			return;
-		}
-		const target = deck ?? _lowestFreeDeck();
-		if (target === null) {
-			pushToast('no free deck: all 4 decks are loaded', 'error');
-			return;
-		}
+		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
+		// must be released on EVERY exit path here - refusal, error, or
+		// success - or that slot stays wrongly excluded from every future
+		// pick (see deck-slots.ts's reservationPending). Releasing is gated on
+		// `opts.reservation`, not merely on `deck !== null`: the "Load onto
+		// deck N" button also passes a non-null deck it never reserved, and an
+		// unconditional release would clear a DIFFERENT, still-open
+		// reservation on that same deck (e.g. a pending double-click confirm
+		// dialog) out from under it. See _releaseDeckReservation for why a
+		// generation number, not a boolean, is what makes that safe.
 		try {
-			// Explicit CH load (incl. confirmed double-click): replace if occupied.
-			if (deck !== null && decks[target].stable_id !== null) {
-				await dispatchPerformanceCommand({ type: 'unload', deck: target });
+			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
+				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
+				return;
 			}
-			await dispatchPerformanceCommand({ type: 'load', deck: target, stable_id: row.stable_id });
-			deckLoadTick += 1;
-			deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-			if (opts.play === true) {
-				await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+			if (!row.file_exists) {
+				// FR-1: broken-link rows stay selectable but never load.
+				pushToast('cannot load: audio file missing on disk (broken link)', 'error');
+				return;
 			}
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : String(error);
-			if (message.includes('must be fully stopped before replacement')) {
-				_offerUnload(target);
+			const target = deck ?? _lowestFreeDeck();
+			if (target === null) {
+				pushToast('no free deck: all 4 decks are loaded', 'error');
+				return;
 			}
-			// Dispatcher already toasted + recorded the deck alert.
+			// The master is never a victim (pin d2c156a503bb) - pickDoubleClickDeck
+			// enforces this at PICK time, but an explicit target can point at a
+			// deck that has since become master (a confirm dialog can sit open
+			// for any length of time - r3919940009), or that was always master
+			// (the "Load onto deck N" button never consults the picker at all).
+			// Revalidate at the actual load boundary, the one place every path
+			// converges, instead of trusting a pick made earlier.
+			if (decks[target].is_master) {
+				pushToast(`cannot load: CH${target} is the live master - unload or reassign it first`, 'error');
+				return;
+			}
+			try {
+				// Explicit CH load (incl. confirmed double-click): replace if occupied.
+				// refuseIfMaster: true on both - this is a destructive REPLACE, not
+				// a standalone eject, so it must stay refused if `target` raced to
+				// master between the check above and here (r3920224754). A
+				// standalone unload (Deck.svelte's Unload button, Quick Draw) does
+				// NOT set this: it must still be able to eject the live master with
+				// no other deck to reassign to (r3920297846).
+				if (deck !== null && decks[target].stable_id !== null) {
+					await dispatchPerformanceCommand({ type: 'unload', deck: target, refuseIfMaster: true });
+				}
+				await dispatchPerformanceCommand({
+					type: 'load',
+					deck: target,
+					stable_id: row.stable_id,
+					refuseIfMaster: true
+				});
+				deckLoadTick += 1;
+				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
+				if (opts.play === true) {
+					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+				}
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (message.includes('must be fully stopped before replacement')) {
+					_offerUnload(target);
+				}
+				// Dispatcher already toasted + recorded the deck alert.
+			}
+		} finally {
+			if (deck !== null && opts.reservation !== undefined) {
+				_releaseDeckReservation(deck, opts.reservation);
+			}
 		}
 	}
 
@@ -2011,7 +2121,9 @@
 			onselectrow={selectRow}
 			onloadrow={loadRow}
 			onpickdoubledeck={pickDoubleDeck}
+			onloadconfirmcancelled={_releaseDeckReservation}
 			onpreviewseek={previewSeek}
+			onrefused={(reason) => pushToast(reason, 'error')}
 			onrate={rateRow}
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}

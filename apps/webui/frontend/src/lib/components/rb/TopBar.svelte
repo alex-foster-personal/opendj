@@ -31,6 +31,7 @@
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
@@ -47,11 +48,10 @@
 		setMaster(value: number): void;
 	}
 
-	const INERT_TITLE = 'not implemented - see PARITY-TODO';
-
 	/** Why the JOBS toggle is inert, or null when the daemon offers jobs. A
-	 * different category from INERT_TITLE above: the feature is built, this
-	 * daemon simply does not serve it. */
+	 * different category from the planned-explainer catalogue: those describe
+	 * a feature nobody has built, this one is built and simply not served by
+	 * this daemon. Two different sentences, deliberately not merged. */
 	const jobsUnavailable = $derived(jobsRefusal());
 
 	let pairingOpen = $state(false);
@@ -194,7 +194,7 @@
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
 	<StemsProgress />
 
-	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
+	<button class="mode-dd rb-inert" disabled title={plannedTitle('mode-dropdown')}>
 		PERFORMANCE
 		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
 			<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
@@ -203,7 +203,7 @@
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
-		<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="list view">
+		<button class="tb-icon rb-inert" disabled title={plannedTitle('list-view')} aria-label="list view">
 			<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
 				<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
 				<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
@@ -212,23 +212,23 @@
 			</svg>
 		</button>
 		<!-- FX panel toggle -->
-		<button class="tb-icon fx rb-inert" disabled title={INERT_TITLE}>FX</button>
+		<button class="tb-icon fx rb-inert" disabled title={plannedTitle('fx')}>FX</button>
 		<!-- split-view icon -->
-		<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="split view">
+		<button class="tb-icon rb-inert" disabled title={plannedTitle('split-view')} aria-label="split view">
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 				<rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" />
 				<line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" />
 			</svg>
 		</button>
 		<!-- 2up icon -->
-		<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="2 deck view">
+		<button class="tb-icon rb-inert" disabled title={plannedTitle('2-deck-view')} aria-label="2 deck view">
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 				<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
 				<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
 			</svg>
 		</button>
 		<!-- grid icon -->
-		<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="grid view">
+		<button class="tb-icon rb-inert" disabled title={plannedTitle('grid-view')} aria-label="grid view">
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 				<rect x="1" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
 				<rect x="6.6" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
@@ -239,7 +239,7 @@
 		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically. Four
 		     stacked jagged polylines - must NOT read as a plain list glyph or
 		     a dotted grid (SCREENSHOT-SPEC 1). -->
-		<button class="tb-icon active rb-inert" disabled title={INERT_TITLE} aria-label="4 waveform view">
+		<button class="tb-icon active rb-inert" disabled title={plannedTitle('4-waveform-view')} aria-label="4 waveform view">
 			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
 				{#each WAVE_ICON_ROWS as row (row.cy)}
 					<polyline
@@ -254,13 +254,13 @@
 			</svg>
 		</button>
 		<!-- 2 circular scope icons -->
-		<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="scope view 1">
+		<button class="tb-icon rb-inert" disabled title={plannedTitle('scope-view-1')} aria-label="scope view 1">
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 				<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
 				<circle cx="6" cy="6" r="1.4" fill="currentColor" />
 			</svg>
 		</button>
-		<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="scope view 2">
+		<button class="tb-icon rb-inert" disabled title={plannedTitle('scope-view-2')} aria-label="scope view 2">
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 				<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
 				<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
@@ -273,7 +273,7 @@
 	     (SCREENSHOT-SPEC 1). -->
 	<div class="spacer-left"></div>
 
-	<button class="link-btn rb-inert" disabled title={INERT_TITLE}>LINK</button>
+	<button class="link-btn rb-inert" disabled title={plannedTitle('link')}>LINK</button>
 
 	<div class="spacer"></div>
 
@@ -372,7 +372,7 @@
 		{/if}
 	</span>
 
-	<span class="dim-label" title={INERT_TITLE}>PAD</span>
+	<span class="dim-label" title={plannedTitle('pad')}>PAD</span>
 	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
 	<button
 		class="midi-label"
@@ -407,7 +407,7 @@
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
 	<CommandEntry />
 
-	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="information">
+	<button class="tb-icon rb-inert" disabled title={plannedTitle('information')} aria-label="information">
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 			<circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" />
 			<rect x="5.3" y="5" width="1.4" height="4" fill="currentColor" />
@@ -415,7 +415,7 @@
 		</svg>
 	</button>
 
-	<span class="free-badge">Free</span>
+	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
 
 	<button
 		type="button"
@@ -480,7 +480,23 @@
 			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
 		onclick={() => setMasterMuted(!isMasterMuted())}
 	>
-		{isMasterMuted() ? 'MUTE' : 'VOL'}
+		<!-- Muted says MUTED, because the button reports a STATE, not an
+		     action; audible shows the speaker glyph, because there is no state
+		     worth spelling out when nothing is wrong (pin 55a26655b749). -->
+		{#if isMasterMuted()}
+			MUTED
+		{:else}
+			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+				<path d="M1 4.5h2.2L6 2v8L3.2 7.5H1z" fill="currentColor" />
+				<path
+					d="M8.4 4.1a3 3 0 0 1 0 3.8M10.3 2.6a5.4 5.4 0 0 1 0 6.8"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.2"
+					stroke-linecap="round"
+				/>
+			</svg>
+		{/if}
 	</button>
 
 	<!-- clock: REAL, local time HH:MM -->

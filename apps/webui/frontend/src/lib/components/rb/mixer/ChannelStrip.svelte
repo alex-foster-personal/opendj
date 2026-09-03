@@ -94,7 +94,10 @@
 		gap: 2px;
 		min-height: 0;
 		height: 100%;
-		padding: 2px 2px 1px;
+		/* Bottom pad opened up so STEM is not crowded against the strip's
+		   lower border. The fader is `flex: 1 1 auto`, so the space comes out
+		   of the channel level slider exactly as pin 8cd32a28c36d asks. */
+		padding: 2px 2px 4px;
 		border-radius: 2px;
 	}
 	.strip.secondary {
@@ -160,6 +163,7 @@
 		color: var(--rb-text-dim);
 		line-height: 1;
 		flex: none;
-		margin-top: 2px;
+		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
+		margin-top: 5px;
 	}
 </style>

@@ -8,6 +8,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
+	import { thumbOffsetPx, valueFromPointer } from '$lib/rb/pitch-fader-geometry';
 
 	let {
 		deck,
@@ -23,20 +24,36 @@
 		onRangeChange: (range: PitchRange) => Promise<void>;
 	} = $props();
 
-	const TRACK_H = 96; // matches .rb-fader height in theme.css
-	const THUMB_H = 12; // matches .rb-fader-thumb height in theme.css
 	const KEY_STEP_PCT = 0.1; // ArrowUp/Down nudges pitch by 0.1%
+
+	/** The live track height. `.rb-fader` is `height: 100%`, so this cannot be
+	 * a constant - it was one, and 0% drew above centre on every fader taller
+	 * than the assumed 96px (pin ebb1def0234c). Measured from the element the
+	 * pointer maths already measures, so the two agree by construction. */
+	let trackEl: HTMLDivElement | undefined = $state();
+	let trackH = $state(96);
 
 	let activePointerId: number | null = null;
 
 	// 0 = -range%, 0.5 = 0% (ratio 1.0), 1 = +range% (top = faster).
 	const value: number = $derived(faderValueFromPitchRatio(deck.pitch, pitchRange));
-	const thumbTopPx: number = $derived((1 - value) * (TRACK_H - THUMB_H));
+	const thumbTopPx: number = $derived(thumbOffsetPx(value, trackH));
+
+	$effect(() => {
+		const el = trackEl;
+		if (el === undefined) return;
+		const measure = (): void => {
+			trackH = el.getBoundingClientRect().height;
+		};
+		measure();
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 
 	function _valueFromEvent(e: PointerEvent): number {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		const y = e.clientY - rect.top - THUMB_H / 2;
-		return Math.min(1, Math.max(0, 1 - y / (TRACK_H - THUMB_H)));
+		return valueFromPointer(e.clientY - rect.top, rect.height);
 	}
 
 	function _setTempoFromValue(value: number): void {
@@ -62,6 +79,19 @@
 	function handlePointerMove(e: PointerEvent): void {
 		if (activePointerId !== e.pointerId) return;
 		_setTempoFromValue(_valueFromEvent(e));
+	}
+
+	function handleDoubleClick(): void {
+		// No `pending` guard, unlike handlePointerDown/handleKeyDown: those gate
+		// STARTING a new gesture while a command is in flight (see
+		// handlePointerMove below, which has no such guard either once a
+		// gesture is already granted). A double-click is not a continuation -
+		// it is a discrete reset the user just performed, and its two
+		// constituent pointerdowns already dispatched their own tempo commands
+		// before this handler runs. Gating the reset on `pending` let those
+		// still-in-flight commands win and silently drop the reset exactly
+		// when the engine is busiest - the reset must supersede them instead.
+		_setTempoFromValue(0.5);
 	}
 
 	function handlePointerDone(e: PointerEvent): void {
@@ -97,8 +127,10 @@
 
 <div class="pitch-fader">
 	<div
+		bind:this={trackEl}
 		class="rb-fader"
 		role="slider"
+		title="Tempo (pitch) - drags the deck's playback speed within its selected pitch range. Centre is 0%, the track's original tempo. Double-click resets to 0%."
 		aria-label={`deck ${deck.deck_id} pitch fader`}
 		aria-orientation="vertical"
 		aria-valuemin={-pitchRange}
@@ -117,6 +149,7 @@
 		onpointermove={handlePointerMove}
 		onpointerup={handlePointerDone}
 		onpointercancel={handlePointerDone}
+		ondblclick={handleDoubleClick}
 		onkeydown={handleKeyDown}
 	>
 		<div class="rb-fader-track"></div>
