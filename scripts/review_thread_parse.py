@@ -201,6 +201,9 @@ class PullRequest:
     state: str
     merged: bool
     url: str
+    # The head the threads were fetched at. A gate that certified coverage at
+    # one SHA must refuse to render a verdict off threads read at another.
+    head_sha: str
     threads: tuple[Thread, ...]
 
     @property

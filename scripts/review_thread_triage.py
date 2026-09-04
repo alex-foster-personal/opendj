@@ -69,7 +69,6 @@ import subprocess
 import sys
 
 from scripts import review_coverage
-
 from scripts.review_thread_parse import PullRequest, Thread, build_thread
 
 # -----------------------------------------------------------------------------
@@ -88,7 +87,7 @@ _THREADS_QUERY = """
 query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$pr){
-      number title state merged url
+      number title state merged url headRefOid
       reviewThreads(first:100, after:$cursor){
         pageInfo{ hasNextPage endCursor }
         nodes{
@@ -189,6 +188,7 @@ def fetch_pull_request(number: int, owner: str = OWNER, repo: str = REPO) -> Pul
         state=head["state"],
         merged=head["merged"],
         url=head["url"],
+        head_sha=head["headRefOid"],
         threads=tuple(threads),
     )
 
@@ -311,9 +311,6 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     args = parser.parse_args()
 
-    pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
-    print(_as_json(pr) if args.json else _render(pr))
-
     # COVERAGE PRECONDITION. Thread triage is a silence detector, and silence
     # from a reviewer that never ran is indistinguishable from a clean review:
     # zero threads makes "every thread reached a terminal state" vacuously
@@ -322,16 +319,32 @@ def main() -> int:
     if args.json:
         # Machine consumers read the thread payload; keep its shape stable and
         # let them call review_coverage directly rather than nesting schemas.
+        pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
+        print(_as_json(pr))
         return 1 if pr.failing else 0
 
-    print()
     try:
+        # Sample the head BEFORE coverage runs. Coverage certifies whichever
+        # head it measured; the thread fetch below is a further network call
+        # whose snapshot can belong to a newer, unreviewed push (PR #1053 P1
+        # BLOCKING, thread r3929980333). Requiring the fetched head to equal
+        # the pre-coverage sample voids the verdict on EITHER side of that
+        # window, as a failed measurement, never a rendered pass.
+        sampled_head = review_coverage._head_sha(str(args.pr))
         coverage = review_coverage.triage(str(args.pr))
+        # Coverage reports a completed Codex round at the current head. Capture
+        # threads only after that report, so a round that finishes between the
+        # former snapshot and coverage collection cannot leave newly-created
+        # findings outside this run's terminal-disposition check.
+        pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
+        review_coverage._require_head_unchanged(sampled_head, pr.head_sha)
     except review_coverage.TriageError as exc:
         # Could not measure is not a verdict, and must not read as either one.
         print(f"[review-coverage] COULD NOT MEASURE: {exc}", file=sys.stderr)
         return 3
 
+    print(_render(pr))
+    print()
     return 1 if (pr.failing or coverage) else 0
 
 
