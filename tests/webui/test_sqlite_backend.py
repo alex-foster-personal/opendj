@@ -14,8 +14,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -189,6 +191,94 @@ class TestRoundTripReads:
         )
         assert [t.stable_id for t in second.items] == ["sid-003"]
         assert second.next_cursor is None
+
+    def test_list_tracks_filters_across_keyset_chunks(
+        self, fresh_state_db: Path,
+    ) -> None:
+        conn = sqlite3.connect(fresh_state_db)
+        try:
+            conn.execute(
+                "UPDATE track_fields SET value_json = ? "
+                "WHERE stable_id = ? AND field_name = 'bpm'",
+                (json.dumps(100.0), "sid-002"),
+            )
+            conn.execute(
+                "INSERT INTO track_fields(stable_id, field_name, value_json, "
+                "source, confidence, modified_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("sid-003", "bpm", json.dumps(130.0), "rekordbox", 1.0, ISO),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        backend = SqliteBackend(fresh_state_db)
+        first = backend.list_tracks(TrackFilter(bpm_min=120.0, limit=1))
+        second = backend.list_tracks(
+            TrackFilter(bpm_min=120.0, limit=1, cursor=first.next_cursor),
+        )
+        tail = backend.list_tracks(
+            TrackFilter(bpm_min=120.0, limit=1, cursor=second.next_cursor),
+        )
+
+        assert [track.stable_id for track in first.items] == ["sid-001"]
+        assert first.next_cursor == "sid-001"
+        assert [track.stable_id for track in second.items] == ["sid-003"]
+        assert second.next_cursor == "sid-003"
+        assert tail.items == []
+        assert tail.next_cursor is None
+
+    def test_list_tracks_query_is_limited_to_the_requested_keyset_chunk(
+        self, fresh_state_db: Path,
+    ) -> None:
+        statements: list[str] = []
+
+        class TracedBackend(SqliteBackend):
+            @contextmanager
+            def _ro(self) -> Iterator[sqlite3.Connection]:
+                with super()._ro() as conn:
+                    conn.set_trace_callback(statements.append)
+                    yield conn
+
+        page = TracedBackend(fresh_state_db).list_tracks(TrackFilter(limit=2))
+        track_selects = [
+            statement for statement in statements
+            if "FROM tracks WHERE deleted_at IS NULL" in statement
+        ]
+
+        assert [track.stable_id for track in page.items] == [
+            "sid-001", "sid-002",
+        ]
+        assert track_selects == [
+            "SELECT stable_id, title, artists_json, album, "
+            "       duration_ms, file_path, created_at, updated_at "
+            "FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id LIMIT 2",
+        ]
+
+    def test_list_tracks_rejects_nan_numeric_fields(
+        self, fresh_state_db: Path,
+    ) -> None:
+        conn = sqlite3.connect(fresh_state_db)
+        try:
+            conn.execute(
+                "UPDATE track_fields SET value_json = ? "
+                "WHERE stable_id = ? AND field_name = ?",
+                ("NaN", "sid-002", "bpm"),
+            )
+            conn.execute(
+                "INSERT INTO track_fields(stable_id, field_name, value_json, "
+                "source, confidence, modified_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("sid-002", "rating", "NaN", "manual", 1.0, ISO),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        backend = SqliteBackend(fresh_state_db)
+
+        assert [track.stable_id for track in backend.list_tracks(
+            TrackFilter(bpm_min=120.0),
+        ).items] == ["sid-001"]
+        assert [track.stable_id for track in backend.list_tracks(
+            TrackFilter(rating_min=0),
+        ).items] == ["sid-001"]
 
     def test_get_track_roundtrip(self, fresh_state_db: Path) -> None:
         backend = SqliteBackend(fresh_state_db)

@@ -150,6 +150,12 @@ _EAV_FIELDS: tuple[str, ...] = (
     "bpm", "key", "rating", "tags", "notes", "last_played_at",
 )
 
+_TRACKS_PROJECTION = (
+    "SELECT stable_id, title, artists_json, album, "
+    "       duration_ms, file_path, created_at, updated_at "
+    "FROM tracks WHERE deleted_at IS NULL"
+)
+
 
 def _parse_rfc3339(ts: str) -> datetime:
     """Parse an RFC 3339 timestamp (``Z`` or ``+00:00`` form). Fail fast.
@@ -297,6 +303,32 @@ def _fetch_fields(
     return out
 
 
+def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:
+    """Keep list-track filtering semantics independent of SQLite collation."""
+    if flt.q:
+        needle = flt.q.casefold()
+        if not (
+            (track.title and needle in track.title.casefold())
+            or (track.artist and needle in track.artist.casefold())
+        ):
+            return False
+    if flt.bpm_min is not None and not (
+        track.bpm is not None and track.bpm >= flt.bpm_min
+    ):
+        return False
+    if flt.bpm_max is not None and not (
+        track.bpm is not None and track.bpm <= flt.bpm_max
+    ):
+        return False
+    if flt.key and track.key != flt.key:
+        return False
+    if flt.rating_min is not None and not (
+        track.rating is not None and track.rating >= flt.rating_min
+    ):
+        return False
+    return not flt.tag or flt.tag in (track.tags or [])
+
+
 def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
     """Validate a patch and resolve tag deltas against the current track."""
     writes: dict[str, Any] = {}
@@ -415,60 +447,38 @@ class SqliteBackend:
             if not self._table_exists(conn, "tracks"):
                 _warn_fallback_once("list_tracks", "no tracks table")
                 return self._fallback.list_tracks(flt)
-            rows = list(
-                conn.execute(
-                    "SELECT stable_id, title, artists_json, album, "
-                    "       duration_ms, file_path, created_at, updated_at "
-                    "FROM tracks "
-                    "WHERE deleted_at IS NULL "
-                    "ORDER BY stable_id"
-                )
-            )
-            fields_map = _fetch_fields(
-                conn, [r["stable_id"] for r in rows],
-            )
-        tracks = [
-            _row_to_track(r, fields_map.get(r["stable_id"], {}))
-            for r in rows
-        ]
-        if flt.q:
-            needle = flt.q.casefold()
-            tracks = [
-                t for t in tracks
-                if (t.title and needle in t.title.casefold())
-                or (t.artist and needle in t.artist.casefold())
-            ]
-        if flt.bpm_min is not None:
-            tracks = [
-                t for t in tracks
-                if t.bpm is not None and t.bpm >= flt.bpm_min
-            ]
-        if flt.bpm_max is not None:
-            tracks = [
-                t for t in tracks
-                if t.bpm is not None and t.bpm <= flt.bpm_max
-            ]
-        if flt.key:
-            tracks = [t for t in tracks if t.key == flt.key]
-        if flt.rating_min is not None:
-            tracks = [
-                t for t in tracks
-                if t.rating is not None and t.rating >= flt.rating_min
-            ]
-        if flt.tag:
-            tracks = [t for t in tracks if flt.tag in (t.tags or [])]
-        limit = max(1, min(flt.limit, MAX_LIMIT))
-        start = 0
-        if flt.cursor:
-            for i, t in enumerate(tracks):
-                if t.stable_id > flt.cursor:
-                    start = i
+            limit = max(1, min(flt.limit, MAX_LIMIT))
+            page: list[Track] = []
+            scan_cursor = flt.cursor
+            while len(page) < limit:
+                cursor_predicate = ""
+                params: tuple[str | int, ...] = (limit,)
+                if scan_cursor is not None:
+                    cursor_predicate = " AND stable_id > ?"
+                    params = (scan_cursor, limit)
+                rows = list(conn.execute(
+                    _TRACKS_PROJECTION + cursor_predicate
+                    + " ORDER BY stable_id LIMIT ?",
+                    params,
+                ))
+                if not rows:
                     break
-            else:
-                start = len(tracks)
-        page = tracks[start : start + limit]
-        next_cursor = page[-1].stable_id if len(page) == limit else None
-        return Page(items=page, next_cursor=next_cursor)
+                fields_map = _fetch_fields(
+                    conn, [row["stable_id"] for row in rows],
+                )
+                for row in rows:
+                    track = _row_to_track(
+                        row, fields_map.get(row["stable_id"], {}),
+                    )
+                    if _matches_track_filter(track, flt):
+                        page.append(track)
+                        if len(page) == limit:
+                            break
+                if len(page) == limit or len(rows) < limit:
+                    break
+                scan_cursor = rows[-1]["stable_id"]
+            next_cursor = page[-1].stable_id if len(page) == limit else None
+            return Page(items=page, next_cursor=next_cursor)
 
     def get_track(self, stable_id: str) -> Track:
         with self._ro() as conn:
