@@ -126,6 +126,8 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	/** UI contract only: no automatic second-track selection or mixing exists yet. */
+	| { type: 'auto_play_two_track' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
@@ -468,6 +470,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('device_id must be a non-empty string');
 		}
 		return { type, device_id: record.device_id };
+	}
+	if (type === 'auto_play_two_track') {
+		_exactKeys(record, ['type']);
+		return { type };
 	}
 	if (type === 'tech_mode_toggle') {
 		_exactKeys(record, ['type']);
@@ -1027,6 +1033,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await restoreHotCue(stableId, command.slot, command.revision, command.reversal_id);
 		hotCueReversals[command.deck] = null;
 		await _hotCueDriver.refresh(command.deck);
+	} else if (command.type === 'auto_play_two_track') {
+		throw new Error('auto_play_two_track must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {
 		toggleTechMode();
 	} else if (command.type === 'tech_mode_peek') {
@@ -1313,6 +1321,13 @@ async function _dispatchUnknown(
 				`command ${command.type} rejected`
 		);
 		_persistCommandError(deck, error, command);
+		throw error;
+	}
+	if (command.type === 'auto_play_two_track') {
+		const error = new Error(
+			'auto_play_two_track: not_implemented - second-track matching and independent rules are planned'
+		);
+		_persistCommandError(null, error);
 		throw error;
 	}
 	const scopes = performanceCommandQueueScopes(command);

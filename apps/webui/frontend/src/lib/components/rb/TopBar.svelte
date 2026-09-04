@@ -411,6 +411,15 @@
 					/>
 					<span>Maximize reach (avoid stranding)</span>
 				</label>
+				<button
+					type="button"
+					class="ap-row ap-two-track rb-inert"
+					disabled
+					title={plannedTitle('autoplay-two-track')}
+				>
+					<span>Two-track AutoPlay</span>
+					<span class="ap-planned">Planned</span>
+				</button>
 				<p class="ap-hint">
 					Off enforce: key +-1 + Beat Sync BPM. Maximize reach (default on) prefers
 					fewer-outward twins so later tracks stay playable. Enforce order: next row
@@ -423,7 +432,7 @@
 	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
 	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
 	<button
-		class="midi-label"
+		class="midi-label topbar-slot-midi"
 		class:st-grey={midiStatus === 'grey'}
 		class:st-green={midiStatus === 'green'}
 		class:st-amber={midiStatus === 'amber'}
@@ -439,7 +448,7 @@
 	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
 	     Inert on a daemon with no jobs API, and the title says which. -->
 	<button
-		class="midi-label"
+		class="midi-label topbar-slot-jobs"
 		class:rb-inert={jobsUnavailable !== null}
 		disabled={jobsUnavailable !== null}
 		title={jobsUnavailable ??
@@ -455,7 +464,7 @@
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
 	<CommandEntry />
 
-	<button class="tb-icon rb-inert" disabled title={plannedTitle('information')} aria-label="information">
+	<button class="tb-icon rb-inert topbar-slot-utility" disabled title={plannedTitle('information')} aria-label="information">
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 			<circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" />
 			<rect x="5.3" y="5" width="1.4" height="4" fill="currentColor" />
@@ -467,7 +476,7 @@
 
 	<button
 		type="button"
-		class="tb-icon theme-toggle"
+		class="tb-icon theme-toggle topbar-slot-utility"
 		class:on={uiPrefs.theme === 'light'}
 		title={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
 		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -482,7 +491,7 @@
 
 	<button
 		type="button"
-		class="tb-icon theme-toggle"
+		class="tb-icon theme-toggle topbar-slot-utility"
 		title="Settings (Cmd+,)"
 		aria-label="Open settings"
 		onclick={() => openSettings()}
@@ -606,34 +615,45 @@
 	}
 
 	.vibe-slot {
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		transform: translate(-50%, -50%);
-		z-index: 1;
+		position: static;
+		flex: none;
+		margin-inline: 2px;
 	}
-
-	/* Wide chrome leaves VIBE centered; before controls can collide beneath
-	 * it, VIBE joins the flow in DOM order between the left and right clusters.
-	 * Then labels abbreviate, finally VIBE yields.
-	 * CommandEntry and JOBS are intentionally never hidden. */
+	.rb-topbar :global(.fb-cluster) {
+		position: static;
+		transform: none;
+		flex: none;
+		margin-inline: 2px;
+	}
+	@media (max-width: 1400px) {
+		.rb-topbar .free-badge,
+		.rb-topbar .topbar-slot-utility { display: none; }
+	}
 	@media (max-width: 1180px) {
-		.vibe-slot {
-			position: static;
-			transform: none;
-			margin-inline: 2px;
-		}
+		.rb-topbar .topbar-slot-pairing,
+		.rb-topbar .topbar-slot-vibe { display: none; }
+		.rb-topbar :global(.cmd-input) { width: 86px; }
+		.rb-topbar :global(.cmd-status) { display: none; }
+	}
+	@media (max-width: 1024px) {
+		.rb-topbar .icon-cluster,
+		.rb-topbar .link-btn,
+		.rb-topbar .topbar-slot-pad { display: none; }
 	}
 	@media (max-width: 980px) {
-		.topbar-slot-pairing { display: none; }
-		.topbar-slot-bsm { font-size: 0; }
-		.topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
-		.topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
-		.topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
+		.rb-topbar .topbar-slot-bsm { font-size: 0; }
+		.rb-topbar .topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
+		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
+		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
 	}
 	@media (max-width: 820px) {
-		.topbar-slot-vibe { display: none; }
-		.topbar-slot-pad, .free-badge, .link-btn { display: none; }
+		.rb-topbar .topbar-slot-midi,
+		.rb-topbar .topbar-slot-utility,
+		.rb-topbar .free-badge,
+		.rb-topbar .clock,
+		.rb-topbar :global(.cmd-entry),
+		.rb-topbar :global([data-testid="refresh-analysis"]),
+		.rb-topbar :global(.bauble-root) { display: none; }
 	}
 
 	.ap-wrap {
@@ -672,6 +692,20 @@
 	}
 	.ap-row input {
 		margin: 0;
+	}
+	.ap-two-track {
+		justify-content: space-between;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		text-align: left;
+	}
+	.ap-planned {
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 	}
 	.ap-hint {
 		margin: 0;

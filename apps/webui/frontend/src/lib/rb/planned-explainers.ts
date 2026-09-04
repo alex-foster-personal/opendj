@@ -46,6 +46,7 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	pad: 'PAD - labels the performance-pad row: hot cues, beat loops, beat jump and sampler banks for the focused deck.',
 	information: 'Track information - opens the full record for the focused deck - every tag, the analysis provenance, play history and the file path.',
 	'free-badge': 'Free plan - is the licence tier this copy runs on. Everything on this screen is included; the badge marks where paid tiers will differ once there are any.',
+	'autoplay-two-track': 'Two-track AutoPlay - will match and mix a second automatic track alongside the primary handoff, with its own evolving selection rules.'
 };
 
 /** The tooltip for a planned control. Throws on an unknown id: an empty
