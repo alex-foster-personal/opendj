@@ -63,6 +63,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		anlz: null,
 		anlz_error: null,
 		last_load_latency_ms: null,
+		load_generation: 0,
 		last_load_stages: null,
 		is_master: false
 	};

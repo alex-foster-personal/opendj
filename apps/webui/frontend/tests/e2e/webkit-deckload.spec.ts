@@ -753,17 +753,22 @@ async function _ensurePlaying(page: Page, deck: DeckId, playing: boolean): Promi
 /**
  * Put the pitch fader of one deck back to exactly 0% with a real pointer click.
  *
- * The keyboard has no "centre" key (Home is -range, End is +range). The
- * component maps a click to `1 - (clientY - rect.top - THUMB_H / 2) / (TRACK_H
- * - THUMB_H)` with THUMB_H 12 and TRACK_H 96, so value 0.5 - ratio 1.0 exactly
- * - is the point 48px below the element's top. Clicking that offset rather
- * than "the middle" keeps the reset exact even if the rendered height ever
- * stops matching the component's constant.
+ * The keyboard has no "centre" key (Home is -range, End is +range).
+ *
+ * The offset is MEASURED, never a constant. The component maps a click to
+ * `1 - (clientY - rect.top - THUMB_H / 2) / (trackH - THUMB_H)`, which is 0.5 -
+ * ratio 1.0 exactly - at `trackH / 2`, whatever the rendered height is. This
+ * used to hardcode 48px for a 96px track, and pin ebb1def0234c (7374bbaec,
+ * Thu 3 Sep 2026) then made the track `height: 100%` with a 64px floor because
+ * the fixed 96 was drawing 0% above centre. At the ~64px this layout actually
+ * gives the fader, a 48px click is -9.8%, and the wait below then sat out its
+ * whole timeout against a fader that had done exactly what it was told.
  */
-const PITCH_CENTRE_OFFSET_Y = 48;
-
 async function _centrePitch(page: Page, deck: DeckId): Promise<void> {
-	await _control(page, deck, 'pitch').click({ position: { x: 3, y: PITCH_CENTRE_OFFSET_Y } });
+	const fader = _control(page, deck, 'pitch');
+	const box = await fader.boundingBox();
+	if (box === null) throw new Error(`deck ${deck} pitch fader has no bounding box`);
+	await fader.click({ position: { x: 3, y: box.height / 2 } });
 	await page.waitForFunction(
 		(deckId) => {
 			const ipc = window.musicDjToolsPerformance;
@@ -850,27 +855,36 @@ async function _waitForDeckLoaded(page: Page, deck: DeckId): Promise<void> {
  * before the new load has even started; the caller then reads the old track's
  * telemetry, or reads inside the gap and sees nulls.
  *
- * A load clears `stable_id` and `last_load_stages` together and restores them
- * together (sampled on the fixture at 5ms: cleared 226ms after the double
- * click, restored at 276ms). So the honest wait is the two-edge one below: see
- * the deck go empty, which is this load starting, then see it come back
- * carrying this load's own stage telemetry. Both edges are required - waiting
- * only for the second would latch the previous load's numbers without ever
- * blocking.
+ * The outgoing blank state is a real reload edge, but it can be shorter than
+ * this suite's 100ms transport poll. `load_generation` increments only after
+ * the real audio transaction commits its incoming track and load telemetry, so
+ * it makes that otherwise transient edge durably observable without hammering
+ * WebKit at a 1ms cadence.
+ *
+ * It has to be a signal the REPLACEMENT PATH cannot roll back, not merely one
+ * that outlives a poll. A destructive replace ejects before it loads, and
+ * engine.unload used to hand the slot a fresh empty state - generation back to
+ * 0 - so a deck on generation 1 went 1 -> 0 -> 1 and this predicate could
+ * never become true. engine.unload now carries the count forward for exactly
+ * this reason; see its comment.
  */
-async function _waitForDeckReloaded(page: Page, deck: DeckId): Promise<void> {
+async function _waitForDeckReloaded(
+	page: Page,
+	deck: DeckId,
+	previousLoadGeneration: number
+): Promise<void> {
 	await page.waitForFunction(
-		(deckId) => window.musicDjToolsPerformance?.query().decks[deckId].stable_id === null,
-		deck,
-		{ timeout: 45_000, polling: 1 }
-	);
-	await page.waitForFunction(
-		(deckId) => {
+		({ deckId, previousLoadGeneration }) => {
 			const state = window.musicDjToolsPerformance?.query().decks[deckId];
-			return state !== undefined && state.stable_id !== null && state.last_load_stages !== null;
+			return (
+				state !== undefined &&
+				state.load_generation > previousLoadGeneration &&
+				state.stable_id !== null &&
+				state.last_load_stages !== null
+			);
 		},
-		deck,
-		{ timeout: 45_000, polling: 1 }
+		{ deckId: deck, previousLoadGeneration },
+		{ timeout: 45_000, polling: TRANSPORT_POLL_MS }
 	);
 }
 
@@ -983,9 +997,27 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		// is `unavailable`. That is the point: the deck must reach a PLAYABLE
 		// state without ever having asked, and only then find out.
 		// Deck 1 already holds this track from the previous test, so this is a
-		// RELOAD and needs the two-edge wait. See _waitForDeckReloaded.
-		await _dblClickLoad(page, 0);
-		await _waitForDeckReloaded(page, 1);
+		// RELOAD. Capture the durable generation before dispatching it.
+		//
+		// The gesture is a DROP onto CH1, not a double-click. Double-click does
+		// not choose its deck: pickDoubleClickDeck ranks empty slots first and
+		// excludes the master, and by this point CH1 is the loaded master while
+		// CH3/CH4 are still empty - so a double-click here loads CH3 and the
+		// wait on CH1 below would sit out its full timeout while nothing was
+		// ever wrong. A drop is the app's only gesture that names its target
+		// deck AND is allowed to replace the live master (Deck.svelte's
+		// onTrackDrop unloads without refuseIfMaster; the "Load onto deck N"
+		// button sets it and would refuse). It is the same replace a DJ does
+		// when they drag a track onto a playing deck.
+		const reloadedId = (await _query(page)).decks[1].stable_id;
+		// Click first, as a user does, so the drag carries this row alone: a
+		// drag from a row inside a multi-row selection carries every selected id.
+		await page.locator(TRACK_ROW).first().click();
+		const previousLoadGeneration = (await _query(page)).decks[1].load_generation;
+		const reload = await _dragRowToDeck(page, 0, 1, { carryPayload: true });
+		expect(reload.dragOverAccepted, 'CH1 refused the reload drag').toBe(true);
+		expect(reload.payloadOnDrop, 'the reload drag carried the wrong track').toBe(reloadedId);
+		await _waitForDeckReloaded(page, 1, previousLoadGeneration);
 
 		const state = await _query(page);
 		const stages = state.decks[1].last_load_stages;
@@ -1030,6 +1062,14 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		} else {
 			await expect(badge).toHaveCount(0);
 		}
+
+		// A drop is a load, not a load+PLAY, so this test leaves CH1 stopped
+		// where the double-click it replaced left it running. Hand the deck
+		// back playing: the transport tests below inherit this deck and read
+		// its audio clock, and a stopped deck would read to them as broken
+		// rather than as never started. Stated here, at the test that changed
+		// it, rather than left for whoever debugs the next failure.
+		await _ensurePlaying(page, 1, true);
 	});
 
 	test('the wave row exposes the decoded duration of the loaded audio', async () => {
@@ -1051,8 +1091,10 @@ test.describe('webkit performance controls on the engine-served build', () => {
 	});
 
 	test('play advances the playhead, pause holds it, play resumes it', async () => {
-		// Double-click load is a load+PLAY, so deck 1 is already running the
-		// real audio clock here. That is the state under test, not a setup step.
+		// Deck 1 arrives here already running the real audio clock, left that
+		// way by the reload test above (which re-plays it after its drop, the
+		// drop being a load with no PLAY). That inherited running state is what
+		// is under test, not a setup step this test performs.
 		await _waitForAudible(page, 1, true);
 		const advancedFromLoad = await _sampleAdvanceMs(page, 1);
 		expect(advancedFromLoad).toBeGreaterThan(TRANSPORT_SAMPLE_MS * 0.5);

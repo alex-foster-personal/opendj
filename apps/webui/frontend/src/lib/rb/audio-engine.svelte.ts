@@ -3190,6 +3190,7 @@ class RbAudioEngine implements AudioEngine {
 		});
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
+		st.load_generation += 1;
 		st.last_load_stages = { ...stages };
 		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
 		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
@@ -3810,7 +3811,17 @@ class RbAudioEngine implements AudioEngine {
 			scheduleTail: Promise.resolve(),
 			swapTail: Promise.resolve()
 		};
-		deckStates[deck] = _emptyDeckState(deck);
+		// The load generation is the ONE field an eject must not roll back. It
+		// counts successful loads onto this slot for the life of the page, and
+		// every consumer of it (the IPC snapshot, the e2e reload waits) reads
+		// it as monotonic: "has a NEW load committed since the number I held?".
+		// Resetting it to 0 here made that question unanswerable across the one
+		// path that needs it most - a destructive replace, which unloads and
+		// then loads, so a deck sitting on generation 1 went 1 -> 0 -> 1 and an
+		// observer waiting for `> 1` waited for ever. Carried forward instead:
+		// the slot is empty, but the count of loads it has served is history,
+		// not state, and history does not un-happen.
+		deckStates[deck] = { ..._emptyDeckState(deck), load_generation: st.load_generation };
 		deckLoadErrors[deck] = null;
 		if (wasMaster) _electPlayingMaster();
 	}

@@ -186,6 +186,8 @@ export interface PerformanceDeckSnapshot {
 	processor_error: string | null;
 	/** Last successful load wall ms; null until a load completes (KPI). */
 	last_load_latency_ms: number | null;
+	/** Monotonic successful-load commit number for durable reload observation. */
+	load_generation: number;
 	/** Last load stage map (ms); null until a load. CLI/IPC feedback. */
 	last_load_stages: Record<string, number> | null;
 	stems: StemDeckState;
@@ -733,6 +735,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error,
 		last_load_latency_ms: deck.last_load_latency_ms,
+		load_generation: deck.load_generation,
 		last_load_stages:
 			deck.last_load_stages === null ? null : { ...deck.last_load_stages },
 		stems: {
