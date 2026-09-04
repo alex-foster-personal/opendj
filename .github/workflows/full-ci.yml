@@ -33,6 +33,14 @@ concurrency:
 jobs:
   test:
     name: full pytest + coverage
+    env:
+      # The job venv IS `.venv`, the path `uv run` treats as the project
+      # environment. Tests spawn `uv run --with modal ...` (apps/stems/job.py)
+      # against the repo root, and a plain `uv run` SYNCS that environment to
+      # uv.lock first: it pruned pytest, librosa and soundfile out from under
+      # the running suite (trunk red Fri 4 Sep 2026 after #1106 moved the venv
+      # here). UV_NO_SYNC makes every child `uv run` use `.venv` as provisioned.
+      UV_NO_SYNC: "1"
     # Runner is a repo-variable switch; see ci.yml's `test` job for the full
     # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}

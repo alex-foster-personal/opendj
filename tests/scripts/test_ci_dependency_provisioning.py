@@ -5,6 +5,7 @@ Requirements:
   uv instead of writing into the runner's system Python.
 - The fast pytest lane, its OpenAPI contract-drift sentinel, and docs build run
   from their provisioned environments.
+- A child `uv run` spawned by the suite must never re-sync the job venv.
 
 Acceptance tests:
 - [if] a runner exposes an externally managed system Python [then ⛔️] no
@@ -13,6 +14,8 @@ Acceptance tests:
   must invoke the project venv interpreter after uv provisioned it.
 - [if] docs dependencies are absent from runner site-packages [then ⛔️] the
   strict MkDocs build must invoke the docs venv executable.
+- [if] a test spawns `uv run --with modal` against the repo root [then ⛔️]
+  the pytest jobs must carry UV_NO_SYNC so `.venv` is not pruned to uv.lock.
 """
 
 from __future__ import annotations
@@ -99,3 +102,21 @@ def test_docs_build_uses_uv_provisioned_venv() -> None:
     assert "uv venv --python 3.11 .venv" in workflow
     assert "uv pip install --python .venv/bin/python -r requirements-docs.txt" in workflow
     assert "run: .venv/bin/mkdocs build --strict" in workflow
+
+
+def test_pytest_jobs_forbid_child_uv_runs_from_resyncing_the_venv() -> None:
+    """`uv run` syncs `.venv` to uv.lock unless told not to.
+
+    apps/stems/job.py spawns `uv run --with modal ...` from the repo root and
+    tests/stems/test_stems_job_pipeline.py drives it for real. Once #1106 made
+    `.venv` the job environment, that sync pruned pytest, librosa and soundfile
+    mid-suite (trunk run 33884587140, Fri 4 Sep 2026). UV_NO_SYNC on the job
+    is what keeps the provisioned environment intact.
+    """
+    for name in ("ci.yml", "full-ci.yml"):
+        workflow = _workflow(name)
+        assert "uv venv --python 3.11 .venv" in workflow, name
+        assert 'UV_NO_SYNC: "1"' in workflow, (
+            f"{name}: the pytest job must set UV_NO_SYNC so a child `uv run` "
+            "cannot resync `.venv` out from under the running suite"
+        )
