@@ -13364,6 +13364,89 @@
         ]
       }
     },
+    "/api/v1/library/wheel": {
+      "get": {
+        "operationId": "get_library_wheel_api_v1_library_wheel_get",
+        "parameters": [
+          {
+            "description": "Per-track overlay on the genre-grouped tree. A disabled axis (decade, overplayed_ness, set_played_in) still returns the real tree with every axis_value null and a stated reason, never a fabricated number.",
+            "in": "query",
+            "name": "axis",
+            "required": false,
+            "schema": {
+              "default": "play_count",
+              "description": "Per-track overlay on the genre-grouped tree. A disabled axis (decade, overplayed_ness, set_played_in) still returns the real tree with every axis_value null and a stated reason, never a fabricated number.",
+              "enum": [
+                "genre",
+                "decade",
+                "play_count",
+                "popularity",
+                "overplayed_ness",
+                "playlist",
+                "set_played_in"
+              ],
+              "title": "Axis",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Library Wheel Api V1 Library Wheel Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Library Wheel",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/library/wheel/axes": {
+      "get": {
+        "description": "Axis catalog alone, so a picker can render enabled/disabled without\npaying for a full tree fetch.",
+        "operationId": "get_library_wheel_axes_api_v1_library_wheel_axes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Get Library Wheel Axes Api V1 Library Wheel Axes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Wheel Axes",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/mytags": {
       "get": {
         "operationId": "list_mytags_api_v1_mytags_get",

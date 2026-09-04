@@ -1171,6 +1171,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/wheel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Library Wheel */
+        get: operations["get_library_wheel_api_v1_library_wheel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/wheel/axes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Wheel Axes
+         * @description Axis catalog alone, so a picker can render enabled/disabled without
+         *     paying for a full tree fetch.
+         */
+        get: operations["get_library_wheel_axes_api_v1_library_wheel_axes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mytags": {
         parameters: {
             query?: never;
@@ -8681,6 +8719,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_wheel_api_v1_library_wheel_get: {
+        parameters: {
+            query?: {
+                /** @description Per-track overlay on the genre-grouped tree. A disabled axis (decade, overplayed_ness, set_played_in) still returns the real tree with every axis_value null and a stated reason, never a fabricated number. */
+                axis?: "genre" | "decade" | "play_count" | "popularity" | "overplayed_ness" | "playlist" | "set_played_in";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_wheel_axes_api_v1_library_wheel_axes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
         };

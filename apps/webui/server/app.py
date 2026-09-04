@@ -61,6 +61,7 @@ from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_upload as ingest_upload_routes
+from .routes import library as library_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_telemetry as performance_telemetry_routes
@@ -351,6 +352,7 @@ def create_app(
     app.include_router(auth_routes.router, prefix=api_prefix)
     app.include_router(ingest_routes.router, prefix=api_prefix)
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
+    app.include_router(library_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
