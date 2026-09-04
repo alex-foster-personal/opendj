@@ -48,7 +48,10 @@ def _git(*args: str) -> str:
 
 
 def _is_ancestor(ancestor: str, descendant: str) -> bool:
-    return subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant]).returncode == 0
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant], check=False
+    )
+    return result.returncode == 0
 
 
 def _count(rev_range: str) -> int:
@@ -81,19 +84,23 @@ def _first_mapped_ancestor(
     )
 
 
-RUNTIME_PREFIXES = ("apps/", "pyproject.toml", "uv.lock")
+RUNTIME_PREFIXES = ("apps/", "pyproject.toml", "uv.lock", ".python-version")
 
 
 def _runtime_paths_missing(head: str, shipped: str) -> list[str]:
-    """Files changed by shipped-only commits that alter what the app runs (apps/**, deps)."""
+    """Files changed by shipped-only commits that alter the app runtime."""
     changed = _git("diff", "--name-only", f"{head}...{shipped}").splitlines()
     return [p for p in changed if p.startswith(RUNTIME_PREFIXES) and not p.endswith(".md")]
 
 
 def _shipped_sha(app: Path) -> str | None:
-    manifest = app / MANIFEST_REL
-    if not manifest.exists():
+    if not app.exists():
         return None
+    manifest = app / MANIFEST_REL
+    if not manifest.is_file():
+        raise SystemExit(
+            f"[dev-loop] installed app at {app} lacks payload/manifest.json: refusing to guess"
+        )
     data = json.loads(manifest.read_text())
     identity = data.get("identity", data)
     sha = identity.get("git_sha_full") or identity.get("git_sha")
@@ -162,10 +169,16 @@ def main(argv: list[str] | None = None) -> int:
         # the same app code as main.
         missing_runtime = _runtime_paths_missing(head, shipped)
         if missing_runtime:
-            parts.append(f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) e.g. {missing_runtime[0]}")
+            parts.append(
+                f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) "
+                f"e.g. {missing_runtime[0]}"
+            )
             verdict, code = "REFUSED: loop lacks fixes the shipped app has", 2
         else:
-            parts.append(f"shipped {shipped[:8]} diverged, tooling-only ({_count(f'{head}..{shipped}')} commit(s), no runtime paths)")
+            parts.append(
+                f"shipped {shipped[:8]} diverged, tooling-only "
+                f"({_count(f'{head}..{shipped}')} commit(s), no runtime paths)"
+            )
 
     if _is_ancestor(main_sha, head):
         parts.append(f"main {main_sha[:8]} +{_count(f'{main_sha}..{head}')}")
@@ -173,7 +186,10 @@ def main(argv: list[str] | None = None) -> int:
         behind_main = _count(f"{head}..{main_sha}")
         parts.append(f"main {main_sha[:8]} BEHIND by {behind_main}")
         if code == 0 and not args.allow_behind_main:
-            verdict, code = "REFUSED: loop lacks merged fixes on main (rebase, or --allow-behind-main)", 3
+            verdict, code = (
+                "REFUSED: loop lacks merged fixes on main (rebase, or --allow-behind-main)",
+                3,
+            )
 
     print(f"[dev-loop] {' | '.join(parts)} | {verdict}")
     return code
