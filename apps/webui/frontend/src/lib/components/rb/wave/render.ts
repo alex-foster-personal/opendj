@@ -73,7 +73,7 @@ const PLAYHEAD_COLORS = {
 	drift: '#ff2d2d'
 } as const;
 
-export type PlayheadTone = keyof typeof PLAYHEAD_COLORS;
+export type PlayheadTone = keyof typeof PLAYHEAD_COLORS | 'masterSynced';
 
 /** Rendering style only (matches rekordbox's white core): highs are drawn
  * at reduced height so the white band reads as the inner core. The band
@@ -375,6 +375,18 @@ export function drawPlayhead(
 	timeMs: number = 0
 ): void {
 	const centerX = Math.round(w / 2);
+	if (tone === 'masterSynced') {
+		// Two adjacent cores are deliberate: yellow says MASTER, while green
+		// retains its established meaning, Beat Sync is engaged. Their matching
+		// 3px glows / 1px cores keep the original equal-weight contract.
+		// Both translucent glows must land before either opaque core. Painting
+		// green's glow after yellow's core visibly contaminates the yellow core.
+		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
+		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.synced, centerX, h);
+		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
+		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.synced, centerX, h);
+		return;
+	}
 	const color = PLAYHEAD_COLORS[tone];
 	let glow = 0.4;
 	let core = 1;
@@ -395,5 +407,29 @@ export function drawPlayhead(
 	ctx.fillRect(centerX - 1, 0, 3, h);
 	ctx.globalAlpha = core;
 	ctx.fillRect(centerX, 0, 1, h);
+	ctx.globalAlpha = 1;
+}
+
+function _drawPlayheadGlow(
+	ctx: CanvasRenderingContext2D,
+	color: string,
+	coreX: number,
+	h: number
+): void {
+	ctx.fillStyle = color;
+	ctx.globalAlpha = 0.45;
+	ctx.fillRect(coreX - 1, 0, 3, h);
+	ctx.globalAlpha = 1;
+}
+
+function _drawPlayheadCore(
+	ctx: CanvasRenderingContext2D,
+	color: string,
+	coreX: number,
+	h: number
+): void {
+	ctx.fillStyle = color;
+	ctx.globalAlpha = 1;
+	ctx.fillRect(coreX, 0, 1, h);
 	ctx.globalAlpha = 1;
 }

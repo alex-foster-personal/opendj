@@ -113,7 +113,11 @@
 
 	const syncPlayheadTone = $derived.by((): PlayheadTone => {
 		if (!deck.audible) return 'stopped';
-		if (deck.is_master && deck.stable_id !== null) return 'master';
+		if (deck.is_master && deck.stable_id !== null) {
+			// MASTER remains yellow; green is reserved for the explicit Beat
+			// Sync-enabled state, even on the MASTER itself.
+			return deck.beat_sync_enabled ? 'masterSynced' : 'master';
+		}
 		const followerBeats = paintAnlz?.beatgrid.beats;
 		if (followerBeats === undefined || masterBeats === null || masterState === null) {
 			return 'now';
