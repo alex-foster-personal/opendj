@@ -269,6 +269,7 @@
 	onpointerenter={() => armLoopHover(deckId)}
 	onpointerleave={() => clearLoopHover(deckId)}
 >
+	<span class="column-label">LOOP</span>
 	<button
 		class="mode-toggle"
 		class:on={intervalGrid}
@@ -409,6 +410,13 @@
 		 * align-items: stretch. */
 		min-width: 44px;
 		max-width: 44px;
+	}
+	.column-label {
+		color: var(--rb-text-dim);
+		font-size: 7px;
+		font-weight: 700;
+		line-height: 7px;
+		letter-spacing: 0.45px;
 	}
 	/* Deliberately tiny: a mode switch, not a feature button. */
 	.mode-toggle {

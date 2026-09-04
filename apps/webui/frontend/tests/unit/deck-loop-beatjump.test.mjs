@@ -50,11 +50,13 @@ function assertMs(actual, expected) {
 let math;
 let ipc;
 let view;
+let loops;
 
 before(async () => {
 	math = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
 	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts');
 	view = await loadTypeScriptModule('src/lib/rb/loop-interval-view.svelte.ts');
+	loops = await loadTypeScriptModule('src/lib/player/transport/loops.ts');
 });
 
 // ------------------------------------------------------------- jump math
@@ -80,6 +82,54 @@ test('a negative beat jump walks the grid backwards', () => {
 	// Last beat (index 8) minus 4 grid beats is index 4 at 2.04s.
 	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 4060, -4), 2040);
 	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 2040, -1), 1553);
+});
+
+test('a live beat loop shifts by the same real PQTZ beat count as its jump', () => {
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(
+			DRIFTING_GRID,
+			{ in_ms: 608, out_ms: 2530 },
+			2,
+			4000
+		),
+		{ in_ms: 1553, out_ms: 3540 }
+	);
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(
+			DRIFTING_GRID,
+			{ in_ms: 608, out_ms: 2530 },
+			-1,
+			4000
+		),
+		{ in_ms: 135, out_ms: 2040 }
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 2040, out_ms: 4060 }, 1, 5000),
+		/does not fit/i
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2530 }, 2, 3000),
+		/decoded duration/i,
+		'a grid beyond decoded audio must not produce a loop the engine clips'
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: -1, out_ms: 2530 }, 2, 4000),
+		/finite 0 <= in_ms < out_ms/i
+	);
+});
+
+test('a shifted live loop keeps an exclusive-out beat jump inside the loop', () => {
+	const shifted = { in_ms: 1553, out_ms: 3540 };
+	assert.equal(
+		loops.targetWithinShiftedLiveLoopMs(DRIFTING_GRID, 3540, shifted),
+		3030,
+		'an exclusive loop out is not a seekable position, so use the preceding real beat'
+	);
+	assert.equal(
+		loops.targetWithinShiftedLiveLoopMs(DRIFTING_GRID, 3030, shifted),
+		3030,
+		'an already in-loop target must retain its exact PQTZ position'
+	);
 });
 
 test('a jump past either grid end lands on the first or last real beat', () => {
@@ -305,16 +355,18 @@ test('beat jump reaches the engine only through the typed dispatcher', async () 
 	// The component owns no engine import - it only calls the injected prop.
 	assert.doesNotMatch(jumpSource, /audio-engine/);
 	assert.match(jumpSource, /onJump\(delta\)/);
+	assert.match(jumpSource, /shiftLiveBeatLoopRangeMs\(beats, deck\.loop, delta, deck\.duration_ms\)/);
+	assert.match(jumpSource, /live loop cannot shift/);
 });
 
-test('beat jump leads the compact horizontal loop control group', async () => {
+test('LOOP and JUMP are visible headings in their requested left-to-right columns', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
-	// The controls remain out of cue-flex, with BeatJump first in the shared
-	// horizontal loop-col so the cue bank keeps its full region.
+	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
+	// The controls remain out of cue-flex, with LOOP left and JUMP right.
 	assert.match(
 		deckSource,
-		/<div class="loop-col">\s*<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>\s*<LoopCluster\b/s
+		/<div class="loop-col">\s*<LoopCluster\b[\s\S]*?<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
 	);
 	const cueRegionStart = deckSource.indexOf('<div class="cue-flex">');
 	const cueRegionEnd = deckSource.indexOf('\n\t\t</div>', cueRegionStart);
@@ -324,6 +376,8 @@ test('beat jump leads the compact horizontal loop control group', async () => {
 		deckSource,
 		/\.loop-col \{[\s\S]*?display: flex;[\s\S]*?flex-direction: row;[\s\S]*?align-items: flex-start;/
 	);
+	assert.match(loopSource, /<span class="column-label">LOOP<\/span>/);
+	assert.match(jumpSource, /<span class="column-label">JUMP<\/span>/);
 	assert.match(jumpSource, /grid-template-columns: repeat\(2, minmax\(18px, 1fr\)\)/);
 	assert.match(jumpSource, /width: 38px;/);
 });

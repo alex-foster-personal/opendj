@@ -10,6 +10,7 @@
 	// Sized to fit the spare height already present in the loop column - the
 	// deck bounding box must not grow to host it.
 	import { beatJumpMovesTransportWithinDuration } from '$lib/rb/beat-sync-math';
+	import { shiftLiveBeatLoopRangeMs } from '$lib/player/transport/loops';
 	import type { AnlzBeat } from '$lib/rb/anlz-types';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 
@@ -49,12 +50,25 @@
 		// jumping as unavailable rather than risk enabling a button that
 		// silently no-ops once the engine clamps its target.
 		if (deck.duration_ms === null) return false;
-		return beatJumpMovesTransportWithinDuration(beats, deck.position_ms, delta, deck.duration_ms);
+		if (!beatJumpMovesTransportWithinDuration(beats, deck.position_ms, delta, deck.duration_ms)) {
+			return false;
+		}
+		if (deck.loop !== null && deck.loop.engaged) {
+			try {
+				shiftLiveBeatLoopRangeMs(beats, deck.loop, delta, deck.duration_ms);
+			} catch {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	function _title(delta: number): string {
 		if (blockedReason !== null) return blockedReason;
 		if (!_canJump(delta)) {
+			if (deck.loop !== null && deck.loop.engaged) {
+				return `the live loop cannot shift ${_label(delta)} beats without leaving the real PQTZ grid`;
+			}
 			return delta < 0
 				? `already within ${-delta} beats of the first beatgrid beat`
 				: `fewer than ${delta} beatgrid beats remain ahead`;
@@ -69,6 +83,7 @@
 </script>
 
 <div class="beat-jump" title="Beat jump: move the transport by whole beatgrid beats">
+	<span class="column-label">JUMP</span>
 	{#each JUMPS as delta (delta)}
 		<button
 			disabled={!_canJump(delta)}
@@ -92,6 +107,15 @@
 		gap: 2px;
 		width: 38px;
 		flex: 0 0 auto;
+	}
+	.column-label {
+		grid-column: 1 / -1;
+		color: var(--rb-text-dim);
+		font-size: 7px;
+		font-weight: 700;
+		line-height: 7px;
+		letter-spacing: 0.45px;
+		text-align: center;
 	}
 	.beat-jump button {
 		background: var(--rb-panel-raised);

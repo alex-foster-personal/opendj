@@ -408,24 +408,10 @@
 			/>
 		</div>
 
-		<!-- Keep the compact transport modifiers together, outside the cue
-		     bank. Beat jump leads the horizontal group so the hot-cue bank
-		     retains its full region. -->
+		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
 		<div class="loop-col">
+			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} inertTip={INERT_TIP} />
 			<BeatJump {deck} {pending} onJump={beatJump} />
-			<LoopCluster
-				{deck}
-				{deckId}
-				{pending}
-				onEngage={engageBeatLoop}
-				onDisengage={disengageLoop}
-				onSafetySave={saveSafetyLoop}
-				onSafetyArm={armSafetyLoop}
-				onSafetyClear={clearSafetyLoop}
-				onIntervalMode={setLoopIntervalMode}
-				onIntervalBase={setLoopIntervalBase}
-				inertTip={INERT_TIP}
-			/>
 		</div>
 
 		<TransportCluster {deck} {pending} onCue={returnToCue} onPlayPause={playPause} />
@@ -588,7 +574,9 @@
 		gap: 3px;
 		flex: 0 0 auto;
 		min-height: 0;
-		/* Keep compact loop/jump controls beside cues. */
+		/* This group stays beside the cue bank within main-row's fixed height.
+		 * LoopCluster keeps its own
+		 * fixed 44px width and vertical controls. */
 	}
 	.cue-flex {
 		flex: 1 1 0;

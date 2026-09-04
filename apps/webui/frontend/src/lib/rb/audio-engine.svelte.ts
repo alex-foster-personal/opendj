@@ -216,7 +216,9 @@ import type { CamelotKey } from '$lib/player/key/camelot';
 import {
 	exactBeatLoopRangeMs,
 	loopEndpointsWithinDurationMs,
-	quantizedLoopEndpointsMs
+	quantizedLoopEndpointsMs,
+	shiftLiveBeatLoopRangeMs,
+	targetWithinShiftedLiveLoopMs
 } from '$lib/player/transport/loops';
 import {
 	_positionForSegment,
@@ -2390,12 +2392,9 @@ async function _scheduleFollowerBackwardBlend(
  * `planTempoRatioRamp`'s small steps scheduled on the real AudioContext
  * clock (never a JS timer racing the audio graph).
  *
- * The first step is awaited so this resolves with the same phase-lock
- * timing callers already depend on; the remaining steps continue on this
- * deck's own serialized schedule queue (`_scheduleDeck`'s `rt.scheduleTail`)
- * without being awaited here, so they cannot extend how long the shared
- * `sync` command scope stays claimed - only this deck's own scope, exactly
- * like an ordinary follow-up mutation on that deck.
+ * Every step is awaited while the shared `sync` command scope is claimed.
+ * A later master update must not observe an intermediate desired revision
+ * while this follower's own schedule tail is still registering its ramp.
  *
  * `rt.reanchorRampActive` holds `transport_pending` true for this deck across
  * the whole ramp. Each step's own schedule revision becomes "presented" as
@@ -2429,11 +2428,11 @@ async function _scheduleReanchoredFollower(
 		rt.reanchorRampActive = false;
 		throw error;
 	}
-	void _continueTempoRamp(deck, syncAt, ramp.slice(1), masterTempoEnabled);
+	await _continueTempoRamp(deck, syncAt, ramp.slice(1), masterTempoEnabled);
 	return scheduledInputSec;
 }
 
-/** Background tail of a re-anchor ramp. Position is deliberately left to
+/** Remaining tail of an awaited re-anchor ramp. Position is deliberately left to
  * `_projectPositionAt` (the same projection every other tempo-only mutation
  * here uses) rather than re-stated from the plan, since only the rate is
  * changing at each step. Always clears `rt.reanchorRampActive` on the way
@@ -2448,20 +2447,14 @@ async function _continueTempoRamp(
 	const rt = _rt[deck];
 	try {
 		for (const step of remainingSteps) {
-			try {
-				await _scheduleDeck(
-					deck,
-					syncAt + step.offsetSec,
-					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-					true,
-					step.tempoRatio,
-					masterTempoEnabled
-				);
-			} catch {
-				// The deck moved on (reload/unload/a newer command) mid-ramp;
-				// abandon the rest rather than fight whatever superseded it.
-				return;
-			}
+			await _scheduleDeck(
+				deck,
+				syncAt + step.offsetSec,
+				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+				true,
+				step.tempoRatio,
+				masterTempoEnabled
+			);
 		}
 	} finally {
 		rt.reanchorRampActive = false;
@@ -3594,6 +3587,30 @@ class RbAudioEngine implements AudioEngine {
 		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
 		const rawTargetMs = beatJumpTargetMs(grid, anchorMs, beats);
 		const targetMs = beatJumpTargetWithinDurationMs(grid, rawTargetMs, _durationSec(deck) * 1000);
+		if (st.loop !== null && st.loop.engaged) {
+			const previousLoop = st.loop;
+			// quantizedSeek preserves an in-range loop. Shift its exact PQTZ
+			// endpoints first so the jump is in the relocated live loop rather
+			// than triggering quantizedSeek's ordinary out-of-loop exit rule.
+			const shiftedLoop = shiftLiveBeatLoopRangeMs(
+				grid,
+				previousLoop,
+				beats,
+				_durationSec(deck) * 1000
+			);
+			st.loop = {
+				...shiftedLoop,
+				engaged: true,
+				beat_length: previousLoop.beat_length
+			};
+			try {
+				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop));
+			} catch (error) {
+				st.loop = previousLoop;
+				throw error;
+			}
+			return;
+		}
 		await this.quantizedSeek(deck, targetMs);
 	}
 

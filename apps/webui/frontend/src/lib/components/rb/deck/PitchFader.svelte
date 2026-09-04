@@ -6,6 +6,7 @@
 	import { PITCH_RANGES } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import { coalesceLatest } from '$lib/rb/coalesce';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
 	import { thumbOffsetPx, valueFromPointer } from '$lib/rb/pitch-fader-geometry';
@@ -34,6 +35,11 @@
 	let trackH = $state(96);
 
 	let activePointerId: number | null = null;
+	const tempoDispatcher = coalesceLatest(async (ratio: number) => await onTempoChange(ratio));
+
+	$effect(() => {
+		return () => tempoDispatcher.cancel();
+	});
 
 	// 0 = -range%, 0.5 = 0% (ratio 1.0), 1 = +range% (top = faster).
 	const value: number = $derived(faderValueFromPitchRatio(deck.pitch, pitchRange));
@@ -57,10 +63,10 @@
 	}
 
 	function _setTempoFromValue(value: number): void {
-		// runPerformanceCommandFromUi owns errors and route-session generation.
-		// Do not await pointer events: a drag must keep sampling while the prior
-		// scheduled tempo update is pending on the deck/sync command scope.
-		void onTempoChange(pitchRatioFromFaderValue(value, pitchRange));
+		// Do not await pointer events. A continuous drag sends its first value
+		// promptly, then holds only its latest value while the deck/sync scope
+		// drains, so a slow schedule cannot replay stale fader positions.
+		void tempoDispatcher.request(pitchRatioFromFaderValue(value, pitchRange));
 	}
 
 	function _setTempoFromKey(value: number): void {

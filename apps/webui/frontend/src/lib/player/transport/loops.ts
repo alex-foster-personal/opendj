@@ -11,7 +11,7 @@
  * scheduler seam they mutate through has been extracted.
  */
 
-import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
+import { quantizeToNearestBeat, validateBeatGrid } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 
 export function quantizedLoopEndpointsMs(
@@ -91,6 +91,70 @@ export function beatLoopFitsWithinDuration(
 	} catch {
 		return false;
 	}
+}
+
+/** Move an engaged, beat-aligned loop by whole real PQTZ beats without
+ * changing its beat length. A boundary that cannot retain the whole loop is
+ * refused rather than silently exiting or shortening the live loop. */
+export function shiftLiveBeatLoopRangeMs(
+	beats: readonly AnlzBeat[],
+	loop: { in_ms: number; out_ms: number },
+	deltaBeats: number,
+	durationMs: number
+): { in_ms: number; out_ms: number } {
+	validateBeatGrid(beats);
+	if (
+		!Number.isFinite(loop.in_ms) ||
+		!Number.isFinite(loop.out_ms) ||
+		loop.in_ms < 0 ||
+		loop.out_ms <= loop.in_ms
+	) {
+		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
+	}
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		throw new RangeError(`decoded duration must be finite and positive, got ${durationMs}`);
+	}
+	if (!Number.isInteger(deltaBeats) || deltaBeats === 0) {
+		throw new RangeError(`deltaBeats must be a non-zero integer, got ${deltaBeats}`);
+	}
+	const inSec = quantizeToNearestBeat(beats, loop.in_ms / 1000);
+	const outSec = quantizeToNearestBeat(beats, loop.out_ms / 1000);
+	const inIndex = beats.findIndex((beat) => beat.t === inSec);
+	const outIndex = beats.findIndex((beat) => beat.t === outSec);
+	const beatLength = outIndex - inIndex;
+	const nextIn = inIndex + deltaBeats;
+	const nextOut = nextIn + beatLength;
+	if (inIndex < 0 || beatLength <= 0 || nextIn < 0 || nextOut >= beats.length) {
+		throw new RangeError(`shifted live loop does not fit after ${deltaBeats} PQTZ beats`);
+	}
+	if (beats[nextOut].t * 1000 > durationMs) {
+		throw new RangeError(`shifted live loop exceeds decoded duration ${durationMs}ms`);
+	}
+	return { in_ms: beats[nextIn].t * 1000, out_ms: beats[nextOut].t * 1000 };
+}
+
+/** An engaged loop's out point is exclusive. A beat jump that lands exactly
+ * there must use the preceding real PQTZ beat, otherwise quantized seek exits
+ * the loop by contract. All other targets retain their exact grid position. */
+export function targetWithinShiftedLiveLoopMs(
+	beats: readonly AnlzBeat[],
+	targetMs: number,
+	loop: { in_ms: number; out_ms: number }
+): number {
+	validateBeatGrid(beats);
+	if (!Number.isFinite(targetMs) || targetMs < 0) {
+		throw new RangeError(`targetMs must be finite and non-negative, got ${targetMs}`);
+	}
+	if (targetMs !== loop.out_ms) return targetMs;
+	const outIndex = beats.findIndex((beat) => beat.t * 1000 === loop.out_ms);
+	if (outIndex < 1) {
+		throw new RangeError(`shifted live loop out ${loop.out_ms}ms is not a movable PQTZ beat`);
+	}
+	const inLoopTargetMs = beats[outIndex - 1].t * 1000;
+	if (inLoopTargetMs < loop.in_ms) {
+		throw new RangeError(`shifted live loop has no PQTZ beat before exclusive out ${loop.out_ms}ms`);
+	}
+	return inLoopTargetMs;
 }
 
 export function exactBeatLoopRangeMs(
