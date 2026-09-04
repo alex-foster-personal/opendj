@@ -2378,12 +2378,28 @@
 	}
 	.playlist-tree-resize:hover,
 	.playlist-tree-resize:active { background: var(--rb-accent); }
+	/* `overflow: hidden` is load-bearing, not tidiness. TrackTable's LIBUX-01
+	 * `.tt-root` min-height is an ABSOLUTE floor, so on a window too short to
+	 * honor it the table stays at its floor height and, with the default
+	 * `overflow: visible`, simply paints outside this panel: measured at the
+	 * repo's standard 1280x800 /performance viewport, `.tt-root` ran to
+	 * y=869 in an 800px window (69px off-screen), `.perf-root` reported
+	 * scrollHeight 895 against clientHeight 800, and the rows painted over
+	 * the browser's 18px bottom bar. Clipping here keeps the panel's own
+	 * chrome intact and confines the shortfall to "fewer rows visible",
+	 * which is the documented degradation (PR #1007 discussion
+	 * r3921443899). Safe for the panel's popovers: `.unload-offer` is
+	 * absolutely positioned INSIDE this box, and TrackTable's
+	 * `.load-confirm` is `position: fixed`, which this rule cannot clip
+	 * because `.list-panel` establishes no containing block for it (no
+	 * transform/filter/contain here, only `position: relative`). */
 	.list-panel {
 		grid-area: list;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
+		overflow: hidden;
 		background: var(--rb-panel);
 		position: relative;
 	}

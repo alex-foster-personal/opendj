@@ -746,7 +746,11 @@
 	</th>
 {/snippet}
 
-<div class="tt-root" data-density={uiPrefs.library_density}>
+<div
+	class="tt-root"
+	data-density={uiPrefs.library_density}
+	data-truncated={provider.truncated ? 'true' : 'false'}
+>
 	{#if masterFold === 'above'}
 		<button
 			type="button"
@@ -1433,13 +1437,31 @@
 		 * area from inside the same box height, PR #1007 discussion
 		 * r3921198996). The enclosing .perf-root grid reserves enough
 		 * total height for this floor to actually fit without overflowing
-		 * (see +page.svelte). */
-		min-height: calc(20px + 5 * var(--tt-row-h) + 17px);
+		 * (see +page.svelte).
+		 *
+		 * `--tt-truncation-h` is the fourth term: when a whole-collection
+		 * search hits its 200-row safety cap, `.truncated-note` renders as a
+		 * `flex: none` SIBLING of `.table-wrap` INSIDE this same box, so its
+		 * height comes straight out of the space budgeted for the thead, the
+		 * five rows and the scrollbar gutter - one full row disappears at
+		 * cosy density on non-overlay-scrollbar platforms. The banner is
+		 * given a declared 17px height below (rather than letting font
+		 * metrics decide) so this floor and the +page.svelte reservation can
+		 * both add the SAME number, and it is added only while the banner is
+		 * actually showing (PR #1007 discussion r3923591731). */
+		--tt-truncation-note-h: 17px;
+		--tt-truncation-h: 0px;
+		min-height: calc(20px + 5 * var(--tt-row-h) + 17px + var(--tt-truncation-h));
 		position: relative;
 		/* compact = current tight rows; cosy = taller + roomier cell pad */
 		--tt-row-h: 22px;
 		--tt-art: 22px;
 		--tt-td-pad-x: 6px;
+	}
+	/* Only while the banner is on screen - an unconditional term would steal
+	 * 17px from the deck area on every window that never truncates. */
+	.tt-root[data-truncated='true'] {
+		--tt-truncation-h: var(--tt-truncation-note-h);
 	}
 	.tt-root[data-density='cosy'] {
 		--tt-row-h: 30px;
@@ -1932,12 +1954,22 @@
 		text-align: center;
 		color: var(--rb-text-dim);
 	}
+	/* Declared height, not font-metric height: `.tt-root`'s min-height floor
+	 * and `+page.svelte`'s library reservation both have to add this exact
+	 * number, and a box whose height depends on the rendered line box cannot
+	 * be added to a static budget (PR #1007 discussion r3923591731).
+	 * border-box so the 1px border and 2px padding are inside the 17px. */
 	.truncated-note {
 		flex: none;
+		box-sizing: border-box;
+		height: var(--tt-truncation-note-h);
 		padding: 2px 8px;
 		border-top: 1px solid var(--rb-border);
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.load-confirm {

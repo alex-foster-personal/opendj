@@ -12,28 +12,35 @@ import { expect, test } from '@playwright/test';
 // geometry check.
 //
 // Two floors compete for the same vertical space (see +page.svelte's
-// perf-root comment, PR #1007 discussions r3921198996 and r3921321752):
-// the deck area's documented 497px two-deck-column content-tight floor
-// (protected via `minmax(497px, ...)`, since `.rb-deck` uses
-// overflow: hidden and a shorter box genuinely clips controls), and the
-// library's 255px 5-row floor. Their sum plus topbar/wave (200px) is 952px,
-// taller than the repo's standard 1280x800 viewport, so only ONE floor can
-// be fully satisfied below that height. Decks win the conflict (protecting
-// already-shipped controls), so this file tests each floor at the viewport
-// where it is actually supposed to hold, instead of asserting both at once
-// somewhere neither can be true.
+// perf-root comment, PR #1007 discussions r3921198996, r3921321752,
+// r3921443899 and r3923591731): the deck area's documented 497px two-deck-
+// column content-tight floor (protected via `minmax(497px, ...)`, since
+// `.rb-deck` uses overflow: hidden and a shorter box genuinely clips
+// controls), and the library's 272px 5-row floor. Their sum plus topbar/wave
+// (200px) is 969px, taller than the repo's standard 1280x800 viewport, so
+// only ONE floor can be fully satisfied below that height. Decks win the
+// conflict (protecting already-shipped controls), so this file tests each
+// floor at the viewport where it is actually supposed to hold, instead of
+// asserting both at once somewhere neither can be true - and then tests, AT
+// 1280x800, what the losing side does with the shortfall, which is where the
+// real defect was.
 
+// 1000px clears the >= 969px threshold at which BOTH floors fit (497 deck +
+// 272 library + 200 topbar/wave), so the 5-row guarantee is actually
+// claimable here. Below it the guarantee does not hold and the tests further
+// down assert what happens instead, rather than pretending it does.
 const TALL_VIEWPORT = { width: 1280, height: 1000 };
 // thead (20px, fixed) + 5 * compact row height (22px, the default density) +
 // a 17px classic-scrollbar-gutter allowance - mirrors TrackTable.svelte's
-// `.tt-root { min-height: calc(20px + 5 * var(--tt-row-h) + 17px) }`
+// `.tt-root { min-height: calc(20px + 5 * var(--tt-row-h) + 17px +
+// var(--tt-truncation-h)) }` with no truncation banner showing
 // (PR #1007 discussion r3921198996: table-wrap's default column widths
 // exceed this viewport's width, so a horizontal scrollbar is real; this
 // sandbox's Chromium happens to render overlay scrollbars, which cost 0
 // layout height, so this assertion cannot itself distinguish "budgeted the
 // 17px and it went unused" from "the budget is wrong" - see NOT-verified in
 // the PR body). 1000px is tall enough that the deck-area floor (497px) is
-// not in the way (952px needed for both floors at once, 1000 > 952).
+// not in the way (969px needed for both floors at once, 1000 > 969).
 const MIN_TABLE_WRAP_HEIGHT = 20 + 5 * 22 + 17;
 
 test('performance: library table-wrap keeps a 5-row floor once the window is tall enough for both floors', async ({
@@ -80,4 +87,126 @@ test('performance: deck keeps its content-tight floor (no control clipping) at t
 	const stemsBox = await stems.boundingBox();
 	expect(stemsBox).not.toBeNull();
 	expect(stemsBox!.y + stemsBox!.height).toBeLessThanOrEqual(deckBox!.y + deckBox!.height + 1);
+});
+
+// PR #1007 discussion r3921443899 (P2/BLOCKING): "at the configured 1280x800
+// Playwright viewport ... only 103px for the browser, versus the 255px needed
+// ... Because `.perf-root` hides overflow, TrackTable's larger `min-height`
+// cannot make those rows visible."
+//
+// The arithmetic is confirmed and unfixable at that height: the deck floor
+// (497px, itself a BLOCKING finding from r3921321752 and asserted above) plus
+// the library floor (272px) plus topbar/wave (200px) is 969px, so at 800px
+// one of the two must give and the decks win. What was a real, separate
+// defect is what the losing side DID: `.tt-root`'s min-height is absolute, so
+// the table kept its floor height and painted straight out of the panel -
+// measured on main at 1280x800, `.tt-root` ran to y=869 in an 800px window,
+// `.perf-root` reported scrollHeight 895 against clientHeight 800 (95px of UI
+// outside the window), and a hit test at the centre of the browser's bottom
+// bar landed inside `.table-wrap`, i.e. the track list was painted on top of
+// the bottom bar.
+//
+// `.list-panel { overflow: hidden }` (BrowserPanel.svelte) confines the
+// shortfall to "fewer rows visible". These two tests are the red-then-green
+// evidence for that: both fail on main (scrollHeight 895 > 801; hit test in
+// `.tt-root`) and pass with the clip in place.
+const OVERFLOW_TOLERANCE_PX = 2;
+
+test('performance: the library floor never pushes UI outside the window at the standard 1280x800 viewport', async ({
+	page
+}) => {
+	await page.setViewportSize(STANDARD_VIEWPORT);
+	await page.goto('/performance');
+	await expect(page.locator('.table-wrap')).toBeVisible();
+
+	const overflow = await page.evaluate(() => {
+		const root = document.querySelector('.perf-root');
+		if (root === null) {
+			throw new Error('.perf-root not found');
+		}
+		return { scrollHeight: root.scrollHeight, clientHeight: root.clientHeight };
+	});
+
+	expect(overflow.scrollHeight).toBeLessThanOrEqual(
+		overflow.clientHeight + OVERFLOW_TOLERANCE_PX
+	);
+});
+
+test('performance: the track list never paints over the browser bottom bar at 1280x800', async ({
+	page
+}) => {
+	await page.setViewportSize(STANDARD_VIEWPORT);
+	await page.goto('/performance');
+	await expect(page.locator('.table-wrap')).toBeVisible();
+
+	const hit = await page.evaluate(() => {
+		const bar = document.querySelector('.bottom-bar');
+		if (bar === null) {
+			throw new Error('.bottom-bar not found');
+		}
+		const box = bar.getBoundingClientRect();
+		const target = document.elementFromPoint(
+			Math.round(box.x + box.width / 2),
+			Math.round(box.y + box.height / 2)
+		);
+		if (target === null) {
+			throw new Error('nothing hit-tested at the bottom bar centre');
+		}
+		return {
+			insideBottomBar: target.closest('.bottom-bar') !== null,
+			insideTrackTable: target.closest('.tt-root') !== null
+		};
+	});
+
+	expect(hit.insideBottomBar).toBe(true);
+	expect(hit.insideTrackTable).toBe(false);
+});
+
+// PR #1007 discussion r3923591731 (P2/BLOCKING): when a whole-collection
+// search returns more than 200 hits, `.truncated-note` renders as a
+// non-shrinking sibling of `.table-wrap` INSIDE `.tt-root`'s fixed minimum
+// height, so the banner is paid for out of the five rows.
+//
+// This asserts the fix where the defect actually lives - in the CSS cascade,
+// on the real `/performance` page, against the real TrackTable element and
+// the real `data-truncated` attribute production writes from
+// `provider.truncated`. It drives that attribute directly rather than through
+// a truncating search, because no self-contained harness in this repo serves
+// a library with more than 200 matching rows; the unit test
+// (library-min-5-rows.test.mjs) covers the other half by asserting the
+// attribute is bound to `provider.truncated` and that the banner markup is
+// gated on the same read. See NOT-verified in the PR body.
+test('performance: the truncation banner adds its own height to the 5-row floor', async ({
+	page
+}) => {
+	await page.setViewportSize(TALL_VIEWPORT);
+	await page.goto('/performance');
+
+	const table = page.locator('.tt-root');
+	await expect(table).toBeVisible();
+
+	const measured = await page.evaluate(() => {
+		const root = document.querySelector('.tt-root');
+		if (root === null) {
+			throw new Error('.tt-root not found');
+		}
+		const read = () => ({
+			minHeight: Number.parseFloat(getComputedStyle(root).minHeight),
+			bannerHeight: Number.parseFloat(
+				getComputedStyle(root).getPropertyValue('--tt-truncation-note-h')
+			)
+		});
+		const before = read();
+		const previous = root.getAttribute('data-truncated');
+		root.setAttribute('data-truncated', 'true');
+		const after = read();
+		root.setAttribute('data-truncated', previous ?? 'false');
+		return { before, after };
+	});
+
+	expect(measured.before.bannerHeight).toBeGreaterThan(0);
+	expect(measured.after.minHeight - measured.before.minHeight).toBeCloseTo(
+		measured.before.bannerHeight,
+		1
+	);
 });
