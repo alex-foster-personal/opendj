@@ -1419,7 +1419,20 @@
 		display: flex;
 		flex-direction: column;
 		flex: 1;
-		min-height: 0;
+		/* LIBUX-01: floor, not 0 - guarantees >= 5 rows survive flex-shrink
+		 * against SuggestNextStrip/RecommendedSection (thead 20px + 5 rows
+		 * at the current density's own --tt-row-h, so compact and cosy each
+		 * get their own correct floor from the same declaration, plus a
+		 * 17px classic-scrollbar-gutter allowance: table-wrap is
+		 * `overflow: auto` and the default column widths already exceed a
+		 * 1280px window's list-panel, so a horizontal scrollbar is real on
+		 * platforms without overlay scrollbars (Windows, many Linux
+		 * themes) - without this the scrollbar eats into the 5-row content
+		 * area from inside the same box height, PR #1007 discussion
+		 * r3921198996). The enclosing .perf-root grid reserves enough
+		 * total height for this floor to actually fit without overflowing
+		 * (see +page.svelte). */
+		min-height: calc(20px + 5 * var(--tt-row-h) + 17px);
 		position: relative;
 		/* compact = current tight rows; cosy = taller + roomier cell pad */
 		--tt-row-h: 22px;
