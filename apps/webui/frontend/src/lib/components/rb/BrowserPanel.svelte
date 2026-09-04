@@ -1417,6 +1417,8 @@
 	/** Holds the order AutoPlay walks, frozen at the moment it was switched
 	 * on (see createAutoPlayFeedSnapshot in auto-play.ts for the maintainer's rule). */
 	const autoPlayFeed = createAutoPlayFeedSnapshot();
+	let autoPlaySnapshotActive = $state(false);
+	let autoPlaySnapshotMatchesView = $state(false);
 
 	// Feed AutoPlay from the SORTED, filtered view the user is actually looking
 	// at - not pane.rows, which is raw stored membership and ignored the sort
@@ -1441,6 +1443,8 @@
 				file_exists: r.file_exists
 			}))
 		);
+		autoPlaySnapshotActive = autoPlayFeed.active;
+		autoPlaySnapshotMatchesView = autoPlayFeed.matches(visibleRows);
 		if (decision.publish !== null) setAutoPlayTrackFeed(decision.publish);
 	});
 
@@ -2206,6 +2210,11 @@
 				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
 			</div>
 		</div>
+		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
+			<div class="autoplay-snapshot-notice" role="status">
+				AutoPlay is using its activation order. Toggle it off and on to use this order.
+			</div>
+		{/if}
 		<TrackTable
 			{provider}
 			selectedIds={pane.selected_ids}
@@ -2395,6 +2404,16 @@
 		gap: 4px;
 		padding: 0 6px;
 		flex: none;
+	}
+	.autoplay-snapshot-notice {
+		flex: none;
+		padding: 3px 8px;
+		border-bottom: 1px solid color-mix(in srgb, var(--rb-orange) 65%, var(--rb-border));
+		background: color-mix(in srgb, var(--rb-orange) 12%, var(--rb-panel));
+		color: var(--rb-orange);
+		font-size: var(--rb-fs-label);
+		line-height: 16px;
+		text-align: center;
 	}
 	.master-dd {
 		font-size: var(--rb-fs-label);
