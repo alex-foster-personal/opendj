@@ -15,6 +15,7 @@ Endpoints::
     GET    /api/sets/{session_id}/audio/{segment}   -> MP3 stream (localhost-only
                                                        when share_state='private')
 """
+
 from __future__ import annotations
 
 import threading
@@ -28,6 +29,8 @@ from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from apps.webui.server.share_gate import configured_share
+
 from . import paths as sets_paths
 from .audio import (
     PathTraversalError,
@@ -38,7 +41,13 @@ from .classify import CLASS_LIST, read_transitions
 from .label import append_label
 from .recorder_service import RecorderConflict, RecorderService
 from .sessions import Session, get_session, list_sessions, summary_to_dict
-from .share import SetShareError, configured_share_base_url, publish_metadata_only, share_url
+from .share import (
+    SetShareConfig,
+    SetShareError,
+    configured_share_base_url,
+    publish_metadata_only,
+    share_url,
+)
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
 
@@ -60,9 +69,7 @@ router = APIRouter(
 )
 
 
-_LOCALHOST_HOSTS: frozenset[str] = frozenset(
-    {"127.0.0.1", "::1", "localhost", "testclient"}
-)
+_LOCALHOST_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 """Allowed client hosts for private-session audio.
 
 ``testclient`` is FastAPI's TestClient default and is treated as
@@ -346,6 +353,7 @@ async def api_timeline_stream(request: Request, session_id: str) -> StreamingRes
         # Empty timeline is valid; stream zero bytes.
         async def _empty() -> Iterable[bytes]:
             yield b""
+
         return StreamingResponse(_empty(), media_type="application/x-ndjson")
 
     def _stream() -> Iterable[bytes]:
@@ -362,14 +370,24 @@ async def api_transitions(request: Request, session_id: str) -> JSONResponse:
     return JSONResponse(rows)
 
 
-def _metadata_share_response(session: Session) -> MetadataShareResponse:
+def _metadata_share_base_url(request: Request) -> str:
+    set_share_config = getattr(request.app.state, "set_share_config", None)
+    share_config = configured_share(request)
+    return configured_share_base_url(
+        set_share_config if isinstance(set_share_config, SetShareConfig) else None,
+        share_host=share_config.host,
+        share_auth=share_config.auth,
+    )
+
+
+def _metadata_share_response(request: Request, session: Session) -> MetadataShareResponse:
     if session.summary.share_state != "shared_cloud":
         raise HTTPException(
             status_code=409,
             detail="metadata sharing has not been enabled for this set",
         )
     try:
-        base_url = configured_share_base_url()
+        base_url = _metadata_share_base_url(request)
     except SetShareError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return MetadataShareResponse(
@@ -381,27 +399,28 @@ def _metadata_share_response(session: Session) -> MetadataShareResponse:
 
 
 @router.get("/{session_id}/share", response_model=MetadataShareResponse)
-async def api_get_metadata_share(
-    request: Request, session_id: str
-) -> MetadataShareResponse:
+async def api_get_metadata_share(request: Request, session_id: str) -> MetadataShareResponse:
     """Get an existing metadata-only share link for a finalized published set."""
-    return _metadata_share_response(_share_visible_session(request, session_id))
+    return _metadata_share_response(request, _share_visible_session(request, session_id))
 
 
 @router.post("/{session_id}/share", response_model=MetadataShareResponse)
 async def api_publish_metadata_share(
+    request: Request,
     session_id: str,
     body: MetadataShareRequest,
 ) -> MetadataShareResponse:
     """Publish timeline metadata after explicit acknowledgement, never MP3 audio."""
     del body
+    if getattr(request.state, "share_audience", "local") == "share":
+        raise HTTPException(status_code=403, detail="share audience cannot publish set metadata")
     session = _session_or_not_found(session_id)
     try:
-        configured_share_base_url()
+        _metadata_share_base_url(request)
         publish_metadata_only(sets_paths.session_dir(session.summary.session_id))
     except SetShareError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _metadata_share_response(_session_or_not_found(session_id))
+    return _metadata_share_response(request, _session_or_not_found(session_id))
 
 
 @router.post("/{session_id}/transitions/{idx}/label")

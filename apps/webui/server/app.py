@@ -9,6 +9,7 @@ CI's on-disk library as a side effect of collection.
 Tests construct a fresh app via :func:`create_app` so they can inject a
 seeded backend without leaking global state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,6 +29,7 @@ from starlette.types import Scope
 
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
+from apps.sets.share import SetShareConfig
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
@@ -96,9 +98,7 @@ from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
 
-FRONTEND_BUILD_DIR: Path = (
-    Path(__file__).resolve().parent.parent / "frontend" / "build"
-)
+FRONTEND_BUILD_DIR: Path = Path(__file__).resolve().parent.parent / "frontend" / "build"
 
 
 class _SpaStaticFiles(StaticFiles):
@@ -154,6 +154,7 @@ def create_app(
     stem_roots: Sequence[Path] | None = None,
     usage_store: UsageStore | None = None,
     share_config: ShareConfig | None = None,
+    set_share_config: SetShareConfig | None = None,
     auto_analyze: bool = False,
 ) -> FastAPI:
     """Build a configured FastAPI app.
@@ -216,6 +217,7 @@ def create_app(
     app.state.version = version
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
+    app.state.set_share_config = set_share_config or SetShareConfig.from_environ()
     app.state.auto_analyze = analysis_autostart.build(enabled=auto_analyze)
     app.state.client_error_log_dir = (
         client_error_log_dir
@@ -235,9 +237,7 @@ def create_app(
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
     app.add_exception_handler(NotFoundError, handle_not_found)
-    app.add_exception_handler(
-        RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled
-    )
+    app.add_exception_handler(RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled)
     app.add_exception_handler(ConflictError, handle_conflict)
     app.add_exception_handler(BackendError, handle_backend_error)
 
@@ -270,8 +270,10 @@ def create_app(
                 # Isolated e2e verify stacks (loopback-only, see
                 # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
                 # talks to daemons :8686/:8688 via VITE_API_BASE.
-                "http://localhost:5273", "http://127.0.0.1:5273",
-                "http://localhost:5275", "http://127.0.0.1:5275",
+                "http://localhost:5273",
+                "http://127.0.0.1:5273",
+                "http://localhost:5275",
+                "http://127.0.0.1:5275",
             ],
             # scripts/bench/serve.py is a loopback static server for the
             # vocal quality rater; its port is a CLI arg (8791 by default,
@@ -309,8 +311,7 @@ def create_app(
         response = await call_next(request)
         if bind_host and bind_host != "127.0.0.1" and bind_host != "localhost":
             response.headers["X-Bind-Warning"] = (
-                f"server is bound to {bind_host}; "
-                "do not expose without Tailscale"
+                f"server is bound to {bind_host}; do not expose without Tailscale"
             )
         return response
 
@@ -369,9 +370,9 @@ def create_app(
     app.include_router(play_analytics_router)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):
-        app.mount("/", _SpaStaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True),
-                  name="spa")
+        app.mount("/", _SpaStaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True), name="spa")
     else:
+
         @app.get("/", include_in_schema=False)
         def _index_placeholder() -> dict[str, str]:
             return {
@@ -411,6 +412,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
     three callables would keep passing after the daemon started draining the
     wrong scope. Call this instead.
     """
+
     def start_unmapped_drain(
         guard: analysis_autostart.GuardFn,
     ) -> analysis_autostart.ConsumedFn:
@@ -457,10 +459,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
             # lost target then sits behind `unchanged` for as long as it keeps
             # its content token.
             latest = ingest_routes._JOBS.last_unmapped
-            if (
-                latest is not None
-                and latest.phase not in ingest_routes.ACTIVE_PHASES
-            ):
+            if latest is not None and latest.phase not in ingest_routes.ACTIVE_PHASES:
                 return latest.queue_signature
             # No unmapped drain has finished in this process, or the newest
             # one is still running and its signature is not final. Fall back
@@ -555,9 +554,12 @@ def _build_default_app() -> FastAPI:
     # and that must abort this boot path too (#762) rather than silently
     # swallow into an empty in-memory library.
     from .sqlite_backend import make_backend
+
     backend: StateBackend = make_backend()
     return create_app(
-        backend=backend, bind_host=bind_host, hostname=hostname,
+        backend=backend,
+        bind_host=bind_host,
+        hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
         stem_roots=stems.roots,
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
