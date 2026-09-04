@@ -42,6 +42,7 @@ import {
 	deckTransportClock,
 	engine,
 	getDeckState,
+	keySyncPreview,
 	mixerState,
 	pitchRanges,
 	type DeckTransportClock,
@@ -153,6 +154,13 @@ export interface PerformanceDeckSnapshot {
 	bpm: number | null;
 	key: string | null;
 	key_shift_semitones: number;
+	/** Exact listener-facing target for KEY SYNC. Null means an elected,
+	 * parseable master/key pair is not available yet. */
+	key_sync_preview: {
+		master_deck: DeckId;
+		target_manual_shift_semitones: number;
+		delta_semitones: number;
+	} | null;
 	effective_bpm: number | null;
 	duration_ms: number | null;
 	position_ms: number;
@@ -686,6 +694,16 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		bpm: deck.bpm,
 		key: deck.key,
 		key_shift_semitones: deck.key_shift_semitones,
+		key_sync_preview: (() => {
+			const preview = keySyncPreview(deckId);
+			return preview === null
+				? null
+				: {
+						master_deck: preview.masterDeck,
+						target_manual_shift_semitones: preview.targetManualShiftSemitones,
+						delta_semitones: preview.deltaSemitones
+					};
+		})(),
 		effective_bpm: deckEffectiveBpm(deckId),
 		duration_ms: deck.duration_ms,
 		position_ms: deck.position_ms,

@@ -240,7 +240,11 @@ import {
 	_effectivePresentedScheduleAt,
 	acknowledgePresentedTransportSchedule,
 	createPresentedTransportTimeline,
+	keySyncEffectiveAudibleSemitones,
+	keySyncManualShiftBaseline,
+	keySyncPreviewAvailable,
 	observePresentedTransportTimeline,
+	presentedKeyShiftSemitonesAt,
 	setPausedTransportTimelineCursor
 } from '$lib/player/transport/presentation';
 import type {
@@ -269,6 +273,11 @@ export {
 	parseCamelotKey
 };
 export type { CamelotKey };
+export {
+	keySyncEffectiveAudibleSemitones,
+	keySyncManualShiftBaseline,
+	presentedKeyShiftSemitonesAt
+};
 export { exactBeatLoopRangeMs, loopEndpointsWithinDurationMs, quantizedLoopEndpointsMs };
 export {
 	commonSyncScheduleTimes,
@@ -851,37 +860,13 @@ export function syncChangeRequiresReschedule(
 	return desiredActive && beatSyncEnabled && master !== null && master !== deck;
 }
 
-/** The key UI must not lead the listener. This accessor resolves only the
- * schedule revision which has crossed the output presentation clock. */
-export function presentedKeyShiftSemitonesAt(
-	timeline: PresentedTransportTimeline,
-	contextTime: number
-): number | null {
-	if (!Number.isFinite(contextTime) || contextTime < 0) {
-		throw new RangeError(`presentation context time must be finite and non-negative, got ${contextTime}`);
-	}
-	const schedule = _effectivePresentedScheduleAt(timeline, contextTime);
-	return schedule?.keyShiftSemitones ?? null;
-}
-
-/** KEY SYNC derives harmonic offsets from the acknowledged output clock only.
- * Render/control time may be ahead of the listener and must never leak here. */
-export function presentedEffectiveAudibleSemitones(
-	timeline: PresentedTransportTimeline
-): number {
-	const presentedAt = timeline.last_presentation_context_time_s;
-	if (presentedAt === null) {
-		throw new Error('KEY SYNC requires output presentation truth before deriving effective offsets');
-	}
-	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
-	if (schedule === null) {
-		throw new Error('KEY SYNC requires an output-presented schedule before deriving effective offsets');
-	}
-	return composeStretchSemitones(
-		schedule.tempoRatio,
-		schedule.masterTempoEnabled ?? true,
-		schedule.keyShiftSemitones ?? 0
-	);
+/** Listener-facing KEY SYNC plan for UI and browser agents. The preview is
+ * deliberately calculated from the exact same control and presented-audio
+ * sources as `syncKey`, never from a visible but potentially stale deck field. */
+export interface KeySyncPreview {
+	masterDeck: DeckId;
+	targetManualShiftSemitones: number;
+	deltaSemitones: number;
 }
 
 export interface KeySyncEffectiveOffsetSource {
@@ -892,61 +877,42 @@ export interface KeySyncEffectiveOffsetSource {
 	presentation: PresentedTransportTimeline;
 }
 
-/** A truly stopped deck has no listener-facing schedule to read, so its next
- * play must use the desired control values. Every live or queued path remains
- * output-clock authoritative and fails until presentation truth exists. */
-export function keySyncEffectiveAudibleSemitones(
-	source: KeySyncEffectiveOffsetSource
-): number {
-	for (const [name, value] of Object.entries({
-		audible: source.audible,
-		transportPending: source.transportPending,
-		pendingMutation: source.pendingMutation
-	})) {
-		if (typeof value !== 'boolean') throw new TypeError(`KEY SYNC ${name} must be boolean`);
-	}
-	const hasPresentedActiveSchedule = source.presentation.presented_active;
-	const hasPendingPresentationMutation =
-		source.presentation.desired_revision !== source.presentation.presented_revision;
-	const quiescent =
-		!source.audible &&
-		!source.transportPending &&
-		!source.pendingMutation &&
-		!hasPresentedActiveSchedule &&
-		!hasPendingPresentationMutation;
-	if (quiescent) {
-		return composeStretchSemitones(
-			source.control.tempoRatio,
-			source.control.masterTempoEnabled,
-			source.control.keyShiftSemitones
-		);
-	}
-	return presentedEffectiveAudibleSemitones(source.presentation);
+function _keySyncPlan(deck: DeckId, masterDeck: DeckId, sourceBaseline: number): KeySyncPreview {
+	const source = deckStates[deck];
+	const master = deckStates[masterDeck];
+	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(
+		source.key,
+		master.key,
+		_effectiveAudibleSemitones(deck),
+		_effectiveAudibleSemitones(masterDeck),
+		sourceBaseline
+	);
+	return {
+		masterDeck,
+		targetManualShiftSemitones,
+		deltaSemitones: targetManualShiftSemitones - sourceBaseline
+	};
 }
 
-/** The manual baseline for a live command must match the output-presented
- * effective pitch baseline, never a newer desired control schedule. */
-export function keySyncManualShiftBaseline(source: KeySyncEffectiveOffsetSource): number {
-	const quiescent =
-		!source.audible &&
-		!source.transportPending &&
-		!source.pendingMutation &&
-		!source.presentation.presented_active &&
-		source.presentation.desired_revision === source.presentation.presented_revision;
-	if (quiescent) {
-		_assertKeyShift(source.control.keyShiftSemitones);
-		return source.control.keyShiftSemitones;
+/** Return null only when an input or output-presented plan is unavailable. */
+export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
+	if (!DECK_IDS.includes(deck)) throw new RangeError(`KEY SYNC deck must be within 1..4, got ${deck}`);
+	const masterDeck = _masterDeck;
+	if (masterDeck === null || masterDeck === deck) return null;
+	const source = deckStates[deck];
+	const master = deckStates[masterDeck];
+	if (
+		source.stable_id === null ||
+		master.stable_id === null ||
+		parseCamelotKey(source.key) === null ||
+		parseCamelotKey(master.key) === null
+	) {
+		return null;
 	}
-	const presentedAt = source.presentation.last_presentation_context_time_s;
-	if (presentedAt === null) {
-		throw new Error('KEY SYNC requires output presentation truth before deriving its manual baseline');
-	}
-	const baseline = presentedKeyShiftSemitonesAt(source.presentation, presentedAt);
-	if (baseline === null) {
-		throw new Error('KEY SYNC requires an output-presented schedule before deriving its manual baseline');
-	}
-	_assertKeyShift(baseline);
-	return baseline;
+	const sourceInput = _keySyncSource(deck);
+	const masterInput = _keySyncSource(masterDeck);
+	if (!keySyncPreviewAvailable(sourceInput) || !keySyncPreviewAvailable(masterInput)) return null;
+	return _keySyncPlan(deck, masterDeck, keySyncManualShiftBaseline(sourceInput));
 }
 
 export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
@@ -3765,20 +3731,13 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async syncKey(deck: DeckId): Promise<void> {
-		const { st } = _requireLoaded(deck, 'syncKey');
+		_requireLoaded(deck, 'syncKey');
 		const masterDeck = _masterDeck;
 		if (masterDeck === null) throw new Error('KEY SYNC requires an elected loaded master deck');
 		if (masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
-		const { st: master } = _requireLoaded(masterDeck, 'KEY SYNC master');
+		_requireLoaded(masterDeck, 'KEY SYNC master');
 		const deckManualShiftSemitones = _keySyncManualShiftBaseline(deck);
-		const targetManualShiftSemitones = deriveKeySyncTargetManualShift(
-			st.key,
-			master.key,
-			_effectiveAudibleSemitones(deck),
-			_effectiveAudibleSemitones(masterDeck),
-			deckManualShiftSemitones
-		);
-		await _setDeckKeyShift(deck, targetManualShiftSemitones);
+		await _setDeckKeyShift(deck, _keySyncPlan(deck, masterDeck, deckManualShiftSemitones).targetManualShiftSemitones);
 	}
 
 	async setKeySync(deck: DeckId, enabled: boolean): Promise<void> {

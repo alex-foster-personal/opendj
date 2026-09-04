@@ -10,6 +10,7 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 1.553 }
 ];
 let audio;
+let presentation;
 let headphones;
 let computeFollowerSyncPlan;
 let disposeAudioResources;
@@ -26,6 +27,7 @@ before(async () => {
 	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts', {
 		viteApiBase: API_BASE
 	});
+	presentation = await loadTypeScriptModule('src/lib/player/transport/presentation.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	({ disposeAudioResources } = await loadTypeScriptModule(
 		'src/lib/rb/audio-resource-disposal.ts'
@@ -422,12 +424,12 @@ test('KEY SYNC reads effective offsets from the last output-presented schedule o
 	);
 
 	assert.ok(
-		Math.abs(audio.presentedEffectiveAudibleSemitones(timeline) - (12 * Math.log2(1.1) + 2)) <
+		Math.abs(presentation.presentedEffectiveAudibleSemitones(timeline) - (12 * Math.log2(1.1) + 2)) <
 			1e-12,
 		'the unpresented revision at contextTime 10 must not affect KEY SYNC'
 	);
 	assert.throws(
-		() => audio.presentedEffectiveAudibleSemitones(audio.createPresentedTransportTimeline(0)),
+		() => presentation.presentedEffectiveAudibleSemitones(audio.createPresentedTransportTimeline(0)),
 		/presentation truth/i
 	);
 });
@@ -471,6 +473,22 @@ test('KEY SYNC uses desired controls for a fresh paused target and output truth 
 		'the audible master must ignore its render/control settings'
 	);
 	assert.equal(Number.isInteger(audio.deriveKeySyncNudge('8A', '9B', targetEffective, masterEffective, 2)), true);
+	const targetManualShift = audio.deriveKeySyncTargetManualShift(
+		'8A',
+		'10A',
+		targetEffective,
+		masterEffective,
+		2
+	);
+	assert.equal(Number.isInteger(targetManualShift), true);
+	assert.ok(
+		targetManualShift >= -12 && targetManualShift <= 12,
+		'authoritative target keeps an existing manual shift within the real DSP range'
+	);
+});
+
+test('KEY SYNC preview is explicitly unavailable with no elected master', () => {
+	assert.equal(audio.keySyncPreview(1), null);
 });
 
 test('KEY SYNC supports two fresh paused loaded decks but rejects live or pending decks without presentation truth', () => {

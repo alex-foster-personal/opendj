@@ -374,6 +374,7 @@
 		{pending}
 		onBeatSync={toggleBeatSync}
 		onMaster={selectMaster}
+		onMasterTempo={toggleMasterTempo}
 		onKeySync={syncKey}
 		onKeyNudge={nudgeKey}
 		onUnload={unloadDeck}
@@ -587,9 +588,7 @@
 		gap: 3px;
 		flex: 0 0 auto;
 		min-height: 0;
-		/* This group stays beside the cue bank within main-row's fixed height.
-		 * BeatJump is a compact 2x2 grid, while LoopCluster keeps its own
-		 * fixed 44px width and vertical controls. */
+		/* Keep compact loop/jump controls beside cues. */
 	}
 	.cue-flex {
 		flex: 1 1 0;

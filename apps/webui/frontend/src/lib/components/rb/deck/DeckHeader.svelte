@@ -5,7 +5,7 @@
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
-	import { effectiveCamelotKey, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import { DECK_IDS, deckStates, effectiveCamelotKey, keySyncPreview, pitchRanges } from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -18,6 +18,7 @@
 		pending,
 		onBeatSync,
 		onMaster,
+		onMasterTempo,
 		onKeySync,
 		onKeyNudge,
 		onUnload,
@@ -28,6 +29,7 @@
 		pending: boolean;
 		onBeatSync: () => Promise<void>;
 		onMaster: () => Promise<void>;
+		onMasterTempo: () => Promise<void>;
 		onKeySync: () => Promise<void>;
 		onKeyNudge: (semitones: -1 | 1) => Promise<void>;
 		onUnload: () => Promise<void>;
@@ -76,6 +78,55 @@
 		'KEY SYNC also uses MASTER as the Camelot reference.',
 		'BeatSyncMax keeps BAR phase lock across seeks when followers are synced.'
 	];
+	const keySyncPlan = $derived.by(() => {
+		const source = deckStates[deckId];
+		void source.key;
+		void source.key_shift_semitones;
+		void source.pitch;
+		void source.master_tempo_enabled;
+		void source.transport_pending;
+		const masterId = DECK_IDS.find((candidate) => deckStates[candidate].is_master);
+		if (masterId !== undefined) {
+			const master = deckStates[masterId];
+			void master.key;
+			void master.key_shift_semitones;
+			void master.pitch;
+			void master.master_tempo_enabled;
+			void master.transport_pending;
+		}
+		return keySyncPreview(deckId);
+	});
+	const keySyncDeltaText: string | null = $derived.by(() => {
+		if (keySyncPlan === null) return null;
+		if (keySyncPlan.deltaSemitones === 0) return 'already harmonically aligned';
+		const magnitude = Math.abs(keySyncPlan.deltaSemitones);
+		const direction = keySyncPlan.deltaSemitones > 0 ? 'up' : 'down';
+		const vocalEffect = magnitude === 1 ? 'vocals slightly higher' : 'vocals much higher';
+		const lowerVocalEffect = magnitude === 1 ? 'vocals slightly lower' : 'vocals much lower';
+		return `${magnitude} semitone${magnitude === 1 ? '' : 's'} ${direction} - ${direction === 'up' ? vocalEffect : lowerVocalEffect}`;
+	});
+	const keySyncTitle: string = $derived(
+		!keySyncAvailable
+			? 'requires a loaded Camelot-key master'
+			: deck.key_sync_enabled
+				? 'KEY SYNC ON - this deck follows the selected master key'
+				: keySyncDeltaText === null
+					? 'KEY SYNC OFF - exact target is unavailable'
+					: `KEY SYNC OFF - ${keySyncDeltaText}`
+	);
+	const keySyncBullets: readonly string[] = $derived(
+		keySyncPlan === null
+			? ['Load a parseable Camelot-key master and wait for the presented audio state.']
+			: [
+				`Target manual shift: ${keySyncPlan.targetManualShiftSemitones >= 0 ? '+' : ''}${keySyncPlan.targetManualShiftSemitones} semitones.`,
+				'Click KEY SYNC to apply this exact listener-facing target.'
+			]
+	);
+	const keySyncWarning: string | null = $derived(
+		!deck.master_tempo_enabled
+			? 'Master Tempo is OFF. Tempo changes affect vocal pitch; KEY SYNC itself does not change playback speed.'
+			: null
+	);
 	/** Show audible Camelot after KEY SYNC / nudge; raw metadata stays in the tooltip. */
 	const keyText: string = $derived(
 		effectiveCamelotKey(deck.key, deck.key_shift_semitones) ?? deck.key ?? '--'
@@ -170,18 +221,35 @@
 		</div>
 
 		<div class="chrome">
-			<button
-				class="rb-lit-button keysync"
-				class:lit={deck.key_sync_enabled}
-				disabled={pending || !keySyncAvailable}
-				aria-pressed={deck.key_sync_enabled}
-				data-performance-control="key-sync"
-				data-state={deck.key_sync_enabled ? 'on' : 'off'}
-				title={keySyncAvailable ? 'toggle key sync to selected master' : 'requires a loaded Camelot-key master'}
-				onclick={async () => await onKeySync()}
+			{#snippet masterTempoAction()}
+				<button
+					type="button"
+					class="enable-master-tempo"
+					disabled={pending}
+					onclick={async () => await onMasterTempo()}
+				>
+					Enable MT
+				</button>
+			{/snippet}
+			<ControlExplainer
+				title={keySyncTitle}
+				bullets={keySyncBullets}
+				warning={keySyncWarning}
+				action={keySyncWarning === null ? null : masterTempoAction}
 			>
-				KEY SYNC
-			</button>
+				<button
+					class="rb-lit-button keysync"
+					class:lit={deck.key_sync_enabled}
+					disabled={pending || !keySyncAvailable}
+					aria-pressed={deck.key_sync_enabled}
+					data-performance-control="key-sync"
+					data-state={deck.key_sync_enabled ? 'on' : 'off'}
+					title={keySyncTitle}
+					onclick={async () => await onKeySync()}
+				>
+					KEY SYNC
+				</button>
+			</ControlExplainer>
 
 			<div class="key-badge">
 				<button
@@ -390,6 +458,20 @@
 	}
 	.keysync {
 		flex: 0 0 auto;
+	}
+	.enable-master-tempo {
+		border: 1px solid var(--rb-red);
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--rb-red) 15%, var(--rb-panel-raised));
+		color: var(--rb-red);
+		font: inherit;
+		font-weight: 650;
+		padding: 3px 5px;
+		cursor: pointer;
+	}
+	.enable-master-tempo:disabled {
+		opacity: 0.55;
+		cursor: default;
 	}
 	.chrome {
 		display: flex;
