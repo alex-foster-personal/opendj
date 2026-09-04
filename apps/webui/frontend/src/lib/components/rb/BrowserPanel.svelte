@@ -64,6 +64,7 @@
 		createPlaylist,
 		deletePlaylist,
 		getPlaylistTracksEtag,
+		isWithinCreateGrace,
 		markPlaylistCreateGrace,
 		PlaylistConflictError,
 		renamePlaylist,
@@ -140,12 +141,11 @@
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
-	/** Spike: hide tree playlists when fewer than 30% of tracks are on disk.
-	 * Move to BE/config later. */
+	/** Hide tree playlists when fewer than 30% of tracks are on disk. */
 	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
 
 	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
-		if (p.track_count === 0) return false;
+		if (p.track_count === 0) return p.available_count === 0;
 		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
 	}
 
@@ -337,9 +337,16 @@
 	const treeNodes = $derived(
 		playlists
 			.slice()
-			// FR-1: with 'Hide broken links' ON, playlists with fewer than
-			// 30% available (on-disk) tracks vanish from the tree.
-			.filter((p) => !uiPrefs.hide_broken_links || !playlistMostlyBroken(p))
+			// With Broken unchecked, playlists below the existing 30% playable
+			// threshold, including zero-track empty entries, vanish from the tree.
+			// A playlist still inside its create grace stays: the '+' flow needs
+			// the brand-new blank reachable so PlaylistTree can focus its rename.
+			.filter(
+				(p) =>
+					!uiPrefs.hide_broken_links ||
+					isWithinCreateGrace(p.playlist_id) ||
+					!playlistMostlyBroken(p)
+			)
 			// Rekordbox custom tree order (djmdPlaylist Seq walk, SCREENSHOT-SPEC
 			// 5b) - NOT alphabetical. Playlists without a rekordbox order (seq
 			// null) sink below the ordered ones, name-sorted among themselves.
@@ -473,7 +480,7 @@
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
-			return 'all tracks in this list are broken links (hidden by Hide broken links)';
+			return 'all tracks in this list are broken links (hidden by Broken filter)';
 		else if (
 			visibleRows.length === 0 &&
 			pane.rows.length > 0 &&
@@ -2152,14 +2159,24 @@
 				</button>
 				<label
 					class="hide-broken"
-					title="FR-1: hide tracks whose audio file is missing on disk; also hides playlists with fewer than 30% available tracks from the tree"
+					title="Show tracks whose audio file is missing on disk. Unchecking also hides playlists with fewer than 30% playable tracks, including empty ones."
 				>
 					<input
 						type="checkbox"
-						checked={uiPrefs.hide_broken_links}
-						onchange={(e) => setHideBrokenLinks(e.currentTarget.checked)}
+						aria-label="Show broken links"
+						checked={!uiPrefs.hide_broken_links}
+						onchange={(e) => setHideBrokenLinks(!e.currentTarget.checked)}
 					/>
-					<span>Hide broken links</span>
+					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+						<path
+							d="M6 5 4.5 3.5a2.1 2.1 0 0 0-3 3L3 8m7-1 1.5 1.5a2.1 2.1 0 0 0 3-3L13 4m-8.5 7.5L11.5 4.5M6.5 9.5l3-3"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.4"
+							stroke-linecap="round"
+						/>
+					</svg>
+					<span>Broken</span>
 				</label>
 				<label
 					class="next-only"
