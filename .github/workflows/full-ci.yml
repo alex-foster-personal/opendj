@@ -41,6 +41,19 @@ jobs:
       # the running suite (trunk red Fri 4 Sep 2026 after #1106 moved the venv
       # here). UV_NO_SYNC makes every child `uv run` use `.venv` as provisioned.
       UV_NO_SYNC: "1"
+      # One native thread per process. Shards share a host with fifteen
+      # other runners, and on trunk e9ed11ecf (Fri 4 Sep 2026) `ps` on nucbox
+      # showed `apps.analysis.run --backend librosa` subprocesses spawned by
+      # the suite at 400-650 percent CPU each: OpenBLAS and numba fan every
+      # call across all 32 threads, sixteen runners do it at once, and the
+      # same shard then took 636 s there against 314 s on a quieter host.
+      # The tests measure behavior, not wall time; one thread each is the
+      # standard setting for a shared CI host. Pinned by
+      # tests/scripts/test_ci_thread_caps.py.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
     # Runner is a repo-variable switch; see ci.yml's `test` job for the full
     # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
