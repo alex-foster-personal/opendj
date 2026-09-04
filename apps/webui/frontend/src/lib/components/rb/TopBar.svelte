@@ -44,6 +44,7 @@
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
+	import { APP_MODES } from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -59,6 +60,8 @@
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
+	let modePickerEl: HTMLDetailsElement | undefined = $state();
+	let modeMenuStyle = $state('');
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -86,6 +89,23 @@
 		// Fixed menu is outside the wrap - keep open when moving into it.
 		if (next instanceof Element && next.closest?.('.ap-menu')) return;
 		autoPlayMenuOpen = false;
+	}
+
+	function _placeModeMenu(): void {
+		if (modePickerEl === undefined || !modePickerEl.open) return;
+		const rect = modePickerEl.getBoundingClientRect();
+		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
+	}
+
+	function _dismissModeMenuOnOutsidePointer(e: PointerEvent): void {
+		if (modePickerEl === undefined || !modePickerEl.open) return;
+		if (e.target instanceof Node && modePickerEl.contains(e.target)) return;
+		modePickerEl.open = false;
+	}
+
+	function _dismissModeMenuOnEscape(e: KeyboardEvent): void {
+		if (e.key !== 'Escape' || modePickerEl === undefined || !modePickerEl.open) return;
+		modePickerEl.open = false;
 	}
 
 	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
@@ -183,6 +203,8 @@
 	}
 </script>
 
+<svelte:window onpointerdown={_dismissModeMenuOnOutsidePointer} onkeydown={_dismissModeMenuOnEscape} />
+
 <header
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
@@ -195,12 +217,37 @@
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
 	<StemsProgress />
 
-	<button class="mode-dd rb-inert" disabled title={plannedTitle('mode-dropdown')}>
-		PERFORMANCE
-		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
-			<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
-		</svg>
-	</button>
+	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
+		<summary class="mode-dd" aria-label="Choose app mode">
+			PERFORMANCE
+			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
+				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
+			</svg>
+		</summary>
+		<div class="mode-menu" style={modeMenuStyle} aria-label="App modes">
+			<p class="mode-menu-heading">Choose app mode</p>
+			{#each APP_MODES as mode (mode.id)}
+				{#if mode.available}
+					<a class="mode-card" href={mode.href} aria-current={mode.id === 'performance' ? 'page' : undefined}>
+						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
+						<span class="mode-copy">
+							<strong>{mode.label}</strong>
+							<span>{mode.description}</span>
+						</span>
+					</a>
+				{:else}
+					<button class="mode-card" type="button" disabled={!mode.available} title={mode.unavailableReason}>
+						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
+						<span class="mode-copy">
+							<strong>{mode.label}</strong>
+							<span>{mode.description}</span>
+						</span>
+						<span class="mode-unavailable">Not available</span>
+					</button>
+				{/if}
+			{/each}
+		</div>
+	</details>
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
@@ -662,6 +709,106 @@
 		letter-spacing: 0.05em;
 		padding: 2px 8px;
 		line-height: 1;
+		cursor: pointer;
+		list-style: none;
+	}
+	.mode-dd::-webkit-details-marker {
+		display: none;
+	}
+	.mode-picker {
+		position: relative;
+		z-index: 20;
+	}
+	.mode-picker[open] > .mode-dd {
+		border-color: var(--rb-accent);
+		color: var(--rb-text);
+	}
+	.mode-menu {
+		/* Fixed positioning escapes the topbar's deliberate overflow clip. */
+		position: fixed;
+		z-index: 100;
+		top: calc(100% + 5px);
+		left: 0;
+		width: 300px;
+		padding: 7px;
+		background: #0a0c0f;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+	}
+	.mode-menu-heading {
+		margin: 1px 3px 6px;
+		color: var(--rb-text-dim);
+		font-size: 9px;
+		font-weight: 650;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+	}
+	.mode-card {
+		display: grid;
+		grid-template-columns: 52px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 7px;
+		width: 100%;
+		min-height: 48px;
+		padding: 5px;
+		border: 1px solid transparent;
+		border-radius: 2px;
+		background: transparent;
+		color: var(--rb-text);
+		font: inherit;
+		text-align: left;
+		text-decoration: none;
+	}
+	a.mode-card:hover,
+	a.mode-card:focus-visible {
+		border-color: var(--rb-accent);
+		background: color-mix(in srgb, var(--rb-accent) 12%, transparent);
+		outline: none;
+	}
+	button.mode-card:disabled {
+		cursor: not-allowed;
+		opacity: 0.52;
+	}
+	.mode-copy {
+		display: grid;
+		gap: 2px;
+		min-width: 0;
+		font-size: 9px;
+		line-height: 1.25;
+	}
+	.mode-copy strong {
+		font-size: 10px;
+		letter-spacing: 0.03em;
+	}
+	.mode-copy > span {
+		color: var(--rb-text-dim);
+	}
+	.mode-unavailable {
+		color: var(--rb-text-dim);
+		font-size: 8px;
+		text-transform: uppercase;
+	}
+	.mode-thumbnail {
+		display: block;
+		height: 36px;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		background-color: #141920;
+	}
+	.mode-thumbnail.decks {
+		background:
+			linear-gradient(90deg, transparent 48%, #72b9ff 48% 52%, transparent 52%),
+			linear-gradient(#161d26 45%, #72b9ff 45% 52%, #161d26 52%);
+	}
+	.mode-thumbnail.library {
+		background:
+			linear-gradient(90deg, #3b79ad 0 22%, transparent 22% 28%, #346c3e 28% 50%, transparent 50% 56%, #7a5c33 56% 78%, transparent 78%),
+			#161d26;
+	}
+	.mode-thumbnail.player {
+		background:
+			radial-gradient(circle at 50% 50%, #a8b2bf 0 12%, #303b48 13% 31%, #72b9ff 32% 36%, #161d26 37%);
 	}
 
 	.icon-cluster {
