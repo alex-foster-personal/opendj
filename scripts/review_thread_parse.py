@@ -138,6 +138,7 @@ class Thread:
     human_replies: int
     disposition: str | None
     ledger_indexed: bool
+    ledger_checked: bool = True
 
     @property
     def triaged(self) -> bool:
@@ -188,8 +189,37 @@ class Thread:
         The reply and the ledger append are one action in two places. A typo'd
         anchor, or a reply nobody followed through on, loses the finding just
         as silently as saying nothing at all.
+
+        Gated on `ledger_checked`: #805 round 8 (review_thread_triage.py:360).
+        A thread built on the deferred-read path never had its permalink
+        checked against anything -- `ledger_indexed` defaults False there, not
+        because the claim was absent, but because nobody looked. Asserting
+        NOT IN LEDGER from a default is exactly the accusation-from-an-
+        unmeasured-read #792 banned, just one layer up: the same class of bug
+        `LedgerReadError` exists to keep out of a rendered verdict, but for a
+        read that was skipped by design rather than one that failed outright.
         """
-        return self.disposition == "DEBT-LOGGED" and not self.ledger_indexed
+        return self.disposition == "DEBT-LOGGED" and self.ledger_checked and not self.ledger_indexed
+
+    @property
+    def ledger_relevant(self) -> bool:
+        """A DEBT-LOGGED claim whose place in `PullRequest.failing` actually
+        hinges on ledger membership. #805 round 8 (review_thread_triage.py:347):
+        `illegal_debt_log` already fails a P0/P1 or BLOCKING debt-log
+        regardless of `ledger_indexed`, and an unresolved thread already fails
+        via `triaged` regardless too -- in both cases a ledger read can only
+        downgrade an already-known verdict to COULD NOT MEASURE if the read
+        happens to fail (a deleted historical base, a predates-the-ledger
+        head). Only a RESOLVED, non-blocking DEBT-LOGGED thread's outcome is
+        actually undetermined without `ledger_indexed`; that is the one shape
+        `debt_not_in_ledger` can flip from passing to failing.
+        """
+        return (
+            self.disposition == "DEBT-LOGGED"
+            and self.resolved
+            and self.severity not in {"P0", "P1"}
+            and self.blocking != "BLOCKING"
+        )
 
 
 @dataclass(frozen=True)
@@ -205,6 +235,11 @@ class PullRequest:
     # one SHA must refuse to render a verdict off threads read at another.
     head_sha: str
     threads: tuple[Thread, ...]
+    # The branch this PR merges into. A DEBT-LOGGED claim may be indexed here
+    # rather than at the head, because `.planning/TECH-DEBT.md` sanctions
+    # appends pushed straight to main; the default is what every caller before
+    # #805 was implicitly assuming.
+    base_ref: str = "main"
 
     @property
     def unterminated(self) -> tuple[Thread, ...]:
@@ -392,8 +427,17 @@ def _disposition(replies: list[dict]) -> str | None:
     return latest
 
 
-def build_thread(node: dict, ledger: frozenset[str] = frozenset()) -> Thread | None:
-    """Turn one GraphQL reviewThread node into a Thread, or None if not a bot's."""
+def build_thread(
+    node: dict, ledger: frozenset[str] = frozenset(), *, ledger_checked: bool = True
+) -> Thread | None:
+    """Turn one GraphQL reviewThread node into a Thread, or None if not a bot's.
+
+    `ledger_checked` defaults True because every direct caller (production's
+    normal read path, and every test in this suite that hand-feeds a `ledger`
+    set) genuinely attempted the read. `fetch_pull_request`'s deferred-read
+    path is the one caller that passes `ledger_checked=False`, for threads it
+    built without ever attempting a read at all.
+    """
     comments = node["comments"]["nodes"]
     if not comments:
         return None
@@ -422,4 +466,5 @@ def build_thread(node: dict, ledger: frozenset[str] = frozenset()) -> Thread | N
         human_replies=len(replies),
         disposition=_disposition(replies),
         ledger_indexed=first["url"] in ledger,
+        ledger_checked=ledger_checked,
     )
