@@ -89,7 +89,6 @@ import {
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
 import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
-import { bumpAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import {
 	fetchAnlz,
 	fetchAnlzBypassingHttpCache,
@@ -105,11 +104,11 @@ import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$li
 import {
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
-	invalidateAllAnlzCacheEntries,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
 	refreshAnlzCacheEntry
 } from '$lib/components/rb/wave/anlz-cache.svelte';
+import { refreshAnalysisSourceDecks } from '$lib/rb/analysis-source-refresh';
 import {
 	beatJumpTargetMs,
 	beatJumpTargetWithinDurationMs,
@@ -3247,21 +3246,7 @@ class RbAudioEngine implements AudioEngine {
 	 * entry via the ordinary `fetchAnlz` path, since this loop never touches
 	 * anything outside `DECK_IDS` (discussion_r3921839825). */
 	async refreshDecksForAnalysisSourceChange(): Promise<void> {
-		bumpAnlzFetchGeneration();
-		invalidateAllAnlzCacheEntries();
-		await Promise.all(
-			DECK_IDS.map(async (deck) => {
-				const stableId = deckStates[deck].stable_id;
-				if (stableId === null) return;
-				const fresh = await fetchAnlzBypassingHttpCache(stableId).catch((err: unknown) => {
-					invalidateAnlzCacheEntry(stableId);
-					throw err;
-				});
-				if (deckStates[deck].stable_id !== stableId) return; // deck was swapped mid-request
-				refreshAnlzCacheEntry(stableId, fresh);
-				deckStates[deck].anlz = fresh;
-			})
-		);
+		await refreshAnalysisSourceDecks(DECK_IDS, deckStates);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */

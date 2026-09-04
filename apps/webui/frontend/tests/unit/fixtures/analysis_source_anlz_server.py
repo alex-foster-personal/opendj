@@ -111,7 +111,7 @@ def create_app() -> FastAPI:
     app.state.backend = InMemoryBackend()
     app.state.analysis_source = AnalysisSourceStore()
     app.state.analysis_db_path = _DB_PATH
-    app.state.requests: list[str] = []
+    app.state.requests = []
     app.state.delay_next_analysis_source_get = False
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
