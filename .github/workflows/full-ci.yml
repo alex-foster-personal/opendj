@@ -76,7 +76,7 @@ jobs:
         # See ci.yml: libsqlcipher-dev ships the runtime shared library on
         # Ubuntu noble.
         run: |
-          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
+          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap'
 
       - name: Run full pytest with coverage
         # coverage: apps/* only. --cov-report=xml for external tools.
