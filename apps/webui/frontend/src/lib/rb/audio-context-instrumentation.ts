@@ -25,6 +25,7 @@ import {
 	installXrunSentinel,
 	installXrunSessionGlobal
 } from '$lib/rb/xrun-sentinel';
+import { attachMeterTaps, teardownMeterTaps, type MeterTapSource } from '$lib/rb/meter-tap';
 
 /**
  * The context whose authoritative (running) device-floor row has been emitted.
@@ -76,6 +77,27 @@ export function stampContextDeviceFloors(ctx: AudioContext): void {
  * machine and is the worst possible failure for a counter whose entire job is
  * to say "this one is not healthy". Audio is never blocked either way.
  */
+/**
+ * Arm the post-EQ channel level meters for this context.
+ *
+ * Fire-and-forget for the same reason as the sentinel: `addModule` is async and
+ * the graph build is not, so the decks must not wait on an instrument. The
+ * failure is RECORDED rather than swallowed - a tap that quietly failed to load
+ * leaves every meter reading silence, which is indistinguishable from a paused
+ * deck and is the worst possible failure for a level meter.
+ */
+export function armDeckMeters(
+	ctx: AudioContext,
+	sources: ReadonlyArray<MeterTapSource>
+): void {
+	void attachMeterTaps(ctx, sources).catch((error: unknown) => {
+		recordPerfEvent(
+			'deck-meters-failed',
+			`channel level meters did not start, so every meter reads silence: ${String(error)}`
+		);
+	});
+}
+
 export function armXrunSentinel(ctx: AudioContext): void {
 	installXrunSessionGlobal();
 	void installXrunSentinel(ctx).catch((error: unknown) => {
@@ -100,6 +122,9 @@ let _outputLiveness: ReturnType<typeof installOutputLiveness> | null = null;
 
 export function disarmContextInstrumentation(): void {
 	detachXrunSentinel();
+	// The meter taps and their zero-gain sink belong to the context being
+	// closed, exactly like the sentinel above.
+	teardownMeterTaps();
 	flushWorkletAckWindow();
 	resetWorkletAckStats();
 	// Same reason as the sentinel above: this listener closes over the context

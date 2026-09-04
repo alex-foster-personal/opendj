@@ -1,3 +1,11 @@
+import {
+	METER_FLOOR_DBFS,
+	createMeterTap,
+	readMeterTap,
+	type MeterReading,
+	type MeterTap,
+	type MeterTapSource
+} from '$lib/rb/meter-tap';
 /**
  * Client-side Web Audio engine for the /performance rekordbox-parity build
  * (build unit: audio-engine). Implements the AudioEngine contract from
@@ -84,6 +92,7 @@ import {
 } from '$lib/rb/presentation-clock-report';
 import {
 	armAudioContextWatchdog,
+	armDeckMeters,
 	armXrunSentinel,
 	disarmContextInstrumentation,
 	stampContextDeviceFloors
@@ -468,25 +477,43 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 	4: _emptyRuntime()
 };
 
-/** Instantaneous post-DSP RMS meter 0..1 for a channel strip VU pulse.
- * Returns 0 when the deck graph is missing or silent - real silence, not a mock. */
-const _meterScratch: Record<DeckId, Float32Array | null> = { 1: null, 2: null, 3: null, 4: null };
+/**
+ * Channel level meter reading, taken POST-EQ and PRE-FADER through an
+ * AudioWorklet tap: level, held peak, lit segment count and clip latch.
+ *
+ * REPLACED `peekDeckMeter`, which returned `Math.min(1, rms * 5.5)`: linear
+ * amplitude against a magic constant, no dB scale, no ballistics, and tapped
+ * BEFORE `trim`, so it responded to neither the trim knob nor the EQ and
+ * could never show clipping. Every number now comes from `meter-math`.
+ *
+ * The AnalyserNode itself stays where it is: `captureDeckAudio` wants raw
+ * deck output for its diagnostic FFT snapshot, a legitimate use of it.
+ */
+/** Deck id to its channel meter tap. This module owns the deck mapping so
+ * meter-tap stays deck-agnostic and reusable for a master meter. */
+const _meterTaps: Record<DeckId, MeterTap | null> = { 1: null, 2: null, 3: null, 4: null };
 
-export function peekDeckMeter(deck: DeckId): number {
-	const nodes = _rt[deck].nodes;
-	if (nodes === null) return 0;
-	let buf = _meterScratch[deck];
-	if (buf === null || buf.length !== nodes.analyser.fftSize) {
-		buf = new Float32Array(new ArrayBuffer(nodes.analyser.fftSize * 4));
-		_meterScratch[deck] = buf;
+export function peekDeckMeterReading(deck: DeckId): MeterReading {
+	const tap = _meterTaps[deck];
+	if (_rt[deck].nodes === null || tap === null) {
+		return {
+			db: METER_FLOOR_DBFS,
+			peakDb: METER_FLOOR_DBFS,
+			segments: 0,
+			normalized: 0,
+			clipped: false
+		};
 	}
-	nodes.analyser.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>);
-	let sum = 0;
-	for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-	const rms = Math.sqrt(sum / buf.length);
-	if (!Number.isFinite(rms)) return 0;
-	// Typical music RMS sits well below 1.0; scale for a readable thin pulse.
-	return Math.min(1, rms * 5.5);
+	return readMeterTap(tap, _meterClockMs());
+}
+
+/** Wall clock for meter ballistics. Falls back to Date.now() only where
+ * performance.now() is genuinely absent, and both are monotonic enough for a
+ * decay measured in hundreds of milliseconds. */
+function _meterClockMs(): number {
+	return typeof performance === 'object' && typeof performance.now === 'function'
+		? performance.now()
+		: Date.now();
 }
 
 export function deckTransportClock(deck: DeckId): DeckTransportClock {
@@ -610,6 +637,9 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect(_masterMuteGain);
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
+	// Post-EQ, pre-fader tap points, one per deck. Collected here and armed
+	// after the loop because addModule is async and the graph build is not.
+	const meterSources: MeterTapSource[] = [];
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -657,8 +687,14 @@ function _ensureGraph(): AudioContext {
 			xf.connect(_masterGain);
 		}
 		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
+		// `high` is post-trim and post-EQ but pre-fader: the DJM convention, and
+		// the reason the meter can be trusted for gain staging. See meter-tap.ts.
+		const tap = createMeterTap();
+		_meterTaps[deck] = tap;
+		meterSources.push({ tap, source: high });
 	}
 	armXrunSentinel(_ctx);
+	armDeckMeters(_ctx, meterSources);
 	return _ctx;
 }
 
