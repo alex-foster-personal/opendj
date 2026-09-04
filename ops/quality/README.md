@@ -61,6 +61,39 @@ each instead carries a floor in its evaluator that ABORTS the run rather than
 scoring a collapsed scan: `shell_construct_lint.CFG.MIN_FILES` and
 `CFG.MYPY_MIN_FILES`.
 
+## A regression that main already carries is not yours
+
+A merge can land a metric over its allowance that NEITHER parent exceeded:
+two branches each add lines to the same file, each stays under the limit, and
+the union crosses it. Once that sits on main, every later PR measures the same
+over-allowance metric and would fail on a regression it inherited (issue
+#1155, worked instance: `file_size.over_limit_python` 49 -> 50 on merged
+line-adds to one file).
+
+So when a metric regresses, the gate re-measures that metric on the merge-base
+`git merge-base HEAD origin/main` and splits the outcome:
+
+- main is AT OR ABOVE this run's value: the line prints `INHERITED`, names
+  main as the owner (`main (sha) is ALSO at N - this is a trunk regression,
+  not yours`), and does not fail the run. Seven PR authors should not each
+  debug the same trunk state.
+- main is BELOW this run's value: the change made an already-bad number
+  worse, so it stays a hard `REGRESSION` and fails. Only `base >= run` is
+  inherited; `base` at 50 and the run at 51 is the run's fault.
+- the merge base cannot be measured (HEAD is itself on main, the ref is
+  missing, or the base tree will not run): the message is unchanged and the
+  output says why. The gate never downgrades on a guess and never passes
+  silently.
+
+The base re-measure only runs when something actually regressed, and only for
+the evaluator that owns the regressed metric. It checks the base out with
+`git worktree add --detach` into a throwaway tempdir and runs that commit's
+own committed copy of the gate there, so a metric over `scripts/` is measured
+against the base's version of the file and a branch-only flag does not have to
+exist on main for the measurement to work. Hard-zero rules are never offered
+the downgrade: a broken architecture contract has no allowance to be "over"
+on main.
+
 ## The mypy ratchet, and its pinned install set
 
 Type debt was completely unmeasured until Tue 1 Sep 2026. The repo had no

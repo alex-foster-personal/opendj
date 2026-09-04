@@ -83,6 +83,22 @@ REG  Q-10 Measure frontend type-erasure: `as unknown as` double-casts across
            run prints RATCHET and still exits 0]
           [if the frontend scan finds no sources then the run aborts rather
            than scoring 0 casts on an empty tree]
+REG  Q-11 Tell an inherited trunk regression from one this change introduced.
+          A merge result can sit over an allowance that NEITHER parent exceeded
+          (issue #1155: two sides each add lines to the same file, each stays
+          under the limit, the union crosses it), and once that lands on main
+          every later PR reads the same over-allowance metric as its own fault.
+          On a REGRESSION the gate re-measures that metric on the merge-base
+          main. If main is already AT OR ABOVE this run's value the line prints
+          INHERITED and does not fail the run - it is trunk's regression, not
+          this change's. If this run is ABOVE main's value the change made an
+          already-over metric worse and it stays a hard REGRESSION.
+          [if the merge-base main is already at this run's value then the line
+           prints INHERITED and the run exits 0]
+          [if this change adds to an already-over metric (base below the run)
+           then the run exits 1]
+          [if the merge base cannot be measured then the message is unchanged
+           and the output says why, never a silent pass]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -117,6 +133,10 @@ FRONTEND = REPO / "apps" / "webui" / "frontend"
 TOOL_REQS = REPO / "ops" / "quality" / "requirements.txt"
 MYPY_REQS = REPO / "ops" / "quality" / "mypy-requirements.txt"
 BASELINE = REPO / "ops" / "quality" / "baseline.json"
+# Ref the gate re-measures a regression against, to tell an inherited trunk
+# failure from one this change introduced (Q-11). Named here so a test or a
+# fork can point it at a different upstream without editing the call sites.
+MAIN_BASE_REF: str = "origin/main"
 
 # `--isolated` pins uv's *package* set but forwards the caller's environment
 # unchanged, and mypy reads these to widen its own import search path outside
@@ -1100,6 +1120,22 @@ def _load_baseline() -> dict[str, float]:
     return json.loads(BASELINE.read_text())["metrics"]
 
 
+def _ratchet_exceeded(m: Metric, baseline: dict[str, float]) -> bool:
+    """True when a plain ratchet metric is over its allowance.
+
+    The only metrics a regression can be INHERITED on. A hard-zero rule has no
+    allowance to be over on main (a broken architecture contract must stay red
+    whoever caused it), and a report-only metric never regresses at all, so
+    neither is ever offered the inherited downgrade.
+    """
+    return (
+        m.key not in HARD_ZERO
+        and m.key not in REPORT_ONLY
+        and m.key in baseline
+        and m.value > baseline[m.key]
+    )
+
+
 def _compare(
     metrics: list[Metric], baseline: dict[str, float]
 ) -> tuple[list[str], list[str], list[str]]:
@@ -1115,17 +1151,182 @@ def _compare(
             continue
         if m.key not in baseline:
             unknown.append(f"{m.key}: {m.value:g} (no baseline; run --update-baseline)")
-        elif m.value > baseline[m.key]:
+        elif _ratchet_exceeded(m, baseline):
             regressions.append(f"{m.key}: {m.value:g} > {baseline[m.key]:g} allowed")
         elif m.value < baseline[m.key]:
             ratchets.append(f"{m.key}: {m.value:g} < {baseline[m.key]:g} allowed")
     return regressions, ratchets, unknown
 
 
+# ----- inherited trunk regressions (Q-11) ----------------------------------
+
+
+@dataclass(frozen=True)
+class BaseCheck:
+    """Result of asking the merge-base main whether it is over too.
+
+    sha is the short merge-base sha, "" when inheritance was undecidable.
+    inherited maps a metric key to (metric, the value main measured).
+    notes are the reasons any over-allowance metric was LEFT as a regression,
+    so a failure always says why instead of silently passing.
+    """
+
+    sha: str
+    inherited: dict[str, tuple[Metric, float]] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
+
+
+def _resolve_base() -> tuple[str | None, str]:
+    """The merge-base sha with main, or (None, why) when undecidable.
+
+    Inheritance is only meaningful when this run is not itself the trunk tip.
+    On a push-to-main run HEAD is origin/main, so the "other main" a branch
+    could blame is the very tree this run measures: downgrading there would
+    silence the one run that exists to detect a regression landing on main.
+    That case returns (None, ...) so the message stays exactly as it is today.
+    """
+    code, out = _run(["git", "merge-base", "HEAD", MAIN_BASE_REF], allow_fail=True)
+    if code != 0:
+        return None, f"git merge-base HEAD {MAIN_BASE_REF} failed (exit {code})"
+    sha = out.strip()
+    if not sha:
+        return None, f"git merge-base HEAD {MAIN_BASE_REF} returned no commit"
+    _, head_out = _run(["git", "rev-parse", "HEAD"])
+    if sha == head_out.strip():
+        return None, "HEAD is itself on main; there is no other main to inherit from"
+    return sha, ""
+
+
+def _measure_owners_at_base(
+    sha: str, owners: list[str]
+) -> tuple[dict[str, float] | None, str]:
+    """Measure `owners` against the tree at `sha`; (metrics, "") or (None, why).
+
+    The merge-base tree is checked out with `git worktree add --detach`, then
+    the gate is re-run there with the base tree's OWN committed copy of
+    scripts/quality_gate.py under the same ambient toolchain. Using the base's
+    own gate matters twice over: a metric over `scripts/` must be measured
+    against the base's version of that file, not this run's, and running the
+    committed gate means the flag this branch added does not have to exist on
+    main for the measurement to work. The base run writes its --json before it
+    decides its own exit code, so a base that is itself red still yields its
+    numbers.
+
+    The cost is deliberate: only a run that already regressed pays for the
+    second scan, and only for the evaluators that own the regressed metrics.
+    The worktree lives in a throwaway tempdir and is removed in `finally`, so
+    an interrupted run leaves at worst an orphaned entry that `git worktree
+    prune` clears.
+    """
+    # mkdtemp creates the dir, which `git worktree add` refuses to reuse.
+    base_dir = Path(tempfile.mkdtemp(prefix="quality-gate-base-"))
+    base_dir.rmdir()
+    try:
+        code, err = _run(
+            ["git", "worktree", "add", "--detach", str(base_dir), sha], allow_fail=True
+        )
+        if code != 0:
+            return None, f"git worktree add of merge base {sha[:10]} failed: {err[-200:]}"
+        if "frontend" in owners:
+            # knip and svelte-kit resolve against a node_modules install, which
+            # a git worktree does not carry. Reuse this run's install read-only
+            # instead of running pnpm install on a throwaway tree.
+            base_fe = base_dir / "apps" / "webui" / "frontend"
+            if (FRONTEND / "node_modules").is_dir():
+                (base_fe / "node_modules").symlink_to(
+                    FRONTEND / "node_modules", target_is_directory=True
+                )
+        out_json = base_dir / "metrics.json"
+        cmd = [
+            sys.executable, "-m", "scripts.quality_gate",
+            "--only", ",".join(owners), "--json", str(out_json),
+        ]
+        proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        if not out_json.exists():
+            return None, (
+                f"merge-base run for {','.join(owners)} exited {proc.returncode} "
+                f"without metrics: {proc.stderr.strip()[-300:]}"
+            )
+        return json.loads(out_json.read_text()), ""
+    finally:
+        # Remove the worktree entry first so the shared .git does not accumulate
+        # orphans, then clear any leftover files whether or not git agreed.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(base_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        shutil.rmtree(base_dir, ignore_errors=True)
+
+
+def _inherited_classification(
+    over: list[Metric],
+    owner_of: dict[str, str],
+    resolve_base: Callable[[], tuple[str | None, str]],
+    measure_owners: Callable[[str, list[str]], tuple[dict[str, float] | None, str]],
+) -> BaseCheck:
+    """Decide which over-allowance metrics the merge-base main already carries.
+
+    A metric is inherited when main measured AT OR ABOVE this run's value: main
+    is over the same allowance and this change added nothing to it, so failing
+    the author for it blames them for trunk. A base BELOW this run's value means
+    the change made an already-over metric worse - base at 50 and this run at 51
+    is this change's fault - so it stays a hard REGRESSION. A metric whose base
+    value cannot be measured stays an unqualified REGRESSION with a reason; the
+    gate must never downgrade on a guess or pass silently.
+    """
+    if not over:
+        return BaseCheck("")
+    base_sha, reason = resolve_base()
+    if base_sha is None:
+        return BaseCheck("", {}, [
+            f"cannot check the merge-base main: {reason}",
+            f"{len(over)} regression(s) reported unqualified rather than guessed",
+        ])
+    short = base_sha[:10]
+    owners = sorted({owner_of[m.key] for m in over})
+    base_values, measure_reason = measure_owners(base_sha, owners)
+    if base_values is None:
+        return BaseCheck(short, {}, [
+            f"cannot re-measure {', '.join(owners)} on merge-base main {short}: "
+            f"{measure_reason}",
+            f"{len(over)} regression(s) reported unqualified rather than guessed",
+        ])
+    inherited: dict[str, tuple[Metric, float]] = {}
+    notes: list[str] = []
+    for m in over:
+        base_value = base_values.get(m.key)
+        if base_value is None:
+            notes.append(f"{m.key}: the merge-base main run ({short}) did not "
+                         "report it; left as a plain regression, not guessed")
+        elif base_value >= m.value:
+            inherited[m.key] = (m, base_value)
+        else:
+            notes.append(f"{m.key}: merge-base main ({short}) measured "
+                         f"{base_value:g} against this run's {m.value:g}; this "
+                         "change is worse than main, so it stays a regression")
+    return BaseCheck(short, inherited, notes)
+
+
+def _inherited_block(
+    m: Metric, base_value: float, base_sha: str, baseline: dict[str, float]
+) -> tuple[str, str]:
+    """The two console lines an INHERITED metric prints in place of REGRESSION."""
+    return (
+        f"INHERITED  {m.key}: {m.value:g} > {baseline[m.key]:g} allowed",
+        f"          main ({base_sha}) is ALSO at {base_value:g} - this is a trunk "
+        "regression, not yours",
+    )
+
+
 # ----- report --------------------------------------------------------------
 
 
-def _markdown(metrics: list[Metric], baseline: dict[str, float], hotspots: list) -> str:
+def _markdown(
+    metrics: list[Metric],
+    baseline: dict[str, float],
+    hotspots: list,
+    inherited: frozenset[str] = frozenset(),
+) -> str:
     lines = [
         "# Code quality report",
         "",
@@ -1160,6 +1361,10 @@ def _markdown(metrics: list[Metric], baseline: dict[str, float], hotspots: list)
             status = "RATCHET"
         else:
             status = "held"
+        # A regression the merge-base main already carries is not this change's
+        # doing; say so here or the report's status column contradicts the exit.
+        if m.key in inherited:
+            status = "INHERITED (on main too)"
         lines.append(
             f"| `{m.key}` | {m.value:g} | {allowed} | {status} | {m.unit} | {m.detail} |"
         )
@@ -1249,6 +1454,51 @@ def _select(only: str | None) -> list[Evaluator]:
     return [e for e in EVALUATORS if e.name in wanted]
 
 
+def _print_ratchet_verdict(
+    ratchets: list[str],
+    unknown: list[str],
+    regressions: list[str],
+    check: BaseCheck,
+    baseline: dict[str, float],
+) -> int:
+    """Print the ratchet/regression readout and return the run's exit code.
+
+    An inherited metric prints INHERITED where its REGRESSION line would have
+    been, so the distinction appears at the metric's own place in the list.
+    Metric keys never contain a colon, so the line prefix names the metric.
+    Extracted from main so main stays under the gate's own complexity ceilings.
+    """
+    print()
+    for line in ratchets:
+        print(f"[quality] RATCHET AVAILABLE  {line}")
+    for line in unknown:
+        print(f"[quality] NO BASELINE       {line}")
+    regressions_kept = 0
+    for line in regressions:
+        key = line.split(":", 1)[0]
+        if key in check.inherited:
+            m, base_value = check.inherited[key]
+            line1, line2 = _inherited_block(m, base_value, check.sha, baseline)
+            print(f"[quality] {line1}")
+            print(line2)
+        else:
+            regressions_kept += 1
+            print(f"[quality] REGRESSION        {line}")
+    for note in check.notes:
+        print(f"[quality] base compare: {note}")
+    if regressions_kept:
+        print(f"\n[quality] FAIL: {regressions_kept} metric(s) got worse.")
+        return 1
+    if check.inherited:
+        print(
+            f"\n[quality] PASS: {len(check.inherited)} metric(s) over allowance "
+            "are INHERITED from main (above); this change made none worse."
+        )
+        return 0
+    print("\n[quality] PASS: nothing got worse.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--only", help="comma separated evaluator names")
@@ -1268,12 +1518,27 @@ def main(argv: list[str] | None = None) -> int:
     _preflight(selected)
 
     metrics: list[Metric] = []
+    owner_of: dict[str, str] = {}
     for evaluator in selected:
         print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
-        metrics.extend(evaluator.run())
+        measured = evaluator.run()
+        # Record which evaluator owns each metric so an inherited re-measure
+        # can re-run just that evaluator on the merge-base tree (Q-11).
+        owner_of.update({m.key: evaluator.name for m in measured})
+        metrics.extend(measured)
 
     baseline = _load_baseline()
     regressions, ratchets, unknown = _compare(metrics, baseline)
+
+    # Ask the merge-base main whether it is over too, but only when something
+    # actually regressed: a green run must not pay for a second scan.
+    check = BaseCheck("")
+    if not args.update_baseline:
+        over = [m for m in metrics if _ratchet_exceeded(m, baseline)]
+        check = _inherited_classification(
+            over, owner_of, _resolve_base, _measure_owners_at_base
+        )
+
     hotspots = _hotspots()
 
     _print_metrics(metrics, baseline)
@@ -1283,7 +1548,9 @@ def main(argv: list[str] | None = None) -> int:
     # the reader has to reconstruct before they can open it.
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(_markdown(metrics, baseline, hotspots))
+        args.report.write_text(
+            _markdown(metrics, baseline, hotspots, inherited=frozenset(check.inherited))
+        )
         print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -1296,19 +1563,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_baseline(metrics)
         return 0
 
-    print()
-    for line in ratchets:
-        print(f"[quality] RATCHET AVAILABLE  {line}")
-    for line in unknown:
-        print(f"[quality] NO BASELINE       {line}")
-    for line in regressions:
-        print(f"[quality] REGRESSION        {line}")
-
-    if regressions:
-        print(f"\n[quality] FAIL: {len(regressions)} metric(s) got worse.")
-        return 1
-    print("\n[quality] PASS: nothing got worse.")
-    return 0
+    return _print_ratchet_verdict(ratchets, unknown, regressions, check, baseline)
 
 
 if __name__ == "__main__":
