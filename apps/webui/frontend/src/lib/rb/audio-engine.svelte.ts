@@ -135,7 +135,16 @@ import {
 	gridFeaturesInert,
 	hasRealBeatGrid
 } from '$lib/player/grid-features';
-import { beatFourLeadInSec, syncSeekBlendDurationSec } from '$lib/rb/sync-seek-blend';
+import {
+	beatFourLeadInSec,
+	beatSyncMaxFollowers,
+	planSeekSync,
+	seekSyncMaster,
+	syncChangeRequiresReschedule,
+	syncMayWriteTempo,
+	syncSeekBlendDurationSec,
+	type SeekSyncPlan
+} from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	StretchDeckProcessor,
@@ -263,6 +272,14 @@ import type {
 // $lib/rb/audio-engine.svelte keeps working unchanged.
 
 export { DECK_IDS, PITCH_RANGES };
+export {
+	beatSyncMaxFollowers,
+	planSeekSync,
+	seekSyncMaster,
+	syncChangeRequiresReschedule,
+	syncMayWriteTempo,
+	type SeekSyncPlan
+};
 export type { PitchRange };
 export {
 	camelotKeysAreCompatible,
@@ -792,76 +809,6 @@ export function decodedTransportDurationMs(decodedDurationSec: number): number {
 	return decodedDurationSec * 1000;
 }
 
-export function seekSyncMaster(
-	deck: DeckId,
-	playing: boolean,
-	beatSyncEnabled: boolean,
-	master: DeckId | null
-): DeckId | null {
-	return playing && beatSyncEnabled && master !== null && master !== deck ? master : null;
-}
-
-/** BeatSyncMax master relocate: return transport-active beat-synced followers
- * that must phase-lock when the master itself seeks. Empty = free seek. */
-export function beatSyncMaxFollowers(
-	deck: DeckId,
-	beatSyncMax: boolean,
-	master: DeckId | null,
-	candidates: readonly { id: DeckId; playing: boolean; beatSyncEnabled: boolean }[]
-): DeckId[] {
-	if (!beatSyncMax || master === null || master !== deck) return [];
-	return candidates
-		.filter((c) => c.id !== deck && c.playing && c.beatSyncEnabled)
-		.map((c) => c.id);
-}
-
-/** Decide whether a playing relocate keeps BAR/beat phase lock.
- * Loop exit must not force a free seek - clear the loop, then still sync. */
-export type SeekSyncPlan =
-	| { kind: 'follower'; master: DeckId }
-	| { kind: 'master-max'; followers: DeckId[] }
-	| { kind: 'free' };
-
-export function planSeekSync(args: {
-	deck: DeckId;
-	transportActive: boolean;
-	beatSyncEnabled: boolean;
-	activeMaster: DeckId | null;
-	beatSyncMax: boolean;
-	candidates: readonly { id: DeckId; playing: boolean; beatSyncEnabled: boolean }[];
-}): SeekSyncPlan {
-	const master = seekSyncMaster(
-		args.deck,
-		args.transportActive,
-		args.beatSyncEnabled,
-		args.activeMaster
-	);
-	if (master !== null) return { kind: 'follower', master };
-	const followers = beatSyncMaxFollowers(
-		args.deck,
-		args.beatSyncMax,
-		args.activeMaster,
-		args.candidates
-	);
-	if (followers.length > 0) return { kind: 'master-max', followers };
-	return { kind: 'free' };
-}
-
-export function syncChangeRequiresReschedule(
-	deck: DeckId,
-	desiredActive: boolean,
-	beatSyncEnabled: boolean,
-	master: DeckId | null
-): boolean {
-	if (typeof desiredActive !== 'boolean' || typeof beatSyncEnabled !== 'boolean') {
-		throw new TypeError('sync desired-active and Beat Sync flags must be boolean');
-	}
-	if (!DECK_IDS.includes(deck) || (master !== null && !DECK_IDS.includes(master))) {
-		throw new RangeError(`sync deck ids must be within 1..4, got deck=${deck}, master=${master}`);
-	}
-	return desiredActive && beatSyncEnabled && master !== null && master !== deck;
-}
-
 /** Listener-facing KEY SYNC plan for UI and browser agents. The preview is
  * deliberately calculated from the exact same control and presented-audio
  * sources as `syncKey`, never from a visible but potentially stale deck field. */
@@ -1327,6 +1274,15 @@ function _playingMaster(): DeckId | null {
 
 function _syncMaster(): DeckId | null {
 	return _masterDeck !== null && deckStates[_masterDeck].playing ? _masterDeck : null;
+}
+
+/** `syncMayWriteTempo` against LIVE state, for the writes that outlive the
+ * command that planned them. Deliberately reads `_masterDeck` and the deck's
+ * BEAT SYNC flag at the moment of the call: a captured copy is exactly the bug
+ * this guards (issue #1134). Effective, not raw, so a lit-but-inert BEAT SYNC
+ * on a gridless deck does not count as sync ownership either. */
+function _syncOwnsFollowerTempo(deck: DeckId): boolean {
+	return syncMayWriteTempo(deck, effectiveBeatSync(deckStates[deck]), _masterDeck);
 }
 
 function _electPlayingMaster(): DeckId | null {
@@ -2447,6 +2403,14 @@ async function _continueTempoRamp(
 	const rt = _rt[deck];
 	try {
 		for (const step of remainingSteps) {
+			// Re-read ownership before EVERY step, never once at plan time. The
+			// DJ can dim BEAT SYNC or promote this deck to master mid-ramp, and
+			// from that instant the remaining steps would be sync moving a
+			// tempo it no longer owns - issue #1134's "the master's BPM keeps
+			// changing with both toggles off". Stop, do not fight the operator.
+			// #1112 made this tail awaited and its failures loud; ownership is
+			// the orthogonal half, so the schedule below stays exactly as it is.
+			if (!_syncOwnsFollowerTempo(deck)) return;
 			await _scheduleDeck(
 				deck,
 				syncAt + step.offsetSec,
@@ -2467,6 +2431,16 @@ async function _synchronizeFollowers(
 	options: _SyncOptions = {}
 ): Promise<void> {
 	if (followers.length === 0 && options.masterSchedule === undefined) return;
+	// Invariant, not a defensive nicety: the master is never one of its own
+	// followers. Every call site already filters it out, so reaching here means
+	// a caller inverted the roles - fail loudly rather than schedule the master
+	// a follower's tempo and leave the DJ wondering why nothing locks (#1134).
+	if (followers.includes(master)) {
+		throw new RangeError(
+			`Beat Sync: master deck ${master} cannot be one of its own followers ` +
+				`(followers=[${followers.join(',')}])`
+		);
+	}
 	try {
 		const ctx = await _resumeContext();
 		_commitPendingIfDue(master);
@@ -2544,7 +2518,14 @@ async function _synchronizeFollowers(
 		};
 		const planned: _PlannedFollower[] = [];
 		const planFailed: { deck: DeckId; message: string }[] = [];
-		for (const deck of followers) {
+		// Ownership is re-read HERE, downstream of every await above (context
+		// resume, and the superseded-pending wait that can park this call for a
+		// scheduled instant). A deck whose BEAT SYNC went dark inside that
+		// window owns its own tempo again: withdrawing it is the correct
+		// outcome, not a phase-lock failure, so it carries no sync_error.
+		const owned = followers.filter((deck) => _syncOwnsFollowerTempo(deck));
+		if (owned.length === 0 && options.masterSchedule === undefined) return;
+		for (const deck of owned) {
 			try {
 				const { st } = _requireLoaded(deck, 'Beat Sync follower');
 				const followerGrid = _requireBeatGrid(st, 'Beat Sync');
@@ -3887,8 +3868,22 @@ class RbAudioEngine implements AudioEngine {
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
 			effectiveBeatSync(deckStates[candidate])
 		);
-		await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
+		// Roles move FIRST, then the re-anchor runs under them. The outgoing
+		// master is one of these followers, and every tempo write sync makes -
+		// including the tail of a re-anchor ramp that outlives this call - asks
+		// `_syncOwnsFollowerTempo` who the master is at that instant. Assigning
+		// afterwards would make the outgoing deck look like the master for the
+		// whole operation and withdraw the very deck being re-anchored (#1134).
+		const previousMaster = _masterDeck;
 		_assignMaster(deck);
+		try {
+			await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
+		} catch (error) {
+			// A refused phase lock must not silently leave MASTER somewhere the
+			// DJ did not put it; restore the roles the press tried to change.
+			_assignMaster(previousMaster);
+			throw error;
+		}
 	}
 
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void {
