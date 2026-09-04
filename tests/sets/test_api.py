@@ -34,9 +34,8 @@ def api_test_client(sets_root: Path, monkeypatch):
 
 
 @pytest.fixture
-def set_share_client(sets_root: Path, monkeypatch):
+def set_share_client(sets_root: Path):
     """Real application boundary configured for a Cloudflare Access share host."""
-    monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
     app = create_app(
         mount_frontend=False,
         share_config=ShareConfig(
@@ -44,6 +43,7 @@ def set_share_client(sets_root: Path, monkeypatch):
             auth=AUTH_CLOUDFLARE_ACCESS,
         ),
         set_share_config=SetShareConfig("https://sets.example.test"),
+        sets_root=sets_root,
     )
     with TestClient(app) as client:
         yield client, sets_root
@@ -304,6 +304,10 @@ def test_api_metadata_share_requires_explicit_consent_and_https_host(
 
     with pytest.raises(SetShareError):
         SetShareConfig("http://sets.example.test")
+    with pytest.raises(SetShareError):
+        SetShareConfig("https://sets.example.test:not-a-port")
+    with pytest.raises(SetShareError):
+        SetShareConfig("https://sets.example.test:99999")
     assert json.loads((session_dir / "manifest.json").read_text())["share_state"] == "private"
 
 
@@ -356,7 +360,11 @@ def test_api_share_audience_can_only_read_published_metadata(set_share_client) -
     published = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
     assert published.status_code == 200
     assert client.get("/api/sets", headers=share_headers).json()[0]["session_id"] == "s1"
-    assert client.get("/api/sets/s1", headers=share_headers).status_code == 200
+    shared_session = client.get("/api/sets/s1", headers=share_headers)
+    assert shared_session.status_code == 200
+    assert set(shared_session.json()) == {"summary"}
+    assert "BlackHole 2ch" not in shared_session.text
+    assert "audio_2026-04-17T21-30-00.mp3" not in shared_session.text
     timeline_path = sets_root / "s1" / "timeline.jsonl"
     with timeline_path.open("a", encoding="utf-8") as timeline:
         timeline.write(
@@ -369,6 +377,7 @@ def test_api_share_audience_can_only_read_published_metadata(set_share_client) -
             )
             + "\n"
         )
+        timeline.write('{"action":"track_loaded"\n')
     shared_timeline = client.get("/api/sets/s1/timeline", headers=share_headers)
     assert shared_timeline.status_code == 200
     assert "/private/recordings/djay.db" not in shared_timeline.text
@@ -392,6 +401,7 @@ def test_api_metadata_share_requires_matching_access_host(set_share_client) -> N
         mount_frontend=False,
         share_config=ShareConfig(host="access.example.test", auth=AUTH_CLOUDFLARE_ACCESS),
         set_share_config=SetShareConfig("https://sets.example.test"),
+        sets_root=sets_root,
     )
     with TestClient(app) as client:
         response = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
@@ -411,6 +421,7 @@ def test_api_metadata_share_rejects_implicit_token_authentication(set_share_clie
             token="secret-token",
         ),
         set_share_config=SetShareConfig("https://sets.example.test"),
+        sets_root=sets_root,
     )
     with TestClient(app) as client:
         response = client.post("/api/sets/s1/share", json={"confirm_metadata_only": True})
@@ -432,6 +443,7 @@ def test_api_share_audience_cannot_publish_when_global_read_only_is_disabled(
             read_only=False,
         ),
         set_share_config=SetShareConfig("https://sets.example.test"),
+        sets_root=sets_root,
     )
     with TestClient(app) as client:
         response = client.post(

@@ -29,6 +29,12 @@ class SetShareConfig:
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url.strip())
+        try:
+            _port = parsed.port
+        except ValueError as exc:
+            raise SetShareError(
+                f"{SET_SHARE_BASE_URL_ENV} must have a valid HTTPS port"
+            ) from exc
         if (
             parsed.scheme != "https"
             or not parsed.netloc

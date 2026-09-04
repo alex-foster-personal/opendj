@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from html import escape
 from math import isfinite
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from . import paths as sets_paths
@@ -22,16 +23,24 @@ def _elapsed(value: object) -> str:
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
-def _timeline_rows(session_id: str) -> list[tuple[str, str, str]]:
-    path = sets_paths.session_dir(session_id) / "timeline.jsonl"
+def _track_event(line: str) -> dict[object, object] | None:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return event if isinstance(event, dict) and event.get("action") == "track_loaded" else None
+
+
+def _timeline_rows(session_id: str, sets_root: Path | None) -> list[tuple[str, str, str]]:
+    path = sets_paths.session_dir(session_id, root=sets_root) / "timeline.jsonl"
     if not path.exists():
         return []
     rows: list[tuple[str, str, str]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        event = json.loads(line)
-        if not isinstance(event, dict) or event.get("action") != "track_loaded":
+        event = _track_event(line)
+        if event is None:
             continue
         metadata = event.get("value")
         values = metadata if isinstance(metadata, dict) else {}
@@ -61,8 +70,8 @@ def _list(rows: list[tuple[str, str, str]], empty: str) -> str:
     return "".join(f"<li><time>{escape(elapsed)}</time><div><strong>{escape(title)}</strong><small>{escape(detail)}</small></div></li>" for elapsed, title, detail in rows)
 
 
-def _render(session: Session) -> str:
-    tracks = _timeline_rows(session.summary.session_id)
+def _render(session: Session, sets_root: Path | None) -> str:
+    tracks = _timeline_rows(session.summary.session_id, sets_root)
     transitions = _transition_rows(session)
     duration = "Duration not finalized" if session.summary.duration_s is None else _elapsed(session.summary.duration_s)
     started_at = escape(session.summary.started_at.replace("T", " ").replace("+00:00", " UTC"))
@@ -71,15 +80,18 @@ def _render(session: Session) -> str:
 
 
 @router.get("/sets/shared/{session_id}", include_in_schema=False)
-def shared_set_page(session_id: str) -> HTMLResponse:
+def shared_set_page(request: Request, session_id: str) -> HTMLResponse:
     """Return one published set only, with no audio element or segment metadata."""
+    sets_root = getattr(request.app.state, "sets_root", None)
+    if sets_root is not None and not isinstance(sets_root, Path):
+        raise TypeError("app.state.sets_root must be pathlib.Path or None")
     try:
-        session = get_session(session_id)
+        session = get_session(session_id, sets_root=sets_root)
     except sets_paths.SessionPathError as exc:
         raise HTTPException(status_code=404, detail="shared set not found") from exc
     if session is None or session.summary.share_state != "shared_cloud":
         raise HTTPException(status_code=404, detail="shared set not found")
-    return HTMLResponse(_render(session), headers={"cache-control": "no-cache"})
+    return HTMLResponse(_render(session, sets_root), headers={"cache-control": "no-cache"})
 
 
 __all__ = ["router"]

@@ -23,6 +23,7 @@ import threading
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -230,9 +231,16 @@ def _validated_recorder_session_id(service: RecorderService, session_id: str) ->
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _session_or_not_found(session_id: str) -> Session:
+def _sets_root(request: Request) -> Path | None:
+    root = getattr(request.app.state, "sets_root", None)
+    if root is None or isinstance(root, Path):
+        return root
+    raise TypeError("app.state.sets_root must be pathlib.Path or None")
+
+
+def _session_or_not_found(request: Request, session_id: str) -> Session:
     try:
-        session = get_session(session_id)
+        session = get_session(session_id, sets_root=_sets_root(request))
     except sets_paths.SessionPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if session is None:
@@ -242,7 +250,7 @@ def _session_or_not_found(session_id: str) -> Session:
 
 def _share_visible_session(request: Request, session_id: str) -> Session:
     """Keep private set metadata invisible to a configured share host."""
-    session = _session_or_not_found(session_id)
+    session = _session_or_not_found(request, session_id)
     audience = getattr(request.state, "share_audience", "local")
     if audience == "share" and session.summary.share_state != "shared_cloud":
         raise HTTPException(status_code=404, detail="session not found")
@@ -351,7 +359,7 @@ async def api_deck_observation_status(request: Request) -> dict[str, Any]:
 
 @router.get("")
 async def api_list_sessions(request: Request) -> JSONResponse:
-    summaries = list_sessions()
+    summaries = list_sessions(sets_root=_sets_root(request))
     if getattr(request.state, "share_audience", "local") == "share":
         summaries = [summary for summary in summaries if summary.share_state == "shared_cloud"]
     return JSONResponse([summary_to_dict(s) for s in summaries])
@@ -360,10 +368,12 @@ async def api_list_sessions(request: Request) -> JSONResponse:
 @router.get("/{session_id}")
 async def api_get_session(request: Request, session_id: str) -> JSONResponse:
     session = _share_visible_session(request, session_id)
+    if getattr(request.state, "share_audience", "local") == "share":
+        return JSONResponse({"summary": summary_to_dict(session.summary)})
     payload: dict[str, Any] = {
         "summary": summary_to_dict(session.summary),
         "manifest": session.manifest,
-        "segments": [asdict(s) for s in list_segments(session_id)],
+        "segments": [asdict(s) for s in list_segments(session_id, sets_root=_sets_root(request))],
     }
     return JSONResponse(payload)
 
@@ -372,7 +382,7 @@ async def api_get_session(request: Request, session_id: str) -> JSONResponse:
 async def api_timeline_stream(request: Request, session_id: str) -> StreamingResponse:
     _share_visible_session(request, session_id)
 
-    session_dir = sets_paths.session_dir(session_id)
+    session_dir = sets_paths.session_dir(session_id, root=_sets_root(request))
     jsonl = session_dir / "timeline.jsonl"
     if not jsonl.exists():
         # Empty timeline is valid; stream zero bytes.
@@ -405,7 +415,7 @@ async def api_timeline_stream(request: Request, session_id: str) -> StreamingRes
 @router.get("/{session_id}/transitions")
 async def api_transitions(request: Request, session_id: str) -> JSONResponse:
     _share_visible_session(request, session_id)
-    rows = read_transitions(session_id)
+    rows = read_transitions(session_id, sets_root=_sets_root(request))
     return JSONResponse(rows)
 
 
@@ -457,29 +467,38 @@ async def api_publish_metadata_share(
     del body
     if getattr(request.state, "share_audience", "local") == "share":
         raise HTTPException(status_code=403, detail="share audience cannot publish set metadata")
-    session = _session_or_not_found(session_id)
+    session = _session_or_not_found(request, session_id)
     try:
         _metadata_share_base_url(request)
-        publish_metadata_only(sets_paths.session_dir(session.summary.session_id))
+        publish_metadata_only(
+            sets_paths.session_dir(session.summary.session_id, root=_sets_root(request))
+        )
     except SetShareError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return _metadata_share_response(request, _session_or_not_found(session_id))
+    return _metadata_share_response(request, _session_or_not_found(request, session_id))
 
 
 @router.post("/{session_id}/transitions/{idx}/label")
 async def api_relabel(
+    request: Request,
     session_id: str,
     idx: int,
     body: LabelRequest,
 ) -> JSONResponse:
-    _session_or_not_found(session_id)
+    _session_or_not_found(request, session_id)
     if body.cls not in CLASS_LIST:
         raise HTTPException(
             status_code=400,
             detail=f"class {body.cls!r} not in {list(CLASS_LIST)}",
         )
     try:
-        append_label(session_id, idx, body.cls, labeler=body.labeler)
+        append_label(
+            session_id,
+            idx,
+            body.cls,
+            labeler=body.labeler,
+            sets_root=_sets_root(request),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse({"ok": True, "idx": idx, "class": body.cls})
@@ -500,7 +519,7 @@ async def api_audio(
             detail="recorded audio is personal-review-only and unavailable to remote clients",
         )
     try:
-        path = resolve_segment_path(session_id, segment)
+        path = resolve_segment_path(session_id, segment, sets_root=_sets_root(request))
     except PathTraversalError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not path.exists():

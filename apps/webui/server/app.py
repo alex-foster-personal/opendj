@@ -156,6 +156,7 @@ def create_app(
     usage_store: UsageStore | None = None,
     share_config: ShareConfig | None = None,
     set_share_config: SetShareConfig | None = None,
+    sets_root: Path | None = None,
     auto_analyze: bool = False,
 ) -> FastAPI:
     """Build a configured FastAPI app.
@@ -219,6 +220,7 @@ def create_app(
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.set_share_config = set_share_config or SetShareConfig.from_environ()
+    app.state.sets_root = Path(sets_root) if sets_root is not None else None
     app.state.auto_analyze = analysis_autostart.build(enabled=auto_analyze)
     app.state.client_error_log_dir = (
         client_error_log_dir
