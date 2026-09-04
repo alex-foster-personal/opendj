@@ -30,8 +30,6 @@ from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from apps.webui.server.share_gate import configured_share
-
 from . import paths as sets_paths
 from .audio import (
     PathTraversalError,
@@ -413,11 +411,15 @@ async def api_transitions(request: Request, session_id: str) -> JSONResponse:
 
 def _metadata_share_base_url(request: Request) -> str:
     set_share_config = getattr(request.app.state, "set_share_config", None)
-    share_config = configured_share(request)
+    share_config = getattr(request.app.state, "share_config", None)
+    share_host = getattr(share_config, "host", None)
+    share_auth = getattr(share_config, "auth", None)
+    if not isinstance(share_host, str) or not isinstance(share_auth, str):
+        raise SetShareError("share gate configuration is missing")
     return configured_share_base_url(
         set_share_config if isinstance(set_share_config, SetShareConfig) else None,
-        share_host=share_config.host,
-        share_auth=share_config.auth,
+        share_host=share_host,
+        share_auth=share_auth,
     )
 
 
