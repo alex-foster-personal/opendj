@@ -91,6 +91,8 @@
  * - [if] a key nudge does not move the tone by a semitone [then ⛔️] key passes.
  * - [if] CUE does not return the playhead to the cue point [then ⛔️] cue passes.
  * - [if] the playhead leaves the loop window [then ⛔️] the loop test passes.
+ * - [if] the looping playhead stops advancing for a second, at any point in the
+ *   observation, [then ⛔️] the loop test passes.
  * - [if] a deck refuses a dragover [then ⛔️] the drag test passes.
  * - [if] a deck ignores a drop whose transfer is empty [then ⛔️] it passes.
  * - [if] a test inherits the playhead the one before it left [then ⛔️] this
@@ -107,6 +109,7 @@ import type {
 	PerformanceState
 } from '../../src/lib/rb/performance-ipc.svelte';
 import type { DeckId } from '../../src/lib/rb/deck-slots';
+import { describeStalledLoopSlices, findStalledLoopSlices } from './support/loop-continuity';
 
 /**
  * STRETCH_CREATE_TIMEOUT_MS in stretch-adapter.ts is 15_000: a broken worklet
@@ -158,12 +161,21 @@ const PITCH_MAX_RATIO = 1 + PITCH_RANGE_PCT / 100;
 
 const SEMITONE_RATIO = Math.pow(2, 1 / 12);
 
-/** Loop window under test, and how long the playhead is watched inside it.
- * 5s over a 1.2s loop is four wraps, so a single missed wrap still fails. */
+/** Loop window under test, and how long the playhead is watched inside it. */
 const LOOP_LENGTH_MS = 1_200;
 const LOOP_OBSERVE_MS = 5_000;
+const LOOP_SAMPLE_INTERVAL_MS = 100;
 /** Slack on the loop edges: one scheduler quantum, not a free pass. */
 const LOOP_EDGE_TOLERANCE_MS = 150;
+/**
+ * Continuity slice for the "still moving" assertion. Shorter than the loop so a
+ * slice's wrap-aware advance is unambiguous, and ten sample intervals long so a
+ * throttled presentation frame is not a failure. The floor is a quarter of the
+ * slice: a stalled or clamped cursor advances exactly zero, so the floor only
+ * has to clear noise. See tests/e2e/support/loop-continuity.ts.
+ */
+const LOOP_CONTINUITY_SLICE_MS = 1_000;
+const LOOP_CONTINUITY_MIN_ADVANCE_MS = 250;
 
 /**
  * Slack on a seek landing, measured on a STOPPED deck.
@@ -1298,40 +1310,63 @@ test.describe('webkit performance controls on the engine-served build', () => {
 			async ({ deckId, forMs, everyMs }) => {
 				const ipc = window.musicDjToolsPerformance;
 				if (ipc === undefined) throw new Error('performance IPC is not installed');
-				const readings: number[] = [];
+				const readings: Array<{ observedAtMs: number; positionMs: number }> = [];
 				const until = performance.now() + forMs;
 				while (performance.now() < until) {
-					readings.push(ipc.query().decks[deckId].position_ms);
+					readings.push({
+						observedAtMs: performance.now(),
+						positionMs: ipc.query().decks[deckId].position_ms
+					});
 					await new Promise((resolve) => setTimeout(resolve, everyMs));
 				}
 				return readings;
 			},
-			{ deckId: 1 as DeckId, forMs: LOOP_OBSERVE_MS, everyMs: 100 }
+			{ deckId: 1 as DeckId, forMs: LOOP_OBSERVE_MS, everyMs: LOOP_SAMPLE_INTERVAL_MS }
 		);
 
 		expect(samples.length).toBeGreaterThan(20);
+		const firstSample = samples[0];
+		const lastSample = samples.at(-1);
+		if (firstSample === undefined || lastSample === undefined) {
+			throw new Error('loop observation returned no samples');
+		}
+		expect(
+			lastSample.observedAtMs - firstSample.observedAtMs,
+			'loop observation must cover nearly its full wall-clock window'
+		).toBeGreaterThanOrEqual(LOOP_OBSERVE_MS - LOOP_SAMPLE_INTERVAL_MS);
 		// EVERY sample must sit inside the window. Not "most": one escape is the
 		// whole defect, and averaging would hide exactly the bug worth catching.
-		for (const positionMs of samples) {
+		for (const { positionMs } of samples) {
 			expect(
 				positionMs,
 				`playhead escaped the loop: ${positionMs.toFixed(0)}ms is outside ` +
 					`${inMs.toFixed(0)}..${outMs.toFixed(0)}ms (all samples: ${samples
-						.map((s) => s.toFixed(0))
+						.map((sample) => sample.positionMs.toFixed(0))
 						.join(', ')})`
 			).toBeGreaterThan(inMs - LOOP_EDGE_TOLERANCE_MS);
 			expect(positionMs).toBeLessThan(outMs + LOOP_EDGE_TOLERANCE_MS);
 		}
 
-		// A backward step is the wrap, and it is the ONLY thing separating a
-		// loop from ordinary playback across the same span.
-		const wraps = samples.filter(
-			(positionMs, index) => index > 0 && positionMs < samples[index - 1]
-		).length;
+		// Bounded is only half the contract: a deck parked at loop-out, or one
+		// whose presentation froze, is inside the window too. So every second of
+		// the observation must also show wrap-aware advance, with the slices
+		// anchored at the END so a tail stall cannot hide in a dropped remainder.
+		// Nothing here counts wraps or distinct phases - `position_ms` is
+		// published on requestAnimationFrame rather than at each audio loop
+		// boundary, so both alias with the loop period. Bounded plus still
+		// advancing for 5s over a 1.2s window is only possible by looping, which
+		// is the DJ-visible property worth asserting. The transport unit
+		// regression covers the multi-span projection underneath it.
+		const stalledSlices = findStalledLoopSlices(samples, {
+			sliceMs: LOOP_CONTINUITY_SLICE_MS,
+			loopLengthMs: LOOP_LENGTH_MS,
+			minimumAdvanceMs: LOOP_CONTINUITY_MIN_ADVANCE_MS
+		});
 		expect(
-			wraps,
-			`observed ${wraps} wrap(s) in ${LOOP_OBSERVE_MS}ms over a ${LOOP_LENGTH_MS}ms loop`
-		).toBeGreaterThanOrEqual(2);
+			describeStalledLoopSlices(stalledSlices),
+			`the loop playhead stopped advancing during the ${LOOP_OBSERVE_MS}ms observation ` +
+				`(all samples: ${samples.map((sample) => sample.positionMs.toFixed(0)).join(', ')})`
+		).toBe('');
 
 		await _dispatch(page, { type: 'loop', deck: 1, loop: null });
 		await _waitForAudible(page, 1, true);
