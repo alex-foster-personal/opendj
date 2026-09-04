@@ -17,6 +17,18 @@ Checks, in order:
    ``[dev-loop] HEAD 6341f421 (af--docs-x) | shipped 4158f361 +23 | main 525e16a9 +2 | OK``
 
 No app installed -> check 1 is reported as ``shipped n/a`` and skipped, never assumed.
+
+History rewrite (Thu 3 Sep 2026, #911): the shipped app is stamped with a SHA from the OLD
+history, which shares no merge base with the rewritten one, so check 1 cannot be answered
+by ancestry alone. Pass ``--commit-map`` (filter-repo's ``old new`` pairs, published under
+``odj-private/rewrite/``): the shipped commit's first-parent chain is walked to the first
+mapped ancestor, that ancestor's NEW sha must be in HEAD, and the unmapped tail (the
+build's own ship-lane commits) is diffed for runtime paths exactly as before. No map and
+no shared history -> exit 4, never a guess.
+
+    [if] shipped sha shares no history with HEAD and no --commit-map [then] exit 4 with the map path
+    [if] the shipped commit's first mapped ancestor is not in HEAD [then] exit 2 (loop is behind)
+    [if] the unmapped tail touches apps/** [then] exit 2; tooling-only tail [then] OK
 """
 
 from __future__ import annotations
@@ -41,6 +53,32 @@ def _is_ancestor(ancestor: str, descendant: str) -> bool:
 
 def _count(rev_range: str) -> int:
     return int(_git("rev-list", "--count", rev_range))
+
+
+def _shares_history(a: str, b: str) -> bool:
+    probe = subprocess.run(["git", "merge-base", a, b], capture_output=True, check=False)
+    return probe.returncode == 0
+
+
+def _load_commit_map(path: Path) -> dict[str, str]:
+    pairs = (line.split() for line in path.read_text().splitlines())
+    mapping = {old: new for old, new in pairs if old != "old"}
+    if not mapping:
+        raise SystemExit(f"[dev-loop] commit-map at {path} holds no old/new pairs")
+    return mapping
+
+
+def _first_mapped_ancestor(
+    shipped: str, commit_map: dict[str, str]
+) -> tuple[str, str, int]:
+    """(old_base, new_base, unmapped_tail_length) walking shipped's first-parent chain."""
+    chain = _git("rev-list", "--first-parent", shipped).splitlines()
+    for depth, old in enumerate(chain):
+        if old in commit_map:
+            return old, commit_map[old], depth
+    raise SystemExit(
+        f"[dev-loop] no commit on {shipped[:8]}'s first-parent chain is in the commit-map"
+    )
 
 
 RUNTIME_PREFIXES = ("apps/", "pyproject.toml", "uv.lock")
@@ -69,6 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app", type=Path, default=DEFAULT_APP)
     parser.add_argument("--allow-behind-main", action="store_true")
     parser.add_argument("--no-fetch", action="store_true", help="skip `git fetch origin main`")
+    parser.add_argument(
+        "--commit-map", type=Path, default=None,
+        help="filter-repo 'old new' pairs, needed only while the shipped app predates a rewrite",
+    )
     args = parser.parse_args(argv)
 
     head = _git("rev-parse", "HEAD")
@@ -86,6 +128,33 @@ def main(argv: list[str] | None = None) -> int:
         parts.append("shipped n/a (no app installed)")
     elif _is_ancestor(shipped, head):
         parts.append(f"shipped {shipped[:8]} +{_count(f'{shipped}..{head}')}")
+    elif not _shares_history(shipped, head):
+        if args.commit_map is None:
+            parts.append(f"shipped {shipped[:8]} is from a rewritten history")
+            verdict = "REFUSED: pass --commit-map (odj-private/rewrite/) or rebuild the app"
+            code = 4
+        else:
+            old_base, new_base, tail = _first_mapped_ancestor(
+                shipped, _load_commit_map(args.commit_map)
+            )
+            missing_runtime = [
+                p for p in _git("diff", "--name-only", old_base, shipped).splitlines()
+                if p.startswith(RUNTIME_PREFIXES) and not p.endswith(".md")
+            ]
+            if not _is_ancestor(new_base, head):
+                parts.append(f"shipped {shipped[:8]} base {new_base[:8]} (rewritten) not in loop")
+                verdict, code = "REFUSED: loop lacks the shipped app's base commit", 2
+            elif missing_runtime:
+                parts.append(
+                    f"shipped {shipped[:8]} BEHIND: {len(missing_runtime)} runtime file(s) "
+                    f"e.g. {missing_runtime[0]}"
+                )
+                verdict, code = "REFUSED: loop lacks fixes the shipped app has", 2
+            else:
+                parts.append(
+                    f"shipped {shipped[:8]} rewritten, base {new_base[:8]} in loop, "
+                    f"tooling-only tail ({tail} commit(s))"
+                )
     else:
         # The shipped commit is not in this loop. That only matters if the commits the
         # loop lacks change what the app DOES: a ship-script or docs-only lane (e.g. the
