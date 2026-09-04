@@ -1418,6 +1418,18 @@
 		overflow: auto;
 		position: relative;
 	}
+	.table-wrap::-webkit-scrollbar {
+		height: 2px;
+	}
+	.table-wrap::-webkit-scrollbar-thumb:horizontal {
+		background: var(--rb-text-dim);
+	}
+	.table-wrap::-webkit-scrollbar-track:horizontal {
+		background: transparent;
+	}
+	.table-wrap::-webkit-scrollbar-button:horizontal {
+		display: none;
+	}
 	table {
 		width: 100%;
 		border-collapse: collapse;
