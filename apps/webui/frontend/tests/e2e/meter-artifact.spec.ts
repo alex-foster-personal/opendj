@@ -14,6 +14,7 @@
  *   [if] a -6 dBFS source does not read -6 dBFS      [then STOP] the scale is wrong
  *   [if] upstream gain does not move the reading     [then STOP] the tap is misplaced
  *   [if] silence does not read as silence            [then STOP] the meter is inventing level
+ *   [if] a silent tap keeps posting                  [then STOP] idle costs main-thread work
  */
 import { readdirSync } from 'node:fs';
 
@@ -67,30 +68,34 @@ async function measureAtGains(page: import('@playwright/test').Page, gains: numb
 			sink.connect(ctx.destination);
 			osc.start();
 
-			// Wait for REAL posts rather than sleeping a fixed time: Chromium can
-			// take longer than any sleep worth writing to bring the audio device
-			// up, and a fixed sleep turns that startup latency into a flake that
-			// looks like a dead worklet.
-			const waitForPosts = async (count: number, timeoutMs: number): Promise<void> => {
-				const target = posts + count;
+			// Wait on the reported VALUE, not on a message count. Two reasons:
+			// Chromium can take longer than any sleep worth writing to bring the
+			// audio device up, and a silent window deliberately posts nothing, so
+			// counting messages cannot express "it went quiet".
+			const waitForPeak = async (
+				ok: (peak: number) => boolean,
+				what: string,
+				timeoutMs: number
+			): Promise<void> => {
 				const deadline = Date.now() + timeoutMs;
-				while (posts < target) {
+				while (!(latestPeak !== null && ok(latestPeak))) {
 					if (Date.now() > deadline) {
-						throw new Error(
-							`meter posted ${posts} messages, needed ${target} within ${timeoutMs}ms`
-						);
+						throw new Error(`meter never reported ${what}; last peak was ${latestPeak}`);
 					}
 					await new Promise((r) => setTimeout(r, 20));
 				}
 			};
 
-			await waitForPosts(1, 10_000);
 			const readings: number[] = [];
 			for (const value of gains) {
 				gain.gain.setValueAtTime(value, ctx.currentTime);
-				// Several windows, so the recorded value is a window fully inside
-				// the new gain rather than one straddling the change.
-				await waitForPosts(5, 10_000);
+				// The oscillator runs at amplitude 1.0, so the gain IS the peak.
+				const tol = Math.max(0.02, value * 0.1);
+				await waitForPeak(
+					(peak) => Math.abs(peak - value) <= tol,
+					`a peak near ${value}`,
+					15_000
+				);
 				readings.push(latestPeak ?? -1);
 			}
 			osc.stop();
@@ -105,8 +110,13 @@ const dbfs = (amplitude: number): number => 20 * Math.log10(Math.max(amplitude, 
 
 test('the worklet asset loads and posts observations', async ({ page }) => {
 	await page.goto('/index.html');
-	const { posts } = await measureAtGains(page, [0.5]);
-	expect(posts, 'the meter worklet posted nothing, so it never registered').toBeGreaterThan(5);
+	const { posts, readings } = await measureAtGains(page, [0.5]);
+	// The count is deliberately not a rate check: the reader now waits on the
+	// VALUE and returns as soon as it settles, and a silent window posts
+	// nothing at all. What this pins is that the hashed asset resolved and the
+	// processor registered, which is exactly what a missing emit would break.
+	expect(posts, 'the meter worklet posted nothing, so it never registered').toBeGreaterThan(0);
+	expect(readings[0], 'the worklet registered but reported no level').toBeGreaterThan(0);
 });
 
 test('a -6 dBFS source reads -6 dBFS', async ({ page }) => {
@@ -128,4 +138,46 @@ test('silence reads as silence, not as an invented floor', async ({ page }) => {
 	await page.goto('/index.html');
 	const { readings } = await measureAtGains(page, [0.5, 0]);
 	expect(readings[1]).toBeLessThan(1e-4);
+});
+
+test('a silent tap posts nothing, so idle decks cost no main-thread work', async ({ page }) => {
+	await page.goto('/index.html');
+	// This is a REGRESSION GUARD with a measured origin. The processor used to
+	// post on every window regardless of content: four taps on a stopped set
+	// measured 197 messages a second, forever, because a deck with no track
+	// still has a live filter chain feeding the tap. The reader decays toward
+	// the floor on its own, so those posts bought nothing at all.
+	const posts = await page.evaluate(
+		async ({ moduleUrl }) => {
+			const ctx = new AudioContext();
+			if (ctx.state === 'suspended') await ctx.resume();
+			await ctx.audioWorklet.addModule(moduleUrl);
+			const sink = new GainNode(ctx, { gain: 0 });
+			sink.connect(ctx.destination);
+			// Explicit zero-valued source: the tap sees real channels of zeros,
+			// which is what a loaded-but-stopped deck actually delivers. A tap
+			// with nothing connected would pass for the wrong reason.
+			const silent = new ConstantSourceNode(ctx, { offset: 0 });
+			silent.start();
+			let n = 0;
+			for (let i = 0; i < 4; i += 1) {
+				const node = new AudioWorkletNode(ctx, 'mdt-channel-meter', {
+					numberOfInputs: 1,
+					numberOfOutputs: 1,
+					outputChannelCount: [1],
+					processorOptions: { reportIntervalS: 0.02 }
+				});
+				node.port.onmessage = () => { n += 1; };
+				silent.connect(node);
+				node.connect(sink);
+			}
+			await new Promise((r) => setTimeout(r, 1000));
+			n = 0;
+			await new Promise((r) => setTimeout(r, 3000));
+			await ctx.close();
+			return n;
+		},
+		{ moduleUrl: meterProcessorAssetPath() }
+	);
+	expect(posts, `four silent taps posted ${posts} messages in 3s; expected none`).toBe(0);
 });

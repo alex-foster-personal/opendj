@@ -18,6 +18,11 @@
  * stays silent, and the main thread connects it through a zero gain as well.
  * A bug here cannot put a sample into the master bus.
  *
+ * It reports PEAK ONLY. An RMS was computed here per sample and posted
+ * alongside it until Fri 4 Sep 2026; nothing ever read it, so it was a
+ * multiply-add per sample per deck on the AUDIO THREAD producing a number
+ * with no consumer. Re-add it only with a reader.
+ *
  * Each post carries a monotonic `seq`. The main thread applies the meter's
  * instantaneous attack ONLY when it sees a new `seq`, and decays otherwise.
  * Without that, a stale peak would be re-attacked on every frame between posts
@@ -39,10 +44,11 @@ class MeterProcessor extends AudioWorkletProcessor {
 			);
 		}
 		this.windowPeak = 0;
-		this.windowSquares = 0;
-		this.windowSamples = 0;
 		this.windowElapsedS = 0;
 		this.seq = 0;
+		// Whether the last posted window carried signal, so exactly ONE post
+		// marks the transition into silence and none follow it.
+		this.postedSignal = false;
 	}
 
 	process(inputs) {
@@ -60,8 +66,6 @@ class MeterProcessor extends AudioWorkletProcessor {
 				const value = samples[i];
 				const magnitude = value < 0 ? -value : value;
 				if (magnitude > this.windowPeak) this.windowPeak = magnitude;
-				this.windowSquares += value * value;
-				this.windowSamples += 1;
 			}
 		}
 		// A quantum with no channels still advances time, otherwise a silent
@@ -71,15 +75,22 @@ class MeterProcessor extends AudioWorkletProcessor {
 		this.windowElapsedS += frames / sampleRate;
 		if (this.windowElapsedS < this.reportIntervalS) return true;
 
-		this.seq += 1;
-		this.port.postMessage({
-			seq: this.seq,
-			peak: this.windowPeak,
-			rms: this.windowSamples === 0 ? 0 : Math.sqrt(this.windowSquares / this.windowSamples)
-		});
+		// SILENCE COSTS NOTHING, the same rule xrun-sentinel-processor follows.
+		// A window with no signal rolls over without posting, so four taps on a
+		// stopped set produce no MessagePort traffic at all. Measured before this
+		// guard: 197 messages a second, forever, from four silent decks.
+		//
+		// Safe because the reader already decays toward the floor when no new
+		// `seq` arrives, so no post and a silent post are behaviourally identical
+		// on the main thread. One post still marks the transition INTO silence,
+		// so a lit meter starts falling from the level it actually reached.
+		const hadSignal = this.windowPeak > 0;
+		if (hadSignal || this.postedSignal) {
+			this.seq += 1;
+			this.port.postMessage({ seq: this.seq, peak: this.windowPeak });
+		}
+		this.postedSignal = hadSignal;
 		this.windowPeak = 0;
-		this.windowSquares = 0;
-		this.windowSamples = 0;
 		this.windowElapsedS = 0;
 		return true;
 	}

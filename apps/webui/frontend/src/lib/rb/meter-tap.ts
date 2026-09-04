@@ -65,7 +65,6 @@ const METER_NODE_OPTIONS: Readonly<AudioWorkletNodeOptions> = Object.freeze({
 interface _Observation {
 	seq: number;
 	peak: number;
-	rms: number;
 }
 
 interface _Ballistic {
@@ -128,11 +127,7 @@ let _sink: GainNode | null = null;
 function _isObservation(data: unknown): data is _Observation {
 	if (typeof data !== 'object' || data === null) return false;
 	const candidate = data as Partial<_Observation>;
-	return (
-		Number.isFinite(candidate.seq) &&
-		Number.isFinite(candidate.peak) &&
-		Number.isFinite(candidate.rms)
-	);
+	return Number.isFinite(candidate.seq) && Number.isFinite(candidate.peak);
 }
 
 /**
