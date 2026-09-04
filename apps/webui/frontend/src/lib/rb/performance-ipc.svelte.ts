@@ -35,6 +35,7 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { setAnalysisSource, type AnalysisSource, type AnalysisSourceFeature } from '$lib/rb/analysis-source.svelte';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
 	DECK_IDS,
@@ -112,6 +113,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
@@ -424,6 +426,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
+	if (type === 'analysis_source') {
+		_exactKeys(record, ['type', 'feature', 'source']);
+		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (record.source !== 'rekordbox' && record.source !== 'own') {
+			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
+		}
+		return { type, feature: record.feature, source: record.source };
+	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
 		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
@@ -733,6 +743,7 @@ export function performanceCommandQueueScopes(
 	) {
 		return ['headphone'];
 	}
+	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
 	const deck = _commandDeck(command);
 	if (command.type === 'channel_cue') {
 		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
@@ -897,6 +908,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'analysis_source') {
+		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.

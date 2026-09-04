@@ -9,9 +9,9 @@
 		ANALYSIS_SOURCE_FEATURES,
 		type AnalysisSource,
 		analysisSourceState,
-		loadAnalysisSource,
-		setAnalysisSource
+		loadAnalysisSource
 	} from '$lib/rb/analysis-source.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const FEATURE_LABEL: Record<string, string> = {
 		beatgrid: 'Beatgrid'
@@ -56,7 +56,7 @@
 	}
 
 	function _pick(feature: (typeof ANALYSIS_SOURCE_FEATURES)[number], source: AnalysisSource): void {
-		void setAnalysisSource(feature, source);
+		void runPerformanceCommandFromUi({ type: 'analysis_source', feature, source });
 	}
 </script>
 

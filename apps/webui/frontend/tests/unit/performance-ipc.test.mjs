@@ -46,10 +46,32 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_acquire' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
+		[1, 2, 3, 4, 'sync']
+	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
+});
+
+test('analysis-source commands are validated through the typed all-deck scheduler', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'vocals', source: 'own' }),
+			/feature must be beatgrid/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'beatgrid', source: 'invalid' }),
+			/source must be rekordbox or own/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('key controls validate through IPC and round-trip serializable shift state', async () => {

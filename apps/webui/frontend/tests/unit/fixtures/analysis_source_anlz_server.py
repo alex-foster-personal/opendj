@@ -23,6 +23,7 @@ single `READY <port>` stdout line.
 from __future__ import annotations
 
 import asyncio
+import os
 import socket
 import sqlite3
 from datetime import UTC, datetime
@@ -52,7 +53,7 @@ SID_NO_OWN_ANALYSIS = "real-track-c-no-own-analysis"
 #: coroutine suspension, not a fabricated fetch delay.
 SID_SLOW = "real-track-slow-own-grid"
 
-_DB_PATH = Path(__file__).resolve().parent / ".analysis-source-anlz-server.tmp.db"
+_DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
 
 def _record(sid: str, bar_count: int) -> AnalysisRecord:
     return AnalysisRecord(
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.state.analysis_source = AnalysisSourceStore()
     app.state.analysis_db_path = _DB_PATH
     app.state.requests: list[str] = []
+    app.state.delay_next_analysis_source_get = False
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
 
@@ -122,13 +124,26 @@ def create_app() -> FastAPI:
         # test's own before/after delta was off by exactly the poll count).
         if request.url.path != "/test/requests":
             app.state.requests.append(str(request.url))
-        if request.url.path.endswith(f"/{SID_SLOW}/anlz"):
+        response = await call_next(request)
+        if (
+            request.method == "GET"
+            and request.url.path == "/api/v1/analysis-source"
+            and app.state.delay_next_analysis_source_get
+        ):
+            app.state.delay_next_analysis_source_get = False
             await asyncio.sleep(0.15)
-        return await call_next(request)
+        elif request.url.path.endswith(f"/{SID_SLOW}/anlz"):
+            await asyncio.sleep(0.15)
+        return response
 
     @app.get("/test/requests")
     def _get_requests() -> list[str]:
         return app.state.requests
+
+    @app.post("/test/delay-next-analysis-source-get")
+    def _delay_next_analysis_source_get() -> dict[str, bool]:
+        app.state.delay_next_analysis_source_get = True
+        return {"armed": True}
 
     return app
 

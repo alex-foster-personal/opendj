@@ -12,7 +12,7 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { api, unwrap } from '../api/client';
+import { api, unwrap } from '../api';
 import { engine } from './audio-engine.svelte';
 
 export type AnalysisSource = 'rekordbox' | 'own';
@@ -28,6 +28,12 @@ interface AnalysisSourceState {
 }
 
 export const analysisSourceState = $state<AnalysisSourceState>({ features: {} });
+
+// A poll may begin before a local PUT and settle after it. The daemon then
+// correctly answers the PUT with the new source, but the older GET must never
+// replace that confirmed mirror after its refresh. Increment before issuing a
+// mutation so every earlier GET response is known stale at adoption time.
+let _latestMutation = 0;
 
 /** True when `next` disagrees with a feature this module already had a
  * confirmed value for. A feature seen for the FIRST time (a fresh mount's
@@ -65,9 +71,11 @@ function _hasLiveChange(next: Record<string, AnalysisSource>): boolean {
  * reports the new source (discussion_r3921666943 follow-up). Throws through
  * to the caller (setAnalysisSource/loadAnalysisSource) on failure -- no
  * silent partial adoption. */
-async function _adopt(features: Record<string, AnalysisSource>): Promise<void> {
+async function _adopt(features: Record<string, AnalysisSource>, mutation: number | null): Promise<void> {
+	if (mutation !== null && mutation !== _latestMutation) return;
 	const changed = _hasLiveChange(features);
 	if (changed) await engine.refreshDecksForAnalysisSourceChange();
+	if (mutation !== null && mutation !== _latestMutation) return;
 	analysisSourceState.features = features;
 }
 
@@ -75,8 +83,10 @@ async function _adopt(features: Record<string, AnalysisSource>): Promise<void> {
  * poll: the server is authoritative and an agent may have changed it since
  * (AnalysisSourceToggle.svelte's poll is what makes the latter visible). */
 export async function loadAnalysisSource(): Promise<void> {
+	const mutation = _latestMutation;
 	const body = await unwrap(api.GET('/api/v1/analysis-source'));
-	await _adopt(body.features);
+	if (mutation !== _latestMutation) return;
+	await _adopt(body.features, mutation);
 }
 
 /** Sets one feature's source. Fails loudly (throws) on a rejected feature
@@ -86,6 +96,7 @@ export async function setAnalysisSource(
 	feature: AnalysisSourceFeature,
 	source: AnalysisSource
 ): Promise<void> {
+	const mutation = ++_latestMutation;
 	const body = await unwrap(api.PUT('/api/v1/analysis-source', { body: { feature, source } }));
-	await _adopt(body.features);
+	await _adopt(body.features, mutation);
 }

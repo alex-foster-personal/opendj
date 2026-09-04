@@ -11,82 +11,76 @@
  *   failure, never a switch that looks applied but wasn't
  */
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const API_BASE = 'https://analysis-source.example.test';
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
+const SERVER_SCRIPT = fileURLToPath(new URL('./fixtures/analysis_source_anlz_server.py', import.meta.url));
 
 let analysisSource;
-let originalFetch;
-
-function jsonResponse(body, init = {}) {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		...init,
-		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
-	});
-}
+let serverProcess;
+let apiBase;
 
 before(async () => {
-	analysisSource = await loadTypeScriptModule('src/lib/rb/analysis-source.svelte.ts', {
-		viteApiBase: API_BASE
+	serverProcess = spawn('uv', ['run', '--no-sync', 'python', SERVER_SCRIPT], {
+		cwd: REPOSITORY_ROOT,
+		env: { ...process.env, MDT_LIBRARY_MODE: 'local' },
+		stdio: ['ignore', 'pipe', 'inherit']
 	});
-	originalFetch = globalThis.fetch;
+	const port = await new Promise((resolve, reject) => {
+		const lines = createInterface({ input: serverProcess.stdout });
+		serverProcess.once('exit', (code) => reject(new Error(`fixture server exited early (${code})`)));
+		lines.on('line', (line) => {
+			const match = /^READY (\d+)$/.exec(line);
+			if (match) resolve(Number(match[1]));
+		});
+	});
+	apiBase = `http://127.0.0.1:${port}`;
+	analysisSource = await loadTypeScriptModule('src/lib/rb/analysis-source.svelte.ts', {
+		viteApiBase: apiBase
+	});
 });
 
 after(() => {
-	globalThis.fetch = originalFetch;
+	serverProcess?.kill();
 });
 
 beforeEach(() => {
 	analysisSource.analysisSourceState.features = {};
 });
 
-test('loadAnalysisSource GETs the daemon selection and mirrors it into state', async () => {
-	let seen;
-	globalThis.fetch = async (request) => {
-		seen = request;
-		return jsonResponse({ features: { beatgrid: 'rekordbox' } });
-	};
-
+test('loadAnalysisSource GETs the production daemon selection and mirrors it into state', async () => {
 	await analysisSource.loadAnalysisSource();
 
-	assert.equal(seen.url, `${API_BASE}/api/v1/analysis-source`);
-	assert.equal(seen.method, 'GET');
 	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
 });
 
-test('setAnalysisSource PUTs feature+source and adopts the response', async () => {
-	let seen;
-	let body;
-	globalThis.fetch = async (request) => {
-		seen = request;
-		body = await request.clone().json();
-		return jsonResponse({ features: { beatgrid: 'own' } });
-	};
-
+test('setAnalysisSource PUTs the production endpoint and adopts its validated response', async () => {
 	await analysisSource.setAnalysisSource('beatgrid', 'own');
 
-	assert.equal(seen.url, `${API_BASE}/api/v1/analysis-source`);
-	assert.equal(seen.method, 'PUT');
-	assert.deepEqual(body, { feature: 'beatgrid', source: 'own' });
 	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'own' });
 });
 
-test('a rejected feature throws and leaves prior state untouched', async () => {
+test('a production-route rejected feature throws and leaves prior state untouched', async () => {
 	analysisSource.analysisSourceState.features = { beatgrid: 'rekordbox' };
-	globalThis.fetch = async () =>
-		new Response(
-			JSON.stringify({
-				detail: {
-					code: 'ANALYSIS_SOURCE_FEATURE_NOT_FOUND',
-					message: "'vocals' is not a toggleable feature; known: ['beatgrid']"
-				}
-			}),
-			{ status: 404, statusText: 'Not Found', headers: { 'content-type': 'application/json' } }
-		);
-
 	await assert.rejects(() => analysisSource.setAnalysisSource('vocals', 'own'));
 	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+});
+
+test('a GET begun before a local PUT cannot overwrite the confirmed PUT adoption', async () => {
+	await fetch(`${apiBase}/test/delay-next-analysis-source-get`, { method: 'POST' });
+	const staleGet = analysisSource.loadAnalysisSource();
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	await analysisSource.setAnalysisSource('beatgrid', 'own');
+	await staleGet;
+
+	assert.deepEqual(
+		analysisSource.analysisSourceState.features,
+		{ beatgrid: 'own' },
+		'a delayed older GET must not replace a newer locally confirmed PUT'
+	);
 });
