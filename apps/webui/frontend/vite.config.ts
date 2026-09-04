@@ -45,7 +45,8 @@ export default defineConfig(({ command, mode }) => {
 						strictPort: true,
 						allowedHosts: resolveAllowedHosts(process.env, rootEnv),
 						proxy: {
-							'/api': devConfig.apiProxyTarget
+							'/api': devConfig.apiProxyTarget,
+							'/sets/shared': devConfig.apiProxyTarget
 						}
 					}
 				})
