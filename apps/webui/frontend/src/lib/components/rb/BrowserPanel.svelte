@@ -54,6 +54,7 @@
 	} from '$lib/rb/job-progress.svelte';
 	import {
 		dispatchPerformanceCommand,
+		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -500,6 +501,9 @@
 	});
 
 	onMount(() => {
+		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
+			selectPlaylist: _selectPlaylistFromCommand
+		});
 		const url = new URL(window.location.href);
 		if (url.searchParams.get('source') === 'spotify') {
 			source = 'spotify';
@@ -563,6 +567,7 @@
 		}, LIBRARY_FALLBACK_POLL_MS);
 
 		return () => {
+			unregisterPerformanceBrowser();
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
@@ -845,14 +850,25 @@
 	}
 
 	function selectPlaylist(node: PlaylistNode, opts?: { newTab?: boolean }): void {
-		const forceNew = opts?.newTab === true || panes[activePane].sticky;
-		if (!forceNew) {
-			if (panes[activePane].playlist_id === node.playlist_id) return;
-			_pushNav();
-			void _loadPane(panes[activePane], node);
+		if (opts?.newTab === true) {
+			_openPlaylistInNewTab(node);
 			return;
 		}
-		_openPlaylistInNewTab(node);
+		void runPerformanceCommandFromUi({ type: 'browser_select_playlist', playlist_id: node.playlist_id });
+	}
+
+	async function _selectPlaylistFromCommand(playlistId: string): Promise<void> {
+		const node = _nodeForNav({
+			playlist_id: playlistId,
+			playlist_name: playlistId,
+			search: '',
+			selected_id: null,
+			scroll_top: 0
+		});
+		if (node === null) throw new Error(`browser_select_playlist: unknown playlist ${playlistId}`);
+		if (panes[activePane].playlist_id === node.playlist_id) return;
+		_pushNav();
+		await _loadPane(panes[activePane], node);
 	}
 
 	function _openPlaylistInNewTab(node: PlaylistNode): void {

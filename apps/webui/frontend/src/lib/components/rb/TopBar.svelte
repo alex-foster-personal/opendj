@@ -12,7 +12,7 @@
 	 * the same typed command path used by browser IPC and presets.
 	 */
 	import { onMount } from 'svelte';
-	import { engine, isMasterMuted, mixerState, setMasterMuted } from '$lib/rb/audio-engine.svelte';
+	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -550,7 +550,7 @@
 		title={isMasterMuted()
 			? 'Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).'
 			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
-		onclick={() => setMasterMuted(!isMasterMuted())}
+		onclick={() => void runPerformanceCommandFromUi({ type: 'master_mute', muted: !isMasterMuted() })}
 	>
 		<!-- Muted says MUTED, because the button reports a STATE, not an
 		     action; audible shows the speaker glyph, because there is no state

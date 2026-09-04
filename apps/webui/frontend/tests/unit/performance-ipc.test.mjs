@@ -556,3 +556,34 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 	assert.match(source, /command\.type === 'load_play_intent'[\s\S]{0,120}return null/);
 	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
 });
+
+test('master mute and browser playlist selection are bus commands with queryable state', async () => {
+	const seen = [];
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const unregister = ipc.registerPerformanceBrowserAdapter({
+		selectPlaylist: async (playlistId) => {
+			seen.push(playlistId);
+		}
+	});
+	try {
+		const before = ipc.queryPerformanceState().history.length;
+		const muted = await ipc.dispatchPerformanceCommand({ type: 'master_mute', muted: true });
+		assert.equal(muted.master.muted, true);
+		assert.equal(muted.history.at(-1).type, 'master_mute');
+		const observed = await ipc.dispatchPerformanceCommand({ type: 'pitch_range', deck: 1, range: 8 });
+		assert.equal(observed.decks[1].last_command_id, observed.history.at(-1).id);
+
+		const selected = await ipc.dispatchPerformanceCommand({
+			type: 'browser_select_playlist',
+			playlist_id: 'playlist-42'
+		});
+		assert.deepEqual(seen, ['playlist-42']);
+		assert.equal(selected.browser.active_playlist, 'playlist-42');
+		assert.equal(selected.history.length, before + 3);
+	} finally {
+		unregister();
+		uninstall();
+		delete globalThis.window;
+	}
+});

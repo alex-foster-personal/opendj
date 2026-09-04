@@ -42,9 +42,11 @@ import {
 	deckTransportClock,
 	engine,
 	getDeckState,
+	isMasterMuted,
 	keySyncPreview,
 	mixerState,
 	pitchRanges,
+	setMasterMuted,
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
@@ -124,6 +126,8 @@ export type PerformanceCommand =
 	| { type: 'master_volume'; value: number }
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
+	| { type: 'master_mute'; muted: boolean }
+	| { type: 'browser_select_playlist'; playlist_id: string }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -202,6 +206,8 @@ export interface PerformanceDeckSnapshot {
 	hot_cue_reversal: { slot: HotCueSlot; revision: string; reversal_id: string } | null;
 	command_error: string | null;
 	command_pending: boolean;
+	/** Last command observed for this deck, including MIDI and UI sources. */
+	last_command_id: string | null;
 }
 
 export interface PerformanceState {
@@ -217,6 +223,9 @@ export interface PerformanceState {
 		channels: Record<DeckId, MixerChannelState>;
 		headphones: HeadphoneState;
 	};
+	master: { muted: boolean };
+	browser: { active_playlist: string | null };
+	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
 	technically_working: {
@@ -226,6 +235,35 @@ export interface PerformanceState {
 		eq_raised: boolean;
 		hovered_edges: EdgeRegion[];
 	};
+}
+
+/** BrowserPanel owns playlist loading, while this module owns the public
+ * command protocol. Registering the narrow adapter keeps both boundaries
+ * explicit and makes a missing mounted browser fail loudly for an agent. */
+export interface PerformanceBrowserAdapter {
+	selectPlaylist(playlistId: string): Promise<void>;
+}
+
+let _browserAdapter: PerformanceBrowserAdapter | null = null;
+let _activeBrowserPlaylist: string | null = null;
+let _commandSequence = 0;
+let _commandHistory: Array<{ id: string; type: PerformanceCommand['type'] }> = [];
+let _deckCommandIds: Record<DeckId, string | null> = { 1: null, 2: null, 3: null, 4: null };
+
+export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAdapter): () => void {
+	if (_browserAdapter !== null) throw new Error('performance browser adapter is already registered');
+	_browserAdapter = adapter;
+	return () => {
+		if (_browserAdapter !== adapter) throw new Error('performance browser adapter ownership changed');
+		_browserAdapter = null;
+	};
+}
+
+function _recordPerformanceCommand(command: PerformanceCommand): void {
+	const event = { id: `pc-${++_commandSequence}`, type: command.type };
+	_commandHistory = [..._commandHistory.slice(-199), event];
+	const deck = _commandDeck(command);
+	if (deck !== null) _deckCommandIds[deck] = event.id;
 }
 
 export type PerformancePresetLifecyclePhase =
@@ -474,6 +512,17 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'crossfader' || type === 'master_volume' || type === 'headphone_mix' || type === 'headphone_level') {
 		_exactKeys(record, ['type', 'value']);
 		return { type, value: _unit('value', record.value) };
+	}
+	if (type === 'master_mute') {
+		_exactKeys(record, ['type', 'muted']);
+		return { type, muted: _boolean('muted', record.muted) };
+	}
+	if (type === 'browser_select_playlist') {
+		_exactKeys(record, ['type', 'playlist_id']);
+		if (typeof record.playlist_id !== 'string' || record.playlist_id.trim() === '') {
+			throw new TypeError('playlist_id must be a non-empty string');
+		}
+		return { type, playlist_id: record.playlist_id };
 	}
 	if (type === 'headphone_outputs_refresh') {
 		_exactKeys(record, ['type']);
@@ -790,7 +839,8 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		})),
 		hot_cue_reversal: hotCueReversals[deckId],
 		command_error: performanceCommandStatus.deck_errors[deckId],
-		command_pending: performanceCommandStatus.deck_pending[deckId] > 0
+		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
+		last_command_id: _deckCommandIds[deckId]
 	};
 }
 
@@ -830,6 +880,9 @@ export function queryPerformanceState(): PerformanceState {
 				4: { ...mixerState.channels[4] }
 			}
 		},
+		master: { muted: isMasterMuted() },
+		browser: { active_playlist: _activeBrowserPlaylist },
+		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error,
 		technically_working: {
@@ -874,6 +927,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
 		command.type === 'master_volume' ||
+		command.type === 'master_mute' ||
+		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		// View state only: no engine write to serialize, so queueing these
@@ -926,6 +981,7 @@ function _errorMessage(error: unknown): string {
  * instrument has no business widening a public protocol.
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
+	_recordPerformanceCommand(command);
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
@@ -1031,6 +1087,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setCrossfader(command.value);
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
+	} else if (command.type === 'master_mute') {
+		setMasterMuted(command.muted);
+	} else if (command.type === 'browser_select_playlist') {
+		if (_browserAdapter === null) throw new Error('browser_select_playlist requires a mounted browser panel');
+		await _browserAdapter.selectPlaylist(command.playlist_id);
+		_activeBrowserPlaylist = command.playlist_id;
 	} else if (command.type === 'headphone_mix') {
 		engine.setHeadphoneMix(command.value);
 	} else if (command.type === 'headphone_level') {
