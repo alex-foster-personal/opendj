@@ -357,6 +357,10 @@ def test_api_share_audience_can_only_read_published_metadata(set_share_client) -
     assert published.status_code == 200
     assert client.get("/api/sets", headers=share_headers).json()[0]["session_id"] == "s1"
     assert client.get("/api/sets/s1", headers=share_headers).status_code == 200
+    shared_page = client.get("/sets/shared/s1", headers=share_headers)
+    assert shared_page.status_code == 200
+    assert "OPEN DJ SET HISTORY" in shared_page.text
+    assert "audio_2026-04-17T21-30-00.mp3" not in shared_page.text
     audio = client.get("/api/sets/s1/audio/audio_2026-04-17T21-30-00.mp3", headers=share_headers)
     assert audio.status_code == 404
 

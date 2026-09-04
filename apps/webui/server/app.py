@@ -30,6 +30,7 @@ from starlette.types import Scope
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.sets.share import SetShareConfig
+from apps.sets.share_page import router as set_share_page_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
@@ -367,6 +368,7 @@ def create_app(
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sync_hub_router, prefix=api_prefix)
     app.include_router(sets_router)
+    app.include_router(set_share_page_router)
     app.include_router(play_analytics_router)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):

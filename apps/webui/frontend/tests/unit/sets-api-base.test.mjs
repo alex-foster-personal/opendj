@@ -80,17 +80,14 @@ test('metadata-only set shares use the agent-addressable HTTP contract', async (
 	]);
 });
 
-test('the shared set page renders timeline metadata and never an audio player', () => {
-	const pagePath = fileURLToPath(
-		new URL('../../src/routes/sets/shared/[sessionId]/+page.svelte', import.meta.url)
-	);
+test('the public share route is server-rendered rather than loading the full client application', () => {
+	const pagePath = fileURLToPath(new URL('../../../../sets/share_page.py', import.meta.url));
 	const source = readFileSync(pagePath, 'utf8');
 
-	assert.match(source, /getSession\(sessionId\)/);
-	assert.match(source, /getTimeline\(sessionId\)/);
-	assert.match(source, /getTransitions\(sessionId\)/);
+	assert.match(source, /@router.get\("\/sets\/shared\/\{session_id\}"/);
 	assert.match(source, /track_loaded/);
-	assert.doesNotMatch(source, /sessionAudioUrl|<audio/);
+	assert.match(source, /Metadata-only share/);
+	assert.doesNotMatch(source, /mp3_segments|<audio/);
 });
 
 test('non-2xx maps detail string or statusText onto Error', async () => {

@@ -31,8 +31,6 @@
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
 	// option (a). Toasts stay global as the app-wide error surface.
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
-	const isSharedSet = $derived($page.url.pathname.startsWith('/sets/shared/'));
-	const isFullScreenSurface = $derived(isPerformance || isSharedSet);
 
 	// Keep html[data-theme] in sync (prefs module also applies on load/set).
 	$effect(() => {
@@ -48,7 +46,6 @@
 	// was down at page load still gets a bus without any polling here.
 	$effect(() => {
 		if (!capabilities.events) return;
-		if (isSharedSet) return;
 		// One bus for the page lifetime: never torn down on navigation.
 		connectEventsBus();
 	});
@@ -77,7 +74,6 @@
 	}
 
 	onMount(() => {
-		if (isSharedSet) return;
 		// THE capability probe: one health GET, before anything daemon-specific
 		// decides whether it is real. Every other surface reads the answer.
 		void capabilities.probe();
@@ -105,11 +101,11 @@
 	<title>Open DJ</title>
 </svelte:head>
 
-{#if !isSharedSet && health.bindWarning}
+{#if health.bindWarning}
 	<BannerWarning message={health.bindWarning} />
 {/if}
 
-{#if isFullScreenSurface}
+{#if isPerformance}
 	{@render children()}
 {:else}
 <div class="app-shell">
@@ -177,18 +173,16 @@
 </div>
 {/if}
 
-{#if !isSharedSet}
-	<SettingsOverlay />
-	<!-- The first-run wizard, over whatever route is on screen. Mounted at the
-	     root for the same reason SettingsOverlay is: /performance bypasses the app
-	     shell, and the one surface a brand new user meets cannot be missing there
-	     of all places. -->
-	<SetupOverlay />
-	<!-- The account panel, mounted at the root for the same reason as the two
-	     above: the user bauble is drawn on /performance too, and its Account door
-	     must open something there. -->
-	<AccountOverlay />
-{/if}
+<SettingsOverlay />
+<!-- The first-run wizard, over whatever route is on screen. Mounted at the
+     root for the same reason SettingsOverlay is: /performance bypasses the app
+     shell, and the one surface a brand new user meets cannot be missing there
+     of all places. -->
+<SetupOverlay />
+<!-- The account panel, mounted at the root for the same reason as the two
+     above: the user bauble is drawn on /performance too, and its Account door
+     must open something there. -->
+<AccountOverlay />
 
 <ToastStack items={toasts} />
 
