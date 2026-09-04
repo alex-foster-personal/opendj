@@ -120,3 +120,12 @@ def test_pytest_jobs_forbid_child_uv_runs_from_resyncing_the_venv() -> None:
             f"{name}: the pytest job must set UV_NO_SYNC so a child `uv run` "
             "cannot resync `.venv` out from under the running suite"
         )
+
+
+def test_audio_stack_marker_uses_real_guarded_imports() -> None:
+    """A locatable but broken audio package must skip its marked tests."""
+    conftest = (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
+
+    assert "def _can_import" in conftest
+    assert "importlib.util.find_spec(\"soundfile\")" not in conftest
+    assert "importlib.util.find_spec(\"librosa\")" not in conftest

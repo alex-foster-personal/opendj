@@ -12,19 +12,30 @@ a single-winner override.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+
+def _can_import(module_name: str) -> bool:
+    """Return whether an optional dependency is actually importable."""
+    try:
+        __import__(module_name)
+    except Exception:  # noqa: BLE001 - optional package imports may be broken.
+        return False
+    return True
+
 
 # Optional-dependency gates, resolved once at collection time. Absence is a
 # SKIP (the extra is deliberately opt-in), never a silent pass or a failure.
 _HAS_MUTAGEN: bool = importlib.util.find_spec("mutagen") is not None
 _HAS_JOBLIB: bool = importlib.util.find_spec("joblib") is not None
 _HAS_AUDIO_STACK: bool = (
-    importlib.util.find_spec("soundfile") is not None
-    and importlib.util.find_spec("librosa") is not None
+    _can_import("soundfile") and _can_import("librosa")
 )
 _HAS_FPCALC: bool = shutil.which("fpcalc") is not None
 # ffmpeg is the local waveform decoder (apps.webui.server.rb_vendor_pkg.
@@ -37,6 +48,35 @@ _HAS_FFMPEG: bool = shutil.which("ffmpeg") is not None
 # git HEAD with --no-build-isolation and no pyproject extra can supply it.
 # CI installs it and runs these tests; a plain `uv sync` venv cannot.
 _HAS_MADMOM: bool = importlib.util.find_spec("madmom") is not None
+
+
+def _log_ci_venv_probe(phase: str) -> None:
+    """Record the test interpreter and a non-preloading audio import probe."""
+    probe = (
+        "try:\n"
+        "    import soundfile\n"
+        "except Exception as error:\n"
+        "    print(f'soundfile=ERROR: {type(error).__name__}: {error}')\n"
+        "else:\n"
+        "    print('soundfile=OK')\n"
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        result = (completed.stdout or completed.stderr).strip().replace("\n", " | ")
+        result = result or f"soundfile=ERROR: subprocess exit {completed.returncode}"
+    except OSError as error:
+        result = f"soundfile=ERROR: {type(error).__name__}: {error}"
+    print(
+        "CI_VENV_PROBE "
+        f"phase={phase} pid={os.getpid()} executable={sys.executable!r} "
+        f"prefix={sys.prefix!r} venv_exists={(Path.cwd() / '.venv').is_dir()} {result}",
+        flush=True,
+    )
 
 
 def _has_rb_parity_marker(path: Path) -> bool:
@@ -64,6 +104,16 @@ def pytest_ignore_collect(
     if mark_expression != "rb_parity":
         return None
     return not _contains_rb_parity_marker(Path(str(collection_path)))
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Snapshot the environment after collection chose optional-dependency skips."""
+    _log_ci_venv_probe("collection")
+
+
+def pytest_runtestloop(session: pytest.Session) -> None:
+    """Snapshot the same environment immediately before test-body execution."""
+    _log_ci_venv_probe("execution")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
