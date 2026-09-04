@@ -15,12 +15,13 @@ on:
     # cancelled at the 30-minute timeout bills 31 and DOES trip. Ceilings below
     # now carry that extra minute per job:
     #
-    #   Release Check    30 Linux + 20 macOS = $1.49  CAN trip
-    #   macOS Packaging  16 macOS min        = $1.05  CAN trip
-    #   E2E              30 + 45 Linux min   = $0.46  CAN trip (see below)
-    #   CI               20+15+20 Linux min  = $0.35  CAN trip
-    #   Windows Parity   30 Windows min      = $0.31  CAN trip on cancellation
-    #   Full CI          20 Linux min        = $0.13  cannot, ever
+    #   Release Check          30 Linux min      = $0.19  cannot, ever
+    #   macOS Packaging        16 macOS min      = $1.05  CAN trip
+    #   macOS Native Companion 20 macOS min      = $1.30  CAN trip
+    #   E2E                    30 + 45 Linux min = $0.46  CAN trip (see below)
+    #   CI                     20+15+20 Linux min = $0.35 CAN trip
+    #   Windows Parity         30 Windows min    = $0.31  CAN trip on cancellation
+    #   Full CI                20 Linux min      = $0.13  cannot, ever
     #
     # THAT TABLE IS NO LONGER LOAD-BEARING. It is a reader's convenience, and
     # the same table one revision ago was wrong: it priced E2E at one 30-minute
@@ -43,7 +44,7 @@ on:
       [
         CI,
         E2E,
-        Release Check,
+        macOS Native Companion,
         macOS Packaging,
         Windows Parity (on-demand),
       ]

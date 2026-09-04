@@ -43,6 +43,11 @@ def test_dependency_jobs_provision_venvs_with_uv() -> None:
         "full-ci.yml": ("uv pip install --python .venv/bin/python -r requirements.txt modal",),
         "release-check.yml": (
             "uv pip install --python .venv/bin/python -r requirements.txt build maturin",
+        ),
+        # The macOS pytest job moved out of release-check.yml into its own
+        # workflow (#924). The contract follows the job, not the file it used
+        # to live in - otherwise relocating a job silently drops its cover.
+        "macos-native-companion.yml": (
             "uv pip install --python .venv/bin/python -r requirements.txt pytest",
         ),
     }

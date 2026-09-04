@@ -322,9 +322,10 @@ def test_every_workflow_that_can_trip_the_guard_is_watched() -> None:
     runner label, or a job list is checked rather than remembered.
     """
     threshold = _guard_threshold()
+    workflows = _workflows()
     watched = set(yaml.safe_load(GUARD.read_text())[True]["workflow_run"]["workflows"])
 
-    can_trip = {n: c for n, d in _workflows().items() if (c := _ceiling_usd(d)) > threshold}
+    can_trip = {n: c for n, d in workflows.items() if (c := _ceiling_usd(d)) > threshold}
     assert can_trip, (
         "no workflow can reach the threshold, so this test would pass against an "
         "EMPTY watch list; the threshold or the pricing is wrong"
@@ -334,6 +335,16 @@ def test_every_workflow_that_can_trip_the_guard_is_watched() -> None:
     assert not unwatched, (
         f"these workflows can exceed the ${threshold:.2f} alert on a single run "
         f"and nothing prices them: {unwatched}"
+    )
+
+    unknown = watched - workflows.keys()
+    assert not unknown, f"the guard watches workflow names that do not exist: {sorted(unknown)}"
+    unnecessary = {
+        name: f"${_ceiling_usd(workflows[name]):.2f}" for name in watched - can_trip.keys()
+    }
+    assert not unnecessary, (
+        "these workflows cannot reach the alert threshold, so pricing them "
+        f"adds a billed guard run without signal: {unnecessary}"
     )
 
     # CONTROL on the assertion above: it has to be able to fail. If every
@@ -377,7 +388,7 @@ def _event_set(condition: str, variable: str) -> set[str]:
         match = re.fullmatch(rf"{re.escape(variable)} == \'([A-Za-z_]+)\'", clause)
         assert match, (
             f"cannot compute the event set: clause {clause!r} is not a "
-            f"`{variable} == \'<name>\'` comparison, so the events it admits "
+            f"`{variable} == '<name>'` comparison, so the events it admits "
             f"are unknown and may be all of them. Widen the parser "
             f"deliberately, or gate the job on event names only."
         )
@@ -395,10 +406,10 @@ def _e2e_priced_events(condition: str) -> set[str]:
     disjunct of any other shape reddens this rather than being skipped.
     """
     stripped = re.sub(r"\s+", " ", condition).strip()
-    escape = "github.event.workflow_run.name != \'E2E\'"
+    escape = "github.event.workflow_run.name != 'E2E'"
     head, sep, tail = stripped.partition("||")
     assert head.strip() == escape and sep, (
-        f"the guard\'s gate no longer opens with {escape!r}, so which of its "
+        f"the guard's gate no longer opens with {escape!r}, so which of its "
         f"clauses are E2E-specific can no longer be read: {condition}"
     )
     return _event_set(tail, "github.event.workflow_run.event")
@@ -478,6 +489,7 @@ def test_every_e2e_run_the_guard_skips_is_below_the_alert_threshold() -> None:
 
 
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
+MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
 
 
 def _top_level_disjuncts(condition: str) -> list[str]:
@@ -506,9 +518,18 @@ def _top_level_disjuncts(condition: str) -> list[str]:
     return [part for part in parts if part]
 
 
-def test_enabling_hosted_os_jobs_cannot_bill_macos_minutes_for_a_branch_creation() -> None:
+@pytest.mark.parametrize(
+    ("workflow_path", "job_id"),
+    (
+        (MACOS_PACKAGING, "packaging"),
+        (MACOS_NATIVE_COMPANION, "macos-native-companion"),
+    ),
+)
+def test_enabling_hosted_os_jobs_cannot_bill_macos_minutes_for_a_branch_creation(
+    workflow_path: Path, job_id: str
+) -> None:
     """if the variable arm stands alone then creating any branch bills 16 macOS minutes"""
-    doc = yaml.safe_load(MACOS_PACKAGING.read_text())
+    doc = yaml.safe_load(workflow_path.read_text())
     triggers = doc[True] if True in doc else doc["on"]
 
     # CONTROL: this test only guards anything because the workflow subscribes to
@@ -521,7 +542,7 @@ def test_enabling_hosted_os_jobs_cannot_bill_macos_minutes_for_a_branch_creation
         f"the risk against the triggers it actually declares: {sorted(triggers)}"
     )
 
-    condition = doc["jobs"]["packaging"]["if"]
+    condition = doc["jobs"][job_id]["if"]
     disjuncts = _top_level_disjuncts(condition)
 
     # A bare `vars.X == 'true'` disjunct is true for EVERY event the workflow
@@ -586,4 +607,3 @@ def test_a_status_guarded_event_gate_is_read_and_any_other_shape_still_refuses()
     # And a status guard around something unreadable is still unreadable.
     with pytest.raises(AssertionError, match="cannot compute the event set"):
         _event_set("!cancelled() && (github.ref == 'refs/heads/main')", "github.event_name")
-
