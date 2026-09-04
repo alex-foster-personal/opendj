@@ -625,6 +625,8 @@
 				detail: allTracksCount > 0 ? `${allTracksCount} tracks available` : 'no tracks available'
 			};
 			playlists = lists;
+			// Playlist navigation is ready even while the initial track pane loads.
+			playlistsLoading = false;
 			await _sweepBlankPlaylists(lists);
 			if (source === 'spotify' && spotifySelectedId !== null) {
 				const selected = lists.find(
