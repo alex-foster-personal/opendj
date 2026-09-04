@@ -80,10 +80,19 @@ def _log_ci_venv_probe(phase: str) -> None:
 
 
 def _has_rb_parity_marker(path: Path) -> bool:
-    """Return whether a test module explicitly belongs to the parity gate."""
-    return path.name.startswith("test_") and path.suffix == ".py" and (
-        "pytest.mark.rb_parity" in path.read_text(encoding="utf-8")
-    )
+    """Return whether a test module belongs to the focused parity gate.
+
+    Every tests/webui test_*.py is gate-owned: the focused-gate module
+    enrolls them all by rglob, so a newly added one must be collected (and
+    then marker-selected by tests/webui/conftest.py) with no hand-written
+    marker (issue #1140). Any other module must declare the marker in source
+    to be gate-owned.
+    """
+    if not (path.name.startswith("test_") and path.suffix == ".py"):
+        return False
+    if path.is_relative_to(Path(__file__).resolve().parent / "webui"):
+        return True
+    return "pytest.mark.rb_parity" in path.read_text(encoding="utf-8")
 
 
 def _contains_rb_parity_marker(path: Path) -> bool:

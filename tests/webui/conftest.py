@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterator
 
 import pytest
@@ -17,6 +18,30 @@ from apps.webui.server.backend import (
     Track,
 )
 from apps.webui.server.etag import compute_etag
+
+WEBUI_TEST_ROOT: Path = Path(__file__).resolve().parent
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-mark webui tests with pytest.mark.rb_parity at collection time.
+
+    The focused Rekordbox parity gates select with ``-m rb_parity``, and
+    tests/scripts/test_run_rb_parity_check.py enrolls every
+    tests/webui/test_*.py by rglob. A new webui test file must therefore be
+    selected with no hand-written marker (issue #1140): this hook supplies the
+    marker. It is handed items from the whole collection session, not just
+    this directory, so it filters on the item path - only modules under
+    tests/webui named test_*.py, exactly the set the rglob enrolls.
+    """
+    marker = pytest.mark.rb_parity
+    for item in items:
+        module_path = Path(getattr(item, "path", ".")).resolve()
+        if (
+            module_path.name.startswith("test_")
+            and module_path.suffix == ".py"
+            and module_path.is_relative_to(WEBUI_TEST_ROOT)
+        ):
+            item.add_marker(marker)
 
 
 def _iso(dt: datetime) -> str:
