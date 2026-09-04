@@ -97,11 +97,23 @@ test('the interval is created only from the arm effect', () => {
 test('arming starts the poll and disarming stops it', () => {
 	const install = blockAfter('export function installAutoPlay(): () => void {');
 	assert.match(install, /\$effect\.root\(\(\) => \{/);
-	assert.match(
-		install,
-		/if \(uiPrefs\.auto_play_enabled\) _startPoll\(\);\s*\n\s*else _stopPoll\(\);/,
-		'both directions, explicitly - a start with no stop leaks the timer past the toggle'
-	);
+	// Both directions, explicitly - a start with no stop leaks the timer past
+	// the toggle. Asserted per branch rather than as one literal line, so the
+	// arm effect stays free to do other arm/disarm work (PLAY-05 queue
+	// activation) without this guard reading that as a regression.
+	const armAt = install.indexOf('if (uiPrefs.auto_play_enabled)');
+	assert.notEqual(armAt, -1, 'the arm effect must still branch on the pref');
+	const elseAt = install.indexOf('else', armAt);
+	assert.notEqual(elseAt, -1, 'and it must still have a disarm branch');
+	const teardownAt = install.indexOf('\treturn () => {');
+	const armed = install.slice(armAt, elseAt);
+	const disarmed = install.slice(elseAt, teardownAt === -1 ? undefined : teardownAt);
+
+	assert.match(armed, /_startPoll\(\);/, 'arming starts the poll');
+	assert.doesNotMatch(armed, /_stopPoll\(\);/, 'and the arm branch never stops it');
+	assert.match(disarmed, /_stopPoll\(\);/, 'disarming stops it');
+	assert.doesNotMatch(disarmed, /_startPoll\(\);/, 'and the disarm branch never starts it');
+
 	assert.doesNotMatch(
 		install,
 		/setInterval\(/,
@@ -134,4 +146,68 @@ test('a tick that does fire while disarmed touches no deck', () => {
 	// is the belt to the effect's braces, not a redundancy to be deleted.
 	const clockRead = tick.indexOf('_promoteMaster()');
 	assert.ok(clockRead > guard, 'every engine read stays behind the guard');
+});
+
+/**
+ * PLAY-05: the arm effect clears the charted order on every run, so it must not
+ * also DEPEND on the state it clears.
+ *
+ * The order's publisher compares against autoPlayOrder.chain to skip an
+ * unchanged plan. Read from inside this tracked $effect, that comparison turned
+ * every charted plan into a reason to re-run the arm effect, which republished
+ * the empty order and nulled the memo key - so the queue was wiped the instant
+ * the poll produced one, and the next tick repeated the cycle. clearAutoPlayOrder
+ * exists to write without reading; the source guard in
+ * autoplay-order-memo.test.mjs pins that it is CALLED, and this pins that it
+ * still has the property the call was made for.
+ *
+ * [if] the arm effect subscribes to autoPlayOrder/autoPlayQueue again [then] a
+ *   planned handoff list is cleared as soon as it exists and can never be
+ *   read - broken.
+ * [if] the pref read is untracked by mistake [then] arming and disarming stop
+ *   working entirely - broken, so the disarm leg is asserted here as well.
+ */
+const PLAN_ENTRY = [
+	"export { installAutoPlay } from '$lib/rb/auto-play.svelte';",
+	"export { autoPlayOrder, autoPlayQueue, publishAutoPlayOrder } from '$lib/rb/autoplay-queue.svelte';",
+	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
+	"export { setAutoPlayEnabled } from '$lib/rb/prefs.svelte';"
+].join('\n');
+
+test('RUNNING it: a published plan survives, and the pref still arms/disarms', async () => {
+	const probe = installTimerProbe();
+	let uninstall = null;
+	try {
+		const autoPlay = await loadRuneModule(PLAN_ENTRY);
+		uninstall = autoPlay.installAutoPlay();
+		await probe.flush();
+		assert.equal(autoPlay.autoPlayQueue.active, true, 'arming creates the inspectable queue');
+
+		// Exactly what the poll does once _refreshChartedOrder has a plan.
+		autoPlay.setAutoPlayTrackFeed([
+			{ stable_id: 'nx-1', key: '8A', bpm: 124, file_exists: true, title: 'One', artist: 'A' },
+			{ stable_id: 'nx-2', key: '9A', bpm: 126, file_exists: true, title: 'Two', artist: 'B' }
+		]);
+		autoPlay.publishAutoPlayOrder(['nx-1', 'nx-2']);
+		await probe.flush();
+
+		assert.deepEqual(
+			[...autoPlay.autoPlayOrder.chain],
+			['nx-1', 'nx-2'],
+			'if publishing a plan re-runs the arm effect then the order is wiped as it appears - broken'
+		);
+		assert.deepEqual(
+			autoPlay.autoPlayQueue.entries.map((entry) => entry.stable_id),
+			['nx-1', 'nx-2'],
+			'and the user-viewable queue goes with it - broken'
+		);
+
+		autoPlay.setAutoPlayEnabled(false);
+		await probe.flush();
+		assert.equal(autoPlay.autoPlayQueue.active, false, 'disarming still clears the queue');
+		assert.deepEqual([...autoPlay.autoPlayOrder.chain], [], 'and the order with it');
+	} finally {
+		if (uninstall !== null) uninstall();
+		probe.restore();
+	}
 });

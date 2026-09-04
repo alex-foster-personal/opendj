@@ -22,7 +22,7 @@ function autoPlayHeader() {
 
 test('AutoPlay header uses an inline monochrome icon, not an emoji', () => {
 	const header = autoPlayHeader();
-	assert.match(header, /<AutoPlayExplainer>/);
+	assert.match(header, /<AutoPlayExplainer\b[^>]*queue=\{autoPlayQueue\.entries\}/);
 	assert.match(header, /<svg\b[^>]*class="autoplay-icon"/);
 	assert.match(header, /stroke="currentColor"/);
 	assert.equal(header.includes('🤖'), false, 'platform-coloured robot emoji returned');

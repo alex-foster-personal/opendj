@@ -21,6 +21,11 @@ test('AutoPlay explainer portals, remains interactive through its pointer corrid
 	const panel = page.locator(PANEL);
 	await expect(panel).toBeVisible();
 	await expect(panel).toContainText('AutoPlay order');
+	// PLAY-05: the panel IS the queue viewer, so the published-plan section has
+	// to be part of what opens - not just a count in the header tooltip. The
+	// trigger above is located by the header's aria-label, which is why that
+	// label stays 'AutoPlay order' while the tooltip talks about the queue.
+	await expect(panel).toContainText('Published queue');
 	await expect(panel.locator("a[href*='Warnsdorff']")).toBeVisible();
 	await expect(panel).toHaveCSS('position', 'fixed');
 	expect(await panel.evaluate((element) => element.parentElement === document.body)).toBe(true);

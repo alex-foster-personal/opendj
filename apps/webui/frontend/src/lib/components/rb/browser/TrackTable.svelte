@@ -31,6 +31,7 @@
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
+	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
 	import { buildCurveSegments, segmentPath } from '$lib/rb/autoplay-curve';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
@@ -852,9 +853,13 @@
 						<th
 							class="h-icon h-autoplay"
 							style={`width:${colWidths.autoplay}px`}
+							title={autoPlayQueue.active
+								? `AutoPlay queue - ${autoPlayQueue.entries.length} planned handoff${autoPlayQueue.entries.length === 1 ? '' : 's'}`
+								: 'AutoPlay queue - starts when AutoPlay is enabled'}
 							aria-label="AutoPlay order"
+							data-autoplay-queue-active={autoPlayQueue.active}
 						>
-							<AutoPlayExplainer>
+							<AutoPlayExplainer queue={autoPlayQueue.entries}>
 								{#snippet demo()}
 									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
 								{/snippet}
@@ -1134,7 +1139,7 @@
 										class="ap-rank"
 										class:ap-rank-hot={hoveredApId === row.stable_id}
 										tabindex="0"
-										title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}
+											title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the frozen activation snapshot`}
 										onpointerenter={() => (hoveredApId = row.stable_id)}
 										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
 										onfocus={() => (hoveredApId = row.stable_id)}

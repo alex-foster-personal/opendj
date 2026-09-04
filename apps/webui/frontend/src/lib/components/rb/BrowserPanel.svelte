@@ -1449,7 +1449,9 @@
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
-				file_exists: r.file_exists
+				file_exists: r.file_exists,
+				title: r.title,
+				artist: r.artist
 			}))
 		);
 		autoPlaySnapshotActive = autoPlayFeed.active;

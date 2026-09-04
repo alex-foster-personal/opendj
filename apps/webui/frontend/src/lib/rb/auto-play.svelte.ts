@@ -56,6 +56,12 @@ import {
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
+import {
+	activateAutoPlayQueue,
+	clearAutoPlayOrder,
+	clearAutoPlayQueue,
+	publishAutoPlayOrder
+} from '$lib/rb/autoplay-queue.svelte';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 
@@ -109,33 +115,25 @@ class AutoPlayHandoffError extends Error {
 	}
 }
 
-/** Read-only charted AutoPlay order for the open playlist (library column). */
-export const autoPlayOrder = $state<{
-	chain: readonly string[];
-	rankOf: ReadonlyMap<string, number>;
-}>({ chain: [], rankOf: new Map() });
-
-function _publishOrder(chain: readonly string[]): void {
-	if (
-		chain.length === autoPlayOrder.chain.length &&
-		chain.every((id, i) => id === autoPlayOrder.chain[i])
-	) {
-		return;
-	}
-	autoPlayOrder.chain = chain;
-	autoPlayOrder.rankOf = new Map(chain.map((id, i) => [id, i + 1]));
-}
+export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
 function _refreshChartedOrder(
 	source: AutoPlayDeckSnap | null,
+	snaps: readonly AutoPlayDeckSnap[],
 	excludeIds: ReadonlySet<string>
 ): void {
 	if (!uiPrefs.auto_play_enabled || source === null || source.stable_id === null) {
-		_publishOrder([]);
+		publishAutoPlayOrder([]);
 		return;
 	}
 	_syncPlayedSet();
-	const bounds = tempoBoundsFromPitchRange(pitchRanges[source.id] ?? 16);
+	const follower = pickFollowerDeck(snaps, source.id);
+	if (follower === null) {
+		publishAutoPlayOrder([]);
+		return;
+	}
+	const followerPitchRange = pitchRanges[follower];
+	const bounds = tempoBoundsFromPitchRange(followerPitchRange);
 	// The poll fires every 250 ms; simulating the chain over the open playlist
 	// is O(rows^2) (1.5 s on 8558 rows). Nothing about the order can change
 	// unless one of these inputs did, so an unchanged key is a no-op tick.
@@ -147,7 +145,9 @@ function _refreshChartedOrder(
 		min_tempo_ratio: bounds.min,
 		max_tempo_ratio: bounds.max,
 		exclude_ids: excludeIds,
-		played_ids: _playedIds
+		played_ids: _playedIds,
+		follower_deck: follower,
+		follower_pitch_range: followerPitchRange
 	});
 	if (key === _chartedOrderKey) return;
 	_chartedOrderKey = key;
@@ -164,7 +164,7 @@ function _refreshChartedOrder(
 		max_chain_length: CHARTED_ORDER_HORIZON + 1
 	});
 	// Upcoming only - source is already playing, not "next".
-	_publishOrder(full.slice(1));
+	publishAutoPlayOrder(full.slice(1));
 }
 
 function _snaps(): AutoPlayDeckSnap[] {
@@ -365,7 +365,7 @@ async function _promoteMaster(): Promise<void> {
 
 async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) {
-		_publishOrder([]);
+		publishAutoPlayOrder([]);
 		_pendingMaster = null;
 		return;
 	}
@@ -385,13 +385,13 @@ async function _tick(): Promise<void> {
 			_triggeredFor = null;
 			_waitingFollowerFor = null;
 		}
-		_publishOrder([]);
+		publishAutoPlayOrder([]);
 		return;
 	}
 
 	_syncPlayedSet();
 	const excludeIds = _excludeIds(source.id, snaps);
-	_refreshChartedOrder(source, excludeIds);
+	_refreshChartedOrder(source, snaps, excludeIds);
 
 	const rem = remainingMs(source.position_ms, source.duration_ms);
 	// min(constant, duration/2): a track shorter than the constant window must
@@ -554,8 +554,19 @@ export function installAutoPlay(): () => void {
 	}
 	_stopArmWatcher = $effect.root(() => {
 		$effect(() => {
-			if (uiPrefs.auto_play_enabled) _startPoll();
-			else _stopPoll();
+			if (uiPrefs.auto_play_enabled) {
+				// PLAY-05: activation creates the inspectable queue before the
+				// first poll has a master track from which to calculate handoffs.
+				activateAutoPlayQueue();
+				_chartedOrderKey = null;
+				clearAutoPlayOrder();
+				_startPoll();
+			} else {
+				_stopPoll();
+				_chartedOrderKey = null;
+				clearAutoPlayOrder();
+				clearAutoPlayQueue();
+			}
 		});
 	});
 	return () => {
@@ -572,6 +583,7 @@ export function installAutoPlay(): () => void {
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', count: 0 };
 		_playedFeedEpoch = -1;
-		_publishOrder([]);
+		publishAutoPlayOrder([]);
+		clearAutoPlayQueue();
 	};
 }

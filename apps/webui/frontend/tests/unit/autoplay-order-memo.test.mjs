@@ -42,7 +42,9 @@ const BASE = Object.freeze({
 	min_tempo_ratio: 0.84,
 	max_tempo_ratio: 1.16,
 	exclude_ids: new Set(['sid-x']),
-	played_ids: new Set(['sid-p', 'sid-q'])
+	played_ids: new Set(['sid-p', 'sid-q']),
+	follower_deck: 2,
+	follower_pitch_range: 8
 });
 
 describe('chartedOrderKey', () => {
@@ -67,7 +69,9 @@ describe('chartedOrderKey', () => {
 			min_tempo_ratio: { ...BASE, min_tempo_ratio: 0.9 },
 			max_tempo_ratio: { ...BASE, max_tempo_ratio: 1.1 },
 			exclude_ids: { ...BASE, exclude_ids: new Set(['sid-x', 'sid-y']) },
-			played_ids: { ...BASE, played_ids: new Set(['sid-p']) }
+			played_ids: { ...BASE, played_ids: new Set(['sid-p']) },
+			follower_deck: { ...BASE, follower_deck: 3 },
+			follower_pitch_range: { ...BASE, follower_pitch_range: 16 }
 		};
 		for (const [name, input] of Object.entries(variants)) {
 			assert.notEqual(mod.chartedOrderKey(input), base, `if ${name} changes and the key does not then the order column goes stale - broken`);
@@ -85,6 +89,26 @@ describe('the poll consults the memo (source guards; the controller is rune-boun
 		const simAt = body.indexOf('simulateAutoPlayChain(');
 		assert.ok(keyAt > 0 && guardAt > keyAt && simAt > guardAt,
 			'if _refreshChartedOrder simulates before checking the memo key then the poll ignores the memo - broken');
+	});
+
+	it('the arm watcher clears an activation queue without subscribing to its writes', () => {
+		const watcherStart = CONTROLLER_SOURCE.indexOf('$effect(() => {');
+		const watcher = CONTROLLER_SOURCE.slice(watcherStart, CONTROLLER_SOURCE.indexOf('\n\t\t});', watcherStart));
+		assert.match(
+			watcher,
+			/clearAutoPlayOrder\(\)/,
+			'if the arm watcher reads autoPlayOrder while clearing it then a published queue re-runs the watcher and disappears - broken'
+		);
+	});
+
+	it('the chart uses the selected follower pitch range, and keys it', () => {
+		const start = CONTROLLER_SOURCE.indexOf('function _refreshChartedOrder(');
+		const body = CONTROLLER_SOURCE.slice(start, CONTROLLER_SOURCE.indexOf('\n}\n', start));
+		assert.match(body, /const follower = pickFollowerDeck\(snaps, source\.id\)/);
+		assert.match(body, /const followerPitchRange = pitchRanges\[follower\]/);
+		assert.match(body, /tempoBoundsFromPitchRange\(followerPitchRange\)/);
+		assert.match(body, /follower_deck: follower/);
+		assert.match(body, /follower_pitch_range: followerPitchRange/);
 	});
 
 	it('simulateAutoPlayChain indexes the playlist once instead of a linear find per step', () => {

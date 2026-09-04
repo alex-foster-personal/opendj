@@ -7,6 +7,7 @@
 	// do not obscure the table below; a caller may deliberately opt below.
 	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import type { AutoPlayQueueEntry } from '$lib/rb/auto-play';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
@@ -20,11 +21,14 @@
 
 	let {
 		demo,
+		queue = [],
 		placement = 'above',
 		children
 	}: {
 		/** Reserved mount point for the mini-library walkthrough animation. */
 		demo?: Snippet;
+		/** Frozen handoff rows, preserved independently of the live browser filter. */
+		queue?: readonly AutoPlayQueueEntry[];
 		/** Column explainers normally clear the table; below is opt-in. */
 		placement?: ColumnExplainerPlacement;
 		/** The robot header trigger this panel opens from. */
@@ -130,6 +134,19 @@
 		>
 			<p class="ap-explain-head">AutoPlay order</p>
 			<p class="ap-explain-mode">{mode.short} - {mode.detail}</p>
+			<p class="ap-explain-sub">Published queue:</p>
+			{#if queue.length === 0}
+				<p class="ap-explain-queue-empty">No handoffs planned yet.</p>
+			{:else}
+				<ol class="ap-explain-queue" aria-label="Published AutoPlay queue">
+					{#each queue as entry, index (entry.stable_id)}
+						<li>
+							<strong>{index + 1}. {entry.title}</strong>
+							{entry.artist === null ? '' : ` - ${entry.artist}`}
+						</li>
+					{/each}
+				</ol>
+			{/if}
 
 			<p class="ap-explain-sub">How AutoPlay ranks the next tracks in this playlist:</p>
 			<ul class="ap-explain-bullets">
@@ -210,6 +227,19 @@
 	}
 	.ap-explain-sub {
 		margin: 6px 0 3px;
+		color: var(--rb-text-dim);
+	}
+	.ap-explain-queue,
+	.ap-explain-queue-empty {
+		margin: 0;
+	}
+	.ap-explain-queue {
+		padding: 0 0 0 18px;
+	}
+	.ap-explain-queue li {
+		margin: 0 0 2px;
+	}
+	.ap-explain-queue-empty {
 		color: var(--rb-text-dim);
 	}
 	.ap-explain-bullets {
