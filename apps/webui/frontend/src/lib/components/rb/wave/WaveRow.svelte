@@ -112,6 +112,7 @@
 	});
 
 	const syncPlayheadTone = $derived.by((): PlayheadTone => {
+		if (!deck.audible) return 'stopped';
 		if (deck.is_master && deck.stable_id !== null) return 'master';
 		const followerBeats = paintAnlz?.beatgrid.beats;
 		if (followerBeats === undefined || masterBeats === null || masterState === null) {
@@ -208,10 +209,10 @@
 		const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
 		const paintPalette = rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
 		if (deck.stable_id === null || deck.duration_ms === null) {
-			// Empty deck: flat dark row + always-on now line - never an invented waveform.
+			// Empty deck: flat dark row + state-derived center line - never an invented waveform.
 			ctx.fillStyle = paintPalette.bg;
 			ctx.fillRect(0, 0, cssW, cssH);
-			drawPlayhead(ctx, cssW, cssH, 'now');
+			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone);
 			return;
 		}
 		drawWaveRow(ctx, {

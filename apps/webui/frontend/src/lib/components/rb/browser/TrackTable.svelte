@@ -844,12 +844,31 @@
 					</th>
 					{@render sortableTh('order', '#', 'order')}
 					{#if autoPlayMode !== 'off'}
-						<th class="h-icon h-autoplay" style={`width:${colWidths.autoplay}px`} title="AutoPlay order - rank in AutoPlay's next handoffs for the open playlist">
+						<th
+							class="h-icon h-autoplay"
+							style={`width:${colWidths.autoplay}px`}
+							aria-label="AutoPlay order"
+						>
 							<AutoPlayExplainer>
 								{#snippet demo()}
 									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
 								{/snippet}
-								<span aria-hidden="true">🤖</span>
+								<svg
+									class="autoplay-icon"
+									viewBox="0 0 16 16"
+									width="12"
+									height="12"
+									aria-hidden="true"
+								>
+									<path
+										d="M8 1.5v2M5.5 2.5h5M4 5.5h8v6H4zM6.25 8h.01M9.75 8h.01M6.25 10h3.5M2.5 7.5H4M12 7.5h1.5"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="1.25"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
 							</AutoPlayExplainer>
 						</th>
 					{/if}

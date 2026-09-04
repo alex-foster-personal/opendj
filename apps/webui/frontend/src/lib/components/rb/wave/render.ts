@@ -65,6 +65,7 @@ export const WAVE_WINDOW_S = 24;
 /** Playhead is pure white in the screenshot; not a themed surface colour. */
 /** Center 'now' line - red by default; Beat Sync followers override via tone. */
 const PLAYHEAD_COLORS = {
+	stopped: '#fff',
 	now: '#e23a32',
 	master: '#e0cc6e',
 	bar1: '#35c04f',

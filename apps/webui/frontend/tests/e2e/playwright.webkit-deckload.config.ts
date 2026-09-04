@@ -13,7 +13,7 @@
  *   - the SPA is served by the ENGINE from `apps/webui/frontend/build`, not
  *     by vite. Dev serves packages untransformed; the artifact does not.
  *
- * THREE SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
+ * FOUR SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
  * so the root chromium/vite config would pick it up, and that run still
  * happens. It is ALSO run here, because everything it asserts is exactly what
  * a tester meets in the installed app and nowhere else: the Cmd+, accelerator
@@ -24,8 +24,9 @@
  * third: unlike the other two it also runs under a SECOND project, chromium,
  * so the same acceptance is asserted on both browsers against the identical
  * artifact and engine (see that file's own header for why). None of the
- * three suites needs a fixture another does not, so they share this engine
- * and its throwaway library rather than paying a second 180s boot.
+ * AutoPlay explainer placement is the fourth suite. None of the four suites
+ * needs a fixture another does not, so they share this engine and its
+ * throwaway library rather than paying a second 180s boot.
  *
  * The library is a throwaway fixture built by the real folder ingest over
  * generated audio (see support/deckload_fixture.py). It is NOT the lane data
@@ -39,8 +40,8 @@
  * - ✔︎ The production build must already exist; a stale/absent build fails at
  *   config load with the command to run, never mid-test as a mystery.
  * - ✔︎ No retries and one worker: a flaky worklet is the defect under test.
- * - ✔︎ Three tier-1 artifact suites run here: the deck-load contract, the
- *   setup entry points, and the cross-browser deck-load smoke.
+ * - ✔︎ Four tier-1 artifact suites run here: the deck-load contract, setup
+ *   entry points, cross-browser deck-load smoke, and AutoPlay explainer.
  * - ✔︎ The chromium project is scoped to the smoke only, so it never doubles
  *   the deck-load contract or setup-entry-points suites under a second
  *   browser.
@@ -54,6 +55,8 @@
  *   accelerator and the chip are gated on webkit.
  * - [if] the chromium project runs webkit-deckload.spec.ts or
  *   setup-entry-points.spec.ts [then ⛔️] the smoke's testMatch scoping holds.
+ * - [if] the AutoPlay explainer is checked only through source text [then ⛔️]
+ *   the production browser-path contract passes.
  */
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -145,7 +148,12 @@ export default defineConfig({
 	// Named individually, never a glob: this directory holds a dozen suites
 	// with their own servers and real-library fixtures, and a pattern that
 	// widened by accident would point them all at this one engine.
-	testMatch: ['webkit-deckload.spec.ts', 'setup-entry-points.spec.ts', 'deckload-smoke.spec.ts'],
+	testMatch: [
+		'webkit-deckload.spec.ts',
+		'setup-entry-points.spec.ts',
+		'deckload-smoke.spec.ts',
+		'autoplay-explainer-placement.spec.ts'
+	],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,

@@ -62,7 +62,7 @@
 		})()
 	);
 	const offTempoTitle: string | null = $derived(
-		deck.is_master ? null : _offTempoTitle(liveBpm, masterBpm)
+		deck.is_master || !deck.audible ? null : _offTempoTitle(liveBpm, masterBpm)
 	);
 	const pitchText: string = $derived(`${((deck.pitch - 1) * 100).toFixed(1)}%`);
 	// Range readout is REAL from the engine's per-deck pitchRanges store;
@@ -177,18 +177,6 @@
 		</button>
 		<button class="rb-lit-button rb-inert" disabled title={inertTip}>AU</button>
 		<button class="rb-lit-button rb-inert" disabled title={inertTip}>MA</button>
-		<button
-			class="rb-lit-button small"
-			class:lit={deck.master_tempo_enabled}
-			disabled={pending}
-			aria-pressed={deck.master_tempo_enabled}
-			data-performance-control="master-tempo"
-			data-state={deck.master_tempo_enabled ? 'on' : 'off'}
-			title={mtTitle}
-			onclick={async () => await onMasterTempo()}
-		>
-			MT
-		</button>
 	</div>
 </div>
 
@@ -245,9 +233,5 @@
 	.side-buttons button {
 		min-width: 34px;
 		text-align: center;
-	}
-	.side-buttons .small {
-		font-size: 8px;
-		padding: 1px 4px;
 	}
 </style>

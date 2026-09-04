@@ -561,10 +561,8 @@ function _clockText(positionMs: number): string {
  *
  * `section.rb-deck` is not decoration: `[data-deck]` matches EIGHT elements
  * (four `.rb-waverow` overview lanes and four `.rb-deck` panels), so a bare
- * `[data-deck="1"]` is ambiguous. `:visible` is not decoration either: JogDial
- * renders TWO buttons carrying `data-performance-control="master-tempo"` (a
- * full-size MT and a `.small` MT for the narrow layout) and only one of them is
- * on screen, so a strict locator would fail on the ambiguity.
+ * `[data-deck="1"]` is ambiguous. `:visible` scopes the locator to the control
+ * a person can interact with rather than hidden responsive UI.
  */
 function _control(page: Page, deck: DeckId, control: string) {
 	return page.locator(
@@ -573,16 +571,11 @@ function _control(page: Page, deck: DeckId, control: string) {
 }
 
 /**
- * Controls that legitimately resolve to more than one VISIBLE element, and how
- * many. JogDial renders two buttons carrying
- * `data-performance-control="master-tempo"` - a full-size `MT` and a `.small`
- * `MT` - in the same `.side-buttons` cluster, both wired to the same
- * `onMasterTempo` handler, with no media query hiding either. Pinning the count
- * here rather than reaching for `.first()` means a NEW duplicate still fails
- * loudly instead of being silently absorbed.
+ * Pin the visible control count before clicking. A new duplicate must fail
+ * loudly instead of being silently absorbed by `.first()`.
  */
 const EXPECTED_VISIBLE_CONTROLS: Readonly<Record<string, number>> = {
-	'master-tempo': 2
+	'master-tempo': 1
 };
 
 /** Click a control after asserting it resolved to the count we expect. */
