@@ -123,6 +123,7 @@ import {
 	computeFollowerSyncPlan,
 	planTempoRatioRamp,
 	playbackBpm,
+	pqtzLoopBeatCount,
 	quantizeToNearestBeat,
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
@@ -2143,14 +2144,14 @@ function _ensureRaf(): void {
 
 /** Display-only stored loop (COMPONENT-MAP 1.3: loop chips are display at
  * v1): the rekordbox active loop when one exists, engaged: false. */
-function _displayLoopFrom(cues: AnlzCue[]): LoopState | null {
+function _displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopState | null {
 	const active = cues.find((c) => c.active_loop && c.out_ms !== null);
 	if (active === undefined || active.out_ms === null) return null;
 	return {
 		in_ms: active.in_ms,
 		out_ms: active.out_ms,
 		engaged: false,
-		beat_length: active.beat_loop_size
+		beat_length: pqtzLoopBeatCount(beats, active.in_ms, active.out_ms)
 	};
 }
 
@@ -3202,7 +3203,7 @@ class RbAudioEngine implements AudioEngine {
 			st.hot_cues = _hotCuesFromSlots(hotCueSlots);
 			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
 			st.has_rb_mapping = candidateTrack.has_rb_mapping;
-			st.loop = _displayLoopFrom(candidateAnlz.cues);
+			st.loop = _displayLoopFrom(candidateAnlz.cues, candidateAnlz.beatgrid.beats);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			if (incumbentProcessor !== null) {
@@ -3254,7 +3255,7 @@ class RbAudioEngine implements AudioEngine {
 		st.anlz = fresh;
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
-		st.loop = _displayLoopFrom(fresh.cues);
+		st.loop = _displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */

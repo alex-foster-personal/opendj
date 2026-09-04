@@ -96,6 +96,25 @@ function _nearestBeatIndex(beats: readonly AnlzBeat[], positionSec: number): num
 	return earlierDistance <= laterDistance ? earlierIndex : laterIndex;
 }
 
+/**
+ * Return a stored loop's length only when both endpoints are exact PQTZ beat
+ * timestamps. Rekordbox BeatLoopSize is vendor metadata that can be packed,
+ * so it is deliberately not an input to this calculation.
+ */
+export function pqtzLoopBeatCount(
+	beats: readonly Pick<AnlzBeat, 't'>[],
+	inMs: number,
+	outMs: number
+): number | null {
+	if (!Number.isFinite(inMs) || !Number.isFinite(outMs) || outMs <= inMs) return null;
+	const startSec = inMs / 1000;
+	const endSec = outMs / 1000;
+	const startIndex = beats.findIndex((beat) => Math.abs(beat.t - startSec) < 1e-9);
+	const endIndex = beats.findIndex((beat) => Math.abs(beat.t - endSec) < 1e-9);
+	const count = endIndex - startIndex;
+	return startIndex >= 0 && endIndex > startIndex ? count : null;
+}
+
 function _enclosingBeatIndex(
 	beats: readonly AnlzBeat[],
 	positionSec: number,
