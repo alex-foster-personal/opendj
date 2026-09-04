@@ -7,6 +7,8 @@ The load-bearing claims:
   * the orphaned worker's process GROUP is actually killed, with its identity
     proven first;
   * a pgid whose identity does NOT check out is left strictly alone;
+  * a pgid whose process is already GONE is reported as a skip WITH the
+    reason, never quietly passed over;
   * an ``unknown`` row refuses to re-enqueue until a reconcile hook can say
     what really happened.
 
@@ -24,10 +26,12 @@ import sys
 import time
 from pathlib import Path
 
+import psutil
 import pytest
 
 from apps.engine_core.jobs.reap import (
     WorkerIdentity,
+    group_has_live_member,
     process_group_exists,
 )
 from apps.engine_core.jobs.runner import (
@@ -48,12 +52,19 @@ import asyncio, json, os, sys
 from apps.engine_core.jobs.runner import JobRunner, register_worker
 from apps.engine_core.jobs.store import JobStore
 
+# argv[1] is the jobs db; argv[2] is the sentinel the WORKER touches once it
+# is past its only write to the stdout pipe it shares with this engine. See
+# the test's _await_worker_ready for why that ordering is the whole
+# precondition of the reap test.
 SLEEPER = (
-    "import json, time\\n"
+    "import json, sys, time\\n"
     "print(json.dumps({'progress': 0.1, 'message': 'started'}), flush=True)\\n"
+    "open(sys.argv[1], 'w').close()\\n"
     "time.sleep(600)\\n"
 )
-register_worker("test-sleeper", lambda _p: [sys.executable, "-c", SLEEPER])
+register_worker(
+    "test-sleeper", lambda _p: [sys.executable, "-c", SLEEPER, sys.argv[2]]
+)
 store = JobStore(sys.argv[1], boot_id="boot-a", owner_pid=os.getpid())
 store.recover()
 
@@ -96,12 +107,14 @@ def _spawn_orphan() -> subprocess.Popen[bytes]:
     )
 
 
-def _start_engine(db_path: Path) -> tuple[subprocess.Popen[str], dict]:
+def _start_engine(
+    db_path: Path, ready: Path
+) -> tuple[subprocess.Popen[str], dict]:
     """Boot a real engine process and wait for it to be holding a worker."""
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO_ROOT)
     engine = subprocess.Popen(
-        [sys.executable, "-c", _ENGINE_SOURCE, str(db_path)],
+        [sys.executable, "-c", _ENGINE_SOURCE, str(db_path), str(ready)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -118,23 +131,85 @@ def _start_engine(db_path: Path) -> tuple[subprocess.Popen[str], dict]:
     return engine, json.loads(line)
 
 
+def _await_worker_ready(
+    engine: subprocess.Popen[str], ready: Path, timeout_s: float = 60.0
+) -> None:
+    """Block until the worker is past the one write the engine's death breaks.
+
+    THE PRECONDITION THIS EXISTS TO MAKE TRUE. ``worker_pgid`` is written the
+    statement after the fork, so the engine reports the job as running while
+    the worker is still inside interpreter startup. SIGKILL the engine in that
+    window and the worker's first ``print`` lands on a pipe whose only reader
+    just died: BrokenPipeError, and the worker goes down with it. The next
+    boot then finds no orphan at all and correctly says "reap skipped: pid N
+    is not running" -- a red test with a healthy engine behind it, and the
+    likelihood of landing in that window rises with how loaded the machine is
+    (measured on darwin: an orphan whose print was held back died at exactly
+    the moment it reached that print, not a millisecond before).
+
+    So the worker announces itself on DISK instead, AFTER that print. The
+    sentinel existing proves the write already happened; from there the worker
+    only sleeps, touching nothing the engine's death can break.
+    """
+    deadline = time.monotonic() + timeout_s
+    while not ready.exists():
+        if engine.poll() is not None:
+            assert engine.stderr is not None
+            raise AssertionError(
+                "engine died before its worker was ready: "
+                f"{engine.stderr.read()}"
+            )
+        if time.monotonic() >= deadline:
+            engine.kill()
+            raise AssertionError(
+                f"worker never wrote its ready sentinel {ready} within "
+                f"{timeout_s:.0f}s, so there is no live orphan to reap"
+            )
+        time.sleep(0.02)
+
+
+def _why_not_live(pgid: int) -> str | None:
+    """Why nothing is RUNNING under ``pgid``, or None when something is.
+
+    ``process_group_exists`` is the wrong probe for a precondition: a pgid
+    stays allocated while its last member is a zombie, so it answers yes for a
+    group that is already a corpse. This one discounts zombies and names the
+    reason, so a precondition that does not hold fails loudly with the fact
+    rather than passing quietly.
+    """
+    if not group_has_live_member(pgid):
+        return f"nothing is still running in process group {pgid}"
+    try:
+        status = psutil.Process(pgid).status()
+    except psutil.NoSuchProcess:
+        return f"pid {pgid} is gone"
+    if status == psutil.STATUS_ZOMBIE:
+        return f"pid {pgid} is a zombie"
+    return None
+
+
 def test_restart_flips_running_to_unknown_and_reaps_the_worker(
     tmp_path: Path,
 ) -> None:
     """SIGKILL a real engine mid-job; boot 2 must clean up after it.
 
     Nothing here is simulated: a separate process really is holding a really
-    running worker when it really is killed without warning.
+    running worker when it really is killed without warning. The worker is
+    held to its ready sentinel first, because an orphan that has not survived
+    the engine's death yet is not an orphan -- see _await_worker_ready.
     """
     db_path = tmp_path / "jobs.db"
-    engine, running = _start_engine(db_path)
+    ready = tmp_path / "worker-ready"
+    engine, running = _start_engine(db_path, ready)
     pgid = running["worker_pgid"]
+    _await_worker_ready(engine, ready)
     engine.kill()  # SIGKILL: no shutdown hook, no cancellation, no mercy
     engine.wait(timeout=10)
 
     try:
         assert running["status"] == "running"
-        assert process_group_exists(pgid), "orphan died before the test ran"
+        dead = _why_not_live(pgid)
+        assert dead is None, f"orphan died before the test ran: {dead}"
 
         boot_b = _store(db_path, "boot-b")
         recovered = boot_b.recover()
@@ -144,7 +219,10 @@ def test_restart_flips_running_to_unknown_and_reaps_the_worker(
         assert row["status"] == "unknown", row
         assert RESTART_ERROR in row["error"]
         assert "reap:" in row["error"], row["error"]
-        assert not process_group_exists(pgid), row["error"]
+        # Live members, not the pgid: the group stays allocated while the
+        # corpse waits to be reaped by whatever inherited it, and "still
+        # allocated" is not "still running".
+        assert not group_has_live_member(pgid), row["error"]
 
         # A second recovery pass has nothing left to do: the row is now owned
         # by boot-b and terminal.
@@ -190,6 +268,55 @@ def test_recovery_refuses_to_kill_a_pgid_it_cannot_prove(
     finally:
         _kill_group(stranger.pid)
         stranger.wait(timeout=10)
+
+
+def test_recovery_reports_a_dead_pgid_as_skipped_with_the_reason(
+    tmp_path: Path,
+) -> None:
+    """The other half of the invariant: a pid that is GONE is said so, loudly.
+
+    A running orphan MUST be reaped. An orphan that died on its own MUST be
+    reported as a skip WITH the reason, never passed over in silence -- the
+    row is the only place that distinction can be recorded. This branch used
+    to be reached only by accident, when the reap test's own worker died in
+    the spawn window; it is worth reaching on purpose.
+    """
+    db_path = tmp_path / "jobs.db"
+    boot_a = _store(db_path, "boot-a")
+    boot_a.recover()
+    job = boot_a.enqueue("dead-worker", {})
+    boot_a.claim_queued()
+
+    corpse = _spawn_orphan()
+    boot_a.record_worker(
+        job["id"],
+        pid=corpse.pid,
+        identity=WorkerIdentity(
+            pgid=corpse.pid,
+            argv=("python", "-c", "sleep"),
+            started_at=time.time(),
+        ),
+    )
+    boot_a.close()
+    corpse.kill()
+    # Waited on here, so the pid is RELEASED rather than left a zombie: the
+    # branch under test is a leader psutil cannot find at all.
+    corpse.wait(timeout=10)
+    assert not process_group_exists(corpse.pid), "the corpse outlived its kill"
+
+    boot_b = _store(db_path, "boot-b")
+    try:
+        recovered = boot_b.recover()
+        assert len(recovered) == 1
+        row = recovered[0]
+        assert row["status"] == "unknown", row
+        assert RESTART_ERROR in row["error"]
+        assert f"reap skipped: pid {corpse.pid} is not running" in row["error"]
+        # Nothing of ours can still be in that group, so the row is done with
+        # and the next boot has no reap left to retry.
+        assert boot_b.recover() == []
+    finally:
+        boot_b.close()
 
 
 def test_unknown_rows_refuse_to_reenqueue_until_reconciled(
