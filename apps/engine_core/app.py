@@ -28,7 +28,6 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
@@ -69,11 +68,12 @@ from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import analysis_autostart
-from apps.webui.server.app import FRONTEND_BUILD_DIR, _SpaStaticFiles
+from apps.webui.server.app import _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
 from apps.webui.server.backend import StateBackend
 from apps.webui.server.cloud_sync import probe_syncthing_status
 from apps.webui.server.deps import get_read_state
+from apps.webui.server.frontend_build import frontend_build_dir
 from apps.webui.server.models import HealthOut
 from apps.webui.server.routes.health import health as legacy_health
 from apps.webui.server.sqlite_backend import make_backend
@@ -306,7 +306,7 @@ def _add_health_route(app: FastAPI) -> None:
 
 def _mount_spa(app: FastAPI) -> None:
     """Mount the SPA build dir exactly as apps/webui/server/app.py does."""
-    build_dir: Path = FRONTEND_BUILD_DIR
+    build_dir = frontend_build_dir()
     if build_dir.exists() and any(build_dir.iterdir()):
         app.mount(
             "/",

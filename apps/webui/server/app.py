@@ -45,6 +45,7 @@ from .errors import (
     handle_not_found,
     handle_rekordbox_writeback_disabled,
 )
+from .frontend_build import frontend_build_dir
 from .routes import analysis as analysis_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import auth as auth_routes
@@ -98,9 +99,7 @@ from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
 
-FRONTEND_BUILD_DIR: Path = (
-    Path(__file__).resolve().parent.parent / "frontend" / "build"
-)
+FRONTEND_BUILD_DIR: Path = frontend_build_dir()
 
 
 class _SpaStaticFiles(StaticFiles):
