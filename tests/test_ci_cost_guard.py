@@ -203,12 +203,40 @@ def _runner_labels(job_id: str, runs_on: object) -> list[str]:
     return [fallback] if isinstance(fallback, str) else list(fallback)
 
 
-def _job_ceiling_usd(job_id: str, job: dict) -> float:
-    """One job's worst-case cost, priced through the guard's own SKU table."""
-    assert "strategy" not in job, (
-        f"{job_id} has a matrix; one job no longer means one billed run "
-        "and this ceiling would understate it"
+def _matrix_runs(job_id: str, job: dict) -> int:
+    """How many billed runs one job definition expands to.
+
+    A `strategy.matrix` job bills once PER COMBINATION, so a ceiling that
+    counted it once would understate the workflow by a factor of the shard
+    count. Only the plain shape is read (every key a literal list, no
+    `include` / `exclude`, no expression); anything else is refused rather
+    than guessed, in the same fail-closed spirit as `_runner_labels`.
+    """
+    strategy = job.get("strategy")
+    if strategy is None:
+        return 1
+    matrix = strategy.get("matrix")
+    assert isinstance(matrix, dict), (
+        f"{job_id} has a strategy this test cannot read: {strategy!r}"
     )
+    assert not ({"include", "exclude"} & matrix.keys()), (
+        f"{job_id} uses matrix include/exclude, which this ceiling cannot count"
+    )
+    runs = 1
+    for key, values in matrix.items():
+        assert isinstance(values, list) and values, (
+            f"{job_id} matrix key {key!r} is not a literal list: {values!r}"
+        )
+        runs *= len(values)
+    return runs
+
+
+def _job_ceiling_usd(job_id: str, job: dict) -> float:
+    """One job's worst-case cost, priced through the guard's own SKU table.
+
+    A matrix job is priced once per combination: the fast pytest lane shards
+    across runners, and each shard is its own billed job with its own timeout.
+    """
     timeout = job.get("timeout-minutes")
     assert isinstance(timeout, int), (
         f"{job_id} has no explicit timeout-minutes, so its ceiling is "
@@ -225,7 +253,7 @@ def _job_ceiling_usd(job_id: str, job: dict) -> float:
     # and a workflow sitting exactly ON the threshold is then classified as
     # unable to trip and dropped from the watch list. Codex found this on #713:
     # Windows Parity priced at exactly $0.30 against a `> $0.30` alert.
-    return (timeout + 1) * sku.rate_usd_per_minute
+    return _matrix_runs(job_id, job) * (timeout + 1) * sku.rate_usd_per_minute
 
 
 def test_a_runner_switch_is_priced_at_the_hosted_fallback_it_can_select() -> None:
