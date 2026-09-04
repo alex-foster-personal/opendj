@@ -56,10 +56,39 @@ const XRUN_SENTINEL_NODE_OPTIONS: Readonly<AudioWorkletNodeOptions> = Object.fre
 
 let _session: XrunSessionCounter = { ...EMPTY_XRUN_SESSION };
 let _node: AudioWorkletNode | null = null;
+let _flushSequence = 0;
+const _flushWaiters = new Map<
+	string,
+	{ resolve: (counter: XrunSessionCounter) => void; reject: (error: Error) => void; timeout: number }
+>();
 
 /** Cumulative xruns for this app session. Agent-readable, no UI required. */
 export function readXrunSessionCounter(): XrunSessionCounter {
 	return { ..._session };
+}
+
+/** Flush the audio-thread xrun window and resolve only after its port acknowledgement. */
+export function flushXrunSessionCounter(): Promise<XrunSessionCounter> {
+	if (_node === null) {
+		return Promise.reject(new Error('xrun sentinel is not armed, so its counter cannot be flushed'));
+	}
+	const requestId = `xrun-flush-${++_flushSequence}`;
+	return new Promise((resolve, reject) => {
+		const timeout = window.setTimeout(() => {
+			_flushWaiters.delete(requestId);
+			reject(new Error('xrun sentinel did not acknowledge the flush within 5 seconds'));
+		}, 5_000);
+		_flushWaiters.set(requestId, { resolve, reject, timeout });
+		_node?.port.postMessage({ kind: 'xrun-flush', requestId });
+	});
+}
+
+function _rejectFlushWaiters(reason: string): void {
+	for (const waiter of _flushWaiters.values()) {
+		window.clearTimeout(waiter.timeout);
+		waiter.reject(new Error(reason));
+	}
+	_flushWaiters.clear();
 }
 
 /**
@@ -72,6 +101,7 @@ export function readXrunSessionCounter(): XrunSessionCounter {
  */
 export function detachXrunSentinel(): void {
 	if (_node === null) return;
+	_rejectFlushWaiters('xrun sentinel detached before it acknowledged the flush');
 	_node.port.onmessage = null;
 	_node.disconnect();
 	_node = null;
@@ -90,6 +120,30 @@ function _onReport(data: unknown): void {
 	// (rate-limited there to one POST per kind per minute). A window the audio
 	// thread reports as late is an audio-liveness failure, not a notice.
 	recordPerfEvent('xrun', xrunReportMessage(data), null, 'error');
+}
+
+function _onMessage(data: unknown): void {
+	if (
+		typeof data === 'object' && data !== null &&
+		(data as { kind?: unknown }).kind === 'xrun-flush-ack' &&
+		typeof (data as { requestId?: unknown }).requestId === 'string'
+	) {
+		const requestId = (data as { requestId: string }).requestId;
+		const waiter = _flushWaiters.get(requestId);
+		if (waiter === undefined) {
+			recordPerfEvent('xrun-sentinel-bad-report', `unexpected xrun flush acknowledgement: ${requestId}`);
+			return;
+		}
+		window.clearTimeout(waiter.timeout);
+		_flushWaiters.delete(requestId);
+		if ((data as { judging?: unknown }).judging !== true) {
+			waiter.reject(new Error('xrun sentinel has not completed cadence warmup; its counter is not ready'));
+			return;
+		}
+		waiter.resolve(readXrunSessionCounter());
+		return;
+	}
+	_onReport(data);
 }
 
 /**
@@ -132,7 +186,7 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 			gapFloorMs: XRUN_GAP_FLOOR_MS
 		}
 	});
-	node.port.onmessage = (event: MessageEvent) => _onReport(event.data);
+	node.port.onmessage = (event: MessageEvent) => _onMessage(event.data);
 	node.addEventListener('processorerror', () => {
 		recordPerfEvent(
 			'xrun-sentinel-failed',
@@ -156,9 +210,13 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 	);
 }
 
-/** DevTools/agent helper: __mdtXruns() returns the session counter. */
+/** DevTools/agent helpers expose both counter reads and acknowledged flushes. */
 export function installXrunSessionGlobal(): void {
 	if (typeof window === 'undefined') return;
-	const w = window as Window & { __mdtXruns?: () => XrunSessionCounter };
+	const w = window as Window & {
+		__mdtFlushXruns?: () => Promise<XrunSessionCounter>;
+		__mdtXruns?: () => XrunSessionCounter;
+	};
 	w.__mdtXruns = () => readXrunSessionCounter();
+	w.__mdtFlushXruns = () => flushXrunSessionCounter();
 }

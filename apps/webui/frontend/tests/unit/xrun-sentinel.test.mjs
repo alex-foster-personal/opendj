@@ -283,4 +283,16 @@ test('the session counter is reachable without a UI', () => {
 		'agent-native parity: the counter needs a programmatic read, not only a meter'
 	);
 	assert.ok(sentinel.includes('__mdtXruns'), 'and a DevTools handle alongside __mdtPerfLog');
+	assert.ok(
+		sentinel.includes('export function flushXrunSessionCounter()'),
+		'an agent must be able to flush the worklet window before reading a pressure boundary'
+	);
+	assert.ok(sentinel.includes('__mdtFlushXruns'), 'the acknowledged flush needs a DevTools handle');
+	const processor = readSource('src/lib/rb/xrun-sentinel-processor.js');
+	assert.ok(processor.includes("kind: 'xrun-flush-ack'"), 'the worklet must acknowledge a flush');
+	assert.ok(processor.includes('judging: this.judging'), 'the acknowledgement must expose warmup readiness');
+	assert.ok(
+		sentinel.includes("xrun sentinel has not completed cadence warmup"),
+		'a flush before cadence warmup must reject rather than claim an authoritative zero'
+	);
 });

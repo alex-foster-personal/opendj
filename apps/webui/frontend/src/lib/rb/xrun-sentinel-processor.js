@@ -90,6 +90,13 @@ class XrunSentinelProcessor extends AudioWorkletProcessor {
 		this.xruns = 0;
 		this.parked = 0;
 		this.worstGapMs = 0;
+		this.flushRequestIds = [];
+		this.port.onmessage = (event) => {
+			const data = event.data;
+			if (data?.kind === 'xrun-flush' && typeof data.requestId === 'string') {
+				this.flushRequestIds.push(data.requestId);
+			}
+		};
 	}
 
 	/**
@@ -150,7 +157,8 @@ class XrunSentinelProcessor extends AudioWorkletProcessor {
 			}
 		}
 		const windowMs = nowMs - this.windowStartMs;
-		if (windowMs < this.reportIntervalMs) return true;
+		const flushRequestIds = this.flushRequestIds.splice(0);
+		if (windowMs < this.reportIntervalMs && flushRequestIds.length === 0) return true;
 		// Silence is the healthy case and it must cost nothing: a window with
 		// nothing in it rolls over without posting, so an idle set produces no
 		// MessagePort traffic and no ring rows at all.
@@ -171,6 +179,9 @@ class XrunSentinelProcessor extends AudioWorkletProcessor {
 		this.xruns = 0;
 		this.parked = 0;
 		this.worstGapMs = 0;
+		for (const requestId of flushRequestIds) {
+			this.port.postMessage({ kind: 'xrun-flush-ack', requestId, judging: this.judging });
+		}
 		return true;
 	}
 }
