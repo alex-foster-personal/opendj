@@ -28,7 +28,6 @@ import {
 } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
-	autoPlayExcludedIds,
 	decideAutoPlayBeatSync,
 	decideMasterPromotion,
 	effectiveAutoPlayThresholdMs,
@@ -63,6 +62,7 @@ import {
 	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
+import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
@@ -85,6 +85,8 @@ let _inFlight = false;
 let _triggeredFor: string | null = null;
 let _playedIds = new Set<string>();
 let _playedFeedEpoch = -1;
+/** Epoch whose non-empty feed exhausted this source without committing a load. */
+let _exhaustedFeedEpoch: number | null = null;
 /** Inputs of the last charted-order simulation; equal key = skip the tick's simulate. */
 let _chartedOrderKey: string | null = null;
 /** Candidates that failed load/play; cleared when playlist membership changes. */
@@ -92,6 +94,12 @@ let _unplayableIds = new Set<string>();
 let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
+/**
+ * Empty playlist feeds are transient during BrowserPanel's playlist hydration.
+ * Remember which empty feed we reported, but do not consume the source's one
+ * handoff arm: the next feed epoch may contain the new playlist's candidates.
+ */
+let _waitingEmptyFeedEpoch: number | null = null;
 /**
  * Every stable_id AutoPlay has DECIDED to load this session (matrix row 14).
  * Recorded before dispatch, never rolled back, and deliberately NOT cleared by
@@ -155,6 +163,8 @@ function _refreshChartedOrder(
 		select_next: pickNextStableId,
 		playlist: getAutoPlayPlaylist(),
 		start_stable_id: source.stable_id,
+		start_key: deckStates[source.id].key,
+		start_bpm: deckStates[source.id].bpm,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
 		min_tempo_ratio: bounds.min,
@@ -168,34 +178,7 @@ function _refreshChartedOrder(
 }
 
 function _snaps(): AutoPlayDeckSnap[] {
-	return DECK_IDS.map((id) => {
-		const d = deckStates[id];
-		return {
-			id,
-			stable_id: d.stable_id,
-			playing: d.playing,
-			// Audio clock, NOT d.position_ms: that mirror is published from
-			// requestAnimationFrame, which the browser stops in a background tab,
-			// and a frozen position never reaches AUTO_PLAY_THRESHOLD_MS. Reading
-			// the clock is what lets a set keep mixing while the user is on
-			// another tab. This poll is a setInterval, which a tab playing audio
-			// keeps running (throttled to ~1s), leaving ~16 chances inside the
-			// 16s window.
-			position_ms: deckAudioClockPositionMs(id),
-			duration_ms: d.duration_ms,
-			is_master: d.is_master,
-			beat_sync_enabled: d.beat_sync_enabled
-		};
-	});
-}
-
-function _excludeIds(sourceId: DeckId, snaps: readonly AutoPlayDeckSnap[]): Set<string> {
-	return autoPlayExcludedIds({
-		decks: snaps,
-		source_deck: sourceId,
-		claimed_ids: _claimedIds,
-		unplayable_ids: _unplayableIds
-	});
+	return autoPlayDeckSnaps(DECK_IDS, (id) => deckStates[id], deckAudioClockPositionMs);
 }
 
 function _syncPlayedSet(): void {
@@ -207,6 +190,10 @@ function _syncPlayedSet(): void {
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_playedFeedEpoch = epoch;
+		if (_exhaustedFeedEpoch !== null) {
+			_triggeredFor = null;
+			_exhaustedFeedEpoch = null;
+		}
 	}
 }
 
@@ -383,14 +370,16 @@ async function _tick(): Promise<void> {
 		// again. Only a genuine idle state clears the arm.
 		if (_pendingMaster === null) {
 			_triggeredFor = null;
+			_exhaustedFeedEpoch = null;
 			_waitingFollowerFor = null;
+			_waitingEmptyFeedEpoch = null;
 		}
 		publishAutoPlayOrder([]);
 		return;
 	}
 
 	_syncPlayedSet();
-	const excludeIds = _excludeIds(source.id, snaps);
+	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
 
 	const rem = remainingMs(source.position_ms, source.duration_ms);
@@ -400,7 +389,9 @@ async function _tick(): Promise<void> {
 	if (rem !== null && windowMs !== null && rem > windowMs) {
 		// Seek back out of the window: allow a later re-arm for same track.
 		if (_triggeredFor === source.stable_id) _triggeredFor = null;
+		if (_triggeredFor === null) _exhaustedFeedEpoch = null;
 		if (_waitingFollowerFor === source.stable_id) _waitingFollowerFor = null;
+		_waitingEmptyFeedEpoch = null;
 		return;
 	}
 
@@ -455,10 +446,20 @@ async function _tick(): Promise<void> {
 		// key/BPM dead end: on Tue 1 Sep 2026 that message sent the maintainer reading
 		// key wheels while the real fault was a feed frozen before the pane
 		// had any rows. Name the actual failure so the log carries it.
+		if (feed.length === 0) {
+			const feedEpoch = getAutoPlayFeedEpoch();
+			if (_waitingEmptyFeedEpoch !== feedEpoch) {
+				pushToast('auto-play: candidate feed is empty - waiting for playlist rows', 'info');
+				_waitingEmptyFeedEpoch = feedEpoch;
+			}
+			// This is not a committed handoff. BrowserPanel deliberately publishes
+			// [] while a playlist switch hydrates, then publishes the new rows with
+			// a new epoch. Keep the source unarmed so that later feed can proceed.
+			return;
+		}
+		_waitingEmptyFeedEpoch = null;
 		pushToast(
-			feed.length === 0
-				? 'auto-play: candidate feed is empty - the playlist view had no rows'
-				: allMissing
+			allMissing
 					? 'auto-play: remaining playlist tracks are missing/stub audio'
 					: uiPrefs.auto_play_enforce_order
 						? 'auto-play: no next unplayed track in playlist order'
@@ -466,6 +467,7 @@ async function _tick(): Promise<void> {
 			'error'
 		);
 		_triggeredFor = source.stable_id;
+		_exhaustedFeedEpoch = _playedFeedEpoch;
 		return;
 	}
 
@@ -474,6 +476,8 @@ async function _tick(): Promise<void> {
 	// a late failure roll the trigger back and load a second track.
 	_inFlight = true;
 	_triggeredFor = source.stable_id;
+	_exhaustedFeedEpoch = null;
+	_waitingEmptyFeedEpoch = null;
 	_claimedIds.add(nextId);
 	_playedIds.add(source.stable_id);
 	_playedIds.add(nextId);
@@ -575,7 +579,9 @@ export function installAutoPlay(): () => void {
 		_stopPoll();
 		_inFlight = false;
 		_triggeredFor = null;
+		_exhaustedFeedEpoch = null;
 		_waitingFollowerFor = null;
+		_waitingEmptyFeedEpoch = null;
 		_pendingMaster = null;
 		_promoting = false;
 		_claimedIds = new Set();

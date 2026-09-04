@@ -535,3 +535,15 @@ test('dismissing a toast is NOT gated on the performance command session', async
 	);
 	assert.match(source, /copyToast: \(id: unknown\) => copyToast\(_toastId\(id\)\)/);
 });
+
+test('load play intent is strictly validated, immediate, and visible to agents', async () => {
+	const source = await readFile(
+		new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/);
+	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/);
+	assert.match(source, /generation must be a positive safe integer/);
+	assert.match(source, /command\.type === 'load_play_intent'[\s\S]{0,120}return null/);
+	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
+});

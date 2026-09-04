@@ -59,7 +59,7 @@ import {
 	ScopedCommandInvalidatedError,
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
-import type { DeckId } from '$lib/rb/deck-slots';
+import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
 import type { DeckAudioSnapshot, DeckState, LoopState, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
@@ -93,6 +93,7 @@ export type PerformanceCommand =
 	// live master with no other deck to reassign to (r3920297846) - only a
 	// destructive REPLACE (BrowserPanel's _loadOntoDeck) opts in.
 	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
+	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
 	| { type: 'play'; deck: DeckId; playing: boolean }
 	| { type: 'cue'; deck: DeckId }
@@ -208,6 +209,7 @@ export interface PerformanceState {
 	master_deck: DeckId | null;
 	command_pending: boolean;
 	command_queued: number;
+	load_play_intent: Record<DeckId, { generation: number; desired_play: boolean } | null>;
 	decks: Record<DeckId, PerformanceDeckSnapshot>;
 	mixer: {
 		crossfader: number;
@@ -411,6 +413,13 @@ function _unit(name: string, value: unknown): number {
 	return parsed;
 }
 
+function _generation(value: unknown): number {
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+		throw new TypeError('generation must be a positive safe integer');
+	}
+	return value;
+}
+
 function _stem(value: unknown): StemControl {
 	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
 		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
@@ -505,6 +514,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		if (record.refuseIfMaster === undefined) return { type, deck, stable_id: record.stable_id };
 		return { type, deck, stable_id: record.stable_id, refuseIfMaster: _boolean('refuseIfMaster', record.refuseIfMaster) };
+	} else if (type === 'load_play_intent') {
+		_exactKeys(record, ['type', 'deck', 'generation', 'desired_play']);
+		return { type, deck, generation: _generation(record.generation), desired_play: _boolean('desired_play', record.desired_play) };
 	} else if (type === 'unload') {
 		_exactKeys(record, ['type', 'deck', 'refuseIfMaster']);
 		if (record.refuseIfMaster === undefined) return { type, deck };
@@ -776,6 +788,12 @@ export function queryPerformanceState(): PerformanceState {
 		master_deck: masterDecks[0] ?? null,
 		command_pending: performanceCommandStatus.active > 0 || performanceCommandStatus.queued > 0,
 		command_queued: performanceCommandStatus.queued,
+		load_play_intent: Object.fromEntries(
+			Object.entries(pendingLoadPlayState()).map(([deck, pending]) => [
+				deck,
+				pending === null ? null : { generation: pending.generation, desired_play: pending.desiredPlay }
+			])
+		) as Record<DeckId, { generation: number; desired_play: boolean } | null>,
 		decks: {
 			1: _deckSnapshot(1),
 			2: _deckSnapshot(2),
@@ -850,6 +868,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'tech_mode_opt_reveal' ||
 		command.type === 'tech_mode_eq_raised' ||
 		command.type === 'tech_mode_edge_hover'
+		|| command.type === 'load_play_intent'
 	) {
 		return null;
 	}
@@ -914,6 +933,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 		hotCueReversals[command.deck] = null;
 		noteRecentDeck(command.deck);
+	} else if (command.type === 'load_play_intent') {
+		if (!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play)) {
+			throw new Error(`load_play_intent generation ${command.generation} is not pending on CH${command.deck}`);
+		}
 	} else if (command.type === 'unload') {
 		// See the 'load' branch above for why this is rechecked here rather
 		// than trusted from the UI-layer check (r3920224754). Opt-in only:

@@ -8,7 +8,7 @@ import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
-import type { DeckId } from '$lib/rb/deck-slots';
+import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
 const HOVER_ARM_MS = 250;
@@ -69,6 +69,16 @@ function _resolveTransportDeck(): DeckId | null {
 }
 
 async function _toggleRecentPlay(): Promise<void> {
+	const pending = mostRecentPendingLoadPlay();
+	if (pending !== null) {
+		await runPerformanceCommandFromUi({
+			type: 'load_play_intent',
+			deck: pending.deck,
+			generation: pending.generation,
+			desired_play: !pending.desiredPlay
+		});
+		return;
+	}
 	const deck = _resolveTransportDeck();
 	if (deck === null) return;
 	const st = getDeckState(deck);

@@ -266,9 +266,29 @@ describe('auto-play track pick', () => {
 			}),
 			'd'
 		);
+		// Pin 0e5fa1 (playlist switch) deliberately supersedes the previous
+		// "unknown current id => null" contract. The deck's playing track is
+		// NOT a member of the playlist the user just switched to, and stopping
+		// there is exactly the stall that left the old playlist's queue in
+		// charge. Enforced order now resumes at the head of the new playlist.
 		assert.equal(
 			pickNextStableId({
 				playlist,
+				current_stable_id: 'missing',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'a'
+		);
+		// ...and an empty playlist still has nothing to offer.
+		assert.equal(
+			pickNextStableId({
+				playlist: [],
 				current_stable_id: 'missing',
 				current_key: '8A',
 				current_bpm: 120,
@@ -824,6 +844,7 @@ describe('auto-play live-set replay (bugs 1 and 2, Mon 31 Aug 2026)', () => {
 			max_tempo_ratio: 1.16
 		});
 		if (next === null) {
+			if (state.playlist.length === 0) return null;
 			state.triggeredFor = source.stable_id;
 			return null;
 		}
@@ -916,6 +937,34 @@ describe('auto-play live-set replay (bugs 1 and 2, Mon 31 Aug 2026)', () => {
 			'AutoPlay must never load one stable_id twice'
 		);
 		assert.equal(new Set(loaded).size, loaded.length, 'no duplicate loads at all');
+	});
+
+	it('waits through a playlist-switch empty feed, then commits exactly one new candidate', () => {
+		const state = freshState();
+		const inWindow = deck({
+			id: 1,
+			stable_id: 'hypnosis',
+			playing: true,
+			is_master: true,
+			position_ms: 290_000,
+			duration_ms: 300_000
+		});
+
+		// BrowserPanel publishes [] while PaneStore clears the old playlist
+		// before the new rows hydrate. This is unavailable input, not a
+		// handoff decision, so it must not consume the source arm.
+		state.playlist = [];
+		assert.equal(tickDecision(state, inWindow), null);
+		assert.equal(state.triggeredFor, null);
+
+		state.playlist = [
+			row('hypnosis', '8A', 124),
+			row('vas-next', '8A', 124),
+			row('vas-later', '8A', 124)
+		];
+		assert.equal(tickDecision(state, inWindow), 'vas-next');
+		assert.equal(tickDecision(state, inWindow), null, 'committed handoff stays pinned');
+		assert.deepEqual([...state.claimed], ['vas-next']);
 	});
 
 	it('scenario 6/7: a looped master arms once; a seek back out re-arms once', () => {

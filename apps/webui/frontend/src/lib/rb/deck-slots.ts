@@ -195,3 +195,75 @@ export function parseExternalRouting(): Map<DeckId, number> | null {
   }
   return routing;
 }
+
+// ---------------------------------------------------------------------------
+// Pending load-play intent (pin 9b8d55)
+//
+// Space pressed while a track is still decoding must be remembered, not
+// dropped. Generation numbers make that safe: a stale intent from a load the
+// user has already superseded can never resurrect and play the wrong track.
+//
+// This lives in deck-slots rather than a module of its own because every
+// consumer (BrowserPanel, performance-ipc, performance-hotkeys) already
+// depends on deck-slots for DeckId, and all access is imperative, so it needs
+// no rune and earns no new import edge.
+// ---------------------------------------------------------------------------
+export interface PendingLoadPlay {
+	deck: DeckId;
+	generation: number;
+	desiredPlay: boolean;
+}
+
+let nextGeneration = 0;
+let pendingByDeck: Record<DeckId, PendingLoadPlay | null> = {
+	1: null,
+	2: null,
+	3: null,
+	4: null
+};
+
+export function beginPendingLoadPlay(deck: DeckId, desiredPlay: boolean): PendingLoadPlay {
+	nextGeneration += 1;
+	const pending = { deck, generation: nextGeneration, desiredPlay };
+	pendingByDeck = { ...pendingByDeck, [deck]: pending };
+	return pending;
+}
+
+export function setPendingLoadPlayIntent(deck: DeckId, generation: number, desiredPlay: boolean): boolean {
+	const pending = pendingByDeck[deck];
+	if (pending === null || pending.generation !== generation) return false;
+	pendingByDeck = { ...pendingByDeck, [deck]: { ...pending, desiredPlay } };
+	return true;
+}
+
+export function consumePendingLoadPlay(deck: DeckId, generation: number): PendingLoadPlay | null {
+	const pending = pendingByDeck[deck];
+	if (pending === null || pending.generation !== generation) return null;
+	return { ...pending };
+}
+
+export function clearPendingLoadPlay(deck: DeckId, generation: number): boolean {
+	const pending = pendingByDeck[deck];
+	if (pending === null || pending.generation !== generation) return false;
+	pendingByDeck = { ...pendingByDeck, [deck]: null };
+	return true;
+}
+
+export function mostRecentPendingLoadPlay(): PendingLoadPlay | null {
+	let mostRecent: PendingLoadPlay | null = null;
+	for (const pending of Object.values(pendingByDeck)) {
+		if (pending !== null && (mostRecent === null || pending.generation > mostRecent.generation)) {
+			mostRecent = pending;
+		}
+	}
+	return mostRecent === null ? null : { ...mostRecent };
+}
+
+export function pendingLoadPlayState(): Record<DeckId, PendingLoadPlay | null> {
+	return {
+		1: pendingByDeck[1] === null ? null : { ...pendingByDeck[1] },
+		2: pendingByDeck[2] === null ? null : { ...pendingByDeck[2] },
+		3: pendingByDeck[3] === null ? null : { ...pendingByDeck[3] },
+		4: pendingByDeck[4] === null ? null : { ...pendingByDeck[4] }
+	};
+}

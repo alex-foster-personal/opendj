@@ -29,6 +29,7 @@
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
+	import { compactOrderWidth } from '$lib/rb/library-column-widths';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
@@ -143,7 +144,8 @@
 
 	function onColResizeMove(event: PointerEvent): void {
 		if (resizeCol === null) return;
-		const next = Math.max(28, resizeStartW + (event.clientX - resizeStartX));
+		const minWidth = resizeCol === 'order' ? compactOrderWidth(maxRowOrder) : 28;
+		const next = Math.max(minWidth, resizeStartW + (event.clientX - resizeStartX));
 		colWidths = { ...colWidths, [resizeCol]: next };
 	}
 
@@ -447,10 +449,17 @@
 	}
 
 	const rows = $derived(provider.rows);
+	const maxRowOrder = $derived(rows.reduce((maximum, row) => Math.max(maximum, row.order), 0));
 	const selectedIdSet = $derived(new Set(selectedIds));
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
+
+	$effect(() => {
+		const orderWidth = compactOrderWidth(maxRowOrder);
+		if (untrack(() => colWidths.order) === orderWidth) return;
+		colWidths = { ...untrack(() => colWidths), order: compactOrderWidth(maxRowOrder) };
+	});
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
@@ -1769,13 +1778,21 @@
 		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
-	.c-order,
+	.c-order {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		padding: 0 2px;
+	}
 	.c-bpm,
 	.c-plays,
 	.c-time {
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 		color: var(--rb-text-dim);
+	}
+	.h-order .th-label {
+		justify-content: center;
+		padding: 0 2px;
 	}
 	.c-plays {
 		font-size: 10px;

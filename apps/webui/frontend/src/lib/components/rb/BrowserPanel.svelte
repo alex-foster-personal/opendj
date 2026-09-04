@@ -89,7 +89,13 @@
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
-	import { pickDoubleClickDeck, type DeckSlotState } from '$lib/rb/deck-slots';
+	import {
+		beginPendingLoadPlay,
+		clearPendingLoadPlay,
+		consumePendingLoadPlay,
+		pickDoubleClickDeck,
+		type DeckSlotState
+	} from '$lib/rb/deck-slots';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
@@ -1445,6 +1451,7 @@
 	$effect(() => {
 		const decision = autoPlayFeed.step(
 			uiPrefs.auto_play_enabled,
+			pane.playlist_id,
 			visibleRows.map((r) => ({
 				stable_id: r.stable_id,
 				key: r.key,
@@ -1615,6 +1622,7 @@
 		// reservation on that same deck (e.g. a pending double-click confirm
 		// dialog) out from under it. See _releaseDeckReservation for why a
 		// generation number, not a boolean, is what makes that safe.
+		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
 			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
@@ -1642,6 +1650,13 @@
 				return;
 			}
 			try {
+				loadIntent = beginPendingLoadPlay(target, opts.play === true);
+				await dispatchPerformanceCommand({
+					type: 'load_play_intent',
+					deck: target,
+					generation: loadIntent.generation,
+					desired_play: loadIntent.desiredPlay
+				});
 				// Explicit CH load (incl. confirmed double-click): replace if occupied.
 				// refuseIfMaster: true on both - this is a destructive REPLACE, not
 				// a standalone eject, so it must stay refused if `target` raced to
@@ -1660,7 +1675,8 @@
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-				if (opts.play === true) {
+				const desiredPlay = consumePendingLoadPlay(target, loadIntent.generation)?.desiredPlay ?? false;
+				if (desiredPlay) {
 					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
 				}
 			} catch (error: unknown) {
@@ -1671,6 +1687,7 @@
 				// Dispatcher already toasted + recorded the deck alert.
 			}
 		} finally {
+			if (loadIntent !== null) clearPendingLoadPlay(loadIntent.deck, loadIntent.generation);
 			if (deck !== null && opts.reservation !== undefined) {
 				_releaseDeckReservation(deck, opts.reservation);
 			}
@@ -2182,28 +2199,6 @@
 					</svg>
 					<span>Broken</span>
 				</label>
-				<label
-					class="next-only"
-					title="Filter to appropriate next tracks (Camelot compatible + BPM within ±6% of master, or half/double within 15 BPM). Shortcut: Tab"
-				>
-					<input
-						type="checkbox"
-						checked={uiPrefs.next_only_filter}
-						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
-					/>
-					<span>Next-only</span>
-				</label>
-				<label
-					class="whole-collection"
-					title="Search the whole collection with server-side FTS5 instead of only this pane"
-				>
-					<input
-						type="checkbox"
-						checked={pane.whole_collection}
-						onchange={(event) => setWholeCollection(event.currentTarget.checked)}
-					/>
-					<span>Whole collection</span>
-				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -2216,16 +2211,44 @@
 				>
 					← Back
 				</button>
-				<SearchBox
-					value={pane.search}
-					mode={searchMode}
-					focusToken={searchFocusToken}
-					placeholder={searchPlaceholder}
-					oninput={setSearch}
-					onclear={() => void clearSearchAndReturn()}
-					onescapeclear={() => void clearSearchAndReturn()}
-					onfocuschange={(f) => (searchFocused = f)}
-				/>
+				<div class="search-stack">
+					{#if searchFocused || pane.search.trim() !== ''}
+						<div class="search-options" aria-label="Search options">
+							<label
+								class="next-only"
+								title="Filter visible candidates by Camelot and BPM. Shortcut: Tab"
+							>
+								<input
+									type="checkbox"
+									checked={uiPrefs.next_only_filter}
+									onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+								/>
+								<span>Next-only</span>
+							</label>
+							<label
+								class="whole-collection"
+								title="Search all playlists uses server FTS across the collection. Unchecked filters only the current pane."
+							>
+								<input
+									type="checkbox"
+									checked={pane.whole_collection}
+									onchange={(event) => setWholeCollection(event.currentTarget.checked)}
+								/>
+								<span>Search all playlists</span>
+							</label>
+						</div>
+					{/if}
+					<SearchBox
+						value={pane.search}
+						mode={searchMode}
+						focusToken={searchFocusToken}
+						placeholder={searchPlaceholder}
+						oninput={setSearch}
+						onclear={() => void clearSearchAndReturn()}
+						onescapeclear={() => void clearSearchAndReturn()}
+						onfocuschange={(f) => (searchFocused = f)}
+					/>
+				</div>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
 				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
@@ -2451,6 +2474,19 @@
 		font-size: var(--rb-fs-label);
 		line-height: 16px;
 		text-align: center;
+	}
+	.search-stack {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+	}
+	.search-options {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: var(--rb-fs-label);
+		white-space: nowrap;
 	}
 	.master-dd {
 		font-size: var(--rb-fs-label);
