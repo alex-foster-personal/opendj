@@ -79,6 +79,14 @@ UNSPAWNABLE = ["/nonexistent/mdt-there-is-no-such-binary"]
 #: Real children the partial-spawn test starts before the unspawnable one.
 HOGS_BEFORE_THE_FAILURE = 3
 
+#: Hogs that must still be spinning DURING the loaded phase before the swing it
+#: measures can be attributed to this test. Popen returning without raising only
+#: proves the fork succeeded; it does not prove the children survived to compete,
+#: and on a saturated box the two phases look identical either way. One hog per
+#: CPU is the point where our own load is at least the whole machine over again -
+#: below it the dominant load is somebody else's, and the run is UNKNOWN.
+HOG_LIVENESS_FLOOR = os.cpu_count() or 4
+
 #: Wall time must move at least this much BETWEEN the two phases, in either
 #: direction, or the machine's conditions demonstrably did not change and the
 #: CPU-side assertion below would prove nothing. The direction is deliberately
@@ -86,7 +94,38 @@ HOGS_BEFORE_THE_FAILURE = 3
 #: routinely the contended one (measured here: wall 417.5 -> 30.5ms while CPU
 #: held at 10.6 -> 10.2ms), and a floor that only accepts inflation would call
 #: that a failed control when it is the cleanest demonstration of the defect.
-WALL_SWING_FLOOR = 1.5
+#:
+#: Raised 1.5 -> 5.6 on Fri 4 Sep 2026 after this test reddened trunk on the
+#: nucbox self-hosted runner at wall 2.43x (cpu 2.38x, run 33882839796). 1.5 was
+#: too low to make the claim ASSERTABLE, which is a different job from proving
+#: conditions changed. CPU time genuinely inflates 1.87-2.52x under contention
+#: on every box in this fleet (the numbers in LOAD_SENSITIVITY_RATIO below), so
+#: the ceiling only clears that inflation once wall has swung roughly 5x. The
+#: HOG_COUNT note above already measured where that bites: wall swing median
+#: 3.4x was a coin flip at 3/5 pass, median 7.4x was 5/5 - so a floor of 1.5
+#: admitted a band this test cannot decide in, and scored it as a red rather
+#: than the UNKNOWN it is.
+#:
+#: The value is DERIVED, not chosen. The assertion allows a ceiling of
+#: 1 + (wall_swing - 1) / LOAD_SENSITIVITY_RATIO, and the largest legitimate CPU
+#: inflation this fleet has measured on a CORRECT process-time implementation is
+#: 2.52x (16-core self-hosted runner, recorded under HOG_COUNT above). For the
+#: ceiling to clear that: 1 + (wall - 1) / 3.0 >= 2.52, so wall >= 5.56. Anything
+#: lower leaves a band where a correct implementation still reddens. The first
+#: revision of this fix picked 4.0, whose ceiling is 2.0x, and Codex flagged it
+#: BLOCKING on PR #1128: at 4.0 a 4.0-5.56x wall swing can still fail on a good
+#: instrument and re-block the merge lane, which is the exact harm this change
+#: exists to remove. A false red costs the merge lane; an UNKNOWN costs one run's
+#: evidence, and that asymmetry decides the rounding.
+#:
+#: This cannot turn the test into a check that cannot fail: a wall-clock
+#: instrument reads the SAME number on both sides, so it scores cpu_swing ==
+#: wall_swing, and any run that clears this floor at all reddens it (at wall 5.6x
+#: the ceiling is 2.53x against a 5.6x reading). Nor does it skip everything: this
+#: box produced 6.52x / 8.72x / 5.04x on three runs with the fleet parked, and the
+#: file's own 4x-oversubscription measurement puts the median at 7.4x, so the test
+#: still asserts on most runs.
+WALL_SWING_FLOOR = 5.6
 
 #: How much less load-sensitive CPU time must be than wall time, measured on each
 #: instrument's EXCESS over an unchanged 1.0x.
@@ -276,23 +315,42 @@ def test_a_stalled_call_is_not_charged_the_stall() -> None:
 
 def test_cpu_time_holds_while_wall_time_swings_with_the_machine() -> None:
     """if the metric tracks machine load then the same commit scores differently"""
+    # Marked hogs, so the loaded phase can prove the contention it measures is
+    # the one this test created. Unmarked, a run on a box the fleet is already
+    # saturating reads the SAME two phases whether the hogs spun or died on
+    # spawn, and the difference decides whether a red means anything.
+    marker = _probe_marker("sensitivity")
+    plan = [_marked_hog(marker)] * HOG_COUNT
     _phase()  # discard: process start and first-touch page faults are not the subject
     quiet_cpu_ms, quiet_wall_ms = _phase()
-    with _cpu_hogs(HOG_COUNT) as hogs:
-        _phase()  # discard: lets the children reach steady state
-        loaded_cpu_ms, loaded_wall_ms = _phase()
+    try:
+        with _cpu_hogs(len(plan), plan) as hogs:
+            _phase()  # discard: lets the children reach steady state
+            spinning = _alive(marker)
+            loaded_cpu_ms, loaded_wall_ms = _phase()
+    finally:
+        subprocess.run(["pkill", "-f", marker], check=False)
 
     wall_swing = max(quiet_wall_ms, loaded_wall_ms) / min(quiet_wall_ms, loaded_wall_ms)
     cpu_swing = max(quiet_cpu_ms, loaded_cpu_ms) / min(quiet_cpu_ms, loaded_cpu_ms)
     measured = (
         f"cpu {quiet_cpu_ms:.1f} -> {loaded_cpu_ms:.1f}ms ({cpu_swing:.2f}x swing), "
-        f"wall {quiet_wall_ms:.1f} -> {loaded_wall_ms:.1f}ms ({wall_swing:.2f}x swing)"
+        f"wall {quiet_wall_ms:.1f} -> {loaded_wall_ms:.1f}ms ({wall_swing:.2f}x swing), "
+        f"{spinning}/{len(hogs)} hogs spinning"
     )
+    if spinning < HOG_LIVENESS_FLOOR:
+        pytest.skip(
+            f"UNKNOWN, not a pass: only {spinning} of {len(hogs)} spawned hogs were still "
+            f"spinning during the loaded phase, under the {HOG_LIVENESS_FLOOR} needed to "
+            f"oversubscribe this box's {os.cpu_count()} CPUs, so whatever load the two "
+            f"phases differ by is not the load this test applied ({measured})"
+        )
     if wall_swing < WALL_SWING_FLOOR:
         pytest.skip(
             f"UNKNOWN, not a pass: {len(hogs)} CPU hogs moved wall time only "
-            f"{wall_swing:.2f}x, under the {WALL_SWING_FLOOR}x this test needs before it "
-            f"can claim the machine's conditions changed at all ({measured})"
+            f"{wall_swing:.2f}x, under the {WALL_SWING_FLOOR}x this test needs before the "
+            f"CPU-side claim is assertable against this hardware's own load-inflation "
+            f"({measured})"
         )
     ceiling = _sensitivity_ceiling(wall_swing)
     assert cpu_swing <= ceiling, (
