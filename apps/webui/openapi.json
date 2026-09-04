@@ -10031,6 +10031,150 @@
         "title": "VendorCapabilityOut",
         "type": "object"
       },
+      "VocalsAnalyzeIn": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "from-stems",
+              "one"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "VocalsAnalyzeIn",
+        "type": "object"
+      },
+      "VocalsAnalyzeOut": {
+        "properties": {
+          "claimed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Claimed",
+            "type": "array"
+          },
+          "refused": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Refused",
+            "type": "object"
+          }
+        },
+        "required": [
+          "claimed",
+          "refused"
+        ],
+        "title": "VocalsAnalyzeOut",
+        "type": "object"
+      },
+      "VocalsRegionOut": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "intensity": {
+            "title": "Intensity",
+            "type": "integer"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_s",
+          "end_s",
+          "intensity"
+        ],
+        "title": "VocalsRegionOut",
+        "type": "object"
+      },
+      "VocalsStatusOut": {
+        "description": "Same shape and four states as ``/anlz``'s ``vocals`` field.",
+        "properties": {
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/VocalsRegionOut"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "rekordbox",
+              "no_vocals",
+              "demucs",
+              "not_analyzed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "status"
+        ],
+        "title": "VocalsStatusOut",
+        "type": "object"
+      },
       "VoiceProbeRequest": {
         "properties": {
           "text": {
@@ -17256,6 +17400,89 @@
         "summary": "Usb Volume Events",
         "tags": [
           "usb"
+        ]
+      }
+    },
+    "/api/v1/vocals/analyze": {
+      "post": {
+        "operationId": "analyze_vocals_api_v1_vocals_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocalsAnalyzeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocalsAnalyzeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze Vocals",
+        "tags": [
+          "vocals"
+        ]
+      }
+    },
+    "/api/v1/vocals/{stable_id}/status": {
+      "get": {
+        "operationId": "get_vocal_status_api_v1_vocals__stable_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocalsStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Vocal Status",
+        "tags": [
+          "vocals"
         ]
       }
     },

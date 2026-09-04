@@ -90,6 +90,7 @@ from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
+from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
@@ -363,6 +364,7 @@ def create_app(
         # the simulated-volume POST, so fake volumes cannot be injected.
         app.include_router(usb_volumes_sim_routes.router, prefix=api_prefix)
     app.include_router(telemetry_routes.router, prefix=api_prefix)
+    app.include_router(vocals_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sync_hub_router, prefix=api_prefix)
     app.include_router(sets_router)

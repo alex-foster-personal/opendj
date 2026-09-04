@@ -2644,6 +2644,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vocals/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Vocals */
+        post: operations["analyze_vocals_api_v1_vocals_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vocals/{stable_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vocal Status */
+        get: operations["get_vocal_status_api_v1_vocals__stable_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/voice/probe": {
         parameters: {
             query?: never;
@@ -6332,6 +6366,55 @@ export interface components {
             target_path?: string | null;
             /** Vendor */
             vendor: string;
+        };
+        /** VocalsAnalyzeIn */
+        VocalsAnalyzeIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "from-stems" | "one";
+            /** Playlist Id */
+            playlist_id?: string | null;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** VocalsAnalyzeOut */
+        VocalsAnalyzeOut: {
+            /** Claimed */
+            claimed: string[];
+            /** Refused */
+            refused: {
+                [key: string]: string;
+            };
+        };
+        /** VocalsRegionOut */
+        VocalsRegionOut: {
+            /** Confidence */
+            confidence?: number | null;
+            /** End S */
+            end_s: number;
+            /** Intensity */
+            intensity: number;
+            /** Start S */
+            start_s: number;
+        };
+        /**
+         * VocalsStatusOut
+         * @description Same shape and four states as ``/anlz``'s ``vocals`` field.
+         */
+        VocalsStatusOut: {
+            /** Fps */
+            fps?: number | null;
+            /** Regions */
+            regions?: components["schemas"]["VocalsRegionOut"][];
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "rekordbox" | "no_vocals" | "demucs" | "not_analyzed";
         };
         /** VoiceProbeRequest */
         VoiceProbeRequest: {
@@ -11271,6 +11354,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsbCapabilityErrorOut"];
+                };
+            };
+        };
+    };
+    analyze_vocals_api_v1_vocals_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VocalsAnalyzeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocalsAnalyzeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vocal_status_api_v1_vocals__stable_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocalsStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

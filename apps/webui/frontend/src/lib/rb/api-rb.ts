@@ -877,3 +877,23 @@ export async function startStemGeneration(
 export async function fetchStemJob(job_id: string): Promise<StemJob> {
 	return _fetchJson<StemJob>(`/api/v1/stems/jobs/${encodeURIComponent(job_id)}`);
 }
+
+// --------------------------------------------- vocal analysis trigger (PARITY-08)
+
+export interface VocalsAnalyzeResult {
+	claimed: string[];
+	refused: Record<string, string>;
+}
+
+/** POST /vocals/analyze - derive vocals from an existing stem bundle (CPU,
+ * no demucs). Refuses (not silently skips) any track outside the classifier's
+ * `todo` category; check `result.refused[stable_id]` for the reason. */
+export async function analyzeVocalsFromStems(stable_id: string): Promise<VocalsAnalyzeResult> {
+	const r = await fetch(`${RB_API_BASE}/api/v1/vocals/analyze`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ stable_ids: [stable_id], mode: 'from-stems' })
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return await r.json();
+}

@@ -47,6 +47,7 @@
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDots from './AnalysisDots.svelte';
 	import StemTags from './StemTags.svelte';
+	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import { computeVirtualWindow } from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -1268,6 +1269,7 @@
 						</td>
 						<td class="c-stems">
 							<StemTags stems={row.stems} />
+							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
 					</tr>
 				{/each}

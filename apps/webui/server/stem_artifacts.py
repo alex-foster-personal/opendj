@@ -313,20 +313,25 @@ def _load_v1_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
 
     files: dict[StemPart, Path] = {}
     metadata: dict[StemPart, WavMetadata] = {}
-    for part in STEM_PARTS:
+    for part in STEM_LAYOUTS[manifest.layout]:
         file_path = _resolve_stem_file(bundle_dir, manifest.files[part], part)
         files[part] = file_path
         metadata[part] = read_wav_metadata(file_path)
 
-    alignment = metadata[STEM_PARTS[0]]
-    for part in STEM_PARTS[1:]:
+    parts = STEM_LAYOUTS[manifest.layout]
+    alignment = metadata[parts[0]]
+    for part in parts[1:]:
         if metadata[part] != alignment:
             raise StemArtifactError(
                 f"{part} metadata {metadata[part]!r} does not align with "
-                f"{STEM_PARTS[0]} metadata {alignment!r}"
+                f"{parts[0]} metadata {alignment!r}"
             )
     return StemBundle(
-        manifest=manifest, files=files, alignment=alignment, media_type="audio/wav"
+        manifest=manifest,
+        files=files,
+        alignment=alignment,
+        media_type="audio/wav",
+        layout=manifest.layout,
     )
 
 
