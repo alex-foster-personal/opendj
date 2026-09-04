@@ -262,6 +262,49 @@ export function pinStatus(pin: LifecyclePin): PinStatus {
   return (PIN_STATUSES.includes(raw) ? raw : "open") as PinStatus;
 }
 
+export interface PinStatusSummary {
+	total: number;
+	untriaged: number;
+	open: number;
+	issued: number;
+	fixed: number;
+	merged: number;
+}
+
+/** Count active statuses from the live comment board. Archived pins are moved
+ * out of this board, and engine job states have no stable comment-id join, so
+ * neither belongs in the comment-icon total. A missing status is deliberately
+ * separate from explicit `open`: older pins have no triage record yet, while
+ * an open pin was explicitly recorded as open. */
+export function summarizePinStatuses(pins: readonly LifecyclePin[]): PinStatusSummary {
+	const summary: PinStatusSummary = {
+		total: 0,
+		untriaged: 0,
+		open: 0,
+		issued: 0,
+		fixed: 0,
+		merged: 0
+	};
+	for (const pin of pins) {
+		const status = pinStatus(pin);
+		if (status === 'archived') continue;
+		summary.total += 1;
+    if (pin.status === null || pin.status === undefined) {
+      summary.untriaged += 1;
+    } else {
+      summary[status] += 1;
+    }
+  }
+  return summary;
+}
+
+export function describePinStatusSummary(pins: readonly LifecyclePin[]): string {
+	const summary = summarizePinStatuses(pins);
+	return `Active comment pins: ${summary.total} total - ` +
+		`${summary.untriaged} untriaged, ${summary.open} open, ${summary.issued} issued, ` +
+		`${summary.fixed} fixed, ${summary.merged} merged`;
+}
+
 /** Archived pins leave the canvas; everything else stays on it forever. */
 export function isPinDrawn(pin: LifecyclePin): boolean {
   return pinStatus(pin) !== "archived";

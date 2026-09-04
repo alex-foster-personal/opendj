@@ -2673,7 +2673,7 @@ async function _synchronizeFollowers(
 			const skipped = planFailed.map((f) => f.deck).join(',');
 			pushToast(
 				`Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
-				'error'
+				'error', undefined, undefined, {}, `beat-sync-followers:${master}`
 			);
 			for (const f of planFailed) {
 				recordPerfEvent('beat-sync-skip', f.message, f.deck);

@@ -282,6 +282,7 @@ export interface ToastIpcRow {
 	id: string;
 	kind: 'info' | 'error';
 	message: string;
+	count: number;
 	created_at: string;
 	/** False while a pointer (or holdToast) is holding it open. */
 	timer_armed: boolean;
@@ -1042,11 +1043,18 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	}
 }
 
-function _persistCommandError(deck: DeckId | null, error: unknown): void {
+function _persistCommandError(
+	deck: DeckId | null, error: unknown, command?: PerformanceCommand
+): void {
 	const messageText = _errorMessage(error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
-	pushToast(`Performance command failed - ${messageText}`, 'error');
+	let subcontrol = '';
+	if (command !== undefined && 'band' in command) subcontrol = command.band;
+	else if (command !== undefined && 'stem' in command) subcontrol = command.stem;
+	else if (command !== undefined && 'slot' in command) subcontrol = command.slot;
+	pushToast(`Performance command failed - ${messageText}`, 'error', undefined, error, {},
+		command === undefined ? undefined : `performance:${deck}:${command.type}:${subcontrol}`);
 }
 
 /**
@@ -1146,7 +1154,7 @@ async function _dispatchWithinPreset(command: PerformanceCommand): Promise<Perfo
 	try {
 		await _execute(command);
 	} catch (error) {
-		_persistCommandError(deck, error);
+		_persistCommandError(deck, error, command);
 		throw error;
 	}
 	return queryPerformanceState();
@@ -1304,7 +1312,7 @@ async function _dispatchUnknown(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
 				`command ${command.type} rejected`
 		);
-		_persistCommandError(deck, error);
+		_persistCommandError(deck, error, command);
 		throw error;
 	}
 	const scopes = performanceCommandQueueScopes(command);
@@ -1320,7 +1328,7 @@ async function _dispatchUnknown(
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
-			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(null, error);
+			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(null, error, command);
 			throw error;
 		} finally {
 			if (_commandSessionIsCurrent(commandGeneration)) performanceCommandStatus.active -= 1;
@@ -1335,7 +1343,7 @@ async function _dispatchUnknown(
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
-			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error);
+			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;
 		}
 	}
@@ -1357,7 +1365,7 @@ async function _dispatchUnknown(
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
-			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error);
+			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error, command);
 			throw error;
 		} finally {
 			if (_commandSessionIsCurrent(commandGeneration)) {
@@ -1459,6 +1467,7 @@ export function installPerformanceBrowserIpc(): () => void {
 				id: toast.logId,
 				kind: toast.kind,
 				message: toast.message,
+				count: toast.count,
 				created_at: toast.createdAt,
 				timer_armed: toastTimerArmed(toast.logId)
 			})),

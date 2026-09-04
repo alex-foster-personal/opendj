@@ -14,6 +14,7 @@
 	 */
 	import { onMount, tick } from 'svelte';
 	import {
+		describePinStatusSummary,
 		describeAnchor,
 		followOnText,
 		isPinDrawn,
@@ -21,8 +22,6 @@
 		markPinSeen,
 		parsePinSeen,
 		pinFromClient,
-		pinBodyStyle,
-		pinIsDone,
 		pinStatus,
 		pinStyle,
 		serializePinSeen,
@@ -46,6 +45,7 @@
 	} from '$lib/rb/feedback-store.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import FeedbackPanel from './FeedbackPanel.svelte';
+	import FeedbackPinCard from './FeedbackPinCard.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
@@ -86,6 +86,15 @@
 	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
 
 	const unavailable = $derived(feedbackState.availability === 'missing');
+	const commentPinTitle = $derived.by(() => {
+		if (unavailable) return INERT_TITLE;
+		if (feedbackState.availability === 'unknown')
+			return 'Comment pins - probing the daemon for /api/v1/feedback';
+		const summary = describePinStatusSummary(feedbackState.pins);
+		return feedbackState.placementArmed
+			? `${summary}. Click anywhere to drop a comment pin (Esc cancels)`
+			: `${summary}. Click to drop a comment pin anywhere on the UI`;
+	});
 	const chevronTitle = $derived.by(() => {
 		if (unavailable) return INERT_TITLE;
 		if (feedbackState.availability === 'unknown')
@@ -280,11 +289,7 @@
 		class:rb-inert={unavailable}
 		class:armed={feedbackState.placementArmed}
 		disabled={unavailable}
-		title={unavailable
-			? INERT_TITLE
-			: feedbackState.placementArmed
-				? 'Click anywhere to drop a comment pin (Esc cancels)'
-				: 'Drop a comment anywhere on the UI - arms one placement click'}
+		title={commentPinTitle}
 		aria-label="Drop a comment pin"
 		aria-pressed={feedbackState.placementArmed}
 		onclick={armPinPlacement}
@@ -321,39 +326,12 @@
 
 <!-- pin body: the original text, the agent's reply, its issue, its actions -->
 {#if bodyPin !== null}
-	<div class="fb-pin-body" style={pinBodyStyle(bodyPin)} role="dialog" aria-label="Comment pin">
-		<p class="fb-hint">{pinStatus(bodyPin)} - {bodyPin.created_at}</p>
-		<p class="fb-body-text">{bodyPin.text}</p>
-		{#if bodyPin.agent_note}
-			<p class="fb-note" title="What an agent did about this pin">{bodyPin.agent_note}</p>
-		{/if}
-		{#if bodyPin.issue_url}
-			<a
-				class="fb-issue-link"
-				href={bodyPin.issue_url}
-				target="_blank"
-				rel="noreferrer noopener"
-				title="Opens in the default browser">{bodyPin.issue_url}</a
-			>
-		{/if}
-		<div class="fb-row-btns">
-			{#if pinIsDone(bodyPin)}
-				<button
-					type="button"
-					class="fb-mini"
-					title="Move this pin into the archive file, with its history"
-					onclick={() => void archiveOpenPin(bodyPin)}>Archive</button
-				>
-				<button
-					type="button"
-					class="fb-mini"
-					title="Open a new pin here, referencing this one"
-					onclick={() => startFollowOn(bodyPin)}>Follow-on</button
-				>
-			{/if}
-			<button type="button" class="fb-mini" onclick={closePin}>Close</button>
-		</div>
-	</div>
+	<FeedbackPinCard
+		pin={bodyPin}
+		onclose={closePin}
+		onarchive={() => archiveOpenPin(bodyPin)}
+		onfollowon={() => startFollowOn(bodyPin)}
+	/>
 {/if}
 
 <!-- one-shot placement mode: a full-viewport button so the next click is the pin -->
@@ -501,36 +479,6 @@
 		background: var(--rb-accent);
 	}
 
-	.fb-pin-body {
-		position: fixed;
-		z-index: 310;
-		width: 240px;
-		max-height: 320px;
-		overflow-y: auto;
-		padding: 6px;
-		background: #0a0c0f;
-		border: 1px solid var(--rb-border);
-		border-radius: 3px;
-		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-		color: var(--rb-text);
-		font-size: 10px;
-	}
-	.fb-body-text {
-		margin: 2px 0 0;
-	}
-	.fb-note {
-		margin: 4px 0 0;
-		padding-top: 4px;
-		border-top: 1px solid var(--rb-border);
-		color: var(--rb-text-dim);
-	}
-	.fb-issue-link {
-		display: block;
-		margin-top: 4px;
-		color: var(--rb-accent);
-		word-break: break-all;
-	}
-
 	.fb-place-overlay {
 		position: fixed;
 		inset: 0;
@@ -564,13 +512,13 @@
 		padding: 3px 4px;
 	}
 
-	.fb-row-btns {
+	:global(.fb-row-btns) {
 		display: flex;
 		gap: 4px;
 		margin-top: 4px;
 	}
 
-	.fb-mini {
+	:global(.fb-mini) {
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
@@ -581,11 +529,15 @@
 		line-height: 1.2;
 		cursor: pointer;
 	}
-	.fb-mini:hover:not(:disabled) {
+	:global(.fb-mini:hover:not(:disabled)) {
 		color: var(--rb-text);
 	}
+	:global(.fb-close) {
+		margin-left: auto;
+		min-width: 20px;
+	}
 
-	.fb-hint {
+	:global(.fb-hint) {
 		margin: 2px 0 0;
 		color: var(--rb-text-dim);
 	}
