@@ -19,8 +19,15 @@ Regression lines:
   - if the burn line or block-cost-per-merge ratio is misread from quota.sh
     then broken (block_cost_usd=42.00 over n=3 merges -> 14.0)
   - if the backlog open/actionable/clean split is misread then broken
-    (5 / 3 / 3 against a fixture that also carries a draft, a blocked:* PR and
-    a PR older than the 30-day actionable window)
+    (8 / 5 / 5 against a fixture that also carries a draft, a blocked:* PR, a
+    post-v1 PR and a PR older than the 30-day actionable window)
+  - if a backlogged label (post-v1 / backlog / blocked:*) counts as actionable
+    then broken (#1107 is CLEAN and in-window but carries post-v1)
+  - if the open-to-merge SLA buckets are not cumulative from createdAt then
+    broken (over_yellow=4 >= 1h, over_red=3 >= 2h, and the 10-minute-old #1109
+    is in neither)
+  - if the builder freeze does not switch on at exactly 15 actionable PRs then
+    broken (off at 5, on at 15, and the matching health line flips with it)
   - if a health line that cannot measure reports PASS or a silent zero instead
     of FAIL then broken (missing probe fixture and missing gh fixture controls)
   - if the 8 data health lines cannot be flipped by their own fixture inputs
@@ -32,6 +39,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -126,7 +134,7 @@ GREEN_LABELS = [
     "gate log written in last 15 min",
     "dispatcher ticked in last 70 min",
     "workers within cap (4)",
-    "actionable PR backlog under hard target 15",
+    "actionable PR backlog under builder-freeze threshold 15",
     "no FATAL in logs last 1h",
     "token present for launchers",
 ]
@@ -161,8 +169,17 @@ def test_green_fixture_reports_expected_kpis(tmp_path):
     assert "burn QUOTA scope=nucbox-local workers_live=2" in out
     assert "efficiency block_cost_per_merge_usd=14.0" in out
 
-    # Backlog split: 6 open rows -> 5 non-draft, 3 actionable, 3 CLEAN.
-    assert "backlog open_prs=5 actionable=3 clean=3 soft_target=10 hard_target=15" in out
+    # Backlog split: 9 open rows -> 8 non-draft, 5 actionable, 5 CLEAN. The
+    # three non-actionable ones are the blocked:* PR, the post-v1 PR and the
+    # July-era PR; the draft is not even open_prs.
+    assert "backlog open_prs=8 actionable=5 clean=5 soft_target=10 hard_target=15" in out
+
+    # Merge-ownership policy numbers (the maintainer, Thu 4 Sep 2026). Of the 5
+    # actionable PRs, 3 are days old (over red), #1108 is 90 minutes old (over
+    # yellow only) and #1109 is 10 minutes old (inside both).
+    assert (
+        "sla yellow_h=1 red_h=2 over_yellow=4 over_red=3 builder_freeze=off freeze_at=15" in out
+    )
 
     # Every health line reports PASS; nothing is unmeasured-green and the
     # throwaway $HOME profile satisfied the token line.
@@ -200,8 +217,55 @@ def test_red_fixture_flips_every_input_driven_health_line(tmp_path):
     assert verdicts["workers within cap (1)"] == "FAIL"
     assert verdicts["no FATAL in logs last 1h"] == "FAIL"
     assert verdicts["token present for launchers"] == "FAIL"
-    # Unflipped: the backlog fixture still holds 3 actionable <= hard target 15.
-    assert verdicts["actionable PR backlog under hard target 15"] == "PASS"
+    # Unflipped: the backlog fixture still holds 5 actionable, under the
+    # builder-freeze threshold of 15.
+    assert verdicts["actionable PR backlog under builder-freeze threshold 15"] == "PASS"
+
+
+def test_builder_freeze_switches_on_at_fifteen_actionable(tmp_path):
+    """If the builder freeze does not switch on at exactly 15 actionable PRs,
+    or its health line does not go red with it, then broken."""
+    fixture = _copy_fixture(tmp_path)
+    rows = [
+        {
+            "number": 2000 + i,
+            "isDraft": False,
+            "mergeStateStatus": "CLEAN",
+            "labels": [],
+            "createdAt": _iso(NOW - 3 * 3600),
+        }
+        for i in range(15)
+    ]
+    (fixture / "gh" / "open.json").write_text(json.dumps(rows))
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout
+    assert "backlog open_prs=15 actionable=15 clean=15" in out
+    assert "over_yellow=15 over_red=15 builder_freeze=on freeze_at=15" in out
+    verdicts = _health(out)
+    assert verdicts["actionable PR backlog under builder-freeze threshold 15"] == "FAIL"
+
+
+def test_one_under_the_freeze_threshold_still_builds(tmp_path):
+    """If 14 actionable PRs already freeze building then broken: the threshold
+    is 15 or more, so 14 must stay off."""
+    fixture = _copy_fixture(tmp_path)
+    rows = [
+        {
+            "number": 2000 + i,
+            "isDraft": False,
+            "mergeStateStatus": "CLEAN",
+            "labels": [],
+            "createdAt": _iso(NOW - 3 * 3600),
+        }
+        for i in range(14)
+    ]
+    (fixture / "gh" / "open.json").write_text(json.dumps(rows))
+
+    out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
+    assert "backlog open_prs=14 actionable=14 clean=14" in out
+    assert "builder_freeze=off freeze_at=15" in out
+    assert _health(out)["actionable PR backlog under builder-freeze threshold 15"] == "PASS"
 
 
 def test_missing_probe_fixture_fails_loud_not_silent_green(tmp_path):
