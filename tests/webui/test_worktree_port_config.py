@@ -279,3 +279,5 @@ def test_guard_is_inapplicable_outside_any_git_worktree(
     monkeypatch.chdir(outside)
 
     assert assert_source_tree_matches_worktree() is None
+
+pytestmark = pytest.mark.rb_parity

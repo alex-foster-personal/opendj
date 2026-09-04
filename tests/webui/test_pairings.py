@@ -85,3 +85,5 @@ def test_create_pairing_notes_too_long_422(client):
         "from_stable_id": "a", "to_stable_id": "b", "notes": "x" * 1001,
     })
     assert r.status_code == 422
+
+pytestmark = pytest.mark.rb_parity

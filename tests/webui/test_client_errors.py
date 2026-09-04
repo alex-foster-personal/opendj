@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
@@ -64,3 +65,5 @@ def test_client_error_rejects_unbounded_stack(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert list(tmp_path.iterdir()) == []
+
+pytestmark = pytest.mark.rb_parity

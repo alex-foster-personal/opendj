@@ -58,7 +58,7 @@ from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
 from tests import fs_clock
 
-pytestmark = pytest.mark.requirement("PARITY-03")
+pytestmark = [pytest.mark.requirement("PARITY-03"), pytest.mark.rb_parity]
 
 LOCAL_SID = "e" * 40
 BROKEN_SID = "f" * 40

@@ -169,3 +169,5 @@ def test_explicit_token_mode_fails_closed_without_token() -> None:
                 "MUSIC_DJ_SHARE_AUTH": AUTH_TOKEN,
             }
         )
+
+pytestmark = pytest.mark.rb_parity

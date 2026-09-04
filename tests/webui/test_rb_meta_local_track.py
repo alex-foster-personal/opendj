@@ -32,7 +32,7 @@ from apps.shared.state import db as state_db
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 LOCAL_SID = "c" * 40
 GONE_SID = "d" * 40

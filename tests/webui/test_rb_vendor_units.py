@@ -33,7 +33,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.webui.server import rb_vendor
 from apps.webui.server.routes.tracks import keep_by_availability
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 FPS = 22050 / 1024  # 21.53 -- the only rate PVDI has ever been observed at
 

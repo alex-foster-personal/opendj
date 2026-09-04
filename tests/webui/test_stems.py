@@ -19,6 +19,7 @@ import json
 import wave
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -204,3 +205,5 @@ def test_rejects_escaped_or_misaligned_stem_files(tmp_path: Path) -> None:
 
     assert misaligned.status_code == 422
     assert misaligned.json()["detail"]["code"] == "STEM_ARTIFACT_INVALID"
+
+pytestmark = pytest.mark.rb_parity

@@ -355,3 +355,5 @@ def test_discovery_contract_distinguishes_unsupported_from_no_devices(
         diskutil_command="/usr/bin/diskutil",
     )
     assert usb_mod._scan_volumes(force=True, discovery=discovery) == []
+
+pytestmark = pytest.mark.rb_parity

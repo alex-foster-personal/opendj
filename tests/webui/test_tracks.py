@@ -137,3 +137,5 @@ def test_patch_track_notes(client, seed_backend):
     )
     assert r.status_code == 200
     assert r.json()["notes"] == "my first mix track"
+
+pytestmark = pytest.mark.rb_parity

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths as pp
 from apps.webui.server import rb_vendor
@@ -79,3 +81,5 @@ def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> N
     assert payload["waveform"] == {"kind": "tri"}
     assert payload["cues"] == live_cues
     assert payload is not cached_payload
+
+pytestmark = pytest.mark.rb_parity

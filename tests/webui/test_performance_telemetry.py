@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -201,3 +202,5 @@ def test_process_endpoint_is_explicit_when_native_probe_is_absent(tmp_path: Path
         "available": False,
         "reason": "native process probe has not written a sample",
     }
+
+pytestmark = pytest.mark.rb_parity

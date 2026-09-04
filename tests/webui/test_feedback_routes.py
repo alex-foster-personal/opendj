@@ -228,3 +228,5 @@ def test_feedback_paths_present_in_openapi(fb: TestClient) -> None:
         "/api/v1/feedback/archive",
     ):
         assert path in spec["paths"], f"{path} missing from the contract"
+
+pytestmark = pytest.mark.rb_parity

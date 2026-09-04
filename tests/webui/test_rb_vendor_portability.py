@@ -333,3 +333,5 @@ def test_resolve_share_path_alias_never_raises_on_unmapped(
     result = rb_vendor.resolve_share_path(foreign_path)
     assert result == Path(foreign_path)
     assert not result.is_file()
+
+pytestmark = pytest.mark.rb_parity

@@ -101,3 +101,5 @@ def test_rejected_patch_leaves_the_store_readable(http_client: TestClient, tmp_p
     assert listed.status_code == 200, "if the list 500s after a rejected patch then the widget is bricked - broken"
     ids = {c["id"] for c in listed.json()["comments"]}
     assert bystander["id"] in ids and victim["id"] in ids, "if a pin vanished then the rejected patch ate data - broken"
+
+pytestmark = pytest.mark.rb_parity

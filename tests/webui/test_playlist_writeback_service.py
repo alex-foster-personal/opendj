@@ -23,7 +23,7 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 # This module exercises live-write MECHANICS against tmp fixtures, so it runs
 # with the one-way rekordbox import gate ON (root conftest reads the marker).
 # It never touches a real rekordbox target.
-pytestmark = pytest.mark.rekordbox_writeback
+pytestmark = [pytest.mark.rekordbox_writeback, pytest.mark.rb_parity]
 
 
 def _revision(target_id: str, members: list[str]) -> str:

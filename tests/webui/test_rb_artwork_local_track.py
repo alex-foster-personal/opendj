@@ -38,7 +38,7 @@ from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
 from tests.fixtures.conftest import resolve_required_fixture
 
-pytestmark = [pytest.mark.requires_mutagen, pytest.mark.requirement("CAT-05")]
+pytestmark = [pytest.mark.requires_mutagen, pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 WITH_ART_SID = "e" * 40
 NO_ART_SID = "f" * 40

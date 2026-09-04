@@ -38,7 +38,7 @@ from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 # Five tracks covering every real reason a mapping can be absent.
 MAPPED = "a" * 40  # rekordbox mapping + live djmdContent row

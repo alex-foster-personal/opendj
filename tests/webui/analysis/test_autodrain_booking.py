@@ -387,3 +387,5 @@ def test_a_settled_booking_is_cleared_by_a_later_drains_lost_target(
         f"stayed at {settled!r}, so the target it lost is suppressed by an "
         "attempt that predates the loss"
     )
+
+pytestmark = pytest.mark.rb_parity

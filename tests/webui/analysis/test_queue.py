@@ -454,3 +454,5 @@ def test_a_storage_failure_stops_the_job_at_the_first_chunk(tmp_path, monkeypatc
     assert any("NotADirectoryError" in line for line in job.log), (
         "the underlying fault was swallowed rather than logged"
     )
+
+pytestmark = pytest.mark.rb_parity

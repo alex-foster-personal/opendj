@@ -322,3 +322,5 @@ def test_a_restart_replaces_a_survivor_once_that_survivor_has_exited(
             watcher.stop(timeout=30)
 
     assert not _reconcile_threads(), "the replacement loop was never joined"
+
+pytestmark = pytest.mark.rb_parity

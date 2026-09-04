@@ -37,7 +37,6 @@ from apps.webui.run_agentbox import (
     validate_serve_status,
 )
 
-
 BROKEN_FUNNEL_STATUS_2026_08_22 = {
     "TCP": {"443": {"HTTPS": True}, "80": {"HTTP": True}},
     "Web": {
@@ -314,3 +313,5 @@ def test_https_status_returns_zero_for_a_real_closed_socket() -> None:
         resolve_ip="127.0.0.1",
         timeout=0.2,
     ) == 0
+
+pytestmark = pytest.mark.rb_parity

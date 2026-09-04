@@ -39,7 +39,7 @@ from apps.webui.server.sqlite_backend import (
 )
 from tests.test_schema_time_travel import _verified_v5_sql
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 
 ISO = "2026-04-17T10:00:00.000000Z"

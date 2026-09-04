@@ -93,3 +93,5 @@ def test_a_kernel_launch_failure_becomes_local_decode_unavailable(
 
     with pytest.raises(local_waveform.LocalDecodeUnavailable, match="could not be launched"):
         local_waveform._decode_peaks(tmp_path / "irrelevant.wav")
+
+pytestmark = pytest.mark.rb_parity

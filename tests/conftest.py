@@ -2,7 +2,8 @@
 
 Distinct from the repo-root ``conftest.py`` (which registers the reqs
 plugin -- coverage-matrix.md writer + ``--live-db`` gate). This module
-owns ONE thing: skipping ``requires_darwin``-marked items off macOS.
+owns collection-time test gates, including the marker-owned Rekordbox parity
+suite and skipping ``requires_darwin``-marked items off macOS.
 
 Both this hook and the reqs plugin's own ``pytest_collection_modifyitems``
 run -- pytest calls every registered implementation of a hook, it is not
@@ -13,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import shutil
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -35,6 +37,33 @@ _HAS_FFMPEG: bool = shutil.which("ffmpeg") is not None
 # git HEAD with --no-build-isolation and no pyproject extra can supply it.
 # CI installs it and runs these tests; a plain `uv sync` venv cannot.
 _HAS_MADMOM: bool = importlib.util.find_spec("madmom") is not None
+
+
+def _has_rb_parity_marker(path: Path) -> bool:
+    """Return whether a test module explicitly belongs to the parity gate."""
+    return path.name.startswith("test_") and path.suffix == ".py" and (
+        "pytest.mark.rb_parity" in path.read_text(encoding="utf-8")
+    )
+
+
+def _contains_rb_parity_marker(path: Path) -> bool:
+    """Return whether a collection path contains a marker-owned test module."""
+    if path.is_file():
+        return _has_rb_parity_marker(path)
+    if path.is_dir():
+        return any(_has_rb_parity_marker(module) for module in path.rglob("test_*.py"))
+    return False
+
+
+def pytest_ignore_collect(
+    collection_path: Path,
+    config: pytest.Config,
+) -> bool | None:
+    """Avoid importing unowned modules when the focused marker gate runs."""
+    mark_expression = str(getattr(config.option, "markexpr", "") or "").strip()
+    if mark_expression != "rb_parity":
+        return None
+    return not _contains_rb_parity_marker(Path(str(collection_path)))
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

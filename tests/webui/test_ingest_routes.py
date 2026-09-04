@@ -316,3 +316,5 @@ def test_coverage_on_never_analysed_library(client, app):
     out = client.get("/api/v1/ingest/coverage")
     assert out.status_code == 200
     assert out.json()["missing"]["analysis"] == 0
+
+pytestmark = pytest.mark.rb_parity

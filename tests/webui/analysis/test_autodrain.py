@@ -465,3 +465,5 @@ def test_a_manual_refresh_after_the_drain_does_not_erase_the_booking(
         "backlog relaunched the moment an unrelated job took the slot"
     )
     assert app.state.auto_analyze.last_signature == consumed
+
+pytestmark = pytest.mark.rb_parity

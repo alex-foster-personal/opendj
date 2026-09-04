@@ -443,3 +443,5 @@ def test_identity_rejects_claims_with_no_subject() -> None:
                 "id_token": _jwt_with_claims({"email": "a@b.c"}),
             }
         )
+
+pytestmark = pytest.mark.rb_parity

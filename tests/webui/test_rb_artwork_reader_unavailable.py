@@ -31,7 +31,7 @@ import pytest
 
 from apps.shared.state import db as state_db
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 STABLE_ID = "e" * 40
 NO_FILE_SID = "d" * 40
