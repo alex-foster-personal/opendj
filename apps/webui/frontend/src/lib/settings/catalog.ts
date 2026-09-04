@@ -165,6 +165,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'technically_working_animate',
+		label: 'Technically-working mode animation',
+		group: 'performance',
+		keywords: ['technically', 'working', 'overlay', 'animate', 'fade', 'edge', 'reveal'],
+		title: 'Fade regions in/out on edge-reveal (cmd+R overlay mode)',
+		detail:
+			'When on (default), revealing/hiding a region in overlay mode cross-fades. Off swaps instantly, no transition.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'confirm.dblclick_load_play',
 		label: 'Confirm double-click Load+play',
 		group: 'confirmations',

@@ -6128,6 +6128,11 @@ export interface components {
              */
             hide_todo_settings: boolean;
             /**
+             * Technically Working Animate
+             * @default true
+             */
+            technically_working_animate: boolean;
+            /**
              * Theme
              * @default dark
              * @enum {string}
@@ -6143,6 +6148,8 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            /** Technically Working Animate */
+            technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
         };

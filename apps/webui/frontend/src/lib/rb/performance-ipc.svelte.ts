@@ -70,6 +70,19 @@ import type {
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
+import {
+	hoveredEdgeList,
+	isEqRaised,
+	isOptRevealActive,
+	isPeeking,
+	isTechModeActive,
+	setEdgeHovered,
+	setEqRaised,
+	setOptReveal,
+	setPeeking,
+	toggleTechMode,
+	type EdgeRegion
+} from '$lib/rb/technically-working.svelte';
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -117,7 +130,16 @@ export type PerformanceCommand =
 	| { type: 'safety_loop_clear'; deck: DeckId }
 	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string }
 	| { type: 'hot_cue_clear'; deck: DeckId; slot: HotCueSlot; revision: string }
-	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string };
+	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string }
+	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
+	// write to serialize, but still a real UI action - every one of these has
+	// a cmd+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
+	// so agent-native parity requires the same commands here.
+	| { type: 'tech_mode_toggle' }
+	| { type: 'tech_mode_peek'; peeking: boolean }
+	| { type: 'tech_mode_opt_reveal'; revealed: boolean }
+	| { type: 'tech_mode_eq_raised'; raised: boolean }
+	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -183,6 +205,13 @@ export interface PerformanceState {
 	};
 	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
+	technically_working: {
+		active: boolean;
+		peeking: boolean;
+		opt_reveal_active: boolean;
+		eq_raised: boolean;
+		hovered_edges: EdgeRegion[];
+	};
 }
 
 export type PerformancePresetLifecyclePhase =
@@ -349,6 +378,13 @@ function _boolean(name: string, value: unknown): boolean {
 	return value;
 }
 
+function _edge(value: unknown): EdgeRegion {
+	if (value !== 'top' && value !== 'bottom' && value !== 'left' && value !== 'right') {
+		throw new RangeError(`edge must be top, bottom, left, or right; got ${String(value)}`);
+	}
+	return value;
+}
+
 function _finite(name: string, value: unknown): number {
 	if (typeof value !== 'number' || !Number.isFinite(value)) {
 		throw new TypeError(`${name} must be a finite number`);
@@ -423,6 +459,26 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('device_id must be a non-empty string');
 		}
 		return { type, device_id: record.device_id };
+	}
+	if (type === 'tech_mode_toggle') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'tech_mode_peek') {
+		_exactKeys(record, ['type', 'peeking']);
+		return { type, peeking: _boolean('peeking', record.peeking) };
+	}
+	if (type === 'tech_mode_opt_reveal') {
+		_exactKeys(record, ['type', 'revealed']);
+		return { type, revealed: _boolean('revealed', record.revealed) };
+	}
+	if (type === 'tech_mode_eq_raised') {
+		_exactKeys(record, ['type', 'raised']);
+		return { type, raised: _boolean('raised', record.raised) };
+	}
+	if (type === 'tech_mode_edge_hover') {
+		_exactKeys(record, ['type', 'edge', 'hovered']);
+		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
@@ -713,7 +769,14 @@ export function queryPerformanceState(): PerformanceState {
 			}
 		},
 		preset: { ...performancePresetLifecycle },
-		last_error: performanceCommandStatus.last_error
+		last_error: performanceCommandStatus.last_error,
+		technically_working: {
+			active: isTechModeActive(),
+			peeking: isPeeking(),
+			opt_reveal_active: isOptRevealActive(),
+			eq_raised: isEqRaised(),
+			hovered_edges: hoveredEdgeList()
+		}
 	};
 }
 
@@ -751,7 +814,14 @@ export function performanceCommandQueueScopes(
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
 		command.type === 'loop_interval_mode' ||
-		command.type === 'loop_interval_base'
+		command.type === 'loop_interval_base' ||
+		// LIBUX-05 overlay chrome: no deck, no engine write, nothing to
+		// serialize against.
+		command.type === 'tech_mode_toggle' ||
+		command.type === 'tech_mode_peek' ||
+		command.type === 'tech_mode_opt_reveal' ||
+		command.type === 'tech_mode_eq_raised' ||
+		command.type === 'tech_mode_edge_hover'
 	) {
 		return null;
 	}
@@ -938,6 +1008,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await restoreHotCue(stableId, command.slot, command.revision, command.reversal_id);
 		hotCueReversals[command.deck] = null;
 		await _hotCueDriver.refresh(command.deck);
+	} else if (command.type === 'tech_mode_toggle') {
+		toggleTechMode();
+	} else if (command.type === 'tech_mode_peek') {
+		setPeeking(command.peeking);
+	} else if (command.type === 'tech_mode_opt_reveal') {
+		setOptReveal(command.revealed);
+	} else if (command.type === 'tech_mode_eq_raised') {
+		setEqRaised(command.raised);
+	} else if (command.type === 'tech_mode_edge_hover') {
+		setEdgeHovered(command.edge, command.hovered);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);

@@ -26,6 +26,9 @@ _DEFAULT_AUTO_SYNC: dict[str, bool] = {
     "djay": False,
     "open_dj": False,
 }
+# LIBUX-05: "smooth fade rather than instant appear/disappear" config option
+# for technically-working mode's edge-reveal overlay. Default on (animated).
+_DEFAULT_TECH_WORKING_ANIMATE = True
 
 
 def _path(request: Request) -> Path:
@@ -66,6 +69,7 @@ def _load(path: Path) -> dict[str, Any]:
             "theme": _DEFAULT_THEME,
             "hide_todo_settings": False,
             "auto_sync": dict(_DEFAULT_AUTO_SYNC),
+            "technically_working_animate": _DEFAULT_TECH_WORKING_ANIMATE,
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -94,11 +98,21 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "hide_todo_settings must be a boolean",
             },
         )
+    animate = raw.get("technically_working_animate", _DEFAULT_TECH_WORKING_ANIMATE)
+    if not isinstance(animate, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "technically_working_animate must be a boolean",
+            },
+        )
     return {
         "confirm": confirm,
         "theme": theme,
         "hide_todo_settings": hide_todo,
         "auto_sync": _parse_auto_sync(raw.get("auto_sync")),
+        "technically_working_animate": animate,
     }
 
 
@@ -117,6 +131,7 @@ class UiPrefsOut(BaseModel):
     theme: UiTheme = _DEFAULT_THEME
     hide_todo_settings: bool = False
     auto_sync: AutoSyncOut = Field(default_factory=AutoSyncOut)
+    technically_working_animate: bool = _DEFAULT_TECH_WORKING_ANIMATE
 
 
 class UiPrefsPatch(BaseModel):
@@ -126,6 +141,7 @@ class UiPrefsPatch(BaseModel):
     theme: UiTheme | None = None
     hide_todo_settings: bool | None = None
     auto_sync: AutoSyncOut | None = None
+    technically_working_animate: bool | None = None
 
 
 @router.get("", response_model=UiPrefsOut)
@@ -147,6 +163,8 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["hide_todo_settings"] = body.hide_todo_settings
     if body.auto_sync is not None:
         current["auto_sync"] = _parse_auto_sync(body.auto_sync.model_dump())
+    if body.technically_working_animate is not None:
+        current["technically_working_animate"] = body.technically_working_animate
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
     publish("library.changed", {"kind": "ui_prefs", "ids": []})

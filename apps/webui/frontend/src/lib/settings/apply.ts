@@ -13,6 +13,7 @@ import {
 	setHideTodoSettings,
 	setLibraryDensity,
 	setNextOnlyFilter,
+	setTechnicallyWorkingAnimate,
 	setTheme,
 	uiPrefs,
 	type AutoSyncDestination,
@@ -30,6 +31,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_play_maximize_reach',
 	'next_only_filter',
 	'hide_todo_settings',
+	'technically_working_animate',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
 	'auto_sync.open_dj',
@@ -65,6 +67,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.next_only_filter;
 		case 'hide_todo_settings':
 			return uiPrefs.hide_todo_settings;
+		case 'technically_working_animate':
+			return uiPrefs.technically_working_animate;
 		case 'auto_sync.rekordbox':
 			return uiPrefs.auto_sync.rekordbox;
 		case 'auto_sync.djay':
@@ -117,6 +121,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'hide_todo_settings':
 			setHideTodoSettings(_asBool(value, key));
+			return;
+		case 'technically_working_animate':
+			setTechnicallyWorkingAnimate(_asBool(value, key));
 			return;
 		case 'auto_sync.rekordbox':
 		case 'auto_sync.djay':

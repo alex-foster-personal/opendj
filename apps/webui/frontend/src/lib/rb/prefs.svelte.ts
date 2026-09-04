@@ -87,6 +87,11 @@ export interface RbUiPrefs {
 	 */
 	usb_auto_open_panel: boolean;
 	/**
+	 * LIBUX-05: "Technically-working mode" edge-reveal overlay. True = smooth
+	 * fade transitions (default); false = instant appear/disappear.
+	 */
+	technically_working_animate: boolean;
+	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
 	 */
@@ -130,6 +135,7 @@ const DEFAULTS: RbUiPrefs = {
 	usb_toast_enabled: true,
 	usb_toast_ms: 5000,
 	usb_auto_open_panel: false,
+	technically_working_animate: true,
 	confirm: {},
 	last_playlist: null
 };
@@ -254,6 +260,15 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (
+		parsed.technically_working_animate !== undefined &&
+		typeof parsed.technically_working_animate !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (technically_working_animate is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const lastPlaylist = _parseLastPlaylist(parsed.last_playlist);
 	const autoSync = _parseAutoSync(parsed.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
@@ -287,6 +302,8 @@ function _load(): RbUiPrefs {
 		usb_toast_enabled: parsed.usb_toast_enabled ?? DEFAULTS.usb_toast_enabled,
 		usb_toast_ms: parsed.usb_toast_ms ?? DEFAULTS.usb_toast_ms,
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
+		technically_working_animate:
+			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist
 	};
@@ -359,6 +376,7 @@ type DiskPrefsPatch = {
 	theme?: UiTheme;
 	hide_todo_settings?: boolean;
 	auto_sync?: AutoSyncPrefs;
+	technically_working_animate?: boolean;
 };
 
 async function _syncDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -467,6 +485,12 @@ export function setHideTodoSettings(next: boolean): void {
 	void _syncDiskPrefs({ hide_todo_settings: next });
 }
 
+export function setTechnicallyWorkingAnimate(next: boolean): void {
+	uiPrefs.technically_working_animate = next;
+	_persist();
+	void _syncDiskPrefs({ technically_working_animate: next });
+}
+
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;
 	_persist();
@@ -501,6 +525,7 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 			theme?: UiTheme;
 			hide_todo_settings?: boolean;
 			auto_sync?: AutoSyncPrefs;
+			technically_working_animate?: boolean;
 		};
 		if (body.confirm !== undefined) {
 			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
@@ -514,6 +539,9 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 		}
 		if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
 			uiPrefs.auto_sync = _parseAutoSync(body.auto_sync);
+		}
+		if (typeof body.technically_working_animate === 'boolean') {
+			uiPrefs.technically_working_animate = body.technically_working_animate;
 		}
 		_persist();
 	} catch {
