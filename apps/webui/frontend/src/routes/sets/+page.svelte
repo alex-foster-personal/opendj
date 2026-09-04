@@ -93,11 +93,12 @@
 
 	async function publishShare(): Promise<void> {
 		if (!selected) return;
+		const sessionId = selected.summary.session_id;
+		const requestId = selectionRequest;
 		busy = true;
 		try {
-			const metadataShare: MetadataShare = await publishMetadataShare(
-				selected.summary.session_id
-			);
+			const metadataShare: MetadataShare = await publishMetadataShare(sessionId);
+			if (requestId !== selectionRequest || selected?.summary.session_id !== sessionId) return;
 			selected = {
 				...selected,
 				summary: { ...selected.summary, share_state: metadataShare.share_state }

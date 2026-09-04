@@ -357,6 +357,24 @@ def test_api_share_audience_can_only_read_published_metadata(set_share_client) -
     assert published.status_code == 200
     assert client.get("/api/sets", headers=share_headers).json()[0]["session_id"] == "s1"
     assert client.get("/api/sets/s1", headers=share_headers).status_code == 200
+    timeline_path = sets_root / "s1" / "timeline.jsonl"
+    with timeline_path.open("a", encoding="utf-8") as timeline:
+        timeline.write(
+            json.dumps(
+                {
+                    "action": "source_error",
+                    "timestamp_s": 8.0,
+                    "value": {"diagnostic": "/private/recordings/djay.db"},
+                }
+            )
+            + "\n"
+        )
+    shared_timeline = client.get("/api/sets/s1/timeline", headers=share_headers)
+    assert shared_timeline.status_code == 200
+    assert "/private/recordings/djay.db" not in shared_timeline.text
+    assert [json.loads(line)["action"] for line in shared_timeline.text.splitlines()] == [
+        "track_loaded"
+    ]
     shared_page = client.get("/sets/shared/s1", headers=share_headers)
     assert shared_page.status_code == 200
     assert "OPEN DJ SET HISTORY" in shared_page.text

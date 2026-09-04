@@ -18,6 +18,7 @@ Endpoints::
 
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
@@ -50,6 +51,32 @@ from .share import (
 )
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
+
+_SHARE_TRACK_VALUE_FIELDS = ("title", "artist", "album")
+
+
+def _share_timeline_event(event: object) -> dict[str, object] | None:
+    """Return the public projection of one track-load event, never diagnostics."""
+    if not isinstance(event, dict) or event.get("action") != "track_loaded":
+        return None
+    value = event.get("value")
+    public_value = {
+        field: value[field]
+        for field in _SHARE_TRACK_VALUE_FIELDS
+        if isinstance(value, dict) and isinstance(value.get(field), str)
+    }
+    return {
+        field: event.get(field)
+        for field in (
+            "session_id",
+            "timestamp_s",
+            "wall_clock",
+            "action",
+            "source",
+            "deck",
+            "track_stable_id",
+        )
+    } | {"value": public_value}
 
 
 @asynccontextmanager
@@ -360,7 +387,21 @@ async def api_timeline_stream(request: Request, session_id: str) -> StreamingRes
         with jsonl.open("rb") as fh:
             yield from fh
 
-    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+    if getattr(request.state, "share_audience", "local") != "share":
+        return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+    def _share_stream() -> Iterable[bytes]:
+        for line in jsonl.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = _share_timeline_event(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+            if event is not None:
+                yield json.dumps(event, separators=(",", ":")).encode() + b"\n"
+
+    return StreamingResponse(_share_stream(), media_type="application/x-ndjson")
 
 
 @router.get("/{session_id}/transitions")
