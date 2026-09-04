@@ -52,22 +52,23 @@ jobs:
         with:
           # 3.11 is the stable CI target; see ci.yml for why.
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
+
+      - name: Setup uv for isolated dependency contracts
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Provision isolated Python test environment
+        # modal is a CI test-environment tool, not a package dependency;
+        # see the fuller note in ci.yml.
+        run: |
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python -r requirements.txt modal
 
       - name: System deps for pyrekordbox (SQLCipher)
+        # Keep the project interpreter available to any post-failure steps.
         # See ci.yml: libsqlcipher-dev ships the runtime shared library on
         # Ubuntu noble.
         run: |
           scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
-
-      - name: Install Python deps
-        # modal is a CI test-environment tool, not a package dependency;
-        # see the fuller note in ci.yml.
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install modal
 
       - name: Run full pytest with coverage
         # coverage: apps/* only. --cov-report=xml for external tools.
@@ -88,7 +89,7 @@ jobs:
         # apps/webui/frontend/node_modules/typescript, which this job never
         # installs. Both are a hard gate in ci.yml's `quality` job instead.
         run: |
-          pytest \
+          .venv/bin/pytest \
             --collect-floor 3700 \
             --ignore=tests/quality/test_frontend_typing_gate.py \
             --ignore=tests/quality/test_frontend_typing_directives.py \
