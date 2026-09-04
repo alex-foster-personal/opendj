@@ -22,6 +22,7 @@ file has a stable shape):
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import re
 import sys
@@ -228,12 +229,45 @@ def _parse_traceability(lines: list[str]) -> dict[str, str]:
 # ------------------------------------------------------------------ build
 
 
+def _duplicate_ids(*buckets: dict) -> dict[str, int]:
+    """Requirement ids that ``REQUIREMENTS.md`` defines more than once.
+
+    Nothing else in the pipeline notices these. The parser keeps both copies,
+    so ``reqs.json`` faithfully reflects a source file that defines one id
+    twice, and both existing gates stay green: ``--check`` compares the file
+    with the source, and the "regenerating must produce no diff" step compares
+    regeneration with itself. Measured Fri 4 Sep 2026 on a planted duplicate of
+    RECON-01: 211 ids -> 212, still 211 distinct, both gates green.
+
+    This matters because ``.planning/REQUIREMENTS.md`` is an append-only ledger
+    that 11 open PRs conflict on, and every proposed fix for that (a union
+    merge driver above all) works by keeping BOTH sides of an append. Keeping
+    both sides is right for text and wrong for identifiers, so the id space
+    needs its own gate before that policy is safe to adopt.
+    """
+    counts: collections.Counter[str] = collections.Counter()
+    for bucket in buckets:
+        for category in bucket.values():
+            for requirement in category["requirements"]:
+                counts[requirement["id"]] += 1
+    return {rid: n for rid, n in counts.items() if n > 1}
+
+
 def _build_payload() -> dict:
     if not SOURCE.exists():
         raise FileNotFoundError(f"Cannot read requirements source: {SOURCE}")
     lines = _read_lines(SOURCE)
     v1 = _parse_v1(lines)
     v2 = _parse_v2(lines)
+    duplicates = _duplicate_ids(v1, v2)
+    if duplicates:
+        listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(duplicates.items()))
+        raise ValueError(
+            f"{SOURCE} defines {len(duplicates)} requirement id(s) more than "
+            f"once: {listed}. Two branches appending the same id is the normal "
+            f"way this happens; renumber one side rather than deleting either, "
+            f"since a traceability row may already point at it."
+        )
     trace = _parse_traceability(lines)
     oos = _parse_out_of_scope(lines)
 
