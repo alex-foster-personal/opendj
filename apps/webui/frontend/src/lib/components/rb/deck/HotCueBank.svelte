@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	// 8-slot hot-cue bank A-H as WIDE slot rows, 2 columns x 4 rows (A-D
 	// left, E-H right, SCREENSHOT-SPEC 3 wide layout): the informative rows
 	// fill spare width for cue labels while their height stays bounded so
@@ -32,6 +33,7 @@
 		pending,
 		onJump,
 		onSave,
+		onRename,
 		onDelete,
 		onRestore,
 		inertTip
@@ -39,7 +41,8 @@
 		deck: DeckState;
 		pending: boolean;
 		onJump: (ms: number) => Promise<void>;
-		onSave: (slot: HotCueSlot) => Promise<HotCueMutation>;
+		onSave: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string) => Promise<HotCueMutation>;
+		onRename: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
 		onRestore: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
 		inertTip: string;
@@ -60,7 +63,13 @@
 	// of an unrelated transport command is the same one-frame blink the play
 	// button had (LATENCY-01 visual feedback). It stays visible as aria-busy.
 	let busySlot: HotCueSlot | null = $state(null);
+	let busySlotCompletion: Promise<void> = Promise.resolve();
 	let undo: { slot: HotCueSlot; revision: string; reversalId: string } | null = $state(null);
+	let renameSlot: HotCueSlot | null = $state(null);
+	let renameNewCueAtMs: number | null = $state(null);
+	let renameStableId: string | null = $state(null);
+	let renameDraft = $state('');
+	let renameInputEl: HTMLInputElement | null = $state(null);
 
 	function fmtMs(ms: number): string {
 		const total = Math.floor(ms / 1000);
@@ -69,37 +78,88 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
+	async function acquireBusySlot(slot: HotCueSlot): Promise<() => void> {
+		const previousCompletion = busySlotCompletion;
+		let release!: () => void;
+		busySlotCompletion = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await previousCompletion;
+		busySlot = slot;
+		return () => {
+			busySlot = null;
+			release();
+		};
+	}
+
 	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
-		if (busySlot !== null) return;
+		if (entry.cue !== null) {
+			await onJump(entry.cue.in_ms);
+			return;
+		}
 		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping
 		// defaults true on an empty deck (deck-state-types.ts), so it alone
 		// cannot gate the save - stable_id is the real "is there a deck to
 		// save onto" signal (#804).
-		if (entry.cue === null && (deck.stable_id === null || !deck.has_rb_mapping)) return;
-		busySlot = entry.slot;
+		if (deck.stable_id === null || !deck.has_rb_mapping) return;
+		await beginRename(entry.slot, deck.position_ms, deck.stable_id);
+	}
+
+	async function beginRename(slot: HotCueSlot, newCueAtMs: number | null, stableId: string): Promise<void> {
+		renameSlot = slot;
+		renameNewCueAtMs = newCueAtMs;
+		renameStableId = stableId;
+		renameDraft = '';
+		await tick();
+		if (renameInputEl === null) throw new Error(`hot cue ${slot}: name input did not mount`);
+		renameInputEl.focus();
+	}
+
+	async function commitRename(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
+		if (renameSlot !== entry.slot) return;
+		const comment = renameDraft.trim() === '' ? undefined : renameDraft;
+		const newCueAtMs = renameNewCueAtMs;
+		const stableId = renameStableId;
+		const release = await acquireBusySlot(entry.slot);
 		try {
-			if (entry.cue !== null) {
-				await onJump(entry.cue.in_ms);
+			if (newCueAtMs !== null) {
+				if (stableId === null) throw new Error(`hot cue ${entry.slot}: rename track is unavailable`);
+				setUndo(entry.slot, await onSave(entry.slot, comment, newCueAtMs, true, stableId));
+			} else if (entry.cue !== null) {
+				setUndo(entry.slot, await onRename(entry.slot, entry.cue.in_ms, comment ?? ''));
 			} else {
-				setUndo(entry.slot, await onSave(entry.slot));
+				throw new Error(`hot cue ${entry.slot}: rename target is unavailable`);
+			}
+			if (renameSlot === entry.slot) {
+				renameSlot = null;
+				renameNewCueAtMs = null;
+				renameStableId = null;
+				renameInputEl = null;
 			}
 		} finally {
-			busySlot = null;
+			release();
 		}
+	}
+
+	function cancelRename(slot: HotCueSlot): void {
+		if (renameSlot !== slot) return;
+		renameSlot = null;
+		renameNewCueAtMs = null;
+		renameStableId = null;
+		renameInputEl = null;
 	}
 
 	async function onClearClick(slot: HotCueSlot, event: MouseEvent): Promise<void> {
 		event.stopPropagation();
-		if (busySlot !== null) return;
 		// Not reachable today (the x only renders for entry.cue !== null, and an
 		// empty deck's hot_cues is always []), closed defensively while this
 		// guard is already under review (#804 audit comment).
 		if (deck.stable_id === null) return;
-		busySlot = slot;
+		const release = await acquireBusySlot(slot);
 		try {
 			setUndo(slot, await onDelete(slot));
 		} finally {
-			busySlot = null;
+			release();
 		}
 	}
 
@@ -111,14 +171,16 @@
 	}
 
 	async function undoLastMutation(): Promise<void> {
-		if (undo === null || busySlot !== null) return;
-		const target = undo;
-		busySlot = target.slot;
+		const requestedSlot = undo?.slot;
+		if (requestedSlot === undefined) return;
+		const release = await acquireBusySlot(requestedSlot);
 		try {
+			if (undo === null) return;
+			const target = undo;
 			await onRestore(target.slot, target.revision, target.reversalId);
 			undo = null;
 		} finally {
-			busySlot = null;
+			release();
 		}
 	}
 </script>
@@ -126,13 +188,33 @@
 <div class="cue-area">
 	<div class="bank">
 		{#each bank as entry (entry.slot)}
+			{#if renameSlot === entry.slot}
+				<input
+					class="slot cue-name"
+					class:filled={entry.cue !== null}
+					class:loop={entry.cue !== null && entry.cue.is_loop}
+					aria-label={`name hot cue ${entry.slot}`}
+					bind:this={renameInputEl}
+					bind:value={renameDraft}
+					onblur={() => void commitRename(entry)}
+					onkeydown={(event) => {
+						if (event.key === 'Enter') {
+							event.preventDefault();
+							event.currentTarget.blur();
+						} else if (event.key === 'Escape') {
+							event.preventDefault();
+							cancelRename(entry.slot);
+						}
+					}}
+				/>
+			{:else}
 			<button
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
 				class:inert-mapping={entry.cue === null &&
 					(deck.stable_id === null || !deck.has_rb_mapping)}
-				disabled={busySlot !== null}
+				disabled={busySlot === entry.slot}
 				aria-busy={pending}
 				title={entry.cue === null
 					? deck.stable_id === null
@@ -165,13 +247,21 @@
 					</span>
 				{/if}
 			</button>
+			{/if}
 		{/each}
 	</div>
 	<button class="rb-lit-button rb-inert dropdown" disabled title={inertTip}>
 		HOT CUE <span class="caret">&#9662;</span>
 	</button>
 	{#if undo !== null}
-		<button class="rb-lit-button undo" disabled={pending || busySlot !== null} onclick={undoLastMutation}>
+		<!-- Undo is frequently the control a DJ clicks to LEAVE the open cue-name
+		input, and that click's mousedown blurs the input, which starts the
+		hot_cue_save that raises `pending` synchronously - before the browser
+		delivers the click. Gating this button on `pending` would therefore eat
+		the very click that started the write and make the operator press UNDO
+		twice. Repeat presses are safe without it: undoLastMutation serializes
+		on the same busy-slot tail and the second one finds its token spent. -->
+		<button class="rb-lit-button undo" aria-busy={pending} onclick={undoLastMutation}>
 			UNDO {undo.slot}
 		</button>
 	{/if}
@@ -229,6 +319,10 @@
 	}
 	.slot.filled .letter {
 		color: var(--rb-green);
+	}
+	.cue-name {
+		outline: 1px solid var(--rb-green);
+		outline-offset: 0;
 	}
 	.slot.filled.loop {
 		border-left-color: var(--rb-orange);

@@ -20,10 +20,8 @@
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
-	import type { HotCueMutation } from '$lib/rb/api-rb';
-	import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
 	import { deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
-	import { hasRealBeatGrid } from '$lib/player/grid-features';
+	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 	import {
 		performanceCommandStatus,
 		dismissPerformanceDeckError,
@@ -45,7 +43,6 @@
 	} from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
-	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import BeatJump from './deck/BeatJump.svelte';
 	import DeckHeader from './deck/DeckHeader.svelte';
@@ -100,6 +97,7 @@
 	);
 
 	const INERT_TIP = 'not implemented - see PARITY-TODO';
+	const hotCueActions = createDeckHotCueActions(() => deckId, () => deck);
 
 	// ------------------------------------------------- engine call plumbing
 	// Engine methods throw loudly on empty decks (fail-fast contract);
@@ -224,71 +222,6 @@
 	// they go straight to the REST write surface, then refresh the deck's
 	// hot_cues from the backend (rb_vendor.fetch_cues is always live).
 
-	async function saveHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {
-		const stableId = deck.stable_id;
-		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
-		const revision = deck.hot_cue_revisions[slot];
-		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
-		let ms = deck.position_ms;
-		// hasRealBeatGrid, not a bare length check: a one-beat or malformed grid
-		// passes "is it non-empty" and then throws inside quantizeToNearestBeat,
-		// refusing to save the hot cue at all. Same rule as transport - no
-		// usable grid means no snap, never a refusal.
-		const beats = deck.anlz?.beatgrid.beats;
-		if (deck.quantize_enabled && hasRealBeatGrid(beats)) {
-			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
-		}
-		try {
-			const state = await dispatchPerformanceCommand({
-				type: 'hot_cue_save', deck: deckId, slot, in_ms: ms, revision
-			});
-			const reversal = state.decks[deckId].hot_cue_reversal;
-			if (reversal === null) throw new Error(`hot cue ${slot}: dispatcher omitted reversal token`);
-			return { cue: null, revision: reversal.revision, reversal: { reversal_id: reversal.reversal_id } };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hot cue ${slot} save failed - ${message}`, 'error');
-			throw error;
-		}
-	}
-
-	async function clearHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {
-		const stableId = deck.stable_id;
-		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
-		const revision = deck.hot_cue_revisions[slot];
-		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
-		try {
-			const state = await dispatchPerformanceCommand({
-				type: 'hot_cue_clear', deck: deckId, slot, revision
-			});
-			const reversal = state.decks[deckId].hot_cue_reversal;
-			if (reversal === null) throw new Error(`hot cue ${slot}: dispatcher omitted reversal token`);
-			return { cue: null, revision: reversal.revision, reversal: { reversal_id: reversal.reversal_id } };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hot cue ${slot} clear failed - ${message}`, 'error');
-			throw error;
-		}
-	}
-
-	async function restoreHotCueAt(
-		slot: HotCueSlot,
-		revision: string,
-		reversalId: string
-	): Promise<void> {
-		const stableId = deck.stable_id;
-		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
-		try {
-			await dispatchPerformanceCommand({
-				type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hot cue ${slot} restore failed - ${message}`, 'error');
-			throw error;
-		}
-	}
-
 	async function setTempo(ratio: number): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'tempo', deck: deckId, ratio });
 	}
@@ -401,9 +334,10 @@
 				{deck}
 				{pending}
 				onJump={seekTo}
-				onSave={saveHotCueAt}
-				onDelete={clearHotCueAt}
-				onRestore={restoreHotCueAt}
+				onSave={hotCueActions.saveHotCueAt}
+				onRename={hotCueActions.renameHotCueAt}
+				onDelete={hotCueActions.clearHotCueAt}
+				onRestore={hotCueActions.restoreHotCueAt}
 				inertTip={INERT_TIP}
 			/>
 		</div>

@@ -132,7 +132,7 @@ export type PerformanceCommand =
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
-	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string }
+	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment?: string | null }
 	| { type: 'hot_cue_clear'; deck: DeckId; slot: HotCueSlot; revision: string }
 	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string }
 	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
@@ -345,13 +345,15 @@ export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueD
 }
 
 let _presetClaim: { id: string } | null = null;
-type CommandScope = DeckId | 'sync' | 'headphone';
+type PersistenceScope = `persistence-${DeckId}`;
+type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
 export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
 	...DECK_IDS,
+	...DECK_IDS.map(_persistenceScope),
 	'sync',
 	'headphone'
 ];
@@ -439,6 +441,12 @@ function _revision(name: string, value: unknown): string {
 	if (typeof value !== 'string' || value.length === 0) {
 		throw new TypeError(`${name} must be a non-empty revision`);
 	}
+	return value;
+}
+
+function _optionalStringOrNull(name: string, value: unknown): string | null | undefined {
+	if (value === undefined || value === null) return value;
+	if (typeof value !== 'string') throw new TypeError(`${name} must be a string or null`);
 	return value;
 }
 
@@ -624,10 +632,18 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, assign: record.assign };
 	} else if (type === 'hot_cue_save') {
-		_exactKeys(record, ['type', 'deck', 'slot', 'in_ms', 'revision']);
+		_exactKeys(record, ['type', 'deck', 'slot', 'in_ms', 'revision', 'comment']);
 		const in_ms = _finite('in_ms', record.in_ms);
 		if (!Number.isInteger(in_ms) || in_ms < 0) throw new RangeError('in_ms must be a non-negative integer');
-		return { type, deck, slot: _hotCueSlot(record.slot), in_ms, revision: _revision('revision', record.revision) };
+		const base: Extract<PerformanceCommand, { type: 'hot_cue_save' }> = {
+			type: 'hot_cue_save',
+			deck,
+			slot: _hotCueSlot(record.slot),
+			in_ms,
+			revision: _revision('revision', record.revision)
+		};
+		const comment = _optionalStringOrNull('comment', record.comment);
+		return comment === undefined ? base : { ...base, comment };
 	} else if (type === 'hot_cue_clear') {
 		_exactKeys(record, ['type', 'deck', 'slot', 'revision']);
 		return { type, deck, slot: _hotCueSlot(record.slot), revision: _revision('revision', record.revision) };
@@ -832,6 +848,10 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 	return 'deck' in command ? command.deck : null;
 }
 
+function _persistenceScope(deck: DeckId): PersistenceScope {
+	return `persistence-${deck}`;
+}
+
 export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
@@ -873,6 +893,9 @@ export function performanceCommandQueueScopes(
 		return null;
 	}
 	if (deck === null) throw new Error(`${command.type} has no command queue scope`);
+	if (command.type === 'hot_cue_save' || command.type === 'hot_cue_clear' || command.type === 'hot_cue_restore') {
+		return [_persistenceScope(deck)];
+	}
 	if (
 		command.type === 'play' ||
 		command.type === 'cue' ||
@@ -1034,7 +1057,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
 			);
 		}
-		const result = await saveHotCue(stableId, command.slot, command.in_ms, command.revision);
+		const result = await saveHotCue(
+			stableId, command.slot, command.in_ms, command.revision, command.comment
+		);
 		if (result.reversal === undefined) throw new Error(`hot cue ${command.slot}: server omitted reversal token`);
 		hotCueReversals[command.deck] = {
 			slot: command.slot,

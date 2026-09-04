@@ -11,7 +11,9 @@ before(async () => {
 });
 
 test('queue scopes isolate deck loads and coordinate only sync-sensitive commands', () => {
-	assert.deepEqual(ipc.PERFORMANCE_PRESET_COMMAND_SCOPES, [1, 2, 3, 4, 'sync', 'headphone']);
+	assert.deepEqual(ipc.PERFORMANCE_PRESET_COMMAND_SCOPES, [
+		1, 2, 3, 4, 'persistence-1', 'persistence-2', 'persistence-3', 'persistence-4', 'sync', 'headphone'
+	]);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'load', deck: 1, stable_id: 'a' }), [
 		1
 	]);
@@ -41,6 +43,10 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		[3, 'sync']
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'hot_cue_save', deck: 4, slot: 'A', in_ms: 1000, revision: 'etag' }),
+		['persistence-4']
+	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_sync', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'channel_cue', deck: 4, enabled: true }), [4]);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
@@ -122,12 +128,15 @@ test('hot-cue controls are strict IPC commands with serializable slot state', as
 		delete globalThis.window;
 	}
 	const [deckSource, ipcSource] = await Promise.all([
-		readFile('src/lib/components/rb/Deck.svelte', 'utf8'),
+		readFile('src/lib/rb/deck-hot-cue-actions.ts', 'utf8'),
 		readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8')
 	]);
-	assert.match(deckSource, /type: 'hot_cue_save', deck: deckId, slot, in_ms: ms, revision/);
+	assert.match(deckSource, /type: 'hot_cue_save' as const/);
 	assert.match(deckSource, /type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId/);
-	assert.match(ipcSource, /await saveHotCue\(stableId, command\.slot, command\.in_ms, command\.revision\)/);
+	assert.match(
+		ipcSource,
+		/await saveHotCue\(\s*stableId, command\.slot, command\.in_ms, command\.revision, command\.comment\s*\)/
+	);
 	assert.match(ipcSource, /await restoreHotCue\(stableId, command\.slot, command\.revision, command\.reversal_id\)/);
 });
 

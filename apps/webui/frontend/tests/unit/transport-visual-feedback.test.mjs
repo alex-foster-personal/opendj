@@ -159,9 +159,10 @@ test('a pending command never greys out the play or cue button', () => {
 test('a pending command never greys out a hot cue pad', () => {
 	const text = componentSource('lib/components/rb/deck/HotCueBank.svelte');
 
-	// Scoped to the PADS. The undo button below them is a different control on a
-	// different budget: it reverses a persisted network write, so gating it on a
-	// command in flight is honest rather than a flicker.
+	// Scoped to the PADS. The undo button below them carries its own guard,
+	// asserted in hot-cue-rename-on-create.test.mjs: it is often the control
+	// clicked to leave an open cue-name input, so a `pending` disable there eats
+	// the click that started the write rather than merely flickering.
 	const padAt = text.indexOf('class="slot"');
 	assert.notEqual(padAt, -1, 'if the hot cue pad markup moved then this guard is pointed at nothing');
 	const padTagEnd = text.indexOf('>', padAt);
@@ -173,9 +174,9 @@ test('a pending command never greys out a hot cue pad', () => {
 		'a transport command in flight must not grey out all eight pads'
 	);
 	assert.ok(
-		padTag.includes('disabled={busySlot !== null}'),
-		'the per-slot write guard must stay: a hot cue SAVE is a real network round trip, ' +
-			'and double-firing it on one slot is a genuine hazard, unlike a 10ms transport hop'
+		padTag.includes('disabled={busySlot === entry.slot}'),
+		'the per-slot write guard must only disable the slot being written: a blur-triggering click ' +
+			'has to remain actionable, then wait for the current write before it starts its own'
 	);
 	assert.ok(
 		padTag.includes('aria-busy={pending}'),
