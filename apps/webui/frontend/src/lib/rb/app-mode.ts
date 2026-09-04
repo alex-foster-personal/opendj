@@ -32,8 +32,9 @@ export const APP_MODES: readonly AppMode[] = [
 		label: 'Library Management',
 		href: '/',
 		thumbnail: 'library',
-		description: 'Manage the local library and leave background workflows available.',
-		available: true
+		description: 'Planned: manage the local library while background workflows continue.',
+		available: false,
+		unavailableReason: 'Library Management mode is not implemented. The existing library page is not this mode.'
 	},
 	{
 		id: 'music-player',
