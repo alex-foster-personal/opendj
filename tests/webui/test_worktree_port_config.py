@@ -15,6 +15,7 @@ from apps.webui.port_config import (
     FRONTEND_POOL_START,
     POOL_SIZE,
     PORT_LANE_ENV,
+    PORT_LANE_STRIDE,
     PROJECT_ROOT,
     PortConfigError,
     WebuiPorts,
@@ -367,7 +368,7 @@ def test_port_lanes_never_overlap_across_their_full_pool_window() -> None:
     asserting the FULL range rather than a single sampled point.
     """
     claimed_ports: set[int] = set()
-    for lane in range(0, 24):
+    for lane in range(24):
         backend_start, frontend_start = _lane_pool_starts(lane)
         lane_ports = set(range(backend_start, backend_start + POOL_SIZE)) | set(
             range(frontend_start, frontend_start + POOL_SIZE)
@@ -449,3 +450,43 @@ def test_guard_is_inapplicable_outside_any_git_worktree(
     assert assert_source_tree_matches_worktree() is None
 
 pytestmark = pytest.mark.rb_parity
+
+
+def test_a_reservation_from_another_lane_is_reallocated_not_restored(tmp_path: Path) -> None:
+    """If a checkout's registry still holds a pair claimed before its lane existed
+    then a claim under the lane must allocate inside the lane's window, not
+    restore the stale pair.
+
+    A self-hosted runner's checkout persists between jobs, `.git` and its
+    `worktree-ports.json` included, so the first claim on that runner (made
+    before #1304 gave it a lane, or by an older workflow) is restored verbatim
+    by every later job: `claim_ports` prefers the registry's current pair over
+    allocation. Sat 5 Sep 2026 18:00 UTC, agentbox-3 derived
+    MUSIC_DJ_PORT_LANE=4 and still claimed 8680/9400, the lane-0 base pair,
+    and collided with the runner next to it (run 33982697725). The lane is a
+    window; a remembered pair outside it is another lane's pair.
+    """
+    repo_root = tmp_path / "runner-3" / "_work" / "music-dj-tools"
+    common_dir = tmp_path / "runner-3" / "_common"
+    for path in (repo_root, common_dir):
+        path.mkdir(parents=True)
+
+    stale = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert stale == WebuiPorts(backend=BACKEND_POOL_START, frontend=FRONTEND_POOL_START)
+    # The persisted .env is what actions/checkout `clean: true` removes; the
+    # registry under .git is what survives.
+    (repo_root / ".env").unlink()
+
+    relaid = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"})
+
+    lane_backend_start = BACKEND_POOL_START + 4 * PORT_LANE_STRIDE
+    lane_frontend_start = FRONTEND_POOL_START + 4 * PORT_LANE_STRIDE
+    assert lane_backend_start <= relaid.backend < lane_backend_start + POOL_SIZE, relaid
+    assert lane_frontend_start <= relaid.frontend < lane_frontend_start + POOL_SIZE, relaid
+    assert relaid != stale
+
+    # CONTROL: inside its own lane a remembered pair IS restored, so the
+    # single-claim-per-run contract the rest of the suite relies on holds.
+    again = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"})
+    assert again == relaid
+

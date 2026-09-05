@@ -465,6 +465,22 @@ def _lane_pool_starts(lane: int) -> tuple[int, int]:
     return BACKEND_POOL_START + offset, FRONTEND_POOL_START + offset
 
 
+def _pair_in_lane_window(ports: WebuiPorts, lane: int) -> bool:
+    """Return whether ``ports`` lies inside ``lane``'s pool window.
+
+    A remembered pair from another lane is another runner's pair: the
+    registry under ``.git`` survives ``actions/checkout``'s ``clean: true`` on a
+    self-hosted runner, so a claim made before the runner had a lane would
+    otherwise be restored verbatim on every later job (agentbox-3 derived lane
+    4 and still claimed the lane-0 base pair, Sat 5 Sep 2026 18:00 UTC).
+    """
+    backend_start, frontend_start = _lane_pool_starts(lane)
+    return (
+        backend_start <= ports.backend < backend_start + POOL_SIZE
+        and frontend_start <= ports.frontend < frontend_start + POOL_SIZE
+    )
+
+
 def _port_lane(environ: Mapping[str, str]) -> int:
     """Resolve the CI runner lane, defaulting to 0 (byte-identical to no lane)."""
     raw_value = environ.get(PORT_LANE_ENV)
@@ -515,6 +531,10 @@ def claim_ports(
         reservations = _prune_missing_worktrees(_load_registry(registry_path))
         previous = dict(reservations)
         current = reservations.get(root_key)
+        if current is not None and not _pair_in_lane_window(current, lane):
+            # Remembered under another lane (or before this runner had one):
+            # not ours to restore. Fall through to allocation inside the lane.
+            current = None
         if current is not None and (configured is None or configured == current):
             selected = current
         elif (
