@@ -126,7 +126,7 @@ class TodoCreateIn(BaseModel):
 class TodoPatchIn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    title: str | None = Field(default=None, min_length=1)
+    title: str = Field(default=None, min_length=1)
     detail: str | None = None
     options: list[str] | None = None
     done: bool | None = None

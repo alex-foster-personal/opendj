@@ -3603,7 +3603,7 @@ export interface components {
             /** Status */
             status?: string | null;
             /** Text */
-            text?: string | null;
+            text?: string;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -6180,7 +6180,7 @@ export interface components {
             /** Options */
             options?: string[] | null;
             /** Title */
-            title?: string | null;
+            title?: string;
         };
         /**
          * TrackListItemOut

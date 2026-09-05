@@ -116,6 +116,24 @@ def test_todo_empty_title_422s(fb: TestClient) -> None:
     assert fb.post("/api/v1/feedback/todos", json={"title": ""}).status_code == 422
 
 
+@pytest.mark.requirement("FB-02")
+def test_todo_patch_rejects_explicit_null_title_and_does_not_advertise_it(
+    fb: TestClient,
+) -> None:
+    todo = fb.post("/api/v1/feedback/todos", json={"title": "original"}).json()
+
+    response = fb.patch(f"/api/v1/feedback/todos/{todo['id']}", json={"title": None})
+
+    assert response.status_code == 422, response.text
+    title_schema = fb.get("/openapi.json").json()["components"]["schemas"][
+        "TodoPatchIn"
+    ]["properties"]["title"]
+    assert "anyOf" not in title_schema, (
+        "if title accepts null in OpenAPI then typed clients can send a request "
+        "the server cannot store - broken"
+    )
+
+
 # ----- comments -----------------------------------------------------------
 @pytest.mark.requirement("FB-03")
 def test_comment_roundtrip_and_bounds(fb: TestClient) -> None:

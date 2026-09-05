@@ -2148,16 +2148,9 @@
             "title": "Status"
           },
           "text": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
           }
         },
         "title": "CommentUpdateIn",
@@ -8990,16 +8983,9 @@
             "title": "Options"
           },
           "title": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
           }
         },
         "title": "TodoPatchIn",
