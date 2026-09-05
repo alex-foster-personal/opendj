@@ -70,8 +70,9 @@ def rewritten_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_no_map_and_no_shared_history_exits_4(rewritten_repo, capsys):
     app, _map, stamp, ship_tooling, _ = rewritten_repo
     stamp(ship_tooling)
-    assert dev_loop_preflight.main(["--app", str(app), "--no-fetch"]) == 4, \
+    assert dev_loop_preflight.main(["--app", str(app), "--no-fetch"]) == 4, (
         "if a rewritten-history shipped sha is judged without a map then the loop guesses - broken"
+    )
     assert "--commit-map" in capsys.readouterr().out
 
 
@@ -92,3 +93,41 @@ def test_runtime_tail_is_refused(rewritten_repo, capsys):
         "then Chrome is behind - broken"
     )
     assert "apps/hotfix.py" in capsys.readouterr().out
+
+
+@pytest.fixture
+def shared_root_rewrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The real Thu 3 Sep rewrite kept history before its cut point, and a stale local
+    branch still reaches the OLD ship sha: root -> old_base -> ship (tooling), and
+    root -> new_base -> fix on the rewritten main. Map old_base -> new_base."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    _commit(repo, "apps/root.py", "root")
+    _git(repo, "checkout", "-q", "-b", "stale-pre-rewrite")
+    old_base = _commit(repo, "apps/a.py", "base")
+    ship_tooling = _commit(repo, ".agents/skills/ship-dmg/x.md", "ship tooling")
+    _git(repo, "checkout", "-q", "main")
+    new_base = _commit(repo, "apps/a.py", "base rewritten")
+    _commit(repo, "apps/fix.py", "fix on new main")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (tmp_path / "map").write_text(f"old new\n{old_base} {new_base}\n")
+    app = tmp_path / "Open DJ.app"
+    manifest = app / dev_loop_preflight.MANIFEST_REL
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"identity": {"git_sha_full": ship_tooling}}))
+    monkeypatch.chdir(repo)
+    return app, tmp_path / "map"
+
+
+def test_reachable_old_sha_is_still_judged_through_the_map(shared_root_rewrite, capsys):
+    app, cmap = shared_root_rewrite
+    argv = ["--app", str(app), "--no-fetch", "--commit-map", str(cmap)]
+    assert dev_loop_preflight.main(argv) == 0, (
+        "if a stale pre-rewrite branch makes the old shipped sha reachable and the preflight "
+        "diffs old-vs-rewritten history instead of using the map then an up-to-date loop is "
+        "refused - broken"
+    )
+    assert "tooling-only tail (1 commit(s))" in capsys.readouterr().out
