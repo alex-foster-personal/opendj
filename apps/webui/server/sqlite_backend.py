@@ -133,6 +133,27 @@ def _stale_tracks_schema_version(path: Path) -> Optional[int]:
     return version if version < _state_schema.SCHEMA_VERSION else None
 
 
+def _tracks_table_missing_schema_meta(path: Path) -> bool:
+    """Return whether a foreign ``tracks`` table lacks migration metadata.
+
+    A genuine historical state DB has ``schema_meta`` and is safe for the
+    migration ladder. Without it, migration starts at v0 and ``CREATE TABLE
+    IF NOT EXISTS tracks`` retains an incompatible pre-existing table, so
+    later v0 statements leak a low-level missing-column error.
+    """
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        has_tracks = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
+        ).fetchone() is not None
+        has_meta = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
+        ).fetchone() is not None
+        return has_tracks and not has_meta
+    finally:
+        conn.close()
+
+
 # Track which fallback warnings we've already emitted, keyed by method name.
 # Per-process singleton so the logs stay quiet after the first call.
 _WARNED_LOCK = threading.Lock()
@@ -923,6 +944,18 @@ def make_backend(
     else:
         target = Path(state_db_path)
     if Path(target).is_file():
+        if _tracks_table_missing_schema_meta(target):
+            raise StaleStateSchemaError(
+                f"{target} has a tracks table but schema_meta reports "
+                f"version 0, below SCHEMA_VERSION "
+                f"{_state_schema.SCHEMA_VERSION}. Refusing to migrate an "
+                "unversioned tracks table. Migration was skipped somewhere "
+                "in the boot path; refusing to serve a mismatched schema. "
+                "Run `python -m "
+                "apps.shared.state.cli init` (or "
+                "apps.shared.state.schema.apply_migrations) on this DB "
+                "before booting."
+            )
         _migrate_before_serving(target)
         log.info("webui backend: using SqliteBackend at %s", target)
         return SqliteBackend(target)

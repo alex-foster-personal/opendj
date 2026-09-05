@@ -710,6 +710,32 @@ class TestFactory:
             verify_conn.close()
         assert version == state_schema.SCHEMA_VERSION
 
+    def test_make_backend_refuses_tracks_without_schema_meta(
+        self, tmp_path: Path,
+    ) -> None:
+        """Issue #790: a foreign old tracks table must fail before migration.
+
+        ``MIGRATIONS[0]`` leaves an existing table in place, then its index
+        creation needs columns this deliberately old shape does not have.
+        The factory must surface the established remediation error instead of
+        leaking that implementation-specific SQLite column failure.
+        """
+        db_path = tmp_path / "state.db"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO tracks VALUES ('legacy-1', 'Legacy Track')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with pytest.raises(StaleStateSchemaError, match="version 0"):
+            make_backend(db_path)
+
     def test_make_backend_raises_when_migration_cannot_write_and_leaves_version_unchanged(
         self, tmp_path: Path,
     ) -> None:
