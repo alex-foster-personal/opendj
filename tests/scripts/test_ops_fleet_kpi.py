@@ -104,9 +104,12 @@ def _run(env: dict[str, str]) -> subprocess.CompletedProcess:
 def _copy_fixture(tmp_path: Path) -> Path:
     fixture = tmp_path / "fixture"
     shutil.copytree(FIXTURE, fixture)
-    # Gate-log freshness is decided by mtime, which git does not track: pin it
-    # inside the window (now - 120s) so the green fixture reports PASS.
+    # Gate-log freshness and report verdict windows are decided by mtime, which
+    # git does not track: pin them inside the frozen window so the fixture does
+    # not depend on when CI happened to check it out.
     os.utime(fixture / "jobs" / "logs" / "tick-gate.log", (NOW - 120, NOW - 120))
+    for report in (fixture / "jobs" / "reports").glob("issue-*.md"):
+        os.utime(report, (NOW - 120, NOW - 120))
     return fixture
 
 
@@ -187,6 +190,13 @@ def test_green_fixture_reports_expected_kpis(tmp_path):
     assert list(verdicts) == GREEN_LABELS, out
     assert set(verdicts.values()) == {"PASS"}, out
     assert "missing" not in proc.stderr
+
+
+def test_copy_fixture_pins_report_mtimes_inside_the_frozen_window(tmp_path):
+    """The report window must be measured against the test's frozen clock."""
+    fixture = _copy_fixture(tmp_path)
+    reports = (fixture / "jobs" / "reports").glob("issue-*.md")
+    assert all(int(report.stat().st_mtime) == NOW - 120 for report in reports)
 
 
 def test_red_fixture_flips_every_input_driven_health_line(tmp_path):
