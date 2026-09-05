@@ -330,7 +330,7 @@ def test_cli_names_the_labelled_artifact() -> None:
         "--built",
         "Open DJ (B)_0.1.0_aarch64.dmg",
     )
-    assert name == "OpenDJ-B-0.1.0-aarch64.dmg"
+    assert name == "OpenDJ-B-0.1.1-aarch64.dmg"
 
 
 @pytest.mark.requirement("INSTALL-04")
