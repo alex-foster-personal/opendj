@@ -74,6 +74,7 @@ import {
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
 import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
+import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
 import type {
 	DeckAudioSnapshot,
 	DeckState,
@@ -169,6 +170,7 @@ export type PerformanceCommand =
 	/** UI contract only: the "show other users' pins" toggle (pin 88e3abec02a0)
 	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
 	| { type: 'pins_show_other_users' }
+	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
@@ -281,6 +283,7 @@ export interface PerformanceState {
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
+	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
@@ -812,6 +815,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (from_deck === to_deck) throw new RangeError('pairing snapshot requires two distinct decks');
 		return { type, from_deck, to_deck };
 	}
+	if (type === 'library_panels') {
+		_exactKeys(record, ['type', 'panel', 'collapsed']);
+		if (record.panel !== 'next' && record.panel !== 'recommended') {
+			throw new TypeError(`library panel must be next or recommended; got ${String(record.panel)}`);
+		}
+		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
+	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
 		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
@@ -1210,7 +1220,11 @@ export function queryPerformanceState(): PerformanceState {
 			eq_raised: isEqRaised(),
 			hovered_edges: hoveredEdgeList()
 		},
-		waveform_stutter: { ...waveformStutterSnapshot() }
+		waveform_stutter: { ...waveformStutterSnapshot() },
+		library_panels: {
+			next_collapsed: uiPrefs.next_panel_collapsed,
+			recommended_collapsed: uiPrefs.recommended_panel_collapsed
+		}
 	};
 }
 
@@ -1250,6 +1264,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
+		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -1443,6 +1458,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'library_panels') {
+		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.

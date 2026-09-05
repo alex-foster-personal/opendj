@@ -2469,27 +2469,47 @@
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
 		{/if}
-		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
-		<SuggestNextStrip
-			stableId={decks[1].stable_id}
-			targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
-			playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
-			onload={(sid) => loadSuggest(sid)}
-			onplay={(sid) => loadSuggest(sid, { play: true })}
-			onhover={(sid) => (suggestHoverId = sid)}
-			oncandidates={(cands) => (suggestCandidates = cands)}
-		/>
-		<RecommendedSection
-			candidates={suggestCandidates}
-			currentPlaylistId={pane.playlist_id}
-			currentPlaylistMemberIds={playlistMemberIds}
-			referenceBpm={masterRef?.bpm ?? null}
-			referenceKey={masterRef?.key ?? null}
-			stableId={decks[1].stable_id}
-			onload={(sid) => loadSuggest(sid)}
-			onplay={(sid) => loadSuggest(sid, { play: true })}
-			onhover={(sid) => (suggestHoverId = sid)}
-		/>
+		<div class="suggestion-panels" data-testid="suggestion-panels">
+			<div class="suggestion-panel-content">
+				<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
+				<div class:collapsed-panel={uiPrefs.next_panel_collapsed}>
+					<SuggestNextStrip
+						stableId={decks[1].stable_id}
+						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
+						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
+						onload={(sid) => loadSuggest(sid)}
+						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onhover={(sid) => (suggestHoverId = sid)}
+						oncandidates={(cands) => (suggestCandidates = cands)}
+					/>
+				</div>
+				{#if !uiPrefs.recommended_panel_collapsed}
+					<RecommendedSection
+						candidates={suggestCandidates}
+						currentPlaylistId={pane.playlist_id}
+						currentPlaylistMemberIds={playlistMemberIds}
+						referenceBpm={masterRef?.bpm ?? null}
+						referenceKey={masterRef?.key ?? null}
+						stableId={decks[1].stable_id}
+						onload={(sid) => loadSuggest(sid)}
+						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onhover={(sid) => (suggestHoverId = sid)}
+					/>
+				{/if}
+			</div>
+			<div class="suggestion-panel-rail" aria-label="collapsed suggestion panels">
+				{#if uiPrefs.next_panel_collapsed}
+					<button type="button" class="suggestion-rail-label" aria-label="Expand NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: false })}>NEXT</button>
+				{:else}
+					<button type="button" class="suggestion-collapse" aria-label="Collapse NEXT panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'next', collapsed: true })}>›</button>
+				{/if}
+				{#if uiPrefs.recommended_panel_collapsed}
+					<button type="button" class="suggestion-rail-label" aria-label="Expand RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: false })}>RECC</button>
+				{:else}
+					<button type="button" class="suggestion-collapse" aria-label="Collapse RECC panel" onclick={() => void runPerformanceCommandFromUi({ type: 'library_panels', panel: 'recommended', collapsed: true })}>›</button>
+				{/if}
+			</div>
+		</div>
 	</div>
 	<div class="library-health" aria-label="library processing health">
 		{#each [libraryHealth, vocalsCompletion, stemsCompletion] as dot (dot.label)}
@@ -2741,6 +2761,47 @@
 	.icon-btn.active {
 		color: var(--rb-accent);
 	}
+	.suggestion-panels {
+		display: flex;
+		min-height: 0;
+	}
+	.suggestion-panel-content {
+		min-width: 0;
+		flex: 1;
+	}
+	.collapsed-panel {
+		height: 0;
+		overflow: hidden;
+		pointer-events: none;
+		visibility: hidden;
+	}
+	.suggestion-panel-rail {
+		display: flex;
+		flex: none;
+		flex-direction: column;
+		align-items: center;
+		justify-content: flex-start;
+		width: 18px;
+		border-left: 1px solid var(--rb-border);
+	}
+	.suggestion-collapse,
+	.suggestion-rail-label {
+		width: 100%;
+		padding: 2px 0;
+		border: 0;
+		background: transparent;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.suggestion-collapse:hover,
+	.suggestion-rail-label:hover {
+		color: var(--rb-accent);
+	}
+	.suggestion-rail-label {
+		font-size: 8px;
+		line-height: 1;
+		writing-mode: vertical-rl;
+	}
 	.bottom-bar {
 		grid-area: bottom;
 		display: flex;
@@ -2779,7 +2840,7 @@
 	}
 	.library-health {
 		position: absolute;
-		right: 8px;
+		right: 28px;
 		bottom: 22px;
 		display: flex;
 		gap: 3px;
