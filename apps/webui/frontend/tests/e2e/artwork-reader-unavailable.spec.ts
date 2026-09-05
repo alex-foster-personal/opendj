@@ -6,8 +6,35 @@
  * Acceptance:
  *   - [if] artwork_available is null [then ⛔️] the artwork cell lacks its reader-unavailable tooltip
  *   - [if] artwork_available is null [then ⛔️] the artwork cell renders an image request
+ *   - [if] the boot scheduler's deferred burst (auth/me, build-info,
+ *     feedback/*, telemetry/heartbeat, jobs -- boot-scheduler.ts, PERF-R6)
+ *     lands before this test's final assertions [then ⛔️] it is misread as
+ *     an unexpected API call rather than the known, harmless boot chatter
+ *
+ * CI FLAKE, root-caused Sat 5 Sep 2026 (10 e2e-gate failures on trunk in one
+ * day, 4 of them this spec): `src/lib/rb/boot-scheduler.ts` (merged Mon 1 Sep,
+ * c48bdd76f/06ce393ba, well before this spec existed) defers auth/me,
+ * build-info, feedback/todos+comments+general, telemetry/heartbeat and jobs
+ * off the boot burst by BOOT_QUIET_MS (3s) plus an idle-frame ceiling. This
+ * spec's catch-all `**\/api/v1/**` route logs anything not explicitly mocked
+ * as "unexpected", so on a fast run the test finishes before the deferred
+ * burst fires and the gap never shows -- on a loaded CI runner (this repo
+ * runs many concurrent e2e-gate jobs on shared self-hosted agentbox
+ * runners) the wall-clock race tips the other way often enough to redden
+ * trunk. The fix is two-sided: mock every boot-scheduler family explicitly
+ * (so the burst is accounted for, not merely raced against) and wait past
+ * the scheduler's own release window before the final assertions, so the
+ * burst is always inside the observation window instead of sometimes inside
+ * it. That turns an intermittent miss into a deterministic pass.
  */
 import { expect, test } from '@playwright/test';
+import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
+
+/** Real margin past the scheduler's own quiet-period + idle-frame ceiling,
+ * so the deferred burst has unquestionably landed before the final asserts
+ * run -- this is what makes the wait deterministic instead of a second,
+ * shorter race against the same clock. */
+const PAST_BOOT_BURST_MS = BOOT_QUIET_MS + BOOT_IDLE_TIMEOUT_MS + 1_000;
 
 const SID = 'a'.repeat(40);
 const READER_UNAVAILABLE = 'artwork could not be checked (tag reader not installed in this build)';
@@ -152,11 +179,28 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({ json: { items: [TRACK], next_cursor: null } })
 	);
 
+	// The boot scheduler's own deferred families (boot-scheduler.ts, PERF-R6).
+	// None of these are the artwork reader path this test is about; they are
+	// mocked here purely so the deferred burst is a known, harmless quantity
+	// rather than something the catch-all route above has to guess at.
+	await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: {} }));
+	await page.route('**/api/v1/build-info', (route) => route.fulfill({ status: 404, json: {} }));
+	await page.route('**/api/v1/feedback/todos', (route) => route.fulfill({ json: { todos: [] } }));
+	await page.route('**/api/v1/feedback/comments', (route) => route.fulfill({ json: { comments: [] } }));
+	await page.route('**/api/v1/feedback/general', (route) => route.fulfill({ status: 404, json: {} }));
+	await page.route('**/api/v1/telemetry/heartbeat', (route) => route.fulfill({ status: 204, json: {} }));
+	await page.route(/\/api\/v1\/jobs(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
+
 	await page.goto('/performance');
 	const artworkCell = page.locator('td.c-art').first();
 	await expect(artworkCell).toBeVisible({ timeout: 15_000 });
 	await expect(artworkCell).toHaveAttribute('title', READER_UNAVAILABLE);
 	await expect(artworkCell.locator('img')).toHaveCount(0);
+
+	// Let the boot scheduler's deferred burst land before the final asserts,
+	// deterministically rather than racing it: see the CI-FLAKE note above.
+	await page.waitForTimeout(PAST_BOOT_BURST_MS);
+
 	expect(artworkRequests).toEqual([]);
 	expect(unexpectedRequests).toEqual([]);
 	expect(pageErrors).toEqual([]);
