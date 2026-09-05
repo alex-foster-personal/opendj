@@ -28,6 +28,7 @@
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
@@ -577,6 +578,7 @@
 	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
 	     reachable from performance mode too - the shell topbar is not
 	     rendered on this route. Sized down to fit --rb-topbar-h. -->
+	<CloudSyncStatusChip />
 	<UserBauble size={20} />
 </header>
 

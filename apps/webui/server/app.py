@@ -54,6 +54,7 @@ from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import cloudsync as cloudsync_routes
+from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
@@ -361,6 +362,7 @@ def create_app(
     app.include_router(commands_routes.router, prefix=api_prefix)
     app.include_router(ui_prefs_routes.router, prefix=api_prefix)
     app.include_router(cloudsync_routes.router, prefix=api_prefix)
+    app.include_router(cloudsync_status_routes.router, prefix=api_prefix)
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(usb_volumes_routes.router, prefix=api_prefix)

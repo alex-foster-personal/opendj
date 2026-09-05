@@ -642,6 +642,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudsync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_api_v1_cloudsync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/commands": {
         parameters: {
             query?: never;
@@ -3457,6 +3474,26 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
+        /** CloudSyncStatusOut */
+        CloudSyncStatusOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Endpoint */
+            endpoint: string | null;
+            /** Last Pull At */
+            last_pull_at: string | null;
+            /** Last Push At */
+            last_push_at: string | null;
+            last_result: components["schemas"]["LastResultOut"] | null;
+            /** Reason */
+            reason: string | null;
+            /** Recent Results */
+            recent_results: components["schemas"]["RecentResultOut"][];
+            /** Rows Pending */
+            rows_pending: number | null;
+            /** Signed In As */
+            signed_in_as: string | null;
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -4286,6 +4323,16 @@ export interface components {
             tracks: number;
             /** Unreadable Music Roots */
             unreadable_music_roots?: string[];
+        };
+        /** LastResultOut */
+        LastResultOut: {
+            /** Message */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error";
         };
         /**
          * LocalDataOut
@@ -5203,6 +5250,22 @@ export interface components {
             verified: boolean;
             /** Volume Uuid */
             volume_uuid: string;
+        };
+        /** RecentResultOut */
+        RecentResultOut: {
+            /** Finished At */
+            finished_at: string;
+            /** Message */
+            message: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error";
         };
         /** ReconcileSummary */
         ReconcileSummary: {
@@ -7893,6 +7956,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_v1_cloudsync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudSyncStatusOut"];
                 };
             };
         };

@@ -8,6 +8,7 @@
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
@@ -156,6 +157,7 @@
 			{:else}
 				<span>Connecting to configured worktree daemon...</span>
 			{/if}
+			<CloudSyncStatusChip />
 			<UserBauble />
 		</div>
 		<div class="content">

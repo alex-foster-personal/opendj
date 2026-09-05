@@ -1723,6 +1723,110 @@
         "title": "ClientPerformanceSampleOut",
         "type": "object"
       },
+      "CloudSyncStatusOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "last_pull_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Pull At"
+          },
+          "last_push_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Push At"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastResultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recent_results": {
+            "items": {
+              "$ref": "#/components/schemas/RecentResultOut"
+            },
+            "title": "Recent Results",
+            "type": "array"
+          },
+          "rows_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Pending"
+          },
+          "signed_in_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed In As"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "signed_in_as",
+          "last_push_at",
+          "last_pull_at",
+          "last_result",
+          "rows_pending",
+          "endpoint",
+          "recent_results"
+        ],
+        "title": "CloudSyncStatusOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -3997,6 +4101,28 @@
           "rekordbox_was_running"
         ],
         "title": "LastImportOut",
+        "type": "object"
+      },
+      "LastResultOut": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "LastResultOut",
         "type": "object"
       },
       "LocalDataOut": {
@@ -6508,6 +6634,43 @@
           "verified"
         ],
         "title": "ReceiptModel",
+        "type": "object"
+      },
+      "RecentResultOut": {
+        "properties": {
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "finished_at",
+          "pushed",
+          "pulled"
+        ],
+        "title": "RecentResultOut",
         "type": "object"
       },
       "ReconcileSummary": {
@@ -12235,6 +12398,27 @@
           }
         },
         "summary": "Put Policy",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/status": {
+      "get": {
+        "operationId": "get_status_api_v1_cloudsync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
         "tags": [
           "cloudsync"
         ]
