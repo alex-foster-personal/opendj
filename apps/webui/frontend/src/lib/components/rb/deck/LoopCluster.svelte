@@ -266,6 +266,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="loop-cluster"
+	role="group"
+	aria-label={`loop controls deck ${deckId}`}
 	onpointerenter={() => armLoopHover(deckId)}
 	onpointerleave={() => clearLoopHover(deckId)}
 >
@@ -274,6 +276,8 @@
 		class="mode-toggle"
 		class:on={intervalGrid}
 		data-performance-control="loop-interval-mode"
+		data-testid={`loop-interval-mode-deck-${deckId}`}
+		aria-label={`loop interval mode deck ${deckId}`}
 		data-state={intervalGrid ? 'on' : 'off'}
 		aria-pressed={intervalGrid}
 		title={intervalGrid
@@ -283,7 +287,7 @@
 	>
 		<span class="mode-glyph" aria-hidden="true">&#9647;&#9647;</span>
 	</button>
-	<button class="rb-lit-button rb-inert int" disabled title={inertTip}>
+	<button class="rb-lit-button rb-inert int" disabled title={inertTip} aria-label={`loop source deck ${deckId}`} data-testid={`loop-source-deck-${deckId}`}>
 		INT <span class="caret">&#9662;</span>
 	</button>
 	{#if intervalGrid}
@@ -291,6 +295,8 @@
 			<button
 				disabled={!canGridDown}
 				data-performance-control="loop-interval-down"
+				data-testid={`loop-interval-down-deck-${deckId}`}
+				aria-label={`smaller loop intervals deck ${deckId}`}
 				title={canGridDown
 					? `show smaller loop intervals (${prevGridBase} to ${prevGridBase * 8} beats)`
 					: `already at the smallest interval window (${MIN_BEATS} beats)`}
@@ -301,6 +307,8 @@
 			<button
 				disabled={!canGridUp}
 				data-performance-control="loop-interval-up"
+				data-testid={`loop-interval-up-deck-${deckId}`}
+				aria-label={`larger loop intervals deck ${deckId}`}
 				title={canGridUp
 					? `show larger loop intervals (${nextGridBase} to ${nextGridBase * 8} beats)`
 					: `already at the largest interval window (${MAX_BEATS} beats)`}
@@ -318,6 +326,9 @@
 					class:selected={engagedIntervalLength === choice}
 					disabled={!_canChoose(choice)}
 					data-performance-control="loop-interval"
+					data-testid={`loop-${choice}-beats-deck-${deckId}`}
+					aria-label={`loop ${choice} beats deck ${deckId}`}
+					aria-pressed={engagedIntervalLength === choice}
 					data-beats={choice}
 					data-state={engagedIntervalLength === choice ? 'on' : 'off'}
 					title={_choiceTip(choice)}
@@ -333,6 +344,9 @@
 			class:engaged
 			disabled={!canToggle}
 			data-performance-control="loop"
+			data-testid={`loop-deck-${deckId}`}
+			aria-label={`loop deck ${deckId}`}
+			aria-pressed={engaged}
 			data-state={engaged ? 'on' : 'off'}
 			title={canToggle ? (engaged ? 'exit loop' : `loop ${_fmtBeats(beatLength)} beats`) : disabledTip}
 			onclick={toggleLoop}
@@ -343,6 +357,8 @@
 			<button
 				disabled={!canHalve}
 				data-performance-control="loop-halve"
+				data-testid={`loop-halve-deck-${deckId}`}
+				aria-label={`halve loop deck ${deckId}`}
 				title={canHalve ? 'halve loop length' : disabledTip}
 				onclick={halve}
 			>
@@ -351,6 +367,8 @@
 			<button
 				disabled={!canDouble}
 				data-performance-control="loop-double"
+				data-testid={`loop-double-deck-${deckId}`}
+				aria-label={`double loop deck ${deckId}`}
 				title={canDouble ? 'double loop length' : disabledTip}
 				onclick={double}
 			>
@@ -364,6 +382,8 @@
 				class="safety-btn"
 				disabled={!canSaveSafety}
 				data-performance-control="safety-loop-save"
+				data-testid={`save-safety-loop-deck-${deckId}`}
+				aria-label={`save safety loop deck ${deckId}`}
 				title={safetyTip}
 				onclick={saveSafety}
 			>
@@ -375,6 +395,8 @@
 				class:armed={safety.armed}
 				disabled={pending}
 				data-performance-control="safety-loop-arm"
+				data-testid={`safety-loop-deck-${deckId}`}
+				aria-label={`safety loop deck ${deckId}`}
 				data-state={safety.armed ? 'on' : 'off'}
 				aria-pressed={safety.armed}
 				title={`safety loop ${safety.beat_length ?? '?'} beats at ${Math.round(safety.in_ms)} ms - ${safety.armed ? 'armed, engages instead of running off the end' : 'saved but disarmed'}`}
@@ -387,7 +409,8 @@
 				disabled={pending}
 				data-performance-control="safety-loop-clear"
 				title="clear the saved safety loop"
-				aria-label="clear safety loop"
+				aria-label={`clear safety loop deck ${deckId}`}
+				data-testid={`clear-safety-loop-deck-${deckId}`}
 				onclick={clearSafety}
 			>
 				&times;

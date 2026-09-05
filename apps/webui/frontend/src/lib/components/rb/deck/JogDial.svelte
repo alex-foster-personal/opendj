@@ -105,7 +105,7 @@
 	);
 </script>
 
-<div class="jog">
+	<div class="jog" role="group" aria-label={`jog controls deck ${deck.deck_id}`}>
 	<div class="dial-wrap" class:jog-off-tempo={offTempoTitle !== null} title={offTempoTitle ?? undefined}>
 		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label="jog dial readout">
 			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
@@ -135,6 +135,8 @@
 			disabled={pending || gridless}
 			aria-pressed={deck.quantize_enabled}
 			data-performance-control="quantize"
+			data-testid={`quantize-deck-${deck.deck_id}`}
+			aria-label={`quantize deck ${deck.deck_id}`}
 			data-state={gridless ? 'inert' : deck.quantize_enabled ? 'on' : 'off'}
 			title={qTitle}
 			onclick={async () => await onQuantize()}
@@ -149,6 +151,8 @@
 				disabled={pending}
 				aria-pressed={deck.slip_enabled}
 				data-performance-control="slip"
+				data-testid={`slip-deck-${deck.deck_id}`}
+				aria-label={`slip deck ${deck.deck_id}`}
 				data-state={deck.slip_active ? 'active' : deck.slip_enabled ? 'armed' : 'off'}
 				title={slipTitle}
 				onclick={async () => await onSlip()}
@@ -162,6 +166,8 @@
 			disabled={pending}
 			aria-pressed={deck.master_tempo_enabled}
 			data-performance-control="master-tempo"
+			data-testid={`master-tempo-deck-${deck.deck_id}`}
+			aria-label={`master tempo deck ${deck.deck_id}`}
 			data-state={deck.master_tempo_enabled ? 'on' : 'off'}
 			data-processor-state={deck.processor_error !== null
 				? 'error'
@@ -175,8 +181,8 @@
 		>
 			MT
 		</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip}>AU</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip}>MA</button>
+		<button class="rb-lit-button rb-inert" disabled title={inertTip} aria-label={`auto cue deck ${deck.deck_id}`} data-testid={`auto-cue-deck-${deck.deck_id}`}>AU</button>
+		<button class="rb-lit-button rb-inert" disabled title={inertTip} aria-label={`manual deck ${deck.deck_id}`} data-testid={`manual-deck-${deck.deck_id}`}>MA</button>
 	</div>
 </div>
 

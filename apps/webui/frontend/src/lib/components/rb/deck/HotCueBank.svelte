@@ -188,15 +188,16 @@
 	}
 </script>
 
-<div class="cue-area">
-	<div class="bank">
+<div class="cue-area" role="group" aria-label={`hot cues deck ${deck.deck_id}`}>
+	<div class="bank" role="group" aria-label={`hot cue pads deck ${deck.deck_id}`}>
 		{#each bank as entry (entry.slot)}
 			{#if renameSlot === entry.slot}
 				<input
 					class="slot cue-name"
 					class:filled={entry.cue !== null}
 					class:loop={entry.cue !== null && entry.cue.is_loop}
-					aria-label={`name hot cue ${entry.slot}`}
+					aria-label={`name hot cue ${entry.slot} deck ${deck.deck_id}`}
+					data-testid={`hot-cue-name-${deck.deck_id}-${entry.slot}`}
 					bind:this={renameInputEl}
 					bind:value={renameDraft}
 					onblur={() => void commitRename(entry)}
@@ -219,6 +220,9 @@
 					(deck.stable_id === null || !deck.has_rb_mapping)}
 				disabled={busySlot === entry.slot}
 				aria-busy={pending}
+				aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
+				data-testid={`hot-cue-${deck.deck_id}-${entry.slot}`}
+				data-performance-control="hot-cue"
 				title={entry.cue === null
 					? deck.stable_id === null
 						? NOT_LOADED_TIP
@@ -236,7 +240,8 @@
 						class="clear"
 						role="button"
 						tabindex="0"
-						aria-label={`clear hot cue ${entry.slot}`}
+						aria-label={`clear hot cue ${entry.slot} deck ${deck.deck_id}`}
+						data-testid={`clear-hot-cue-${deck.deck_id}-${entry.slot}`}
 						title={`clear hot cue ${entry.slot}`}
 						onclick={(event) => onClearClick(entry.slot, event)}
 						onkeydown={(event) => {
@@ -253,7 +258,7 @@
 			{/if}
 		{/each}
 	</div>
-	<button class="rb-lit-button rb-inert dropdown" disabled title={inertTip}>
+	<button class="rb-lit-button rb-inert dropdown" disabled title={inertTip} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
 		HOT CUE <span class="caret">&#9662;</span>
 	</button>
 	{#if undo !== null}
@@ -264,7 +269,7 @@
 		the very click that started the write and make the operator press UNDO
 		twice. Repeat presses are safe without it: undoLastMutation serializes
 		on the same busy-slot tail and the second one finds its token spent. -->
-		<button class="rb-lit-button undo" aria-busy={pending} onclick={undoLastMutation}>
+		<button class="rb-lit-button undo" aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
 			UNDO {undo.slot}
 		</button>
 	{/if}

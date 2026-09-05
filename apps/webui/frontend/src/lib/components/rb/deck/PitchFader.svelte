@@ -145,6 +145,7 @@
 		aria-disabled={pending}
 		tabindex="0"
 		data-performance-control="pitch"
+		data-testid={`pitch-fader-deck-${deck.deck_id}`}
 		use:wheelAdjust={{
 			step: WHEEL_STEP.pitch,
 			get: () => value,
@@ -171,6 +172,8 @@
 				disabled={pending}
 				aria-pressed={pitchRange === range}
 				data-performance-control="pitch-range"
+				data-testid={`pitch-range-${range}-deck-${deck.deck_id}`}
+				aria-label={`pitch range ${range === 100 ? 'wide' : `${range} percent`} deck ${deck.deck_id}`}
 				data-range={range}
 				data-state={pitchRange === range ? 'on' : 'off'}
 				title={`pitch range ${range === 100 ? 'WIDE' : `+-${range}%`}`}

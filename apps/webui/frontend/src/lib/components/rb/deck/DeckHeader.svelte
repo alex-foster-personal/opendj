@@ -178,6 +178,7 @@
 				class="art-btn"
 				title="Unload deck"
 				aria-label={`Unload deck ${deckId}`}
+				data-testid={`unload-deck-${deckId}`}
 				disabled={pending}
 				onclick={() => void onUnload()}
 			>
@@ -226,6 +227,8 @@
 					type="button"
 					class="enable-master-tempo"
 					disabled={pending}
+					aria-label={`enable master tempo deck ${deckId}`}
+					data-testid={`enable-master-tempo-deck-${deckId}`}
 					onclick={async () => await onMasterTempo()}
 				>
 					Enable MT
@@ -243,6 +246,8 @@
 					disabled={pending || !keySyncAvailable}
 					aria-pressed={deck.key_sync_enabled}
 					data-performance-control="key-sync"
+					data-testid={`key-sync-deck-${deckId}`}
+					aria-label={`key sync deck ${deckId}`}
 					data-state={deck.key_sync_enabled ? 'on' : 'off'}
 					title={keySyncTitle}
 					onclick={async () => await onKeySync()}
@@ -256,7 +261,8 @@
 					class="nudge"
 					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === -12}
 					data-performance-control="key-nudge-down"
-					aria-label="lower key by one semitone"
+					aria-label={`lower key by one semitone deck ${deckId}`}
+					data-testid={`key-nudge-down-deck-${deckId}`}
 					title="lower key by one semitone"
 					onclick={async () => await onKeyNudge(-1)}
 				>
@@ -272,7 +278,8 @@
 					class="nudge"
 					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
 					data-performance-control="key-nudge-up"
-					aria-label="raise key by one semitone"
+					aria-label={`raise key by one semitone deck ${deckId}`}
+					data-testid={`key-nudge-up-deck-${deckId}`}
 					title="raise key by one semitone"
 					onclick={async () => await onKeyNudge(1)}
 				>
@@ -288,6 +295,8 @@
 						disabled={pending || gridless}
 						aria-pressed={deck.beat_sync_enabled}
 						data-performance-control="beat-sync"
+						data-testid={`beat-sync-deck-${deckId}`}
+						aria-label={`beat sync deck ${deckId}`}
 						data-state={gridless ? 'inert' : deck.beat_sync_enabled ? 'on' : 'off'}
 						title={beatSyncTitle}
 						onclick={async () => await onBeatSync()}
@@ -302,6 +311,8 @@
 						disabled={pending || deck.stable_id === null}
 						aria-pressed={deck.is_master}
 						data-performance-control="master"
+						data-testid={`master-deck-${deckId}`}
+						aria-label={`master deck ${deckId}`}
 						data-state={deck.is_master ? 'on' : 'off'}
 						title={masterTitle}
 						onclick={async () => await onMaster()}

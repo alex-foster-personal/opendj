@@ -94,6 +94,7 @@
 	use:wheelAdjust={{ step: WHEEL_STEP.fader, get: () => value, set: onchange }}
 	role="slider"
 	aria-label={label}
+	data-testid={`channel-${deckId}-fader`}
 	aria-orientation="vertical"
 	aria-valuemin={0}
 	aria-valuemax={1}

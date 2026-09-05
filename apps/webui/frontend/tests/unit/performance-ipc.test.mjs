@@ -417,8 +417,8 @@ test('deck header key controls dispatch only through the typed performance dispa
 	assert.match(deckSource, /type: 'key_nudge', deck: deckId, semitones/);
 	assert.match(headerSource, /onKeySync/);
 	assert.match(headerSource, /onKeyNudge/);
-	assert.match(headerSource, /aria-label="lower key by one semitone"/);
-	assert.match(headerSource, /aria-label="raise key by one semitone"/);
+	assert.match(headerSource, /aria-label=\{`lower key by one semitone deck \$\{deckId\}`\}/);
+	assert.match(headerSource, /aria-label=\{`raise key by one semitone deck \$\{deckId\}`\}/);
 	assert.match(deckSource, /candidate !== deckId/);
 });
 

@@ -289,6 +289,8 @@
 
 <section
 	class="rb-deck rb-panel"
+	role="group"
+	aria-label={`deck ${deckId}`}
 	class:drop-hover={dropHover}
 	class:loading={pending}
 	class:deck-focus={deckHoverUi.deckId === deckId}
@@ -327,10 +329,10 @@
 	<div class="main-row">
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label="grid adjust">
+			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
 				<span class="ticks">&#9475;&#9475;&#9475;</span>
 			</button>
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label="grid shift">
+			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
 				<span class="ticks">&#9478;&#9478;&#9478;</span>
 			</button>
 		</div>

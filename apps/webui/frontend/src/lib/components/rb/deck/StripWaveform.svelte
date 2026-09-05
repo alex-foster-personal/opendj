@@ -133,7 +133,8 @@
 			type="button"
 			class="play-hint"
 			style={`left:${playHintPct}%`}
-			aria-label="Play from here"
+			aria-label={`play from waveform deck ${deck.deck_id}`}
+			data-testid={`waveform-play-deck-${deck.deck_id}`}
 			title="Play"
 			onclick={(e) => void handlePlayHint(e)}
 		>
@@ -144,7 +145,8 @@
 		class="strip"
 		onclick={(e) => void handleClick(e)}
 		disabled={deck.stable_id === null || pending}
-		aria-label="track overview waveform - click to seek"
+		aria-label={`waveform seek deck ${deck.deck_id}`}
+		data-testid={`waveform-seek-deck-${deck.deck_id}`}
 		title={vocalsTitle ?? undefined}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>

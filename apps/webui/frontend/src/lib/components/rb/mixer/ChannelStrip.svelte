@@ -54,6 +54,8 @@
 	class:secondary
 	class:deck-focus={focused}
 	data-mixer-channel={deckId}
+	role="group"
+	aria-label={`channel ${deckId}`}
 	onpointerenter={() => setHoveredDeck(deckId)}
 	onpointerleave={() => {
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
@@ -64,6 +66,7 @@
 		<Knob
 			knobId={knobId(deckId, 'trim')}
 			label="TRIM"
+			accessibleLabel={`trim deck ${deckId}`}
 			value={trim}
 			tone="white"
 			size={TRIM_SIZE}
@@ -71,14 +74,15 @@
 		/>
 	</div>
 	<div class="eq-stack">
-		<Knob knobId={knobId(deckId, 'high')} label="HI" value={eqHigh} onchange={(v) => oneq('high', v)} />
-		<Knob knobId={knobId(deckId, 'mid')} label="MID" value={eqMid} onchange={(v) => oneq('mid', v)} />
-		<Knob knobId={knobId(deckId, 'low')} label="LOW" value={eqLow} onchange={(v) => oneq('low', v)} />
+		<Knob knobId={knobId(deckId, 'high')} label="HI" accessibleLabel={`high EQ deck ${deckId}`} value={eqHigh} onchange={(v) => oneq('high', v)} />
+		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} onchange={(v) => oneq('mid', v)} />
+		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} onchange={(v) => oneq('low', v)} />
 	</div>
 	<div class="filter-slot">
 		<Knob
 			knobId={knobId(deckId, 'filter')}
 			label="FILTER"
+			accessibleLabel={`filter deck ${deckId}`}
 			value={0.5}
 			tone="rainbow"
 			size={FILTER_SLOT_SIZE}
@@ -89,6 +93,8 @@
 		class:enabled={cueEnabled}
 		class="cue-btn"
 		aria-pressed={cueEnabled}
+		aria-label={`cue channel ${deckId}`}
+		data-testid={`cue-channel-${deckId}`}
 		onclick={() => oncue(!cueEnabled)}>CUE</button
 	>
 	<div class="fader-slot">
@@ -98,7 +104,7 @@
 			{looped}
 			deckId={deckId}
 			onchange={onfader}
-			label={`channel ${deckId} fader`}
+			label={`channel fader deck ${deckId}`}
 		/>
 	</div>
 	<span class="stem-label">STEM</span>

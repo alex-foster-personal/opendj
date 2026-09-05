@@ -82,12 +82,14 @@
 	}
 </script>
 
-<div class="beat-jump" title="Beat jump: move the transport by whole beatgrid beats">
+	<div class="beat-jump" role="group" aria-label={`beat jump deck ${deck.deck_id}`} title="Beat jump: move the transport by whole beatgrid beats">
 	<span class="column-label">JUMP</span>
 	{#each JUMPS as delta (delta)}
 		<button
 			disabled={!_canJump(delta)}
 			data-performance-control="beat-jump"
+			data-testid={`beat-jump-${delta}-deck-${deck.deck_id}`}
+			aria-label={`jump ${_label(delta)} beats deck ${deck.deck_id}`}
 			data-beats={delta}
 			title={_title(delta)}
 			onclick={() => void jump(delta)}

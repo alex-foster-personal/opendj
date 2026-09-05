@@ -33,6 +33,8 @@
 		knobId: string;
 		/** Small caps label under the knob (TRIM / HI / MID / LOW / FILTER ...). */
 		label: string;
+		/** AX name when the visible caption needs deck context. */
+		accessibleLabel?: string;
 		/** Position 0..1; 0.5 = center detent (unity / flat). */
 		value: number;
 		/** Called with the new 0..1 value on every drag/keyboard change. */
@@ -45,7 +47,7 @@
 		size?: number;
 	}
 
-	let { knobId, label, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
+	let { knobId, label, accessibleLabel, value, onchange, inert = false, tone = 'accent', size = 30 }: Props =
 		$props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
@@ -163,8 +165,9 @@
 	class:warn-orange={warn === 'orange'}
 	class:warn-red={warn === 'red'}
 	data-knob-id={knobId}
+	data-testid={`knob-${knobId}`}
 	role="slider"
-	aria-label={label}
+	aria-label={accessibleLabel ?? label}
 	aria-valuemin={0}
 	aria-valuemax={1}
 	aria-valuenow={value}
