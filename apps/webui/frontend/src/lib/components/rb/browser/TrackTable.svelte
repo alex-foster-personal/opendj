@@ -83,6 +83,7 @@
 		| 'comments'
 		| 'time'
 		| 'quality'
+		| 'energy'
 		| 'genre'
 		| 'stems'
 		| 'autoplay';
@@ -108,6 +109,7 @@
 		comments: 110,
 		time: 48,
 		quality: 92,
+		energy: 22,
 		genre: 90,
 		stems: 148,
 		autoplay: 46
@@ -808,6 +810,7 @@
 				<col style={`width:${colWidths.comments}px`} />
 				<col style={`width:${colWidths.time}px`} />
 				<col style={`width:${colWidths.quality}px`} />
+				<col style={`width:${colWidths.energy}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
 			</colgroup>
@@ -1013,6 +1016,22 @@
 						<span
 							class="col-resize"
 							onpointerdown={(e) => onColResizeStart(e, 'quality')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
+					<th
+						class="h-energy"
+						style={`width:${colWidths.energy}px`}
+						title="Energy 1-9, from Mixed In Key"
+						aria-label="Energy 1-9, from Mixed In Key"
+					>
+						<span class="th-label"><span class="energy-icon" aria-hidden="true">⚡</span></span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'energy')}
 							onpointermove={onColResizeMove}
 							onpointerup={onColResizeEnd}
 							onpointercancel={onColResizeEnd}
@@ -1259,6 +1278,9 @@
 						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
 							<QualityBadge quality={row.quality} />
+						</td>
+						<td class="c-energy" class:energy-unset={row.energy === null} title="Energy 1-9, from Mixed In Key">
+							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
 							{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
@@ -1800,6 +1822,18 @@
 	.c-quality {
 		overflow: hidden;
 		white-space: nowrap;
+	}
+	.c-energy {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		padding: 0;
+	}
+	.c-energy.energy-unset {
+		color: var(--rb-text-dim);
+	}
+	.energy-icon {
+		font-size: 11px;
+		line-height: 1;
 	}
 	.c-order .grip {
 		margin-right: 2px;

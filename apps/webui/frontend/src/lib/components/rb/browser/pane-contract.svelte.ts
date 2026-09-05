@@ -62,6 +62,13 @@ export interface BrowserRow {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	/** MIK energy (1-9); null on every row today - no listing/rb-meta
+	 * payload projects it yet (sqlite backend's _EAV_FIELDS does not
+	 * include "energy", see apps/webui/server/sqlite_backend.py). The
+	 * import that would populate this is issue #903's engine half; this
+	 * field exists so the display (TrackTable's Energy column) needs no
+	 * further wiring once that lands. */
+	energy: number | null;
 	/** '' for All Tracks rows (listing carries no ETag) - rating edits
 	 * lazily fetch one. Playlist rows carry it inline (contract 4). */
 	etag: string;

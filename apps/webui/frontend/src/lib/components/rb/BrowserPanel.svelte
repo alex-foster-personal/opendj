@@ -1244,6 +1244,9 @@
 			comments: wire.comments,
 			duration_ms: wire.duration_ms,
 			genre: wire.genre,
+			// No listing/rb-meta payload projects MIK energy yet (issue #903
+			// engine half); null is the honest state until it does.
+			energy: null,
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
 			spotify_pending:
@@ -1287,6 +1290,7 @@
 			// genre/is_streaming are NOT in the listing contract (point 1) -
 			// null here means 'fall back to lazily fetched rb-meta'.
 			genre: null,
+			energy: null,
 			file_exists: track.file_exists,
 			is_streaming: null,
 			spotify_pending: track.stable_id.startsWith('spotify-pending:'),

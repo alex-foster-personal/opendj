@@ -99,6 +99,7 @@ import {
 } from '$lib/rb/audio-context-instrumentation';
 import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
 import {
+	ConflictError,
 	fetchAnlz,
 	fetchAnlzBypassingHttpCache,
 	fetchAudioArrayBuffer,
@@ -106,6 +107,7 @@ import {
 	fetchStemAudioArrayBuffers,
 	STEM_LAYOUT_PART_NAMES,
 	getTrack,
+	patchTrack,
 	probeStemArtifact,
 	RbApiError
 } from '$lib/rb/api-rb';
@@ -871,6 +873,32 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 	const masterInput = _keySyncSource(masterDeck);
 	if (!keySyncPreviewAvailable(sourceInput) || !keySyncPreviewAvailable(masterInput)) return null;
 	return _keySyncPlan(deck, masterDeck, keySyncManualShiftBaseline(sourceInput));
+}
+
+/** Set the loaded deck track's rating (deck-header pin 4de63478782c). Same
+ * PATCH /tracks/{sid} + If-Match path as the library rating cell
+ * (BrowserPanel._patchRating) - deck-header just has no ETag of its own to
+ * carry, so it always fetches one fresh first. A race where a different
+ * track loads onto this deck while the request is in flight is guarded by
+ * re-checking stable_id before writing the result back. */
+export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
+	const stable_id = deckStates[deck].stable_id;
+	if (stable_id === null) return;
+	try {
+		const etag = (await getTrack(stable_id)).etag;
+		const { track, etag: fresh } = await patchTrack(stable_id, etag, { rating: next });
+		void fresh;
+		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = track.rating ?? null;
+	} catch (exc) {
+		if (exc instanceof ConflictError) {
+			if (deckStates[deck].stable_id === stable_id) {
+				deckStates[deck].rating = exc.current.rating ?? null;
+			}
+			pushToast('rating conflict: track changed elsewhere - showing current value', 'error');
+			return;
+		}
+		pushToast(`rating update failed: ${String(exc)}`, 'error');
+	}
 }
 
 /** Retain accepted, effective future presentation schedules after a SLIP anchor. */
@@ -1933,6 +1961,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.stable_id = null;
 	st.title = null;
 	st.artist = null;
+	st.rating = null;
 	st.bpm = null;
 	st.key = null;
 	st.key_shift_semitones = 0;
@@ -2980,6 +3009,7 @@ class RbAudioEngine implements AudioEngine {
 			// the deck's "unknown" null.
 			st.title = candidateTrack.title ?? null;
 			st.artist = candidateTrack.artist ?? null;
+			st.rating = candidateTrack.rating ?? null;
 			st.bpm = candidateTrack.bpm ?? null;
 			st.key = candidateTrack.key ?? null;
 			// The decoded buffer is the audio actually scheduled. Metadata can

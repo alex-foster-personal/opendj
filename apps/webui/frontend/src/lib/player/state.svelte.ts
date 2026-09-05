@@ -34,6 +34,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		stable_id: null,
 		title: null,
 		artist: null,
+		rating: null,
 		bpm: null,
 		key: null,
 		key_shift_semitones: 0,

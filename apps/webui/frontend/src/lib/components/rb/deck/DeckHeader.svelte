@@ -5,12 +5,20 @@
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
-	import { DECK_IDS, deckStates, effectiveCamelotKey, keySyncPreview, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import {
+		DECK_IDS,
+		deckStates,
+		effectiveCamelotKey,
+		keySyncPreview,
+		pitchRanges,
+		rateDeckTrack
+	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import RatingStars from '../browser/RatingStars.svelte';
 
 	let {
 		deck,
@@ -21,6 +29,7 @@
 		onMasterTempo,
 		onKeySync,
 		onKeyNudge,
+		onResetTempo,
 		onUnload,
 		keySyncAvailable
 	}: {
@@ -32,6 +41,7 @@
 		onMasterTempo: () => Promise<void>;
 		onKeySync: () => Promise<void>;
 		onKeyNudge: (semitones: -1 | 1) => Promise<void>;
+		onResetTempo: (ratio: number) => Promise<void>;
 		onUnload: () => Promise<void>;
 		keySyncAvailable: boolean;
 	} = $props();
@@ -150,6 +160,38 @@
 			: String(deck.key_shift_semitones)
 	);
 
+	// --------------------------------------- tempo/key readout (pin 815937c87bc1)
+	// Original-key colour is deck.key's OWN camelot colour, distinct from
+	// keyColor above which tracks the shifted (current) key.
+	const origKeyColor: string | null = $derived(camelotKeyColor(deck.key));
+	const keyChanged: boolean = $derived(deck.key !== null && deck.key_shift_semitones !== 0);
+	// Percentage offset matches PitchFader's own (pitch - 1) * 100 arithmetic.
+	const tempoPct: number = $derived(Math.round((deck.pitch - 1) * 100));
+	const tempoChanged: boolean = $derived(deck.pitch !== 1);
+	const tempoPctText: string = $derived(tempoPct >= 0 ? `+${tempoPct}` : String(tempoPct));
+	const resetTitle: string = $derived(
+		deck.bpm === null
+			? 'Reset to original tempo'
+			: `Reset to original tempo: ${deck.bpm.toFixed(0)}bpm${deck.key !== null ? ` | key: ${deck.key}` : ''}`
+	);
+	const resetBullets: string[] = [
+		'Tempo returns to the analysed 0% (the track\'s original bpm).',
+		'Key returns to the analysed key by re-applying the existing single-semitone nudge back to 0 - there is no separate absolute key-reset command.'
+	];
+
+	/** Combined reset: tempo goes straight to ratio 1.0 (0%); key has no
+	 * absolute-reset primitive in the engine, so it is walked back to 0
+	 * semitones one nudge at a time through the SAME onKeyNudge the badge's
+	 * arrows already use - no new IPC command type. */
+	async function resetToOriginal(): Promise<void> {
+		await onResetTempo(1);
+		const shift = deck.key_shift_semitones;
+		const step: -1 | 1 = shift > 0 ? -1 : 1;
+		for (let i = 0; i < Math.abs(shift); i++) {
+			await onKeyNudge(step);
+		}
+	}
+
 	// ----------------------------------------------------------- _helpers
 
 	function _fmtClock(ms: number): string {
@@ -205,16 +247,52 @@
 		<div class="meta" class:empty={deck.stable_id === null}>
 			<span class="title">{deck.title ?? 'No track loaded'}</span>
 			<span class="artist">{deck.artist ?? ''}</span>
+			{#if deck.stable_id !== null}
+				<span class="deck-rating-row">
+					<RatingStars rating={deck.rating} onrate={(n) => void rateDeckTrack(deckId, n)} />
+					<!-- Dot only, per pin scope: the library column, the click-to-set
+					     swatch selector, and the shift-stacked multi-tag layout are a
+					     separate feature and stay out of this packet. -->
+					<span class="color-dot" title="Colour tag (not yet settable)"></span>
+				</span>
+			{/if}
 		</div>
 
-		<div class="readout">
-			<span class="bpm">{bpmText}</span>
-			<span
-				class="key"
-				style={keyColor !== null ? `color:${keyColor}` : undefined}
-				title={keyHover ?? undefined}>{keyText}</span
+		{#snippet resetToOriginalAction()}
+			<button
+				type="button"
+				class="reset-to-original"
+				disabled={pending || deck.stable_id === null}
+				aria-label={`reset deck ${deckId} to original tempo and key`}
+				data-testid={`reset-to-original-deck-${deckId}`}
+				onclick={async () => await resetToOriginal()}
 			>
-		</div>
+				{resetTitle}
+			</button>
+		{/snippet}
+		<ControlExplainer
+			title={resetTitle}
+			bullets={resetBullets}
+			action={deck.stable_id === null ? null : resetToOriginalAction}
+			showDelayMs={150}
+		>
+			<div class="readout">
+				{#if keyChanged}
+					<span class="readout-key-line">
+						<span style={keyColor !== null ? `color:${keyColor}` : undefined}>{keyText}</span>
+						<span class="from">
+							 (from <span style={origKeyColor !== null ? `color:${origKeyColor}` : undefined}>{deck.key}</span>)
+						</span>
+					</span>
+				{/if}
+				<span class="bpm">{bpmText}</span>
+				{#if tempoChanged}
+					<span class="readout-tempo-line">
+						{tempoPctText}% <span class="from"> (from {deck.bpm?.toFixed(0) ?? '--'}bpm)</span>
+					</span>
+				{/if}
+			</div>
+		</ControlExplainer>
 
 		<div class="clocks">
 			<span class="remain">{remainText}</span>
@@ -435,10 +513,24 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	.deck-rating-row {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		font-size: var(--rb-fs-label);
+	}
+	.color-dot {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		border: 1px solid var(--rb-text-dim);
+		background: transparent;
+	}
 	.readout {
 		display: flex;
-		align-items: baseline;
-		gap: 4px;
+		flex-direction: column;
+		align-items: flex-start;
 		flex: 0 1 auto;
 		min-width: 0;
 	}
@@ -447,9 +539,23 @@
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 	}
-	.readout .key {
-		font-size: var(--rb-fs-label);
+	.readout-key-line,
+	.readout-tempo-line {
+		font-size: 0.75em;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.readout .from {
 		color: var(--rb-text-dim);
+	}
+	.reset-to-original {
+		background: transparent;
+		border: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		padding: 2px 4px;
+		cursor: pointer;
 	}
 	.clocks {
 		display: flex;

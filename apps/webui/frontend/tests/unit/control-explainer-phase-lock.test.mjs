@@ -175,9 +175,14 @@ test("ControlExplainer is mounted on CUE, SLIP, KEY SYNC, BEAT SYNC and MASTER",
   const deckHeaderMounts = DECK_HEADER_SRC.match(/<ControlExplainer\b/g) ?? [];
   assert.equal(
     deckHeaderMounts.length,
-    3,
-    "if DeckHeader does not mount exactly three explainers then KEY SYNC, " +
-      "BEAT SYNC, or MASTER has lost its own",
+    // 3 -> 4: pin 815937c87bc1 (issue #931) added a 4th mount wrapping the
+    // tempo/key readout with a "reset to original" hover action. Bumped
+    // deliberately alongside that feature, not to silence a real drift -
+    // KEY SYNC / BEAT SYNC / MASTER still each have their own (asserted
+    // individually above).
+    4,
+    "if DeckHeader does not mount exactly four explainers then KEY SYNC, " +
+      "BEAT SYNC, MASTER, or the tempo/key readout reset has lost its own",
   );
 	assert.match(
 		DECK_HEADER_SRC,

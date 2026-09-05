@@ -320,6 +320,7 @@
 		onMasterTempo={toggleMasterTempo}
 		onKeySync={syncKey}
 		onKeyNudge={nudgeKey}
+		onResetTempo={setTempo}
 		onUnload={unloadDeck}
 		{keySyncAvailable}
 	/>

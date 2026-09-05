@@ -48,6 +48,7 @@ function _row(overrides = {}) {
 		comments: null,
 		duration_ms: null,
 		genre: null,
+		energy: null,
 		file_exists: true,
 		quality: null,
 		play_count: 0,

@@ -49,6 +49,10 @@ export interface DeckState {
 	title: string | null;
 	/** Track artist; null until loaded. */
 	artist: string | null;
+	/** Track rating (0-5, library convention); null until loaded or unrated.
+	 * Editable in-place from the deck header, same PATCH path as the
+	 * library rating cell (see audio-engine.svelte.ts rateDeckTrack). */
+	rating: number | null;
 	/** Track BPM from TrackOut (format to 2dp, e.g. 128.00); null unknown. */
 	bpm: number | null;
 	/** Camelot key text from TrackOut (e.g. '7A'); null unknown. */
