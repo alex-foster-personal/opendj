@@ -176,6 +176,60 @@ test('performance: the track list never paints over the browser bottom bar at 12
 // (library-min-5-rows.test.mjs) covers the other half by asserting the
 // attribute is bound to `provider.truncated` and that the banner markup is
 // gated on the same read. See NOT-verified in the PR body.
+// Pin 862cd3 LESS mode: decks 3/4 collapse to 0 height in place, and the
+// whole point is that the freed vertical space actually reaches the library
+// row (library-min-5-rows.test.mjs proves the CSS source says so; this is
+// the render-level proof). At the standard 1280x800 viewport MORE mode
+// cannot satisfy both floors at once (see the 969px arithmetic above), but
+// LESS mode's own floors are smaller - topbar 28 + wavestack (2 rows) 86 +
+// deck floor 248 = 362px, well under 800 - so LESS should get noticeably
+// more real library height than MORE at the exact same viewport, while
+// decks 1/2 stay unclipped and decks 3/4 stay mounted (just visually
+// collapsed, not removed - they keep receiving IPC/audio per the pin).
+const LESS_MODE_CHORD = process.platform === 'darwin' ? 'Meta+2' : 'Control+2';
+
+test('performance: switching to LESS frees real height to the library versus MORE, at the same 1280x800 viewport', async ({
+	page
+}) => {
+	await page.setViewportSize(STANDARD_VIEWPORT);
+	await page.goto('/performance');
+
+	const tableWrap = page.locator('.table-wrap');
+	await expect(tableWrap).toBeVisible();
+	const moreBox = await tableWrap.boundingBox();
+	expect(moreBox).not.toBeNull();
+
+	await page.keyboard.press(LESS_MODE_CHORD);
+	// The deck-layout transition is CSS-animated (--rb-deck-layout-duration);
+	// wait for the class + collapsed deck 3 rather than a fixed timeout.
+	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+	const deck3 = page.locator("[data-deck='3']").first();
+	await expect
+		.poll(async () => (await deck3.boundingBox())?.height ?? -1)
+		.toBeLessThanOrEqual(1);
+
+	const lessBox = await tableWrap.boundingBox();
+	expect(lessBox).not.toBeNull();
+
+	// LESS must give the library strictly more room than MORE, at minimum
+	// one collapsed deck column's worth (497 - 248 = 249px) - the wavestack
+	// shrinking too only ever adds to that margin.
+	expect(lessBox!.height - moreBox!.height).toBeGreaterThanOrEqual(249 - 1);
+
+	// Decks 1/2 must stay fully unclipped in LESS, same floor as MORE.
+	const deck1 = page.locator('.rb-deck').first();
+	await expect(deck1).toBeVisible();
+	const deck1Box = await deck1.boundingBox();
+	expect(deck1Box).not.toBeNull();
+	expect(deck1Box!.height).toBeGreaterThanOrEqual(MIN_DECK_HEIGHT - 1);
+
+	// Decks 3/4 stay MOUNTED (present in the DOM), just visually collapsed -
+	// pin 862cd3's whole contract is chrome-only hiding, never unmounting.
+	await expect(deck3).toBeAttached();
+	const deck4 = page.locator("[data-deck='4']").first();
+	await expect(deck4).toBeAttached();
+});
+
 test('performance: the truncation banner adds its own height to the 5-row floor', async ({
 	page
 }) => {

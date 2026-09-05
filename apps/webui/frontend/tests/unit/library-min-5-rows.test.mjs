@@ -55,6 +55,7 @@ const BROWSER_PANEL_PATH = fileURLToPath(
 const SUGGEST_NEXT_STRIP_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/SuggestNextStrip.svelte', import.meta.url)
 );
+const THEME_PATH = fileURLToPath(new URL('../../src/lib/rb/theme.css', import.meta.url));
 
 const MIN_ROWS = 5;
 
@@ -64,29 +65,15 @@ function firstMatch(source, pattern, label) {
 	return m;
 }
 
-test('TrackTable.tt-root has a 5-row min-height floor keyed to --tt-row-h', () => {
-	const source = readFileSync(TRACK_TABLE_PATH, 'utf8');
-	const m = firstMatch(
-		source,
-		/\.tt-root\s*{[^}]*min-height:\s*calc\((\d+)px\s*\+\s*(\d+)\s*\*\s*var\(--tt-row-h\)\s*\+\s*(\d+)px\s*\+\s*var\(--tt-truncation-h\)\)/,
-		'a `.tt-root { min-height: calc(<thead>px + N * var(--tt-row-h) + <gutter>px + var(--tt-truncation-h)) }` floor'
-	);
-	const rowFactor = Number(m[2]);
-	assert.ok(
-		rowFactor >= MIN_ROWS,
-		`.tt-root min-height must reserve at least ${MIN_ROWS} rows, found ${rowFactor}`
-	);
-});
-
-test('perf-root reserves at least the sum of the real library-chrome floors', () => {
-	const pageSource = readFileSync(PAGE_PATH, 'utf8');
+// Shared by 'perf-root reserves at least the sum of the real library-chrome
+// floors' (MORE) and the PER-MODE test below (LESS) - both need the exact
+// same real-component-derived library floor, just checked against a
+// different mode's ceiling reservation.
+function computeRequiredLibraryPx() {
 	const trackTableSource = readFileSync(TRACK_TABLE_PATH, 'utf8');
 	const browserPanelSource = readFileSync(BROWSER_PANEL_PATH, 'utf8');
 	const suggestNextSource = readFileSync(SUGGEST_NEXT_STRIP_PATH, 'utf8');
 
-	// thead + N * cosy-row-height, straight from TrackTable's own floor
-	// declaration and its cosy density override - the tallest row wins,
-	// since the floor must hold in either density.
 	const floorMatch = firstMatch(
 		trackTableSource,
 		/\.tt-root\s*{[^}]*min-height:\s*calc\((\d+)px\s*\+\s*(\d+)\s*\*\s*var\(--tt-row-h\)\s*\+\s*(\d+)px\s*\+\s*var\(--tt-truncation-h\)\)/,
@@ -123,9 +110,6 @@ test('perf-root reserves at least the sum of the real library-chrome floors', ()
 	);
 	const stripFloorPx = Number(stripFloorMatch[1]);
 
-	// The truncation banner is a `flex: none` sibling of `.table-wrap` inside
-	// `.tt-root`, so when a whole-collection search truncates it spends the
-	// same budget the five rows do (PR #1007 discussion r3923591731).
 	const truncationNoteMatch = firstMatch(
 		trackTableSource,
 		/--tt-truncation-note-h:\s*(\d+)px/,
@@ -141,6 +125,27 @@ test('perf-root reserves at least the sum of the real library-chrome floors', ()
 		scrollbarGutterPx +
 		truncationNotePx;
 
+	return { requiredLibraryPx, bottomBarPx };
+}
+
+test('TrackTable.tt-root has a 5-row min-height floor keyed to --tt-row-h', () => {
+	const source = readFileSync(TRACK_TABLE_PATH, 'utf8');
+	const m = firstMatch(
+		source,
+		/\.tt-root\s*{[^}]*min-height:\s*calc\((\d+)px\s*\+\s*(\d+)\s*\*\s*var\(--tt-row-h\)\s*\+\s*(\d+)px\s*\+\s*var\(--tt-truncation-h\)\)/,
+		'a `.tt-root { min-height: calc(<thead>px + N * var(--tt-row-h) + <gutter>px + var(--tt-truncation-h)) }` floor'
+	);
+	const rowFactor = Number(m[2]);
+	assert.ok(
+		rowFactor >= MIN_ROWS,
+		`.tt-root min-height must reserve at least ${MIN_ROWS} rows, found ${rowFactor}`
+	);
+});
+
+test('perf-root reserves at least the sum of the real library-chrome floors', () => {
+	const pageSource = readFileSync(PAGE_PATH, 'utf8');
+	const { requiredLibraryPx, bottomBarPx } = computeRequiredLibraryPx();
+
 	const reserveMatch = firstMatch(
 		pageSource,
 		/calc\(100vh - var\(--rb-topbar-h\) - 4 \* var\(--rb-waverow-h\) - (\d+)px\)/,
@@ -150,11 +155,9 @@ test('perf-root reserves at least the sum of the real library-chrome floors', ()
 
 	assert.ok(
 		reservedPx >= requiredLibraryPx + bottomBarPx,
-		`perf-root reserves ${reservedPx}px for the library panel, but the real ` +
+		`perf-root (MORE) reserves ${reservedPx}px for the library panel, but the real ` +
 			`chrome floors need >= ${requiredLibraryPx + bottomBarPx}px ` +
-			`(pane-header ${paneHeaderPx} + strip-floor ${stripFloorPx} + thead ${theadPx} + ` +
-			`${rowFactor} * cosy-row ${cosyRowPx} + scrollbar-gutter ${scrollbarGutterPx} + ` +
-			`truncation-banner ${truncationNotePx} + bottom-bar ${bottomBarPx})`
+			`(library floor ${requiredLibraryPx} + bottom-bar ${bottomBarPx})`
 	);
 });
 
@@ -296,5 +299,135 @@ test('deck-area grid track has a minmax floor matching the documented two-deck-c
 		columnPx,
 		`deck-area minmax floor (${deckFloorPx}) must equal the documented two-deck-column ` +
 			`height (${columnPx}) so LIBUX-01's library reservation can never clip deck controls`
+	);
+});
+
+// Pin 862cd3 LESS mode: decks 3/4 collapse to 0 height in place (chrome
+// only, both components stay mounted), and the whole point of the pin is
+// that the LIBRARY gains the freed vertical space. That only happens if
+// the OUTER `.perf-root.deck-layout-less` grid track floors shrink to
+// match the collapsed content - otherwise the freed component height is
+// trapped inside grid tracks still sized for MORE mode, and the library
+// gains nothing (the regression this test guards against). Both modes'
+// floors are derived from the same source-of-truth comments/values rather
+// than pinned as remembered numbers, so a future edit to either mode's
+// numbers fails this test instead of silently reopening the bug.
+test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at least one collapsed deck', () => {
+	const pageSource = readFileSync(PAGE_PATH, 'utf8');
+	const themeSource = readFileSync(THEME_PATH, 'utf8');
+
+	const waverowMatch = firstMatch(
+		themeSource,
+		/--rb-waverow-h:\s*(\d+)px/,
+		"theme.css's --rb-waverow-h value"
+	);
+	const waverowPx = Number(waverowMatch[1]);
+
+	const perDeckMatch = firstMatch(
+		pageSource,
+		/one deck needs (\d+)px/,
+		'the documented per-deck content-tight height'
+	);
+	const perDeckPx = Number(perDeckMatch[1]);
+
+	const columnMatch = firstMatch(
+		pageSource,
+		/two-deck column needs (\d+)px/,
+		'the documented two-deck-column height'
+	);
+	const columnPx = Number(columnMatch[1]);
+
+	// Scope each mode's grid-template-rows to its own rule block. Neither
+	// `.perf-root { ... }` nor `.perf-root.deck-layout-less { ... }` contains
+	// a nested `{`, so a plain "up to the next closing brace" capture is
+	// exact - and `\.perf-root\s*\{` cannot accidentally match a compound
+	// selector like `.perf-root.tw-active {`, since the character right
+	// after "root" there is `.`, not whitespace or `{`.
+	const moreBlockMatch = firstMatch(
+		pageSource,
+		/\.perf-root\s*\{([^}]*)\}/,
+		'the default (MORE) .perf-root rule block'
+	);
+	const lessBlockMatch = firstMatch(
+		pageSource,
+		/\.perf-root\.deck-layout-less\s*\{([^}]*)\}/,
+		'the .perf-root.deck-layout-less override rule block'
+	);
+	const moreBlock = moreBlockMatch[1];
+	const lessBlock = lessBlockMatch[1];
+
+	function wavestackRows(block, label) {
+		const m = firstMatch(
+			block,
+			/calc\((\d+)\s*\*\s*var\(--rb-waverow-h\)\)/,
+			`a wavestack row count in ${label}`
+		);
+		return Number(m[1]);
+	}
+	function deckFloorPx(block, label) {
+		const m = firstMatch(block, /minmax\(\s*(\d+)px,/, `a deck-area minmax floor in ${label}`);
+		return Number(m[1]);
+	}
+
+	const moreWavestackRows = wavestackRows(moreBlock, 'MORE');
+	const lessWavestackRows = wavestackRows(lessBlock, 'LESS');
+	const moreDeckFloor = deckFloorPx(moreBlock, 'MORE');
+	const lessDeckFloor = deckFloorPx(lessBlock, 'LESS');
+
+	// MORE is unchanged from before the pin: full 4-row wavestack, two-deck
+	// column floor.
+	assert.equal(moreWavestackRows, 4, 'MORE mode must reserve all 4 wavestack rows');
+	assert.equal(
+		moreDeckFloor,
+		columnPx,
+		`MORE deck-area floor (${moreDeckFloor}) must equal the two-deck-column height (${columnPx})`
+	);
+
+	// LESS only ever shows one deck per column (3/4 collapsed), so it needs
+	// only 2 wavestack rows and one deck's content-tight floor - not the
+	// two-deck column.
+	assert.equal(lessWavestackRows, 2, 'LESS mode must reserve only 2 wavestack rows (decks 1/2)');
+	assert.equal(
+		lessDeckFloor,
+		perDeckPx,
+		`LESS deck-area floor (${lessDeckFloor}) must equal the one-deck height (${perDeckPx}), ` +
+			'not the two-deck column, since decks 3/4 are collapsed'
+	);
+
+	// The library row is `minmax(0, 1fr)` in both modes (unchanged), so it
+	// picks up whatever the topbar/wavestack/deckarea rows above it do not
+	// reserve. Compare that reservation directly: LESS must reserve
+	// strictly less than MORE, by at least the height of the deck rows that
+	// collapsed (one deck column's worth) - the wavestack shrinking too only
+	// ever adds to that margin, never subtracts from it.
+	const moreReservedRows = moreWavestackRows * waverowPx + moreDeckFloor;
+	const lessReservedRows = lessWavestackRows * waverowPx + lessDeckFloor;
+	const collapsedDeckRowsPx = columnPx - perDeckPx;
+
+	assert.ok(
+		moreReservedRows - lessReservedRows >= collapsedDeckRowsPx,
+		`LESS must free up >= ${collapsedDeckRowsPx}px (one collapsed deck column) to the library ` +
+			`row versus MORE, but MORE reserves ${moreReservedRows}px and LESS reserves ` +
+			`${lessReservedRows}px (a difference of only ${moreReservedRows - lessReservedRows}px)`
+	);
+
+	// (a) Freeing space to the library is pointless if LESS's own ceiling
+	// reservation (the "how much am I leaving for the library" term inside
+	// its minmax/min calc) is not itself enough to cover the library's real
+	// 5-row floor - assert that holds for LESS specifically, not just MORE
+	// (test 2 above already covers MORE).
+	const { requiredLibraryPx, bottomBarPx } = computeRequiredLibraryPx();
+	const lessCeilingReserveMatch = firstMatch(
+		lessBlock,
+		/calc\(100vh - var\(--rb-topbar-h\) - 2 \* var\(--rb-waverow-h\) - (\d+)px\)/,
+		"LESS mode's deck-area ceiling reservation"
+	);
+	const lessCeilingReservePx = Number(lessCeilingReserveMatch[1]);
+
+	assert.ok(
+		lessCeilingReservePx >= requiredLibraryPx + bottomBarPx,
+		`perf-root (LESS) reserves ${lessCeilingReservePx}px for the library panel, but the real ` +
+			`chrome floors need >= ${requiredLibraryPx + bottomBarPx}px ` +
+			`(library floor ${requiredLibraryPx} + bottom-bar ${bottomBarPx})`
 	);
 });

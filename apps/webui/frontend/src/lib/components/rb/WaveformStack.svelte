@@ -31,9 +31,13 @@
 		min-width: 0;
 		transition: grid-template-rows var(--rb-deck-layout-duration, 200ms) ease;
 	}
-	/* LESS: rows 3/4 (decks 3/4) collapse to 0, releasing that height back
-	 * to the deckarea/library rows below (see +page.svelte's
-	 * --rb-wavestack-h). Rows 1/2 (decks 1/2) are untouched. */
+	/* LESS: rows 3/4 (decks 3/4) collapse to 0 INSIDE this component's own
+	 * grid, but that alone does not free height to the deckarea/library
+	 * rows below - +page.svelte's outer `.perf-root.deck-layout-less`
+	 * grid-template-rows independently shrinks the wavestack area's OWN
+	 * track to 2 waverows (not 4) so the two grids agree and the library's
+	 * `1fr` row actually picks up the difference. Rows 1/2 (decks 1/2) are
+	 * untouched. */
 	.rb-wavestack.less {
 		grid-template-rows: var(--rb-waverow-h) var(--rb-waverow-h) 0px 0px;
 	}
