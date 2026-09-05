@@ -12240,6 +12240,127 @@
         ]
       }
     },
+    "/api/v1/commands": {
+      "post": {
+        "description": "Submit one declared order and wait for the real browser result.",
+        "operationId": "post_command_api_v1_commands_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/commands/next": {
+      "get": {
+        "description": "Let the sole open performance page claim its next agent order.",
+        "operationId": "next_command_api_v1_commands_next_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Next Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/commands/{order_id}/result": {
+      "post": {
+        "description": "Resolve an order with page-produced per-step statuses and mirror delta.",
+        "operationId": "complete_command_api_v1_commands__order_id__result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Complete Command Api V1 Commands  Order Id  Result Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
     "/api/v1/copilot/suggest-next": {
       "post": {
         "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",

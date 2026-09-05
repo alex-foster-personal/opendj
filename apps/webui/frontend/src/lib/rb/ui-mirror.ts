@@ -3,6 +3,7 @@ import { toasts } from '$lib/stores.svelte';
 import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState } from './master-silence-report';
 import { queryPerformanceState } from './performance-ipc.svelte';
+import { installAgentOrderPoll } from './agent-orders';
 import { readXrunSessionCounter } from './xrun-sentinel';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
@@ -69,12 +70,38 @@ export function buildUiMirror(): Record<string, unknown> {
 }
 
 export function installUiMirror(): () => void {
+	// The engine only knows a performance page is open once it has ACCEPTED a
+	// mirror publish, and every /api/v1/commands route answers 409 until then.
+	// This flag is that precondition, read by the order poll: without it the
+	// poll races its own first publish, loses, and the browser logs the 409 as a
+	// console error that no catch block can take back.
+	let registered = false;
 	const publish = (): void => {
-		void fetch(MIRROR_PATH, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(buildUiMirror()) });
+		void fetch(MIRROR_PATH, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(buildUiMirror())
+		}).then((response) => {
+			registered = response.ok;
+		});
 	};
 	publish();
 	const interval = window.setInterval(publish, 1000);
+	const uninstallOrderPoll = installAgentOrderPoll(
+		{
+			isRegistered: () => registered,
+			forget: () => {
+				registered = false;
+			}
+		},
+		publish
+	);
 	return () => {
+		// Order matters: drop the registration and stop the poll BEFORE the mirror
+		// is deleted, so teardown never leaves a poll asking about a page the
+		// engine has just been told is gone.
+		registered = false;
+		uninstallOrderPoll();
 		window.clearInterval(interval);
 		void fetch(MIRROR_PATH, { method: 'DELETE', keepalive: true });
 	};
