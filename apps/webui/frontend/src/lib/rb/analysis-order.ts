@@ -22,7 +22,7 @@ import type { AnalysisOrder } from './api-ingest';
 // assertions (see api-smartlists.test.mjs's note on the same limit).
 export { RbApiError };
 
-export type AnalysisOrderDeps = {
+type AnalysisOrderDeps = {
 	orderTrackAnalysis: () => Promise<AnalysisOrder>;
 	/** Called only after the shared track-order command succeeds. */
 	upsertJob: (phase: AnalysisOrder['phase']) => void;
