@@ -96,20 +96,9 @@ let _unplayableIds = new Set<string>();
 let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
-/**
- * Empty playlist feeds are transient during BrowserPanel's playlist hydration.
- * Remember which empty feed we reported, but do not consume the source's one
- * handoff arm: the next feed epoch may contain the new playlist's candidates.
- */
+/** Empty-feed toast epoch during playlist hydration, without consuming the source arm. */
 let _waitingEmptyFeedEpoch: number | null = null;
-/**
- * Every stable_id AutoPlay has DECIDED to load this session (matrix row 14).
- * Recorded before dispatch, never rolled back, and deliberately NOT cleared by
- * _syncPlayedSet: this is the guarantee that AutoPlay cannot put one track on
- * two decks. The deck scan alone cannot provide it - it only sees where a
- * track is right now, so it misses one that was loaded and then unloaded, or
- * one whose load has not published its stable_id yet.
- */
+/** IDs claimed before dispatch, never retired by a feed epoch, prevent duplicate loads. */
 let _claimedIds = new Set<string>();
 /** Deferred master promotion, retried until the follower is audible (row 18). */
 let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;

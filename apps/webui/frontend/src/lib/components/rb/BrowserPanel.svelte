@@ -1601,7 +1601,7 @@
 		);
 		autoPlaySnapshotActive = autoPlayFeed.active;
 		autoPlaySnapshotMatchesView = autoPlayFeed.matches(visibleRows);
-		if (decision.publish !== null) setAutoPlayTrackFeed(decision.publish);
+		if (decision.publish !== null) setAutoPlayTrackFeed(pane.playlist_id, decision.publish);
 	});
 
 	/** Monotonic load counter - double-click prefers least-recent in the pair. */
