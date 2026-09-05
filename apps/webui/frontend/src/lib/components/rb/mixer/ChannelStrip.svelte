@@ -2,7 +2,7 @@
 	/**
 	 * One mixer channel strip (SCREENSHOT-SPEC 4), top-down:
 	 * channel number, TRIM, HI/MID/LOW, FILTER (visual stub),
-	 * headphone CUE, vertical fader (fills remaining height), STEM label.
+	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
 	import { getDeckState } from '$lib/rb/audio-engine.svelte';
@@ -10,6 +10,8 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { EqBand } from '$lib/rb/mixer-types';
 	import { knobId } from '$lib/rb/knob-control.svelte';
+	import type { StemControl } from '$lib/rb/stem-types';
+	import StemRow from '../deck/StemRow.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
 
@@ -27,14 +29,31 @@
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
+		stemPending: boolean;
 		ontrim: (value: number) => void;
 		oneq: (band: EqBand, value: number) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
+		onStemMute: (stem: StemControl) => Promise<void>;
+		onStemSolo: (stem: StemControl) => Promise<void>;
 	}
 
-	let { deckId, trim, eqHigh, eqMid, eqLow, fader, cueEnabled, ontrim, oneq, onfader, oncue }: Props =
-		$props();
+	let {
+		deckId,
+		trim,
+		eqHigh,
+		eqMid,
+		eqLow,
+		fader,
+		cueEnabled,
+		stemPending,
+		ontrim,
+		oneq,
+		onfader,
+		oncue,
+		onStemMute,
+		onStemSolo
+	}: Props = $props();
 
 	/** Decks 3/4 are secondary; lighten strip so 1/2 draw the eye. */
 	const secondary = $derived(deckId === 3 || deckId === 4);
@@ -108,6 +127,9 @@
 		/>
 	</div>
 	<span class="stem-label">STEM</span>
+	<div class="stem-slot">
+		<StemRow deck={deck} pending={stemPending} onMute={onStemMute} onSolo={onStemSolo} />
+	</div>
 </div>
 
 <style>
@@ -190,5 +212,16 @@
 		flex: none;
 		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
 		margin-top: 5px;
+	}
+	.stem-slot :global(.stems) {
+		flex-direction: column;
+		gap: 2px;
+	}
+	.stem-slot :global(.mute) {
+		margin-right: 0;
+	}
+	.stem-slot :global(.chip) {
+		font-size: 7px;
+		padding: 1px 4px;
 	}
 </style>
