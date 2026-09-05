@@ -358,6 +358,15 @@ falls when that is split by concern rather than by being a single types file.
 hotspot) is decomposed. Neither is a job for a rescue PR. Do not raise either
 again without adding a row here.
 
+### Sat 5 Sep 2026: waveform track artwork crosses the api-rb.ts ceiling
+
+| metric                | was | now | what is in the gap                                                                                                                                                                                          |
+| --------------------- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend.max_fan_in` | 36  | 38  | Top module is now `src/lib/rb/api-rb.ts` (it overtook `client.ts` since the allowance was measured); #1297's `WaveTrackSummary.svelte` is its 38th importer, taking `artworkUrl`. Recorded to clear a red trunk. |
+
+Owner and payback: `baseline.json` entry `WAVE_ARTWORK_API_RB_FAN_IN`. The
+same split that #677 names for `client.ts` applies to `api-rb.ts`.
+
 ## What each evaluator answers
 
 | evaluator    | tool                        | the question it answers                                                                                                                                                              |
