@@ -231,7 +231,7 @@ function main() {
       .flatMap(([, nodes]) => nodes)
       .map((n) => _nodeFile(immutableDir, n)),
   ];
-  for (const file of libraryFiles) {
+  for (const file of [...libraryFiles, ...performanceFiles]) {
     for (const target of _specifiers(immutableDir, file, DYNAMIC_IMPORT)) {
       if (known.has(target) && !libraryFiles.has(target) && !performanceFiles.has(target)) otherRoots.push(target);
     }
