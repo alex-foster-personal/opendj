@@ -499,6 +499,11 @@ let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
+
+/** The actual AudioContext state, not a transport-state inference. */
+export function audioContextState(): AudioContextState | 'uninitialized' {
+	return _ctx?.state ?? 'uninitialized';
+}
 const _rt: Record<DeckId, _DeckRuntime> = {
 	1: _emptyRuntime(),
 	2: _emptyRuntime(),

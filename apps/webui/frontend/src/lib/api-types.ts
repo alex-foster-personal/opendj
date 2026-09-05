@@ -1979,6 +1979,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/state/ui-mirror": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ui Mirror
+         * @description Return the latest page mirror, or fail explicitly when no page is open.
+         */
+        get: operations["get_ui_mirror_api_v1_state_ui_mirror_get"];
+        /**
+         * Publish Ui Mirror
+         * @description Replace the page's current screen document with strict JSON input.
+         */
+        put: operations["publish_ui_mirror_api_v1_state_ui_mirror_put"];
+        post?: never;
+        /**
+         * Close Ui Mirror
+         * @description Mark the performance page closed during its unmount lifecycle.
+         */
+        delete: operations["close_ui_mirror_api_v1_state_ui_mirror_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/estimate": {
         parameters: {
             query?: never;
@@ -10239,6 +10267,81 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_ui_mirror_api_v1_state_ui_mirror_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    publish_ui_mirror_api_v1_state_ui_mirror_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_ui_mirror_api_v1_state_ui_mirror_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

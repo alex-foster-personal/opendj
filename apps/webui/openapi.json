@@ -15626,6 +15626,85 @@
         ]
       }
     },
+    "/api/v1/state/ui-mirror": {
+      "delete": {
+        "description": "Mark the performance page closed during its unmount lifecycle.",
+        "operationId": "close_ui_mirror_api_v1_state_ui_mirror_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Close Ui Mirror",
+        "tags": [
+          "agent-state"
+        ]
+      },
+      "get": {
+        "description": "Return the latest page mirror, or fail explicitly when no page is open.",
+        "operationId": "get_ui_mirror_api_v1_state_ui_mirror_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ui Mirror",
+        "tags": [
+          "agent-state"
+        ]
+      },
+      "put": {
+        "description": "Replace the page's current screen document with strict JSON input.",
+        "operationId": "publish_ui_mirror_api_v1_state_ui_mirror_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Publish Ui Mirror Api V1 State Ui Mirror Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Ui Mirror",
+        "tags": [
+          "agent-state"
+        ]
+      }
+    },
     "/api/v1/stems/estimate": {
       "get": {
         "description": "Every tier costed for one track, so a UI needs one round trip not three.\n\nA tier with no benchmark returns ``measured: false`` and the reason rather\nthan a plausible-looking guess. Rendering a guess as a number is how an\nassumption becomes ground truth.",

@@ -84,6 +84,7 @@ from .routes import settings_ai as settings_ai_routes
 from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
+from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
 from .routes import telemetry as telemetry_routes
@@ -355,6 +356,7 @@ def create_app(
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
+    app.include_router(state_routes.router, prefix=api_prefix)
     app.include_router(ui_prefs_routes.router, prefix=api_prefix)
     app.include_router(cloudsync_routes.router, prefix=api_prefix)
     app.include_router(spotify_routes.router, prefix=api_prefix)
