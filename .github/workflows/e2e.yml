@@ -441,9 +441,14 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-gate-failures
+          # The engine's own logs from the Root suite's fixture data dir travel
+          # with the Playwright output: twice on Sat 5 Sep 2026 the suite failed
+          # on "apps.analysis.run exited 5" and the traceback lived only here,
+          # cleaned by the next checkout before anyone read it.
           path: |
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
+            apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/logs/**
           if-no-files-found: ignore
           retention-days: 14
 
