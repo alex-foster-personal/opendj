@@ -3016,8 +3016,11 @@ export interface components {
         AnalysisOrderOut: {
             /** Kind */
             kind: string;
-            /** Phase */
-            phase: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "queued" | "running" | "done" | "error";
             /** Stable Id */
             stable_id: string;
         };
@@ -5557,7 +5560,10 @@ export interface components {
             /** Session Id */
             session_id: string | null;
         };
-        /** RefreshIn */
+        /**
+         * RefreshIn
+         * @description One refresh scope, including the explicit analysis-grid track order.
+         */
         RefreshIn: {
             /** Analysis Kind */
             analysis_kind?: string | null;
@@ -5572,7 +5578,10 @@ export interface components {
             /** Stable Id */
             stable_id?: string | null;
         };
-        /** RefreshStatusOut */
+        /**
+         * RefreshStatusOut
+         * @description The one-slot job's public, serializable state.
+         */
         RefreshStatusOut: {
             /** Current Step */
             current_step: string | null;
