@@ -102,6 +102,27 @@ jobs:
     # otherwise, and the runner user has NOPASSWD sudo.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
+    env:
+      # One native thread per process. This job's "Root Playwright suite" step
+      # runs the webui refresh job, which shells out to
+      # `apps.analysis.run --backend librosa --workers 2` (see
+      # apps/webui/server/routes/ingest_analysis_argv.py). Without a cap,
+      # OpenBLAS and numba fan every call out across every thread the host
+      # has, exactly the failure mode ci.yml's `test` job already documents
+      # (tests/scripts/test_ci_thread_caps.py) and was never carried over
+      # here: this job shares the same self-hosted agentbox host with up to
+      # ten other concurrent runner jobs. Under that contention a
+      # ProcessPoolExecutor worker fork can land mid-BLAS-thread-activity and
+      # die outright - concurrent.futures.process.BrokenProcessPool,
+      # tests/e2e/ingest-refresh.spec.ts:56 - intermittently, worse the busier
+      # the host is, and with no OOM-kill line because nothing here is short
+      # on memory. Seen on PR #1092, PR #1306 (run 33981951903 attempt 2) and
+      # elsewhere Fri-Sat 4-5 Sep 2026. One thread each removes the
+      # oversubscription rather than papering over a dead worker.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
 
     steps:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
