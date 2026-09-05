@@ -17,6 +17,12 @@ import type { StemDeckState } from './stem-types';
  * requires the follower PQTZ beat number (1..4) to match the master. */
 export type SyncMode = 'beat' | 'bar';
 
+/** Quantize grid a quantized seek/cue/loop-end snaps to, in beats. 'phase'
+ * (match to the detected phase length) is plumbed but NOT implemented
+ * (pin a67bafbfc4b0) - selecting it is rejected with not_implemented before
+ * it can reach the engine (performance-ipc.svelte.ts _dispatchUnknown). */
+export type QuantizeGrid = 1 | 4 | 8 | 'phase';
+
 /** Active loop on a deck. */
 export interface LoopState {
 	/** Loop-in position ms. */
@@ -77,6 +83,8 @@ export interface DeckState {
 	pitch: number;
 	/** Quantize transport seeks, cue placement, and loop endpoints to PQTZ. */
 	quantize_enabled: boolean;
+	/** Quantize grid the seek/cue/loop-end snaps to (pin a67bafbfc4b0). */
+	quantize_grid_beats: QuantizeGrid;
 	/** Follow the elected master deck's local PQTZ tempo and phase. */
 	beat_sync_enabled: boolean;
 	/** Keep this deck's audible Camelot key aligned to the elected master.

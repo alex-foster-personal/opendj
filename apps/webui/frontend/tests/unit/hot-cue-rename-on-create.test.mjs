@@ -52,7 +52,12 @@ test('an empty-slot click enters focused rename mode before persistence begins',
 	assert.match(text, /renameInputEl\.focus\(\)/);
 	assert.match(text, /<input[\s\S]*class="[^"]*cue-name"[\s\S]*bind:this=\{renameInputEl\}/);
 	assert.match(text, /bind:value=\{renameDraft\}/);
-	assert.match(text, /onblur=\{\(\) => void commitRename\(entry\)\}/);
+	// bot review P2 (pin c20eeb07cae0 follow-up): onblur now inspects the
+	// event before committing, so tabbing to the cancel button does not
+	// auto-save a discarded draft - covered in full by
+	// hot-cue-edit-and-greedy-columns.test.mjs. This still asserts the
+	// blur path DOES commit on every ordinary blur.
+	assert.match(text, /void commitRename\(entry\);/);
 	assert.match(text, /event\.key === 'Enter'/);
 	assert.match(text, /event\.key === 'Escape'/);
 });
@@ -99,7 +104,7 @@ test('a blur-triggering populated-pad click stays immediate while writes seriali
 	);
 	assert.match(
 		text,
-		/disabled=\{busySlot === entry\.slot\}/,
+		/disabled=\{busySlot === entry\.slot \|\| renameSlot === entry\.slot\}/,
 		'a write in one slot must not disable the different button used to leave the input'
 	);
 	const clickStart = text.indexOf('async function onSlotClick');

@@ -132,6 +132,7 @@ import {
 	playbackBpm,
 	pqtzLoopBeatCount,
 	quantizeToNearestBeat,
+	quantizeToNearestGridBeat,
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
@@ -163,7 +164,7 @@ import {
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
 import type { AudioEngine } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
-import type { DeckAudioSnapshot, DeckState, LoopState, SyncMode } from '$lib/rb/deck-state-types';
+import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
@@ -809,13 +810,15 @@ export function applyPausedDeckControlSettings(
 export function quantizedPositionMs(
 	beats: readonly AnlzBeat[],
 	positionMs: number,
-	quantizeEnabled: boolean
+	quantizeEnabled: boolean,
+	/** The deck's selected quantize grid (pin a67bafbfc4b0); unused when quantizeEnabled is false - callers with nothing to snap to may pass 1. */
+	gridBeats: 1 | 4 | 8 = 1
 ): number {
 	if (!Number.isFinite(positionMs) || positionMs < 0) {
 		throw new RangeError(`positionMs must be a finite non-negative number, got ${positionMs}`);
 	}
 	if (!quantizeEnabled) return positionMs;
-	return quantizeToNearestBeat(beats, positionMs / 1000) * 1000;
+	return quantizeToNearestGridBeat(beats, positionMs / 1000, gridBeats) * 1000;
 }
 
 export function decodedTransportDurationMs(decodedDurationSec: number): number {
@@ -1101,6 +1104,20 @@ function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[]
 function _quantizeGrid(st: DeckState): readonly AnlzBeat[] | null {
 	const beats = st.anlz?.beatgrid.beats;
 	return effectiveQuantize(st) && hasRealBeatGrid(beats) ? beats : null;
+}
+
+/**
+ * The deck's selected quantize grid (pin a67bafbfc4b0), narrowed to the beat counts a snap calculation can actually use.
+ * 'phase' can never reach here: setQuantizeGrid rejects any value except 1/4/8, so a deck's stored quantize_grid_beats
+ * is always one of those at runtime - this throws rather than silently falling back, so a bug that DID let 'phase'
+ * through is loud instead of quietly snapping to the wrong grid.
+ */
+function _quantizeGridBeats(st: DeckState): 1 | 4 | 8 {
+	const beats = st.quantize_grid_beats;
+	if (beats === 'phase') {
+		throw new Error(`quantize_grid_beats: deck ${st.deck_id} is 'phase', which is not implemented and must never reach a snap calculation`);
+	}
+	return beats;
 }
 
 function _assignMaster(deck: DeckId | null): void {
@@ -3191,7 +3208,7 @@ class RbAudioEngine implements AudioEngine {
 			pressT0Ms
 		);
 		const cueMs = pauseBeats !== null
-			? quantizedPositionMs(pauseBeats, positionSec * 1000, true)
+			? quantizedPositionMs(pauseBeats, positionSec * 1000, true, _quantizeGridBeats(st))
 			: positionSec * 1000;
 		st.cue_ms = cueMs;
 		if (st.slip_active) _clearSlip(deck);
@@ -3211,7 +3228,7 @@ class RbAudioEngine implements AudioEngine {
 			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
 		}
 		const seekBeats = _quantizeGrid(st);
-		const targetMs = seekBeats !== null ? quantizedPositionMs(seekBeats, ms, true) : ms;
+		const targetMs = seekBeats !== null ? quantizedPositionMs(seekBeats, ms, true, _quantizeGridBeats(st)) : ms;
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
@@ -3305,7 +3322,7 @@ class RbAudioEngine implements AudioEngine {
 			const cueBeats = _quantizeGrid(st);
 			st.cue_ms =
 				cueBeats !== null
-					? quantizedPositionMs(cueBeats, st.position_ms, true)
+					? quantizedPositionMs(cueBeats, st.position_ms, true, _quantizeGridBeats(st))
 					: st.position_ms;
 		} else {
 			await this.quantizedSeek(deck, st.cue_ms);
@@ -3449,7 +3466,7 @@ class RbAudioEngine implements AudioEngine {
 		const loopBeats = _quantizeGrid(st);
 		const snapped =
 			loopBeats !== null
-				? quantizedLoopEndpointsMs(loopBeats, loop, true)
+				? quantizedLoopEndpointsMs(loopBeats, loop, true, _quantizeGridBeats(st))
 				: quantizedLoopEndpointsMs([], loop, false);
 		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
 		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
@@ -3621,6 +3638,14 @@ class RbAudioEngine implements AudioEngine {
 		if (enabled && gridFeaturesInert(st)) {
 			pushToast(`Deck ${deck} QUANTIZE ${GRID_FEATURE_TIP}`, 'info');
 		}
+	}
+
+	setQuantizeGrid(deck: DeckId, beats: Exclude<QuantizeGrid, 'phase'>): void {
+		if (beats !== 1 && beats !== 4 && beats !== 8) {
+			throw new TypeError('setQuantizeGrid: beats must be 1, 4, or 8');
+		}
+		const st = deckStates[deck];
+		st.quantize_grid_beats = beats;
 	}
 
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {

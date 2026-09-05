@@ -73,7 +73,14 @@ import {
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
 import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
-import type { DeckAudioSnapshot, DeckState, LoopState, SafetyLoopSlot, SyncMode } from '$lib/rb/deck-state-types';
+import type {
+	DeckAudioSnapshot,
+	DeckState,
+	LoopState,
+	QuantizeGrid,
+	SafetyLoopSlot,
+	SyncMode
+} from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
@@ -121,6 +128,12 @@ export type PerformanceCommand =
 	| { type: 'tempo'; deck: DeckId; ratio: number }
 	| { type: 'pitch_range'; deck: DeckId; range: PitchRange }
 	| { type: 'quantize'; deck: DeckId; enabled: boolean }
+	// Pin a67bafbfc4b0: the quantize GRID, separate from the on/off toggle
+	// above. 1/4/8 are real and change engine.setQuantizeGrid; 'phase'
+	// (match to the detected phase length) is explicitly NOT implemented -
+	// _dispatchUnknown rejects it before it can queue, same shape as
+	// auto_play_two_track's not_implemented rejection.
+	| { type: 'quantize_grid'; deck: DeckId; beats: 1 | 4 | 8 | 'phase' }
 	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
 	| { type: 'master'; deck: DeckId }
@@ -199,6 +212,7 @@ export interface PerformanceDeckSnapshot {
 	pitch: number;
 	pitch_range: PitchRange;
 	quantize_enabled: boolean;
+	quantize_grid_beats: QuantizeGrid;
 	beat_sync_enabled: boolean;
 	key_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
@@ -813,6 +827,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'quantize_grid') {
+		_exactKeys(record, ['type', 'deck', 'beats']);
+		if (record.beats !== 1 && record.beats !== 4 && record.beats !== 8 && record.beats !== 'phase') {
+			throw new RangeError(`beats must be 1, 4, 8, or "phase"; got ${String(record.beats)}`);
+		}
+		return { type, deck, beats: record.beats };
 	} else if (type === 'stem_mute') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
 		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
@@ -986,6 +1006,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		pitch: deck.pitch,
 		pitch_range: pitchRanges[deckId],
 		quantize_enabled: deck.quantize_enabled,
+		quantize_grid_beats: deck.quantize_grid_beats,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		key_sync_enabled: deck.key_sync_enabled,
 		master_tempo_enabled: deck.master_tempo_enabled,
@@ -1254,6 +1275,13 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setPitchRange(command.deck, command.range);
 	} else if (command.type === 'quantize') {
 		engine.setQuantize(command.deck, command.enabled);
+	} else if (command.type === 'quantize_grid') {
+		// 'phase' is rejected earlier in _dispatchUnknown, before this command
+		// can even queue - only 1/4/8 ever reach the engine.
+		if (command.beats === 'phase') {
+			throw new Error('quantize_grid: not_implemented - phase reached _execute unrejected');
+		}
+		engine.setQuantizeGrid(command.deck, command.beats);
 	} else if (command.type === 'beat_sync') {
 		await engine.setBeatSync(command.deck, command.enabled);
 	} else if (command.type === 'sync_mode') {
@@ -1843,6 +1871,13 @@ async function _dispatchUnknown(
 			'pins_show_other_users: not_implemented - community feature, no cloudsync channel yet'
 		);
 		_persistCommandError(null, error);
+		throw error;
+	}
+	if (command.type === 'quantize_grid' && command.beats === 'phase') {
+		const error = new Error(
+			'quantize_grid: not_implemented - will match quantize to the detected phase length'
+		);
+		_persistCommandError(command.deck, error, command);
 		throw error;
 	}
 	const scopes = performanceCommandQueueScopes(command);

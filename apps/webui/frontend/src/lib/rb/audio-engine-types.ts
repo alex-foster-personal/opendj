@@ -7,7 +7,7 @@
  */
 
 import type { DeckId } from './deck-slots';
-import type { DeckAudioSnapshot, SyncMode } from './deck-state-types';
+import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand } from './mixer-types';
 import type { StemControl } from './stem-types';
 
@@ -50,6 +50,9 @@ export interface AudioEngine {
 	clearSafetyLoop(deck: DeckId): void;
 	/** Enable/disable PQTZ snapping. Defaults true per deck. */
 	setQuantize(deck: DeckId, enabled: boolean): void;
+	/** Change the quantize grid (1/4/8 beats). 'phase' is rejected upstream
+	 * in performance-ipc, never reaches here. */
+	setQuantizeGrid(deck: DeckId, beats: Exclude<QuantizeGrid, 'phase'>): void;
 	/** Enable/disable master tempo/phase following. Defaults true per deck. */
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Enable/disable pitch preservation in the Signalsmith processor. */

@@ -59,6 +59,8 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
+	import SpinnerIcon from './SpinnerIcon.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
@@ -1186,8 +1188,16 @@
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
 							<span class="deck-btns">
+								<span class="deck-btns-title">load to deck:</span>
 								{#each DECKS as d (d)}
+									{@const target = deckStates[d]}
+									{@const isLoading = performanceCommandStatus.deck_pending[d] > 0}
+									{@const isThisTrack = target.stable_id === row.stable_id}
 									<button
+										class="deck-target"
+										class:master-target={target.is_master}
+										class:loading-target={isLoading}
+										class:loaded-target={isThisTrack}
 										title={`Load onto deck ${d}`}
 										onclick={(e) => {
 											e.stopPropagation();
@@ -1195,7 +1205,11 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{d}
+										{#if isLoading}
+											<SpinnerIcon size={9} />
+										{:else}
+											{d}
+										{/if}
 									</button>
 								{/each}
 								{#if removable}
@@ -1943,20 +1957,48 @@
 	.c-preview {
 		position: relative;
 	}
+	/* Visible on hover+selected (mouse), per the pin: hover-only used to block
+	   visibility outright. display stays inline-flex always (never `none`) so
+	   the buttons remain Tab-reachable regardless of hover/selection - a
+	   keyboard user tabbing through the row must have an equal path to the
+	   mouse's hover, and a display:none element cannot receive the very
+	   focus that would reveal it. opacity+pointer-events do the hiding
+	   instead, and :focus-within always wins so Tab landing on any of these
+	   buttons reveals the whole group before the very next Tab press. */
 	.deck-btns {
-		display: none;
+		display: inline-flex;
 		position: absolute;
 		top: 2px;
 		right: 4px;
 		gap: 2px;
+		align-items: center;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 120ms ease;
 	}
-	tbody tr:hover .deck-btns {
-		display: inline-flex;
+	tbody tr:hover.rb-row-selected .deck-btns,
+	.deck-btns:focus-within {
+		opacity: 1;
+		pointer-events: auto;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.deck-btns {
+			transition: none;
+		}
+	}
+	.deck-btns-title {
+		font-size: 8px;
+		color: var(--rb-text-dim);
+		margin-right: 2px;
+		white-space: nowrap;
 	}
 	.deck-btns button {
 		width: 16px;
 		height: 16px;
 		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
@@ -1968,6 +2010,28 @@
 	.deck-btns button:hover {
 		background: var(--rb-accent);
 		color: #fff;
+	}
+	/* Per-deck state on the quick-load targets, per the pin: dim by default
+	   (empty deck = blank, no extra class), yellow border while that deck is
+	   master, the shared loading-wheel spinner while a command for that deck
+	   is in flight, slightly grey once that deck already holds THIS row's
+	   track. Numerals stay white throughout so they read against every
+	   state. */
+	.deck-btns button.deck-target {
+		color: #fff;
+		opacity: 0.55;
+	}
+	.deck-btns button.deck-target.loaded-target {
+		opacity: 0.75;
+		background: color-mix(in srgb, var(--rb-panel-raised) 60%, #000 20%);
+	}
+	.deck-btns button.deck-target.master-target {
+		opacity: 1;
+		border-color: var(--rb-yellow, #e8c13a);
+	}
+	.deck-btns button.deck-target.loading-target {
+		opacity: 1;
+		color: var(--rb-accent);
 	}
 	.deck-btns button.remove-btn {
 		color: var(--rb-red);

@@ -370,6 +370,30 @@ export function quantizeToNearestDownbeat(
 }
 
 /**
+ * Return the exact time of the nearest grid line for the DECK's selected
+ * quantize grid (pin a67bafbfc4b0): every beat (1), every bar downbeat (4,
+ * assumed 4/4 - same set `quantizeToNearestDownbeat` snaps to), or every
+ * OTHER bar downbeat (8 - a 2-bar grid). 'phase' never reaches here: it is
+ * rejected in performance-ipc._dispatchUnknown before it can become a
+ * setting change, so this function's grid parameter excludes it entirely.
+ */
+export function quantizeToNearestGridBeat(
+	beats: readonly AnlzBeat[],
+	positionSec: number,
+	gridBeats: 1 | 4 | 8
+): number {
+	if (gridBeats === 1) return quantizeToNearestBeat(beats, positionSec);
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	if (gridBeats === 4) return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+	const twoBarBeats = downbeats.filter((_beat, index) => index % 2 === 0);
+	if (twoBarBeats.length === 0) throw new Error('PQTZ beat grid contains no 2-bar downbeat');
+	return twoBarBeats[_nearestBeatIndex(twoBarBeats, positionSec)].t;
+}
+
+/**
  * Return the exact time of the next real PQTZ bar downbeat at or after
  * `positionSec` - the moment a BeatSyncMax hot-cue TRIGGER (#884) defers to,
  * rather than the nearest one SAVE (above) snaps to. Once the grid runs out

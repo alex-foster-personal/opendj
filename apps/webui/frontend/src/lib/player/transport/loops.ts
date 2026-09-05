@@ -11,7 +11,11 @@
  * scheduler seam they mutate through has been extracted.
  */
 
-import { quantizeToNearestBeat, validateBeatGrid } from '$lib/rb/beat-sync-math';
+import {
+	quantizeToNearestBeat,
+	quantizeToNearestGridBeat,
+	validateBeatGrid
+} from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 
 type LoopSnapshot = {
@@ -73,7 +77,10 @@ export function phaseLockedSafetyLoopAtTrackEnd(
 export function quantizedLoopEndpointsMs(
 	beats: readonly AnlzBeat[],
 	loop: { in_ms: number; out_ms: number },
-	quantizeEnabled: boolean
+	quantizeEnabled: boolean,
+	/** The deck's selected quantize grid (pin a67bafbfc4b0). Unused when
+	 * quantizeEnabled is false - callers with nothing to snap to may pass 1. */
+	gridBeats: 1 | 4 | 8 = 1
 ): { in_ms: number; out_ms: number } {
 	if (
 		!Number.isFinite(loop.in_ms) ||
@@ -85,8 +92,8 @@ export function quantizedLoopEndpointsMs(
 	}
 	if (!quantizeEnabled) return { ...loop };
 	const snapped = {
-		in_ms: quantizeToNearestBeat(beats, loop.in_ms / 1000) * 1000,
-		out_ms: quantizeToNearestBeat(beats, loop.out_ms / 1000) * 1000
+		in_ms: quantizeToNearestGridBeat(beats, loop.in_ms / 1000, gridBeats) * 1000,
+		out_ms: quantizeToNearestGridBeat(beats, loop.out_ms / 1000, gridBeats) * 1000
 	};
 	if (snapped.out_ms <= snapped.in_ms) {
 		throw new RangeError(

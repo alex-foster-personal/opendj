@@ -15,6 +15,7 @@
 		pitchRange,
 		pending,
 		onQuantize,
+		onQuantizeGrid,
 		onMasterTempo,
 		onSlip,
 		inertTip
@@ -23,6 +24,10 @@
 		pitchRange: PitchRange;
 		pending: boolean;
 		onQuantize: () => Promise<void>;
+		/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats). 'phase'
+		 * (match to detected phase length) is NOT implemented - its option is
+		 * greyed rb-inert and never calls this. */
+		onQuantizeGrid: (beats: 1 | 4 | 8) => Promise<void>;
 		onMasterTempo: () => Promise<void>;
 		onSlip: () => Promise<void>;
 		inertTip: string;
@@ -98,6 +103,16 @@
 				? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
 				: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'
 	);
+	// Q label mirrors the active grid (pin a67bafbfc4b0). 'phase' is plumbed
+	// but not implemented, so the label can show it (the setting exists) even
+	// though nothing can select it into that state from this UI yet.
+	const qLabel: string = $derived(
+		deck.quantize_grid_beats === 'phase' ? 'Q-phase' : `Q${deck.quantize_grid_beats}`
+	);
+	const qGridBullets: readonly string[] = [
+		'Choose the beat grid that seeks, cue points, and loop ends snap to.',
+		'"match to phase length" is not implemented - it will match quantize to the detected phase length.'
+	];
 	const mtTitle: string = $derived(
 		deck.master_tempo_enabled
 			? 'Master Tempo ON - hold musical key while changing tempo'
@@ -129,20 +144,46 @@
 	</div>
 
 	<div class="side-buttons">
-		<button
-			class="rb-lit-button"
-			class:lit={deck.quantize_enabled && !gridless}
-			disabled={pending || gridless}
-			aria-pressed={deck.quantize_enabled}
-			data-performance-control="quantize"
-			data-testid={`quantize-deck-${deck.deck_id}`}
-			aria-label={`quantize deck ${deck.deck_id}`}
-			data-state={gridless ? 'inert' : deck.quantize_enabled ? 'on' : 'off'}
-			title={qTitle}
-			onclick={async () => await onQuantize()}
-		>
-			Q
-		</button>
+		<ControlExplainer title={qTitle} bullets={qGridBullets}>
+			{#snippet action()}
+				<div class="q-grid-options" role="group" aria-label={`quantize grid deck ${deck.deck_id}`}>
+					{#each [1, 4, 8] as const as beats (beats)}
+						<button
+							class="q-grid-opt"
+							class:selected={deck.quantize_grid_beats === beats}
+							data-testid={`quantize-grid-${beats}-deck-${deck.deck_id}`}
+							aria-pressed={deck.quantize_grid_beats === beats}
+							onclick={async () => await onQuantizeGrid(beats)}
+						>
+							{beats}
+						</button>
+					{/each}
+					<button
+						class="q-grid-opt rb-inert"
+						disabled
+						data-testid={`quantize-grid-phase-deck-${deck.deck_id}`}
+						title="not implemented, will match quantize to the detected phase length"
+						aria-label="match to phase length - not implemented"
+					>
+						phase
+					</button>
+				</div>
+			{/snippet}
+			<button
+				class="rb-lit-button"
+				class:lit={deck.quantize_enabled && !gridless}
+				disabled={pending || gridless}
+				aria-pressed={deck.quantize_enabled}
+				data-performance-control="quantize"
+				data-testid={`quantize-deck-${deck.deck_id}`}
+				aria-label={`quantize deck ${deck.deck_id}`}
+				data-state={gridless ? 'inert' : deck.quantize_enabled ? 'on' : 'off'}
+				title={qTitle}
+				onclick={async () => await onQuantize()}
+			>
+				{qLabel}
+			</button>
+		</ControlExplainer>
 		<ControlExplainer title={slipTitle} bullets={slipBullets} demo="slip">
 			<button
 				class="rb-lit-button"
@@ -239,5 +280,25 @@
 	.side-buttons button {
 		min-width: 34px;
 		text-align: center;
+	}
+	.q-grid-options {
+		display: flex;
+		gap: 4px;
+	}
+	.q-grid-opt {
+		min-width: 28px;
+		padding: 3px 5px;
+		background: #14171d;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 10px;
+		text-align: center;
+		cursor: pointer;
+	}
+	.q-grid-opt.selected {
+		border-color: var(--rb-accent);
+		color: var(--rb-accent);
 	}
 </style>

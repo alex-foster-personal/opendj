@@ -174,9 +174,10 @@ test('a pending command never greys out a hot cue pad', () => {
 		'a transport command in flight must not grey out all eight pads'
 	);
 	assert.ok(
-		padTag.includes('disabled={busySlot === entry.slot}'),
-		'the per-slot write guard must only disable the slot being written: a blur-triggering click ' +
-			'has to remain actionable, then wait for the current write before it starts its own'
+		padTag.includes('disabled={busySlot === entry.slot || renameSlot === entry.slot}'),
+		'the per-slot write guard must only disable the slot being written (or mid-rename, pin ' +
+			'c20eeb07cae0): a blur-triggering click has to remain actionable, then wait for the ' +
+			'current write before it starts its own'
 	);
 	assert.ok(
 		padTag.includes('aria-busy={pending}'),

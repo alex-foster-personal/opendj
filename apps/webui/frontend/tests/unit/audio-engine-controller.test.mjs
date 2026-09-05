@@ -697,6 +697,52 @@ test('central seek quantization snaps to real PQTZ and missing grids fail explic
 	assert.throws(() => audio.quantizedPositionMs([], 590, true), /beat grid/i);
 });
 
+/**
+ * Pin a67bafbfc4b0 follow-up (bot review P1): the deck's selected quantize
+ * grid (1/4/8 beats) must actually change what a seek/cue/loop snaps to, not
+ * just sit in deckStates unread. A regular 120bpm, 8-bar grid (32 beats)
+ * gives every-beat, every-bar-downbeat, and every-OTHER-bar-downbeat targets
+ * that all differ at position 5.4s: nearest beat 5.5, nearest downbeat 6.0,
+ * nearest 2-bar downbeat 4.0. If gridBeats stopped being threaded through
+ * (e.g. a caller reverting to the 1-only default) this test would see grid 4
+ * and grid 8 collapse back onto the grid-1 answer.
+ */
+function _regularGrid(bpm, beatCount) {
+	const beatIntervalSec = 60 / bpm;
+	return Array.from({ length: beatCount }, (_, index) => ({
+		n: (index % 4) + 1,
+		bpm,
+		t: index * beatIntervalSec
+	}));
+}
+const GRID_120BPM_8BAR = _regularGrid(120, 32);
+
+test('quantizedPositionMs snaps to a different beat depending on the selected grid (1 vs 4 vs 8)', () => {
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true, 1), 5500);
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true, 4), 6000);
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true, 8), 4000);
+	// Unchanged when quantize is off, regardless of which grid is selected.
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, false, 8), 5400);
+	// Omitting gridBeats still defaults to the old grid-1 behaviour.
+	assert.equal(audio.quantizedPositionMs(GRID_120BPM_8BAR, 5400, true), 5500);
+});
+
+test('quantizedLoopEndpointsMs snaps both endpoints to the selected grid, not always grid-1', () => {
+	const loop = { in_ms: 5400, out_ms: 9900 };
+	assert.deepEqual(audio.quantizedLoopEndpointsMs(GRID_120BPM_8BAR, loop, true, 1), {
+		in_ms: 5500,
+		out_ms: 10000
+	});
+	assert.deepEqual(audio.quantizedLoopEndpointsMs(GRID_120BPM_8BAR, loop, true, 4), {
+		in_ms: 6000,
+		out_ms: 10000
+	});
+	assert.deepEqual(audio.quantizedLoopEndpointsMs(GRID_120BPM_8BAR, loop, true, 8), {
+		in_ms: 4000,
+		out_ms: 8000
+	});
+});
+
 test('paused seek produces one frozen UI and runtime clock position', () => {
 	assert.deepEqual(audio.pausedSeekClock(608, 4000), {
 		position_ms: 608,
