@@ -389,6 +389,59 @@ describe('auto-play track pick', () => {
 		);
 	});
 
+	it('pin 0a047b: smart mode continues from the loaded track\'s own position, never the list top', () => {
+		// the maintainer, pin 0a047b8a4e4d: a double-clicked (instant-loaded) track must
+		// have its successor computed from ITS position in the current view,
+		// not from row 0 onward. Every row here is mutually compatible (same
+		// key, same BPM), so the ONLY thing that can decide the pick is
+		// position - if 'early' (unplayed, sits before 'mid') is ever picked
+		// over 'late' (sits after 'mid'), AutoPlay just walked back to the top
+		// of the list instead of continuing from the loaded track.
+		const { pickNextStableId } = mod;
+		const viewOrder = [row('early', '8A', 120), row('mid', '8A', 120), row('late', '8A', 120)];
+		for (const maximize_reach of [false, true]) {
+			assert.equal(
+				pickNextStableId({
+					playlist: viewOrder,
+					current_stable_id: 'mid',
+					current_key: '8A',
+					current_bpm: 120,
+					exclude_ids: new Set(),
+					played_ids: new Set(),
+					enforce_play_order: false,
+					maximize_reach,
+					min_tempo_ratio: 0.84,
+					max_tempo_ratio: 1.16
+				}),
+				'late',
+				`maximize_reach=${maximize_reach}: must continue forward from 'mid', not back to 'early'`
+			);
+		}
+	});
+
+	it('pin 0a047b: smart mode wraps to a row before the loaded track only when nothing compatible follows it', () => {
+		// The forward-first rule must not turn into a dead end: if nothing
+		// after the loaded track is compatible, AutoPlay still has to keep
+		// playing rather than stall, so it falls back to a compatible row
+		// before it.
+		const { pickNextStableId } = mod;
+		const viewOrder = [row('before', '8A', 120), row('mid', '8A', 120), row('after', '1A', 120)];
+		assert.equal(
+			pickNextStableId({
+				playlist: viewOrder,
+				current_stable_id: 'mid',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'before'
+		);
+	});
+
 	it('bpmWithinPhaseLockRange rejects half/double folds', () => {
 		const { bpmWithinPhaseLockRange } = mod;
 		assert.equal(bpmWithinPhaseLockRange(120, 120, 0.84, 1.16), true);
