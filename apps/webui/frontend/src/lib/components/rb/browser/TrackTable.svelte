@@ -1148,7 +1148,7 @@
 										class="ap-rank"
 										class:ap-rank-hot={hoveredApId === row.stable_id}
 										tabindex="0"
-											title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the frozen activation snapshot`}
+										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
 										onpointerenter={() => (hoveredApId = row.stable_id)}
 										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
 										onfocus={() => (hoveredApId = row.stable_id)}

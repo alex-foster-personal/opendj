@@ -1448,9 +1448,21 @@
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
+	/** Filters change AutoPlay's candidate set. Sort state is intentionally absent. */
+	const autoPlayFilterKey = $derived(
+		[
+			searchMode === 'find' ? '' : pane.search.trim(),
+			searchMode,
+			wholeCollectionActive ? 'collection' : 'playlist',
+			uiPrefs.hide_broken_links ? 'hide-broken' : 'show-broken',
+			uiPrefs.next_only_filter ? 'next-only' : 'all-next',
+			nextOnlyRef?.key ?? '',
+			nextOnlyRef?.bpm ?? ''
+		].join('|')
+	);
 
-	/** Holds the order AutoPlay walks, frozen at the moment it was switched
-	 * on (see createAutoPlayFeedSnapshot in auto-play.ts for the maintainer's rule). */
+	/** Holds the order AutoPlay walks, frozen at activation except for active
+	 * filter changes (see createAutoPlayFeedSnapshot in auto-play.ts). */
 	const autoPlayFeed = createAutoPlayFeedSnapshot();
 	let autoPlaySnapshotActive = $state(false);
 	let autoPlaySnapshotMatchesView = $state(false);
@@ -1479,7 +1491,8 @@
 				file_exists: r.file_exists,
 				title: r.title,
 				artist: r.artist
-			}))
+			})),
+			autoPlayFilterKey
 		);
 		autoPlaySnapshotActive = autoPlayFeed.active;
 		autoPlaySnapshotMatchesView = autoPlayFeed.matches(visibleRows);
