@@ -533,7 +533,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Client Errors */
+        get: operations["list_client_errors_api_v1_client_errors_get"];
         put?: never;
         /** Capture Client Error */
         post: operations["capture_client_error_api_v1_client_errors_post"];
@@ -541,6 +542,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/client-errors/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Triage Client Error */
+        patch: operations["triage_client_error_api_v1_client_errors__event_id__patch"];
         trace?: never;
     };
     "/api/v1/client-events": {
@@ -3378,6 +3396,39 @@ export interface components {
             event_id: string;
             /** Stored */
             stored: boolean;
+        };
+        /** ClientErrorRecord */
+        ClientErrorRecord: {
+            /** Event Id */
+            event_id: string;
+            /** Kind */
+            kind: string;
+            /** Message */
+            message: string;
+            /** Received At */
+            received_at: string;
+        };
+        /** ClientErrorTriageIn */
+        ClientErrorTriageIn: {
+            /**
+             * Disposition
+             * @enum {string}
+             */
+            disposition: "fix" | "no-fix" | "duplicate";
+            /** Ref */
+            ref: string;
+        };
+        /** ClientErrorTriageOut */
+        ClientErrorTriageOut: {
+            /**
+             * Disposition
+             * @enum {string}
+             */
+            disposition: "fix" | "no-fix" | "duplicate";
+            /** Event Id */
+            event_id: string;
+            /** Ref */
+            ref: string;
         };
         /** ClientEventIn */
         ClientEventIn: {
@@ -7819,6 +7870,37 @@ export interface operations {
             };
         };
     };
+    list_client_errors_api_v1_client_errors_get: {
+        parameters: {
+            query?: {
+                untriaged?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientErrorRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     capture_client_error_api_v1_client_errors_post: {
         parameters: {
             query?: never;
@@ -7839,6 +7921,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    triage_client_error_api_v1_client_errors__event_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientErrorTriageIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientErrorTriageOut"];
                 };
             };
             /** @description Validation Error */

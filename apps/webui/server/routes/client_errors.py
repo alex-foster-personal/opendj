@@ -1,14 +1,15 @@
 """Bounded browser-error sink with full details in a separate daily log."""
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from apps.shared.telemetry import capture_browser_error
@@ -18,15 +19,15 @@ from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 router = APIRouter(prefix="/client-errors", tags=["client-errors"])
 log = logging.getLogger(__name__)
 
-ContextValue = Union[str, int, float, bool, None]
+ContextValue = str | int | float | bool | None
 
 
 class ClientErrorIn(BaseModel):
     client_event_id: str = Field(min_length=1, max_length=128)
     kind: Literal["window-error", "unhandled-rejection", "sveltekit", "ui-error"]
     message: str = Field(min_length=1, max_length=4096)
-    name: Optional[str] = Field(default=None, max_length=256)
-    stack: Optional[str] = Field(default=None, max_length=32768)
+    name: str | None = Field(default=None, max_length=256)
+    stack: str | None = Field(default=None, max_length=32768)
     url: str = Field(max_length=4096)
     client_timestamp: str = Field(max_length=128)
     user_agent: str = Field(max_length=2048)
@@ -52,10 +53,59 @@ class ClientErrorOut(BaseModel):
     stored: bool
 
 
+class ClientErrorTriageIn(BaseModel):
+    disposition: Literal["fix", "no-fix", "duplicate"]
+    ref: str = Field(min_length=1, max_length=4096)
+
+
+class ClientErrorTriageOut(ClientErrorTriageIn):
+    event_id: str
+
+
+class ClientErrorRecord(BaseModel):
+    event_id: str
+    received_at: str
+    kind: str
+    message: str
+
+
+def _daily_logs(log_dir: Path) -> list[Path]:
+    return sorted(log_dir.glob("webui-client-errors-????-??-??.log"))
+
+
+def _triage_path(daily_path: Path) -> Path:
+    return daily_path.with_suffix(".triage.jsonl")
+
+
+def _read_jsonl(path: Path) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def _triaged_event_ids(log_dir: Path) -> set[str]:
+    return {
+        str(record["event_id"])
+        for daily_path in _daily_logs(log_dir)
+        for record in _read_jsonl(_triage_path(daily_path))
+    }
+
+
+def _find_event_log(log_dir: Path, event_id: str) -> Path | None:
+    for daily_path in _daily_logs(log_dir):
+        if any(record.get("event_id") == event_id for record in _read_jsonl(daily_path)):
+            return daily_path
+    return None
+
+
+def _log_dir(request: Request) -> Path:
+    return Path(getattr(request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR))
+
+
 @router.post("", response_model=ClientErrorOut, status_code=202)
 def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErrorOut:
     event_id = uuid.uuid4().hex[:16]
-    received_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
+    received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
     record = {
@@ -64,9 +114,7 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
         "client_ip": request.client.host if request.client else None,
         **payload.model_dump(),
     }
-    log_dir = Path(
-        getattr(request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR)
-    )
+    log_dir = _log_dir(request)
     path = daily_log_path(log_dir, "webui-client-errors", time.gmtime())
     stored = append_json_record(path, record)
     summary = payload.message.replace("\n", " ")[:300]
@@ -103,3 +151,31 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
                  **payload.context},
     )
     return ClientErrorOut(event_id=event_id, stored=stored)
+
+
+@router.get("", response_model=list[ClientErrorRecord])
+def list_client_errors(
+    request: Request, untriaged: bool = Query(default=False)
+) -> list[ClientErrorRecord]:
+    log_dir = _log_dir(request)
+    triaged_ids = _triaged_event_ids(log_dir) if untriaged else set()
+    return [
+        ClientErrorRecord.model_validate(record)
+        for daily_path in _daily_logs(log_dir)
+        for record in _read_jsonl(daily_path)
+        if not untriaged or str(record["event_id"]) not in triaged_ids
+    ]
+
+
+@router.patch("/{event_id}", response_model=ClientErrorTriageOut)
+def triage_client_error(
+    event_id: str, payload: ClientErrorTriageIn, request: Request
+) -> ClientErrorTriageOut:
+    log_dir = _log_dir(request)
+    daily_path = _find_event_log(log_dir, event_id)
+    if daily_path is None:
+        raise HTTPException(status_code=404, detail=f"Unknown client error event: {event_id}")
+    record = {"event_id": event_id, **payload.model_dump()}
+    if not append_json_record(_triage_path(daily_path), record):
+        raise HTTPException(status_code=507, detail="Client error triage log is full")
+    return ClientErrorTriageOut(event_id=event_id, **payload.model_dump())

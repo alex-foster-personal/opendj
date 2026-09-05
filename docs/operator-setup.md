@@ -11,6 +11,22 @@ local dev (gitignored) or - preferred for anything sensitive - store the
 values in Doppler under `construct` / `dev_af` and invoke commands via
 `doppler run --`.
 
+## Logs and client-error triage
+
+All runtime logs stay in the engine data directory, so they survive app restarts and can be collected before deciding whether an incident needs Sentry triage.
+
+| Path | Writer | Retention and purpose |
+| --- | --- | --- |
+| `<data-dir>/logs/engine.log` | Bundled engine stdout and stderr | Appended across launches. Rotates at 5 MiB, retaining `engine.log.1` through `.5`. |
+| `<data-dir>/logs/engine-warn.log` | Python logging and uvicorn errors | JSONL warnings and errors only, with a `boot_id` on every record. Use `tail -f` for the focused incident stream. |
+| `<data-dir>/logs/webui-client-errors-YYYY-MM-DD.log` | Browser error API | Full daily JSONL browser-error records. The file is never rewritten by triage. |
+| `<data-dir>/logs/webui-client-errors-YYYY-MM-DD.triage.jsonl` | Browser error triage API | Append-only decisions: `fix`, `no-fix`, or `duplicate`, with a required reference. |
+| `~/.local/share/music-dj-tools/webui/webui-backend-YYYY-MM-DD.log` | `just webui-backend` | Development backend stdout and stderr. |
+
+For the Chrome loop, `scripts/run_chrome_loop.sh --engine` appends the direct engine output to `<chrome-loop-data-dir>/logs/engine.log`; do not start the engine bare if the output needs to survive the terminal session.
+
+List outstanding browser incidents with `GET /api/v1/client-errors?untriaged=1`. Record a decision with `PATCH /api/v1/client-errors/<event_id>` and a JSON body such as `{"disposition":"no-fix","ref":"issue #896"}`.
+
 ## Baseline (every feature needs this)
 
 - macOS 13+ (arm64 or x86_64).

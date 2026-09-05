@@ -23,13 +23,21 @@
 //! 4. A boot that does not reach a healthy /api/v1/health inside the timeout
 //!    raises a native error dialog naming the failure. A blank window that
 //!    never resolves is not an outcome this shell has.
+//! 5. Engine output is never silently lost. The log is proved writable
+//!    before the engine is spawned, an interrupted read is reissued rather
+//!    than read as the end of the stream, and a pump that does die stops the
+//!    engine instead of leaving it running with nothing recording what it
+//!    does. A log that quietly stops is indistinguishable from an engine
+//!    that had nothing to say, which is the one report this shell must not
+//!    be able to make.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// The payload directory inside the bundle, relative to Contents/Resources.
 pub const PAYLOAD_DIR: &str = "payload";
@@ -37,6 +45,8 @@ pub const PAYLOAD_DIR: &str = "payload";
 /// The one entry point the shell knows. Everything else about the payload
 /// (interpreter, dependency layout, module names) is the payload's business.
 pub const ENGINE_LAUNCHER: &str = "bin/opendj-engine";
+const ENGINE_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+const ENGINE_LOG_ROTATIONS: u8 = 5;
 
 /// How long a cold engine boot may take before the shell calls it failed.
 /// Measured boots on this Mac are ~1.5s; 30s is a wide margin over a first
@@ -88,6 +98,7 @@ pub struct Engine {
     port: u16,
     data_dir: PathBuf,
     log_path: PathBuf,
+    log_sink: Arc<LogSink>,
 }
 
 impl Engine {
@@ -100,9 +111,34 @@ impl Engine {
     /// Polling health rather than trusting the spawn is the whole point: a
     /// process that started and then refused its data dir is exactly the
     /// failure a naive shell renders as an empty window.
+    /// Why the log pump stopped, if it did.
+    ///
+    /// `None` is the healthy case AND the only case in which this shell may
+    /// say the engine started: see rule 5.
+    pub fn log_failure(&self) -> Option<String> {
+        self.log_sink.failure()
+    }
+
     pub fn wait_until_healthy(&mut self, timeout: Duration) -> Result<(), EngineError> {
         let deadline = Instant::now() + timeout;
         loop {
+            // BEFORE the exit check, because a pump failure stops the engine:
+            // asked in the other order this reports a bare exit status and
+            // buries the reason underneath it.
+            if let Some(detail) = self.log_failure() {
+                return Err(EngineError::new(
+                    "Open DJ lost the engine log.",
+                    format!(
+                        "{detail}\n\
+                         The engine was stopped rather than left running with \
+                         nothing recording it.\n\
+                         Data directory: {}\n\
+                         Engine log: {}",
+                        self.data_dir.display(),
+                        self.log_path.display()
+                    ),
+                ));
+            }
             if let Some(status) = self.child.try_wait().unwrap_or(None) {
                 return Err(EngineError::new(
                     "The Open DJ engine stopped while starting up.",
@@ -254,18 +290,24 @@ pub fn spawn(
         )
     })?;
     if let Some(parent) = log_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|err| {
+            EngineError::new(
+                "Open DJ could not create its log folder.",
+                format!("{}: {err}", parent.display()),
+            )
+        })?;
     }
-    let log = std::fs::File::create(log_path).map_err(|err| {
+    rotate_log_if_needed(log_path, ENGINE_LOG_MAX_BYTES).map_err(|err| {
         EngineError::new(
-            "Open DJ could not open its engine log.",
+            "Open DJ could not rotate its engine log.",
             format!("{}: {err}", log_path.display()),
         )
     })?;
-    let log_err = log.try_clone().map_err(|err| {
-        EngineError::new("Open DJ could not duplicate its engine log handle.", err.to_string())
-    })?;
-
+    // BEFORE the spawn, on purpose. A log path that is a directory, a folder
+    // the user cannot write, or a full disk are launch-time facts. Learning
+    // them from a pump thread means the engine is already running and the
+    // user has already been told it started.
+    verify_log_writable(log_path)?;
     let mut command = Command::new(&launcher);
     command
         .arg("--data-dir")
@@ -275,24 +317,207 @@ pub fn spawn(
         .arg("--port")
         .arg(port.to_string())
         .stdin(Stdio::null())
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(log_err))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("OPENDJ_ENGINE_WARN_LOG", log_path.with_file_name("engine-warn.log"))
+        .env("OPENDJ_ENGINE_LOG_BOOT_ID", log_boot_id())
         .process_group(0);
     for name in STRIPPED_ENV {
         command.env_remove(name);
     }
-    let child = command.spawn().map_err(|err| {
+    let mut child = command.spawn().map_err(|err| {
         EngineError::new(
             "Open DJ could not start its engine.",
             format!("Launching {} failed: {err}", launcher.display()),
         )
     })?;
+    let sink = Arc::new(LogSink::new(log_path.to_path_buf()));
+    // The child is its own group leader (`process_group(0)` above), so this
+    // pid is also the pgid a failing pump signals.
+    let pgid = child.id() as i32;
+    spawn_log_reader(
+        child.stdout.take().expect("engine stdout was piped"),
+        "stdout",
+        Arc::clone(&sink),
+        pgid,
+    );
+    spawn_log_reader(
+        child.stderr.take().expect("engine stderr was piped"),
+        "stderr",
+        Arc::clone(&sink),
+        pgid,
+    );
     Ok(Engine {
         child,
         port,
         data_dir: data_dir.to_path_buf(),
         log_path: log_path.to_path_buf(),
+        log_sink: sink,
     })
+}
+
+/// The engine's log file, and the one place a pump failure is recorded.
+///
+/// The mutex is an append lock rather than a path lock: stdout and stderr are
+/// pumped by two threads into one file that either of them may rotate, so
+/// unguarded appends can interleave a write with a rename. `failure` is the
+/// channel back to supervision, and it exists because an engine that outlives
+/// its log pump reports a healthy launch and then loses every line it writes.
+struct LogSink {
+    path: PathBuf,
+    append_lock: Mutex<()>,
+    failure: Mutex<Option<String>>,
+}
+
+impl LogSink {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            append_lock: Mutex::new(()),
+            failure: Mutex::new(None),
+        }
+    }
+
+    fn append(&self, bytes: &[u8]) -> std::io::Result<()> {
+        let _guard = self.append_lock.lock().expect("engine log mutex poisoned");
+        append_rotated(&self.path, bytes)
+    }
+
+    /// Record why the pump stopped. The first reason wins: whichever stream
+    /// failed first is the cause, and the second is usually its consequence.
+    fn record_failure(&self, detail: String) {
+        eprintln!("[ERROR] {detail}");
+        let mut slot = self.failure.lock().expect("engine log failure mutex poisoned");
+        if slot.is_none() {
+            *slot = Some(detail);
+        }
+    }
+
+    fn failure(&self) -> Option<String> {
+        self.failure
+            .lock()
+            .expect("engine log failure mutex poisoned")
+            .clone()
+    }
+}
+
+/// Copy one engine stream into the log until it ends, or say why it stopped.
+///
+/// `Interrupted` is what the previous `while let Ok(read)` loop got wrong: a
+/// signal delivered mid-read is the OS asking for the read to be reissued,
+/// not the end of the stream, so reading it as the end silently stops
+/// capturing a perfectly healthy engine. Every other read error, and every
+/// append or rotation error, is terminal and is RETURNED rather than printed
+/// and swallowed, because the caller is what turns it into a stopped engine.
+fn pump_stream<R: Read>(mut stream: R, stream_name: &str, sink: &LogSink) -> Result<(), String> {
+    let mut buffer = [0; 8192];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(read) => sink.append(&buffer[..read]).map_err(|error| {
+                format!(
+                    "could not write engine {stream_name} to {}: {error}",
+                    sink.path.display()
+                )
+            })?,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(format!("could not read engine {stream_name}: {error}")),
+        }
+    }
+}
+
+/// Pump one stream on its own thread, and stop the engine if the pump dies.
+///
+/// Stopping is the point. The shell used to print one line and return, which
+/// left an engine running with no log, on behalf of a user who had been told
+/// it started fine. The group kill is the one [`Engine::shutdown`] uses, so
+/// the engine's own children go with it, and the recorded reason is what
+/// [`Engine::wait_until_healthy`] reports instead of a bare exit status.
+fn spawn_log_reader<R: Read + Send + 'static>(
+    stream: R,
+    stream_name: &'static str,
+    sink: Arc<LogSink>,
+    pgid: i32,
+) {
+    std::thread::spawn(move || {
+        if let Err(detail) = pump_stream(stream, stream_name, &sink) {
+            sink.record_failure(detail);
+            stop_process_group(pgid);
+        }
+    });
+}
+
+/// SIGTERM a process group this shell created at spawn.
+fn stop_process_group(pgid: i32) {
+    // SAFETY: killpg on a pgid this process created. It is the child's own
+    // pid, because `process_group(0)` made the child a group leader, so this
+    // can never reach the shell's own group.
+    unsafe {
+        libc::killpg(pgid, libc::SIGTERM);
+    }
+}
+
+/// Prove the engine log can be appended to, before anything depends on it.
+fn verify_log_writable(log_path: &Path) -> Result<(), EngineError> {
+    open_append(log_path).map(drop).map_err(|err| {
+        EngineError::new(
+            "Open DJ could not write its engine log.",
+            format!("{}: {err}", log_path.display()),
+        )
+    })
+}
+
+fn open_append(log_path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+}
+
+fn append_rotated(log_path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let existing_size = match std::fs::metadata(log_path) {
+        Ok(metadata) => metadata.len(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(error),
+    };
+    if existing_size > 0 && existing_size + bytes.len() as u64 > ENGINE_LOG_MAX_BYTES {
+        rotate_log_if_needed(log_path, 0)?;
+    }
+    open_append(log_path)?.write_all(bytes)
+}
+
+fn log_boot_id() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is before Unix epoch")
+        .as_millis();
+    format!("shell-{}-{millis}", std::process::id())
+}
+
+fn rotation_path(log_path: &Path, index: u8) -> PathBuf {
+    PathBuf::from(format!("{}.{}", log_path.display(), index))
+}
+
+fn rotate_log_if_needed(log_path: &Path, max_bytes: u64) -> std::io::Result<()> {
+    let metadata = match std::fs::metadata(log_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if metadata.len() < max_bytes {
+        return Ok(());
+    }
+    let oldest = rotation_path(log_path, ENGINE_LOG_ROTATIONS);
+    if oldest.exists() {
+        std::fs::remove_file(oldest)?;
+    }
+    for index in (1..ENGINE_LOG_ROTATIONS).rev() {
+        let source = rotation_path(log_path, index);
+        if source.exists() {
+            std::fs::rename(source, rotation_path(log_path, index + 1))?;
+        }
+    }
+    std::fs::rename(log_path, rotation_path(log_path, 1))
 }
 
 /// The tail of the engine log, for an error dialog that says something.
@@ -303,4 +528,187 @@ pub fn log_tail(log_path: &Path, lines: usize) -> String {
     let collected: Vec<&str> = text.lines().collect();
     let start = collected.len().saturating_sub(lines);
     collected[start..].join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // - if an interrupted read ends the pump then one signal during a healthy
+    //   engine's life silently stops all logging -> broken
+    // - if a terminal read error is swallowed then the shell reports a
+    //   healthy launch while capturing nothing -> broken
+    // - if an unwritable log target is discovered by the pump rather than
+    //   before the spawn then the engine is already running when the shell
+    //   finds out -> broken
+    // - if a pump failure does not stop the engine then the app runs on with
+    //   nothing recording what it did -> broken
+    // - if a recorded pump failure still reports a healthy boot then the
+    //   whole durability contract is decorative -> broken
+
+    /// A stream that hands out exactly the reads a test asks for.
+    ///
+    /// Real pipes cannot be made to return `Interrupted` on demand, and that
+    /// is the case the pump has to get right, so the stream is the fixture.
+    struct ScriptedStream {
+        steps: Vec<std::io::Result<&'static [u8]>>,
+        next: usize,
+    }
+
+    impl ScriptedStream {
+        fn new(steps: Vec<std::io::Result<&'static [u8]>>) -> Self {
+            Self { steps, next: 0 }
+        }
+    }
+
+    impl Read for ScriptedStream {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let step = self
+                .steps
+                .get(self.next)
+                .expect("the pump read past the end of its script");
+            self.next += 1;
+            match step {
+                Ok(bytes) => {
+                    buffer[..bytes.len()].copy_from_slice(bytes);
+                    Ok(bytes.len())
+                }
+                Err(error) => Err(std::io::Error::new(error.kind(), error.to_string())),
+            }
+        }
+    }
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("opendj-{name}-{}", log_boot_id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+
+    fn sleeping_child() -> Child {
+        Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn retries_interrupted_reads_instead_of_ending_the_pump() {
+        let directory = scratch_dir("pump-interrupted");
+        let sink = LogSink::new(directory.join("engine.log"));
+        let stream = ScriptedStream::new(vec![
+            Err(std::io::Error::from(std::io::ErrorKind::Interrupted)),
+            Ok(b"first\n"),
+            Err(std::io::Error::from(std::io::ErrorKind::Interrupted)),
+            Ok(b"second\n"),
+            Ok(b""),
+        ]);
+
+        pump_stream(stream, "stdout", &sink).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&sink.path).unwrap(),
+            "first\nsecond\n"
+        );
+        assert!(sink.failure().is_none());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reports_a_terminal_read_error_rather_than_swallowing_it() {
+        let directory = scratch_dir("pump-read-error");
+        let sink = LogSink::new(directory.join("engine.log"));
+        let stream = ScriptedStream::new(vec![
+            Ok(b"before\n"),
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)),
+        ]);
+
+        let failure = pump_stream(stream, "stderr", &sink).unwrap_err();
+
+        assert!(failure.contains("could not read engine stderr"), "{failure}");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn refuses_an_unwritable_log_target_before_the_engine_exists() {
+        let directory = scratch_dir("pump-unwritable");
+        let log_path = directory.join("engine.log");
+        // A directory where the log belongs: every append to it fails, the
+        // way a read-only folder or a full disk does.
+        std::fs::create_dir_all(&log_path).unwrap();
+
+        let refusal = verify_log_writable(&log_path).unwrap_err();
+
+        assert!(
+            refusal.headline.contains("could not write its engine log"),
+            "{refusal}"
+        );
+        let sink = LogSink::new(log_path);
+        let stream = ScriptedStream::new(vec![Ok(b"line\n")]);
+        let failure = pump_stream(stream, "stdout", &sink).unwrap_err();
+        assert!(failure.contains("could not write engine stdout"), "{failure}");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn stopping_the_group_terminates_the_engine() {
+        let mut child = sleeping_child();
+
+        stop_process_group(child.id() as i32);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if child.try_wait().unwrap().is_some() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        child.kill().unwrap();
+        panic!("stop_process_group left the engine running");
+    }
+
+    #[test]
+    fn a_lost_log_fails_the_launch_instead_of_reporting_healthy() {
+        let directory = scratch_dir("pump-launch");
+        let log_path = directory.join("engine.log");
+        let sink = Arc::new(LogSink::new(log_path.clone()));
+        sink.record_failure("could not write engine stdout: disk full".into());
+        let mut engine = Engine {
+            child: sleeping_child(),
+            // Nothing listens here, so a healthy verdict could only come from
+            // skipping the check.
+            port: 1,
+            data_dir: directory.clone(),
+            log_path,
+            log_sink: sink,
+        };
+
+        let failure = engine.wait_until_healthy(BOOT_TIMEOUT).unwrap_err();
+
+        assert!(failure.headline.contains("lost the engine log"), "{failure}");
+        assert!(failure.detail.contains("disk full"), "{failure}");
+        engine.shutdown();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rotates_full_log_and_keeps_five_archives() {
+        let directory = std::env::temp_dir().join(format!("opendj-engine-log-{}", log_boot_id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let log_path = directory.join("engine.log");
+        for index in 1..=ENGINE_LOG_ROTATIONS {
+            std::fs::write(rotation_path(&log_path, index), format!("old-{index}")).unwrap();
+        }
+        std::fs::write(&log_path, "current").unwrap();
+
+        rotate_log_if_needed(&log_path, 1).unwrap();
+
+        assert_eq!(std::fs::read_to_string(rotation_path(&log_path, 1)).unwrap(), "current");
+        assert_eq!(std::fs::read_to_string(rotation_path(&log_path, 5)).unwrap(), "old-4");
+        assert!(!log_path.exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }

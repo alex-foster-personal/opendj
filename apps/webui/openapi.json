@@ -1418,6 +1418,89 @@
         "title": "ClientErrorOut",
         "type": "object"
       },
+      "ClientErrorRecord": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "received_at",
+          "kind",
+          "message"
+        ],
+        "title": "ClientErrorRecord",
+        "type": "object"
+      },
+      "ClientErrorTriageIn": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "fix",
+              "no-fix",
+              "duplicate"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disposition",
+          "ref"
+        ],
+        "title": "ClientErrorTriageIn",
+        "type": "object"
+      },
+      "ClientErrorTriageOut": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "fix",
+              "no-fix",
+              "duplicate"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disposition",
+          "ref",
+          "event_id"
+        ],
+        "title": "ClientErrorTriageOut",
+        "type": "object"
+      },
       "ClientEventIn": {
         "properties": {
           "client_event_id": {
@@ -12218,6 +12301,51 @@
       }
     },
     "/api/v1/client-errors": {
+      "get": {
+        "operationId": "list_client_errors_api_v1_client_errors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "untriaged",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Untriaged",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClientErrorRecord"
+                  },
+                  "title": "Response List Client Errors Api V1 Client Errors Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Client Errors",
+        "tags": [
+          "client-errors"
+        ]
+      },
       "post": {
         "operationId": "capture_client_error_api_v1_client_errors_post",
         "requestBody": {
@@ -12253,6 +12381,58 @@
           }
         },
         "summary": "Capture Client Error",
+        "tags": [
+          "client-errors"
+        ]
+      }
+    },
+    "/api/v1/client-errors/{event_id}": {
+      "patch": {
+        "operationId": "triage_client_error_api_v1_client_errors__event_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorTriageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorTriageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Triage Client Error",
         "tags": [
           "client-errors"
         ]
