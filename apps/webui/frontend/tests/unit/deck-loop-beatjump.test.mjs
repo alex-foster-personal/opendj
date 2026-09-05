@@ -118,6 +118,56 @@ test('a live beat loop shifts by the same real PQTZ beat count as its jump', () 
 	);
 });
 
+test('resizing the saved engaged beat loop replaces its matching safety snapshot', () => {
+	const before = { in_ms: 135, out_ms: 2040, engaged: true, beat_length: 4 };
+	const after = { in_ms: 135, out_ms: 1080, engaged: true, beat_length: 2 };
+	assert.deepEqual(
+		loops.replaceMatchingSafetyLoopSnapshot(
+			{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
+			before,
+			after
+		),
+		{ in_ms: 135, out_ms: 1080, beat_length: 2, armed: true },
+		'an engaged loop resize must not leave an earlier safety-loop snapshot to restore later'
+	);
+	assert.deepEqual(
+		loops.replaceMatchingSafetyLoopSnapshot(
+			{ in_ms: 2040, out_ms: 4060, beat_length: 4, armed: true },
+			before,
+			after
+		),
+		{ in_ms: 2040, out_ms: 4060, beat_length: 4, armed: true },
+		'a separately saved safety loop remains an explicit operator choice'
+	);
+});
+
+test('natural-end safety re-entry reconstructs a whole beat loop from its grid anchor', () => {
+	const reentry = loops.phaseLockedSafetyLoopAtTrackEnd(
+		DRIFTING_GRID,
+		{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
+		4000
+	);
+	assert.deepEqual(reentry, { in_ms: 135, out_ms: 2040, engaged: true, beat_length: 4 });
+	assert.equal(
+		loops.phaseLockedSafetyLoopAtTrackEnd(
+			DRIFTING_GRID,
+			{ in_ms: 135, out_ms: 2040, beat_length: null, armed: true },
+			4000
+		),
+		null,
+		'a safety loop without a beat count must stop at track end rather than re-entering off-grid'
+	);
+	assert.equal(
+		loops.phaseLockedSafetyLoopAtTrackEnd(
+			[],
+			{ in_ms: 135, out_ms: 2040, beat_length: 4, armed: true },
+			4000
+		),
+		null,
+		'a gridless safety slot must take the normal natural-end stop'
+	);
+});
+
 test('a shifted live loop keeps an exclusive-out beat jump inside the loop', () => {
 	const shifted = { in_ms: 1553, out_ms: 3540 };
 	assert.equal(

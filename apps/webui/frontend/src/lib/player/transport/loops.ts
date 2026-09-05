@@ -14,6 +14,62 @@
 import { quantizeToNearestBeat, validateBeatGrid } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 
+type LoopSnapshot = {
+	in_ms: number;
+	out_ms: number;
+	engaged: boolean;
+	beat_length: number | null;
+};
+
+type SafetyLoopSnapshot = {
+	in_ms: number;
+	out_ms: number;
+	beat_length: number | null;
+	armed: boolean;
+};
+
+/** Keep a saved safety loop current only when it was captured from the exact
+ * engaged loop being resized. A separately saved range remains intentional. */
+export function replaceMatchingSafetyLoopSnapshot(
+	safety: SafetyLoopSnapshot | null,
+	previous: LoopSnapshot,
+	next: LoopSnapshot
+): SafetyLoopSnapshot | null {
+	if (
+		safety === null ||
+		safety.in_ms !== previous.in_ms ||
+		safety.out_ms !== previous.out_ms ||
+		safety.beat_length !== previous.beat_length
+	) {
+		return safety;
+	}
+	return {
+		in_ms: next.in_ms,
+		out_ms: next.out_ms,
+		beat_length: next.beat_length,
+		armed: safety.armed
+	};
+}
+
+/** A natural-end safety re-entry is permitted only when it can be rebuilt as
+ * an exact PQTZ beat loop. A manual, incomplete, or duration-overrunning slot
+ * deliberately falls through to the ordinary natural-end stop. */
+export function phaseLockedSafetyLoopAtTrackEnd(
+	beats: readonly AnlzBeat[],
+	safety: SafetyLoopSnapshot,
+	durationMs: number
+): LoopSnapshot | null {
+	if (safety.beat_length === null) return null;
+	if (!Number.isInteger(safety.beat_length) || safety.beat_length <= 0) return null;
+	try {
+		const range = exactBeatLoopRangeMs(beats, safety.in_ms, safety.beat_length, safety.in_ms);
+		if (range.out_ms > durationMs) return null;
+		return { ...range, engaged: true, beat_length: safety.beat_length };
+	} catch {
+		return null;
+	}
+}
+
 export function quantizedLoopEndpointsMs(
 	beats: readonly AnlzBeat[],
 	loop: { in_ms: number; out_ms: number },

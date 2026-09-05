@@ -71,7 +71,7 @@ import {
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
 import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
-import type { DeckAudioSnapshot, DeckState, LoopState, SyncMode } from '$lib/rb/deck-state-types';
+import type { DeckAudioSnapshot, DeckState, LoopState, SafetyLoopSlot, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
@@ -212,6 +212,9 @@ export interface PerformanceDeckSnapshot {
 	last_load_stages: Record<string, number> | null;
 	stems: StemDeckState;
 	loop: LoopState | null;
+	/** The saved SAFE slot is engine truth, so agents can verify a resize did
+	 * not leave a stale snapshot that natural-end recovery could restore. */
+	safety_loop: SafetyLoopSlot | null;
 	/** Loop cluster view state, so an agent that can drive the interval grid
 	 * can also read back which mode and window it landed on. */
 	loop_interval: { grid_mode: boolean; grid_base: number; choices: number[] };
@@ -905,6 +908,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
+		safety_loop: deck.safety_loop === null ? null : { ...deck.safety_loop },
 		loop_interval: {
 			grid_mode: loopIntervalView[deckId].gridMode,
 			grid_base: loopIntervalView[deckId].gridBase,

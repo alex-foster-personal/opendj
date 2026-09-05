@@ -225,7 +225,9 @@ import type { CamelotKey } from '$lib/player/key/camelot';
 import {
 	exactBeatLoopRangeMs,
 	loopEndpointsWithinDurationMs,
+	phaseLockedSafetyLoopAtTrackEnd,
 	quantizedLoopEndpointsMs,
+	replaceMatchingSafetyLoopSnapshot,
 	shiftLiveBeatLoopRangeMs,
 	targetWithinShiftedLiveLoopMs
 } from '$lib/player/transport/loops';
@@ -1921,22 +1923,15 @@ function _publishPresentedTransport(
 	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
 		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
 		const safety = st.safety_loop;
-		if (
-			safety !== null &&
-			safety.armed &&
-			(st.loop === null || !st.loop.engaged) &&
-			safety.out_ms > safety.in_ms
-		) {
-			const nextLoop: LoopState = {
-				in_ms: safety.in_ms,
-				out_ms: safety.out_ms,
-				engaged: true,
-				beat_length: safety.beat_length
-			};
+		const nextLoop =
+			safety !== null && safety.armed && (st.loop === null || !st.loop.engaged)
+				? phaseLockedSafetyLoopAtTrackEnd(st.anlz?.beatgrid.beats ?? [], safety, rt.durationSec * 1000)
+				: null;
+		if (nextLoop !== null) {
 			void _scheduleDeck(
 				deck,
 				safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
-				safety.in_ms / 1000,
+				nextLoop.in_ms / 1000,
 				true,
 				undefined,
 				undefined,
@@ -3517,12 +3512,17 @@ class RbAudioEngine implements AudioEngine {
 		const grid = _requireBeatGrid(st, 'engageBeatLoop');
 		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
 		const range = exactBeatLoopRangeMs(grid, currentMs, beats, startMs);
+		const previousLoop = st.loop === null ? null : { ...st.loop };
 		await this.setLoop(deck, range);
 		if (st.loop !== null) st.loop.beat_length = beats;
 		const pending = _rt[deck].pending;
 		const pendingLoop = pending[pending.length - 1]?.loop;
 		if (pendingLoop !== null && pendingLoop !== undefined) {
 			pendingLoop.beat_length = beats;
+		}
+		const nextLoop = pendingLoop ?? st.loop;
+		if (previousLoop !== null && nextLoop !== null) {
+			st.safety_loop = replaceMatchingSafetyLoopSnapshot(st.safety_loop, previousLoop, nextLoop);
 		}
 	}
 
