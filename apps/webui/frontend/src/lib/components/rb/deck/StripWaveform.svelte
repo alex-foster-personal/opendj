@@ -71,6 +71,10 @@
 		return null;
 	});
 
+	const loopCues: { in_ms: number; out_ms: number }[] = $derived(
+		deck.hot_cues.flatMap((hc) => (hc.is_loop && hc.out_ms !== null ? [{ in_ms: hc.in_ms, out_ms: hc.out_ms }] : []))
+	);
+
 	// ----------------------------------------------------------- _helpers
 
 	function _pctOf(ms: number): number {
@@ -98,7 +102,8 @@
 			durationMs: deck.duration_ms,
 			waveform: deck.anlz === null ? null : deck.anlz.waveform,
 			vocals,
-			loop: deck.loop
+			loop: deck.loop,
+			loopCues
 		});
 	});
 
