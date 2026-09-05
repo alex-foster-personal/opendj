@@ -101,7 +101,7 @@
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
 	import AddTrackSearch from './browser/AddTrackSearch.svelte';
-	import IconRail from './browser/IconRail.svelte';
+	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
 	import {
@@ -2096,7 +2096,7 @@
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >
-	<IconRail {source} onspotify={selectSpotifySource} />
+	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} />
 	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel
