@@ -28,6 +28,7 @@
  */
 
 import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
+import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import type { RbMeta, TrackQuality } from '$lib/rb/library-types';
 
 // ------------------------------------------------------------ row types
@@ -427,13 +428,14 @@ export function resolveBootPlaylist(args: {
 
 // -------------------------------------------- client search + sort pipeline
 
-/** FR-1 hide-broken filter THEN case-insensitive substring search over
- * title/artist/comments/key/genre (genre falls back to lazy rb_meta).
- *
- * Genre demos (search box / chip clicks):
- *   `genre:House`  - strict: a comma-split genre token equals the tag
- *   `genre:~House` - loose: genre field contains the tag as a substring
- * Plain queries still match across title/artist/comments/key/genre.
+/** FR-1 hide-broken filter THEN the search grammar (browser-search-query.ts,
+ * pin 7ca47b21ead7 / issue #936): case-insensitive substring search over
+ * title/artist/comments/key/genre (genre falls back to lazy rb_meta),
+ * layered with `field:operator:value` predicates over bpm, rating and key,
+ * plus the pre-existing `genre:` / `genre:~` tag filters. See that module's
+ * doc comment for the full grammar; this function only adapts a BrowserRow
+ * into the pure module's SearchableTrack shape (resolving the rb_meta genre
+ * fallback here, since that fallback is BrowserRow-specific).
  *
  * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
  * hide-broken: they are intentional unmatched placeholders, not broken links. */
@@ -442,40 +444,21 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 	const base = hideBroken
 		? rows.filter((r) => r.file_exists || r.is_streaming === true || r.spotify_pending === true)
 		: rows;
-	const raw = query.trim();
-	if (raw === '') return base;
-
-	const genreStrict = /^genre:(?!~)(.+)$/i.exec(raw);
-	if (genreStrict !== null) {
-		const tag = genreStrict[1].trim().toLowerCase();
-		if (tag === '') return base;
-		return base.filter((r) => _genreTokens(r).some((t) => t === tag));
-	}
-	const genreLoose = /^genre:~(.+)$/i.exec(raw);
-	if (genreLoose !== null) {
-		const tag = genreLoose[1].trim().toLowerCase();
-		if (tag === '') return base;
-		return base.filter((r) => {
-			const g = (r.genre ?? r.rb_meta?.genre ?? '').toLowerCase();
-			return g.includes(tag);
-		});
-	}
-
-	const q = raw.toLowerCase();
+	if (query.trim() === '') return base;
 	return base.filter((r) =>
-		[r.title, r.artist, r.comments, r.key, r.genre ?? r.rb_meta?.genre ?? null].some(
-			(field) => field !== null && field.toLowerCase().includes(q)
+		matchesSearchQuery(
+			{
+				title: r.title,
+				artist: r.artist,
+				comments: r.comments,
+				key: r.key,
+				genre: r.genre ?? r.rb_meta?.genre ?? null,
+				bpm: r.bpm,
+				rating: r.rating
+			},
+			query
 		)
 	);
-}
-
-function _genreTokens(row: BrowserRow): string[] {
-	const raw = row.genre ?? row.rb_meta?.genre ?? '';
-	if (raw.trim() === '') return [];
-	return raw
-		.split(',')
-		.map((t) => t.trim().toLowerCase())
-		.filter((t) => t !== '');
 }
 
 /** Comparable cell value for a sort key (null = missing, sorts last). */

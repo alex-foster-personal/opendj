@@ -288,6 +288,35 @@ test('filterRows: genre: strict token vs genre:~ loose substring', () => {
 	);
 });
 
+test('filterRows: bpm/rating/key predicates and multi-term AND (pin 7ca47b21ead7)', () => {
+	const rows = [
+		_row({ stable_id: 'a', artist: 'Daft Punk', bpm: 123, rating: 5, key: '8A' }),
+		_row({ stable_id: 'b', artist: 'Daft Punk', bpm: 90, rating: 5, key: '8A' }),
+		_row({ stable_id: 'c', artist: 'Someone Else', bpm: 123, rating: 5, key: '9A' })
+	];
+	assert.deepEqual(
+		contract.filterRows(rows, 'bpm:120-128', false).map((r) => r.stable_id),
+		['a', 'c']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'rating:>=4', false).map((r) => r.stable_id),
+		['a', 'b', 'c']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'key:8a', false).map((r) => r.stable_id),
+		['a', 'b']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'Daft bpm:120-128 rating:>=4', false).map((r) => r.stable_id),
+		['a']
+	);
+	// Unknown field degrades to substring rather than emptying the table.
+	assert.deepEqual(
+		contract.filterRows(rows, 'foo:bar', false).map((r) => r.stable_id),
+		[]
+	);
+});
+
 // -------------------------------------------------------- sort pipeline
 
 test('sortRows: numeric asc/desc with nulls last in BOTH directions, input not mutated', () => {
