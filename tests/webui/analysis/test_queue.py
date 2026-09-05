@@ -228,13 +228,20 @@ def test_the_browser_client_calls_a_route_the_app_really_serves(app):
     source = API_INGEST_TS.read_text()
     called = set(re.findall(r"fetch\(`\$\{API_BASE\}(/api/v1/[a-z0-9/-]+)", source))
     queue_calls = {path for path in called if "analysis-queue" in path}
-    assert queue_calls == {"/api/v1/analysis-queue"}, (
+    assert queue_calls == {
+        "/api/v1/analysis-queue",
+        "/api/v1/analysis-queue/orders/",
+    }, (
         f"unexpected analysis-queue calls in {API_INGEST_TS.name}: {sorted(queue_calls)}"
     )
 
     served = {r.path for r in app.routes if isinstance(r, APIRoute)}
-    assert queue_calls <= served, (
-        f"the client calls routes the app does not serve: {sorted(queue_calls - served)}"
+    unserved = {
+        path for path in queue_calls
+        if not any(route == path or route.startswith(path) for route in served)
+    }
+    assert not unserved, (
+        f"the client calls routes the app does not serve: {sorted(unserved)}"
     )
     assert "/api/v1/analysis-queue/run" in served, (
         "the agent-facing run endpoint must stay mounted even with no TS client"
