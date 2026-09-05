@@ -99,7 +99,11 @@
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
-	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
+	import {
+		createAutoPlayFeedSnapshot,
+		getAutoPlayRankOf,
+		setAutoPlayTrackFeed
+	} from '$lib/rb/auto-play';
 	import {
 		beginPendingLoadPlay,
 		clearPendingLoadPlay,
@@ -121,6 +125,7 @@
 		derivePlaylistDeckMembership,
 		derivePlaylistPaneOpenCounts,
 		filterRows,
+		installBrowserSortIpc,
 		makeClientRowProvider,
 		multiPanePlaylistIds,
 		reorderPanesInPlace,
@@ -455,6 +460,7 @@
 	}
 
 	function _computeVisibleSearchResult(): VisibleSearchResult {
+		const autoPlayRankOf = pane.sort_key === 'autoplay' ? getAutoPlayRankOf() : undefined;
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
 			return {
@@ -462,14 +468,20 @@
 					sortRows(
 						filterRows(pane.rows, '', uiPrefs.hide_broken_links),
 						pane.sort_key,
-						pane.sort_dir
+						pane.sort_dir,
+						autoPlayRankOf
 					)
 				),
 				ignoredFilters: []
 			};
 		}
 		if (wholeCollectionActive) {
-			const unfilteredRows = sortRows(pane.search_results, pane.sort_key, pane.sort_dir);
+			const unfilteredRows = sortRows(
+				pane.search_results,
+				pane.sort_key,
+				pane.sort_dir,
+				autoPlayRankOf
+			);
 			const fallback = resolveSearchFilterFallback(
 				_applyNextOnly(unfilteredRows),
 				unfilteredRows,
@@ -477,9 +489,9 @@
 			);
 			return fallback;
 		}
-		const unfilteredRows = visibleRowsOf(pane, false);
+		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
 		const fallback = resolveSearchFilterFallback(
-			_applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links)),
+			_applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links, autoPlayRankOf)),
 			unfilteredRows,
 			pane.search.trim() === '' ? [] : _searchFilterNames(true)
 		);
@@ -593,6 +605,14 @@
 	});
 
 	onMount(() => {
+		const uninstallBrowserSortIpc = installBrowserSortIpc({
+			sort: sortBy,
+			query: () => ({
+				sort_key: pane.sort_key,
+				sort_dir: pane.sort_dir,
+				visible_ids: visibleRows.map((row) => row.stable_id)
+			})
+		});
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
 			selectPlaylist: _selectPlaylistFromCommand
 		});
@@ -659,6 +679,7 @@
 		}, LIBRARY_FALLBACK_POLL_MS);
 
 		return () => {
+			uninstallBrowserSortIpc();
 			unregisterPerformanceBrowser();
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
@@ -1571,6 +1592,19 @@
 	const autoPlayFeed = createAutoPlayFeedSnapshot();
 	let autoPlaySnapshotActive = $state(false);
 	let autoPlaySnapshotMatchesView = $state(false);
+
+	// The AutoPlay column is hidden while disabled. Clear its active sort through
+	// each pane's own owner before that happens, so the visible and published feed
+	// return to that pane's natural order rather than a stale rank map. Every pane
+	// is checked, not just the active one: switching tabs never mounts the other
+	// three, so a sort left on an inactive pane would otherwise resurface silently
+	// the next time the user tabs back to it.
+	$effect(() => {
+		if (uiPrefs.auto_play_enabled) return;
+		for (const p of panes) {
+			if (p.sort_key === 'autoplay') p.toggleSort('autoplay');
+		}
+	});
 
 	// Feed AutoPlay from the SORTED, filtered view the user is actually looking
 	// at - not pane.rows, which is raw stored membership and ignored the sort

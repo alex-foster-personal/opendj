@@ -21,7 +21,8 @@ export const COL_DEFAULTS = {
 	energy: 22,
 	genre: 90,
 	stems: 148,
-	autoplay: 46
+	// 12px robot icon with 8px breathing room on each side.
+	autoplay: 28
 } as const;
 
 export type ColId = keyof typeof COL_DEFAULTS;

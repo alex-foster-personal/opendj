@@ -36,6 +36,7 @@ import {
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
 	getAutoPlayPlaylistRevision,
+	registerAutoPlayRankProvider,
 	pickFollowerDeck,
 	pickNextStableId,
 	pickSourceDeck,
@@ -58,6 +59,7 @@ import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	activateAutoPlayQueue,
+	autoPlayOrder,
 	clearAutoPlayOrder,
 	clearAutoPlayQueue,
 	publishAutoPlayOrder
@@ -546,6 +548,7 @@ export function installAutoPlay(): () => void {
 	if (_stopArmWatcher !== null) {
 		throw new Error('auto-play already installed');
 	}
+	const unregisterRankProvider = registerAutoPlayRankProvider(() => autoPlayOrder.rankOf);
 	_stopArmWatcher = $effect.root(() => {
 		$effect(() => {
 			if (uiPrefs.auto_play_enabled) {
@@ -564,6 +567,7 @@ export function installAutoPlay(): () => void {
 		});
 	});
 	return () => {
+		unregisterRankProvider();
 		_stopArmWatcher?.();
 		_stopArmWatcher = null;
 		_stopPoll();

@@ -162,6 +162,11 @@ test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable
 	const { COL_DEFAULTS } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
 	assert.equal(COL_DEFAULTS.key, 36);
 	assert.equal(COL_DEFAULTS.bpm, 42);
+	assert.equal(
+		COL_DEFAULTS.autoplay,
+		28,
+		'AutoPlay uses its compact 12px icon plus 8px side padding'
+	);
 	assert.match(source, /camelot-suffix/);
 	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
 	assert.match(source, /Dynamic key.*not analyzed/);

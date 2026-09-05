@@ -29,26 +29,13 @@
 
 import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
+import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { RbMeta, TrackQuality } from '$lib/rb/library-types';
+import type { SortDir, SortKey } from './browser-sort-ipc';
+export { installBrowserSortIpc } from './browser-sort-ipc';
+export type { SortDir, SortKey } from './browser-sort-ipc';
 
 // ------------------------------------------------------------ row types
-
-/** Sortable column keys (client-side sort - ordering is not server-provided). */
-export type SortKey =
-	| 'order'
-	| 'plays'
-	| 'title'
-	| 'artist'
-	| 'key'
-	| 'bpm'
-	| 'rating'
-	| 'comments'
-	| 'time'
-	| 'energy'
-	| 'genre';
-
-/** Sort direction: 1 = ascending, -1 = descending. */
-export type SortDir = 1 | -1;
 
 /** One browser table row, hydrated INLINE from the listing payloads
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
@@ -287,8 +274,18 @@ export class PaneStore {
 		return true;
 	}
 
-	/** Header click cycle: new key asc → desc → clear (natural order). */
+	/** Header click cycle: ordinary keys asc → desc → clear; AutoPlay asc → clear. */
 	toggleSort(key: SortKey): void {
+		if (key === 'autoplay') {
+			if (this.sort_key === 'autoplay') {
+				this.sort_key = null;
+				this.sort_dir = 1;
+			} else {
+				this.sort_key = 'autoplay';
+				this.sort_dir = 1;
+			}
+			return;
+		}
 		if (this.sort_key !== key) {
 			this.sort_key = key;
 			this.sort_dir = 1;
@@ -481,13 +478,20 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'comments') return row.comments;
 	else if (key === 'time') return row.duration_ms;
 	else if (key === 'energy') return row.energy;
-	else return row.genre ?? row.rb_meta?.genre ?? null;
+	else if (key === 'genre') return row.genre ?? row.rb_meta?.genre ?? null;
+	throw new Error('AutoPlay ranks are not cell values');
 }
 
 /** Stable client sort; nulls last regardless of direction. Returns a
  * new array (never mutates the pane's membership-ordered rows). */
-export function sortRows(rows: BrowserRow[], key: SortKey | null, dir: SortDir): BrowserRow[] {
+export function sortRows(
+	rows: BrowserRow[],
+	key: SortKey | null,
+	dir: SortDir,
+	autoPlayRankOf: ReadonlyMap<string, number> = new Map()
+): BrowserRow[] {
 	if (key === null) return rows;
+	if (key === 'autoplay') return sortRowsByAutoPlayOrder(rows, autoPlayRankOf);
 	return rows.slice().sort((a, b) => {
 		const av = sortValue(a, key);
 		const bv = sortValue(b, key);
@@ -503,8 +507,17 @@ export function sortRows(rows: BrowserRow[], key: SortKey | null, dir: SortDir):
 }
 
 /** The full read pipeline a pane renders: FR-1 filter -> search -> sort. */
-export function visibleRowsOf(pane: PaneStore, hideBroken: boolean): BrowserRow[] {
-	return sortRows(filterRows(pane.rows, pane.search, hideBroken), pane.sort_key, pane.sort_dir);
+export function visibleRowsOf(
+	pane: PaneStore,
+	hideBroken: boolean,
+	autoPlayRankOf: ReadonlyMap<string, number> = new Map()
+): BrowserRow[] {
+	return sortRows(
+		filterRows(pane.rows, pane.search, hideBroken),
+		pane.sort_key,
+		pane.sort_dir,
+		autoPlayRankOf
+	);
 }
 
 /** Writes a decoded strip into every matching row in every pane, ALWAYS overwriting - the audience-ambiguous sidecar (TECH-DEBT.md) never outranks /anlz's own audience-scoped decode. */

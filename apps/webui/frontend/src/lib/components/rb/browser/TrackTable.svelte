@@ -464,6 +464,7 @@
 	});
 
 	const apCurveX = $derived(Math.max(8, colWidths.autoplay / 2));
+	const apCurveArrowId = $derived(`ap-curve-arrow-${restoreKey}`);
 
 	/** r3919185343: `table-layout: fixed` at `width: 100%` redistributes any
 	 * extra space beyond the configured column total across the columns on a
@@ -883,29 +884,35 @@
 							title={autoPlayQueue.active
 								? `AutoPlay queue - ${autoPlayQueue.entries.length} planned handoff${autoPlayQueue.entries.length === 1 ? '' : 's'}`
 								: 'AutoPlay queue - starts when AutoPlay is enabled'}
-							aria-label="AutoPlay order"
 							data-autoplay-queue-active={autoPlayQueue.active}
 						>
 							<AutoPlayExplainer queue={autoPlayQueue.entries}>
 								{#snippet demo()}
 									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
 								{/snippet}
-								<svg
-									class="autoplay-icon"
-									viewBox="0 0 16 16"
-									width="12"
-									height="12"
-									aria-hidden="true"
+								<button
+									class="autoplay-sort"
+									aria-pressed={sortKey === 'autoplay'}
+									aria-label={sortKey === 'autoplay' ? 'AutoPlay order, sorted 1 to n - activate to restore pane order' : 'AutoPlay order - activate to sort 1 to n'}
+									onclick={() => onsort('autoplay')}
 								>
-									<path
-										d="M8 1.5v2M5.5 2.5h5M4 5.5h8v6H4zM6.25 8h.01M9.75 8h.01M6.25 10h3.5M2.5 7.5H4M12 7.5h1.5"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="1.25"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
+									<svg
+										class="autoplay-icon"
+										viewBox="0 0 16 16"
+										width="12"
+										height="12"
+										aria-hidden="true"
+									>
+										<path
+											d="M8 1.5v2M5.5 2.5h5M4 5.5h8v6H4zM6.25 8h.01M9.75 8h.01M6.25 10h3.5M2.5 7.5H4M12 7.5h1.5"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</button>
 							</AutoPlayExplainer>
 						</th>
 					{/if}
@@ -1376,12 +1383,18 @@
 				aria-hidden="true"
 				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.funnel + colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
+				<defs>
+					<marker id={apCurveArrowId} viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto">
+						<path d="M0 0L6 3L0 6z" class="ap-curve-arrow" />
+					</marker>
+				</defs>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
 					<path
 						d={segmentPath(seg, apCurveX)}
 						class="ap-curve-seg"
 						class:skips={seg.skips}
 						fill="none"
+						marker-end={`url(#${apCurveArrowId})`}
 					/>
 					<circle
 						cx={apCurveX}
@@ -1474,6 +1487,14 @@
 	.ap-rank:focus {
 		color: var(--rb-accent);
 	}
+	.autoplay-sort {
+		display: inline-flex;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+	}
 	.h-autoplay :global(.ap-explain-wrap) {
 		color: inherit;
 	}
@@ -1506,6 +1527,9 @@
 	}
 	.ap-curve-node.hot {
 		opacity: 1;
+	}
+	.ap-curve-arrow {
+		fill: var(--rb-accent);
 	}
 
 	.tt-root {

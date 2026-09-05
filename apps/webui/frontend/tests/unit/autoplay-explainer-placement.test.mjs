@@ -65,6 +65,16 @@ test('TrackTable still owns the AutoPlay column trigger through the shared expla
 	assert.notEqual(start, -1, 'AutoPlay header is missing');
 	const header = trackTable.slice(trackTable.lastIndexOf('<th', start), trackTable.indexOf('</th>', start));
 	assert.match(header, /<AutoPlayExplainer/);
+	assert.match(header, /<button\s+class="autoplay-sort"/);
+	assert.match(header, /aria-pressed=\{sortKey === 'autoplay'\}/);
+});
+
+test('AutoPlay header delegates one-click ascending and clear behavior to the pane owner', () => {
+	assert.match(trackTable, /onclick=\{\(\) => onsort\('autoplay'\)\}/);
+	assert.doesNotMatch(trackTable, /autoPlayColumnSorted/);
+	assert.match(trackTable, /const apCurveArrowId = \$derived\(`ap-curve-arrow-\$\{restoreKey\}`\)/);
+	assert.match(trackTable, /<marker id=\{apCurveArrowId\}/);
+	assert.match(trackTable, /marker-end=\{`url\(#\$\{apCurveArrowId\}\)`\}/);
 });
 
 test('every static TrackTable header uses the shared body-portal action, never a native title', () => {
