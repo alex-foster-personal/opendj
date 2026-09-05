@@ -69,24 +69,21 @@ control arm, not the final browser-engine verdict.
 
 ### WebKit-truthful UI loop
 
-Start the production-bundle watcher first and wait for its initial `built in`
-line:
+Run the coupled production-bundle watcher and engine:
 
 ```sh
-cd apps/webui/frontend
-pnpm build --watch
+just webui-webkit-watch
 ```
 
-Only then start `just webui-backend` in another terminal. The engine chooses
-between the SPA mount and its no-build placeholder at startup, so starting it
-before the initial build would leave Safari on the placeholder until the
-engine restarts.
+The recipe runs `pnpm build --watch`, waits for its initial production build,
+then starts the reloadable engine with `MDT_FRONTEND_BUILD_DIR` pointed at that
+bundle. Keep this terminal running. On every save, Vite rebuilds the same
+production output that the engine is already serving. If the watcher exits or
+does not finish its initial build within 12 seconds, the loop fails loudly.
 
 Open the claimed backend URL in Safari. The engine serves the rebuilt bundle,
 so Safari exercises the system WebKit and the same production transforms used
-by the packaged interface. DEVLOOP-03 (#852) owns reliable persistent watch
-mode. Until it lands, treat a stopped watcher as an explicit failure and rerun
-`pnpm build` after the next save; the engine continues serving that output.
+by the packaged interface.
 
 ### Engine loop
 

@@ -72,7 +72,7 @@ def test_ui_only_webkit_truth_requires_no_cargo_build_or_dmg() -> None:
 
     assert "pnpm build --watch" in webkit_loop
     assert "Safari" in webkit_loop
-    assert webkit_loop.index("pnpm build --watch") < webkit_loop.index("just webui-backend")
+    assert "just webui-webkit-watch" in webkit_loop
     assert "cargo" not in webkit_loop.lower()
     assert "dmg" not in webkit_loop.lower()
 
