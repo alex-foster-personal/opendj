@@ -32,11 +32,14 @@ function _position(deck: ReturnType<typeof queryPerformanceState>['decks'][1]): 
 	phrase: number | null;
 } {
 	const beat = [...deck.beatgrid].reverse().find((row) => row.time_ms <= deck.position_ms);
-	if (beat === undefined) return { ms: deck.position_ms, bars_beats: null, phrase: null };
+	const phrase = deck.phrases.findIndex((row, index) =>
+		row.start_ms <= deck.position_ms && (index === deck.phrases.length - 1 || deck.phrases[index + 1].start_ms > deck.position_ms)
+	);
+	if (beat === undefined) return { ms: deck.position_ms, bars_beats: null, phrase: phrase < 0 ? null : phrase + 1 };
 	return {
 		ms: deck.position_ms,
 		bars_beats: `${Math.floor((beat.n - 1) / 4) + 1}.${((beat.n - 1) % 4) + 1}`,
-		phrase: Math.floor((beat.n - 1) / 32) + 1
+		phrase: phrase < 0 ? null : phrase + 1
 	};
 }
 
@@ -56,7 +59,8 @@ export function buildUiMirror(): Record<string, unknown> {
 				audible: deck.audible && silence.verdict !== 'silent-while-playing',
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
 				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
-				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems
+				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
+				phrases: deck.phrases
 			}])
 		),
 		browser: { playlist: state.browser.active_playlist, search: null, sort: null, selected_row: null, visible_rows_count: document.querySelectorAll('.track-row, [role="row"]').length },

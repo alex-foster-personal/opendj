@@ -217,6 +217,8 @@ export interface PerformanceDeckSnapshot {
 	loop_interval: { grid_mode: boolean; grid_base: number; choices: number[] };
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
+	/** Real AnlzPhrase boundaries lifted for agent phrase-time planning. */
+	phrases: Array<{ start_ms: number; end_ms: number; kind: number; mood: number }>;
 	hot_cue_slots: Array<{ slot: HotCueSlot; cue: HotCue | null; revision: string }>;
 	hot_cue_reversal: { slot: HotCueSlot; revision: string; reversal_id: string } | null;
 	/** #884: a hot_cue_trigger currently waiting for this deck's own next
@@ -910,6 +912,12 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		},
 		beatgrid: beatgrid.beatgrid,
 		beatgrid_ms: beatgrid.beatgrid_ms,
+		phrases: deck.anlz?.phrases?.map((phrase) => ({
+			start_ms: phrase.start_s * 1000,
+			end_ms: phrase.end_s * 1000,
+			kind: phrase.kind,
+			mood: phrase.mood
+		})) ?? [],
 		hot_cue_slots: (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as HotCueSlot[]).map((slot) => ({
 			slot,
 			cue: deck.hot_cues.find((cue) => cue.slot === slot) ?? null,

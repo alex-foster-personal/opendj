@@ -4,6 +4,9 @@ import {
 	queryPerformanceState,
 	type PerformanceCommand
 } from './performance-ipc.svelte';
+import { durationProgress, resolveDuration, type Duration } from './agent-duration';
+
+type ClockDeck = 1 | 2 | 3 | 4;
 
 const NEXT_ORDER_PATH = '/api/v1/commands/next';
 const IDLE_POLL_MS = 50;
@@ -60,22 +63,30 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 	if (typeof ramp.to !== 'number' || !Number.isFinite(ramp.to) || ramp.to < 0 || ramp.to > 1) {
 		throw new RangeError('ramp to must be a finite 0..1 control value');
 	}
-	const over = ramp.over as Record<string, unknown> | undefined;
-	if (over === undefined || typeof over.beats !== 'number' || !Number.isFinite(over.beats) || over.beats <= 0) {
-		throw new TypeError('ramp over must declare positive beats');
-	}
-	const clockDeck = typeof ramp.clock_deck === 'number' ? ramp.clock_deck : command.deck;
-	if (clockDeck !== 1 && clockDeck !== 2 && clockDeck !== 3 && clockDeck !== 4) throw new RangeError('clock_deck must be 1..4');
 	const before = queryPerformanceState();
-	const bpm = before.decks[clockDeck].effective_bpm;
-	if (bpm === null || bpm <= 0) throw new Error('ramp clock deck requires a positive effective BPM');
+	const over = ramp.over as Duration | undefined;
+	if (over === undefined) throw new TypeError('ramp over must declare a Duration');
+	const clockDeck: ClockDeck | null = over.clock === undefined || over.clock === 'master'
+		? before.master_deck
+		: over.clock as ClockDeck;
+	if (clockDeck === null) throw new Error('no_master');
+	const clock = before.decks[clockDeck];
+	const plan = resolveDuration(over, {
+		position_ms: clock.position_ms,
+		beatgrid: clock.beatgrid,
+		phrases: clock.phrases
+	});
+	if (over.unit !== 'ms' && !clock.playing) throw new Error('clock_not_playing');
 	const start = command.type === 'eq' ? before.mixer.channels[command.deck][`eq_${command.band}`] : before.mixer.channels[command.deck][command.type];
-	const durationMs = over.beats * 60_000 / bpm;
-	const ticks = Math.max(1, Math.ceil(durationMs / 16));
-	for (let tick = 1; tick <= ticks; tick += 1) {
-		const value = start + (ramp.to - start) * tick / ticks;
+	const startedAt = performance.now();
+	while (true) {
+		const progress = over.unit === 'ms'
+			? Math.min(1, (performance.now() - startedAt) / over.n)
+			: durationProgress(plan, queryPerformanceState().decks[clockDeck].position_ms);
+		const value = start + (ramp.to - start) * progress;
 		await dispatchPerformanceCommand({ ...command, value });
-		if (tick < ticks) await new Promise<void>((resolve) => window.setTimeout(resolve, durationMs / ticks));
+		if (progress === 1) break;
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
 	}
 	return { status: 'succeeded' };
 }
