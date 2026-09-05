@@ -147,7 +147,7 @@
 	}
 	.meta {
 		margin-left: 3px;
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		min-width: 0;

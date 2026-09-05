@@ -461,6 +461,6 @@
 	}
 	.qd-empty {
 		padding: 8px 10px;
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 	}
 </style>

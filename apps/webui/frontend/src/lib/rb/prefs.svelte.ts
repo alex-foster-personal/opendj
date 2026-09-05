@@ -21,6 +21,7 @@ import {
 } from './deck-layout-prefs';
 import { parseAutoSync, parseLastPlaylist } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
+import { validateActiveScheme } from './theme-tokens';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
@@ -156,6 +157,7 @@ function _applyThemeDom(theme: UiTheme): void {
 	if (typeof document === 'undefined') return;
 	document.documentElement.dataset.theme = theme;
 	document.documentElement.style.colorScheme = theme;
+	validateActiveScheme(theme);
 }
 
 function _load(): RbUiPrefs {

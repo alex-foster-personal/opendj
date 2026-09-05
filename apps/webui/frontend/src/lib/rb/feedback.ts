@@ -25,6 +25,10 @@
  *     [if] flush() drops a pending value [then ⛔️] broken
  *   ✔︎ 🎯 pinFromClient: a viewport click becomes 0..100 percents, clamped.
  *     [if] a click at the exact bottom-right corner exceeds 100 [then ⛔️] broken
+ *   ✔︎ 🎯 pinBodyPos: a reopened/hovered pin body's MEASURED size is clamped
+ *     fully on-viewport (issue #928), reusing clampPanelPos.
+ *     [if] a pin near the bottom or a side opens with its body off-screen
+ *       [then ⛔️] broken
  *   ✔︎ 🎯 pinStatus/isPinDrawn/pinIsDone: a pin with no status is open, an
  *     unknown status is open, only archived leaves the canvas, and only a
  *     fixed/merged pin offers Archive and Follow-on.
@@ -219,6 +223,33 @@ export function pinBodyStyle(pin: PinPoint): string {
     `left:min(${pin.x_pct}%, max(0px, calc(100vw - 252px)));` +
     `top:min(${pin.y_pct}%, max(0px, calc(100vh - 320px)))`
   );
+}
+
+/**
+ * Where a pin's body sits, from its ACTUAL rendered size rather than the
+ * fixed 252x320 guess `pinBodyStyle` uses. The guess is safe (it always
+ * over-reserves) but wrong: `.fb-pin-body` renders at 240px wide with the
+ * repo-wide `box-sizing: border-box`, and its true height is whatever the
+ * pin's own text and agent note measure, almost always well under the
+ * 320px max-height cap. Reserving the cap every time nudges a short pin's
+ * body further from its marker than the body actually needs.
+ *
+ * `clampPanelPos` (issue #928 review) already solves exactly this problem
+ * for the review panel, so this composes it rather than inventing a second
+ * clamp: the pin's percent point becomes a px position against the live
+ * viewport, then that position is clamped fully on-screen by the caller's
+ * MEASURED panel size (`FeedbackPinCard`'s own `getBoundingClientRect()`).
+ */
+export function pinBodyPos(
+  pin: PinPoint,
+  panel: { w: number; h: number },
+  viewport: { w: number; h: number },
+): PanelPos {
+  const pos = {
+    x: (pin.x_pct / 100) * viewport.w,
+    y: (pin.y_pct / 100) * viewport.h,
+  };
+  return clampPanelPos(pos, panel, viewport);
 }
 
 // ----- pin lifecycle (issue #858) ----------------------------------------

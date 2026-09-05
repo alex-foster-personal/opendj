@@ -66,7 +66,7 @@
 		border: 1px solid var(--rb-border, #23282f);
 		border-radius: 3px;
 		background: var(--rb-panel-raised, #1a1e25);
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 		font-size: 9px;
 		line-height: 15px;
 		white-space: nowrap;
@@ -87,7 +87,7 @@
 
 	/* ---- the ramp: dim at the bottom rung, lit at the top ---- */
 	.q-unknown {
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 		border-style: dashed;
 		background: transparent;
 	}
@@ -99,7 +99,7 @@
 	}
 
 	.q-lounge {
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 		border-color: var(--rb-border, #23282f);
 	}
 

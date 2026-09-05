@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
+	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
 	let {
@@ -16,6 +16,45 @@
 
 	let pinBodyElement: HTMLDivElement | null = $state(null);
 
+	/** Set once the card's REAL size is measured; null until then and again
+	 * whenever a DIFFERENT pin's body reuses this same mounted instance
+	 * (switching straight from one open marker to another skips the
+	 * `{#if bodyPin !== null}` unmount in FeedbackWidget). `bodyStyle` below
+	 * falls back to `pinBodyStyle`'s fixed guess for that gap, same as
+	 * before this pin ever gets measured. */
+	let measuredPos: { x: number; y: number } | null = $state(null);
+
+	/** `pinBodyStyle`'s fixed 252x320 guess until measured for real - a
+	 * `$derived` (not a stored initial value) so it re-reads `pin` on every
+	 * prop change, not just at mount. */
+	const bodyStyle = $derived.by(() => {
+		const pos = measuredPos;
+		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+	});
+
+	/** Re-clamp against the card's REAL measured size, not the guess. Runs
+	 * once pinBodyElement mounts, again whenever `pin` changes (a different
+	 * marker opened into this same instance), and again on every resize,
+	 * since a viewport resize can turn an on-screen position into an
+	 * off-screen one. */
+	function _reposition(): void {
+		if (pinBodyElement === null) return;
+		const rect = pinBodyElement.getBoundingClientRect();
+		measuredPos = pinBodyPos(
+			pin,
+			{ w: rect.width, h: rect.height },
+			{ w: window.innerWidth, h: window.innerHeight }
+		);
+	}
+
+	$effect(() => {
+		// Reset so a newly-swapped-in pin repaints from the guess for one
+		// frame rather than briefly showing the PREVIOUS pin's measured spot.
+		void pin;
+		measuredPos = null;
+		if (pinBodyElement !== null) _reposition();
+	});
+
 	/** An outside pointer closes only this reopened card. The widget owns a
 	 * separate new-pin draft, so it remains intact. Pointerdown precedes a
 	 * marker click, letting another marker reopen its own card immediately. */
@@ -26,11 +65,11 @@
 	}
 </script>
 
-<svelte:window onpointerdowncapture={handleOutsidePinPointerDown} />
+<svelte:window onpointerdowncapture={handleOutsidePinPointerDown} onresize={_reposition} />
 
 <div
 	class="fb-pin-body"
-	style={pinBodyStyle(pin)}
+	style={bodyStyle}
 	role="dialog"
 	aria-label="Comment pin"
 	bind:this={pinBodyElement}
