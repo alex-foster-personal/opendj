@@ -10,6 +10,7 @@ import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
 import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
 
 const HOVER_ARM_MS = 250;
 const MIN_BEATS = 1;
@@ -42,12 +43,6 @@ export function clearLoopHover(deck: DeckId): void {
 		clearTimeout(hoverTimer);
 		hoverTimer = null;
 	}
-}
-
-function _typingTarget(t: EventTarget | null): boolean {
-	if (!(t instanceof HTMLElement)) return false;
-	const tag = t.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
 }
 
 function _resolveTransportDeck(): DeckId | null {
@@ -116,7 +111,7 @@ async function _exitLast(): Promise<void> {
 export function installPerformanceHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
 		if (isSettingsOpen()) return;
-		if (_typingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.code === 'Space' || e.key === ' ') {
 			e.preventDefault();
 			void _toggleRecentPlay();
