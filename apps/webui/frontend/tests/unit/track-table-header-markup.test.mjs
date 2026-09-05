@@ -22,9 +22,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const table = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
+	'utf8'
+);
+const qualityBadge = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/QualityBadge.svelte', import.meta.url)),
 	'utf8'
 );
 
@@ -61,4 +66,17 @@ test('it uses the same h-icon convention as its narrow neighbours', () => {
 	assert.ok(iconHeaders.length >= 5, `only ${iconHeaders.length} h-icon headers`);
 	assert.ok(table.includes('class="h-icon h-err"'));
 	assert.ok(table.includes('class="h-icon h-art"'));
+});
+
+test('the quality column is compact QLT with a full custom explanation', async () => {
+	const { COL_DEFAULTS } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
+	assert.equal(COL_DEFAULTS.quality, 34);
+	assert.match(
+		table,
+		/use:columnExplainer=\{\{ text: "QLT - audio quality as the biggest venue this file survives/
+	);
+	assert.match(table, /<span class="th-label"><span>QLT<\/span><\/span>/);
+	assert.match(table, /<QualityBadge quality=\{row\.quality\} compact showContainer=\{false\} \/>/);
+	assert.match(qualityBadge, /compact \? full\.slice\(0, 1\)\.toUpperCase\(\) : full/);
+	assert.match(qualityBadge, /class:compact/);
 });

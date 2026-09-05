@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const table = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
@@ -53,7 +54,11 @@ test('Energy cell renders the row value undimmed and dims when absent', () => {
 	assert.match(cell, /class:energy-unset=\{row\.energy === null\}/, 'no dim state for a missing energy value');
 });
 
-test('Energy column has a COL_DEFAULTS width entry and a matching <col>', () => {
-	assert.match(table, /energy:\s*\d+/, 'no energy width in COL_DEFAULTS');
+test('Energy column has a COL_DEFAULTS width entry and a matching <col>', async () => {
+	// COL_DEFAULTS moved to the shared $lib/rb/library-column-widths module
+	// (pin batch: compact library display) so every column's default width
+	// has one source of truth instead of a copy baked into this component.
+	const { COL_DEFAULTS } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
+	assert.equal(typeof COL_DEFAULTS.energy, 'number', 'no energy width in COL_DEFAULTS');
 	assert.match(table, /<col style=\{`width:\$\{colWidths\.energy\}px`\} \/>/);
 });

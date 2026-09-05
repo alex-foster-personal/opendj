@@ -1,41 +1,48 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import test from 'node:test';
-
+import { readFile } from 'node:fs/promises';
+import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const TRACK_TABLE = fileURLToPath(
-	new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)
-);
-
-const widths = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
-const source = readFileSync(TRACK_TABLE, 'utf8').replaceAll('\r\n', '\n');
-
-test('compactOrderWidth fits the largest materialized order without excess width', () => {
-	assert.equal(widths.compactOrderWidth(19), 24);
-	assert.equal(widths.compactOrderWidth(8558), 32);
-	assert.equal(widths.compactOrderWidth(100000), 42);
-	assert.equal(widths.compactOrderWidth(0), 24);
-});
-
-test('compactOrderWidth rejects values that cannot be rendered as row order', () => {
-	for (const value of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-		assert.throws(() => widths.compactOrderWidth(value), /non-negative safe integer/);
+test('compact utility columns fit real analysis grids and keep room for row numbers', async () => {
+	const { compactUtilityWidths } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
+	assert.deepEqual(compactUtilityWidths(19), { funnel: 18, err: 20, cloud: 16, order: 24 });
+	assert.equal(compactUtilityWidths(8558).order, 32);
+	assert.equal(compactUtilityWidths(100000).order, 42);
+	assert.equal(compactUtilityWidths(0).order, 24);
+	for (const invalid of [-1, 1.5, NaN, Infinity]) {
+		assert.throws(() => compactUtilityWidths(invalid), /non-negative safe integer/);
 	}
 });
 
-test('TrackTable changes only the order width and keeps the narrow order column centered', () => {
-	assert.match(source, /import \{ compactOrderWidth \} from '\$lib\/rb\/library-column-widths'/);
-	assert.match(source, /const maxRowOrder = \$derived\(rows\.reduce\(/);
-	assert.match(
-		source,
-		/colWidths = \{ \.\.\.untrack\(\(\) => colWidths\), order: compactOrderWidth\(maxRowOrder\) \}/,
-		'order-width refresh must preserve every user-resized content column'
+test('compact musical columns fit displayed key and BPM text without widening defaults', async () => {
+	const { autoMusicalWidths, compactMusicalWidths, COL_DEFAULTS } = await loadTypeScriptModule(
+		'src/lib/rb/library-column-widths.ts'
 	);
-	assert.match(source, /\.h-order \.th-label \{[\s\S]*?justify-content: center;[\s\S]*?padding: 0 2px;/);
-	assert.match(source, /\.c-order \{[\s\S]*?text-align: center;[\s\S]*?font-variant-numeric: tabular-nums;[\s\S]*?padding: 0 2px;/);
+	// Real WebKit measurement: a rendered 10B needs 29.23px and 124 needs 33px
+	// after the table cell's existing horizontal padding.
+	assert.deepEqual(compactMusicalWidths([]), { key: 30, bpm: 33 });
+	assert.deepEqual(compactMusicalWidths([{ key: '8A', bpm: 120 }, { key: '12B', bpm: 128.4 }]), {
+		key: 30,
+		bpm: 33
+	});
+	assert.deepEqual(compactMusicalWidths([{ key: 'unparsed-key', bpm: 12345 }]), {
+		key: COL_DEFAULTS.key,
+		bpm: COL_DEFAULTS.bpm
+	});
+	assert.deepEqual(
+		autoMusicalWidths({ key: 31, bpm: 39 }, { key: 30, bpm: 33 }, new Set(['key'])),
+		{ key: 31, bpm: 33 }
+	);
 });
 
-// Regression: if order width changes any other column or clips the largest row
-// number then the pin is broken.
+test('auto-fit follows viewport and row-number changes while preserving manually resized columns', async () => {
+	const source = await readFile('src/lib/components/rb/browser/TrackTable.svelte', 'utf8');
+	assert.match(source, /const maxRowOrder = \$derived\(rows\.reduce/);
+	assert.match(source, /const compact = compactUtilityWidths\(maxRowOrder\);/);
+	assert.match(source, /const musical = compactMusicalWidths\(rows\);/);
+	assert.match(source, /autoMusicalWidths\(current, musical, manuallyResizedColumns\)/);
+	assert.match(source, /manuallyResizedColumns\.add\(col\)/);
+	assert.match(source, /void wrapWidth;/);
+	assert.match(source, /\.c-funnel,[\s\S]*?\.c-cloud \{\s*padding: 0 2px;/);
+	assert.match(source, /\.c-order \{\s*font-size: 9px;\s*padding: 0 2px;/);
+});

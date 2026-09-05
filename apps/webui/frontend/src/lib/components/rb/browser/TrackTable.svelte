@@ -28,9 +28,9 @@
 	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
+	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
-	import { compactOrderWidth } from '$lib/rb/library-column-widths';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
@@ -71,55 +71,13 @@
 	const ROW_HEIGHT_COSY = 30;
 	const OVERSCAN = 10;
 
-	type ColId =
-		| 'funnel'
-		| 'err'
-		| 'cloud'
-		| 'order'
-		| 'preview'
-		| 'art'
-		| 'title'
-		| 'artist'
-		| 'key'
-		| 'bpm'
-		| 'plays'
-		| 'rating'
-		| 'comments'
-		| 'time'
-		| 'quality'
-		| 'energy'
-		| 'genre'
-		| 'stems'
-		| 'autoplay';
-
 	// ----- AUTOPLAY-COL -----------------------------------------------------
 	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
 	const AUTOPLAY_THEAD_H = 20;
 
-	const COL_DEFAULTS: Record<ColId, number> = {
-		funnel: 24,
-		err: 24,
-		cloud: 24,
-		order: 34,
-		preview: 177,
-		art: 54,
-		title: 220,
-		artist: 140,
-		key: 36,
-		bpm: 42,
-		plays: 36,
-		rating: 80,
-		comments: 110,
-		time: 48,
-		quality: 92,
-		energy: 22,
-		genre: 90,
-		stems: 148,
-		autoplay: 46
-	};
-
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
+	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
 	let resizeStartX = 0;
 	let resizeStartW = 0;
@@ -144,14 +102,15 @@
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		resizeCol = col;
+		manuallyResizedColumns.add(col);
 		resizeStartX = event.clientX;
 		resizeStartW = colWidths[col];
 	}
 
 	function onColResizeMove(event: PointerEvent): void {
 		if (resizeCol === null) return;
-		const minWidth = resizeCol === 'order' ? compactOrderWidth(maxRowOrder) : 28;
-		const next = Math.max(minWidth, resizeStartW + (event.clientX - resizeStartX));
+		const minimum = Math.min(28, COL_DEFAULTS[resizeCol]);
+		const next = Math.max(minimum, resizeStartW + (event.clientX - resizeStartX));
 		colWidths = { ...colWidths, [resizeCol]: next };
 	}
 
@@ -458,17 +417,23 @@
 	}
 
 	const rows = $derived(provider.rows);
-	const maxRowOrder = $derived(rows.reduce((maximum, row) => Math.max(maximum, row.order), 0));
+	const maxRowOrder = $derived(rows.reduce((max, row) => Math.max(max, row.order), 0));
+	$effect(() => {
+		const compact = compactUtilityWidths(maxRowOrder);
+		const musical = compactMusicalWidths(rows);
+		void wrapWidth;
+		// Manual K/B drags stay authoritative; other utility widths reflow with data.
+		const current = untrack(() => colWidths);
+		colWidths = {
+			...current,
+			...compact,
+			...autoMusicalWidths(current, musical, manuallyResizedColumns)
+		};
+	});
 	const selectedIdSet = $derived(new Set(selectedIds));
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
-
-	$effect(() => {
-		const orderWidth = compactOrderWidth(maxRowOrder);
-		if (untrack(() => colWidths.order) === orderWidth) return;
-		colWidths = { ...untrack(() => colWidths), order: compactOrderWidth(maxRowOrder) };
-	});
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
@@ -1066,9 +1031,9 @@
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						use:columnExplainer={{ text: 'biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps' }}
+						use:columnExplainer={{ text: "QLT - audio quality as the biggest venue this file survives, from effective bitrate (size over duration) and container. The badge shows the rung's initial and its colour; hover a badge for the full rung name, the kbps and the container" }}
 					>
-						<span class="th-label"><span>Venue</span></span>
+						<span class="th-label"><span>QLT</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -1344,7 +1309,9 @@
 							class="c-plays"
 							title="play count (rekordbox history + djay)"
 						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
-						<td class="c-rating">
+						<!-- The cell hands its own width to CSS so the stars can
+						     tighten then shrink to fit it (pin 8f60606750c6). -->
+						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
 						</td>
 						<td class="c-comments" title={row.comments ?? ''}>
@@ -1354,7 +1321,7 @@
 						</td>
 						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
-							<QualityBadge quality={row.quality} />
+							<QualityBadge quality={row.quality} compact showContainer={false} />
 						</td>
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
@@ -1670,6 +1637,16 @@
 		font-weight: 600;
 		letter-spacing: 0.02em;
 	}
+	thead th:nth-child(-n + 3),
+	.c-funnel,
+	.c-err,
+	.c-cloud {
+		padding: 0 2px;
+	}
+	thead th:nth-child(4) .th-label {
+		padding: 0 2px;
+		font-size: 9px;
+	}
 	th.sortable {
 		padding: 0;
 		cursor: pointer;
@@ -1927,8 +1904,36 @@
 	.c-plays {
 		font-size: 10px;
 	}
+	.c-order {
+		font-size: 9px;
+		padding: 0 2px;
+	}
 
+	/* Five stars are a fixed-width control, so truncating them is never the
+	 * right answer: at 11px with 1px gaps they come to ~67px of advance width
+	 * inside 68px of usable cell, and the generic td rule then hangs an
+	 * ellipsis off the sliver that did not fit - all five stars painted, and a
+	 * '..' after them (pin 8f60606750c6, the maintainer, Wed 2 Sep 2026).
+	 *
+	 * Two stages, in the order the pin asks for: give back the 1px gaps first,
+	 * and only shrink the glyphs once there is no gap left to give. Both
+	 * measure against --rating-w, which the cell publishes from colWidths -
+	 * state the table already owns, so no ResizeObserver and no layout read.
+	 * STAR_ADV (1.2em) is the ★ glyph's advance, which is wider than 1em; using
+	 * 1em here would under-measure and let the overflow back in. */
+	.c-rating {
+		--rating-avail: calc(var(--rating-w, 80px) - 2 * var(--tt-td-pad-x));
+		/* Four gaps, each tripled for unrated stars. */
+		--rb-star-gap: clamp(
+			0px,
+			calc((var(--rating-avail) - 5 * 1.2 * var(--rb-fs-browser)) / 12),
+			1px
+		);
+		--rb-star-size: min(var(--rb-fs-browser), calc(var(--rating-avail) / 6));
+		text-overflow: clip;
+	}
 	.c-quality {
+		padding: 0 2px;
 		overflow: hidden;
 		white-space: nowrap;
 	}
@@ -1946,6 +1951,15 @@
 		fill: currentColor;
 	}
 	.energy-glyph { display: none; }
+	/* At the compact 34px default the base 6-8px td/th padding plus
+	 * .th-label's own inner padding leaves too little room for the "QLT"
+	 * label and clips the compact badge's border (the maintainer, review thread on
+	 * PR #1095): give this column the same tight 2px treatment as the
+	 * funnel/err/cloud utility columns instead of widening it back out. */
+	.h-quality,
+	.h-quality .th-label {
+		padding: 0 2px;
+	}
 	.c-order .grip {
 		margin-right: 2px;
 		font-size: 8px;
@@ -2050,7 +2064,8 @@
 		border-radius: 1px;
 	}
 
-	/* preview cell hosts the hover deck-load buttons */
+	/* The loader opens only from artwork or title. It is fixed to escape the
+	 * scrolling table and flips below a top-row trigger when needed. */
 	.c-preview {
 		position: relative;
 	}
@@ -2089,25 +2104,6 @@
 		margin-right: 2px;
 		white-space: nowrap;
 	}
-	.deck-btns button {
-		width: 16px;
-		height: 16px;
-		padding: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		color: var(--rb-text);
-		font-size: 9px;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.deck-btns button:hover {
-		background: var(--rb-accent);
-		color: #fff;
-	}
 	/* Per-deck state on the quick-load targets, per the pin: dim by default
 	   (empty deck = blank, no extra class), yellow border while that deck is
 	   master, the shared loading-wheel spinner while a command for that deck
@@ -2134,8 +2130,13 @@
 		color: var(--rb-red);
 		font-size: 11px;
 		font-weight: 700;
+		line-height: 1;
+		cursor: pointer;
 	}
-	.deck-btns button.remove-btn:hover {
+	tbody tr:hover .row-remove {
+		display: block;
+	}
+	.row-remove:hover {
 		background: var(--rb-red);
 		color: #fff;
 	}

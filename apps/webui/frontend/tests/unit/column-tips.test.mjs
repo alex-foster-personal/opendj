@@ -154,9 +154,14 @@ test('no header inlines its own copy of a tip string', () => {
 	}
 });
 
-test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable dynamic analysis', () => {
-	assert.match(source, /key: 36/);
-	assert.match(source, /bpm: 42/);
+test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable dynamic analysis', async () => {
+	// COL_DEFAULTS moved to the shared $lib/rb/library-column-widths module
+	// (pin batch: compact library display), so the 36/42px widths are asserted
+	// against that module rather than a literal `key: 36` in this component's
+	// own source - see the equivalent fix in track-table-energy-column.test.mjs.
+	const { COL_DEFAULTS } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
+	assert.equal(COL_DEFAULTS.key, 36);
+	assert.equal(COL_DEFAULTS.bpm, 42);
 	assert.match(source, /camelot-suffix/);
 	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
 	assert.match(source, /Dynamic key.*not analyzed/);
