@@ -504,3 +504,4 @@ def test_contained_asset_path_revalidates_share_containment_after_directory_repl
     assert first.resolved == target
     assert second.resolved is None
     assert second.reason == "unsafe:share-symlink"
+
