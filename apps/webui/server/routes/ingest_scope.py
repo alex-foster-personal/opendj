@@ -7,6 +7,10 @@ from typing import Literal
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+AnalysisKind = Literal[
+    "vocals", "beatgrid", "key", "cues", "waveform", "phrase", "loudness", "stems", "other"
+]
+
 
 class RefreshIn(BaseModel):
     """One refresh scope, including the explicit analysis-grid track order."""
@@ -14,7 +18,7 @@ class RefreshIn(BaseModel):
     batch_dir: str | None = None
     scope: Literal["library", "unmapped", "track"] = "library"
     stable_id: str | None = None
-    analysis_kind: str | None = None
+    analysis_kind: AnalysisKind | None = None
 
 
 def resolve_scope(body: RefreshIn | None, ingest_inbox: Path) -> tuple[str, Path | None]:
@@ -29,6 +33,8 @@ def resolve_scope(body: RefreshIn | None, ingest_inbox: Path) -> tuple[str, Path
         if body.analysis_kind is None or body.analysis_kind.strip() == "":
             raise HTTPException(422, "track scope requires analysis_kind")
         return "track", None
+    if body.stable_id is not None or body.analysis_kind is not None:
+        raise HTTPException(422, "stable_id and analysis_kind require scope='track'")
     if body.batch_dir is None:
         return body.scope, None
     if body.scope != "library":

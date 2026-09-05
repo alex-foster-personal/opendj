@@ -31,7 +31,9 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.routing import APIRoute
+from pydantic import ValidationError
 
 from apps.analysis import run as analysis_run
 from apps.analysis.backends import DEFAULT_BACKEND
@@ -164,6 +166,26 @@ def test_order_rejects_an_unknown_analysis_kind(client, app, tmp_path):
     response = client.post("/api/v1/analysis-queue/orders/order002/unknown")
     assert response.status_code == 422
     assert "unknown analysis kind" in response.text
+
+
+def test_order_rejects_a_missing_track_before_acknowledging(client):
+    """A 202 must mean the requested track entered the shared job."""
+    _enable_all_steps(client)
+
+    response = client.post("/api/v1/analysis-queue/orders/no-such-track/beatgrid")
+
+    assert response.status_code == 422
+    assert "not an on-disk library track" in response.text
+
+
+def test_track_refresh_input_rejects_an_unknown_kind_and_non_track_fields(tmp_path):
+    """Malformed track requests must not become a library-wide refresh."""
+    from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope
+
+    with pytest.raises(ValidationError, match="analysis_kind"):
+        RefreshIn(scope="track", stable_id="order004", analysis_kind="beatgird")
+    with pytest.raises(HTTPException, match="require scope='track'"):
+        resolve_scope(RefreshIn(stable_id="order004"), tmp_path)
 
 
 @pytest.mark.parametrize(("kind", "step"), [("stems", "stems"), ("vocals", "vocals")])

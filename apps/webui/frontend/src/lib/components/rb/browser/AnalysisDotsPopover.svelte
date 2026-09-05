@@ -250,8 +250,9 @@
 
 	async function refreshOrders(): Promise<void> {
 		if (stableId === null) return;
-		for (const order of await getTrackAnalysisOrders(stableId)) {
-			jobProgress.upsert({ stable_id: stableId, kind: order.kind as AnalysisKind, phase: order.phase });
+		const sid = stableId;
+		for (const order of await getTrackAnalysisOrders(sid)) {
+			jobProgress.upsert({ stable_id: sid, kind: order.kind as AnalysisKind, phase: order.phase });
 		}
 	}
 

@@ -453,16 +453,22 @@ def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     return _missing_by_step(on_disk)
 
 
+def validate_track_order_target(stable_id: str) -> None:
+    """Fail before queueing when a requested track is absent or ambiguous."""
+    targets, _unreachable = _tracks_on_disk()
+    if sum(sid == stable_id for sid, _path in targets) != 1:
+        raise HTTPException(422, f"track {stable_id!r} is not an on-disk library track")
+
+
 def _track_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     """One explicit track order, selected before the shared worker starts."""
     if len(job.analysis_orders) != 1:
         raise RuntimeError("track scope requires exactly one analysis order")
     stable_id, kind = next(iter(job.analysis_orders.items()))
     step = "stems" if kind == "stems" else "vocals" if kind == "vocals" else "analysis"
+    validate_track_order_target(stable_id)
     targets, _unreachable = _tracks_on_disk()
     selected = [(sid, path) for sid, path in targets if sid == stable_id]
-    if len(selected) != 1:
-        raise HTTPException(422, f"track {stable_id!r} is not an on-disk library track")
     _log(job, f"track scope: ordering {kind} for {stable_id} through {step}")
     return {"analysis": selected if step == "analysis" else [],
             "stems": selected if step == "stems" else [],

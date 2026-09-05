@@ -154,6 +154,7 @@ def order_track_analysis(stable_id: str, kind: str) -> AnalysisOrderOut:
     """Order one real analysis CLI run through the same single refresh slot."""
     if kind not in ANALYSIS_KINDS:
         raise HTTPException(422, f"unknown analysis kind {kind!r}")
+    ingest.validate_track_order_target(stable_id)
     ingest.start_refresh(ingest.RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind))
     return AnalysisOrderOut(stable_id=stable_id, kind=kind, phase="queued")
 
