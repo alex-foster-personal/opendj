@@ -33,6 +33,13 @@ Regression lines:
   - if the 8 data health lines cannot be flipped by their own fixture inputs
     then broken (the red-fixture run proves each verdict is driven by the
     input it names, not by ambient machine state)
+  - if an untimestamped FATAL line flips the window health check then broken:
+    a bare "FATAL: ..." has awk $1 = "FATAL:", and a string compare puts "F"
+    above any "2026-..." bound, so the pre-fix filter admitted it forever and
+    pinned the line red with no way to age out
+  - if that excluded count is swallowed instead of named in the label then
+    broken (the label carries "+N untimestamped", 0 on the green fixture and 1
+    once an untimestamped FATAL is written)
   - if the token health line leaks the developer's real shell profile then
     broken (run with a throwaway $HOME)
 """
@@ -130,6 +137,15 @@ def _health(out: str) -> dict[str, str]:
     return verdicts
 
 
+def _fatal_label(untimestamped: int) -> str:
+    """The FATAL health label, which names how many lines the window filter had
+    to exclude for carrying no timestamp to window on."""
+    return (
+        f"no timestamped FATAL in logs last {HOURS}h "
+        f"(+{untimestamped} untimestamped, excluded: no time to window on)"
+    )
+
+
 GREEN_LABELS = [
     "queue-watchdog unit active",
     "exactly one watchdog loop (sleeping main pid 424242)",
@@ -138,7 +154,7 @@ GREEN_LABELS = [
     "dispatcher ticked in last 70 min",
     "workers within cap (4)",
     "actionable PR backlog under builder-freeze threshold 15",
-    "no FATAL in logs last 1h",
+    _fatal_label(0),
     "token present for launchers",
 ]
 
@@ -212,8 +228,12 @@ def test_red_fixture_flips_every_input_driven_health_line(tmp_path):
     os.utime(fixture / "jobs" / "logs" / "tick-gate.log", (NOW - 2000, NOW - 2000))
     (fixture / "jobs" / "state" / "tickgate-dispatcher.ts").write_text(f"{NOW - 9999}\n")
     (fixture / "jobs" / "state" / "cap-agents").write_text("1\n")  # live_now=2 > 1
+    # The timestamped line is what flips this verdict. The untimestamped one
+    # rides along only to prove it changes the label's excluded count without
+    # ever being the reason the line is red.
     (fixture / "jobs" / "logs" / "recent-fatal.log").write_text(
         f"{_iso(NOW - 100)} FATAL induced for the red control\n"
+        "FATAL: untimestamped, so there is no time to window it on\n"
     )
 
     # No token profile in $HOME -> token line red.
@@ -225,11 +245,34 @@ def test_red_fixture_flips_every_input_driven_health_line(tmp_path):
     assert verdicts["gate log written in last 15 min"] == "FAIL"
     assert verdicts["dispatcher ticked in last 70 min"] == "FAIL"
     assert verdicts["workers within cap (1)"] == "FAIL"
-    assert verdicts["no FATAL in logs last 1h"] == "FAIL"
+    assert verdicts[_fatal_label(1)] == "FAIL"
     assert verdicts["token present for launchers"] == "FAIL"
     # Unflipped: the backlog fixture still holds 5 actionable, under the
     # builder-freeze threshold of 15.
     assert verdicts["actionable PR backlog under builder-freeze threshold 15"] == "PASS"
+
+
+def test_untimestamped_fatal_is_counted_but_never_windowed(tmp_path):
+    """If a FATAL line carrying no timestamp flips the window health check then
+    broken. Such a line has awk $1 = "FATAL:", and a string compare puts "F"
+    above any "2026-..." bound, so the pre-fix filter admitted every one of them
+    forever: the check was pinned red with no way to age out, which carries as
+    little information as a check that can never go red. The count must still be
+    named in the label, because writing FATAL without a UTC stamp is its own
+    defect and swallowing it silently is how 214 such lines hid in plain sight."""
+    fixture = _copy_fixture(tmp_path)
+    # No timestamp anywhere on the line, and the only FATAL inside the window.
+    (fixture / "jobs" / "logs" / "untimestamped-fatal.log").write_text(
+        "FATAL: tick gate failed for merge-odd\n"
+    )
+
+    out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
+    verdicts = _health(out)
+
+    # Pre-fix this read FAIL, because "FATAL:" > "2026-09-04T17:30:00Z".
+    assert verdicts[_fatal_label(1)] == "PASS", out
+    # And the excluded line is named rather than swallowed.
+    assert _fatal_label(0) not in verdicts, out
 
 
 def test_builder_freeze_switches_on_at_fifteen_actionable(tmp_path):
