@@ -202,6 +202,30 @@ export async function listPairings(source?: string): Promise<Pairing[]> {
 	);
 }
 
+/** Every pairing touching `stableId`, either direction. The route only
+ * filters by ONE side per call (`from_stable_id` XOR `to_stable_id`), so this
+ * issues both and merges by `pairing_id` - a pairing is directional data
+ * (`direction`), but "is this track paired with anything" has to look both
+ * ways. Used to default-show the paired track in the recommended bar (pin
+ * 72ac80073f92 / issue #878). */
+export async function listPairingsFor(stableId: string): Promise<Pairing[]> {
+	const [asFrom, asTo] = await Promise.all([
+		unwrap(
+			api.GET('/api/v1/pairings', {
+				params: { query: { from_stable_id: stableId, to_stable_id: null, source: null } }
+			})
+		),
+		unwrap(
+			api.GET('/api/v1/pairings', {
+				params: { query: { from_stable_id: null, to_stable_id: stableId, source: null } }
+			})
+		)
+	]);
+	const byId = new Map<string, Pairing>();
+	for (const p of [...asFrom, ...asTo]) byId.set(p.pairing_id, p);
+	return [...byId.values()];
+}
+
 export async function createPairing(body: {
 	from_stable_id: string;
 	to_stable_id: string;

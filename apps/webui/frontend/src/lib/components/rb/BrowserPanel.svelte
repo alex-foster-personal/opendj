@@ -2366,6 +2366,7 @@
 			currentPlaylistMemberIds={playlistMemberIds}
 			referenceBpm={masterRef?.bpm ?? null}
 			referenceKey={masterRef?.key ?? null}
+			stableId={decks[1].stable_id}
 			onload={(sid) => loadSuggest(sid)}
 			onplay={(sid) => loadSuggest(sid, { play: true })}
 			onhover={(sid) => (suggestHoverId = sid)}
