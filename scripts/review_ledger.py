@@ -21,6 +21,7 @@ OWNER = "maintainer"
 REPO = "music-dj-tools"
 
 _LEDGER_PATH = ".planning/TECH-DEBT.md"
+_DEBT_PATH = ".planning/debt/{number}.md"
 
 # The ledger is the other half of a DEBT-LOGGED claim. A reply naming an anchor
 # that was never appended loses the finding just as silently as saying nothing.
@@ -51,6 +52,44 @@ class LedgerFileNotFoundError(LedgerReadError):
     at one specific ref (never a union) still sees a raise either way -- only
     `_ledger_permalinks`'s union loop distinguishes the two.
     """
+
+
+def debt_permalinks_from_text(text: str) -> frozenset[str]:
+    """Every review-thread URL explicitly named by one PR debt file."""
+    return frozenset(_PERMALINK.findall(text))
+
+
+def _debt_permalinks(
+    number: int, head_sha: str, owner: str = OWNER, repo: str = REPO
+) -> frozenset[str]:
+    """Read only PR `number`'s debt file from its immutable branch head.
+
+    The runner checkout is deliberately irrelevant. A missing per-PR file is
+    a measured empty set: it makes a DEBT-LOGGED thread fail, while a failed
+    remote read still raises rather than being mistaken for absence.
+    """
+    path = _DEBT_PATH.format(number=number)
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "-H",
+            "Accept: application/vnd.github.raw",
+            f"repos/{owner}/{repo}/contents/{path}?ref={head_sha}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return debt_permalinks_from_text(result.stdout)
+    if _is_missing_file(result.stdout):
+        missing_path = _path_exists_at(head_sha, path, owner=owner, repo=repo) is False
+        if missing_path:
+            return frozenset()
+    raise LedgerReadError(
+        f"could not read {path} at {head_sha}: {result.stderr.strip() or '<no stderr>'}"
+    )
 
 
 def _is_missing_file(stdout: str) -> bool:

@@ -6,7 +6,7 @@ reach one of three terminal states before or at merge:
     FIXED        code changed in response
     REBUTTED     reply explaining why not, thread resolved
     DEBT-LOGGED  reply "logged as tech debt: <anchor>", thread resolved,
-                 entry appended to .planning/TECH-DEBT.md
+                 entry in .planning/debt/<pr>.md on the PR branch
 
 Each of those rows requires BOTH HALVES: a reply that records which
 disposition was chosen, and a resolve that closes it. A reply alone is work in
@@ -95,7 +95,7 @@ import json
 import sys
 
 from scripts import review_coverage
-from scripts.review_ledger import OWNER, REPO, LedgerReadError, _ledger_permalinks
+from scripts.review_ledger import OWNER, REPO, LedgerReadError, _debt_permalinks
 from scripts.review_thread_parse import PullRequest, Thread, build_thread
 from scripts.review_thread_refs import (
     _LEDGER_READ_ATTEMPTS,
@@ -103,7 +103,6 @@ from scripts.review_thread_refs import (
     HeadMovedError,
     _fetch_pr_refs,
     _gh_graphql,
-    _require_ledger_measured,
     _require_stable_base,
     _require_stable_head,
 )
@@ -320,10 +319,7 @@ def fetch_pull_request(number: int, owner: str = OWNER, repo: str = REPO) -> Pul
             # does not resolve (#805 round 9) -- there is then no third
             # pinned commit to hand `_ledger_permalinks`, not a ref it fails
             # to read.
-            if base_sha is not None:
-                ledger = _ledger_permalinks(head_sha, base_sha, main_sha, owner=owner, repo=repo)
-            else:
-                ledger = _ledger_permalinks(head_sha, main_sha, owner=owner, repo=repo)
+            ledger = _debt_permalinks(number, head_sha, owner=owner, repo=repo)
         # `_fetch_thread_nodes` re-checks head/base stability against the
         # already-confirmed values on every one of its own pages, so a race
         # DURING this re-fetch still aborts outright rather than silently
@@ -385,12 +381,11 @@ def fetch_pull_request(number: int, owner: str = OWNER, repo: str = REPO) -> Pul
     threads = tuple(
         t
         for t in (
-            build_thread(n, ledger, ledger_checked=(ledger_needed and base_sha is not None))
+            build_thread(n, ledger, ledger_checked=ledger_needed)
             for n in nodes
         )
         if t is not None
     )
-    _require_ledger_measured(number, base_ref, base_sha, head_sha, main_sha, threads)
     return PullRequest(
         number=head["number"],
         title=head["title"],
@@ -447,9 +442,8 @@ def _render(pr: PullRequest) -> str:
     if pr.unindexed_debt:
         lines.append("")
         lines.append(
-            "DEBT-LOG NOT IN LEDGER (the reply claims it; "
-            f".planning/TECH-DEBT.md at {pr.head_sha} does not, "
-            f"and neither does the one on {pr.base_ref}):"
+            "DEBT-LOG NOT IN PR DEBT FILE (the reply claims it; "
+            f".planning/debt/{pr.number}.md at {pr.head_sha} does not):"
         )
         lines += [_describe(t) for t in pr.unindexed_debt]
     if pr.violations:
@@ -460,7 +454,7 @@ def _render(pr: PullRequest) -> str:
         lines.append("")
         lines.append(
             "Each must reach FIXED, REBUTTED, or DEBT-LOGGED "
-            "(.planning/TECH-DEBT.md) before this PR merges: a reply saying which, "
+            f"(.planning/debt/{pr.number}.md) before this PR merges: a reply saying which, "
             "AND a resolve. P0/P1 and BLOCKING may not be debt-logged."
         )
     else:
