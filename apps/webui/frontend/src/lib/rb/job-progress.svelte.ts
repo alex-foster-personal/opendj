@@ -84,6 +84,7 @@ export const FAKE_TICK_MS = 250;
 export const JOB_STUCK_TTL_MS = 45_000;
 
 export type JobPhase = 'queued' | 'running' | 'done' | 'error';
+export type AnalysisStatus = 'done' | 'missing' | 'queued' | 'in-progress';
 
 export type TrackJob = {
 	stable_id: string;
@@ -101,6 +102,13 @@ export type TrackJob = {
 };
 
 export type AnalysisBadge = Partial<Record<AnalysisKind, boolean>>;
+
+/** The popover's four honest states. An active job wins over stale badge data. */
+export function analysisStatus(done: boolean, phase: JobPhase | null): AnalysisStatus {
+	if (phase === 'running') return 'in-progress';
+	if (phase === 'queued') return 'queued';
+	return done ? 'done' : 'missing';
+}
 
 /** A real detected data-quality problem for one analysis kind (the browser
  * "Err" column) - never a guessed/fabricated severity. */
@@ -395,6 +403,10 @@ export const jobProgress = {
 	},
 	activeFor(stableId: string): TrackJob | null {
 		return pickActiveJob(Object.values(jobs), stableId);
+	},
+	phaseFor(stableId: string, kind: AnalysisKind): JobPhase | null {
+		const job = jobs[_jobKey(kind, stableId)];
+		return job === undefined ? null : job.phase;
 	},
 	ribbon(): { kind: AnalysisKind; label: string; progress: number; n: number } | null {
 		return ribbonFromJobs(Object.values(jobs));

@@ -1115,10 +1115,10 @@
 									aria-hidden="true"
 								></span>
 							{/if}
-							<AnalysisDots badge={_badgeFor(row)} />
+							<AnalysisDots stableId={row.stable_id} badge={_badgeFor(row)} />
 						</td>
 						<td class="c-err">
-							<AnalysisDots issues={_issuesFor(row)} mode="issues" />
+							<AnalysisDots stableId={row.stable_id} issues={_issuesFor(row)} mode="issues" />
 						</td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a

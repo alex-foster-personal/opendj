@@ -80,6 +80,12 @@ export type AnalysisQueue = {
 	auto: AutoAnalyze;
 };
 
+export type AnalysisOrder = {
+	stable_id: string;
+	kind: string;
+	phase: 'queued' | 'running' | 'done' | 'error';
+};
+
 export type UploadFileResult = {
 	filename: string;
 	staged_path: string | null;
@@ -150,6 +156,21 @@ export async function getAnalysisQueue(limit?: number): Promise<AnalysisQueue> {
 	const r = await fetch(`${API_BASE}/api/v1/analysis-queue${query}`);
 	if (!r.ok) await _err(r);
 	return (await r.json()) as AnalysisQueue;
+}
+
+export async function getTrackAnalysisOrders(stableId: string): Promise<AnalysisOrder[]> {
+	const r = await fetch(`${API_BASE}/api/v1/analysis-queue/orders/${encodeURIComponent(stableId)}`);
+	if (!r.ok) await _err(r);
+	return ((await r.json()) as { items: AnalysisOrder[] }).items;
+}
+
+export async function orderTrackAnalysis(stableId: string, kind: string): Promise<AnalysisOrder> {
+	const r = await fetch(
+		`${API_BASE}/api/v1/analysis-queue/orders/${encodeURIComponent(stableId)}/${encodeURIComponent(kind)}`,
+		{ method: 'POST' }
+	);
+	if (!r.ok) await _err(r);
+	return (await r.json()) as AnalysisOrder;
 }
 
 export async function uploadIngestFiles(
