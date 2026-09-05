@@ -218,6 +218,7 @@ def create_app(
     app.state.lock_status_fn = lock_status_fn
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
+    app.state.analysis_db_path = state_db_path
     app.state.version = version
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
