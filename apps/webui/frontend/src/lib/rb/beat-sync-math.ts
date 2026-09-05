@@ -376,6 +376,16 @@ export function quantizeToNearestDownbeat(
  * OTHER bar downbeat (8 - a 2-bar grid). 'phase' never reaches here: it is
  * rejected in performance-ipc._dispatchUnknown before it can become a
  * setting change, so this function's grid parameter excludes it entirely.
+ *
+ * `validateBeatGrid` enforces an unbroken n=1,2,3,4 cadence with no gaps, so
+ * every downbeat is exactly 4 real beats after the last: the 2-bar grid's
+ * `index % 2 === 0` IS the musical bar parity here, not merely array order,
+ * because the schema forbids a bar going missing mid-grid.
+ *
+ * A grid with no downbeat at all (0 or 1 detected - a track with sparse or
+ * failed downbeat detection) degrades to the nearest available beat, or to
+ * that single downbeat, rather than throwing: an approximate grid line beats
+ * refusing to seek/loop at all.
  */
 export function quantizeToNearestGridBeat(
 	beats: readonly AnlzBeat[],
@@ -386,10 +396,11 @@ export function quantizeToNearestGridBeat(
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionSec', positionSec);
 	const downbeats = beats.filter((beat) => beat.n === 1);
-	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
-	if (gridBeats === 4) return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+	if (downbeats.length === 0) return quantizeToNearestBeat(beats, positionSec);
+	if (gridBeats === 4 || downbeats.length === 1) {
+		return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+	}
 	const twoBarBeats = downbeats.filter((_beat, index) => index % 2 === 0);
-	if (twoBarBeats.length === 0) throw new Error('PQTZ beat grid contains no 2-bar downbeat');
 	return twoBarBeats[_nearestBeatIndex(twoBarBeats, positionSec)].t;
 }
 

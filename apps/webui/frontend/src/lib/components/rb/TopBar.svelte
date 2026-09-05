@@ -15,6 +15,7 @@
 	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { autoPlayNextState } from '$lib/rb/auto-play-next.svelte';
 	import {
 		setAutoPlayEnabled,
 		setAutoPlayEnforceOrder,
@@ -69,6 +70,15 @@
 		if (d.mode === 'off') return `${d.short} - ${d.detail}`;
 		return `AutoPlay ON (${d.short}) - last ~16s loads onto a free/stopped deck. ${d.detail}`;
 	});
+
+	// Pin fc60002b81a8: ">|" split of the AutoPlay button, early next-track
+	// transition trigger. Toggles arm/cancel through the same command path
+	// as every other performance control (see auto-play-next.svelte.ts).
+	function _toggleAutoPlayNext(): void {
+		void runPerformanceCommandFromUi(
+			autoPlayNextState.armed ? { type: 'auto_play_next_cancel' } : { type: 'auto_play_next_arm' }
+		);
+	}
 
 	function _placeAutoPlayMenu(): void {
 		if (autoPlayWrapEl === undefined) return;
@@ -382,6 +392,18 @@
 		>
 			AutoPlay
 		</button>
+		<button
+			type="button"
+			class="bsm-toggle ap-next-btn"
+			class:on={autoPlayNextState.armed}
+			aria-pressed={autoPlayNextState.armed}
+			title={autoPlayNextState.armed
+				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
+				: 'Next-track loop: loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'}
+			onclick={_toggleAutoPlayNext}
+		>
+			&gt;|
+		</button>
 		{#if autoPlayMenuOpen}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
@@ -662,6 +684,27 @@
 		position: relative;
 		display: inline-flex;
 		align-items: center;
+	}
+	/* Pin fc60002b81a8: the ">|" next-track trigger reads as one button with
+	   the AutoPlay toggle plus an RHS section, not two separate controls. */
+	.ap-wrap > .bsm-toggle:first-child {
+		border-top-right-radius: 0;
+		border-bottom-right-radius: 0;
+		border-right: none;
+	}
+	.ap-next-btn {
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		padding-left: 6px;
+		padding-right: 6px;
+	}
+	/* The ">|" split is the least essential control in this row (an early-
+	   trigger shortcut, not a required transport) - drop it first, at the
+	   same 980px breakpoint this row already uses to abbreviate BSM/AutoPlay
+	   labels, rather than let it compete for room with controls a DJ or an
+	   agent actually needs. */
+	@media (max-width: 980px) {
+		.rb-topbar .topbar-slot-autoplay > .ap-next-btn { display: none; }
 	}
 	.ap-menu {
 		position: fixed;

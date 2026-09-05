@@ -159,6 +159,11 @@ export type PerformanceCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
+	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
+	 * of the AutoPlay button. Real (not stubbed) - see auto-play-next.ts /
+	 * auto-play-next.svelte.ts for the approximate loop/duck/cut it arms. */
+	| { type: 'auto_play_next_arm' }
+	| { type: 'auto_play_next_cancel' }
 	/** UI contract only: the "show other users' pins" toggle (pin 88e3abec02a0)
 	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
 	| { type: 'pins_show_other_users' }
@@ -285,6 +290,26 @@ export interface PerformanceState {
  * explicit and makes a missing mounted browser fail loudly for an agent. */
 export interface PerformanceBrowserAdapter {
 	selectPlaylist(playlistId: string): Promise<void>;
+}
+
+/** Pin fc60002b81a8: same decoupling shape as PerformanceBrowserAdapter above
+ * - auto-play-next.svelte.ts owns the real orchestration and already
+ * imports dispatchPerformanceCommand from this module, so this module
+ * registers rather than statically imports it back (a static import both
+ * ways would be a real cycle, not just a slack-ratchet number). A missing
+ * registration fails loudly, same rationale as a missing browser adapter. */
+export interface AutoPlayNextController {
+	arm(): boolean;
+	cancel(): void;
+}
+
+let _autoPlayNextController: AutoPlayNextController | null = null;
+
+export function registerAutoPlayNextController(controller: AutoPlayNextController): () => void {
+	_autoPlayNextController = controller;
+	return () => {
+		if (_autoPlayNextController === controller) _autoPlayNextController = null;
+	};
 }
 
 let _browserAdapter: PerformanceBrowserAdapter | null = null;
@@ -716,6 +741,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, device_id: record.device_id };
 	}
 	if (type === 'auto_play_two_track') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'auto_play_next_arm' || type === 'auto_play_next_cancel') {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -1157,6 +1186,11 @@ export function performanceCommandQueueScopes(
 		command.type === 'tech_mode_opt_reveal' ||
 		command.type === 'tech_mode_eq_raised' ||
 		command.type === 'tech_mode_edge_hover'
+		// AutoPlay Next arm/cancel dispatch their own scoped loop/eq
+		// commands internally (auto-play-next.svelte.ts); this entry point
+		// itself has no deck and nothing to serialize against.
+		|| command.type === 'auto_play_next_arm'
+		|| command.type === 'auto_play_next_cancel'
 		|| command.type === 'load_play_intent'
 	) {
 		return null;
@@ -1402,6 +1436,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'auto_play_two_track') {
 		throw new Error('auto_play_two_track must be rejected at the dispatch boundary');
+	} else if (command.type === 'auto_play_next_arm') {
+		if (_autoPlayNextController === null) {
+			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
+		}
+		_autoPlayNextController.arm();
+	} else if (command.type === 'auto_play_next_cancel') {
+		if (_autoPlayNextController === null) {
+			throw new Error('auto_play_next_cancel: no AutoPlay Next controller is mounted on this route');
+		}
+		_autoPlayNextController.cancel();
 	} else if (command.type === 'pins_show_other_users') {
 		throw new Error('pins_show_other_users must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {

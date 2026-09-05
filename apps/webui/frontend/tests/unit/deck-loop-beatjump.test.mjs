@@ -700,3 +700,64 @@ test('shift/opt click on loop halve or double resize with an end or center ancho
 		/resizedLoopRangeMs\(gridBeats, deck\.loop, beatLength, anchor, deck\.duration_ms\)/
 	);
 });
+
+// ------------------------------------------------------- grid quantize (8)
+
+// No n===1 beat at all - a track whose downbeat detector found nothing.
+const NO_DOWNBEAT_GRID = [
+	{ n: 2, bpm: 128, t: 0.1 },
+	{ n: 3, bpm: 128, t: 0.57 },
+	{ n: 4, bpm: 128, t: 1.04 }
+];
+
+// Exactly one n===1 beat, valid 1,2,3,4 cadence throughout.
+const ONE_DOWNBEAT_GRID = [
+	{ n: 3, bpm: 128, t: 0.1 },
+	{ n: 4, bpm: 128, t: 0.57 },
+	{ n: 1, bpm: 128, t: 1.04 },
+	{ n: 2, bpm: 128, t: 1.51 }
+];
+
+// Four full bars, valid cadence, so downbeats sit at real bar boundaries
+// 0, 1, 2, 3 (by array index AND by musical position - the schema's
+// unbroken n=1,2,3,4 cadence makes the two equivalent, since a bar cannot
+// go missing mid-grid without breaking `validateBeatGrid`).
+const FOUR_BAR_GRID = [
+	{ n: 1, bpm: 128, t: 0.0 },
+	{ n: 2, bpm: 128, t: 0.47 },
+	{ n: 3, bpm: 128, t: 0.94 },
+	{ n: 4, bpm: 128, t: 1.41 },
+	{ n: 1, bpm: 128, t: 1.88 }, // bar 1
+	{ n: 2, bpm: 128, t: 2.35 },
+	{ n: 3, bpm: 128, t: 2.82 },
+	{ n: 4, bpm: 128, t: 3.29 },
+	{ n: 1, bpm: 128, t: 3.76 }, // bar 2
+	{ n: 2, bpm: 128, t: 4.23 },
+	{ n: 3, bpm: 128, t: 4.7 },
+	{ n: 4, bpm: 128, t: 5.17 },
+	{ n: 1, bpm: 128, t: 5.64 } // bar 3
+];
+
+test('quantizeToNearestGridBeat(8) degrades to the nearest plain beat when no downbeat exists', () => {
+	assert.equal(
+		math.quantizeToNearestGridBeat(NO_DOWNBEAT_GRID, 0.6, 8),
+		math.quantizeToNearestBeat(NO_DOWNBEAT_GRID, 0.6),
+		'no downbeat at all must still return a real grid line, not throw'
+	);
+	assert.equal(math.quantizeToNearestGridBeat(NO_DOWNBEAT_GRID, 0.6, 4), 0.57);
+});
+
+test('quantizeToNearestGridBeat(8) degrades to the single downbeat when only one exists', () => {
+	assert.equal(math.quantizeToNearestGridBeat(ONE_DOWNBEAT_GRID, 1.5, 8), 1.04);
+	assert.equal(math.quantizeToNearestGridBeat(ONE_DOWNBEAT_GRID, 1.5, 4), 1.04);
+});
+
+test('quantizeToNearestGridBeat(8) selects every other real bar downbeat (0, 2, ...), never an odd one', () => {
+	// twoBarBeats here are bars 0 (0.0s) and 2 (3.76s); bars 1 (1.88s) and 3
+	// (5.64s) must never be returned for gridBeats:8.
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 0.5, 8), 0.0);
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 2.9, 8), 3.76);
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 5.5, 8), 3.76);
+	// gridBeats:4 has no such restriction - bar 1 and bar 3 are reachable.
+	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 1.9, 4), 1.88);
+});

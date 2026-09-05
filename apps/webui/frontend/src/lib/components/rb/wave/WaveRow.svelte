@@ -44,8 +44,10 @@
 	} from './render';
 	import {
 		createLatestSeekDispatcher,
+		snapWaveTargetMs,
 		waveClickTargetMs,
-		waveDragTargetMs
+		waveDragTargetMs,
+		waveSnapModeFromModifiers
 	} from './wave-scrub';
 
 	const { deckId }: { deckId: DeckId } = $props();
@@ -127,6 +129,10 @@
 	const barsLabel = $derived(
 		paintAnlz !== null ? barsToNextCueLabel(paintAnlz, deck.position_ms) : null
 	);
+
+	// Scrub-target snapping (pin a705aebfbeae) reads this deck's own beatgrid,
+	// not the master's - each waveform snaps to its own track's downbeats.
+	const scrubBeats = $derived(paintAnlz?.beatgrid.beats ?? null);
 
 	const masterDeck = $derived(DECK_IDS.find((d) => getDeckState(d).is_master) ?? null);
 	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
@@ -347,9 +353,9 @@
 	// ---- click-drag seek: the engine position at pointerdown is frozen as
 	// the gesture origin. Dragging grabs the waveform under the fixed playhead;
 	// click-without-drag still seeks to the time visibly beneath the pointer.
-	function _dragTarget(clientX: number): number {
+	function _dragTarget(clientX: number, modifiers: { shiftKey: boolean; metaKey: boolean }): number {
 		// Match drawWaveRow: wall-clock window scaled by pitch into track time.
-		return waveDragTargetMs({
+		const raw = waveDragTargetMs({
 			originPositionMs: scrubOriginPositionMs,
 			originClientX: scrubOriginClientX,
 			clientX,
@@ -357,16 +363,18 @@
 			durationMs: scrubDurationMs,
 			windowSeconds: WAVE_WINDOW_S * deck.pitch
 		});
+		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
 
-	function _clickTarget(clientX: number): number {
-		return waveClickTargetMs({
+	function _clickTarget(clientX: number, modifiers: { shiftKey: boolean; metaKey: boolean }): number {
+		const raw = waveClickTargetMs({
 			centerPositionMs: scrubOriginPositionMs,
 			pointerX: clientX - scrubLeftPx,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
 			windowSeconds: WAVE_WINDOW_S * deck.pitch
 		});
+		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
 
 	function _clearGesture(): void {
@@ -401,13 +409,7 @@
 		scrubDispatchError = null;
 		seeking = true;
 		// SPIKE-PERF: jump the painted window under the pointer immediately.
-		scrubPreviewMs = waveClickTargetMs({
-			centerPositionMs: scrubOriginPositionMs,
-			pointerX: event.clientX - scrubLeftPx,
-			widthPx: scrubWidthPx,
-			durationMs: scrubDurationMs,
-			windowSeconds: WAVE_WINDOW_S * deck.pitch
-		});
+		scrubPreviewMs = _clickTarget(event.clientX, event);
 	}
 
 	async function onPointerMove(event: PointerEvent): Promise<void> {
@@ -415,14 +417,16 @@
 		const deltaPx = event.clientX - scrubOriginClientX;
 		if (!scrubMoved && Math.abs(deltaPx) < DRAG_THRESHOLD_PX) return;
 		scrubMoved = true;
-		_queueSeek(_dragTarget(event.clientX));
+		_queueSeek(_dragTarget(event.clientX, event));
 	}
 
 	async function onPointerUp(event: PointerEvent): Promise<void> {
 		if (!seeking || event.pointerId !== scrubPointerId) return;
 		const canvas = event.currentTarget as HTMLCanvasElement;
 		try {
-			const targetMs = scrubMoved ? _dragTarget(event.clientX) : _clickTarget(event.clientX);
+			const targetMs = scrubMoved
+				? _dragTarget(event.clientX, event)
+				: _clickTarget(event.clientX, event);
 			scrubPreviewMs = targetMs;
 			await seekDispatcher.request(targetMs);
 			if (scrubDispatchError !== null) throw scrubDispatchError;

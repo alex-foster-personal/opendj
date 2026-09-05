@@ -351,6 +351,14 @@
 									data-testid={`cancel-hot-cue-name-${deck.deck_id}-${entry.slot}`}
 									onmousedown={(event) => event.preventDefault()}
 									onclick={() => cancelRename(entry.slot)}
+									onblur={(event) => {
+										// Tab away from THIS button without activating it (the
+										// input's own blur already deferred its commit to us,
+										// above) must not leave an uncommitted draft popover
+										// open forever - finish the deferred commit unless focus
+										// is headed back into the name input itself.
+										if (event.relatedTarget !== renameInputEl) void commitRename(entry);
+									}}
 								>
 									&#215;
 								</button>

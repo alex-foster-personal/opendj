@@ -20,6 +20,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if an agent cannot send the same comment through hot_cue_save then broken
  * - if a hot-cue write stops raising deck pending while it is in flight then broken
  * - if the visible Undo is disabled by that pending write then broken
+ * - if tabbing to Cancel then tabbing away without activating it leaves the
+ *   draft popover open then broken (PR #1270 carry-over)
  */
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
@@ -241,5 +243,24 @@ test('the Undo button survives being the control that triggered the blur', () =>
 		undoFlow,
 		/const release = await acquireBusySlot\(requestedSlot\);[\s\S]*if \(undo === null\) return;/,
 		'without the disable, a repeated Undo must be serialized and then find its token already spent'
+	);
+});
+
+test('tabbing to Cancel then away without activating it still commits the deferred draft', () => {
+	const text = source('lib/components/rb/deck/HotCueBank.svelte');
+	const cancelAt = text.indexOf('class="cue-name-cancel"');
+	assert.notEqual(cancelAt, -1, 'if the cancel button markup moved then this guard is pointed at nothing');
+	// Not indexOf('>', cancelAt): several attributes on this tag are arrow
+	// function handlers (`=>`), whose '>' would end the slice early. A
+	// fixed window comfortably covering the whole opening tag is simpler
+	// and more robust than trying to parse past every `=>` in the markup.
+	const cancelTag = text.slice(cancelAt, cancelAt + 1000);
+
+	assert.match(
+		cancelTag,
+		/onblur=\{\(event\) => \{[\s\S]*?if \(event\.relatedTarget !== renameInputEl\) void commitRename\(entry\);/,
+		'the name input defers its commit to this button when Tab is headed here (bot review ' +
+			'P2, pin c20eeb07cae0) - if THIS button also lets focus leave without deciding, ' +
+			'the deferred commit is dropped and the popover is left open forever'
 	);
 });
