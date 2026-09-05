@@ -162,6 +162,9 @@ test('null artwork availability identifies an unavailable reader without request
 	);
 	await page.route('**/api/v1/stems/tiers', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/v1/state/ui-mirror', (route) => route.fulfill({ json: {} }));
+	await page.route('**/api/v1/feedback/performance-marks', (route) =>
+		route.fulfill({ json: { count: 0, last_mark: null } })
+	);
 	await page.route('**/api/v1/client-events', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/client-errors', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/commands/next', (route) => route.fulfill({ status: 409, json: {} }));

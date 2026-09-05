@@ -2529,6 +2529,57 @@
         "title": "DecisionRecordOut",
         "type": "object"
       },
+      "DeckMarkOut": {
+        "properties": {
+          "audible": {
+            "title": "Audible",
+            "type": "boolean"
+          },
+          "deck_id": {
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "loop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoopMarkOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "playing": {
+            "title": "Playing",
+            "type": "boolean"
+          },
+          "position_ms": {
+            "title": "Position Ms",
+            "type": "number"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          }
+        },
+        "required": [
+          "deck_id",
+          "stable_id",
+          "playing",
+          "audible",
+          "position_ms",
+          "loop"
+        ],
+        "title": "DeckMarkOut",
+        "type": "object"
+      },
       "DeckObservationsRequest": {
         "description": "A batch of Open DJ deck-state snapshots, oldest first.\n\nSnapshots stay untyped here on purpose. Pydantic would happily\ncoerce the string \"false\" into ``False`` and 0 into ``0.0``, which\nis exactly the quiet reinterpretation this pipeline must not do, so\nvalidation belongs to :func:`~apps.sets.sources.opendj_wire.parse_snapshot`\nalone rather than being split across two disagreeing contracts.\n\nThe cap is ten minutes of a 1 s cadence: enough for a tab that was\nbackgrounded to flush its buffer, small enough to bound one request.",
         "properties": {
@@ -4303,6 +4354,24 @@
         "title": "LoginOut",
         "type": "object"
       },
+      "LoopMarkOut": {
+        "properties": {
+          "in_ms": {
+            "title": "In Ms",
+            "type": "number"
+          },
+          "out_ms": {
+            "title": "Out Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "in_ms",
+          "out_ms"
+        ],
+        "title": "LoopMarkOut",
+        "type": "object"
+      },
       "MachineModel": {
         "description": "One ``machines`` row on the wire.",
         "properties": {
@@ -4635,6 +4704,75 @@
           "stable_ids"
         ],
         "title": "MembershipReplaceIn",
+        "type": "object"
+      },
+      "MixerChannelMarkOut": {
+        "properties": {
+          "assign": {
+            "title": "Assign",
+            "type": "string"
+          },
+          "deck_id": {
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "eq_high": {
+            "title": "Eq High",
+            "type": "number"
+          },
+          "eq_low": {
+            "title": "Eq Low",
+            "type": "number"
+          },
+          "eq_mid": {
+            "title": "Eq Mid",
+            "type": "number"
+          },
+          "fader": {
+            "title": "Fader",
+            "type": "number"
+          },
+          "trim": {
+            "title": "Trim",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deck_id",
+          "trim",
+          "eq_low",
+          "eq_mid",
+          "eq_high",
+          "fader",
+          "assign"
+        ],
+        "title": "MixerChannelMarkOut",
+        "type": "object"
+      },
+      "MixerMarkOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/MixerChannelMarkOut"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "crossfader": {
+            "title": "Crossfader",
+            "type": "number"
+          },
+          "master": {
+            "title": "Master",
+            "type": "number"
+          }
+        },
+        "required": [
+          "crossfader",
+          "master",
+          "channels"
+        ],
+        "title": "MixerMarkOut",
         "type": "object"
       },
       "MyTagAssignIn": {
@@ -5323,6 +5461,68 @@
           "added_at"
         ],
         "title": "PendingTrackOut",
+        "type": "object"
+      },
+      "PerformanceFeedbackMarkIn": {
+        "properties": {
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/DeckMarkOut"
+            },
+            "title": "Decks",
+            "type": "array"
+          },
+          "mixer": {
+            "$ref": "#/components/schemas/MixerMarkOut"
+          },
+          "recorded_at_ms": {
+            "minimum": 0.0,
+            "title": "Recorded At Ms",
+            "type": "integer"
+          },
+          "vote": {
+            "enum": [
+              "bad",
+              "good",
+              "great"
+            ],
+            "title": "Vote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recorded_at_ms",
+          "vote",
+          "decks",
+          "mixer"
+        ],
+        "title": "PerformanceFeedbackMarkIn",
+        "type": "object"
+      },
+      "PerformanceFeedbackMarksOut": {
+        "properties": {
+          "count": {
+            "maximum": 400.0,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "last_mark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PerformanceFeedbackMarkIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "count",
+          "last_mark"
+        ],
+        "title": "PerformanceFeedbackMarksOut",
         "type": "object"
       },
       "PermissionsOut": {
@@ -13613,6 +13813,66 @@
           }
         },
         "summary": "Put General",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/performance-marks": {
+      "get": {
+        "operationId": "get_performance_marks_api_v1_feedback_performance_marks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Performance Marks",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "create_performance_mark_api_v1_feedback_performance_marks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PerformanceFeedbackMarkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Performance Mark",
         "tags": [
           "feedback"
         ]

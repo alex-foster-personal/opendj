@@ -492,6 +492,14 @@ test('key controls validate through IPC and round-trip serializable shift state'
 	}
 });
 
+test('vibe meter uses thumb glyphs and routes every mark through the typed dispatcher', async () => {
+	const source = await readFile(new URL('../../src/lib/components/rb/VibeMeter.svelte', import.meta.url), 'utf8');
+	assert.match(source, /recordFeedback\('bad', event\)/);
+	assert.match(source, /event\.shiftKey \? 'great' : 'good'/);
+	assert.doesNotMatch(source, /voteVibe\(/);
+	assert.match(source, /M5 2\.2h5\.1/);
+});
+
 test('SLIP validates through IPC and exposes its inactive read state', async () => {
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();

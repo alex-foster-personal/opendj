@@ -52,11 +52,26 @@ export type SettingsOut = components['schemas']['SettingsOut'];
 export type HealthOut = components['schemas']['EngineHealthOut'];
 type PairingCreateBody = Omit<components['schemas']['PairingCreate'], 'direction' | 'source'> &
 	Partial<Pick<components['schemas']['PairingCreate'], 'direction' | 'source'>>;
+export type PerformanceFeedbackMark = components['schemas']['PerformanceFeedbackMarkIn'];
+export type PerformanceFeedbackSummary = components['schemas']['PerformanceFeedbackMarksOut'];
 
 export class ConflictError extends Error {
 	constructor(public current: Track, public etag: string) {
 		super('If-Match mismatch');
 	}
+}
+
+/** Engine-owned user judgements, retained independently of the browser origin. */
+export async function getPerformanceFeedback(): Promise<PerformanceFeedbackSummary> {
+	return requireBody(await api.GET('/api/v1/feedback/performance-marks')).data;
+}
+
+export async function createPerformanceFeedback(
+	mark: PerformanceFeedbackMark
+): Promise<PerformanceFeedbackSummary> {
+	return requireBody(
+		await api.POST('/api/v1/feedback/performance-marks', { body: mark })
+	).data;
 }
 
 export interface PlayItGoal {
