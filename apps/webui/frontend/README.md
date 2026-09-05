@@ -135,6 +135,13 @@ Two properties matter more than the numbers:
   unattributed-chunk case, against a synthetic build tree in a temp dir. No
   `pnpm build` needed; it runs in `pnpm test:unit`.
 
+The `measured` column is the esbuild-minified baseline the ceilings were derived
+from. Since then `vite.config.ts` switched the production minifier to terser,
+which takes about 6% off every surface (`performance` 205,141 -> 193,290 on
+`main`), so today's readings sit well under the recorded figures. **The ceilings
+themselves are unchanged** - the extra room is a real reduction in shipped bytes,
+not a widened budget, and the ratchet still bites at the same numbers.
+
 The `library` figure of 256,000 is unchanged from the gate's introduction. The
 other two are ratchets at their measured value plus 5%, rounded up to the next
 KiB. `other-lazy` in particular is tight by construction (about 3 KB of

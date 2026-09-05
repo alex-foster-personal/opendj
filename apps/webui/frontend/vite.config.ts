@@ -23,6 +23,26 @@ export default defineConfig(({ command, mode }) => {
 		envDir: REPOSITORY_ROOT,
 		plugins: [sveltekit()],
 		build: {
+			// Terser instead of Vite's default esbuild minifier. Measured on
+			// origin/main at 59248abb9, gzip under build/_app/immutable/, which is
+			// exactly what scripts/bundle-budget.mjs weighs:
+			//   library      105,664 -> 101,056   (-4,608)
+			//   performance  205,141 -> 193,290  (-11,851, 94.9% -> 89.5%)
+			//   other-lazy    65,348 ->  62,014   (-3,334)
+			// About 6% off every surface, 19,793 bytes in total, for 0.4s of build
+			// time (13.0s -> 13.4s). Vite runs terser in worker threads, so it is
+			// near free here. The 205,141 baseline reproduces the `measured` value
+			// already recorded for the performance budget, so these deltas are on
+			// the same footing as the numbers the ceilings were derived from.
+			//
+			// Defaults only, deliberately. `compress.passes: 2` was measured and
+			// bought a further 85 bytes, which does not earn a tuning knob that a
+			// later reader has to reason about.
+			//
+			// This does NOT touch the AudioWorklet processors: they are emitted as
+			// assets (see assetsInlineLimit below), never as chunks, so the minifier
+			// never sees them and the worklet-scope constraints below still hold.
+			minify: 'terser' as const,
 			// AudioWorklet modules must stay REAL FILES. Anything under the
 			// default 4096-byte inline limit is emitted as a `data:` URI, and
 			// `audioWorklet.addModule()` fetches a module script: a data: URI
