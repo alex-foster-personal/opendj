@@ -6,6 +6,7 @@ import json
 import socket
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -31,10 +32,93 @@ def _write_env(root: Path, backend: int, frontend: int) -> None:
     )
 
 
+def _free_ports(count: int) -> list[int]:
+    """Allocate `count` DISTINCT free ports.
+
+    Every probe is held open until all of them are bound. Binding one socket,
+    reading its port and CLOSING it before binding the next lets the kernel
+    hand the same ephemeral port straight back, because a port that was only
+    bound (never connected) returns to the pool immediately with no TIME_WAIT.
+
+    That is not theoretical. It broke trunk on 2026-09-05 at 7a0640b88: this
+    file called the old one-at-a-time helper twice in a row and the pytest fast
+    lane failed with `WebuiPorts(backend=45747, frontend=45747)` -- both calls
+    returned 45747, so `claim_ports` correctly refused a config whose backend
+    and frontend were the same port.
+
+    It reproduces on Linux and not on macOS, which is why a local check is not
+    evidence here: the two kernels allocate ephemeral ports differently. Holding
+    the sockets open removes the race on both, because `bind` cannot assign a
+    port another live socket already holds.
+    """
+    probes: list[socket.socket] = []
+    try:
+        for _ in range(count):
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.bind(("127.0.0.1", 0))
+            probes.append(probe)
+        return [int(probe.getsockname()[1]) for probe in probes]
+    finally:
+        for probe in probes:
+            probe.close()
+
+
 def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
+    return _free_ports(1)[0]
+
+
+def test_free_ports_holds_every_probe_open_until_all_are_bound() -> None:
+    """If ports are allocated in a batch then no probe closes before the last bind.
+
+    Guards the trunk break at 7a0640b88 (2026-09-05): the helper bound one
+    probe, read its port and CLOSED it before binding the next, so the kernel
+    could hand the same ephemeral port straight back. It did -- the pytest fast
+    lane failed with `WebuiPorts(backend=45747, frontend=45747)`.
+
+    This asserts the ORDERING invariant rather than distinctness of the result.
+    Distinctness is the symptom and it is a coin flip: a batch of 64 allocated
+    with the old racy helper collided in 0 of 40 trials on macOS, so a test that
+    checks only distinctness cannot fail on a developer machine and is not a
+    guard at all. The ordering is the mechanism, it is what the fix changed, and
+    it is identical on every platform.
+    """
+    events: list[str] = []
+    real_socket = socket.socket
+
+    class _Tracking(real_socket):  # type: ignore[misc, valid-type]
+        def bind(self, *args: object, **kwargs: object) -> None:
+            super().bind(*args, **kwargs)  # type: ignore[misc]
+            events.append("bind")
+
+        def close(self) -> None:
+            events.append("close")
+            super().close()  # type: ignore[misc]
+
+    with mock.patch.object(socket, "socket", _Tracking):
+        ports = _free_ports(4)
+
+    assert len(ports) == 4
+    assert len(set(ports)) == 4, f"duplicate ports handed out: {sorted(ports)}"
+    assert events.count("bind") == 4, f"expected 4 binds, saw {events}"
+    first_close = events.index("close")
+    last_bind = len(events) - 1 - events[::-1].index("bind")
+    assert first_close > last_bind, (
+        "a probe was released before the batch finished binding, which is exactly "
+        f"the race that broke trunk: {events}"
+    )
+
+
+def test_claim_refuses_a_config_whose_ports_are_equal(tmp_path: Path) -> None:
+    """If backend and frontend are the same port then claiming must fail loudly.
+
+    This is the guard that caught the racy allocator rather than letting two
+    services be pointed at one port. Keep it: without it the race above would
+    have surfaced as a confusing runtime bind failure instead of a clear error.
+    """
+    _write_env(tmp_path, 45747, 45747)
+
+    with pytest.raises(PortConfigError, match="must be different"):
+        resolve_ports(environ={}, dotenv_path=tmp_path / ".env")
 
 
 def test_root_env_is_the_only_primitive_port_surface(tmp_path: Path) -> None:
@@ -55,8 +139,7 @@ def test_claim_preserves_unrelated_env_and_removes_redundant_proxy(
     common_dir = tmp_path / "common"
     repo_root.mkdir()
     common_dir.mkdir()
-    backend = _free_port()
-    frontend = _free_port()
+    backend, frontend = _free_ports(2)
     _write_env(repo_root, backend, frontend)
 
     claimed = claim_ports(
@@ -108,8 +191,7 @@ def test_copied_env_is_reallocated_when_another_worktree_owns_the_pair(
     second_root = tmp_path / "repo-b"
     first_root.mkdir()
     second_root.mkdir()
-    backend = _free_port()
-    frontend = _free_port()
+    backend, frontend = _free_ports(2)
     _write_env(first_root, backend, frontend)
     _write_env(second_root, backend, frontend)
 
@@ -175,8 +257,7 @@ def test_unclaimed_or_foreign_pair_fails_before_binding(tmp_path: Path) -> None:
     repo_root.mkdir()
     other_root.mkdir()
     common_dir.mkdir()
-    backend = _free_port()
-    frontend = _free_port()
+    backend, frontend = _free_ports(2)
     _write_env(repo_root, backend, frontend)
     registry_dir = common_dir / "music-dj-tools"
     registry_dir.mkdir()
@@ -216,8 +297,7 @@ def test_repeat_claim_leaves_dotenv_untouched(tmp_path: Path) -> None:
     common_dir = tmp_path / "common"
     repo_root.mkdir()
     common_dir.mkdir()
-    backend = _free_port()
-    frontend = _free_port()
+    backend, frontend = _free_ports(2)
     _write_env(repo_root, backend, frontend)
 
     claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
