@@ -47,7 +47,7 @@
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
-	import AnalysisDots from './AnalysisDots.svelte';
+	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
 	import StemTags from './StemTags.svelte';
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import { computeVirtualWindow } from './virtual-window';
@@ -1117,10 +1117,10 @@
 									aria-hidden="true"
 								></span>
 							{/if}
-							<AnalysisDots badge={_badgeFor(row)} />
+							<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />
 						</td>
 						<td class="c-err">
-							<AnalysisDots issues={_issuesFor(row)} mode="issues" />
+							<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />
 						</td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a
