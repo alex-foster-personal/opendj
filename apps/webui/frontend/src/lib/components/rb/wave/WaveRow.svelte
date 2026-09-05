@@ -165,6 +165,8 @@
 	let scrubWidthPx = 0;
 	let scrubMoved = false;
 	let scrubDispatchError: unknown = null;
+	let lastPaintScrollPx: number | null = null;
+	let lastPaintInputs: readonly unknown[] | null = null;
 	const DRAG_THRESHOLD_PX = 3;
 	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
@@ -197,9 +199,32 @@
 		return () => observer.disconnect();
 	});
 
-	function draw(): void {
+	function draw(force = false): void {
 		const el = canvasEl;
 		if (el === undefined || palette === null || cssW === 0 || cssH === 0) return;
+		const paintPositionMs = _paintPositionMs();
+		const scrollPx =
+			(deck.duration_ms === null ? 0 : paintPositionMs / 1000) *
+			(cssW / (WAVE_WINDOW_S * deck.pitch));
+		const visualInputs = [
+			deck.stable_id,
+			deck.duration_ms,
+			paintAnlz,
+			deck.pitch,
+			deck.loop,
+			syncPlayheadTone,
+			cssW,
+			cssH,
+			palette
+		] as const;
+		const visualsChanged =
+			lastPaintInputs === null ||
+			visualInputs.some((value, index) => !Object.is(value, lastPaintInputs?.[index]));
+		if (!force && !visualsChanged && lastPaintScrollPx !== null && Math.abs(scrollPx - lastPaintScrollPx) < 1) {
+			return;
+		}
+		lastPaintScrollPx = scrollPx;
+		lastPaintInputs = visualInputs;
 		const dpr = window.devicePixelRatio;
 		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
 			el.width = cssW * dpr;
@@ -222,7 +247,7 @@
 		drawWaveRow(ctx, {
 			widthCss: cssW,
 			heightCss: cssH,
-			positionMs: _paintPositionMs(),
+			positionMs: paintPositionMs,
 			durationMs: deck.duration_ms,
 			anlz: paintAnlz,
 			palette: paintPalette,
@@ -251,8 +276,9 @@
 		const masterMoving =
 			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
 		const pulse = syncPlayheadTone === 'drift';
-		if (!(deck.playing || seeking || pulse || masterMoving)) return;
-		let raf = requestAnimationFrame(function loop() {
+		const hovered = deckHoverUi.deckId === deckId;
+		if (!(deck.playing || seeking || (hovered && (pulse || masterMoving)))) return;
+		let raf = requestAnimationFrame(function waveRowFrame() {
 			draw();
 			stallState = foldPresentationSample(stallState, {
 				playing: deck.playing,
@@ -262,7 +288,7 @@
 			const stall = stallState;
 			if (stall !== undefined && stall.verdict === 'presentation-stalled') playheadFrozen = true;
 			else if (stall !== undefined && stall.frozenSinceMs === null) playheadFrozen = false;
-			raf = requestAnimationFrame(loop);
+			raf = requestAnimationFrame(waveRowFrame);
 		});
 		return () => cancelAnimationFrame(raf);
 	});
@@ -289,7 +315,7 @@
 		void masterState?.position_ms;
 		void cssW;
 		void cssH;
-		draw();
+		draw(true);
 	});
 
 	// ---- click-drag seek: the engine position at pointerdown is frozen as

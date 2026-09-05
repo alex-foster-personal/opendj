@@ -103,6 +103,26 @@ interface BandNorms {
 /** Per-waveform normalization cache - computed once per anlz payload. */
 const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
 
+interface WaveBandImage {
+	canvas: HTMLCanvasElement;
+	key: string;
+}
+
+/**
+ * Band geometry is the expensive part of a scrolling waveform. It changes only
+ * with the immutable waveform data, zoom, row width, height, or palette, so
+ * retain an offscreen full-track image and translate it under the fixed
+ * playhead. The image is deliberately transparent: moving overlays remain on
+ * the destination canvas and no cached background can obscure them.
+ */
+/** Test-only cache reset. The production cache is weakly owned by ANLZ data. */
+export function resetWaveBandCacheForTest(): void {
+	// WeakMap has no clear(), so replace it for deterministic isolated tests.
+	_bandImages = new WeakMap<AnlzWaveform, WaveBandImage>();
+}
+
+let _bandImages = new WeakMap<AnlzWaveform, WaveBandImage>();
+
 function _p99(values: number[]): number {
 	const nonZero = values.filter((v) => v > 0);
 	if (nonZero.length === 0) return 1;
@@ -170,7 +190,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const pxPerS = w / trackWindowS;
 
 	if (frame.anlz !== null && durS > 0) {
-		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
+		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		// Loop cue bands paint as background, before the beat grid/phrases they
 		// would otherwise blank out for their span; point cue markers stay in
@@ -199,10 +219,56 @@ function _mirrorRect(path: Path2D, x: number, centerY: number, halfHeight: numbe
 	path.rect(x, centerY - halfHeight, 1, halfHeight * 2);
 }
 
-function _drawBands(
+function _drawCachedBands(
 	ctx: CanvasRenderingContext2D,
 	waveform: AnlzWaveform,
 	tLeft: number,
+	pxPerS: number,
+	durS: number,
+	w: number,
+	h: number,
+	palette: WavePalette
+): void {
+	// Node painter tests intentionally provide only Path2D. Browser production
+	// always has document, while this direct branch keeps those geometry tests
+	// exercising the same real bucket painter without a fake DOM canvas.
+	if (typeof document === 'undefined') {
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette);
+		return;
+	}
+	const key = `${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}`;
+	let image = _bandImages.get(waveform);
+	if (image === undefined || image.key !== key) {
+		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette), key };
+		_bandImages.set(waveform, image);
+	}
+	ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
+}
+
+function _buildBandImage(
+	waveform: AnlzWaveform,
+	pxPerS: number,
+	durS: number,
+	h: number,
+	palette: WavePalette
+): HTMLCanvasElement {
+	if (typeof document === 'undefined') {
+		throw new Error('wave band cache requires a browser canvas');
+	}
+	const canvas = document.createElement('canvas');
+	const w = Math.max(1, Math.ceil(durS * pxPerS));
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext('2d');
+	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
+	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette);
+	return canvas;
+}
+
+/** Build the transparent full-track band image once, never per animation frame. */
+function _drawBands(
+	ctx: CanvasRenderingContext2D,
+	waveform: AnlzWaveform,
 	pxPerS: number,
 	durS: number,
 	w: number,
@@ -225,11 +291,8 @@ function _drawBands(
 	const highPath = new Path2D();
 
 	for (let x = 0; x < w; x++) {
-		const t0 = tLeft + x / pxPerS;
-		const t1 = t0 + 1 / pxPerS;
-		if (t1 <= 0 || t0 >= durS) continue;
-		const p0 = Math.max(0, Math.floor((t0 / durS) * n));
-		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil((t1 / durS) * n) - 1));
+		const p0 = Math.max(0, Math.floor((x / w) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
 		if (mono) {
 			// Heights only (PWAV/PWV3): the contract does not pin which band
 			// array carries them, so take the per-point max across all three.
