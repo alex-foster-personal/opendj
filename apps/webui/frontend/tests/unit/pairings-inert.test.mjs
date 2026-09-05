@@ -9,7 +9,7 @@
  * durable pairing gate", not "restore". So the UI now says so instead of
  * asking.
  *
- * ON PROVING "no request fired": CreatePairingSheet.svelte cannot be mounted
+ * ON PROVING "no phantom request fired": CreatePairingSheet.svelte cannot be mounted
  * here (node:test + esbuild, no component mount infra - same constraint
  * capability-gating-markup.test.mjs documents). A mounted assertion would
  * anyway be the weaker claim. What is asserted instead is stronger: the
@@ -47,7 +47,7 @@ const RETIRED_MODULE = join(SRC, 'lib/rb/pairing-alignments.svelte.ts');
 const INERT_TITLE = 'not implemented - see PARITY-TODO';
 const PHANTOM_PATHS = ['/api/v1/pairings/sync-snapshots', '/api/v1/pairings/alignments'];
 /** The three sheet actions that needed the routes that never shipped. */
-const RETIRED_ACTIONS = ['Align hotcues', 'Reload sync', 'Capture'];
+const RETIRED_ACTIONS = ['Align hotcues', 'Reload sync'];
 
 const sheet = readFileSync(SHEET, 'utf8');
 
@@ -69,14 +69,14 @@ function stripComments(source) {
 
 // ------------------------------------------------------- the inert controls
 
-test('all three Create-pairing actions are disabled and say why', () => {
+test('only the two phantom Create-pairing actions are disabled and say why', () => {
 	const footer = sheet.slice(sheet.indexOf('<footer>'), sheet.indexOf('</footer>'));
 	for (const label of RETIRED_ACTIONS) {
 		assert.ok(footer.includes(label), `${label} button is missing from the sheet`);
 	}
 	const buttons = footer.match(/<button[\s\S]*?<\/button>/g) ?? [];
-	assert.equal(buttons.length, RETIRED_ACTIONS.length, 'the footer holds exactly the three actions');
-	for (const button of buttons) {
+	assert.equal(buttons.length, 3, 'the footer holds two inert actions and one real Capture');
+	for (const button of buttons.slice(0, 2)) {
 		assert.match(button, /\bdisabled\b/, `a footer action lost disabled: ${button}`);
 		assert.match(button, /title=\{INERT_TITLE\}/, `a footer action lost its tooltip: ${button}`);
 	}
@@ -84,9 +84,11 @@ test('all three Create-pairing actions are disabled and say why', () => {
 		sheet.includes(`const INERT_TITLE = '${INERT_TITLE}';`),
 		'the tooltip literal must stay exactly the shared PARITY-TODO wording'
 	);
+	assert.match(buttons[2], /onclick=\{_save\}/, 'Capture must save the frozen pairing snapshot');
+	assert.doesNotMatch(buttons[2], /rb-inert|title=\{INERT_TITLE\}/, 'Capture must not be retired with the phantom actions');
 });
 
-test('no action can fire a request, because the sheet holds no call site', () => {
+test('the sheet itself holds no phantom request call site', () => {
 	const code = stripComments(sheet);
 	assert.equal(
 		/(^|[^A-Za-z0-9_])fetch\(/.test(code),
@@ -96,15 +98,16 @@ test('no action can fire a request, because the sheet holds no call site', () =>
 	for (const path of PHANTOM_PATHS) {
 		assert.equal(code.includes(path), false, `${path} is still requested from the sheet`);
 	}
-	// A disabled button with no handler is the whole point: no onclick, nothing
-	// to schedule, nothing to await.
 	const footer = code.slice(code.indexOf('<footer>'), code.indexOf('</footer>'));
-	assert.equal(/onclick/.test(footer), false, 'an inert action must not carry a handler');
+	const inertButtons = footer.match(/<button[\s\S]*?<\/button>/g) ?? [];
+	for (const button of inertButtons.slice(0, 2)) {
+		assert.equal(/onclick/.test(button), false, 'a phantom action must not carry a handler');
+	}
 });
 
-test('the deck picker stays live - real engine state is not collateral damage', () => {
-	assert.match(sheet, /deckStates\[d\]\.stable_id !== null/);
-	assert.match(sheet, /onchange=\{\(\) => _toggle\(d\.id\)\}/);
+test('the deck picker renders only the dispatcher snapshot', () => {
+	assert.match(sheet, /snapshot\?\.decks \?\? \[\]/);
+	assert.match(sheet, /onchange=\{\(\) => _toggle\(d\.deck_id\)\}/);
 	assert.equal(
 		/<input[^>]*type="checkbox"[^>]*disabled/.test(sheet),
 		false,

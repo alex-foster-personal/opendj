@@ -46,7 +46,10 @@ const CHAIN_SOURCE = readFileSync(
 
 const BASE = Object.freeze({
 	feed_epoch: 3,
+	playlist_revision: 7,
 	source_stable_id: 'sid-a',
+	source_key: '8A',
+	source_bpm: 124,
 	enforce_play_order: false,
 	maximize_reach: true,
 	min_tempo_ratio: 0.84,
@@ -73,7 +76,10 @@ describe('chartedOrderKey', () => {
 		const base = mod.chartedOrderKey(BASE);
 		const variants = {
 			feed_epoch: { ...BASE, feed_epoch: 4 },
+			playlist_revision: { ...BASE, playlist_revision: 8 },
 			source_stable_id: { ...BASE, source_stable_id: 'sid-b' },
+			source_key: { ...BASE, source_key: '9A' },
+			source_bpm: { ...BASE, source_bpm: 126 },
 			enforce_play_order: { ...BASE, enforce_play_order: true },
 			maximize_reach: { ...BASE, maximize_reach: false },
 			min_tempo_ratio: { ...BASE, min_tempo_ratio: 0.9 },
@@ -87,6 +93,30 @@ describe('chartedOrderKey', () => {
 			assert.notEqual(mod.chartedOrderKey(input), base, `if ${name} changes and the key does not then the order column goes stale - broken`);
 		}
 	});
+
+	it('tracks a playlist-content revision without resetting the membership epoch', () => {
+		const feed = [
+			{ stable_id: 'sid-a', key: '8A', bpm: 124, file_exists: true },
+			{ stable_id: 'sid-b', key: '9A', bpm: 126, file_exists: true }
+		];
+		mod.setAutoPlayTrackFeed(feed);
+		const membershipEpoch = mod.getAutoPlayFeedEpoch();
+		const playlistRevision = mod.getAutoPlayPlaylistRevision();
+		mod.setAutoPlayTrackFeed([
+			feed[0],
+			{ ...feed[1], bpm: 128 }
+		]);
+		assert.equal(
+			mod.getAutoPlayFeedEpoch(),
+			membershipEpoch,
+			'if a metadata edit resets the membership epoch then played history is lost mid-set - broken'
+		);
+		assert.equal(
+			mod.getAutoPlayPlaylistRevision(),
+			playlistRevision + 1,
+			'if BPM/key/file changes do not advance the playlist revision then a future live feed leaves the chart stale - broken'
+		);
+	});
 });
 
 describe('the poll consults the memo (source guards; the controller is rune-bound)', () => {
@@ -99,6 +129,34 @@ describe('the poll consults the memo (source guards; the controller is rune-boun
 		const simAt = body.indexOf('simulateAutoPlayChain(');
 		assert.ok(keyAt > 0 && guardAt > keyAt && simAt > guardAt,
 			'if _refreshChartedOrder simulates before checking the memo key then the poll ignores the memo - broken');
+	});
+
+	it('every published empty order invalidates the memo before the next chart', () => {
+		const clearStart = CONTROLLER_SOURCE.indexOf('function _clearChartedOrder(): void {');
+		const clearEnd = CONTROLLER_SOURCE.indexOf('\n}', clearStart);
+		assert.ok(clearStart >= 0 && clearEnd > clearStart, 'if the clear helper is absent then an empty order can leave its memo live - broken');
+		const clear = CONTROLLER_SOURCE.slice(clearStart, clearEnd);
+		assert.match(clear, /_chartedOrderKey = null;/);
+		assert.match(clear, /publishAutoPlayOrder\(\[\]\);/);
+
+		const refreshStart = CONTROLLER_SOURCE.indexOf('function _refreshChartedOrder(');
+		const refresh = CONTROLLER_SOURCE.slice(refreshStart, CONTROLLER_SOURCE.indexOf('\n}\n', refreshStart));
+		assert.equal(
+			refresh.split('_clearChartedOrder();').length - 1,
+			2,
+			'if either chart guard publishes an empty order without clearing the memo then an unchanged recovery stays blank - broken'
+		);
+
+		const tickStart = CONTROLLER_SOURCE.indexOf('async function _tick(): Promise<void> {');
+		const tick = CONTROLLER_SOURCE.slice(tickStart, CONTROLLER_SOURCE.indexOf('function _startPoll(): void {', tickStart));
+		assert.equal(
+			tick.split('_clearChartedOrder();').length - 1,
+			2,
+			'if either tick guard clears the order without invalidating the memo then an unchanged recovery stays blank - broken'
+		);
+		const uninstallStart = CONTROLLER_SOURCE.indexOf('\treturn () => {');
+		const uninstall = CONTROLLER_SOURCE.slice(uninstallStart);
+		assert.match(uninstall, /_clearChartedOrder\(\);/, 'if teardown clears the order without invalidating the memo then re-entry can stay blank - broken');
 	});
 
 	it('the arm watcher clears an activation queue without subscribing to its writes', () => {

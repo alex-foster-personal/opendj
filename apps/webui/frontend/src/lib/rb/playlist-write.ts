@@ -216,6 +216,9 @@ export type BlankPlaylistLike = {
 	track_count: number;
 	/** When set, only `webui` rows are delete candidates. */
 	vendor?: string;
+	/** Server last-touch timestamp (ISO 8601). Backs the grace check across a
+	 * reload, where `_graceUntil` (in-memory, this module) does not survive. */
+	updated_at?: string;
 };
 
 export type BlankDeleteDecision =
@@ -254,6 +257,16 @@ export function _resetCreateGraceForTests(): void {
 	_graceUntil.clear();
 }
 
+/** Server-timestamp fallback for `isWithinCreateGrace`: a row this recently
+ * touched is presumed still mid-create even with no (or an evicted)
+ * `_graceUntil` entry -- the case a reload produces, since that registry is
+ * in-memory only and does not survive one. */
+function isWithinServerGrace(updatedAt: string | undefined, nowMs: number): boolean {
+	if (updatedAt === undefined) return false;
+	const updatedMs = Date.parse(updatedAt);
+	return Number.isFinite(updatedMs) && nowMs - updatedMs < BLANK_PLAYLIST_GRACE_MS;
+}
+
 export function decideBlankPlaylistDelete(
 	p: BlankPlaylistLike,
 	nowMs: number = Date.now()
@@ -267,7 +280,10 @@ export function decideBlankPlaylistDelete(
 	if (!isBlankPlaylistName(p.name)) {
 		return { action: 'keep', reason: `renamed name=${JSON.stringify(p.name.trim())}` };
 	}
-	if (isWithinCreateGrace(p.playlist_id, nowMs)) {
+	if (
+		isWithinCreateGrace(p.playlist_id, nowMs) ||
+		isWithinServerGrace(p.updated_at, nowMs)
+	) {
 		return { action: 'keep', reason: `within ${BLANK_PLAYLIST_GRACE_MS}ms create grace` };
 	}
 	return {

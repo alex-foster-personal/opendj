@@ -49,6 +49,8 @@ function _row(overrides = {}) {
 		duration_ms: null,
 		genre: null,
 		energy: null,
+		energy_source: null,
+		energy_reason: 'no Mixed In Key energy has been imported',
 		file_exists: true,
 		quality: null,
 		play_count: 0,
@@ -212,6 +214,20 @@ test('toggleSort: asc → desc → clear (natural order)', () => {
 	p.toggleSort('title'); // switching keys starts ascending
 	assert.equal(p.sort_key, 'title');
 	assert.equal(p.sort_dir, 1);
+});
+
+test('sortRows: MIK energy is numeric and missing values stay last in both directions', () => {
+	const rows = [
+		_row({ stable_id: 'missing', energy: null }),
+		_row({ stable_id: 'nine', energy: 9 }),
+		_row({ stable_id: 'one', energy: 1 })
+	];
+	assert.deepEqual(contract.sortRows(rows, 'energy', 1).map((row) => row.stable_id), [
+		'one', 'nine', 'missing'
+	]);
+	assert.deepEqual(contract.sortRows(rows, 'energy', -1).map((row) => row.stable_id), [
+		'nine', 'one', 'missing'
+	]);
 });
 
 test('select / setSearch / rememberScroll write the pane cursor state', () => {

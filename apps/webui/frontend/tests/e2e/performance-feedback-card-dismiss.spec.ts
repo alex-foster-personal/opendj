@@ -6,19 +6,40 @@ test('reopened comment card closes on a real column resize pointerdown', async (
 	// Provision the pin through the production API (the dev server proxies /api to the engine),
 	// so the scenario does not depend on whatever the live feedback store happens to hold.
 	const seeded = await page.request.post('/api/v1/feedback/comments', {
-		data: { page: '/performance', text: SEED_TEXT, x_pct: 55, y_pct: 45 }
+		data: {
+			page: '/performance',
+			text: SEED_TEXT,
+			x_pct: 55,
+			y_pct: 45,
+			ui: 'chrome-loop',
+			viewport_width: 1280,
+			viewport_height: 800
+		}
 	});
 	if (!seeded.ok()) throw new Error(`seeding the feedback pin failed: HTTP ${seeded.status()}`);
 	const seededId = (await seeded.json()).id as string;
 	try {
 		await runScenario(page);
 	} finally {
+		// Archive requires the pin to be fixed/merged first (409 PIN_NOT_DONE
+		// otherwise, apps/webui/server/routes/feedback_pins.py:archive_comment) -
+		// this pin is only ever seeded `open`, so transition it before archiving.
+		const patched = await page.request.patch(`/api/v1/feedback/comments/${seededId}`, {
+			data: { status: 'fixed' }
+		});
+		if (!patched.ok()) throw new Error(`marking the seeded pin ${seededId} fixed failed: HTTP ${patched.status()}`);
 		const archived = await page.request.post(`/api/v1/feedback/comments/${seededId}/archive`);
 		if (!archived.ok()) throw new Error(`archiving the seeded pin ${seededId} failed: HTTP ${archived.status()}`);
 	}
 });
 
 async function runScenario(page: import('@playwright/test').Page): Promise<void> {
+	// Pin 88e3abec02a0 defaults "show feedback comment pins" OFF for a new
+	// viewer (per-viewer localStorage). This spec is exercising the pins
+	// themselves, so opt this viewer in before the widget mounts and reads it.
+	await page.addInitScript(() => {
+		window.localStorage.setItem('mdt.feedback.pinsVisible.v1', '1');
+	});
 	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
 	const existingPin = page.locator(`button.fb-pin[title^="${SEED_TEXT}"]`);
 	await expect(existingPin).toBeVisible({ timeout: 60_000 });

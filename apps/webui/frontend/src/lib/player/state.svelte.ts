@@ -46,6 +46,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		cue_ms: null,
 		pitch: 1,
 		quantize_enabled: true,
+		quantize_grid_beats: 1,
 		beat_sync_enabled: true,
 		key_sync_enabled: false,
 		master_tempo_enabled: true,

@@ -1457,6 +1457,89 @@
         "title": "ClientErrorOut",
         "type": "object"
       },
+      "ClientErrorRecord": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "received_at",
+          "kind",
+          "message"
+        ],
+        "title": "ClientErrorRecord",
+        "type": "object"
+      },
+      "ClientErrorTriageIn": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "fix",
+              "no-fix",
+              "duplicate"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disposition",
+          "ref"
+        ],
+        "title": "ClientErrorTriageIn",
+        "type": "object"
+      },
+      "ClientErrorTriageOut": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "fix",
+              "no-fix",
+              "duplicate"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disposition",
+          "ref",
+          "event_id"
+        ],
+        "title": "ClientErrorTriageOut",
+        "type": "object"
+      },
       "ClientEventIn": {
         "properties": {
           "client_event_id": {
@@ -1996,6 +2079,26 @@
             "title": "Text",
             "type": "string"
           },
+          "ui": {
+            "enum": [
+              "chrome-loop",
+              "packaged-app"
+            ],
+            "title": "Ui",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          },
           "x_pct": {
             "maximum": 100.0,
             "minimum": 0.0,
@@ -2013,7 +2116,10 @@
           "x_pct",
           "y_pct",
           "page",
-          "text"
+          "text",
+          "ui",
+          "viewport_width",
+          "viewport_height"
         ],
         "title": "CommentCreateIn",
         "type": "object"
@@ -2082,6 +2188,16 @@
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinEnvironmentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -2187,16 +2303,9 @@
             "title": "Status"
           },
           "text": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
           }
         },
         "title": "CommentUpdateIn",
@@ -4893,6 +5002,16 @@
             ],
             "title": "Notes"
           },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PairingSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "default": "manual",
             "enum": [
@@ -4913,6 +5032,80 @@
           "to_stable_id"
         ],
         "title": "PairingCreate",
+        "type": "object"
+      },
+      "PairingDeckSnapshot": {
+        "properties": {
+          "deck_id": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "eq_adjusts": {
+            "items": {
+              "$ref": "#/components/schemas/PairingEqAdjust"
+            },
+            "title": "Eq Adjusts",
+            "type": "array"
+          },
+          "position_ms": {
+            "minimum": 0.0,
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/PairingTimestamp"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck_id",
+          "stable_id",
+          "title",
+          "position_ms",
+          "timestamp",
+          "eq_adjusts"
+        ],
+        "title": "PairingDeckSnapshot",
+        "type": "object"
+      },
+      "PairingEqAdjust": {
+        "properties": {
+          "band": {
+            "enum": [
+              "low",
+              "mid",
+              "high"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "band",
+          "value"
+        ],
+        "title": "PairingEqAdjust",
         "type": "object"
       },
       "PairingOut": {
@@ -4948,6 +5141,16 @@
             "title": "Pairing Id",
             "type": "string"
           },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PairingSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "enum": [
               "manual",
@@ -4976,6 +5179,58 @@
           "updated_at"
         ],
         "title": "PairingOut",
+        "type": "object"
+      },
+      "PairingSnapshot": {
+        "properties": {
+          "beat_sync_max": {
+            "title": "Beat Sync Max",
+            "type": "boolean"
+          },
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/PairingDeckSnapshot"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Decks",
+            "type": "array"
+          },
+          "version": {
+            "const": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "beat_sync_max",
+          "decks"
+        ],
+        "title": "PairingSnapshot",
+        "type": "object"
+      },
+      "PairingTimestamp": {
+        "properties": {
+          "unit": {
+            "enum": [
+              "beats",
+              "time"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "unit",
+          "value"
+        ],
+        "title": "PairingTimestamp",
         "type": "object"
       },
       "PassiveActivityOut": {
@@ -5140,6 +5395,44 @@
           "how_to_grant"
         ],
         "title": "PermissionsOut",
+        "type": "object"
+      },
+      "PinEnvironmentOut": {
+        "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
+        "properties": {
+          "machine": {
+            "title": "Machine",
+            "type": "string"
+          },
+          "release_version": {
+            "title": "Release Version",
+            "type": "string"
+          },
+          "ui": {
+            "enum": [
+              "chrome-loop",
+              "packaged-app"
+            ],
+            "title": "Ui",
+            "type": "string"
+          },
+          "viewport_height": {
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ui",
+          "viewport_width",
+          "viewport_height",
+          "machine",
+          "release_version"
+        ],
+        "title": "PinEnvironmentOut",
         "type": "object"
       },
       "PlanModel": {
@@ -7467,6 +7760,33 @@
             ],
             "title": "Duration Ms"
           },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
           "etag": {
             "title": "Etag",
             "type": "string"
@@ -7602,6 +7922,9 @@
           "has_rb_mapping",
           "artwork_available",
           "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason",
           "match_context"
         ],
         "title": "SearchHit",
@@ -9052,16 +9375,9 @@
             "title": "Options"
           },
           "title": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
           }
         },
         "title": "TodoPatchIn",
@@ -9138,6 +9454,33 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
           },
           "file_exists": {
             "title": "File Exists",
@@ -9290,7 +9633,10 @@
           "vocals",
           "stems",
           "artwork_available",
-          "artwork_status"
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason"
         ],
         "title": "TrackListItemOut",
         "type": "object"
@@ -9578,6 +9924,33 @@
             ],
             "title": "Duration Ms"
           },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
           "etag": {
             "title": "Etag",
             "type": "string"
@@ -9708,7 +10081,10 @@
           "stems",
           "has_rb_mapping",
           "artwork_available",
-          "artwork_status"
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason"
         ],
         "title": "TrackRowOut",
         "type": "object"
@@ -12318,6 +12694,51 @@
       }
     },
     "/api/v1/client-errors": {
+      "get": {
+        "operationId": "list_client_errors_api_v1_client_errors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "untriaged",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Untriaged",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClientErrorRecord"
+                  },
+                  "title": "Response List Client Errors Api V1 Client Errors Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Client Errors",
+        "tags": [
+          "client-errors"
+        ]
+      },
       "post": {
         "operationId": "capture_client_error_api_v1_client_errors_post",
         "requestBody": {
@@ -12353,6 +12774,58 @@
           }
         },
         "summary": "Capture Client Error",
+        "tags": [
+          "client-errors"
+        ]
+      }
+    },
+    "/api/v1/client-errors/{event_id}": {
+      "patch": {
+        "operationId": "triage_client_error_api_v1_client_errors__event_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorTriageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorTriageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Triage Client Error",
         "tags": [
           "client-errors"
         ]

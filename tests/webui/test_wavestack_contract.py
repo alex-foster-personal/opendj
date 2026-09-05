@@ -9,6 +9,8 @@ Regression one-liners:
   - if a waveform row loses its per-deck identity then broken
   - if an empty deck exposes a seekable waveform control then broken
   - if waveform seeking loses its accessible slider contract then broken
+  - if a loaded deck loses its artwork, readable truncated title, or hover scrub then broken
+  - if an empty or artwork-unavailable deck looks like a silent missing thumbnail then broken
 """
 from __future__ import annotations
 
@@ -21,6 +23,10 @@ pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WAVEFORM_STACK = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/WaveformStack.svelte"
 WAVE_ROW = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveRow.svelte"
+WAVE_GUTTER = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveGutter.svelte"
+WAVE_TRACK_SUMMARY = (
+    REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/wave/WaveTrackSummary.svelte"
+)
 
 
 def _source(path: Path) -> str:
@@ -38,9 +44,12 @@ def test_wavestack_mounts_exactly_the_four_supported_decks() -> None:
 def test_every_wavestack_row_carries_its_deck_identity() -> None:
     source = _source(WAVE_ROW)
 
+    gutter = _source(WAVE_GUTTER)
+
     assert 'class="rb-waverow"' in source
     assert "data-deck={deckId}" in source
-    assert '<span class="deck-num">{deckId}</span>' in source
+    assert '<WaveGutter {deck} {deckId} {barsLabel} />' in source
+    assert '<span class="deck-num">{deckId}</span>' in gutter
 
 
 def test_empty_or_busy_deck_waveform_is_not_seekable() -> None:
@@ -62,3 +71,23 @@ def test_waveform_seek_canvas_remains_an_accessible_bounded_slider() -> None:
     assert "aria-valuemin={0}" in source
     assert "aria-valuemax={deck.duration_ms ?? 0}" in source
     assert "aria-valuenow={Math.round(deck.position_ms)}" in source
+
+
+def test_waveform_gutter_has_track_artwork_and_hover_scrubbable_title() -> None:
+    source = _source(WAVE_TRACK_SUMMARY)
+
+    assert "artworkUrl(deck.stable_id, 's')" in source
+    assert 'class="wave-art"' in source
+    assert 'class="wave-track-name"' in source
+    assert "trackNameScrubPx" in source
+    assert "onpointerenter={startTrackNameScrub}" in source
+    assert "onpointerleave={stopTrackNameScrub}" in source
+
+
+def test_waveform_gutter_labels_empty_and_unavailable_artwork_states() -> None:
+    source = _source(WAVE_TRACK_SUMMARY)
+
+    assert "No track loaded" in source
+    assert "Artwork unavailable" in source
+    assert "artworkFailed" in source
+    assert "loaded deck ${deck.stable_id} is missing a title" in source

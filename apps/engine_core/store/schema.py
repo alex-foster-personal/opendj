@@ -347,6 +347,107 @@ _ANALYSIS: tuple[str, ...] = (
 
 
 # ==========================================================================
+# DOMAIN: analysis retention -- availability dimension, unmatched staging,
+# energy time series, per-field verification provenance
+# Legacy source: apps/shared/state/schema.py (_V8, the af--analysis-retention
+# migration). Views are deliberately NOT mirrored here: this consolidated
+# module tracks tables/indexes only (see DOMAINS/TABLES docstrings); no other
+# domain here carries a view either.
+# ==========================================================================
+
+_ANALYSIS_RETENTION: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS track_availability (
+        stable_id     TEXT PRIMARY KEY REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        state         TEXT NOT NULL CHECK (state IN
+                        ('present','absent','awaiting_volume','streaming')),
+        checked_path  TEXT,
+        checked_at    TEXT NOT NULL
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_track_availability_state "
+        "ON track_availability(state)"
+    ),
+    """
+    CREATE TABLE IF NOT EXISTS unmatched_source_analysis (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        source             TEXT NOT NULL CHECK (source IN
+                             ('mik','rekordbox','djay','serato','traktor',
+                              'open-dj-tool','manual','inferred','webui')),
+        source_row_id      TEXT NOT NULL,
+        field_name         TEXT NOT NULL,
+        value_json         TEXT NOT NULL,
+        unmatched_reason   TEXT NOT NULL CHECK (unmatched_reason IN
+                             ('no_candidate','ambiguous_candidates',
+                              'lost_collision')),
+        confidence         REAL CHECK (confidence IS NULL OR
+                                       (confidence >= 0 AND confidence <= 1)),
+        title              TEXT,
+        artist             TEXT,
+        album              TEXT,
+        isrc               TEXT,
+        duration_ms        INTEGER,
+        source_path        TEXT,
+        modified_at        TEXT NOT NULL,
+        imported_at        TEXT NOT NULL,
+        promoted_stable_id TEXT REFERENCES tracks(stable_id) ON DELETE SET NULL,
+        promoted_at        TEXT,
+        UNIQUE (source, source_row_id, field_name)
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_unmatched_source_analysis_pending "
+        "ON unmatched_source_analysis(source, field_name) "
+        "WHERE promoted_stable_id IS NULL"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_unmatched_source_analysis_promoted "
+        "ON unmatched_source_analysis(promoted_stable_id) "
+        "WHERE promoted_stable_id IS NOT NULL"
+    ),
+    """
+    CREATE TABLE IF NOT EXISTS track_energy_segments (
+        stable_id   TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        seq         INTEGER NOT NULL,
+        start_ms    INTEGER NOT NULL CHECK (start_ms >= 0),
+        length_ms   INTEGER NOT NULL CHECK (length_ms > 0),
+        energy      INTEGER NOT NULL CHECK (energy BETWEEN 1 AND 10),
+        source      TEXT NOT NULL CHECK (source IN
+                      ('mik','rekordbox','djay','serato','traktor',
+                       'open-dj-tool','manual','inferred','webui')),
+        confidence  REAL CHECK (confidence IS NULL OR
+                                (confidence >= 0 AND confidence <= 1)),
+        start_clamped INTEGER NOT NULL DEFAULT 0
+                        CHECK (start_clamped IN (0, 1)),
+        modified_at TEXT NOT NULL,
+        PRIMARY KEY (stable_id, source, seq)
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_track_energy_segments_start "
+        "ON track_energy_segments(stable_id, start_ms)"
+    ),
+    """
+    CREATE TABLE IF NOT EXISTS analysis_field_verification (
+        source      TEXT NOT NULL,
+        field_name  TEXT NOT NULL,
+        status      TEXT NOT NULL,
+        basis       TEXT NOT NULL CHECK (basis IN
+                      ('cross_source','single_source','unverified')),
+        normaliser  TEXT,
+        checked_at  TEXT,
+        verified_by TEXT,
+        overridden  INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (source, field_name)
+    )
+    """,
+)
+
+
+
+# ==========================================================================
 # DOMAIN: curation -- pairing-memory edges + smartlist rules
 # Legacy source: apps/shared/pairings/schema_sql.py (ensure_phase08_tables,
 # called from the pairings repo AND the smartlists repo on construction)
@@ -690,6 +791,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
     "sync_infra": _SYNC_INFRA,
     "analysis": _ANALYSIS,
+    "analysis_retention": _ANALYSIS_RETENTION,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -716,6 +818,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
     "analysis": "apps/analysis/store.py",
+    "analysis_retention": "apps/shared/state/schema.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -753,6 +856,12 @@ TABLES: dict[str, tuple[str, ...]] = {
         "local_changelog",
     ),
     "analysis": ("analysis", "analysis_events"),
+    "analysis_retention": (
+        "track_availability",
+        "unmatched_source_analysis",
+        "track_energy_segments",
+        "analysis_field_verification",
+    ),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (

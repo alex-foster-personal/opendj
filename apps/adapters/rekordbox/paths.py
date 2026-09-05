@@ -112,13 +112,30 @@ def resolve_share_path(path: str) -> Path:
     return Path(path)
 
 
-def resolve_asset_path(path: str) -> MappedPath:
-    """Map one vendor asset path and enforce symlink-aware containment."""
+def resolve_asset_path(
+    path: str, *, resolver: platform_paths.AssetResolver | None = None
+) -> MappedPath:
+    """Map one vendor asset path and enforce symlink-aware containment.
+
+    ``resolver`` lets one bulk caller (``build_track_rows``) memoise repeat
+    containment lookups for the lifetime of that one call -- see
+    :class:`apps.shared.platform_paths.AssetResolver`. Every other call site
+    omits it and gets the always-uncached behaviour unchanged.
+    """
+    if resolver is not None:
+        return resolver.resolve_asset_path(path)
     return platform_paths.resolve_asset_path(path)
 
 
-def _asset_sibling(mapped: MappedPath, candidate: Path) -> MappedPath:
+def _asset_sibling(
+    mapped: MappedPath,
+    candidate: Path,
+    *,
+    resolver: platform_paths.AssetResolver | None = None,
+) -> MappedPath:
     """Contain a derived sibling of an already-mapped vendor asset path."""
+    if resolver is not None:
+        return resolver.resolve_asset_sibling(mapped, candidate)
     return platform_paths.resolve_asset_sibling(mapped, candidate)
 
 

@@ -428,6 +428,15 @@ function _drawVocals(
 	ctx.globalAlpha = 1;
 }
 
+/**
+ * CH3/4 get a lighter fill than --rb-bg (#0d0f12) so secondary rows read
+ * clearly under the opaque canvas (CSS alone cannot show through).
+ */
+export function resolvePaintPalette(deckId: number, palette: WavePalette): WavePalette {
+	const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
+	return rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
+}
+
 /** Fixed center playhead. Always drawn (busy waveforms + empty decks).
  * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red). */
 export function drawPlayhead(

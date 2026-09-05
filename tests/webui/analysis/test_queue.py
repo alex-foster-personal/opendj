@@ -157,6 +157,15 @@ def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, a
     _wait(client)
 
 
+def test_order_rejects_an_unknown_analysis_kind(client, app, tmp_path):
+    _seed(app, "order002", _audio(tmp_path, "order.mp3"))
+    _enable_all_steps(client)
+
+    response = client.post("/api/v1/analysis-queue/orders/order002/unknown")
+    assert response.status_code == 422
+    assert "unknown analysis kind" in response.text
+
+
 # ----- the drain ------------------------------------------------------------
 
 @pytest.mark.requirement("PARITY-06")

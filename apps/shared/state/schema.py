@@ -11,9 +11,9 @@ list where index ``i`` is the SQL to take the schema from version ``i`` to
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-SCHEMA_VERSION: int = 7
+SCHEMA_VERSION: int = 8
 
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -487,9 +487,185 @@ _V6: list[str] = [
     "ON auth_sessions(expires_at)",
 ]
 
+
+# --- migration 7 -> 8: analysis retention for audio we do not have --------
+# the maintainer, Tue 28 Jul 2026: "can we still grab the analyses of the files we don't
+# have but mark them file missing? maybe in a different table to prevent
+# confusion later".
+#
+# Numbered 8, not 4: this branch was cut before track_locations (v4/v5),
+# Google sign-in (v6) and CLOUDSYNC (v7) landed on main, and all four
+# claimed v4 independently. Same renumbering rationale as v6/v7 above --
+# this migration lands on top of the ladder instead of colliding with it.
+#
+# Two DISTINCT cases, deliberately NOT collapsed into one table:
+#
+# (a) A track that HAS a ``tracks`` row but whose audio is absent on disk
+#     (7,166 of 8,355 rows measured Tue 28 Jul 2026). Its analysis stays in
+#     ``track_fields`` -- duplicating it into an orphan table would create a
+#     migration that rots the moment the file is re-acquired. Availability is
+#     modelled as an explicit DIMENSION instead: ``track_availability``, one
+#     row per stable_id, plus views so the safe default is the easy one.
+#
+# (b) An analysed SOURCE row that matches no ``tracks`` row at all (2,603 of
+#     MIK's 7,026 songs). There is no stable_id to hang a ``track_fields`` row
+#     on, and inventing one would fabricate identity. It gets its own staging
+#     table, ``unmatched_source_analysis``, with a nullable
+#     ``promoted_stable_id`` recording the later match. See
+#     ``docs/analysis-retention.md`` for the promotion path.
+#     ``unmatched_reason`` records WHY no stable_id was assigned: no candidate
+#     at all, several equally good candidates, or a candidate that a
+#     better-tier source row won. All three mean the same thing operationally
+#     -- we do not know which track this analysis belongs to -- which is
+#     exactly why it must not sit in ``track_fields``.
+#
+# ``track_energy_segments`` is the time-series destination for MIK's
+# ZENERGYSEGMENT rows, in MILLISECONDS per the repo convention
+# (docs/terminology-reference/time-series-vs-scalar.md). ``track_fields`` is
+# one row per (stable_id, field_name) and cannot hold a series.
+_V8: list[str] = [
+    # (a) availability as a dimension, not a duplicated analysis table.
+    """
+    CREATE TABLE IF NOT EXISTS track_availability (
+        stable_id     TEXT PRIMARY KEY REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        state         TEXT NOT NULL CHECK (state IN
+                        ('present','absent','awaiting_volume','streaming')),
+        checked_path  TEXT,
+        checked_at    TEXT NOT NULL
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_track_availability_state "
+        "ON track_availability(state)"
+    ),
+    # Safe-default views. An aggregate written against ``tracks`` silently
+    # includes unplayable rows; one written against ``tracks_available``
+    # cannot. Rows with NO availability row yet are UNKNOWN and are excluded
+    # from ``tracks_available`` on purpose (absence of evidence is not
+    # evidence of presence).
+    #
+    # ``deleted_at IS NULL`` is required here, not implied by the
+    # ``track_availability`` FK's ``ON DELETE CASCADE``: a soft delete only
+    # sets ``tracks.deleted_at``, it never issues a physical ``DELETE``, so
+    # the cascade never fires and a tombstoned track's ``track_availability``
+    # row (and a tombstoned track_fields row) survives it. Without this
+    # predicate these safe-default views resurrect synced ghosts and inflate
+    # aggregates built against them.
+    """
+    CREATE VIEW IF NOT EXISTS tracks_available AS
+    SELECT t.*
+    FROM tracks t
+    JOIN track_availability a ON a.stable_id = t.stable_id
+    WHERE a.state = 'present' AND t.deleted_at IS NULL
+    """,
+    """
+    CREATE VIEW IF NOT EXISTS tracks_unavailable AS
+    SELECT t.*, a.state AS availability_state, a.checked_at AS availability_checked_at
+    FROM tracks t
+    JOIN track_availability a ON a.stable_id = t.stable_id
+    WHERE a.state <> 'present' AND t.deleted_at IS NULL
+    """,
+    """
+    CREATE VIEW IF NOT EXISTS track_fields_available AS
+    SELECT f.*
+    FROM track_fields f
+    JOIN track_availability a ON a.stable_id = f.stable_id
+    JOIN tracks t ON t.stable_id = f.stable_id
+    WHERE a.state = 'present' AND f.deleted_at IS NULL AND t.deleted_at IS NULL
+    """,
+    # (b) analysis with no stable_id to hang it on. Staging, not truth:
+    # ``promoted_stable_id`` is the one-way door into ``track_fields``.
+    """
+    CREATE TABLE IF NOT EXISTS unmatched_source_analysis (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        source             TEXT NOT NULL CHECK (source IN
+                             ('mik','rekordbox','djay','serato','traktor',
+                              'open-dj-tool','manual','inferred','webui')),
+        source_row_id      TEXT NOT NULL,
+        field_name         TEXT NOT NULL,
+        value_json         TEXT NOT NULL,
+        unmatched_reason   TEXT NOT NULL CHECK (unmatched_reason IN
+                             ('no_candidate','ambiguous_candidates',
+                              'lost_collision')),
+        confidence         REAL CHECK (confidence IS NULL OR
+                                       (confidence >= 0 AND confidence <= 1)),
+        title              TEXT,
+        artist             TEXT,
+        album              TEXT,
+        isrc               TEXT,
+        duration_ms        INTEGER,
+        source_path        TEXT,
+        modified_at        TEXT NOT NULL,
+        imported_at        TEXT NOT NULL,
+        promoted_stable_id TEXT REFERENCES tracks(stable_id) ON DELETE SET NULL,
+        promoted_at        TEXT,
+        UNIQUE (source, source_row_id, field_name)
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_unmatched_source_analysis_pending "
+        "ON unmatched_source_analysis(source, field_name) "
+        "WHERE promoted_stable_id IS NULL"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_unmatched_source_analysis_promoted "
+        "ON unmatched_source_analysis(promoted_stable_id) "
+        "WHERE promoted_stable_id IS NOT NULL"
+    ),
+    # Energy time series, milliseconds, time-indexed. Boundaries are rounded,
+    # never a start and a duration independently: see
+    # apps/mik/mikdb.py::_segment_rows_by_song. ``start_clamped`` marks the 77
+    # rows whose source start time was negative float dust, so a reader can
+    # tell a genuine 0 start from a clamped one.
+    """
+    CREATE TABLE IF NOT EXISTS track_energy_segments (
+        stable_id   TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        seq         INTEGER NOT NULL,
+        start_ms    INTEGER NOT NULL CHECK (start_ms >= 0),
+        length_ms   INTEGER NOT NULL CHECK (length_ms > 0),
+        energy      INTEGER NOT NULL CHECK (energy BETWEEN 1 AND 10),
+        source      TEXT NOT NULL CHECK (source IN
+                      ('mik','rekordbox','djay','serato','traktor',
+                       'open-dj-tool','manual','inferred','webui')),
+        confidence  REAL CHECK (confidence IS NULL OR
+                                (confidence >= 0 AND confidence <= 1)),
+        start_clamped INTEGER NOT NULL DEFAULT 0
+                        CHECK (start_clamped IN (0, 1)),
+        modified_at TEXT NOT NULL,
+        PRIMARY KEY (stable_id, source, seq)
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_track_energy_segments_start "
+        "ON track_energy_segments(stable_id, start_ms)"
+    ),
+    # HOW each field was verified, stored next to the values it produced.
+    # Cross-source agreement and a one-sided single-source probe are not the
+    # same strength of evidence, and a bare "passed" in a log line does not
+    # survive six months. Written by apps.mik.load.record_verification from
+    # apps.shared.equivalence.EquivalenceGate.provenance_rows, so a reader
+    # cannot mistake one basis for the other. ``overridden`` records that a
+    # human forced the write past a non-passing verdict.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_field_verification (
+        source      TEXT NOT NULL,
+        field_name  TEXT NOT NULL,
+        status      TEXT NOT NULL,
+        basis       TEXT NOT NULL CHECK (basis IN
+                      ('cross_source','single_source','unverified')),
+        normaliser  TEXT,
+        checked_at  TEXT,
+        verified_by TEXT,
+        overridden  INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),
+        recorded_at TEXT NOT NULL,
+        PRIMARY KEY (source, field_name)
+    )
+    """,
+]
+
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -531,7 +707,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
                 conn.execute(stmt)
             conn.execute(
                 "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
-                (target_version, datetime.now(timezone.utc).isoformat()),
+                (target_version, datetime.now(UTC).isoformat()),
             )
             conn.execute("COMMIT")
         except Exception:
@@ -561,9 +737,32 @@ TABLES: tuple[str, ...] = (
     "sync_state",
     "hub_changelog",
     "local_changelog",
+    # v8 (analysis retention for audio we do not have)
+    "track_availability",
+    "unmatched_source_analysis",
+    "track_energy_segments",
+    "analysis_field_verification",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
-intentionally excluded -- it is infrastructure, not domain data."""
+intentionally excluded -- it is infrastructure, not domain data. The last
+four arrived in v8."""
+
+VIEWS: tuple[str, ...] = (
+    "tracks_available",
+    "tracks_unavailable",
+    "track_fields_available",
+)
+"""Safe-default views created by migration v8. Query these, not ``tracks``,
+whenever an aggregate must not silently count unplayable rows."""
+
+AVAILABILITY_STATES: tuple[str, ...] = (
+    "present",
+    "absent",
+    "awaiting_volume",
+    "streaming",
+)
+"""Mirror of the ``track_availability.state`` CHECK constraint. Kept in sync
+by ``tests/shared/state/test_schema.py``."""
 
 
 FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (

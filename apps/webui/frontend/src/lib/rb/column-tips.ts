@@ -15,6 +15,7 @@ export type LibraryColTipId =
 	| 'rating'
 	| 'comments'
 	| 'time'
+	| 'energy'
 	| 'genre';
 
 /** Header explainers (plain text for native `title` tooltips). */
@@ -33,6 +34,7 @@ export const COLUMN_TIPS: Record<LibraryColTipId, string> = {
 	rating: 'Star rating (1-5). Click to edit; writes back with optimistic concurrency.',
 	comments: 'Free-text comments from the library record.',
 	time: 'Track duration (mm:ss).',
+	energy: 'Energy 1-9, imported from Mixed In Key. Empty means no readable Mixed In Key value is available; hover the cell for the reason.',
 	genre:
 		'Genres prioritize Rekordbox. Agents may enrich during enrich. User can edit the enrich prompt and choose Rbx vs Mixed In Key vs OpenDJ enriched (incl. version history) in config - WIP unfinished. Click a tag to filter; double = loose; triple = undo.'
 };

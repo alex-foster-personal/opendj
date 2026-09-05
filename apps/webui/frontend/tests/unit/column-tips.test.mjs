@@ -54,7 +54,7 @@ function titleExpressions(text) {
 
 test('every column tip id has real explanatory copy behind it', () => {
 	const ids = Object.keys(tips.COLUMN_TIPS);
-	assert.equal(ids.length, 12, `expected 12 column tips, got ${ids.length}: ${ids.join(', ')}`);
+	assert.equal(ids.length, 13, `expected 13 column tips, got ${ids.length}: ${ids.join(', ')}`);
 	for (const [id, tip] of Object.entries(tips.COLUMN_TIPS)) {
 		assert.equal(typeof tip, 'string', `${id} has no tip string`);
 		assert.ok(
@@ -107,20 +107,20 @@ test('every column tip id is actually wired to a header', () => {
 	}
 });
 
-test('the Preview and Artwork headers carry a title (the pair that regressed)', () => {
+test('the Preview and Artwork headers carry their shared custom explanation (the pair that regressed)', () => {
 	for (const [cls, id] of [
 		['h-preview', 'preview'],
 		['h-art', 'art']
 	]) {
-		const at = source.indexOf(`class="${cls}"`);
-		assert.ok(at > 0, `no <th class="${cls}"> found - the header moved, find it`);
+		const at = source.search(new RegExp(`class="(?:[a-z0-9-]+ )*${cls}(?: [a-z0-9-]+)*"`));
+		assert.ok(at > 0, `no <th> carrying ${cls} found - the header moved, find it`);
 		// The opening tag runs from the `<th` before the class to the next `>`
-		// at brace depth zero; the title must live inside it.
+		// at brace depth zero; the action's text must live inside it.
 		const open = source.lastIndexOf('<th', at);
 		const tag = source.slice(open, source.indexOf('>\n', at) + 1);
 		assert.ok(
 			tag.includes(`columnHeaderTitle('${id}')`),
-			`the ${id} header carries no column-tips title:\n${tag}`
+			`the ${id} header carries no column-tips explanation:\n${tag}`
 		);
 	}
 });

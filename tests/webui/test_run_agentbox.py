@@ -128,6 +128,19 @@ def test_dated_logs_append_off_the_worktree(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "first\n"
 
 
+def test_dated_log_path_uses_utc_when_no_time_is_supplied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import apps.webui.run_agentbox as runner
+
+    monkeypatch.setattr(runner.time, "gmtime", lambda: time.strptime("2026-08-17", "%Y-%m-%d"))
+    monkeypatch.setattr(runner.time, "localtime", lambda: time.strptime("2026-08-18", "%Y-%m-%d"))
+
+    assert dated_log_path("webui-backend", durable_dir=tmp_path) == (
+        tmp_path / "webui-backend-2026-08-17.log"
+    )
+
+
 def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
     assert is_agentbox(hostname="agentbox") is True
     assert is_agentbox(hostname="afmac") is False

@@ -14,6 +14,22 @@ Regression lines:
     0.00 / 0.00 for dispatcher / merge-even / merge-odd / merge-fable / rc-qa)
   - if a merged PR count or the per-merged Codex review ratio is misread from
     the gh JSON then broken (n=3, reviews 2+1+0 -> 1.0)
+  - if KPI_SKIP_REVIEW_COST does not actually skip the per-merged-PR review
+    loop then broken (proved by deleting the per-PR reviews fixtures: the
+    skipping run must not report a missing fixture, the measuring run must)
+  - if the skip goes quiet instead of naming itself then broken: an ABSENT
+    ratio already means the merged read failed, so a skipped measurement that
+    also prints nothing is indistinguishable from a failed one
+  - if the flag skips the loop when it is UNSET then broken (the overshoot
+    control: the reported defect is "too slow", and always-skipping satisfies
+    that report perfectly while deleting the metric)
+  - if a non-1 skip flag disables the measurement then broken: configuration
+    typos must fail explicitly rather than silently drop a KPI
+  - if a per-PR review read fails and the ratio still prints a number then
+    broken: 2>/dev/null used to hide both _gh's refusal and any live gh error,
+    so every unreadable PR contributed a silent 0 and the ratio came out low
+    while looking measured (1 of 3 missing and 3 of 3 missing both say
+    unmeasurable now, and stderr carries the refusal)
   - if an ATTEMPT_START stamp older than the window counts then broken
     (attempts_started=2, not 3)
   - if the burn line or block-cost-per-merge ratio is misread from quota.sh
@@ -347,6 +363,123 @@ def test_missing_gh_fixture_reports_unmeasurable_never_zero(tmp_path):
     assert "missing gh fixture" in proc.stderr
     assert "codex_reviews_per_merged_pr=" not in out
     assert "efficiency block_cost_per_merge_usd=" not in out
+
+
+def test_skip_review_cost_skips_the_loop_and_says_so(tmp_path):
+    """If KPI_SKIP_REVIEW_COST does not skip the per-merged-PR review loop, or
+    skips it silently, then broken.
+
+    The proof that the loop did not run is NOT the changed output line, which a
+    stray echo could fake. It is that the per-PR reviews fixtures are DELETED
+    and the run still says nothing about a missing fixture: _gh refuses a silent
+    empty read and writes "missing gh fixture" to stderr, so a loop that ran
+    would have to complain three times.
+    """
+    fixture = _copy_fixture(tmp_path)
+    for reviews in (fixture / "gh").glob("reviews-*.json"):
+        reviews.unlink()
+
+    env = _env(fixture, _home(tmp_path, token_profile=True))
+    env["KPI_SKIP_REVIEW_COST"] = "1"
+    proc = _run(env)
+    out = proc.stdout + proc.stderr
+
+    assert "codex_reviews_per_merged_pr=skipped" in out
+    assert "missing gh fixture" not in proc.stderr
+    # The gates the flag exists to serve are unaffected.
+    assert "merges n=3 per_hour=3.00" in out
+    assert "backlog open_prs=8 actionable=5" in out
+    assert "builder_freeze=off" in out
+
+
+def test_skip_review_cost_rejects_non_one_values(tmp_path):
+    """If a typo silently skips the KPI, then broken."""
+    fixture = _copy_fixture(tmp_path)
+    env = _env(fixture, _home(tmp_path, token_profile=True))
+    env["KPI_SKIP_REVIEW_COST"] = "yes"
+
+    proc = _run(env)
+
+    assert proc.returncode == 2
+    assert "KPI_SKIP_REVIEW_COST must be unset or 1, got: yes" in proc.stderr
+    assert "codex_reviews_per_merged_pr=skipped" not in proc.stdout
+
+
+def test_skip_review_cost_is_named_when_there_are_no_merges(tmp_path):
+    """If an intentional skip with zero merges goes unnamed, then broken."""
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "gh" / "merged.json").write_text("[]")
+    env = _env(fixture, _home(tmp_path, token_profile=True))
+    env["KPI_SKIP_REVIEW_COST"] = "1"
+
+    proc = _run(env)
+
+    assert proc.returncode == 0, proc.stderr
+    assert "merges n=0 " in proc.stdout
+    assert "codex_reviews_per_merged_pr=skipped" in proc.stdout
+
+
+def test_skip_is_distinguishable_from_an_unmeasurable_read(tmp_path):
+    """If a deliberate skip renders the same as a failed merged-PR read then
+    broken: absence already carries "could not measure"."""
+    fixture = _copy_fixture(tmp_path)
+    env = _env(fixture, _home(tmp_path, token_profile=True))
+    env["KPI_SKIP_REVIEW_COST"] = "1"
+    proc = _run(env)
+    out = proc.stdout + proc.stderr
+    assert "codex_reviews_per_merged_pr=skipped" in out
+    assert "not measured, not 0" in out
+    assert "codex_reviews_per_merged_pr=0" not in out
+
+
+def test_review_cost_still_measured_when_the_flag_is_unset(tmp_path):
+    """The overshoot control. The reported defect was "the run is too slow", and
+    a version that always skips the loop satisfies that report completely while
+    silently deleting the metric. Assert the ORIGINAL behavior still holds where
+    it should: no flag, real ratio, fixtures read."""
+    fixture = _copy_fixture(tmp_path)
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert "codex_reviews_per_merged_pr=1.0" in out
+    assert "skipped" not in out.split("codex_reviews_per_merged_pr=")[1].splitlines()[0]
+
+
+def test_review_fixtures_are_read_when_the_flag_is_unset(tmp_path):
+    """The negative control for the skip proof above: with the fixtures deleted
+    and NO flag, the loop must run and must complain. Without this, "no missing
+    fixture message" would be evidence of nothing.
+
+    This control failed on its first run and found a real defect: the per-PR
+    read was wrapped in 2>/dev/null, which swallowed _gh's own refusal, so the
+    loop could never complain about anything and each unreadable PR silently
+    contributed 0 reviews to a ratio that still printed as a measurement.
+    """
+    fixture = _copy_fixture(tmp_path)
+    for reviews in (fixture / "gh").glob("reviews-*.json"):
+        reviews.unlink()
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+    assert "missing gh fixture" in proc.stderr
+    # And the ratio must refuse itself rather than come out quietly low.
+    assert "codex_reviews_per_merged_pr=unmeasurable (3 of 3 per-PR review reads failed" in out
+    assert "codex_reviews_per_merged_pr=0.0" not in out
+
+
+def test_one_unreadable_pr_makes_the_whole_ratio_unmeasurable(tmp_path):
+    """If a PARTIAL review read still prints a ratio then broken: two of three
+    PRs readable and one missing yields 3/3 of a real numerator over a 3-PR
+    denominator only by luck, and in general drags the ratio down while looking
+    exactly like a measurement."""
+    fixture = _copy_fixture(tmp_path)
+    victim = sorted((fixture / "gh").glob("reviews-*.json"))[0]
+    victim.unlink()
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+    assert "codex_reviews_per_merged_pr=unmeasurable (1 of 3 per-PR review reads failed" in out
+    assert "codex_reviews_per_merged_pr=1.0" not in out
 
 
 def test_script_is_executable_and_syntax_clean():

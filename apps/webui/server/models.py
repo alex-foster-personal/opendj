@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProvenanceOut(BaseModel):
@@ -94,6 +94,11 @@ class TrackListItemOut(TrackOut):
     # so TrackTable does not depend on IntersectionObserver hydration.
     artwork_available: bool | None
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    # Display-only MIK value. Null means the browser must render an empty
+    # Energy cell and use energy_reason rather than inventing a number.
+    energy: int | None
+    energy_source: Literal["mik"] | None
+    energy_reason: str
 
 
 class TracksPage(BaseModel):
@@ -173,6 +178,9 @@ class TrackRowOut(BaseModel):
     has_rb_mapping: bool
     artwork_available: bool | None
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    energy: int | None
+    energy_source: Literal["mik"] | None
+    energy_reason: str
 
 
 class PlaylistDetail(BaseModel):
@@ -195,8 +203,34 @@ class PairingOut(BaseModel):
     direction: Literal["->", "<->"]
     source: Literal["manual", "learned", "ai"]
     notes: str | None = None
+    snapshot: PairingSnapshot | None = None
     created_at: str
     updated_at: str
+
+
+class PairingTimestamp(BaseModel):
+    unit: Literal["beats", "time"]
+    value: float = Field(ge=0)
+
+
+class PairingEqAdjust(BaseModel):
+    band: Literal["low", "mid", "high"]
+    value: float = Field(ge=0, le=1)
+
+
+class PairingDeckSnapshot(BaseModel):
+    deck_id: Literal[1, 2, 3, 4]
+    stable_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    position_ms: int = Field(ge=0)
+    timestamp: PairingTimestamp
+    eq_adjusts: list[PairingEqAdjust]
+
+
+class PairingSnapshot(BaseModel):
+    version: Literal[1]
+    beat_sync_max: bool
+    decks: list[PairingDeckSnapshot] = Field(min_length=2, max_length=2)
 
 
 class PairingCreate(BaseModel):
@@ -205,6 +239,22 @@ class PairingCreate(BaseModel):
     direction: Literal["->", "<->"] = "->"
     source: Literal["manual", "learned", "ai"] = "manual"
     notes: str | None = Field(default=None, max_length=1000)
+    snapshot: PairingSnapshot | None = None
+
+    @model_validator(mode="after")
+    def validate_snapshot_decks_match_pair(self) -> PairingCreate:
+        if self.snapshot is None:
+            return self
+        snapshot_ids = {deck.stable_id for deck in self.snapshot.decks}
+        pair_ids = {self.from_stable_id, self.to_stable_id}
+        if len(snapshot_ids) != 2 or snapshot_ids != pair_ids:
+            raise ValueError("snapshot decks must match the selected pairing tracks exactly")
+        if len({deck.deck_id for deck in self.snapshot.decks}) != 2:
+            raise ValueError("snapshot decks must use two distinct deck IDs")
+        unit = "beats" if self.snapshot.beat_sync_max else "time"
+        if any(deck.timestamp.unit != unit for deck in self.snapshot.decks):
+            raise ValueError("snapshot timestamp units must match beat_sync_max")
+        return self
 
 
 class QueueItemOut(BaseModel):

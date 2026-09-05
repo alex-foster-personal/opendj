@@ -804,6 +804,16 @@ test('the deferred resync call site threads the same load-token check into after
 	);
 });
 
+test('the lazy beatgrid upgrade module resolves when a deck first uses it (issue #920)', async () => {
+	stubDaemon();
+	const lazyUpgrade = await loadTypeScriptModule('src/lib/player/beatgrid-lazy.ts', {
+		viteApiBase: API_BASE
+	});
+	const st = { anlz: { ...emptyAnlz(), beatgrid: { beat_count: 0, beats: [] } }, anlz_error: null };
+	await lazyUpgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
+	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS, 'the first lazy call runs the unchanged upgrade API');
+});
+
 test('the injected resync ports wire the real engine sync primitives, not stand-ins', () => {
 	const start = source.indexOf('const _beatgridResyncPorts: BeatgridResyncPorts = {');
 	assert.ok(start > 0, '_beatgridResyncPorts not found - this test is reading the wrong file');

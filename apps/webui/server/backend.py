@@ -105,6 +105,7 @@ class Pairing:
     direction: Literal["->", "<->"]
     source: Literal["manual", "learned", "ai"]
     notes: str | None
+    snapshot: dict[str, object] | None = None
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -202,6 +203,7 @@ class StateBackend(Protocol):
     def list_tracks(self, flt: TrackFilter) -> Page: ...
     def get_track(self, stable_id: str) -> Track: ...
     def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]: ...
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
@@ -307,6 +309,16 @@ class InMemoryBackend:
         with self._mutex:
             return {
                 sid: self._tracks[sid]
+                for sid in stable_ids if sid in self._tracks
+            }
+
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]:
+        """``file_path`` only, for callers (playlist availability) that never
+        touch the rest of the Track -- skips hydrating every EAV field for
+        rows the caller was going to discard anyway."""
+        with self._mutex:
+            return {
+                sid: self._tracks[sid].file_path
                 for sid in stable_ids if sid in self._tracks
             }
 
@@ -474,8 +486,27 @@ class InMemoryBackend:
                         and existing.direction == pairing.direction):
                     if pairing.notes and pairing.notes != existing.notes:
                         merged_notes = f"{existing.notes or ''}\n{pairing.notes}".strip()
-                        updated = replace(existing, notes=merged_notes,
-                                          updated_at=_utcnow_iso())
+                        # Write-once, same as the snapshot-only branch below:
+                        # a frozen open-time capture is never replaced, so
+                        # merging notes cannot smuggle a recapture past that
+                        # contract. Only a pairing with no snapshot yet
+                        # accepts an incoming one.
+                        snapshot = (
+                            existing.snapshot if existing.snapshot is not None
+                            else pairing.snapshot
+                        )
+                        updated = replace(
+                            existing, notes=merged_notes, snapshot=snapshot,
+                            updated_at=_utcnow_iso(),
+                        )
+                        self._pairings[existing.pairing_id] = updated
+                        return updated
+                    if pairing.snapshot is not None:
+                        if existing.snapshot is not None:
+                            return existing
+                        updated = replace(
+                            existing, snapshot=pairing.snapshot, updated_at=_utcnow_iso()
+                        )
                         self._pairings[existing.pairing_id] = updated
                         return updated
                     return existing

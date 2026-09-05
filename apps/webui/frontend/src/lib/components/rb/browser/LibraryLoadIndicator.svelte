@@ -15,6 +15,8 @@
 	 * The percentage is only ever shown once `total` is known (All Tracks
 	 * health, or the selected playlist's track_count) - never invented.
 	 */
+	import SpinnerIcon from './SpinnerIcon.svelte';
+
 	let {
 		progress
 	}: {
@@ -53,10 +55,7 @@
 
 {#if progress !== null}
 	<div class="lli-root" role="status" aria-live="polite">
-		<svg class="lli-icon" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-			<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
-			<path d="M8 8V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-		</svg>
+		<span class="lli-icon"><SpinnerIcon size={10} /></span>
 		<span class="lli-label">
 			Loaded {progress.loaded}{progress.total !== null ? ` of ${progress.total}` : ''}
 			{#if rowsPerSecond > 0}
@@ -86,17 +85,9 @@
 		line-height: 1.2;
 	}
 	.lli-icon {
+		display: flex;
 		flex: none;
 		color: var(--rb-accent);
-		animation: lli-spin 0.9s linear infinite;
-	}
-	@keyframes lli-spin {
-		from {
-			transform: rotate(0deg);
-		}
-		to {
-			transform: rotate(360deg);
-		}
 	}
 	.lli-label {
 		flex: none;

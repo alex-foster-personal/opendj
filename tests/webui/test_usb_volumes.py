@@ -118,6 +118,41 @@ def test_classify_role_usb_removable_vs_fixed() -> None:
     assert classify_role(protocol="Disk Image", removable=True) == "disk_image"
 
 
+def test_music_kind_survives_missing_diskutil_metadata() -> None:
+    """classify_role(protocol=None, removable=None) falls to "other"; when
+    classify_mount() still proved music content, that must not be hidden
+    behind a metadata gap that never asserted the volume is non-usb."""
+    unclassifiable = usb_mod.UsbVolume(
+        id="path:MYSTERY",
+        name="MYSTERY",
+        mount_path="/Volumes/MYSTERY",
+        kind="music",
+        role="other",
+        protocol=None,
+        removable=None,
+    )
+    out = usb_mod._to_out(unclassifiable)
+    assert out.is_music is True
+    assert out.hide_reason is None
+
+
+def test_music_kind_stays_hidden_for_a_known_non_usb_role() -> None:
+    """A role of "other" backed by an actual known protocol (just not one
+    that maps to usb_stick/mounted_drive/disk_image) is a real non-usb bus,
+    not a metadata gap, so it must stay hidden even if it contains audio."""
+    known_other_bus = usb_mod.UsbVolume(
+        id="path:THUNDER",
+        name="THUNDER",
+        mount_path="/Volumes/THUNDER",
+        kind="music",
+        role="other",
+        protocol="Thunderbolt",
+        removable=None,
+    )
+    out = usb_mod._to_out(known_other_bus)
+    assert out.is_music is False
+
+
 def test_hide_reason_tags() -> None:
     assert (
         hide_reason_for("mounted_drive", protocol="USB")

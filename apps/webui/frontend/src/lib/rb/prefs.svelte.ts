@@ -36,6 +36,9 @@ export const PLAYLIST_TREE_WIDTH_DEFAULT = 300;
 /** Library track-table row density (browser list only - not decks/mixer). */
 export type LibraryDensity = 'compact' | 'cosy';
 
+/** The two optional suggestion panels below the library table. */
+export type LibraryPanel = 'next' | 'recommended';
+
 /** App + /performance chrome theme. Default dark. */
 export type UiTheme = 'dark' | 'light';
 
@@ -57,6 +60,9 @@ export interface RbUiPrefs {
 	/** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
+	/** Persisted independently so either collapsed rail entry can restore its panel. */
+	next_panel_collapsed: boolean;
+	recommended_panel_collapsed: boolean;
 	/**
 	 * Auto-play next track onto a free/stopped follower when the playing
 	 * source enters the remaining-time window (~16s). Hard-cut v1.
@@ -130,6 +136,8 @@ const DEFAULTS: RbUiPrefs = {
 	library_density: 'compact',
 	beat_sync_max: true,
 	next_only_filter: false,
+	next_panel_collapsed: false,
+	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
 	auto_play_enforce_order: false,
 	auto_play_maximize_reach: true,
@@ -203,6 +211,21 @@ function _load(): RbUiPrefs {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (next_only_filter is not a boolean) - ` +
 				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (next_panel_collapsed is not a boolean) - ` +
+				'clear the key to recover'
+		);
+	}
+	if (
+		parsed.recommended_panel_collapsed !== undefined &&
+		typeof parsed.recommended_panel_collapsed !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (recommended_panel_collapsed is not a boolean) - ` +
+				'clear the key to recover'
 		);
 	}
 	if (parsed.auto_play_enabled !== undefined && typeof parsed.auto_play_enabled !== 'boolean') {
@@ -304,6 +327,9 @@ function _load(): RbUiPrefs {
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_only_filter: parsed.next_only_filter ?? DEFAULTS.next_only_filter,
+		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
+		recommended_panel_collapsed:
+			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
 		auto_play_enabled: parsed.auto_play_enabled ?? DEFAULTS.auto_play_enabled,
 		auto_play_enforce_order:
 			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
@@ -422,6 +448,13 @@ export function setAutoPlayMaximizeReach(next: boolean): void {
 
 export function setNextOnlyFilter(next: boolean): void {
 	uiPrefs.next_only_filter = next;
+	_persist();
+}
+
+/** Collapse one suggestion panel while retaining the other panel's state. */
+export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean): void {
+	if (panel === 'next') uiPrefs.next_panel_collapsed = collapsed;
+	else uiPrefs.recommended_panel_collapsed = collapsed;
 	_persist();
 }
 

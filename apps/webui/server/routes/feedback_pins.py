@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from .feedback import (
     _COMMENTS_FILE,
@@ -48,21 +48,10 @@ _PATCHABLE_STATUSES = "^(open|issued|fixed|merged)$"
 
 # ----- models -------------------------------------------------------------
 class CommentUpdateIn(BaseModel):
-    text: str | None = Field(default=None, min_length=1)
+    text: str = Field(default=None, min_length=1)
     status: str | None = Field(default=None, pattern=_PATCHABLE_STATUSES)
     issue_url: str | None = None
     agent_note: str | None = None
-
-    @model_validator(mode="after")
-    def _text_omitted_not_nulled(self) -> CommentUpdateIn:
-        # `text` is required (non-None) on CommentOut, so a PATCH carrying an
-        # explicit `{"text": null}` would pass this model and then blow up
-        # CommentOut.model_validate() with a 500. Reject it here as a 422
-        # instead; a field left OUT of the body (not in model_fields_set)
-        # still means "leave text unchanged".
-        if "text" in self.model_fields_set and self.text is None:
-            raise ValueError("text cannot be null; omit the field to leave it unchanged")
-        return self
 
 
 class CommentFollowOnIn(BaseModel):

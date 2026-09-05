@@ -38,6 +38,34 @@ TABLE_DOCS: dict[str, str] = {
         "04.md's SYNC SET v1 explicitly excludes it, so it carries no "
         "updated_at / origin_device_id / deleted_at."
     ),
+    "track_availability": (
+        "One row per stable_id recording whether its audio is present on "
+        "disk right now, distinct from the analysed values that stay in "
+        "track_fields regardless. Safe-default views (tracks_available, "
+        "tracks_unavailable, track_fields_available) read this as a "
+        "dimension so an aggregate cannot silently include unplayable rows."
+    ),
+    "unmatched_source_analysis": (
+        "Staging for an analysed source row (MIK, rekordbox, ...) that "
+        "matches no tracks row at all, so there is no stable_id to hang a "
+        "track_fields row on. unmatched_reason records why; "
+        "promoted_stable_id is the one-way door into track_fields once a "
+        "match is later found (see docs/analysis-retention.md)."
+    ),
+    "track_energy_segments": (
+        "Time-series destination for a source's energy-over-time data "
+        "(e.g. MIK's ZENERGYSEGMENT), in milliseconds per the repo's "
+        "time-series-vs-scalar convention. track_fields is one row per "
+        "(stable_id, field_name) and cannot hold a series."
+    ),
+    "analysis_field_verification": (
+        "How each field was verified, stored next to the values it "
+        "produced: cross-source agreement, a one-sided single-source "
+        "probe, or unverified. Written by apps.mik.load.record_verification "
+        "from apps.shared.equivalence.EquivalenceGate.provenance_rows; "
+        "overridden records a human forcing a write past a non-passing "
+        "verdict."
+    ),
     "playlists": (
         "One row per vendor playlist, unique on (vendor, vendor_pl_id): "
         "re-ingesting the same playlist from the same vendor updates in "

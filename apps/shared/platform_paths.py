@@ -489,3 +489,67 @@ def resolve_asset_path(
 def resolve_asset_sibling(mapped: MappedPath, candidate: Path) -> MappedPath:
     """Contain a derived sibling of an already-mapped vendor asset path."""
     return _contained_asset_path(mapped, candidate)
+
+
+class AssetResolver:
+    """Per-call memo for asset containment resolution (pin ad59ac).
+
+    One row's preview strip, vocals lookup and artwork check frequently
+    resolve the exact same ``AnalysisDataPath`` independently, and a page of
+    rows repeats that across rows too -- ``candidate.resolve(strict=False)``
+    walks and lstats every path component, so this was measured costing 50
+    listing rows 507 ``resolve()`` calls / 4,251 lstats for what is really a
+    handful of distinct paths (cProfile,
+    ``apps/webui/server/rb_vendor_pkg/track_rows.py`` harness).
+
+    A prior fix cached the containment verdict for 30s across REQUESTS (the
+    ``FILE_EXISTS_TTL_S`` pattern in ``apps/adapters/rekordbox/config.py``)
+    and was rejected on review: a directory inside ``SHARE_ROOT`` can be
+    replaced by a symlink to outside it between two requests, and a cached
+    "safe" verdict would then be served without rerunning the containment
+    check. This class carries no time dimension and no module-level state at
+    all -- a caller constructs one, threads it through the handful of calls
+    that make up ONE bulk-hydration pass (e.g. one
+    :func:`~apps.webui.server.rb_vendor_pkg.track_rows.build_track_rows`
+    call), and lets it go out of scope when that call returns. Nothing it
+    resolves can ever be read back by a later, separate request, because
+    nothing outlives the object.
+
+    Every call site that does not pass one still gets the always-uncached
+    :func:`resolve_asset_path` / :func:`resolve_asset_sibling` behaviour
+    unchanged -- this is additive, not a replacement.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[tuple[str, str, bool, str], MappedPath] = {}
+
+    def resolve_asset_path(
+        self, asset_path: str, *, path_map: PathMap | None = None
+    ) -> MappedPath:
+        """Memoised counterpart of the module-level :func:`resolve_asset_path`."""
+        mapped = resolve_library_path(asset_path, path_map=path_map)
+        if mapped.resolved is None:
+            return mapped
+        return self._contained(mapped, mapped.resolved)
+
+    def resolve_asset_sibling(self, mapped: MappedPath, candidate: Path) -> MappedPath:
+        """Memoised counterpart of the module-level :func:`resolve_asset_sibling`."""
+        return self._contained(mapped, candidate)
+
+    def _contained(self, mapped: MappedPath, candidate: Path) -> MappedPath:
+        # Keyed on every field the result is derived from (pin ad59ac review,
+        # P2): ``original`` and ``reason``/``mapped`` are echoed straight
+        # through to the returned MappedPath by ``_contained_asset_path``, so
+        # omitting ``original`` would let two callers with the same
+        # (reason, mapped, candidate) but a different input path receive
+        # back someone else's ``original``. On the actual hot path this pin
+        # targets, every caller sharing a candidate also shares the same
+        # ``analysis_data_path`` string as ``original``, so this changes
+        # nothing about the achieved dedup.
+        key = (mapped.original, mapped.reason, mapped.mapped, str(candidate))
+        hit = self._cache.get(key)
+        if hit is not None:
+            return hit
+        result = _contained_asset_path(mapped, candidate)
+        self._cache[key] = result
+        return result

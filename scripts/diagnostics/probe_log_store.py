@@ -21,10 +21,8 @@ def append_bounded_jsonl(
     output_dir: Path, record: dict[str, Any], cap_bytes: int
 ) -> tuple[Path, bool]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    # Deliberately LOCAL time: the file name is the operator's calendar day,
-    # so a log is found where a human looks for it. Every record inside
-    # carries a UTC timestamp, which is what any analysis reads.
-    stamp = datetime.now().strftime("%Y-%m-%d")  # noqa: DTZ005
+    # UTC names and UTC record timestamps keep one cross-machine timeline.
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     path = output_dir / f"opendj-performance-{stamp}.jsonl"
     payload = (
         json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

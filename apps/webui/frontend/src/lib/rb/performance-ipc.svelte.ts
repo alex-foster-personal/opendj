@@ -42,6 +42,7 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { createPairing } from '$lib/api';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -73,7 +74,15 @@ import {
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
 import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
-import type { DeckAudioSnapshot, DeckState, LoopState, SafetyLoopSlot, SyncMode } from '$lib/rb/deck-state-types';
+import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
+import type {
+	DeckAudioSnapshot,
+	DeckState,
+	LoopState,
+	QuantizeGrid,
+	SafetyLoopSlot,
+	SyncMode
+} from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
@@ -99,6 +108,7 @@ import {
 	toggleTechMode,
 	type EdgeRegion
 } from '$lib/rb/technically-working.svelte';
+import { waveformStutterSnapshot } from '$lib/rb/audio-health.svelte';
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -121,6 +131,12 @@ export type PerformanceCommand =
 	| { type: 'tempo'; deck: DeckId; ratio: number }
 	| { type: 'pitch_range'; deck: DeckId; range: PitchRange }
 	| { type: 'quantize'; deck: DeckId; enabled: boolean }
+	// Pin a67bafbfc4b0: the quantize GRID, separate from the on/off toggle
+	// above. 1/4/8 are real and change engine.setQuantizeGrid; 'phase'
+	// (match to the detected phase length) is explicitly NOT implemented -
+	// _dispatchUnknown rejects it before it can queue, same shape as
+	// auto_play_two_track's not_implemented rejection.
+	| { type: 'quantize_grid'; deck: DeckId; beats: 1 | 4 | 8 | 'phase' }
 	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
 	| { type: 'master'; deck: DeckId }
@@ -146,6 +162,15 @@ export type PerformanceCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
+	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
+	 * of the AutoPlay button. Real (not stubbed) - see auto-play-next.ts /
+	 * auto-play-next.svelte.ts for the approximate loop/duck/cut it arms. */
+	| { type: 'auto_play_next_arm' }
+	| { type: 'auto_play_next_cancel' }
+	/** UI contract only: the "show other users' pins" toggle (pin 88e3abec02a0)
+	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
+	| { type: 'pins_show_other_users' }
+	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
@@ -164,7 +189,10 @@ export type PerformanceCommand =
 	| { type: 'tech_mode_peek'; peeking: boolean }
 	| { type: 'tech_mode_opt_reveal'; revealed: boolean }
 	| { type: 'tech_mode_eq_raised'; raised: boolean }
-	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean };
+	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean }
+	| { type: 'pairing_snapshot_open' }
+	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
+	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -196,6 +224,7 @@ export interface PerformanceDeckSnapshot {
 	pitch: number;
 	pitch_range: PitchRange;
 	quantize_enabled: boolean;
+	quantize_grid_beats: QuantizeGrid;
 	beat_sync_enabled: boolean;
 	key_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
@@ -253,7 +282,10 @@ export interface PerformanceState {
 	browser: { active_playlist: string | null };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
+	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
+	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	last_error: string | null;
+	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
 		active: boolean;
 		peeking: boolean;
@@ -263,6 +295,19 @@ export interface PerformanceState {
 	};
 }
 
+export interface PairingSnapshot {
+	version: 1;
+	beat_sync_max: boolean;
+	decks: Array<{
+		deck_id: DeckId;
+		stable_id: string;
+		title: string;
+		position_ms: number;
+		timestamp: { unit: 'beats' | 'time'; value: number };
+		eq_adjusts: Array<{ band: EqBand; value: number }>;
+	}>;
+}
+
 /** BrowserPanel owns playlist loading, while this module owns the public
  * command protocol. Registering the narrow adapter keeps both boundaries
  * explicit and makes a missing mounted browser fail loudly for an agent. */
@@ -270,11 +315,32 @@ export interface PerformanceBrowserAdapter {
 	selectPlaylist(playlistId: string): Promise<void>;
 }
 
+/** Pin fc60002b81a8: same decoupling shape as PerformanceBrowserAdapter above
+ * - auto-play-next.svelte.ts owns the real orchestration and already
+ * imports dispatchPerformanceCommand from this module, so this module
+ * registers rather than statically imports it back (a static import both
+ * ways would be a real cycle, not just a slack-ratchet number). A missing
+ * registration fails loudly, same rationale as a missing browser adapter. */
+export interface AutoPlayNextController {
+	arm(): boolean;
+	cancel(): void;
+}
+
+let _autoPlayNextController: AutoPlayNextController | null = null;
+
+export function registerAutoPlayNextController(controller: AutoPlayNextController): () => void {
+	_autoPlayNextController = controller;
+	return () => {
+		if (_autoPlayNextController === controller) _autoPlayNextController = null;
+	};
+}
+
 let _browserAdapter: PerformanceBrowserAdapter | null = null;
 let _activeBrowserPlaylist: string | null = null;
 let _commandSequence = 0;
 let _commandHistory: Array<{ id: string; type: PerformanceCommand['type'] }> = [];
 let _deckCommandIds: Record<DeckId, string | null> = { 1: null, 2: null, 3: null, 4: null };
+let _pairingSnapshot: PairingSnapshot | null = $state(null);
 
 export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAdapter): () => void {
 	if (_browserAdapter !== null) throw new Error('performance browser adapter is already registered');
@@ -702,6 +768,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
+	if (type === 'auto_play_next_arm' || type === 'auto_play_next_cancel') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'pins_show_other_users') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
 	if (type === 'tech_mode_toggle') {
 		_exactKeys(record, ['type']);
 		return { type };
@@ -721,6 +795,32 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'tech_mode_edge_hover') {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
+	}
+	if (type === 'pairing_snapshot_open') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'pairing_snapshot_remove_eq_adjuster') {
+		_exactKeys(record, ['type', 'deck', 'band']);
+		const deck = _deck(record.deck);
+		if (record.band !== 'low' && record.band !== 'mid' && record.band !== 'high') {
+			throw new TypeError(`band must be low, mid, or high; got ${String(record.band)}`);
+		}
+		return { type, deck, band: record.band };
+	}
+	if (type === 'pairing_snapshot_save') {
+		_exactKeys(record, ['type', 'from_deck', 'to_deck']);
+		const from_deck = _deck(record.from_deck);
+		const to_deck = _deck(record.to_deck);
+		if (from_deck === to_deck) throw new RangeError('pairing snapshot requires two distinct decks');
+		return { type, from_deck, to_deck };
+	}
+	if (type === 'library_panels') {
+		_exactKeys(record, ['type', 'panel', 'collapsed']);
+		if (record.panel !== 'next' && record.panel !== 'recommended') {
+			throw new TypeError(`library panel must be next or recommended; got ${String(record.panel)}`);
+		}
+		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
@@ -806,6 +906,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'quantize_grid') {
+		_exactKeys(record, ['type', 'deck', 'beats']);
+		if (record.beats !== 1 && record.beats !== 4 && record.beats !== 8 && record.beats !== 'phase') {
+			throw new RangeError(`beats must be 1, 4, 8, or "phase"; got ${String(record.beats)}`);
+		}
+		return { type, deck, beats: record.beats };
 	} else if (type === 'stem_mute') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
 		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
@@ -946,6 +1052,40 @@ function _hotCueArmedSnapshot(
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
+function _openPairingSnapshot(): PairingSnapshot {
+	const unit: 'beats' | 'time' = uiPrefs.beat_sync_max ? 'beats' : 'time';
+	const decks = DECK_IDS.flatMap((deckId) => {
+		const deck = getDeckState(deckId);
+		if (deck.stable_id === null) return [];
+		const channel = mixerState.channels[deckId];
+		const positionBeat = [...(deck.anlz?.beatgrid.beats ?? [])]
+			.reverse()
+			.find((beat) => beat.t * 1000 <= deck.position_ms);
+		let timestampValue = deck.position_ms;
+		if (unit === 'beats') {
+			if (positionBeat === undefined) {
+				throw new Error(`CH${deckId} has no beatgrid timestamp for pairing capture`);
+			}
+			timestampValue = positionBeat.n;
+		}
+		const adjustments: Array<{ band: EqBand; value: number }> = [
+			{ band: 'low', value: channel.eq_low },
+			{ band: 'mid', value: channel.eq_mid },
+			{ band: 'high', value: channel.eq_high }
+		];
+		const eq_adjusts = adjustments.filter((adjust) => adjust.value !== 0.5);
+		return [{
+			deck_id: deckId,
+			stable_id: deck.stable_id,
+			title: deck.title ?? deck.stable_id,
+			position_ms: deck.position_ms,
+			timestamp: { unit, value: timestampValue },
+			eq_adjusts
+		}];
+	});
+	return { version: 1, beat_sync_max: uiPrefs.beat_sync_max, decks };
+}
+
 function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	const deck = getDeckState(deckId);
 	const beatgrid = _beatgridProjection(deckId, deck);
@@ -979,6 +1119,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		pitch: deck.pitch,
 		pitch_range: pitchRanges[deckId],
 		quantize_enabled: deck.quantize_enabled,
+		quantize_grid_beats: deck.quantize_grid_beats,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		key_sync_enabled: deck.key_sync_enabled,
 		master_tempo_enabled: deck.master_tempo_enabled,
@@ -1071,12 +1212,18 @@ export function queryPerformanceState(): PerformanceState {
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error,
+		pairing_snapshot: _pairingSnapshot === null ? null : structuredClone(_pairingSnapshot),
 		technically_working: {
 			active: isTechModeActive(),
 			peeking: isPeeking(),
 			opt_reveal_active: isOptRevealActive(),
 			eq_raised: isEqRaised(),
 			hovered_edges: hoveredEdgeList()
+		},
+		waveform_stutter: { ...waveformStutterSnapshot() },
+		library_panels: {
+			next_collapsed: uiPrefs.next_panel_collapsed,
+			recommended_collapsed: uiPrefs.recommended_panel_collapsed
 		}
 	};
 }
@@ -1117,6 +1264,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
+		command.type === 'library_panels' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -1129,6 +1277,14 @@ export function performanceCommandQueueScopes(
 		command.type === 'tech_mode_opt_reveal' ||
 		command.type === 'tech_mode_eq_raised' ||
 		command.type === 'tech_mode_edge_hover'
+		|| command.type === 'pairing_snapshot_open'
+		|| command.type === 'pairing_snapshot_remove_eq_adjuster'
+		|| command.type === 'pairing_snapshot_save'
+		// AutoPlay Next arm/cancel dispatch their own scoped loop/eq
+		// commands internally (auto-play-next.svelte.ts); this entry point
+		// itself has no deck and nothing to serialize against.
+		|| command.type === 'auto_play_next_arm'
+		|| command.type === 'auto_play_next_cancel'
 		|| command.type === 'load_play_intent'
 	) {
 		return null;
@@ -1247,6 +1403,13 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setPitchRange(command.deck, command.range);
 	} else if (command.type === 'quantize') {
 		engine.setQuantize(command.deck, command.enabled);
+	} else if (command.type === 'quantize_grid') {
+		// 'phase' is rejected earlier in _dispatchUnknown, before this command
+		// can even queue - only 1/4/8 ever reach the engine.
+		if (command.beats === 'phase') {
+			throw new Error('quantize_grid: not_implemented - phase reached _execute unrejected');
+		}
+		engine.setQuantizeGrid(command.deck, command.beats);
 	} else if (command.type === 'beat_sync') {
 		await engine.setBeatSync(command.deck, command.enabled);
 	} else if (command.type === 'sync_mode') {
@@ -1295,6 +1458,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'library_panels') {
+		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.
@@ -1367,6 +1532,18 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'auto_play_two_track') {
 		throw new Error('auto_play_two_track must be rejected at the dispatch boundary');
+	} else if (command.type === 'auto_play_next_arm') {
+		if (_autoPlayNextController === null) {
+			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
+		}
+		_autoPlayNextController.arm();
+	} else if (command.type === 'auto_play_next_cancel') {
+		if (_autoPlayNextController === null) {
+			throw new Error('auto_play_next_cancel: no AutoPlay Next controller is mounted on this route');
+		}
+		_autoPlayNextController.cancel();
+	} else if (command.type === 'pins_show_other_users') {
+		throw new Error('pins_show_other_users must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {
 		toggleTechMode();
 	} else if (command.type === 'tech_mode_peek') {
@@ -1377,6 +1554,30 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setEqRaised(command.raised);
 	} else if (command.type === 'tech_mode_edge_hover') {
 		setEdgeHovered(command.edge, command.hovered);
+	} else if (command.type === 'pairing_snapshot_open') {
+		_pairingSnapshot = _openPairingSnapshot();
+	} else if (command.type === 'pairing_snapshot_remove_eq_adjuster') {
+		if (_pairingSnapshot === null) throw new Error('pairing snapshot is not open');
+		const deck = _pairingSnapshot.decks.find((item) => item.deck_id === command.deck);
+		if (deck === undefined) throw new Error(`CH${command.deck} is not in the pairing snapshot`);
+		if (!deck.eq_adjusts.some((adjust) => adjust.band === command.band)) {
+			throw new Error(`CH${command.deck} has no ${command.band} EQ adjustment`);
+		}
+		_pairingSnapshot = {
+			..._pairingSnapshot,
+			decks: _pairingSnapshot.decks.map((deck) => deck.deck_id !== command.deck
+				? deck
+				: { ...deck, eq_adjusts: deck.eq_adjusts.filter((adjust) => adjust.band !== command.band) })
+		};
+	} else if (command.type === 'pairing_snapshot_save') {
+		if (_pairingSnapshot === null) throw new Error('pairing snapshot is not open');
+		const from = _pairingSnapshot.decks.find((deck) => deck.deck_id === command.from_deck);
+		const to = _pairingSnapshot.decks.find((deck) => deck.deck_id === command.to_deck);
+		if (from === undefined || to === undefined) throw new Error('selected decks are not in the pairing snapshot');
+		await createPairing({
+			from_stable_id: from.stable_id, to_stable_id: to.stable_id,
+			snapshot: { ..._pairingSnapshot, decks: [from, to] }
+		});
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
@@ -1827,6 +2028,20 @@ async function _dispatchUnknown(
 			'auto_play_two_track: not_implemented - second-track matching and independent rules are planned'
 		);
 		_persistCommandError(null, error);
+		throw error;
+	}
+	if (command.type === 'pins_show_other_users') {
+		const error = new Error(
+			'pins_show_other_users: not_implemented - community feature, no cloudsync channel yet'
+		);
+		_persistCommandError(null, error);
+		throw error;
+	}
+	if (command.type === 'quantize_grid' && command.beats === 'phase') {
+		const error = new Error(
+			'quantize_grid: not_implemented - will match quantize to the detected phase length'
+		);
+		_persistCommandError(command.deck, error, command);
 		throw error;
 	}
 	const scopes = performanceCommandQueueScopes(command);

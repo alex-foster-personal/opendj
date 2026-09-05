@@ -31,6 +31,16 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         "bpm",
         "key",
         "energy",
+        # Integrated loudness as the source reports it. Units are NOT
+        # interchangeable between sources (dBFS vs RMS vs LUFS integrated vs
+        # LUFS short-term are four numbers wearing one word), so a loudness
+        # write must clear the equivalence gate first -- see
+        # apps/shared/equivalence.py and docs/analysis-retention.md.
+        "loudness",
+        # Clipped-peak count as the analyser observed it (MIK
+        # ZSONG.ZCLIPPEDPEAKCOUNT: 2,379 of 7,026 tracks carry at least one
+        # clipped peak, max 88,680). Free QC data, 100% incremental.
+        "clipped_peak_count",
         "rating",
         "cue_points",
         "beatgrid",
@@ -339,8 +349,8 @@ def to_open_dj_track(
 
 __all__ = [
     "WRAPPED_FIELDS",
-    "write_field",
     "read_field",
     "read_history",
     "to_open_dj_track",
+    "write_field",
 ]

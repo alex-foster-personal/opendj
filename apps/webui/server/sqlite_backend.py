@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence
 
 from apps.shared.state import db as _state_db
+from apps.shared.state import queries as _state_queries
 from apps.shared.state import schema as _state_schema
 from apps.shared.state.writer import StateWriter
 
@@ -183,7 +184,7 @@ def _reset_warnings_for_tests() -> None:
 # Fields the webui Track exposes that live in track_fields (EAV). Any field
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
-    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
+    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments", "energy",
 )
 
 _TRACKS_PROJECTION = (
@@ -546,24 +547,32 @@ class SqliteBackend:
             if not self._table_exists(conn, "tracks"):
                 _warn_fallback_once("get_tracks_bulk", "no tracks table")
                 return self._fallback.get_tracks_bulk(ids)
-            rows: list[sqlite3.Row] = []
-            chunk = 500
-            for i in range(0, len(ids), chunk):
-                sub = ids[i : i + chunk]
-                placeholders = ",".join("?" * len(sub))
-                rows.extend(
-                    conn.execute(
-                        "SELECT stable_id, title, artists_json, album, "
-                        "       duration_ms, file_path, created_at, updated_at "
-                        f"FROM tracks WHERE stable_id IN ({placeholders})",
-                        tuple(sub),
-                    )
-                )
+            rows = _state_queries.bulk_select_by_stable_id(
+                conn, "tracks",
+                "stable_id, title, artists_json, album, duration_ms, "
+                "file_path, created_at, updated_at",
+                ids,
+            )
             fields_map = _fetch_fields(conn, [r["stable_id"] for r in rows])
         return {
             r["stable_id"]: _row_to_track(r, fields_map.get(r["stable_id"], {}))
             for r in rows
         }
+
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]:
+        """``file_path`` only, skipping the ``_fetch_fields`` EAV pass -- see
+        ``routes/playlists.py`` for why (pin e0f3a90652a9)."""
+        ids = list(dict.fromkeys(stable_ids))
+        if not ids:
+            return {}
+        with self._ro() as conn:
+            if not self._table_exists(conn, "tracks"):
+                _warn_fallback_once("get_file_paths_bulk", "no tracks table")
+                return self._fallback.get_file_paths_bulk(ids)
+            rows = _state_queries.bulk_select_by_stable_id(
+                conn, "tracks", "stable_id, file_path", ids,
+            )
+        return {r["stable_id"]: r["file_path"] for r in rows}
 
     def list_playlists(self) -> list[Playlist]:
         with self._ro() as conn:

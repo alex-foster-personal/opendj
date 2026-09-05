@@ -20,6 +20,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if an agent cannot send the same comment through hot_cue_save then broken
  * - if a hot-cue write stops raising deck pending while it is in flight then broken
  * - if the visible Undo is disabled by that pending write then broken
+ * - if tabbing to Cancel then tabbing away without activating it leaves the
+ *   draft popover open then broken (PR #1270 carry-over)
  */
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
@@ -52,7 +54,12 @@ test('an empty-slot click enters focused rename mode before persistence begins',
 	assert.match(text, /renameInputEl\.focus\(\)/);
 	assert.match(text, /<input[\s\S]*class="[^"]*cue-name"[\s\S]*bind:this=\{renameInputEl\}/);
 	assert.match(text, /bind:value=\{renameDraft\}/);
-	assert.match(text, /onblur=\{\(\) => void commitRename\(entry\)\}/);
+	// bot review P2 (pin c20eeb07cae0 follow-up): onblur now inspects the
+	// event before committing, so tabbing to the cancel button does not
+	// auto-save a discarded draft - covered in full by
+	// hot-cue-edit-and-greedy-columns.test.mjs. This still asserts the
+	// blur path DOES commit on every ordinary blur.
+	assert.match(text, /void commitRename\(entry\);/);
 	assert.match(text, /event\.key === 'Enter'/);
 	assert.match(text, /event\.key === 'Escape'/);
 });
@@ -99,7 +106,7 @@ test('a blur-triggering populated-pad click stays immediate while writes seriali
 	);
 	assert.match(
 		text,
-		/disabled=\{busySlot === entry\.slot\}/,
+		/disabled=\{busySlot === entry\.slot \|\| renameSlot === entry\.slot\}/,
 		'a write in one slot must not disable the different button used to leave the input'
 	);
 	const clickStart = text.indexOf('async function onSlotClick');
@@ -236,5 +243,24 @@ test('the Undo button survives being the control that triggered the blur', () =>
 		undoFlow,
 		/const release = await acquireBusySlot\(requestedSlot\);[\s\S]*if \(undo === null\) return;/,
 		'without the disable, a repeated Undo must be serialized and then find its token already spent'
+	);
+});
+
+test('tabbing to Cancel then away without activating it still commits the deferred draft', () => {
+	const text = source('lib/components/rb/deck/HotCueBank.svelte');
+	const cancelAt = text.indexOf('class="cue-name-cancel"');
+	assert.notEqual(cancelAt, -1, 'if the cancel button markup moved then this guard is pointed at nothing');
+	// Not indexOf('>', cancelAt): several attributes on this tag are arrow
+	// function handlers (`=>`), whose '>' would end the slice early. A
+	// fixed window comfortably covering the whole opening tag is simpler
+	// and more robust than trying to parse past every `=>` in the markup.
+	const cancelTag = text.slice(cancelAt, cancelAt + 1000);
+
+	assert.match(
+		cancelTag,
+		/onblur=\{\(event\) => \{[\s\S]*?if \(event\.relatedTarget !== renameInputEl\) void commitRename\(entry\);/,
+		'the name input defers its commit to this button when Tab is headed here (bot review ' +
+			'P2, pin c20eeb07cae0) - if THIS button also lets focus leave without deciding, ' +
+			'the deferred commit is dropped and the popover is left open forever'
 	);
 });

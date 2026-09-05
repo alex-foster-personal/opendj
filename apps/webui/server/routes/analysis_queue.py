@@ -40,7 +40,7 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..analysis_autostart import AutoAnalyzeState
@@ -151,7 +151,7 @@ def run_analysis_queue() -> ingest.RefreshStatusOut:
 def order_track_analysis(stable_id: str, kind: str) -> AnalysisOrderOut:
     """Order one real analysis CLI run through the same single refresh slot."""
     if kind not in ANALYSIS_KINDS:
-        raise ValueError(f"unknown analysis kind {kind!r}")
+        raise HTTPException(422, f"unknown analysis kind {kind!r}")
     ingest.start_refresh(ingest.RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind))
     return AnalysisOrderOut(stable_id=stable_id, kind=kind, phase="queued")
 

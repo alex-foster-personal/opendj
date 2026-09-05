@@ -22,21 +22,23 @@
  *     [if] a vendor mapping lands and an ambient /anlz retry returns a real
  *       PQTZ grid [then] the engine's deck.anlz adopts it and re-reconciles ⛔️
  */
-import {
-	reconcileAfterBeatgridSettled,
-	reconcileBeforeClear,
-	resyncSettlementNeedsFullBarrier,
-	type BeatgridResyncPorts
-} from '$lib/player/beatgrid-resync';
+import type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
 import { sameBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { isScopedCommandInvalidated } from '$lib/rb/performance-command-scheduler';
 import { createScopedSyncRunner, type ScopedSyncRunner } from '$lib/player/scoped-sync-runner';
-export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync';
+export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracking';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
 type DeckId = DeckState['deck_id'];
+
+let _resyncModule: Promise<typeof import('$lib/player/beatgrid-resync')> | undefined;
+
+function _loadResyncModule(): Promise<typeof import('$lib/player/beatgrid-resync')> {
+	_resyncModule ??= import('$lib/player/beatgrid-resync');
+	return _resyncModule;
+}
 
 /** Everything this module needs from the engine, as probes rather than state.
  *
@@ -172,7 +174,8 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 		landed,
 		publish,
 		isStale
-	) => {
+	) =>
+		_loadResyncModule().then(({ reconcileAfterBeatgridSettled, resyncSettlementNeedsFullBarrier }) => {
 			const guardedPorts: BeatgridResyncPorts = {
 				...ports,
 				setBeatSyncEnabled: (d, enabled) => {
@@ -204,7 +207,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 					Promise.resolve()
 				);
 			});
-	};
+		});
 	return {
 		installScopedSyncRunner: scopedSync.install,
 		afterBeatgridUpgrade,
@@ -260,10 +263,11 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				reportError(
 					`Deck ${deck}'s stranded Beat Sync followers could not be reconciled before ${action} - ${_message(error)}`
 				);
-			runScoped(deck, (widen) => (
-				widen(() => reconcileBeforeClear(guardedPorts, deck, stranded)).catch(onFailure),
-				Promise.resolve()
-			)).catch(onFailure);
+			runScoped(deck, (widen) =>
+				_loadResyncModule().then(({ reconcileBeforeClear }) =>
+					widen(() => reconcileBeforeClear(guardedPorts, deck, stranded)).catch(onFailure)
+				)
+			).catch(onFailure);
 		},
 		adoptAuthoritativeGrid(stableId, data) {
 			for (const deck of ports.deckIds) {

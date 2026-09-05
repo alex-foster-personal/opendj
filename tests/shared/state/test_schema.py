@@ -144,6 +144,108 @@ def test_v4_backfills_primary_from_tracks_file_path(tmp_path: Path) -> None:
         conn.close()
 
 
+def _views(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='view'"
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
+def test_v8_tables_and_views_exist(state_conn: sqlite3.Connection) -> None:
+    names = _tables(state_conn)
+    for expected in (
+        "track_availability",
+        "unmatched_source_analysis",
+        "track_energy_segments",
+    ):
+        assert expected in names
+    assert set(state_schema.VIEWS) <= _views(state_conn)
+
+
+def test_v8_is_idempotent_over_a_populated_db(state_db_path: Path) -> None:
+    """A real DB carries data; migrating twice must be a no-op, not a wipe."""
+    conn = state_db.open_rw(state_db_path)
+    try:
+        conn.execute(
+            "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
+            "VALUES (?, 'isrc', ?, ?)",
+            ("c" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO track_availability(stable_id, state, checked_path, "
+            "checked_at) VALUES (?, 'absent', '/gone.mp3', ?)",
+            ("c" * 40, "2026-01-01T00:00:00Z"),
+        )
+        assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
+        assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
+        assert (
+            conn.execute("SELECT COUNT(*) FROM track_availability").fetchone()[0] == 1
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
+            == state_schema.SCHEMA_VERSION
+        )
+    finally:
+        conn.close()
+
+
+def test_availability_state_check_constraint(state_conn: sqlite3.Connection) -> None:
+    state_conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
+        "VALUES (?, 'isrc', ?, ?)",
+        ("d" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        state_conn.execute(
+            "INSERT INTO track_availability(stable_id, state, checked_at) "
+            "VALUES (?, 'lost', ?)",
+            ("d" * 40, "2026-01-01T00:00:00Z"),
+        )
+
+
+def test_availability_states_mirror_the_check_constraint(
+    state_conn: sqlite3.Connection,
+) -> None:
+    state_conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
+        "VALUES (?, 'isrc', ?, ?)",
+        ("e" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
+    for state in state_schema.AVAILABILITY_STATES:
+        state_conn.execute(
+            "INSERT INTO track_availability(stable_id, state, checked_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(stable_id) DO UPDATE SET state=excluded.state",
+            ("e" * 40, state, "2026-01-01T00:00:00Z"),
+        )
+
+
+def test_energy_segments_reject_an_out_of_scale_value(
+    state_conn: sqlite3.Connection,
+) -> None:
+    state_conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
+        "VALUES (?, 'isrc', ?, ?)",
+        ("f" * 40, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        state_conn.execute(
+            "INSERT INTO track_energy_segments(stable_id, seq, start_ms, length_ms, "
+            "energy, source, modified_at) VALUES (?, 0, 0, 1000, 17, 'mik', ?)",
+            ("f" * 40, "2026-01-01T00:00:00Z"),
+        )
+
+
+def test_unmatched_reason_is_constrained(state_conn: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        state_conn.execute(
+            "INSERT INTO unmatched_source_analysis(source, source_row_id, "
+            "field_name, value_json, unmatched_reason, modified_at, imported_at) "
+            "VALUES ('mik', '1', 'energy', '5', 'because', ?, ?)",
+            ("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+
+
 def test_track_fields_confidence_bounds(state_conn: sqlite3.Connection) -> None:
     state_conn.execute(
         "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "

@@ -42,7 +42,16 @@ def http_client(tmp_path: Path) -> TestClient:
 def _create(client: TestClient) -> dict:
     r = client.post(
         "/api/v1/feedback/comments",
-        json={"x_pct": 10, "y_pct": 20, "anchor": ".bank", "page": "/performance", "text": "hot cues ignore BSM"},
+        json={
+            "x_pct": 10,
+            "y_pct": 20,
+            "anchor": ".bank",
+            "page": "/performance",
+            "text": "hot cues ignore BSM",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
+        },
     )
     assert r.status_code == 201, r.text
     return r.json()

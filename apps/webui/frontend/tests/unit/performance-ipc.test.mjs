@@ -6,9 +6,13 @@ import { readFrontendSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let ipc;
+let pairing;
 
 before(async () => {
 	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts');
+	pairing = await loadTypeScriptModule('tests/unit/fixtures/pairing-snapshot-entry.ts', {
+		viteApiBase: 'https://pairing.example.test'
+	});
 });
 
 test('queue scopes isolate deck loads and coordinate only sync-sensitive commands', () => {
@@ -57,6 +61,73 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_open' }), null);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' }),
+		null
+	);
+});
+
+test('pairing snapshot freezes deck state, removes only real adjustments, and saves only the selected pair', async () => {
+	const originalFetch = globalThis.fetch;
+	const requests = [];
+	globalThis.fetch = async (request) => {
+		const body = JSON.parse(await request.clone().text());
+		requests.push(body);
+		return new Response(JSON.stringify({
+			pairing_id: 'pairing-1', ...body, direction: '->', source: 'manual', notes: null,
+			created_at: '2026-09-05T00:00:00.000000Z', updated_at: '2026-09-05T00:00:00.000000Z'
+		}), { status: 201, headers: { 'content-type': 'application/json' } });
+	};
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		pairing.uiPrefs.beat_sync_max = false;
+		for (const deckId of [1, 2, 3, 4]) {
+			const deck = pairing.deckStates[deckId];
+			deck.stable_id = deckId <= 3 ? `track-${deckId}` : null;
+			deck.title = deckId <= 3 ? `Track ${deckId}` : null;
+			deck.position_ms = deckId * 1000;
+			deck.anlz = null;
+			Object.assign(pairing.mixerState.channels[deckId], { eq_low: 0.2, eq_mid: 0.5, eq_high: 0.8 });
+		}
+		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		pairing.deckStates[1].position_ms = 99999;
+		pairing.mixerState.channels[1].eq_low = 0.9;
+		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' });
+		await assert.rejects(
+			pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'mid' }),
+			/has no mid EQ adjustment/
+		);
+		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_save', from_deck: 1, to_deck: 3 });
+		const snapshot = pairing.queryPerformanceState().pairing_snapshot;
+		assert.equal(snapshot.decks[0].position_ms, 1000);
+		assert.deepEqual(snapshot.decks[0].eq_adjusts, [{ band: 'high', value: 0.8 }]);
+		assert.deepEqual(requests[0].snapshot.decks.map((deck) => deck.deck_id), [1, 3]);
+	} finally {
+		uninstall();
+		globalThis.fetch = originalFetch;
+		delete globalThis.window;
+	}
+});
+
+test('pairing snapshot rejects beat timestamps when no beat is available', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		pairing.uiPrefs.beat_sync_max = true;
+		pairing.deckStates[1].stable_id = 'track-no-grid';
+		pairing.deckStates[1].title = 'No Grid';
+		pairing.deckStates[1].position_ms = 500;
+		pairing.deckStates[1].anlz = { beatgrid: { beats: [] } };
+		await assert.rejects(
+			pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' }),
+			/no beatgrid timestamp/
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('a beatgrid-landed resync claims only its own deck, and widening never makes that claim wait on the wide work', () => {
@@ -1077,6 +1148,27 @@ test('master mute and browser playlist selection are bus commands with queryable
 		assert.equal(selected.history.length, before + 3);
 	} finally {
 		unregister();
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+// ----- pin 88e3abec02a0: "show other users' pins" is stubbed, not silent --
+// The community-pins toggle in FeedbackWidget is inert (rb-inert, disabled),
+// but per AGENT-NATIVE PARITY every UI control still needs a matching
+// performance-bus command - one that answers honestly rather than pretending
+// to work. Modelled on auto_play_two_track, the existing precedent for a
+// UI-contract-only command that is rejected at the dispatch boundary before
+// it ever reaches deck/engine logic.
+test('pins_show_other_users is a registered performance command that refuses not_implemented', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			() => ipc.dispatchPerformanceCommand({ type: 'pins_show_other_users' }),
+			/not_implemented/
+		);
+	} finally {
 		uninstall();
 		delete globalThis.window;
 	}

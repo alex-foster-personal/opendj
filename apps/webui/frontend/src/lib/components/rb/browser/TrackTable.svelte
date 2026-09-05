@@ -7,7 +7,7 @@
 <script lang="ts">
 	// Browser track table (SCREENSHOT-SPEC 5c). Columns in screenshot order:
 	// funnel | cloud | # | Preview | Artwork | Track Title | Artist | K | B |
-	// Rating | Comments | Time | Venue (quality badge) | Genre | Stems.
+	// Rating | Comments | Time | Venue (quality badge) | Energy | Genre | Stems.
 	// Preview strips + file_exists arrive
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
@@ -44,10 +44,11 @@
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
+	import { columnExplainer } from './column-explainer-placement';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
-	import AnalysisDots from './AnalysisDots.svelte';
+	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
 	import StemTags from './StemTags.svelte';
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import { computeVirtualWindow } from './virtual-window';
@@ -59,6 +60,8 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
+	import SpinnerIcon from './SpinnerIcon.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
@@ -248,6 +251,7 @@
 		sortKey,
 		sortDir,
 		emptyMessage,
+		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
 		removable = false,
@@ -282,6 +286,8 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Honest note when a tiny search result bypasses Next-only only. */
+		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
 		 * scroll cursor restores when this changes, NOT on row updates. */
 		restoreKey: string | number;
@@ -735,11 +741,11 @@
 	<th
 		class={`h-${key} sortable`}
 		style={`width:${colWidths[col]}px`}
+		use:columnExplainer={{ text: columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`) }}
 		onclick={(e) => {
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
 		}}
-		title={columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`)}
 	>
 		<span class="th-label">
 			<span>{label}</span>
@@ -816,7 +822,11 @@
 			</colgroup>
 			<thead>
 				<tr>
-					<th class="h-icon" style={`width:${colWidths.funnel}px`} title="filter - not implemented, see PARITY-TODO">
+					<th
+						class="h-icon"
+						style={`width:${colWidths.funnel}px`}
+						use:columnExplainer={{ text: 'filter - not implemented, see PARITY-TODO' }}
+					>
 						<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
 							<path d="M2 3h12l-4.5 5v5l-3-1.5V8z" fill="currentColor" />
 						</svg>
@@ -832,7 +842,7 @@
 					<th
 						class="h-icon h-err"
 						style={`width:${colWidths.err}px`}
-						title="Err - detected analysis data-quality issues, hover a square for detail"
+						use:columnExplainer={{ text: 'Err - detected analysis data-quality issues, hover a square for detail' }}
 					>
 						Err
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -844,7 +854,11 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					<th class="h-icon" style={`width:${colWidths.cloud}px`} title="cloud/streaming flag">
+					<th
+						class="h-icon"
+						style={`width:${colWidths.cloud}px`}
+						use:columnExplainer={{ text: 'cloud/streaming flag' }}
+					>
 						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
 							<path
 								d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
@@ -897,7 +911,7 @@
 					<th
 						class="h-preview"
 						style={`width:${colWidths.preview}px`}
-						title={columnHeaderTitle('preview')}
+						use:columnExplainer={{ text: columnHeaderTitle('preview') }}
 					>
 						Preview
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -910,11 +924,14 @@
 						></span>
 					</th>
 					<th
-						class="h-art"
+						class="h-icon h-art"
 						style={`width:${colWidths.art}px`}
-						title={columnHeaderTitle('art')}
+						use:columnExplainer={{ text: columnHeaderTitle('art') }}
 					>
-						Artwork
+						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+							<path d="M1 3h14v10H1zm1 9 3.4-3.9 2.3 2.6 2.1-2.3L14 12V4H2z" fill="currentColor" />
+							<circle cx="5" cy="6" r="1" fill="currentColor" />
+						</svg>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -931,16 +948,18 @@
 					<th
 						class="h-key sortable"
 						style={`width:${colWidths.key}px`}
+						use:columnExplainer={{
+							text: columnHeaderTitle(
+								'key',
+								masterKey !== null
+									? `Master key ${masterKey} - sort by key (asc → desc → clear)`
+									: 'Sort by key (asc → desc → clear)'
+							)
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('key');
 						}}
-						title={columnHeaderTitle(
-							'key',
-							masterKey !== null
-								? `Master key ${masterKey} - sort by key (asc → desc → clear)`
-								: 'Sort by key (asc → desc → clear)'
-						)}
 					>
 						<span class="th-label">
 							{#if masterKey !== null}
@@ -969,16 +988,18 @@
 					<th
 						class="h-bpm sortable"
 						style={`width:${colWidths.bpm}px`}
+						use:columnExplainer={{
+							text: columnHeaderTitle(
+								'bpm',
+								masterBpm !== null
+									? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
+									: 'Sort by BPM (asc → desc → clear)'
+							)
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('bpm');
 						}}
-						title={columnHeaderTitle(
-							'bpm',
-							masterBpm !== null
-								? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
-								: 'Sort by BPM (asc → desc → clear)'
-						)}
 					>
 						<span class="th-label">
 							{#if masterBpm !== null}
@@ -1009,7 +1030,7 @@
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						title="biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps"
+						use:columnExplainer={{ text: 'biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps' }}
 					>
 						<span class="th-label"><span>Venue</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1021,13 +1042,21 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<th
 						class="h-energy"
+						class:h-icon={true}
+						class:sortable={true}
 						style={`width:${colWidths.energy}px`}
-						title="Energy 1-9, from Mixed In Key"
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('energy');
+						}}
+						title="Energy 1-9, from Mixed In Key - sort ascending, descending, then clear"
 						aria-label="Energy 1-9, from Mixed In Key"
 					>
-						<span class="th-label"><span class="energy-icon" aria-hidden="true">⚡</span></span>
+						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg><span class="energy-glyph" aria-hidden="true">⚡</span>{#if sortKey === 'energy'}<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>{/if}</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -1041,7 +1070,7 @@
 					<th
 						class="h-stems"
 						style={`width:${colWidths.stems}px`}
-						title="Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes"
+						use:columnExplainer={{ text: 'Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes' }}
 					>
 						<span class="th-label"><span>Stems</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1115,10 +1144,10 @@
 									aria-hidden="true"
 								></span>
 							{/if}
-							<AnalysisDots stableId={row.stable_id} badge={_badgeFor(row)} />
+							<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />
 						</td>
 						<td class="c-err">
-							<AnalysisDots stableId={row.stable_id} issues={_issuesFor(row)} mode="issues" />
+							<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />
 						</td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a
@@ -1186,8 +1215,16 @@
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
 							<span class="deck-btns">
+								<span class="deck-btns-title">load to deck:</span>
 								{#each DECKS as d (d)}
+									{@const target = deckStates[d]}
+									{@const isLoading = performanceCommandStatus.deck_pending[d] > 0}
+									{@const isThisTrack = target.stable_id === row.stable_id}
 									<button
+										class="deck-target"
+										class:master-target={target.is_master}
+										class:loading-target={isLoading}
+										class:loaded-target={isThisTrack}
 										title={`Load onto deck ${d}`}
 										onclick={(e) => {
 											e.stopPropagation();
@@ -1195,7 +1232,11 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{d}
+										{#if isLoading}
+											<SpinnerIcon size={9} />
+										{:else}
+											{d}
+										{/if}
 									</button>
 								{/each}
 								{#if removable}
@@ -1279,7 +1320,7 @@
 						<td class="c-quality">
 							<QualityBadge quality={row.quality} />
 						</td>
-						<td class="c-energy" class:energy-unset={row.energy === null} title="Energy 1-9, from Mixed In Key">
+						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
@@ -1322,6 +1363,9 @@
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">{emptyMessage}</div>
+		{/if}
+		{#if filterBypassNote !== null}
+			<p class="filter-bypass-note" data-testid="filter-bypass-note">{filterBypassNote}</p>
 		{/if}
 		{#if apCurveSegments.length > 0}
 			<svg
@@ -1521,6 +1565,26 @@
 	}
 	.table-wrap::-webkit-scrollbar-button:horizontal {
 		display: none;
+	}
+	/* Static column explanations are portalled to body by columnExplainer(), so
+	 * scope this deliberately-global skin here and outrank sticky headers and
+	 * the table's own curve/load overlays. */
+	:global(.column-explain-panel) {
+		position: fixed;
+		z-index: 100;
+		width: min(280px, calc(100vw - 16px));
+		max-height: calc(100vh - 16px);
+		overflow-y: auto;
+		padding: 6px 8px;
+		background: var(--rb-panel-raised, #0a0c0f);
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 10px;
+		line-height: 1.4;
+		pointer-events: none;
 	}
 	table {
 		width: 100%;
@@ -1832,9 +1896,11 @@
 		color: var(--rb-text-dim);
 	}
 	.energy-icon {
-		font-size: 11px;
-		line-height: 1;
+		width: 11px;
+		height: 11px;
+		fill: currentColor;
 	}
+	.energy-glyph { display: none; }
 	.c-order .grip {
 		margin-right: 2px;
 		font-size: 8px;
@@ -1943,20 +2009,48 @@
 	.c-preview {
 		position: relative;
 	}
+	/* Visible on hover+selected (mouse), per the pin: hover-only used to block
+	   visibility outright. display stays inline-flex always (never `none`) so
+	   the buttons remain Tab-reachable regardless of hover/selection - a
+	   keyboard user tabbing through the row must have an equal path to the
+	   mouse's hover, and a display:none element cannot receive the very
+	   focus that would reveal it. opacity+pointer-events do the hiding
+	   instead, and :focus-within always wins so Tab landing on any of these
+	   buttons reveals the whole group before the very next Tab press. */
 	.deck-btns {
-		display: none;
+		display: inline-flex;
 		position: absolute;
 		top: 2px;
 		right: 4px;
 		gap: 2px;
+		align-items: center;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 120ms ease;
 	}
-	tbody tr:hover .deck-btns {
-		display: inline-flex;
+	tbody tr:hover.rb-row-selected .deck-btns,
+	.deck-btns:focus-within {
+		opacity: 1;
+		pointer-events: auto;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.deck-btns {
+			transition: none;
+		}
+	}
+	.deck-btns-title {
+		font-size: 8px;
+		color: var(--rb-text-dim);
+		margin-right: 2px;
+		white-space: nowrap;
 	}
 	.deck-btns button {
 		width: 16px;
 		height: 16px;
 		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
@@ -1968,6 +2062,28 @@
 	.deck-btns button:hover {
 		background: var(--rb-accent);
 		color: #fff;
+	}
+	/* Per-deck state on the quick-load targets, per the pin: dim by default
+	   (empty deck = blank, no extra class), yellow border while that deck is
+	   master, the shared loading-wheel spinner while a command for that deck
+	   is in flight, slightly grey once that deck already holds THIS row's
+	   track. Numerals stay white throughout so they read against every
+	   state. */
+	.deck-btns button.deck-target {
+		color: #fff;
+		opacity: 0.55;
+	}
+	.deck-btns button.deck-target.loaded-target {
+		opacity: 0.75;
+		background: color-mix(in srgb, var(--rb-panel-raised) 60%, #000 20%);
+	}
+	.deck-btns button.deck-target.master-target {
+		opacity: 1;
+		border-color: var(--rb-yellow, #e8c13a);
+	}
+	.deck-btns button.deck-target.loading-target {
+		opacity: 1;
+		color: var(--rb-accent);
 	}
 	.deck-btns button.remove-btn {
 		color: var(--rb-red);
@@ -2009,6 +2125,13 @@
 		padding: 24px;
 		text-align: center;
 		color: var(--rb-text-dim);
+	}
+	.filter-bypass-note {
+		margin: 0;
+		padding: 3px 8px;
+		border-top: 1px solid var(--rb-border);
+		color: var(--rb-orange);
+		font-size: var(--rb-fs-label);
 	}
 	/* Declared height, not font-metric height: `.tt-root`'s min-height floor
 	 * and `+page.svelte`'s library reservation both have to add this exact

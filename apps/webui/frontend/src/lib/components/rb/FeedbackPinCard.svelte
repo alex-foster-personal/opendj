@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
+	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
 	let {
@@ -77,7 +78,18 @@
 	<p class="fb-hint">{pinStatus(pin)} - {pin.created_at}</p>
 	<p class="fb-body-text">{pin.text}</p>
 	{#if pin.agent_note}
-		<p class="fb-note" title="What an agent did about this pin">{pin.agent_note}</p>
+		<p class="fb-note" title="What an agent did about this pin">
+			{#each linkifyAgentNote(pin.agent_note) as segment, i (i)}
+				{#if segment.type === 'link'}
+					<a
+						href={segment.value}
+						target="_blank"
+						rel="noreferrer noopener"
+						onclick={(e) => e.stopPropagation()}>{segment.value}</a
+					>
+				{:else}{segment.value}{/if}
+			{/each}
+		</p>
 	{/if}
 	{#if pin.issue_url}
 		<a
@@ -136,6 +148,13 @@
 		padding-top: 4px;
 		border-top: 1px solid var(--rb-border);
 		color: var(--rb-text-dim);
+		/* pin 27fe1e3e61b5: .perf-root sets user-select: none globally, which
+		   this inherits otherwise - an agent's reply must be copyable. */
+		user-select: text;
+	}
+	.fb-note a {
+		color: var(--rb-accent);
+		word-break: break-all;
 	}
 	.fb-issue-link {
 		display: block;

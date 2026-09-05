@@ -167,6 +167,13 @@
 		});
 	}
 
+	/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats). 'phase' is
+	 * plumbed but not implemented, so it never reaches here - JogDial's own
+	 * phase option is disabled and calls nothing. */
+	async function setQuantizeGrid(beats: 1 | 4 | 8): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'quantize_grid', deck: deckId, beats });
+	}
+
 	async function toggleBeatSync(): Promise<void> {
 		await runPerformanceCommandFromUi({
 			type: 'beat_sync',
@@ -366,6 +373,7 @@
 			{pitchRange}
 			{pending}
 			onQuantize={toggleQuantize}
+			onQuantizeGrid={setQuantizeGrid}
 			onMasterTempo={toggleMasterTempo}
 			onSlip={toggleSlip}
 			inertTip={INERT_TIP}

@@ -15,7 +15,7 @@ import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import type { AnlzData } from '$lib/rb/anlz-types';
 
-export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-upgrade';
+export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-lazy';
 export {
 	createBeatgridResyncGuards,
 	createBeatgridResyncTracking

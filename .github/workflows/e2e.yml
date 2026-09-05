@@ -102,12 +102,64 @@ jobs:
     # otherwise, and the runner user has NOPASSWD sudo.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
+    env:
+      # One native thread per process. This job's "Root Playwright suite" step
+      # runs the webui refresh job, which shells out to
+      # `apps.analysis.run --backend librosa --workers 2` (see
+      # apps/webui/server/routes/ingest_analysis_argv.py). Without a cap,
+      # OpenBLAS and numba fan every call out across every thread the host
+      # has, exactly the failure mode ci.yml's `test` job already documents
+      # (tests/scripts/test_ci_thread_caps.py) and was never carried over
+      # here: this job shares the same self-hosted agentbox host with up to
+      # ten other concurrent runner jobs. Under that contention a
+      # ProcessPoolExecutor worker fork can land mid-BLAS-thread-activity and
+      # die outright - concurrent.futures.process.BrokenProcessPool,
+      # tests/e2e/ingest-refresh.spec.ts:56 - intermittently, worse the busier
+      # the host is, and with no OOM-kill line because nothing here is short
+      # on memory. Seen on PR #1092, PR #1306 (run 33981951903 attempt 2) and
+      # elsewhere Fri-Sat 4-5 Sep 2026. One thread each removes the
+      # oversubscription rather than papering over a dead worker.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
 
     steps:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           clean: true
+
+      - name: Derive the worktree-port lane from the runner identity
+        # This job is the only one that claims a dynamic pair from the pool
+        # (apps/webui/port_config.py, via `pnpm test:e2e` below): each
+        # self-hosted runner is a separate clone with its own registry and
+        # lock (issue #1301), so two runners on one host both start
+        # allocating from slot 0 of the SAME pool and can select the same
+        # pair. MUSIC_DJ_PORT_LANE shifts one runner's whole pool window
+        # clear of every other lane's.
+        #
+        # RUNNER_NAME is the self-hosted agent's registered name (`agentName`
+        # in its `.runner` file), e.g. "agentbox-2", or "nucbox-wsl" with no
+        # trailing number for a host's first-registered runner. Lane 0 is
+        # left unclaimed for local dev (unset var, e.g. `just webui-ports` on
+        # a developer machine that is also a runner host), so an unsuffixed
+        # name gets lane 1 and a suffixed name gets its numeric index plus 1.
+        # Thus an unsuffixed runner never collides with local dev or suffix 1.
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
 
       - name: Enable pinned pnpm
         # Order matters: corepack before setup-node, so a `pnpm` shim exists on
@@ -121,7 +173,14 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.14.0"
-          cache: pnpm
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
 
       - name: Setup Python
@@ -147,7 +206,7 @@ jobs:
         # against an unpopulated one it resolves somewhere else entirely and
         # reports success while binding the wrong thing. Populating the venv
         # here is what makes that command mean what it says.
-        run: uv sync
+        run: uv sync --extra tags --extra analysis
 
       - name: Prove the venv is populated and is this checkout's
         # Fail fast and loudly rather than letting the engine boot fail 180s
@@ -160,6 +219,12 @@ jobs:
           .venv/bin/python -c "import apps.engine_core" \
             || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
           echo "[OK] apps.engine_core imports"
+
+      - name: Runner preflight - node tools and disk
+        # Fail here, naming the runner, rather than mid-install with a cryptic
+        # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh
+        # (it deliberately does not run `pnpm store status`; see the script).
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
 
       - name: Install frontend dependencies
         working-directory: apps/webui/frontend
@@ -362,6 +427,15 @@ jobs:
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
         run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
+      - name: Root Playwright suite (real engine + Vite)
+        working-directory: apps/webui/frontend
+        # `test:e2e` fixes a pair reserved for this suite, builds its own
+        # generated-audio library, and starts the engine before Vite. This is
+        # the default Playwright command developers run, so running it here
+        # keeps its API-backed specs from becoming an unobserved test estate.
+        if: ${{ !cancelled() }}
+        run: pnpm test:e2e --output test-results/root-playwright
+
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -422,7 +496,14 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.14.0"
-          cache: pnpm
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
 
       - name: Setup Python
@@ -444,6 +525,12 @@ jobs:
 
       - name: Install Python deps into the project venv
         run: uv sync
+
+      - name: Runner preflight - node tools and disk
+        # Fail here, naming the runner, rather than mid-install with a cryptic
+        # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh
+        # (it deliberately does not run `pnpm store status`; see the script).
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
 
       - name: Install frontend dependencies
         working-directory: apps/webui/frontend

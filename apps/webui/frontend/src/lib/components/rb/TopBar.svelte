@@ -14,7 +14,12 @@
 	import { onMount } from 'svelte';
 	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
-	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import {
+		dispatchPerformanceCommand,
+		runPerformanceCommandFromUi,
+		type PairingSnapshot
+	} from '$lib/rb/performance-ipc.svelte';
+	import { autoPlayNextState } from '$lib/rb/auto-play-next.svelte';
 	import {
 		setAutoPlayEnabled,
 		setAutoPlayEnforceOrder,
@@ -27,6 +32,8 @@
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
@@ -58,6 +65,7 @@
 	const jobsUnavailable = $derived(jobsRefusal());
 
 	let pairingOpen = $state(false);
+	let pairingSnapshot = $state<PairingSnapshot | null>(null);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
@@ -69,6 +77,15 @@
 		if (d.mode === 'off') return `${d.short} - ${d.detail}`;
 		return `AutoPlay ON (${d.short}) - last ~16s loads onto a free/stopped deck. ${d.detail}`;
 	});
+
+	// Pin fc60002b81a8: ">|" split of the AutoPlay button, early next-track
+	// transition trigger. Toggles arm/cancel through the same command path
+	// as every other performance control (see auto-play-next.svelte.ts).
+	function _toggleAutoPlayNext(): void {
+		void runPerformanceCommandFromUi(
+			autoPlayNextState.armed ? { type: 'auto_play_next_cancel' } : { type: 'auto_play_next_arm' }
+		);
+	}
 
 	function _placeAutoPlayMenu(): void {
 		if (autoPlayWrapEl === undefined) return;
@@ -169,6 +186,13 @@
 
 	function _setMaster(value: number): void {
 		void runPerformanceCommandFromUi({ type: 'master_volume', value });
+	}
+
+	async function _openPairing(): Promise<void> {
+		const state = await dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		if (state.pairing_snapshot === null) throw new Error('pairing snapshot was not captured');
+		pairingSnapshot = state.pairing_snapshot;
+		pairingOpen = true;
 	}
 
 	function _masterFromEvent(e: PointerEvent): number {
@@ -345,7 +369,7 @@
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
-		onclick={() => (pairingOpen = true)}
+		onclick={() => void _openPairing()}
 	>
 		Create pairing
 	</button>
@@ -381,6 +405,18 @@
 			onclick={() => setAutoPlayEnabled(!uiPrefs.auto_play_enabled)}
 		>
 			AutoPlay
+		</button>
+		<button
+			type="button"
+			class="bsm-toggle ap-next-btn"
+			class:on={autoPlayNextState.armed}
+			aria-pressed={autoPlayNextState.armed}
+			title={autoPlayNextState.armed
+				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
+				: 'Next-track loop: loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'}
+			onclick={_toggleAutoPlayNext}
+		>
+			&gt;|
 		</button>
 		{#if autoPlayMenuOpen}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -516,29 +552,43 @@
 	<RefreshAnalysisButton />
 
 	<!-- master volume: REAL -> engine master GainNode -->
-	<div
-		class="master-slider"
-		role="slider"
-		aria-label="master volume"
-		title="Master volume - final output gain"
-		aria-orientation="horizontal"
-		aria-valuemin={0}
-		aria-valuemax={1}
-		aria-valuenow={mixerState.master}
-		tabindex="0"
-		use:wheelAdjust={{
-			step: WHEEL_STEP.fader,
-			get: () => mixerState.master,
-			set: _setMaster
-		}}
-		onpointerdown={handleMasterDown}
-		onpointermove={handleMasterMove}
-		onpointerup={handleMasterUp}
-		onkeydown={handleMasterKeyDown}
-	>
-		<div class="master-track"></div>
-		<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
-		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
+	<div class="master-slider-wrap">
+		<div
+			class="master-slider"
+			role="slider"
+			aria-label="master volume"
+			title="Master volume - final output gain"
+			aria-orientation="horizontal"
+			aria-valuemin={0}
+			aria-valuemax={1}
+			aria-valuenow={mixerState.master}
+			tabindex="0"
+			use:wheelAdjust={{
+				step: WHEEL_STEP.fader,
+				get: () => mixerState.master,
+				set: _setMaster
+			}}
+			onpointerdown={handleMasterDown}
+			onpointermove={handleMasterMove}
+			onpointerup={handleMasterUp}
+			onkeydown={handleMasterKeyDown}
+		>
+			<div class="master-track"></div>
+			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
+		</div>
+
+		<!-- output-to-device bar: REAL -> audio-output-liveness verdict (pin
+		     93c82bb36eb7). A 1px line under the master slider distinguishing "we
+		     are sending audio" (the slider above) from "a device is actually
+		     receiving it" (this line). Idle paints nothing rather than a false
+		     "ok", per the pin's own "never healthy when the probe cannot tell"
+		     rule. -->
+		<div
+			class={`output-health-bar ${describeAudioOutputHealth(audioOutputHealth.snapshot).cssClass}`}
+			title={describeAudioOutputHealth(audioOutputHealth.snapshot).title}
+			aria-label="output to audio device"
+		></div>
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.
@@ -582,7 +632,7 @@
 	<UserBauble size={20} />
 </header>
 
-<CreatePairingSheet bind:open={pairingOpen} />
+<CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
@@ -662,6 +712,27 @@
 		position: relative;
 		display: inline-flex;
 		align-items: center;
+	}
+	/* Pin fc60002b81a8: the ">|" next-track trigger reads as one button with
+	   the AutoPlay toggle plus an RHS section, not two separate controls. */
+	.ap-wrap > .bsm-toggle:first-child {
+		border-top-right-radius: 0;
+		border-bottom-right-radius: 0;
+		border-right: none;
+	}
+	.ap-next-btn {
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		padding-left: 6px;
+		padding-right: 6px;
+	}
+	/* The ">|" split is the least essential control in this row (an early-
+	   trigger shortcut, not a required transport) - drop it first, at the
+	   same 980px breakpoint this row already uses to abbreviate BSM/AutoPlay
+	   labels, rather than let it compete for room with controls a DJ or an
+	   agent actually needs. */
+	@media (max-width: 980px) {
+		.rb-topbar .topbar-slot-autoplay > .ap-next-btn { display: none; }
 	}
 	.ap-menu {
 		position: fixed;
@@ -993,6 +1064,12 @@
 		line-height: 1.4;
 	}
 
+	.master-slider-wrap {
+		display: flex;
+		flex-direction: column;
+		flex: 0 0 auto;
+		gap: 2px;
+	}
 	.master-slider {
 		position: relative;
 		width: 80px;
@@ -1001,6 +1078,28 @@
 		touch-action: none;
 		outline: none;
 		flex: 0 0 auto;
+	}
+	.output-health-bar {
+		width: 80px;
+		height: 1px;
+		flex: 0 0 auto;
+		background: transparent;
+	}
+	.output-health-bar.ok {
+		background: var(--rb-accent);
+		opacity: 0.5;
+	}
+	.output-health-bar.dead {
+		/* --rb-danger is never defined (see StemsPrompt.svelte); --rb-red is the
+		   palette's real danger colour (theme.css). */
+		background: var(--rb-red, #e55);
+		opacity: 1;
+		height: 2px;
+		margin-top: -0.5px;
+	}
+	.output-health-bar.unknown {
+		background: var(--rb-text-dim);
+		opacity: 0.25;
 	}
 	.master-track {
 		position: absolute;
