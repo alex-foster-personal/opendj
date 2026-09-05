@@ -17,6 +17,16 @@
  *   the memo exists but the poll ignores it - broken.
  * [if] simulateAutoPlayChain goes back to playlist.find per step [then] the
  *   one-off simulation is O(rows^2) again - broken.
+ * [if] the charted simulation stops being bounded to a constant number of row
+ *   touches per chain step [then] every handoff freezes the UI - broken.
+ *
+ * The scale block used to assert wall-clock (`ms < 750`). That threshold was
+ * load-sensitive, not a property of the code: it passed alone and went red
+ * whenever a Playwright run or a Vite build shared the machine (Fri 4 Sep 2026,
+ * twice, while the same 8558-row walk measured 3623 ms under contention against
+ * 77 ms idle). Wall-clock is gone; the same regression is now caught by counting
+ * the row property reads the picker performs, which is a fixed number for a
+ * given algorithm on a given fixture and does not move with CPU load.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -129,8 +139,66 @@ describe('simulateAutoPlayChain at library scale', () => {
 		play_order: i
 	}));
 
-	it('honours max_chain_length (start row included)', async () => {
-		const chain = await loadTypeScriptModule('src/lib/rb/auto-play-chain.ts');
+	/**
+	 * COUNTED_ROWS is deliberately smaller than the 8558-row fixture above.
+	 *
+	 * The work ratio asserted below is scale-invariant once the maximize-reach
+	 * budget fallback engages, which it does from 448 rows up (measured by
+	 * bisection Fri 4 Sep 2026; reachable * candidates passes
+	 * AUTO_PLAY_REACH_MAX_STEPS). Measured
+	 * touches per row per chain step, Fri 4 Sep 2026: 4.10 at 1000 rows, 4.15 at
+	 * 2000, 4.18 at 4279, 4.19 at 8558. 2000 rows buys the same signal for a
+	 * quarter of the work, and a real complexity regression fails in seconds
+	 * rather than grinding for minutes before the runner gives up on it.
+	 * `falls back to greedy` below pins the branch so shrinking the fixture
+	 * cannot silently stop exercising it.
+	 */
+	const COUNTED_ROWS = 2000;
+	const HORIZON = 65;
+	/** Row property touches per row per chain step; 4.19 measured, see above. */
+	const MAX_TOUCHES_PER_ROW_PER_STEP = 8;
+
+	let chain;
+	before(async () => {
+		chain = await loadTypeScriptModule('src/lib/rb/auto-play-chain.ts');
+	});
+
+	/**
+	 * Playlist rows that tally every property read the picker performs, and trip
+	 * the moment the tally passes `budget`.
+	 *
+	 * Tripping inside the getter rather than asserting afterwards is what keeps
+	 * the failure legible. Removing the reach budget was measured Fri 4 Sep 2026:
+	 * with a post-hoc assert the walk never returned, and the runner killed the
+	 * whole file at 60 s with `test timed out` and named no cause. Tripping
+	 * mid-walk turned the same mutant into a named failure in 3 s.
+	 */
+	function countingPlaylist(rows, budget = Number.POSITIVE_INFINITY) {
+		const counter = { touches: 0 };
+		const bump = () => {
+			counter.touches += 1;
+			if (counter.touches > budget) {
+				throw new Error(
+					`if the charted simulation touches more than ${budget} row properties (over ${MAX_TOUCHES_PER_ROW_PER_STEP} per row per chain step) then every handoff freezes the UI - broken`
+				);
+			}
+		};
+		const list = Array.from({ length: rows }, (_, i) => {
+			const stable_id = `sid-${i}`;
+			const key = keys[i % keys.length];
+			const bpm = 120 + (i % 20);
+			return {
+				get stable_id() { bump(); return stable_id; },
+				get key() { bump(); return key; },
+				get bpm() { bump(); return bpm; },
+				get file_exists() { bump(); return true; },
+				play_order: i
+			};
+		});
+		return { list, counter };
+	}
+
+	it('honors max_chain_length (start row included)', () => {
 		const out = chain.simulateAutoPlayChain({
 			playlist,
 			start_stable_id: 'sid-0',
@@ -144,26 +212,41 @@ describe('simulateAutoPlayChain at library scale', () => {
 		assert.equal(out[0], 'sid-0');
 	});
 
-	it('the charted horizon under maximize_reach costs well under one poll interval', async () => {
-		const chain = await loadTypeScriptModule('src/lib/rb/auto-play-chain.ts');
-		const t0 = performance.now();
+	it('maximize_reach falls back to greedy at library scale, which is what keeps the walk linear', () => {
+		const { list } = countingPlaylist(COUNTED_ROWS);
+		const pick = chain.pickNextMaximizingReach({
+			candidates: list.slice(1),
+			current_key: list[0].key,
+			current_bpm: list[0].bpm,
+			min_tempo_ratio: 0.84,
+			max_tempo_ratio: 1.16,
+			max_steps: chain.AUTO_PLAY_REACH_MAX_STEPS
+		});
+		assert.equal(pick.fell_back, true,
+			`if ${COUNTED_ROWS} rows no longer exhausts the reach budget then the counted test below stopped exercising the branch that bounds the walk - broken`);
+	});
+
+	it('the charted horizon touches each row a bounded number of times per step', () => {
+		const budget = COUNTED_ROWS * HORIZON * MAX_TOUCHES_PER_ROW_PER_STEP;
+		const { list, counter } = countingPlaylist(COUNTED_ROWS, budget);
 		const out = chain.simulateAutoPlayChain({
-			playlist,
+			playlist: list,
 			start_stable_id: 'sid-0',
 			enforce_play_order: false,
 			maximize_reach: true,
 			min_tempo_ratio: 0.84,
 			max_tempo_ratio: 1.16,
-			max_chain_length: 65
+			max_chain_length: HORIZON
 		});
-		const ms = performance.now() - t0;
-		assert.ok(out.length > 1, 'sanity: the chain advances');
-		// 77 ms on the Air; a shared CI runner measured 273 ms once (Wed 2 Sep 2026).
-		// The symptom this guards is the ~1.5 s long task in the header, and this is
-		// one synchronous per-handoff call (source_stable_id is a memo-key input), so
-		// the line must sit well under that: 750 ms is half the freeze and ~2.7x the
-		// worst runner jitter seen. The old whole-library walk was 6900 ms.
-		assert.ok(ms < 750, `if the charted simulation costs ${ms.toFixed(0)}ms then every handoff freezes the UI - broken`);
+		// Guards the denominator: a chain that died at step 2 would pass any
+		// budget expressed over the full horizon without doing the work.
+		assert.equal(out.length, HORIZON,
+			'if the charted chain stops short of the horizon then the budget below is measured against work never done - broken');
+		// The getter above trips first on a breach; this states the property in
+		// full and covers a budget that is exceeded exactly at the last read.
+		const ratio = counter.touches / (COUNTED_ROWS * HORIZON);
+		assert.ok(counter.touches <= budget,
+			`if the charted simulation touches ${counter.touches} row properties (${ratio.toFixed(1)} per row per step, budget ${MAX_TOUCHES_PER_ROW_PER_STEP}) then every handoff freezes the UI - broken`);
 	});
 
 	it('the controller passes the horizon, so the column never walks the whole library', () => {
