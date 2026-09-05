@@ -1,7 +1,14 @@
 <script lang="ts">
 	// Hover/focus teaching chrome for performance controls. Native `title` stays
-	// on the wrapped control; this popover adds short bullets + optional SVG demos.
-	// UI-only - does not invent engine behavior. Copy must match audio-engine.
+	// on the wrapped control by convention; this popover adds short bullets +
+	// optional SVG demos. UI-only - does not invent engine behavior. Copy must
+	// match audio-engine.
+	//
+	// A caller whose wrapped control would otherwise show BOTH the native
+	// title and this popover at once (the overlap pin dd4f0f5ae33f flagged)
+	// should drop that control's own `title` and keep only `aria-label` -
+	// this component's own `title` prop still reaches screen readers via the
+	// popover's heading and, on slow/no-hover, is unaffected either way.
 	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
 
@@ -16,6 +23,7 @@
 		action = null,
 		demo = null,
 		placement = 'auto',
+		showDelayMs = 0,
 		children
 	}: {
 		/** Native tooltip text mirrored for screen readers / slow hover. */
@@ -30,6 +38,14 @@
 		demo?: ExplainerDemo | null;
 		/** Prefer above; `auto` flips below when near the top of the viewport. */
 		placement?: 'auto' | 'above' | 'below';
+		/**
+		 * Trailing show debounce in ms. Default 0 = show immediately, which
+		 * preserves every existing caller's current behavior. A caller with a
+		 * reason to debounce (e.g. several of these packed edge to edge, where
+		 * a fast skim across them would otherwise flash a popover per item)
+		 * sets its own value and states that reason at the call site.
+		 */
+		showDelayMs?: number;
 		children: Snippet;
 	} = $props();
 
@@ -37,6 +53,7 @@
 	let open = $state(false);
 	let popStyle = $state('');
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
 
@@ -53,17 +70,30 @@
 		}
 	}
 
+	function _openNow(): void {
+		showTimer = undefined;
+		_place();
+		open = true;
+	}
+
 	function _show(): void {
 		if (hideTimer !== undefined) clearTimeout(hideTimer);
 		hideTimer = undefined;
+		if (showTimer !== undefined) clearTimeout(showTimer);
+		showTimer = undefined;
 		if (!hasRich) return;
-		_place();
-		open = true;
+		if (showDelayMs > 0) {
+			showTimer = setTimeout(_openNow, showDelayMs);
+		} else {
+			_openNow();
+		}
 	}
 
 	function _close(): void {
 		if (hideTimer !== undefined) clearTimeout(hideTimer);
 		hideTimer = undefined;
+		if (showTimer !== undefined) clearTimeout(showTimer);
+		showTimer = undefined;
 		open = false;
 	}
 
