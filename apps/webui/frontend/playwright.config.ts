@@ -29,6 +29,7 @@ export default defineConfig({
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
 		'**/webkit-deckload.spec.ts', // playwright.webkit-deckload.config.ts (built artifact)
 		'**/deckload-smoke.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, chromium+webkit, #770)
+		'**/playlist-detail.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, fixture playlists, #859)
 		'**/desktop-setup.spec.ts', // playwright.desktop-setup.config.ts (static http.server)
 		'**/play-analytics.spec.ts', // playwright.play-analytics.config.ts (fixture server)
 		'**/rekordbox-writeback-disabled.spec.ts', // playwright.rekordbox-gate.config.ts
