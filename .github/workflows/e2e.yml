@@ -486,6 +486,17 @@ jobs:
     # See the `gate` job above for the runner-selection and --with-deps note.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
+    env:
+      # One native thread per process, as on the pytest jobs (#1157). The
+      # engine this job boots forks apps.analysis.run's process pool; on
+      # agentbox that fork with OpenBLAS/numba threads live produced 238
+      # python3 "segfault at 0" kernel entries on Sat 5 Sep 2026 and five
+      # BrokenProcessPool failures in the Root Playwright suite once eight
+      # e2e runners shared the host. tests/scripts/test_ci_thread_caps.py.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
