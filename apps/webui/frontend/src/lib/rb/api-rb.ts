@@ -57,15 +57,33 @@ export class RbApiError extends Error {
 
 async function _throwRbApiError(r: Response): Promise<never> {
 	// Backend contract: errors are explicit JSON {"detail": {code, message}}
-	// (COMPONENT-MAP 2 shared plumbing). If the body is not that shape the
-	// json()/field access fails loudly, which is the behaviour we want.
-	const body = (await r.json()) as { detail?: { code?: string; message?: string } | string };
-	const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
-	throw new RbApiError(
-		r.status,
-		detail?.code ?? `HTTP_${r.status}`,
-		detail?.message ?? r.statusText
-	);
+	// (COMPONENT-MAP 2 shared plumbing). ServerErrorMiddleware emits plain
+	// text for unhandled errors, so parse text defensively to preserve the
+	// HTTP status rather than leaking a JSON SyntaxError to the user.
+	const text = await r.text();
+	let body: unknown;
+	try {
+		body = JSON.parse(text) as unknown;
+	} catch {
+		throw new RbApiError(r.status, `HTTP_${r.status}`, text.slice(0, 200));
+	}
+
+	const detail =
+		typeof body === 'object' && body !== null && 'detail' in body
+			? body.detail
+			: undefined;
+	if (
+		typeof detail === 'object' &&
+		detail !== null &&
+		'code' in detail &&
+		'message' in detail &&
+		typeof detail.code === 'string' &&
+		typeof detail.message === 'string'
+	) {
+		throw new RbApiError(r.status, detail.code, detail.message);
+	}
+
+	throw new RbApiError(r.status, `HTTP_${r.status}`, text.slice(0, 200));
 }
 
 async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
