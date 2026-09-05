@@ -40,7 +40,10 @@
 	}: {
 		deck: DeckState;
 		pending: boolean;
-		onJump: (ms: number) => Promise<void>;
+		/** #884: slot-addressed, not a raw ms - lets the dispatcher honour
+		 * BeatSyncMax (arm for the deck's own next downbeat) instead of a plain
+		 * unconditional seek. */
+		onJump: (slot: HotCueSlot) => Promise<void>;
 		onSave: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string) => Promise<HotCueMutation>;
 		onRename: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
@@ -94,7 +97,7 @@
 
 	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
 		if (entry.cue !== null) {
-			await onJump(entry.cue.in_ms);
+			await onJump(entry.slot);
 			return;
 		}
 		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping

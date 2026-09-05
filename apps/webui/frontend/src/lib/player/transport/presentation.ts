@@ -479,3 +479,19 @@ export function observePresentedTransportTimeline(
 
 	return _presentedObservation(timeline, false, outputStarted, clockStalled, 'output');
 }
+
+// ---------------------------------------------------- slip anchor re-export
+//
+// The SLIP hidden-transport algebra lives WHOLE in transport/slip-anchor.ts
+// (pure, importless). It is re-exported here so the engine reaches it through
+// the presentation barrel it already imports, rather than taking a new direct
+// module edge.
+
+export {
+	createSlipAnchor,
+	rebaseSlipAnchor,
+	shouldActivateSlip,
+	slipHiddenPositionSec,
+	slipHiddenPositionWithTempoBoundaries
+} from '$lib/player/transport/slip-anchor';
+export type { SlipAnchor, SlipTempoBoundary } from '$lib/player/transport/slip-anchor';

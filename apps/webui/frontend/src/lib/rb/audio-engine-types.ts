@@ -77,6 +77,12 @@ export interface AudioEngine {
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void;
 	/** Explicit seek entry point. cueJump delegates here so quantize is central. */
 	quantizedSeek(deck: DeckId, ms: number): Promise<void>;
+	/** DECKUX-09: defer a hot-cue jump to `armAtPositionSec` on the deck's own
+	 * transport clock; returns the absolute AudioContext time it lands at. */
+	armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number): Promise<number>;
+	/** The engine's AudioContext clock, for projecting an armed trigger's
+	 * remaining wait without exposing the context itself. */
+	contextTimeNowSec(): number;
 	/** Capture real post-Signalsmith analyser data; never synthesised. */
 	captureDeckAudio(deck: DeckId): DeckAudioSnapshot;
 	/** TRIM knob 0..1 (0.5 = unity) -> per-channel input GainNode. */

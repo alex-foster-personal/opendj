@@ -351,6 +351,65 @@ export function quantizeToNearestBeat(
 }
 
 /**
+ * Return the exact time of the nearest real PQTZ bar downbeat (n === 1).
+ *
+ * BeatSyncMax stores hot cues on bars, rather than merely on the nearest beat:
+ * a hand-set cue must be phase-safe before a later synchronized launch can
+ * use it. Ties are stable toward the earlier downbeat, matching ordinary
+ * quantization.
+ */
+export function quantizeToNearestDownbeat(
+	beats: readonly AnlzBeat[],
+	positionSec: number
+): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the next real PQTZ bar downbeat at or after
+ * `positionSec` - the moment a BeatSyncMax hot-cue TRIGGER (#884) defers to,
+ * rather than the nearest one SAVE (above) snaps to. Once the grid runs out
+ * (`positionSec` past the last downbeat, near track end) there is no future
+ * phase-locked moment left, so this returns `positionSec` itself: fire now.
+ */
+export function nextDownbeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: number): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	const index = _firstBeatAtOrAfter(downbeats, positionSec);
+	return index < downbeats.length ? downbeats[index].t : positionSec;
+}
+
+export type HotCueTriggerPlan = { kind: 'immediate' } | { kind: 'armed'; armAtPositionSec: number };
+
+/**
+ * Decide whether a hot-cue TRIGGER (#884) jumps immediately or waits for the
+ * deck's own next downbeat.
+ *
+ * BeatSyncMax only protects an audible transition already in progress, so a
+ * stopped deck (nothing audible to protect) and a positionSec past an engaged
+ * loop's own already-tight window both jump immediately regardless of the
+ * preference. Cross-deck follower re-anchoring (the OTHER meaning of
+ * BeatSyncMax, for seek) is out of scope here - this is self-referential to
+ * the triggering deck's own grid only.
+ */
+export function planHotCueTrigger(
+	beatSyncMax: boolean,
+	playing: boolean,
+	loopEngaged: boolean,
+	positionSec: number,
+	beats: readonly AnlzBeat[]
+): HotCueTriggerPlan {
+	if (!beatSyncMax || !playing || loopEngaged) return { kind: 'immediate' };
+	return { kind: 'armed', armAtPositionSec: nextDownbeatAtOrAfter(beats, positionSec) };
+}
+
+/**
  * Target position (ms) for a beat jump measured across exact PQTZ beats.
  *
  * The anchor snaps to the nearest real grid beat, then the jump counts whole

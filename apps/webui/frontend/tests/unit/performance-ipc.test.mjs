@@ -135,13 +135,21 @@ test('hot-cue controls are strict IPC commands with serializable slot state', as
 	assert.match(deckSource, /type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId/);
 	assert.match(
 		ipcSource,
-		/await saveHotCue\(\s*stableId, command\.slot, command\.in_ms, command\.revision, command\.comment\s*\)/
+		/await saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment\s*\)/
 	);
 	assert.match(ipcSource, /await restoreHotCue\(stableId, command\.slot, command\.revision, command\.reversal_id\)/);
 });
 
 test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal state', async () => {
 	const originalFetch = globalThis.fetch;
+	// This test is about CAS/reversal plumbing, not BeatSyncMax quantization,
+	// and the stubbed deck below carries no real PQTZ beatgrid - but the
+	// default preference (prefs.svelte.ts DEFAULTS.beat_sync_max) is true, and
+	// hot_cue_save gates its quantize path on it, so an empty grid would throw
+	// "beat grid must contain at least 2 beats" before this test ever reaches
+	// the CAS assertions it actually cares about.
+	const originalBeatSyncMax = ipc.uiPrefs.beat_sync_max;
+	ipc.uiPrefs.beat_sync_max = false;
 	const requests = [];
 	let restoreCalls = 0;
 	globalThis.fetch = async (input, init = {}) => {
@@ -205,6 +213,7 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 		resetDriver();
 		delete globalThis.window;
 		globalThis.fetch = originalFetch;
+		ipc.uiPrefs.beat_sync_max = originalBeatSyncMax;
 	}
 });
 
@@ -235,6 +244,154 @@ test('hot_cue_save rejects for an unmapped deck before reaching the network, sam
 		resetDriver();
 		delete globalThis.window;
 		globalThis.fetch = originalFetch;
+	}
+});
+
+// Downbeats at 0.135 and 2.025, matching beat-sync-math.test.mjs's real PQTZ
+// capture, so a wrong armAtPositionSec would surface as a wrong test number
+// rather than an untestable magic value.
+const TRIGGER_PQTZ_BEATS = [
+	{ n: 1, bpm: 127, t: 0.135 },
+	{ n: 2, bpm: 127, t: 0.608 },
+	{ n: 3, bpm: 127, t: 1.08 },
+	{ n: 4, bpm: 127, t: 1.553 },
+	{ n: 1, bpm: 127, t: 2.025 },
+	{ n: 2, bpm: 127, t: 2.497 },
+	{ n: 3, bpm: 127, t: 2.97 },
+	{ n: 4, bpm: 127, t: 3.442 }
+];
+
+function triggerDriverStub({ playing, loopEngaged, positionSec, contextTimeNowSec }) {
+	const cue = { slot: 'A', in_ms: 4000, out_ms: null, is_loop: false, beat_loop_size: null, color_table_index: null, comment: null };
+	const jumpCalls = [];
+	const armCalls = [];
+	let clockSec = contextTimeNowSec;
+	return {
+		driver: {
+			stableId: () => 'loaded-track',
+			refresh: async () => {},
+			hasRbMapping: () => true,
+			triggerState: () => ({ cue, playing, loopEngaged, positionSec, beats: TRIGGER_PQTZ_BEATS }),
+			jump: async (deck, positionMs) => {
+				jumpCalls.push({ deck, positionMs });
+			},
+			arm: async (deck, positionMs, armAtPositionSec) => {
+				armCalls.push({ deck, positionMs, armAtPositionSec });
+				const targetContextTime = clockSec + (armAtPositionSec - positionSec);
+				return targetContextTime;
+			},
+			contextTimeNowSec: () => clockSec
+		},
+		jumpCalls,
+		armCalls,
+		advanceClock: (bySec) => {
+			clockSec += bySec;
+		}
+	};
+}
+
+test('hot_cue_trigger jumps immediately unless BeatSyncMax, playing and unlooped all hold (#884)', async () => {
+	globalThis.window = {};
+	const cases = [
+		{ playing: true, loopEngaged: false, beatSyncMax: false, label: 'BeatSyncMax off' },
+		{ playing: false, loopEngaged: false, beatSyncMax: true, label: 'stopped deck' },
+		{ playing: true, loopEngaged: true, beatSyncMax: true, label: 'engaged loop' }
+	];
+	const originalBeatSyncMax = ipc.uiPrefs.beat_sync_max;
+	try {
+		for (const { playing, loopEngaged, beatSyncMax, label } of cases) {
+			ipc.uiPrefs.beat_sync_max = beatSyncMax;
+			const { driver, jumpCalls, armCalls } = triggerDriverStub({
+				playing,
+				loopEngaged,
+				positionSec: 1.8,
+				contextTimeNowSec: 10
+			});
+			const resetDriver = ipc.installPerformanceHotCueDriverForTest(driver);
+			const uninstall = ipc.installPerformanceBrowserIpc();
+			try {
+				const state = await window.musicDjToolsPerformance.dispatch({
+					type: 'hot_cue_trigger', deck: 1, slot: 'A'
+				});
+				assert.deepEqual(jumpCalls, [{ deck: 1, positionMs: 4000 }], label);
+				assert.deepEqual(armCalls, [], label);
+				assert.equal(state.decks[1].hot_cue_armed, null, label);
+			} finally {
+				uninstall();
+				resetDriver();
+			}
+		}
+	} finally {
+		delete globalThis.window;
+		ipc.uiPrefs.beat_sync_max = originalBeatSyncMax;
+	}
+});
+
+test('hot_cue_trigger arms for the next downbeat and exposes a live, self-expiring countdown (#884)', async () => {
+	globalThis.window = {};
+	const originalBeatSyncMax = ipc.uiPrefs.beat_sync_max;
+	ipc.uiPrefs.beat_sync_max = true;
+	const { driver, jumpCalls, armCalls, advanceClock } = triggerDriverStub({
+		playing: true,
+		loopEngaged: false,
+		positionSec: 1.8,
+		contextTimeNowSec: 10
+	});
+	const resetDriver = ipc.installPerformanceHotCueDriverForTest(driver);
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const state = await window.musicDjToolsPerformance.dispatch({
+			type: 'hot_cue_trigger', deck: 1, slot: 'A'
+		});
+		// positionSec 1.8 -> next downbeat is 2.025, not the nearer-but-past one.
+		assert.deepEqual(armCalls, [{ deck: 1, positionMs: 4000, armAtPositionSec: 2.025 }]);
+		assert.deepEqual(jumpCalls, []);
+		const armed = state.decks[1].hot_cue_armed;
+		assert.equal(armed.slot, 'A');
+		assert.equal(armed.target_position_ms, 4000);
+		assert.ok(armed.remaining_ms > 0, 'a freshly-armed trigger reports a positive countdown');
+		assert.equal(Math.round(armed.remaining_ms), 225, 'remaining_ms derives from the live clock, not a cached value');
+		// The countdown is recomputed live, not cached: advancing the stubbed
+		// clock changes the NEXT read without a new command.
+		advanceClock(0.1);
+		const midway = ipc.queryPerformanceState().decks[1].hot_cue_armed;
+		assert.ok(midway.remaining_ms < armed.remaining_ms, 'remaining_ms must fall as the clock advances');
+		// Once the target context time is reached, the armed record self-clears.
+		advanceClock(1);
+		const landed = ipc.queryPerformanceState().decks[1].hot_cue_armed;
+		assert.equal(landed, null, 'an armed record must not linger once its target time has passed');
+	} finally {
+		uninstall();
+		resetDriver();
+		delete globalThis.window;
+		ipc.uiPrefs.beat_sync_max = originalBeatSyncMax;
+	}
+});
+
+test('hot_cue_trigger rejects an empty slot before touching jump or arm (#884)', async () => {
+	globalThis.window = {};
+	const { driver, jumpCalls, armCalls } = triggerDriverStub({
+		playing: true,
+		loopEngaged: false,
+		positionSec: 1.8,
+		contextTimeNowSec: 10
+	});
+	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
+		...driver,
+		triggerState: () => ({ cue: null, playing: true, loopEngaged: false, positionSec: 1.8, beats: TRIGGER_PQTZ_BEATS })
+	});
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'hot_cue_trigger', deck: 1, slot: 'B' }),
+			/nothing to trigger/i
+		);
+		assert.deepEqual(jumpCalls, []);
+		assert.deepEqual(armCalls, []);
+	} finally {
+		uninstall();
+		resetDriver();
+		delete globalThis.window;
 	}
 });
 

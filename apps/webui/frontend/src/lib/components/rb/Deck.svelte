@@ -43,6 +43,7 @@
 	} from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import BeatJump from './deck/BeatJump.svelte';
 	import DeckHeader from './deck/DeckHeader.svelte';
@@ -105,6 +106,13 @@
 
 	async function seekTo(ms: number): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: ms });
+	}
+
+	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
+	 * honour BeatSyncMax - routed through hot_cue_trigger, not seekTo, so it
+	 * can arm for the deck's own next downbeat instead of jumping immediately. */
+	async function triggerHotCue(slot: HotCueSlot): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot });
 	}
 
 	async function playPause(): Promise<void> {
@@ -333,7 +341,7 @@
 			<HotCueBank
 				{deck}
 				{pending}
-				onJump={seekTo}
+				onJump={triggerHotCue}
 				onSave={hotCueActions.saveHotCueAt}
 				onRename={hotCueActions.renameHotCueAt}
 				onDelete={hotCueActions.clearHotCueAt}

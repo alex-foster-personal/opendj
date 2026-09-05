@@ -118,9 +118,11 @@ function _cmdPressCue(deck: DeckId): void {
 	void dispatchPerformanceCommand({ type: 'cue', deck });
 }
 
-/** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). */
-function _cmdHotCue(deck: DeckId, inMs: number): void {
-	void dispatchPerformanceCommand({ type: 'seek', deck, position_ms: inMs });
+/** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). Slot-
+ * addressed, not a raw ms (#884): hot_cue_trigger, unlike a plain seek, can
+ * honour BeatSyncMax and arm for the deck's own next downbeat. */
+function _cmdHotCue(deck: DeckId, slot: HotCueSlot): void {
+	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot });
 }
 
 /** REBASE ADAPTER: engage an auto/beat loop from the current position. */
@@ -160,7 +162,7 @@ export function handleMidiAction(action: MidiAction, value: MidiInputValue): voi
 				pushToast(`Deck ${action.deck}: no hot cue in slot ${action.slot}`, 'info');
 				return;
 			}
-			_cmdHotCue(action.deck, cue);
+			_cmdHotCue(action.deck, action.slot);
 			return;
 		}
 		case 'deck_beat_loop': {

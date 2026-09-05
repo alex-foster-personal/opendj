@@ -23,6 +23,13 @@
  *   ✔︎ ✅ 🎯 hot_cue_save is gated on has_rb_mapping for every caller (#736).
  *     [if] a browser/CLI agent dispatches hot_cue_save for an unmapped deck
  *       [then] it rejects before reaching saveHotCue, same as the UI click ⛔️
+ *   ✔︎ ✅ 🎯 hot_cue_trigger honours BeatSyncMax on a playing, unlooped deck (#884).
+ *     [if] BeatSyncMax is on, the deck is playing and unlooped [then] the jump
+ *       arms for the deck's own next downbeat instead of firing immediately,
+ *       and the wait is readable via query().decks[deck].hot_cue_armed ⛔️
+ *     [if] the deck is stopped, or has an engaged loop, or BeatSyncMax is off
+ *       [then] the jump fires immediately - a stopped deck has no audible
+ *       transition to protect, and an engaged loop already owns its window
  */
 
 import {
@@ -35,6 +42,8 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
 	DECK_IDS,
@@ -72,6 +81,8 @@ import type {
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
+export { uiPrefs };
 import { noteRecentDeck } from '$lib/rb/recent-deck';
 import {
 	hoveredEdgeList,
@@ -139,6 +150,10 @@ export type PerformanceCommand =
 	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment?: string | null }
 	| { type: 'hot_cue_clear'; deck: DeckId; slot: HotCueSlot; revision: string }
 	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string }
+	/** #884: the pad-press/MIDI trigger entry point, distinct from hot_cue_save
+	 * (which persists a NEW position). BeatSyncMax may arm rather than jump
+	 * immediately - see the module docstring and `hot_cue_armed` in query(). */
+	| { type: 'hot_cue_trigger'; deck: DeckId; slot: HotCueSlot }
 	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
 	// write to serialize, but still a real UI action - every one of these has
 	// a cmd+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
@@ -204,6 +219,10 @@ export interface PerformanceDeckSnapshot {
 	beatgrid_ms: number[];
 	hot_cue_slots: Array<{ slot: HotCueSlot; cue: HotCue | null; revision: string }>;
 	hot_cue_reversal: { slot: HotCueSlot; revision: string; reversal_id: string } | null;
+	/** #884: a hot_cue_trigger currently waiting for this deck's own next
+	 * downbeat (BeatSyncMax, playing, unlooped); null when nothing is armed
+	 * or once the deferred jump has landed. */
+	hot_cue_armed: { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null;
 	command_error: string | null;
 	command_pending: boolean;
 	/** Last command observed for this deck, including MIDI and UI sources. */
@@ -356,6 +375,15 @@ export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $s
 const hotCueReversals: Record<DeckId, { slot: HotCueSlot; revision: string; reversal_id: string } | null> =
 	$state({ 1: null, 2: null, 3: null, 4: null });
 
+/** #884: raw armed record. `remaining_ms` is deliberately NOT stored here -
+ * it is derived live from `target_context_time` at query() time, the same
+ * "recompute from the presentation clock, never cache a countdown" pattern
+ * `deckTransportClock` uses, so it can never go stale between queries. */
+const hotCueArmed: Record<
+	DeckId,
+	{ slot: HotCueSlot; target_position_ms: number; target_context_time: number } | null
+> = $state({ 1: null, 2: null, 3: null, 4: null });
+
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
 	refresh(deck: DeckId): Promise<void>;
@@ -363,12 +391,43 @@ export interface PerformanceHotCueDriver {
 	 * read here too so a non-UI caller (browser IPC, a preset transaction)
 	 * hits the identical guard rather than only the component seeing it. */
 	hasRbMapping(deck: DeckId): boolean;
+	/** #884: everything planHotCueTrigger needs for one slot, in one read so
+	 * the test seam can stand in for the engine without a real audio graph. */
+	triggerState(
+		deck: DeckId,
+		slot: HotCueSlot
+	): {
+		cue: HotCue | null;
+		playing: boolean;
+		loopEngaged: boolean;
+		positionSec: number;
+		beats: readonly AnlzBeat[];
+	};
+	/** Immediate jump - the same path an unquantized click always took. */
+	jump(deck: DeckId, positionMs: number): Promise<void>;
+	/** Defer the jump to the deck's own next downbeat; returns the absolute
+	 * AudioContext time the schedule lands at. */
+	arm(deck: DeckId, positionMs: number, armAtPositionSec: number): Promise<number>;
+	contextTimeNowSec(): number;
 }
 
 const _defaultHotCueDriver: PerformanceHotCueDriver = {
 	stableId: (deck) => getDeckState(deck).stable_id,
 	refresh: (deck) => engine.refreshHotCues(deck),
-	hasRbMapping: (deck) => getDeckState(deck).has_rb_mapping
+	hasRbMapping: (deck) => getDeckState(deck).has_rb_mapping,
+	triggerState: (deck, slot) => {
+		const state = getDeckState(deck);
+		return {
+			cue: state.hot_cues.find((cue) => cue.slot === slot) ?? null,
+			playing: state.playing,
+			loopEngaged: state.loop !== null && state.loop.engaged,
+			positionSec: state.position_ms / 1000,
+			beats: state.anlz?.beatgrid.beats ?? []
+		};
+	},
+	jump: (deck, positionMs) => engine.quantizedSeek(deck, positionMs),
+	arm: (deck, positionMs, armAtPositionSec) => engine.armHotCueTrigger(deck, positionMs, armAtPositionSec),
+	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
@@ -705,6 +764,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			revision: _revision('revision', record.revision),
 			reversal_id: _revision('reversal_id', record.reversal_id)
 		};
+	} else if (type === 'hot_cue_trigger') {
+		_exactKeys(record, ['type', 'deck', 'slot']);
+		return { type, deck, slot: _hotCueSlot(record.slot) };
 	}
 	throw new TypeError(`unknown performance command type: ${type}`);
 }
@@ -766,6 +828,22 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
 	};
 	_beatgridProjections[deckId] = fresh;
 	return fresh;
+}
+
+/** Live-derive `remaining_ms` from the AudioContext clock rather than
+ * trusting a cached countdown, then self-clear once the schedule has landed -
+ * the same "recompute, don't cache" rule `deckTransportClock` follows. */
+function _hotCueArmedSnapshot(
+	deckId: DeckId
+): { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null {
+	const armed = hotCueArmed[deckId];
+	if (armed === null) return null;
+	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
+	if (remainingMs <= 0) {
+		hotCueArmed[deckId] = null;
+		return null;
+	}
+	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
 function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
@@ -838,6 +916,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			revision: deck.hot_cue_revisions[slot]
 		})),
 		hot_cue_reversal: hotCueReversals[deckId],
+		hot_cue_armed: _hotCueArmedSnapshot(deckId),
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
 		last_command_id: _deckCommandIds[deckId]
@@ -955,6 +1034,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'play' ||
 		command.type === 'cue' ||
 		command.type === 'seek' ||
+		// Arming resolves as soon as the graph's pending-segment queue accepts
+		// the future schedule (no timer holds this scope across the wait -
+		// see armHotCueTrigger), so grouping with seek/play cannot stall.
+		command.type === 'hot_cue_trigger' ||
 		command.type === 'beat_jump' ||
 		command.type === 'tempo' ||
 		command.type === 'beat_sync' ||
@@ -1011,6 +1094,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			deckLoadSettled();
 		}
 		hotCueReversals[command.deck] = null;
+		hotCueArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
 		if (!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play)) {
@@ -1030,6 +1114,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
+		hotCueArmed[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) await engine.play(command.deck, pressT0Ms);
 		else await engine.pause(command.deck, pressT0Ms);
@@ -1119,8 +1204,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
 			);
 		}
+		const savedPositionMs = uiPrefs.beat_sync_max
+			? Math.round(
+				quantizeToNearestDownbeat(
+					getDeckState(command.deck).anlz?.beatgrid.beats ?? [],
+					command.in_ms / 1000
+				) * 1000
+			)
+			: command.in_ms;
 		const result = await saveHotCue(
-			stableId, command.slot, command.in_ms, command.revision, command.comment
+			stableId, command.slot, savedPositionMs, command.revision, command.comment
 		);
 		if (result.reversal === undefined) throw new Error(`hot cue ${command.slot}: server omitted reversal token`);
 		hotCueReversals[command.deck] = {
@@ -1146,6 +1239,25 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await restoreHotCue(stableId, command.slot, command.revision, command.reversal_id);
 		hotCueReversals[command.deck] = null;
 		await _hotCueDriver.refresh(command.deck);
+	} else if (command.type === 'hot_cue_trigger') {
+		const { cue, playing, loopEngaged, positionSec, beats } = _hotCueDriver.triggerState(
+			command.deck,
+			command.slot
+		);
+		if (cue === null) throw new Error(`hot cue ${command.slot}: nothing to trigger`);
+		const plan = planHotCueTrigger(uiPrefs.beat_sync_max, playing, loopEngaged, positionSec, beats);
+		if (plan.kind === 'immediate') {
+			hotCueArmed[command.deck] = null;
+			await _hotCueDriver.jump(command.deck, cue.in_ms);
+		} else {
+			const targetContextTime = await _hotCueDriver.arm(command.deck, cue.in_ms, plan.armAtPositionSec);
+			hotCueArmed[command.deck] = {
+				slot: command.slot,
+				target_position_ms: cue.in_ms,
+				target_context_time: targetContextTime
+			};
+		}
+		noteRecentDeck(command.deck);
 	} else if (command.type === 'auto_play_two_track') {
 		throw new Error('auto_play_two_track must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {
