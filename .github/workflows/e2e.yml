@@ -147,7 +147,7 @@ jobs:
         # against an unpopulated one it resolves somewhere else entirely and
         # reports success while binding the wrong thing. Populating the venv
         # here is what makes that command mean what it says.
-        run: uv sync
+        run: uv sync --extra tags --extra analysis
 
       - name: Prove the venv is populated and is this checkout's
         # Fail fast and loudly rather than letting the engine boot fail 180s
@@ -361,6 +361,15 @@ jobs:
         # STRETCH_QUALITY_PLAN is deliberately unset so the smoke arm runs and
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
         run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
+
+      - name: Root Playwright suite (real engine + Vite)
+        working-directory: apps/webui/frontend
+        # `test:e2e` fixes a pair reserved for this suite, builds its own
+        # generated-audio library, and starts the engine before Vite. This is
+        # the default Playwright command developers run, so running it here
+        # keeps its API-backed specs from becoming an unobserved test estate.
+        if: ${{ !cancelled() }}
+        run: pnpm test:e2e --output test-results/root-playwright
 
       - name: Upload failure artifacts
         if: failure()

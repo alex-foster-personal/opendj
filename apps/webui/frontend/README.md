@@ -101,8 +101,9 @@ fast. The stories are written so that adopting it later needs no rewrite.
 pnpm test:e2e
 ```
 
-Run against a running dev daemon + SvelteKit dev server. CI skips if no
-headless Chromium is available.
+Installs the `tags` and `analysis` extras, builds a generated-audio fixture,
+starts a real local engine and Vite, then runs the root Playwright suite in
+Chromium. It never reads a personal library.
 
 ## Bundle budgets
 

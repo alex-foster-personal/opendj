@@ -1,12 +1,60 @@
 import { defineConfig, devices } from '@playwright/test';
+import { mkdirSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { claimAndCheckWebuiDevConfigOnce } from './webui-port-config';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const FIXTURE_DATA_DIR = join(
+	REPOSITORY_ROOT,
+	'apps',
+	'webui',
+	'frontend',
+	'tests',
+	'e2e',
+	'fixtures',
+	'root-playwright-data'
+);
+const SANDBOX_HOME = join(FIXTURE_DATA_DIR, 'sandbox-home');
+const FIXTURE_PARENT_DIR = join(
+	REPOSITORY_ROOT,
+	'apps',
+	'webui',
+	'frontend',
+	'tests',
+	'e2e',
+	'fixtures'
+);
+if (dirname(FIXTURE_DATA_DIR) !== FIXTURE_PARENT_DIR) {
+	throw new Error(`Refusing to reset fixture outside ${FIXTURE_PARENT_DIR}: ${FIXTURE_DATA_DIR}`);
+}
+if (process.env.TEST_WORKER_INDEX === undefined) {
+	rmSync(FIXTURE_DATA_DIR, { recursive: true, force: true });
+}
+mkdirSync(SANDBOX_HOME, { recursive: true });
+
 // Once = claim/check in the main process only; workers reuse its payload
 // (they re-import this config after vite has bound the claimed port).
 const ports = claimAndCheckWebuiDevConfigOnce(REPOSITORY_ROOT, 'frontend');
+
+// The root suite contains browser tests that use the Vite /api proxy. Build a
+// real, throwaway library before the engine starts so `pnpm test:e2e` has no
+// undeclared daemon or personal-library prerequisite.
+function shellArgument(value: string): string {
+	return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+const FIXTURE_COMMAND = [
+	'uv', 'run', '--no-sync', 'python', '-m',
+	'apps.webui.frontend.tests.e2e.support.deckload_fixture',
+	'--data-dir', FIXTURE_DATA_DIR, '--seed-playlists'
+].map(shellArgument).join(' ');
+const ENGINE_COMMAND = [
+	'uv', 'run', '--no-sync', 'python', '-m', 'apps.engine_core', 'serve',
+	'--data-dir', FIXTURE_DATA_DIR, '--host', '127.0.0.1', '--port', String(ports.backendPort)
+].map(shellArgument).join(' ');
+const SERVER_COMMAND = `${FIXTURE_COMMAND} && ${ENGINE_COMMAND}`;
 
 export default defineConfig({
 	testDir: './tests/e2e',
@@ -25,7 +73,10 @@ export default defineConfig({
 	// setup-entry-points.spec.ts is deliberately NOT here: its double run under
 	// vite/chromium AND the webkit artifact config is documented in both files.
 	testIgnore: [
+		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
+		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
+		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
 		'**/webkit-deckload.spec.ts', // playwright.webkit-deckload.config.ts (built artifact)
 		'**/deckload-smoke.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, chromium+webkit, #770)
@@ -38,17 +89,38 @@ export default defineConfig({
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts' // playwright.stretch-quality.config.ts (no server)
 	],
+	fullyParallel: false,
+	workers: 1,
+	retries: 0,
 	timeout: 30_000,
-	webServer: {
-		// --host is not decoration. Vite's default binds `localhost`, which on
-		// this machine resolves to ::1 ONLY, while baseURL below dials
-		// 127.0.0.1 -- every test in every suite then died on
-		// ERR_CONNECTION_REFUSED while `port` reported the server up. Bind the
-		// exact address the tests connect to, so the two can never disagree.
-		command: `pnpm dev --host 127.0.0.1`,
-		port: ports.frontendPort,
-		reuseExistingServer: false,
-	},
+	webServer: [
+		{
+			command: SERVER_COMMAND,
+			cwd: REPOSITORY_ROOT,
+			url: `http://127.0.0.1:${ports.backendPort}/api/v1/health`,
+			reuseExistingServer: false,
+			timeout: 180_000,
+			env: {
+				...process.env,
+				MDT_DATA_DIR: FIXTURE_DATA_DIR,
+				MDT_LIBRARY_MODE: 'local',
+				WEB_CONCURRENCY: '',
+				HOME: SANDBOX_HOME
+			}
+		},
+		{
+			// --host is not decoration. Vite's default binds `localhost`, which on
+			// this machine resolves to ::1 ONLY, while baseURL below dials
+			// 127.0.0.1 -- every test in every suite then died on
+			// ERR_CONNECTION_REFUSED while `port` reported the server up. Bind the
+			// exact address the tests connect to, so the two can never disagree.
+			command: `pnpm dev --host 127.0.0.1`,
+			cwd: fileURLToPath(new URL('./', import.meta.url)),
+			url: `http://127.0.0.1:${ports.frontendPort}`,
+			reuseExistingServer: false,
+			timeout: 90_000
+		}
+	],
 	use: { baseURL: `http://127.0.0.1:${ports.frontendPort}` },
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });
