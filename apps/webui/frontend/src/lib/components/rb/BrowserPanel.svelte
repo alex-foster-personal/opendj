@@ -83,9 +83,18 @@
 		PLAYLIST_TREE_WIDTH_MAX,
 		PLAYLIST_TREE_WIDTH_MIN
 	} from '$lib/rb/prefs.svelte';
-	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
+	import {
+		isAppropriateNext,
+		resolveSearchFilterFallback,
+		type NextOnlyRef
+	} from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
-	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import {
+		isCurrentBrowserSearch,
+		reportBrowserSearchResult,
+		subscribeBrowserSearch,
+		type BrowserSearchRequest
+	} from '$lib/rb/browser-search';
 	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
@@ -432,21 +441,48 @@
 		return rows.filter((r) => isAppropriateNext(r, ref));
 	}
 
-	function _computeVisibleRows(): BrowserRow[] {
+	interface VisibleSearchResult {
+		rows: BrowserRow[];
+		ignoredFilters: string[];
+	}
+
+	function _searchFilterNames(includeBrokenFilter: boolean): string[] {
+		const names: string[] = [];
+		if (includeBrokenFilter && uiPrefs.hide_broken_links) names.push('Hide broken links');
+		if (uiPrefs.next_only_filter && nextOnlyRef !== null) names.push('next-only');
+		return names;
+	}
+
+	function _computeVisibleSearchResult(): VisibleSearchResult {
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
-			return _applyNextOnly(
-				sortRows(
-					filterRows(pane.rows, '', uiPrefs.hide_broken_links),
-					pane.sort_key,
-					pane.sort_dir
-				)
-			);
+			return {
+				rows: _applyNextOnly(
+					sortRows(
+						filterRows(pane.rows, '', uiPrefs.hide_broken_links),
+						pane.sort_key,
+						pane.sort_dir
+					)
+				),
+				ignoredFilters: []
+			};
 		}
 		if (wholeCollectionActive) {
-			return _applyNextOnly(sortRows(pane.search_results, pane.sort_key, pane.sort_dir));
+			const unfilteredRows = sortRows(pane.search_results, pane.sort_key, pane.sort_dir);
+			const fallback = resolveSearchFilterFallback(
+				_applyNextOnly(unfilteredRows),
+				unfilteredRows,
+				_searchFilterNames(false)
+			);
+			return fallback;
 		}
-		return _applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links));
+		const unfilteredRows = visibleRowsOf(pane, false);
+		const fallback = resolveSearchFilterFallback(
+			_applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links)),
+			unfilteredRows,
+			pane.search.trim() === '' ? [] : _searchFilterNames(true)
+		);
+		return fallback;
 	}
 
 	/** Wall time of the LAST filter+sort pass (PERF-R5 Q9).
@@ -455,15 +491,24 @@
 	 * that produced it. */
 	let _lastVisibleComputeMs = 0;
 
-	const visibleRows = $derived.by(() => {
+	const visibleSearchResult = $derived.by(() => {
 		// This pass is filterRows + sortRows over the WHOLE pane array - up to
 		// ~8k rows on All Tracks, plus an O(n log n) sort when a column sort is
 		// active. Timing it is the only way the filter debounce below can be
 		// shown to be worth having.
 		const startedAt = performance.now();
-		const rows = _computeVisibleRows();
+		const result = _computeVisibleSearchResult();
 		_lastVisibleComputeMs = performance.now() - startedAt;
-		return rows;
+		return result;
+	});
+	const visibleRows = $derived(visibleSearchResult.rows);
+	const ignoredSearchFilters = $derived(visibleSearchResult.ignoredFilters);
+	const filterFallbackNote = $derived.by(() => {
+		if (ignoredSearchFilters.length === 0) return null;
+		const filterLabel = ignoredSearchFilters.join(' and ');
+		const suffix = ignoredSearchFilters.length === 1 ? '' : 's';
+		const trackLabel = visibleRows.length === 1 ? 'track' : 'tracks';
+		return `${visibleRows.length} ${trackLabel} fetched by ignoring the active ${filterLabel} filter${suffix}.`;
 	});
 	// Read contract handed to TrackTable (getters stay reactive through
 	// visibleRows/pane). The virtualization lane replaces THIS provider,
@@ -521,7 +566,7 @@
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
 			// Programmatic, so it must beat (and cancel) any keystroke burst
 			// still waiting to settle.
-			if (request.revision > 0) _setSearchNow(request.query);
+			if (request.revision > 0) _setSearchNow(request.query, request);
 		});
 		const onKey = (e: KeyboardEvent): void => {
 			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
@@ -1888,9 +1933,30 @@
 	/** Programmatic search write (genre chip, clear, restore). Immediate, and
 	 * cancels any pending keystroke settle so a superseded burst cannot land
 	 * on top of what was just clicked. */
-	function _setSearchNow(next: string): void {
+	function _setSearchNow(next: string, request?: BrowserSearchRequest): void {
 		_filterDebounceFor(activePane).cancel();
 		panes[activePane].setSearch(next);
+		if (request === undefined) return;
+		// A whole-collection command answers from server FTS, so its result is
+		// only knowable once that lands; everything else is already rendered.
+		// Genre chip filters stay client-side (filterRows), never FTS.
+		const active = panes[activePane];
+		if (active.whole_collection && !/^genre:/i.test(next.trim())) {
+			void _searchWholeCollection(active, next, request);
+		} else _reportBrowserSearchResult(request);
+	}
+
+	function _reportBrowserSearchResult(request: BrowserSearchRequest): void {
+		// A newer command superseded this one while its FTS was in flight. These
+		// rows are not its answer, and reporting them throws on the stale guard
+		// inside an unawaited promise.
+		if (!isCurrentBrowserSearch(request)) return;
+		const result = _computeVisibleSearchResult();
+		reportBrowserSearchResult(request, {
+			fallback: result.ignoredFilters.length > 0,
+			ignoredFilters: result.ignoredFilters,
+			rowCount: result.rows.length
+		});
 	}
 
 	function _captureSearchReturn(): void {
@@ -2011,12 +2077,17 @@
 		if (next) void _searchWholeCollection(active, active.search);
 	}
 
-	async function _searchWholeCollection(active: PaneStore, query: string): Promise<void> {
+	async function _searchWholeCollection(
+		active: PaneStore,
+		query: string,
+		request?: BrowserSearchRequest
+	): Promise<void> {
 		const trimmed = query.trim();
 		if (trimmed === '') {
 			active.search_results = [];
 			active.search_total = 0;
 			active.searching = false;
+			if (request !== undefined) _reportBrowserSearchResult(request);
 			return;
 		}
 		active.searching = true;
@@ -2040,7 +2111,10 @@
 				pushToast(`search failed: ${String(exc)}`, 'error');
 			}
 		} finally {
-			if (active.search.trim() === trimmed) active.searching = false;
+			if (active.search.trim() === trimmed) {
+				active.searching = false;
+				if (request !== undefined && active === pane) _reportBrowserSearchResult(request);
+			}
 		}
 	}
 
@@ -2350,6 +2424,9 @@
 			findQuery={findHighlightQuery}
 			{suggestHoverId}
 		/>
+		{#if filterFallbackNote !== null}
+			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
+		{/if}
 		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 		<SuggestNextStrip
 			stableId={decks[1].stable_id}
@@ -2530,6 +2607,16 @@
 		border-bottom: 1px solid color-mix(in srgb, var(--rb-orange) 65%, var(--rb-border));
 		background: color-mix(in srgb, var(--rb-orange) 12%, var(--rb-panel));
 		color: var(--rb-orange);
+		font-size: var(--rb-fs-label);
+		line-height: 16px;
+		text-align: center;
+	}
+	.filter-fallback-note {
+		flex: none;
+		padding: 3px 8px;
+		border-top: 1px solid color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
+		background: color-mix(in srgb, var(--rb-accent) 10%, var(--rb-panel));
+		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
 		line-height: 16px;
 		text-align: center;

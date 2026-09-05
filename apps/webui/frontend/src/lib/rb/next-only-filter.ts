@@ -9,6 +9,35 @@ import { BPM_HALF_ABS, BPM_SWEET_PCT } from '$lib/rb/bpm-heat';
 /** Match apps.shared.harmonic.MAX_BPM_DIFF_PCT / candidates.bpm_window_pct. */
 export const NEXT_BPM_WINDOW_PCT = BPM_SWEET_PCT;
 
+/** Pin 007fed0da025 (the maintainer, Wed 2 Sep 2026): only a tiny exact search result
+ * may be shown outside active filters. */
+export const SEARCH_FILTER_FALLBACK_MAX_ROWS = 2;
+
+export interface SearchFilterFallback<Row> {
+	rows: Row[];
+	ignoredFilters: string[];
+}
+
+/**
+ * Preserve a tiny, exact search result when active filters hide every match.
+ * Three or more matches remain hidden so filters retain their normal meaning.
+ */
+export function resolveSearchFilterFallback<Row>(
+	filteredRows: Row[],
+	unfilteredRows: Row[],
+	activeFilterNames: string[]
+): SearchFilterFallback<Row> {
+	if (
+		activeFilterNames.length > 0 &&
+		filteredRows.length === 0 &&
+		unfilteredRows.length > 0 &&
+		unfilteredRows.length <= SEARCH_FILTER_FALLBACK_MAX_ROWS
+	) {
+		return { rows: unfilteredRows, ignoredFilters: activeFilterNames };
+	}
+	return { rows: filteredRows, ignoredFilters: [] };
+}
+
 export interface NextOnlyRef {
 	key: string | null;
 	bpm: number | null;

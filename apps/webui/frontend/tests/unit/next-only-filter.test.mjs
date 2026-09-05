@@ -9,6 +9,29 @@ before(async () => {
 });
 
 describe('next-only-filter', () => {
+	it('reveals one or two search rows only when an active filter hid every match', () => {
+		const { resolveSearchFilterFallback, SEARCH_FILTER_FALLBACK_MAX_ROWS } = mod;
+		const unfiltered = [{ stable_id: 'azara-1' }, { stable_id: 'azara-2' }];
+
+		assert.equal(SEARCH_FILTER_FALLBACK_MAX_ROWS, 2);
+		assert.deepEqual(
+			resolveSearchFilterFallback([], unfiltered, ['next-only']),
+			{ rows: unfiltered, ignoredFilters: ['next-only'] }
+		);
+		assert.deepEqual(
+			resolveSearchFilterFallback([{ stable_id: 'kept' }], unfiltered, ['next-only']),
+			{ rows: [{ stable_id: 'kept' }], ignoredFilters: [] }
+		);
+		assert.deepEqual(
+			resolveSearchFilterFallback([], [...unfiltered, { stable_id: 'azara-3' }], ['next-only']),
+			{ rows: [], ignoredFilters: [] }
+		);
+		assert.deepEqual(
+			resolveSearchFilterFallback([], unfiltered, []),
+			{ rows: [], ignoredFilters: [] }
+		);
+	});
+
 	it('uses 6% BPM window', () => {
 		const { bpmInNextWindow, NEXT_BPM_WINDOW_PCT } = mod;
 		assert.equal(NEXT_BPM_WINDOW_PCT, 6);
