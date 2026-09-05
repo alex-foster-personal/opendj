@@ -50,7 +50,6 @@ from tests.fixtures.conftest import resolve_required_fixture
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
     pytest.mark.slow,
-    pytest.mark.requires_darwin,
     pytest.mark.skipif(
         not RBOX_AVAILABLE,
         reason=(
