@@ -28,6 +28,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.feedback_prompts_export import exportable_rows, write_export
 from scripts.provenance_links import GhUnavailable, attach_links, branch_windows, pr_map
 from scripts.provenance_probe import (
     Probe,
@@ -78,6 +79,29 @@ def _refuse(repo: Path, why: str, *, record: bool) -> int:
     return 3
 
 
+def _export_feedback_pins(repo: Path, feedback_dir: Path) -> int:
+    """Publish the validated pin projection after a successful prompt sweep."""
+    try:
+        path = write_export(repo, feedback_dir)
+    except (LockUnavailable, ValueError, TypeError, OSError) as exc:
+        return _refuse(repo, f"configured feedback source failed: {exc}", record=True)
+    print(f"[OK] feedback pins -> {path}")
+    return 0
+
+
+def _finish_with_pin_export(repo: Path, feedback_dir: Path | None) -> int:
+    """Export pins when configured without making their local source a prompt-sweep prerequisite."""
+    if feedback_dir is None:
+        message = (
+            "pin export UNAVAILABLE: no --feedback-dir was configured; prompt provenance "
+            "completed, but no user-prompt pin ledger was written"
+        )
+        record_error(repo, message)
+        print(f"[UNAVAILABLE] {message}", file=sys.stderr)
+        return 0
+    return _export_feedback_pins(repo, feedback_dir)
+
+
 def _report_stats(repo: Path, prompts: list[dict], since: float, why: str) -> int:
     """Print what a sweep WOULD do, and what the last one refused to do.
 
@@ -110,6 +134,10 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--repo", type=Path, required=True)
+    ap.add_argument(
+        "--feedback-dir", type=Path, default=None,
+        help="feedback directory containing comments.json and archive-*.json",
+    )
     ap.add_argument("--full", action="store_true", help="ignore the watermark and re-harvest")
     ap.add_argument("--stats", action="store_true", help="report only, write nothing")
     # Where to harvest FROM. Defaulting to the real per-user stores means no
@@ -149,6 +177,16 @@ def main() -> int:
     if not (repo / ".git").exists():
         print(f"[ERROR] not a git repo: {repo}", file=sys.stderr)
         return 1
+
+    if args.feedback_dir is not None:
+        try:
+            exportable_rows(args.feedback_dir)
+        except ValueError as exc:
+            return _refuse(
+                repo,
+                f"configured feedback source cannot be exported: {exc}",
+                record=not args.stats,
+            )
 
     # Refusing before the watermark is read, so the refusal cannot move it.
     # Resolved AFTER `repo`, because `_refuse` needs somewhere to persist to.
@@ -229,7 +267,7 @@ def main() -> int:
                 if not acquired:
                     print("[skip] another sweep holds the lock; its run covers these sources")
                     return 0
-                return _sweep(
+                result = _sweep(
                     repo,
                     since,
                     why,
@@ -245,6 +283,7 @@ def main() -> int:
                     # `generation_conflict` tests containment between them.
                     Probe(present, named, identities, _store_generations(roots, present, None)),
                 )
+                return result if result else _finish_with_pin_export(repo, args.feedback_dir)
         except LockUnavailable as exc:
             return _refuse(
                 repo,
@@ -280,7 +319,10 @@ def main() -> int:
             # is what --stats is for.
             return _refuse(repo, str(exc), record=False)
 
-    return _report_stats(repo, prompts, since, why)
+    result = _report_stats(repo, prompts, since, why)
+    if args.feedback_dir is None:
+        print("[UNAVAILABLE] pin export: no --feedback-dir was configured", file=sys.stderr)
+    return result
 
 
 def _sweep(
