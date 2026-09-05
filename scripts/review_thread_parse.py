@@ -20,6 +20,8 @@ import json
 import re
 from dataclasses import dataclass
 
+from scripts.review_sol import SOL, is_sol_thread
+
 BOT_LOGINS = frozenset(
     {
         "chatgpt-codex-connector",
@@ -298,6 +300,22 @@ def _is_bot(login: str) -> bool:
     return _normalize_login(login) in BOT_LOGINS
 
 
+def _is_reviewer_thread(login: str, body: str) -> bool:
+    """Is this opening comment a REVIEW that the three-state rule governs?
+
+    Bot login is the usual answer. Sol is the exception: it is a Codex CLI run
+    posted through `gh` as the maintainer (issue #1211, Thu 4 Sep 2026), so it has no bot
+    login to recognize and is identified by the marker its lane writes instead.
+    Without this branch a Sol finding would be an ordinary human comment, and
+    the silence detector would let a P0 sit unanswered through a merge -- the
+    exact gap this module exists to close, just wearing a different login.
+
+    The marker is checked at ANY head, not the current one: an outdated
+    finding still has to reach a disposition.
+    """
+    return _is_bot(login) or is_sol_thread(login, body)
+
+
 def _is_human(login: str) -> bool:
     """Any real person. Deliberately wider than "not a review bot".
 
@@ -443,21 +461,21 @@ def build_thread(
         return None
     first = comments[0]
     author = (first.get("author") or {}).get("login") or ""
-    if not _is_bot(author):
+    body = first["body"]
+    if not _is_reviewer_thread(author, body):
         return None
     replies = [
         comment
         for comment in comments[1:]
         if _is_human((comment.get("author") or {}).get("login") or "")
     ]
-    body = first["body"]
     return Thread(
         node_id=node["id"],
         path=node["path"] or "(file gone)",
         line=node["line"],
         resolved=node["isResolved"],
         outdated=node["isOutdated"],
-        bot=author,
+        bot=SOL if is_sol_thread(author, body) else author,
         severity=_severity(body),
         blocking=_blocking(body),
         summary=_summary(body),

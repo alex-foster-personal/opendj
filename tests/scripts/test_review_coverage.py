@@ -430,8 +430,12 @@ def test_a_restored_reviewer_is_not_exempted_by_its_own_historical_outage_commen
 # the committed .coderabbit.yaml instead of the app dashboard.
 
 
-def test_codex_is_the_sole_expected_reviewer() -> None:
-    assert EXPECTED_REVIEWERS == ("Codex",)
+def test_codex_and_sol_are_the_expected_reviewers() -> None:
+    """Sol joined Fri 5 Sep 2026 (issue #1211) as Codex's ALTERNATIVE, not as
+    a second requirement: see `review_sol.substitute_alternatives` and this
+    suite's companion tests/scripts/test_review_sol.py, which pins that either
+    one alone covers the pair and that neither reviewing still fails."""
+    assert EXPECTED_REVIEWERS == ("Codex", "Sol")
     assert "CodeRabbit" not in EXPECTED_REVIEWERS
     assert "Devin Review" not in EXPECTED_REVIEWERS
 

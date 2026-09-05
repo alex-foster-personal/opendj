@@ -17,8 +17,22 @@ class TriageError(RuntimeError):
     """Measurement failed. Never rendered as a verdict."""
 
 
-def _gh(args: list[str]) -> str:
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+def _gh(args: list[str], payload: dict | None = None) -> str:
+    """Run `gh` and return stdout, raising on any nonzero exit.
+
+    `payload` is written to the child's stdin as JSON, for the one call shape
+    that needs a request body too large and too nested for `-f` flags: the
+    `pulls/<n>/reviews` POST that `scripts/sol_review.py` submits, whose
+    `comments` array is a list of objects. Kept here rather than shelling out
+    separately so every `gh` call in the review tooling fails the same way.
+    """
+    proc = subprocess.run(
+        ["gh", *args],
+        input=json.dumps(payload) if payload is not None else None,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if proc.returncode != 0:
         raise TriageError(
             f"gh {' '.join(args)} failed ({proc.returncode}): "

@@ -94,6 +94,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from scripts.review_gh import TriageError, _checks, _head_sha, _paginated_json_list
+from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
 REPO = "maintainer/music-dj-tools"
 
@@ -103,7 +104,11 @@ REPO = "maintainer/music-dj-tools"
 #: Devin were removed here by issue #1016 (Thu 3 Sep 2026): CodeRabbit is
 #: rate-limited on every PR and Devin's trial expired at #530, so neither
 #: produces a real review to require.
-EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex",)
+#: Sol joined Thu 4 Sep 2026 (issue #1211): the Codex GitHub app ran out of
+#: quota at ~18:30Z and has posted a usage-limit notice instead of a review
+#: ever since. The two are ALTERNATIVES, not additional requirements -- see
+#: `review_sol.substitute_alternatives`, applied in `triage` below.
+EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL)
 
 #: Substrings that mean the check reported success WITHOUT reviewing. Matched
 #: case-insensitively against the check's description.
@@ -142,7 +147,9 @@ REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
 #: cross-check on a weaker status signal, it is the ONLY signal, so
 #: `classify_reviewer` skips the check lookup entirely rather than misreading
 #: its permanent absence as a failure.
-CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex"})
+#: Sol posts no check either: it is a CLI run whose only trace on the PR is
+#: the review it submits, so evidence is its sole instrument too.
+CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL})
 
 #: Reviewers KNOWN to be unavailable, with the owner of restoring each. A gate
 #: that can never go green blocks all work, so a known-dead reviewer must not
@@ -266,27 +273,33 @@ def _collect_evidence(
     push each was left against, so those filter on plain equality. Issue
     comments carry no such field, so they fall back to `_body_is_at_head`.
     """
+    def wrote(payload: dict) -> bool:
+        """Did `name` write this artifact? Codex is known by its bot login;
+        Sol has no bot account and is known by login PLUS marker (see
+        scripts/review_sol.py for why neither half suffices alone)."""
+        login = (payload.get("user") or {}).get("login", "")
+        if name == SOL:
+            return is_sol_artifact(login, payload.get("body") or "", head_sha)
+        return _matches(login, name)
+
     bodies: list[str] = []
     submitted = 0
     for review in reviews:
-        if not _matches((review.get("user") or {}).get("login", ""), name):
+        if not wrote(review):
             continue
         if review.get("commit_id") != head_sha:
             continue
         submitted += 1
         if review.get("body"):
             bodies.append(review["body"])
-    comments = sum(
-        1
-        for c in inline
-        if _matches((c.get("user") or {}).get("login", ""), name)
-        and c.get("commit_id") == head_sha
-    )
+    comments = sum(1 for c in inline if wrote(c) and c.get("commit_id") == head_sha)
     for comment in issue_comments:
-        if not _matches((comment.get("user") or {}).get("login", ""), name):
+        if not wrote(comment):
             continue
         body = comment.get("body") or ""
-        if _body_is_at_head(body, head_sha):
+        # Sol's marker already carries the head it reviewed, so `wrote` has
+        # done the head-tie `_body_is_at_head` does for Codex's summary table.
+        if name == SOL or _body_is_at_head(body, head_sha):
             bodies.append(body)
     return ReviewerEvidence(submitted, comments, tuple(bodies))
 
@@ -316,6 +329,11 @@ class ReviewerVerdict:
     # must not apply to it: its findings can still arrive, and arriving after
     # a merge is exactly the disposition gap the gate exists to prevent.
     in_progress: bool = False
+    # The alternative reviewer that covered for this one, when this reviewer
+    # left nothing. Not folded into `reason`: the board prints `sub` off this
+    # field, so a covered row never reads as "ok" and claims a review that did
+    # not happen. See `review_sol.substitute_alternatives`.
+    substituted_by: str = ""
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
@@ -493,16 +511,15 @@ def triage(pr: str) -> int:
     head_sha = _head_sha(pr)
     evidence = _evidence(pr, head_sha)
     _require_head_unchanged(head_sha, _head_sha(pr))
-    verdicts = [
-        classify_reviewer(name, checks, evidence.get(name))
-        for name in EXPECTED_REVIEWERS
-    ]
+    verdicts = substitute_alternatives(
+        [classify_reviewer(name, checks, evidence.get(name)) for name in EXPECTED_REVIEWERS]
+    )
 
     print(f"[review-coverage] PR #{pr} @ head {head_sha}")
     print()
     print("  reviewer coverage")
     for verdict in verdicts:
-        mark = "ok  " if verdict.reviewed else "MISS"
+        mark = "MISS" if not verdict.reviewed else ("sub " if verdict.substituted_by else "ok  ")
         found = evidence.get(verdict.name)
         artifacts = f" [{found.artifact_count} artifact(s)]" if found else ""
         print(f"    {mark} {verdict.name}: {verdict.reason}{artifacts}")
@@ -551,8 +568,13 @@ def triage(pr: str) -> int:
         return 1
 
     covered = len(verdicts) - len(unavailable)
+    # Substitutions are counted OUT of "reviewed" rather than folded into it:
+    # "all 2 reviewed" on a PR only Sol looked at is the same class of lie the
+    # artifact requirement exists to stop.
+    subbed = sum(1 for v in verdicts if v.substituted_by)
     print(
-        f"[review-coverage] PASS: all {covered} AVAILABLE reviewer(s) reviewed"
+        f"[review-coverage] PASS: {covered - subbed} of {covered} AVAILABLE reviewer(s) reviewed"
+        + (f", {subbed} covered by an alternative" if subbed else "")
         + (f"; {len(unavailable)} known-unavailable." if unavailable else ".")
     )
     return 0
