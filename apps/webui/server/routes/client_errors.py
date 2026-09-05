@@ -67,7 +67,7 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
     log_dir = Path(
         getattr(request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR)
     )
-    path = daily_log_path(log_dir, "webui-client-errors", time.localtime())
+    path = daily_log_path(log_dir, "webui-client-errors", time.gmtime())
     stored = append_json_record(path, record)
     summary = payload.message.replace("\n", " ")[:300]
     if stored:

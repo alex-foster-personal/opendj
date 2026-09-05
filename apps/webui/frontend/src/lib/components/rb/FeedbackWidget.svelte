@@ -42,6 +42,7 @@
 		toggleFeedbackPanel,
 		type FeedbackPin
 	} from '$lib/rb/feedback-store.svelte';
+	import { readShellBuild } from '$lib/rb/build-identity';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import FeedbackPanel from './FeedbackPanel.svelte';
@@ -68,6 +69,7 @@
 	let pinDraft: {
 		point: PinPoint;
 		anchor: string | null;
+		viewport: { width: number; height: number };
 		text: string;
 		followOn: { parentId: string; label: string } | null;
 	} | null = $state(null);
@@ -232,6 +234,7 @@
 		pinDraft = {
 			point: { x_pct: pin.x_pct, y_pct: pin.y_pct },
 			anchor: pin.anchor,
+			viewport: { width: window.innerWidth, height: window.innerHeight },
 			text: '',
 			followOn: { parentId: pin.id, label: followOnText(pin).trim() }
 		};
@@ -262,6 +265,7 @@
 		pinDraft = {
 			point,
 			anchor: describeAnchor(under ?? null),
+			viewport: { width: window.innerWidth, height: window.innerHeight },
 			text: '',
 			followOn: null
 		};
@@ -291,12 +295,19 @@
 				y_pct: submitted.point.y_pct,
 				anchor: submitted.anchor,
 				page: pathname,
-				text
+				text,
+				ui: pinUiKind(),
+				viewport_width: submitted.viewport.width,
+				viewport_height: submitted.viewport.height
 			});
 			if (saved && pinDraft === submitted) pinDraft = null;
 		} finally {
 			savingPin = false;
 		}
+	}
+
+	function pinUiKind(): 'chrome-loop' | 'packaged-app' {
+		return readShellBuild().kind === 'absent' ? 'chrome-loop' : 'packaged-app';
 	}
 
 	function handleEscape(e: KeyboardEvent): void {

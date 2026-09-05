@@ -48,7 +48,7 @@ import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -145,6 +145,8 @@ class CommentOut(BaseModel):
     text: str
     created_at: str
     build: BuildStampOut
+    # Pins created before issue #904 have no environment record.
+    environment: "PinEnvironmentOut | None" = None
     # Pin lifecycle (issue #858): absent on pins created before Wed 2 Sep 2026.
     status: str | None = None  # open | issued | fixed | merged | archived
     issue_url: str | None = None
@@ -166,6 +168,27 @@ class CommentCreateIn(BaseModel):
     anchor: str | None = None
     page: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    ui: Literal["chrome-loop", "packaged-app"]
+    viewport_width: int = Field(ge=1, le=100_000)
+    viewport_height: int = Field(ge=1, le=100_000)
+
+
+class PinEnvironmentOut(BaseModel):
+    """Non-personal runtime facts needed to reproduce a pinned UI defect.
+
+    ``machine`` and ``release_version`` are already exposed by the running
+    daemon's settings/health surfaces. The browser contributes only its UI
+    kind and viewport dimensions: no username, user agent, URL query, or
+    other new personal data enters the pin store.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ui: Literal["chrome-loop", "packaged-app"]
+    viewport_width: int
+    viewport_height: int
+    machine: str
+    release_version: str
 
 
 class GeneralNoteOut(BaseModel):
@@ -290,6 +313,24 @@ def _build_stamp(request: Request) -> BuildStampOut:
     return BuildStampOut(error=str(failure))
 
 
+def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentOut:
+    """Combine browser dimensions with daemon facts it already publishes."""
+
+    machine = getattr(request.app.state, "hostname", None)
+    release_version = getattr(request.app.state, "version", None)
+    if not isinstance(machine, str) or machine == "":
+        raise RuntimeError("feedback pin environment has no published machine name")
+    if not isinstance(release_version, str) or release_version == "":
+        raise RuntimeError("feedback pin environment has no published release version")
+    return PinEnvironmentOut(
+        ui=body.ui,
+        viewport_width=body.viewport_width,
+        viewport_height=body.viewport_height,
+        machine=machine,
+        release_version=release_version,
+    )
+
+
 # ----- todos --------------------------------------------------------------
 @router.get("/todos", response_model=TodoListOut)
 def list_todos(request: Request) -> TodoListOut:
@@ -375,6 +416,7 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
         text=body.text,
         created_at=_now(),
         build=_build_stamp(request),
+        environment=_pin_environment(body, request),
     )
     with _COMMENTS_LOCK:
         items = _load(path, "comments")

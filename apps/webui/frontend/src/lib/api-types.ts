@@ -3550,6 +3550,15 @@ export interface components {
             page: string;
             /** Text */
             text: string;
+            /**
+             * Ui
+             * @enum {string}
+             */
+            ui: "chrome-loop" | "packaged-app";
+            /** Viewport Height */
+            viewport_height: number;
+            /** Viewport Width */
+            viewport_width: number;
             /** X Pct */
             x_pct: number;
             /** Y Pct */
@@ -3577,6 +3586,7 @@ export interface components {
             build: components["schemas"]["BuildStampOut"];
             /** Created At */
             created_at: string;
+            environment?: components["schemas"]["PinEnvironmentOut"] | null;
             /** Id */
             id: string;
             /** Issue Url */
@@ -4710,6 +4720,30 @@ export interface components {
             how_to_grant: string;
             /** Roots */
             roots?: components["schemas"]["AccessProbeOut"][];
+        };
+        /**
+         * PinEnvironmentOut
+         * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
+         *
+         *     ``machine`` and ``release_version`` are already exposed by the running
+         *     daemon's settings/health surfaces. The browser contributes only its UI
+         *     kind and viewport dimensions: no username, user agent, URL query, or
+         *     other new personal data enters the pin store.
+         */
+        PinEnvironmentOut: {
+            /** Machine */
+            machine: string;
+            /** Release Version */
+            release_version: string;
+            /**
+             * Ui
+             * @enum {string}
+             */
+            ui: "chrome-loop" | "packaged-app";
+            /** Viewport Height */
+            viewport_height: number;
+            /** Viewport Width */
+            viewport_width: number;
         };
         /** PlanModel */
         PlanModel: {

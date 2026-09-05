@@ -6,7 +6,15 @@ test('reopened comment card closes on a real column resize pointerdown', async (
 	// Provision the pin through the production API (the dev server proxies /api to the engine),
 	// so the scenario does not depend on whatever the live feedback store happens to hold.
 	const seeded = await page.request.post('/api/v1/feedback/comments', {
-		data: { page: '/performance', text: SEED_TEXT, x_pct: 55, y_pct: 45 }
+		data: {
+			page: '/performance',
+			text: SEED_TEXT,
+			x_pct: 55,
+			y_pct: 45,
+			ui: 'chrome-loop',
+			viewport_width: 1280,
+			viewport_height: 800
+		}
 	});
 	if (!seeded.ok()) throw new Error(`seeding the feedback pin failed: HTTP ${seeded.status()}`);
 	const seededId = (await seeded.json()).id as string;

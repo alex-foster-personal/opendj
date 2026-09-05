@@ -145,11 +145,21 @@ def test_comment_roundtrip_and_bounds(fb: TestClient) -> None:
             "anchor": "#vibe-meter",
             "page": "/performance",
             "text": "this overlaps the clock",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
         },
     )
     assert r.status_code == 201
     pin = r.json()
     assert pin["build"]["git_sha"]
+    assert pin["environment"] == {
+        "ui": "chrome-loop",
+        "viewport_width": 1280,
+        "viewport_height": 800,
+        "machine": "test-host",
+        "release_version": "0.1.0",
+    }
 
     listed = fb.get("/api/v1/feedback/comments").json()["comments"]
     assert [c["id"] for c in listed] == [pin["id"]]
@@ -194,7 +204,15 @@ def test_archive_moves_never_deletes(fb: TestClient) -> None:
     )
     fb.post(
         "/api/v1/feedback/comments",
-        json={"x_pct": 1, "y_pct": 1, "page": "/performance", "text": "pin"},
+        json={
+            "x_pct": 1,
+            "y_pct": 1,
+            "page": "/performance",
+            "text": "pin",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
+        },
     )
     fb.put("/api/v1/feedback/general", json={"text": "general thoughts"})
 

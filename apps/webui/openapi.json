@@ -1957,6 +1957,26 @@
             "title": "Text",
             "type": "string"
           },
+          "ui": {
+            "enum": [
+              "chrome-loop",
+              "packaged-app"
+            ],
+            "title": "Ui",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          },
           "x_pct": {
             "maximum": 100.0,
             "minimum": 0.0,
@@ -1974,7 +1994,10 @@
           "x_pct",
           "y_pct",
           "page",
-          "text"
+          "text",
+          "ui",
+          "viewport_width",
+          "viewport_height"
         ],
         "title": "CommentCreateIn",
         "type": "object"
@@ -2043,6 +2066,16 @@
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinEnvironmentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -5094,6 +5127,44 @@
           "how_to_grant"
         ],
         "title": "PermissionsOut",
+        "type": "object"
+      },
+      "PinEnvironmentOut": {
+        "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
+        "properties": {
+          "machine": {
+            "title": "Machine",
+            "type": "string"
+          },
+          "release_version": {
+            "title": "Release Version",
+            "type": "string"
+          },
+          "ui": {
+            "enum": [
+              "chrome-loop",
+              "packaged-app"
+            ],
+            "title": "Ui",
+            "type": "string"
+          },
+          "viewport_height": {
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ui",
+          "viewport_width",
+          "viewport_height",
+          "machine",
+          "release_version"
+        ],
+        "title": "PinEnvironmentOut",
         "type": "object"
       },
       "PlanModel": {
