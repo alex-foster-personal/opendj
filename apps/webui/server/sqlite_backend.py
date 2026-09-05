@@ -183,7 +183,7 @@ def _reset_warnings_for_tests() -> None:
 # Fields the webui Track exposes that live in track_fields (EAV). Any field
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
-    "bpm", "key", "rating", "tags", "notes", "last_played_at",
+    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
 )
 
 _TRACKS_PROJECTION = (

@@ -21,6 +21,7 @@ than imported by value, because they are rebindable overrides -- see
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -318,8 +319,9 @@ def local_track_row(stable_id: str) -> tuple[str | None, int | None]:
     vendor mapping.
 
     A locally imported file has a real ``tracks`` row but no djmdContent row,
-    so every rekordbox-sourced field (artwork, ANLZ, cues, genre) is absent by
-    definition. These two columns are the only honest inputs left for the
+    so every rekordbox-sourced field (artwork, ANLZ, cues) is absent by
+    definition. Genre and comment are state-layer file-tag facts resolved by
+    the web read model. These two columns are the only honest inputs left for the
     disk-truth flags a browser row still needs, and they are the SAME columns
     :func:`~apps.webui.server.rb_vendor_pkg.track_rows.bulk_availability` falls
     back to for unmapped rows -- so a listing row and its rb-meta can never
@@ -337,6 +339,43 @@ def local_track_row(stable_id: str) -> tuple[str | None, int | None]:
         raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
     file_path, duration_ms = row
     return (file_path or None, int(duration_ms) if duration_ms is not None else None)
+
+
+def local_track_file_tags(stable_id: str) -> tuple[str | None, str | None]:
+    """``(genre, comment)`` import-time file tags for an unmapped track.
+
+    A folder import persists the genre and comment it read off the file's
+    own tags into ``track_fields`` (see
+    :func:`apps.shared.state.ingest.folder._write_file_tag_metadata`). They
+    are file facts, not rekordbox facts, so they are the only two metadata
+    fields an unmapped row can honestly serve.
+
+    Read through the SAME ``config.STATE_DB`` connection
+    :func:`local_track_row` uses rather than through the request's
+    ``StateBackend``: the two resolve independently, and a local-only
+    library whose ``state.db`` the backend never opened would otherwise
+    answer "track not found" for a row this module can see. Absent tags
+    (no import, or a file with none) return ``None``, never an invented
+    value.
+    """
+    state = _open_ro(config.STATE_DB, "STATE_DB")
+    try:
+        rows = state.execute(
+            "SELECT field_name, value_json FROM track_fields "
+            "WHERE stable_id = ? AND field_name IN ('genre', 'comments')",
+            (stable_id,),
+        ).fetchall()
+    finally:
+        state.close()
+    tags: dict[str, str] = {}
+    for field_name, value_json in rows:
+        try:
+            value = json.loads(value_json)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(value, str) and value:
+            tags[field_name] = value
+    return (tags.get("genre"), tags.get("comments"))
 
 
 def resolve_playable_audio(
@@ -503,6 +542,7 @@ __all__ = [
     "local_artwork",
     "local_artwork_available",
     "local_audio_file",
+    "local_track_file_tags",
     "local_track_row",
     "resolve_asset_path",
     "resolve_content",

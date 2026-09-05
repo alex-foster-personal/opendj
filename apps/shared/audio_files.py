@@ -23,6 +23,8 @@ class AudioMetadata:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
+    genre: str | None = None
+    comment: str | None = None
     duration_s: float | None = None
     bitrate_kbps: int | None = None
     sample_rate: int | None = None
@@ -94,6 +96,8 @@ def read_metadata(path: Path) -> AudioMetadata | None:
         title=_first(f, "title"),
         artist=_first(f, "artist"),
         album=_first(f, "album"),
+        genre=_first(f, "genre"),
+        comment=_first(f, "comment"),
         duration_s=float(info.length) if info and getattr(info, "length", None) else None,
         bitrate_kbps=bitrate_kbps,
         sample_rate=int(info.sample_rate) if info and getattr(info, "sample_rate", None) else None,

@@ -132,7 +132,7 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
             rb_config.MASTER_PLAIN_DB = Path({str(absent_master_db)!r})
 
             app = FastAPI()
-            app.state.backend = make_backend()
+            app.state.backend = make_backend(Path({str(state_path)!r}))
             app.include_router(router, prefix="/api/v1")
             with TestClient(app) as test_client:
                 resp = test_client.get("/api/v1/tracks/{STABLE_ID}/artwork")

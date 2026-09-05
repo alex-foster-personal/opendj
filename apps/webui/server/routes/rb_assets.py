@@ -49,8 +49,9 @@ class RbMetaOut(BaseModel):
 
     ``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the
     rekordbox-sourced fields are then honestly empty (``vendor_id`` None,
-    analysis False, no cues, no genre) while ``folder_path``, ``file_exists``
-    and ``quality`` still carry the state layer's own disk truth.
+    analysis False and no cues). Genre and comment instead come from the
+    state layer's import-time file tags, alongside ``folder_path``,
+    ``file_exists`` and ``quality``.
     ``artwork_available`` is the one exception -- it reflects a real embedded
     tag picture on the local file when present, since ``/artwork`` now
     serves that instead of a rekordbox-rendered jpg for these rows. See
@@ -190,12 +191,19 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
     Mirrors :func:`get_track_anlz`'s VENDOR_MAPPING_NOT_FOUND branch: every
     rekordbox-sourced field is empty because it genuinely does not exist for a
     locally imported file, and nothing is synthesised to fill the gap. The
-    fields that are NOT rekordbox facts - file_exists, quality, and
+    fields that are NOT rekordbox facts - genre and comment (the file's own
+    tags, kept by the folder import), file_exists, quality, and
     artwork_available (an embedded tag, not a rekordbox render) - are still
-    measured, from the same state-layer file_path and the same cached stat the
+    served, from the same state-layer file_path and the same cached stat the
     bulk listing uses, so a row and its rb-meta cannot disagree.
+
+    Every field here resolves through ``rb_vendor`` against one state.db, not
+    through the request's ``StateBackend``: a local-only library commonly has
+    no backend-visible track at all, and splitting the reads across two stores
+    is what made this branch raise NotFoundError instead of answering.
     """
     file_path, duration_ms = rb_vendor.local_track_row(stable_id)
+    genre, comment = rb_vendor.local_track_file_tags(stable_id)
     quality = rb_vendor.bulk_quality(
         [stable_id], {stable_id: file_path}, {stable_id: duration_ms}
     )[stable_id]
@@ -208,8 +216,8 @@ def _local_rb_meta(stable_id: str) -> RbMetaOut:
             [stable_id], {stable_id: file_path}, {}
         )[stable_id],
         is_streaming=rb_vendor.is_streaming_path(file_path),
-        genre=None,
-        comment=None,
+        genre=genre,
+        comment=comment,
         duration_s=duration_ms // 1000 if duration_ms is not None else None,
         artwork_available=rb_vendor.local_artwork_available(file_path),
         analysis_available=False,

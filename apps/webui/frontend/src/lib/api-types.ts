@@ -5223,8 +5223,9 @@ export interface components {
          *
          *     ``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the
          *     rekordbox-sourced fields are then honestly empty (``vendor_id`` None,
-         *     analysis False, no cues, no genre) while ``folder_path``, ``file_exists``
-         *     and ``quality`` still carry the state layer's own disk truth.
+         *     analysis False and no cues). Genre and comment instead come from the
+         *     state layer's import-time file tags, alongside ``folder_path``,
+         *     ``file_exists`` and ``quality``.
          *     ``artwork_available`` is the one exception -- it reflects a real embedded
          *     tag picture on the local file when present, since ``/artwork`` now
          *     serves that instead of a rekordbox-rendered jpg for these rows. See

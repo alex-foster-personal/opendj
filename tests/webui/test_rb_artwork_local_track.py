@@ -114,7 +114,7 @@ def client(
     monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent.db")
 
     app = FastAPI()
-    app.state.backend = make_backend()
+    app.state.backend = make_backend(state_path)
     app.include_router(router, prefix="/api/v1")
     with TestClient(app) as test_client:
         yield test_client
