@@ -27,6 +27,12 @@ TABLES: dict[str, str] = {
         "means the audio is unresolvable, which is what the 'present' "
         "denominator in docs/library-availability.md counts."
     ),
+    "track_availability": (
+        "One track's current playability verdict (present, absent, "
+        "awaiting_volume or streaming), with the path that was checked and "
+        "when. NO row at all means UNKNOWN, which is why `tracks_available` "
+        "excludes it: absence of evidence is not evidence of presence."
+    ),
     "track_fields": (
         "One field value for one track from one adapter, so rekordbox, djay "
         "and serato can each hold a different opinion about the same track "
@@ -115,6 +121,26 @@ TABLES: dict[str, str] = {
     "analysis_events": (
         "One analysis run's outcome, including failures, so a track that "
         "cannot be analysed is distinguishable from one never attempted."
+    ),
+    "track_energy_segments": (
+        "One contiguous stretch of one track's timeline carrying an energy "
+        "rating of 1 to 10, as a single source heard it, ordered by `seq`. "
+        "A track has many rows per source; the series IS the shape of the "
+        "track, so reading one row alone tells you almost nothing."
+    ),
+    "unmatched_source_analysis": (
+        "One field value a source offered that could not be attached to any "
+        "track, kept with the identifying metadata it arrived with (title, "
+        "artist, isrc, source path) and the reason it failed to land "
+        "(no_candidate, ambiguous_candidates, lost_collision). This is how "
+        "analysis for audio we do not have yet survives until the track "
+        "turns up."
+    ),
+    "analysis_field_verification": (
+        "One verdict on whether a given source's values for a given field "
+        "can be trusted, and on what basis (cross_source, single_source or "
+        "unverified). What the equivalence gate consults before letting that "
+        "source's analysis be promoted onto a track."
     ),
     # ----- curation ------------------------------------------------------
     "pairings": (

@@ -14,7 +14,7 @@ Run in a SUBPROCESS, matching test_contract_rev.py / test_data_dir_sandbox.py:
 
 Single-line intent:
   - if a v5-shaped state.db boots through create_app then /api/v1/health
-    serves 200 with the v7 schema applied [broken if migration only runs on
+    serves 200 with the v8 schema applied [broken if migration only runs on
     a write path, per the #762 incident]
 """
 
@@ -25,7 +25,7 @@ import os
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -78,7 +78,7 @@ def _write_v5_state_db(db_path: Path) -> None:
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript(_verified_v5_sql())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         conn.execute(
             "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path,"
             " created_at, updated_at) VALUES (?, 'inferred', ?, ?, ?, ?)",
@@ -129,22 +129,22 @@ def test_engine_boots_and_serves_health_against_a_v5_db(probe: dict) -> None:
     assert probe["health_body"]["status"] == "ok"
 
 
-def test_v5_state_db_lands_on_v7_after_boot(probe: dict) -> None:
+def test_v5_state_db_lands_on_v8_after_boot(probe: dict) -> None:
     conn = sqlite3.connect(f"file:{probe['state_db']}?mode=ro", uri=True)
     try:
         version = conn.execute(
             "SELECT MAX(version) FROM schema_meta"
         ).fetchone()[0]
-        # v7's ``deleted_at`` column is exactly what the live incident's
-        # unmigrated db was missing; querying it proves the shape, not just
-        # the counter.
+        # v7 first added the ``deleted_at`` column that the live incident's
+        # unmigrated db was missing; querying it proves the shape survives
+        # the subsequent v8 migration too, not just the version counter.
         row = conn.execute(
             "SELECT deleted_at FROM tracks WHERE stable_id = ?",
             ("v5-boot-fixture",),
         ).fetchone()
     finally:
         conn.close()
-    assert version == 7
+    assert version == 8
     assert row == (None,)
 
 
@@ -169,7 +169,7 @@ def test_boot_aborts_end_to_end_when_migration_cannot_write(
 
     Caveat (same as ``tests/webui/test_sqlite_backend.py``'s equivalent):
     this fires before ``apply_migrations`` runs any statement, not inside a
-    migration step. v6/v7 only add nullable columns and brand-new tables, so
+    migration step. v6-v8 only add nullable columns and brand-new tables, so
     no real v5 data makes an actual migration step raise without fabricating
     broken SQL. This proves the boot path aborts on any real write failure
     during migrate-or-open; it does not exercise a step itself raising.

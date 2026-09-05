@@ -83,6 +83,7 @@ class UsbVolume:
     simulated: bool = False
     role: VolumeRole = "other"
     protocol: str | None = None
+    removable: bool | None = None
     hide_reason: str | None = None
 
 
@@ -326,6 +327,7 @@ def _scan_volumes(
                 simulated=False,
                 role=role,
                 protocol=info.protocol,
+                removable=info.removable,
                 hide_reason=hide_reason_for(
                     role, protocol=info.protocol, name=entry.name
                 ),
@@ -483,7 +485,17 @@ def _capability_response(exc: UsbDiscoveryUnavailable) -> JSONResponse:
 
 
 def _to_out(v: UsbVolume) -> UsbVolumeOut:
-    is_music = v.kind in ("rekordbox", "djay", "music") and v.role == "usb_stick"
+    kind_is_music = v.kind in ("rekordbox", "djay", "music")
+    # role == "other" with no protocol/removable at all means diskutil gave us
+    # nothing to classify with (unavailable, timed out on a read that still
+    # returned some bytes, or a plist missing both keys) rather than a real
+    # non-usb bus we deliberately fold away. classify_mount() still proved
+    # music content in that case, so trust it instead of hiding a genuine USB
+    # music volume behind a metadata gap.
+    metadata_unavailable = (
+        v.role == "other" and v.protocol is None and v.removable is None
+    )
+    is_music = kind_is_music and (v.role == "usb_stick" or metadata_unavailable)
     return UsbVolumeOut(
         id=v.id,
         name=v.name,

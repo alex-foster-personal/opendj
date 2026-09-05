@@ -2090,10 +2090,9 @@ interface _SyncOptions {
 }
 
 /**
- * When a synced waveform seek snaps backwards, crossfade a little from the
- * current bar into beat 4 of the target bar so the landing at `landingSec`
- * is less of a hard cut. Falls back to a plain schedule when no buffer /
- * lead-in is available.
+ * When a synced waveform seek snaps backwards, crossfade from the current bar
+ * into beat 4 of the target bar so `landingSec` lands softer. Falls back to a
+ * plain schedule with no buffer/lead-in, or where the mix buffer bypasses stems/pitch under Master Tempo.
  */
 async function _scheduleFollowerBackwardBlend(
 	deck: DeckId,
@@ -2117,6 +2116,7 @@ async function _scheduleFollowerBackwardBlend(
 		buffer === null ||
 		nodes === null ||
 		processor === null ||
+		processor instanceof AlignedStemDeckProcessor || masterTempoEnabled ||
 		landingSec >= currentSec - 0.08
 	) {
 		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
