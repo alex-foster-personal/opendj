@@ -11,9 +11,14 @@ from unittest import mock
 import pytest
 
 from apps.webui.port_config import (
+    BACKEND_POOL_START,
+    FRONTEND_POOL_START,
+    POOL_SIZE,
+    PORT_LANE_ENV,
     PROJECT_ROOT,
     PortConfigError,
     WebuiPorts,
+    _lane_pool_starts,
     assert_source_tree_matches_worktree,
     check_reservation,
     claim_ports,
@@ -310,6 +315,89 @@ def test_repeat_claim_leaves_dotenv_untouched(tmp_path: Path) -> None:
     assert dotenv.read_text(encoding="utf-8") == first_text
     assert dotenv.stat().st_mtime_ns == first_stat.st_mtime_ns
     assert dotenv.stat().st_ino == first_stat.st_ino
+
+
+def test_two_runner_clones_with_distinct_lanes_never_select_the_same_pair(
+    tmp_path: Path,
+) -> None:
+    """If two independent CI runner clones claim distinct lanes then they must not
+    be able to select the same or an overlapping pair.
+
+    Each self-hosted runner is a separate clone with its own common dir and its
+    own worktree-ports.json registry (issue #1301, Sat 5 Sep 2026): the lock
+    that serializes allocation lives per-registry, so two runners' registries
+    never contend, and both start allocating from the same pool base. Without a
+    per-runner lane, two runners on the same host land on the identical pair
+    the moment both registries are empty, which is exactly what put trunk red
+    while every Playwright spec passed.
+    """
+    runner_a_repo = tmp_path / "runner-a" / "_work" / "music-dj-tools"
+    runner_a_common = tmp_path / "runner-a" / "_common"
+    runner_b_repo = tmp_path / "runner-b" / "_work" / "music-dj-tools"
+    runner_b_common = tmp_path / "runner-b" / "_common"
+    for path in (runner_a_repo, runner_a_common, runner_b_repo, runner_b_common):
+        path.mkdir(parents=True)
+
+    claimed_a = claim_ports(
+        repo_root=runner_a_repo,
+        common_dir=runner_a_common,
+        environ={PORT_LANE_ENV: "1"},
+    )
+    claimed_b = claim_ports(
+        repo_root=runner_b_repo,
+        common_dir=runner_b_common,
+        environ={PORT_LANE_ENV: "2"},
+    )
+
+    assert {claimed_a.backend, claimed_a.frontend}.isdisjoint(
+        {claimed_b.backend, claimed_b.frontend}
+    ), f"lane 1 pair {claimed_a} overlaps lane 2 pair {claimed_b}"
+
+
+def test_port_lanes_never_overlap_across_their_full_pool_window() -> None:
+    """If any two distinct lanes are compared then their entire scan windows,
+    not just the slot each currently happens to pick, must be disjoint.
+
+    A registry can advance past slot 0 (a stale reservation, a bound port from
+    something unrelated), so a guard that only checks the first slot can pass
+    today and collide tomorrow when a runner's registry has non-trivial state.
+    This also mutates in both directions: a lane that is ignored entirely (the
+    pre-fix behavior) collapses every window onto lane 0 and fails immediately
+    below; a stride narrower than the pool needs also fails, caught by
+    asserting the FULL range rather than a single sampled point.
+    """
+    claimed_ports: set[int] = set()
+    for lane in range(0, 24):
+        backend_start, frontend_start = _lane_pool_starts(lane)
+        lane_ports = set(range(backend_start, backend_start + POOL_SIZE)) | set(
+            range(frontend_start, frontend_start + POOL_SIZE)
+        )
+        overlap = claimed_ports & lane_ports
+        assert not overlap, f"lane {lane} window overlaps an earlier lane at {sorted(overlap)}"
+        claimed_ports |= lane_ports
+
+
+def test_port_lane_zero_matches_the_original_unshifted_pool_bounds() -> None:
+    """If no lane is configured then allocation must be byte-identical to before
+    this feature existed, so the two pre-existing test files stay green."""
+    assert _lane_pool_starts(0) == (BACKEND_POOL_START, FRONTEND_POOL_START)
+
+
+def test_port_lane_rejects_a_negative_or_malformed_value(tmp_path: Path) -> None:
+    """If MUSIC_DJ_PORT_LANE is negative or not an integer then claiming must
+    fail loudly rather than silently wrapping into another lane's window."""
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    for bad_value in ("-1", "not-a-number", "1.5"):
+        with pytest.raises(PortConfigError, match=PORT_LANE_ENV):
+            claim_ports(
+                repo_root=repo_root,
+                common_dir=common_dir,
+                environ={PORT_LANE_ENV: bad_value},
+            )
 
 
 def _init_git_worktree(root: Path) -> Path:

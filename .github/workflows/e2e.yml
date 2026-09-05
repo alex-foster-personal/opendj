@@ -109,6 +109,37 @@ jobs:
         with:
           clean: true
 
+      - name: Derive the worktree-port lane from the runner identity
+        # This job is the only one that claims a dynamic pair from the pool
+        # (apps/webui/port_config.py, via `pnpm test:e2e` below): each
+        # self-hosted runner is a separate clone with its own registry and
+        # lock (issue #1301), so two runners on one host both start
+        # allocating from slot 0 of the SAME pool and can select the same
+        # pair. MUSIC_DJ_PORT_LANE shifts one runner's whole pool window
+        # clear of every other lane's.
+        #
+        # RUNNER_NAME is the self-hosted agent's registered name (`agentName`
+        # in its `.runner` file), e.g. "agentbox-2", or "nucbox-wsl" with no
+        # trailing number for a host's first-registered runner. Lane 0 is
+        # left unclaimed for local dev (unset var, e.g. `just webui-ports` on
+        # a developer machine that is also a runner host), so an unsuffixed
+        # name gets lane 1 and a suffixed name gets its numeric index plus 1.
+        # Thus an unsuffixed runner never collides with local dev or suffix 1.
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
       - name: Enable pinned pnpm
         # Order matters: corepack before setup-node, so a `pnpm` shim exists on
         # PATH when setup-node's `cache: pnpm` resolves the store. Same

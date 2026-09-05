@@ -8,6 +8,9 @@ Requirements:
 - ✔︎ Port availability checks are per service and use cross-platform sockets.
 - ✔︎ CLI values override process environment, which overrides root ``.env``.
 - ✔︎ The CLI refuses to run when the loaded ``apps`` tree is another worktree.
+- ✔︎ ``MUSIC_DJ_PORT_LANE`` shifts one CI runner's whole pool window clear of
+  every other lane's, so independent runner clones on one host cannot select
+  an overlapping pair.
 
 Acceptance tests:
 
@@ -17,6 +20,8 @@ Acceptance tests:
   startup continues.
 - [if] ``uv`` binds an ancestor worktree's ``.venv`` [then ⛔️] the CLI prints
   ports, because those ports belong to the other worktree's ``.env``.
+- [if] two runner clones claim distinct ``MUSIC_DJ_PORT_LANE`` values [then
+  ⛔️] their allocated pairs overlap.
 """
 
 from __future__ import annotations
@@ -39,12 +44,25 @@ from pathlib import Path
 BACKEND_ENV = "MUSIC_DJ_BACKEND_PORT"
 FRONTEND_ENV = "MUSIC_DJ_FRONTEND_PORT"
 OBSOLETE_PROXY_ENV = "MUSIC_DJ_API_PROXY_TARGET"
+PORT_LANE_ENV = "MUSIC_DJ_PORT_LANE"
 MIN_PORT = 1024
 MAX_PORT = 65535
 POOL_SIZE = 120
 LOCK_TIMEOUT_SECONDS = 2.0
 BACKEND_POOL_START = 8680
 FRONTEND_POOL_START = 9400
+# Each CI runner host is a separate clone with its own common dir, so its own
+# worktree-ports.json registry and lock (issue #1301): two runners' registries
+# never contend, and both start allocating from slot 0 of the same pool. A
+# lane shifts one runner's ENTIRE pool window (not just its first pick) clear
+# of every other lane's window, so no two runners can select an overlapping
+# pair regardless of what each registry already holds.
+#
+# The stride must clear the gap between the two pools plus one full pool
+# width, or a later lane's backend window walks into an earlier lane's
+# frontend window. Derived, not hardcoded, so a future change to POOL_SIZE or
+# either pool start cannot silently reopen that overlap.
+PORT_LANE_STRIDE = (FRONTEND_POOL_START - BACKEND_POOL_START) + POOL_SIZE
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEBUI_ENV_FILE = PROJECT_ROOT / ".env"
 
@@ -441,20 +459,40 @@ def _configured_candidate(
     )
 
 
-def _allocate_pair(reservations: Mapping[str, WebuiPorts]) -> WebuiPorts:
+def _lane_pool_starts(lane: int) -> tuple[int, int]:
+    """Return this lane's (backend, frontend) pool start, shifted by the stride."""
+    offset = lane * PORT_LANE_STRIDE
+    return BACKEND_POOL_START + offset, FRONTEND_POOL_START + offset
+
+
+def _port_lane(environ: Mapping[str, str]) -> int:
+    """Resolve the CI runner lane, defaulting to 0 (byte-identical to no lane)."""
+    raw_value = environ.get(PORT_LANE_ENV)
+    if raw_value is None or raw_value.strip() == "":
+        return 0
+    value_text = raw_value.strip()
+    if not value_text.isascii() or not value_text.isdecimal():
+        raise PortConfigError(f"{PORT_LANE_ENV} must be a non-negative integer, got {value_text!r}")
+    return int(value_text)
+
+
+def _allocate_pair(reservations: Mapping[str, WebuiPorts], lane: int) -> WebuiPorts:
     reserved_ports = {
         port for ports in reservations.values() for port in (ports.backend, ports.frontend)
     }
+    backend_pool_start, frontend_pool_start = _lane_pool_starts(lane)
     for slot in range(POOL_SIZE):
         candidate = WebuiPorts(
-            backend=BACKEND_POOL_START + slot,
-            frontend=FRONTEND_POOL_START + slot,
+            backend=backend_pool_start + slot,
+            frontend=frontend_pool_start + slot,
         )
         if candidate.backend in reserved_ports or candidate.frontend in reserved_ports:
             continue
         if _pair_is_available(candidate):
             return candidate
-    raise PortConfigError("no free worktree port pair remains; release stale reservations first")
+    raise PortConfigError(
+        f"no free worktree port pair remains in lane {lane}; release stale reservations first"
+    )
 
 
 def claim_ports(
@@ -470,6 +508,7 @@ def claim_ports(
     effective_environ = os.environ if environ is None else environ
     dotenv_path = resolved_root / ".env"
     configured = requested or _configured_candidate(dotenv_path, effective_environ)
+    lane = _port_lane(effective_environ)
     root_key = str(resolved_root)
 
     with _locked_registry(resolved_common_dir) as registry_path:
@@ -490,7 +529,7 @@ def claim_ports(
             selected = configured
         else:
             reservations.pop(root_key, None)
-            selected = _allocate_pair(reservations)
+            selected = _allocate_pair(reservations, lane)
 
         reservations[root_key] = selected
         _write_registry(registry_path, reservations)
@@ -664,6 +703,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "PORT_LANE_ENV",
     "PortConfigError",
     "WebuiPorts",
     "check_reservation",
