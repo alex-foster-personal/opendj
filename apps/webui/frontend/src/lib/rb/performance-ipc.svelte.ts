@@ -42,6 +42,7 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { createPairing } from '$lib/api';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -185,7 +186,10 @@ export type PerformanceCommand =
 	| { type: 'tech_mode_peek'; peeking: boolean }
 	| { type: 'tech_mode_opt_reveal'; revealed: boolean }
 	| { type: 'tech_mode_eq_raised'; raised: boolean }
-	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean };
+	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean }
+	| { type: 'pairing_snapshot_open' }
+	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
+	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -276,6 +280,7 @@ export interface PerformanceState {
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
+	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
 		active: boolean;
 		peeking: boolean;
@@ -283,6 +288,19 @@ export interface PerformanceState {
 		eq_raised: boolean;
 		hovered_edges: EdgeRegion[];
 	};
+}
+
+export interface PairingSnapshot {
+	version: 1;
+	beat_sync_max: boolean;
+	decks: Array<{
+		deck_id: DeckId;
+		stable_id: string;
+		title: string;
+		position_ms: number;
+		timestamp: { unit: 'beats' | 'time'; value: number };
+		eq_adjusts: Array<{ band: EqBand; value: number }>;
+	}>;
 }
 
 /** BrowserPanel owns playlist loading, while this module owns the public
@@ -317,6 +335,7 @@ let _activeBrowserPlaylist: string | null = null;
 let _commandSequence = 0;
 let _commandHistory: Array<{ id: string; type: PerformanceCommand['type'] }> = [];
 let _deckCommandIds: Record<DeckId, string | null> = { 1: null, 2: null, 3: null, 4: null };
+let _pairingSnapshot: PairingSnapshot | null = $state(null);
 
 export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAdapter): () => void {
 	if (_browserAdapter !== null) throw new Error('performance browser adapter is already registered');
@@ -772,6 +791,25 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
 	}
+	if (type === 'pairing_snapshot_open') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'pairing_snapshot_remove_eq_adjuster') {
+		_exactKeys(record, ['type', 'deck', 'band']);
+		const deck = _deck(record.deck);
+		if (record.band !== 'low' && record.band !== 'mid' && record.band !== 'high') {
+			throw new TypeError(`band must be low, mid, or high; got ${String(record.band)}`);
+		}
+		return { type, deck, band: record.band };
+	}
+	if (type === 'pairing_snapshot_save') {
+		_exactKeys(record, ['type', 'from_deck', 'to_deck']);
+		const from_deck = _deck(record.from_deck);
+		const to_deck = _deck(record.to_deck);
+		if (from_deck === to_deck) throw new RangeError('pairing snapshot requires two distinct decks');
+		return { type, from_deck, to_deck };
+	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
 		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
@@ -1002,6 +1040,40 @@ function _hotCueArmedSnapshot(
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
+function _openPairingSnapshot(): PairingSnapshot {
+	const unit: 'beats' | 'time' = uiPrefs.beat_sync_max ? 'beats' : 'time';
+	const decks = DECK_IDS.flatMap((deckId) => {
+		const deck = getDeckState(deckId);
+		if (deck.stable_id === null) return [];
+		const channel = mixerState.channels[deckId];
+		const positionBeat = [...(deck.anlz?.beatgrid.beats ?? [])]
+			.reverse()
+			.find((beat) => beat.t * 1000 <= deck.position_ms);
+		let timestampValue = deck.position_ms;
+		if (unit === 'beats') {
+			if (positionBeat === undefined) {
+				throw new Error(`CH${deckId} has no beatgrid timestamp for pairing capture`);
+			}
+			timestampValue = positionBeat.n;
+		}
+		const adjustments: Array<{ band: EqBand; value: number }> = [
+			{ band: 'low', value: channel.eq_low },
+			{ band: 'mid', value: channel.eq_mid },
+			{ band: 'high', value: channel.eq_high }
+		];
+		const eq_adjusts = adjustments.filter((adjust) => adjust.value !== 0.5);
+		return [{
+			deck_id: deckId,
+			stable_id: deck.stable_id,
+			title: deck.title ?? deck.stable_id,
+			position_ms: deck.position_ms,
+			timestamp: { unit, value: timestampValue },
+			eq_adjusts
+		}];
+	});
+	return { version: 1, beat_sync_max: uiPrefs.beat_sync_max, decks };
+}
+
 function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	const deck = getDeckState(deckId);
 	const beatgrid = _beatgridProjection(deckId, deck);
@@ -1128,6 +1200,7 @@ export function queryPerformanceState(): PerformanceState {
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error,
+		pairing_snapshot: _pairingSnapshot === null ? null : structuredClone(_pairingSnapshot),
 		technically_working: {
 			active: isTechModeActive(),
 			peeking: isPeeking(),
@@ -1186,6 +1259,9 @@ export function performanceCommandQueueScopes(
 		command.type === 'tech_mode_opt_reveal' ||
 		command.type === 'tech_mode_eq_raised' ||
 		command.type === 'tech_mode_edge_hover'
+		|| command.type === 'pairing_snapshot_open'
+		|| command.type === 'pairing_snapshot_remove_eq_adjuster'
+		|| command.type === 'pairing_snapshot_save'
 		// AutoPlay Next arm/cancel dispatch their own scoped loop/eq
 		// commands internally (auto-play-next.svelte.ts); this entry point
 		// itself has no deck and nothing to serialize against.
@@ -1458,6 +1534,30 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setEqRaised(command.raised);
 	} else if (command.type === 'tech_mode_edge_hover') {
 		setEdgeHovered(command.edge, command.hovered);
+	} else if (command.type === 'pairing_snapshot_open') {
+		_pairingSnapshot = _openPairingSnapshot();
+	} else if (command.type === 'pairing_snapshot_remove_eq_adjuster') {
+		if (_pairingSnapshot === null) throw new Error('pairing snapshot is not open');
+		const deck = _pairingSnapshot.decks.find((item) => item.deck_id === command.deck);
+		if (deck === undefined) throw new Error(`CH${command.deck} is not in the pairing snapshot`);
+		if (!deck.eq_adjusts.some((adjust) => adjust.band === command.band)) {
+			throw new Error(`CH${command.deck} has no ${command.band} EQ adjustment`);
+		}
+		_pairingSnapshot = {
+			..._pairingSnapshot,
+			decks: _pairingSnapshot.decks.map((deck) => deck.deck_id !== command.deck
+				? deck
+				: { ...deck, eq_adjusts: deck.eq_adjusts.filter((adjust) => adjust.band !== command.band) })
+		};
+	} else if (command.type === 'pairing_snapshot_save') {
+		if (_pairingSnapshot === null) throw new Error('pairing snapshot is not open');
+		const from = _pairingSnapshot.decks.find((deck) => deck.deck_id === command.from_deck);
+		const to = _pairingSnapshot.decks.find((deck) => deck.deck_id === command.to_deck);
+		if (from === undefined || to === undefined) throw new Error('selected decks are not in the pairing snapshot');
+		await createPairing({
+			from_stable_id: from.stable_id, to_stable_id: to.stable_id,
+			snapshot: { ..._pairingSnapshot, decks: [from, to] }
+		});
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);

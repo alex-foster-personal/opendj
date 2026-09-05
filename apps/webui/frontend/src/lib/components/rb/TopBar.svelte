@@ -14,7 +14,11 @@
 	import { onMount } from 'svelte';
 	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
-	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import {
+		dispatchPerformanceCommand,
+		runPerformanceCommandFromUi,
+		type PairingSnapshot
+	} from '$lib/rb/performance-ipc.svelte';
 	import { autoPlayNextState } from '$lib/rb/auto-play-next.svelte';
 	import {
 		setAutoPlayEnabled,
@@ -61,6 +65,7 @@
 	const jobsUnavailable = $derived(jobsRefusal());
 
 	let pairingOpen = $state(false);
+	let pairingSnapshot = $state<PairingSnapshot | null>(null);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
@@ -181,6 +186,13 @@
 
 	function _setMaster(value: number): void {
 		void runPerformanceCommandFromUi({ type: 'master_volume', value });
+	}
+
+	async function _openPairing(): Promise<void> {
+		const state = await dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		if (state.pairing_snapshot === null) throw new Error('pairing snapshot was not captured');
+		pairingSnapshot = state.pairing_snapshot;
+		pairingOpen = true;
 	}
 
 	function _masterFromEvent(e: PointerEvent): number {
@@ -357,7 +369,7 @@
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
-		onclick={() => (pairingOpen = true)}
+		onclick={() => void _openPairing()}
 	>
 		Create pairing
 	</button>
@@ -620,7 +632,7 @@
 	<UserBauble size={20} />
 </header>
 
-<CreatePairingSheet bind:open={pairingOpen} />
+<CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />

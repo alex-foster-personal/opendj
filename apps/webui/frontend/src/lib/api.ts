@@ -50,6 +50,8 @@ export type SettingsOut = components['schemas']['SettingsOut'];
 /** The daemon's schema is named EngineHealthOut; the frontend name is kept so
  * no call site moves. `status` is an open string there, not the literal 'ok'. */
 export type HealthOut = components['schemas']['EngineHealthOut'];
+type PairingCreateBody = Omit<components['schemas']['PairingCreate'], 'direction' | 'source'> &
+	Partial<Pick<components['schemas']['PairingCreate'], 'direction' | 'source'>>;
 
 export class ConflictError extends Error {
 	constructor(public current: Track, public etag: string) {
@@ -226,13 +228,7 @@ export async function listPairingsFor(stableId: string): Promise<Pairing[]> {
 	return [...byId.values()];
 }
 
-export async function createPairing(body: {
-	from_stable_id: string;
-	to_stable_id: string;
-	direction?: '->' | '<->';
-	source?: 'manual' | 'learned' | 'ai';
-	notes?: string;
-}): Promise<Pairing> {
+export async function createPairing(body: PairingCreateBody): Promise<Pairing> {
 	try {
 		// `direction` and `source` carry server-side defaults, which the generated
 		// request type spells as required.

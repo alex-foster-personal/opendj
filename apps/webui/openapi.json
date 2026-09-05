@@ -4963,6 +4963,16 @@
             ],
             "title": "Notes"
           },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PairingSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "default": "manual",
             "enum": [
@@ -4983,6 +4993,80 @@
           "to_stable_id"
         ],
         "title": "PairingCreate",
+        "type": "object"
+      },
+      "PairingDeckSnapshot": {
+        "properties": {
+          "deck_id": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "eq_adjusts": {
+            "items": {
+              "$ref": "#/components/schemas/PairingEqAdjust"
+            },
+            "title": "Eq Adjusts",
+            "type": "array"
+          },
+          "position_ms": {
+            "minimum": 0.0,
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/PairingTimestamp"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck_id",
+          "stable_id",
+          "title",
+          "position_ms",
+          "timestamp",
+          "eq_adjusts"
+        ],
+        "title": "PairingDeckSnapshot",
+        "type": "object"
+      },
+      "PairingEqAdjust": {
+        "properties": {
+          "band": {
+            "enum": [
+              "low",
+              "mid",
+              "high"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "band",
+          "value"
+        ],
+        "title": "PairingEqAdjust",
         "type": "object"
       },
       "PairingOut": {
@@ -5018,6 +5102,16 @@
             "title": "Pairing Id",
             "type": "string"
           },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PairingSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "enum": [
               "manual",
@@ -5046,6 +5140,58 @@
           "updated_at"
         ],
         "title": "PairingOut",
+        "type": "object"
+      },
+      "PairingSnapshot": {
+        "properties": {
+          "beat_sync_max": {
+            "title": "Beat Sync Max",
+            "type": "boolean"
+          },
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/PairingDeckSnapshot"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Decks",
+            "type": "array"
+          },
+          "version": {
+            "const": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "beat_sync_max",
+          "decks"
+        ],
+        "title": "PairingSnapshot",
+        "type": "object"
+      },
+      "PairingTimestamp": {
+        "properties": {
+          "unit": {
+            "enum": [
+              "beats",
+              "time"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "unit",
+          "value"
+        ],
+        "title": "PairingTimestamp",
         "type": "object"
       },
       "PassiveActivityOut": {

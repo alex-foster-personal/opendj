@@ -105,6 +105,7 @@ class Pairing:
     direction: Literal["->", "<->"]
     source: Literal["manual", "learned", "ai"]
     notes: str | None
+    snapshot: dict[str, object] | None = None
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -485,8 +486,27 @@ class InMemoryBackend:
                         and existing.direction == pairing.direction):
                     if pairing.notes and pairing.notes != existing.notes:
                         merged_notes = f"{existing.notes or ''}\n{pairing.notes}".strip()
-                        updated = replace(existing, notes=merged_notes,
-                                          updated_at=_utcnow_iso())
+                        # Write-once, same as the snapshot-only branch below:
+                        # a frozen open-time capture is never replaced, so
+                        # merging notes cannot smuggle a recapture past that
+                        # contract. Only a pairing with no snapshot yet
+                        # accepts an incoming one.
+                        snapshot = (
+                            existing.snapshot if existing.snapshot is not None
+                            else pairing.snapshot
+                        )
+                        updated = replace(
+                            existing, notes=merged_notes, snapshot=snapshot,
+                            updated_at=_utcnow_iso(),
+                        )
+                        self._pairings[existing.pairing_id] = updated
+                        return updated
+                    if pairing.snapshot is not None:
+                        if existing.snapshot is not None:
+                            return existing
+                        updated = replace(
+                            existing, snapshot=pairing.snapshot, updated_at=_utcnow_iso()
+                        )
                         self._pairings[existing.pairing_id] = updated
                         return updated
                     return existing

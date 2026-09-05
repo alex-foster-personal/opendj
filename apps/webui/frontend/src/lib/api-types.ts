@@ -4675,6 +4675,7 @@ export interface components {
             from_stable_id: string;
             /** Notes */
             notes?: string | null;
+            snapshot?: components["schemas"]["PairingSnapshot"] | null;
             /**
              * Source
              * @default manual
@@ -4683,6 +4684,33 @@ export interface components {
             source: "manual" | "learned" | "ai";
             /** To Stable Id */
             to_stable_id: string;
+        };
+        /** PairingDeckSnapshot */
+        PairingDeckSnapshot: {
+            /**
+             * Deck Id
+             * @enum {integer}
+             */
+            deck_id: 1 | 2 | 3 | 4;
+            /** Eq Adjusts */
+            eq_adjusts: components["schemas"]["PairingEqAdjust"][];
+            /** Position Ms */
+            position_ms: number;
+            /** Stable Id */
+            stable_id: string;
+            timestamp: components["schemas"]["PairingTimestamp"];
+            /** Title */
+            title: string;
+        };
+        /** PairingEqAdjust */
+        PairingEqAdjust: {
+            /**
+             * Band
+             * @enum {string}
+             */
+            band: "low" | "mid" | "high";
+            /** Value */
+            value: number;
         };
         /** PairingOut */
         PairingOut: {
@@ -4699,6 +4727,7 @@ export interface components {
             notes?: string | null;
             /** Pairing Id */
             pairing_id: string;
+            snapshot?: components["schemas"]["PairingSnapshot"] | null;
             /**
              * Source
              * @enum {string}
@@ -4708,6 +4737,28 @@ export interface components {
             to_stable_id: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** PairingSnapshot */
+        PairingSnapshot: {
+            /** Beat Sync Max */
+            beat_sync_max: boolean;
+            /** Decks */
+            decks: components["schemas"]["PairingDeckSnapshot"][];
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+        };
+        /** PairingTimestamp */
+        PairingTimestamp: {
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "beats" | "time";
+            /** Value */
+            value: number;
         };
         /**
          * PassiveActivityOut
