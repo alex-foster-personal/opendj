@@ -23,7 +23,7 @@ const ORIGIN = `http://127.0.0.1:${REKORDBOX_GATE_E2E_PORT}`;
 
 export default defineConfig({
 	testDir: '.',
-	testMatch: 'rekordbox-writeback-disabled.spec.ts',
+	testMatch: ['rekordbox-writeback-disabled.spec.ts', 'artwork-reader-unavailable.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
