@@ -107,6 +107,7 @@ import {
 	toggleTechMode,
 	type EdgeRegion
 } from '$lib/rb/technically-working.svelte';
+import { waveformStutterSnapshot } from '$lib/rb/audio-health.svelte';
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -279,6 +280,7 @@ export interface PerformanceState {
 	browser: { active_playlist: string | null };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
+	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
@@ -1207,7 +1209,8 @@ export function queryPerformanceState(): PerformanceState {
 			opt_reveal_active: isOptRevealActive(),
 			eq_raised: isEqRaised(),
 			hovered_edges: hoveredEdgeList()
-		}
+		},
+		waveform_stutter: { ...waveformStutterSnapshot() }
 	};
 }
 

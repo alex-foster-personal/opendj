@@ -38,6 +38,17 @@ export function resolveSearchFilterFallback<Row>(
 	return { rows: filteredRows, ignoredFilters: [] };
 }
 
+/** Recover only a precise search hidden by Next-only, never a broad result set. */
+export function selectSearchFilterFallback<T>(
+	query: string,
+	filteredRows: readonly T[],
+	rows: T[],
+	complete: boolean
+): T[] | null {
+	if (!complete || query.trim() === '' || filteredRows.length !== 0) return null;
+	return rows.length >= 1 && rows.length <= 2 ? rows : null;
+}
+
 export interface NextOnlyRef {
 	key: string | null;
 	bpm: number | null;

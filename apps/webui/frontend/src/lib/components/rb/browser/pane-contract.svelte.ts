@@ -214,6 +214,7 @@ export class PaneStore {
 	search_results = $state<BrowserRow[]>([]);
 	searching = $state(false);
 	search_total = $state(0);
+	search_result_query = $state('');
 	/** Playlist-level ETag from the load's GET (add-remove-reorder-tracks
 	 * node) - '' for the All Tracks / blank pane, which have no single
 	 * playlist row to CAS against. Required If-Match for the next mutation. */

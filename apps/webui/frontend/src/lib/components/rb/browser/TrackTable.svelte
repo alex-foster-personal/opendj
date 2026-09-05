@@ -251,6 +251,7 @@
 		sortKey,
 		sortDir,
 		emptyMessage,
+		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
 		removable = false,
@@ -285,6 +286,8 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Honest note when a tiny search result bypasses Next-only only. */
+		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
 		 * scroll cursor restores when this changes, NOT on row updates. */
 		restoreKey: string | number;
@@ -1361,6 +1364,9 @@
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">{emptyMessage}</div>
 		{/if}
+		{#if filterBypassNote !== null}
+			<p class="filter-bypass-note" data-testid="filter-bypass-note">{filterBypassNote}</p>
+		{/if}
 		{#if apCurveSegments.length > 0}
 			<svg
 				class="ap-curve"
@@ -2119,6 +2125,13 @@
 		padding: 24px;
 		text-align: center;
 		color: var(--rb-text-dim);
+	}
+	.filter-bypass-note {
+		margin: 0;
+		padding: 3px 8px;
+		border-top: 1px solid var(--rb-border);
+		color: var(--rb-orange);
+		font-size: var(--rb-fs-label);
 	}
 	/* Declared height, not font-metric height: `.tt-root`'s min-height floor
 	 * and `+page.svelte`'s library reservation both have to add this exact

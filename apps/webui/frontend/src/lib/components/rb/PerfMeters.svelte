@@ -20,7 +20,9 @@
 	import {
 		audioHealthHover,
 		audioHealthHz,
-		audioHealthLevel
+		audioHealthLevel,
+		waveformStutterHover,
+		waveformStutterSnapshot
 	} from '$lib/rb/audio-health.svelte';
 	import {
 		audioPrefetchReadyBytes,
@@ -37,6 +39,8 @@
 
 	const hz = $derived(audioHealthHz());
 	const hzLevel = $derived(audioHealthLevel());
+	const waveformStutter = $derived(waveformStutterSnapshot());
+	const waveformStutterWarn = $derived(waveformStutter.stutters > 0);
 	const cacheN = $derived(audioPrefetchReadyCount());
 	const cacheBytes = $derived(audioPrefetchReadyBytes());
 	const cacheHover = $derived(
@@ -104,6 +108,7 @@
 	title={audioHealthHover()}
 >{hz === null ? '--' : `${hz}`}</span>
 <span class="perf-meter cache-n" title={cacheHover}>{cacheN}</span>
+<span class="perf-meter" class:warn={waveformStutterWarn} title={waveformStutterHover()}>{waveformStutter.active ? `W${waveformStutter.stutters}` : 'W--'}</span>
 <span
 	class="perf-meter memory-mb"
 	class:warn={memoryLevel === 'warn'}

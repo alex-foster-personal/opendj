@@ -86,6 +86,7 @@
 	import {
 		isAppropriateNext,
 		resolveSearchFilterFallback,
+		selectSearchFilterFallback,
 		type NextOnlyRef
 	} from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
@@ -510,11 +511,47 @@
 		const trackLabel = visibleRows.length === 1 ? 'track' : 'tracks';
 		return `${visibleRows.length} ${trackLabel} fetched by ignoring the active ${filterLabel} filter${suffix}.`;
 	});
+	const searchFilterFallback = $derived.by(() => {
+		// Find highlights rather than filters. Recovery needs complete, settled
+		// results for the current query, never a capped page or prior FTS response.
+		if (
+			pane.search.trim() === '' ||
+			visibleRows.length !== 0 ||
+			pane.loading ||
+			pane.searching ||
+			searchMode === 'find' ||
+			!uiPrefs.next_only_filter
+		)
+			return null;
+		const complete = wholeCollectionActive
+			? pane.search_result_query === pane.search.trim() &&
+				pane.search_total === pane.search_results.length
+			: !pane.truncated;
+		// Only Next-only is bypassed. The user-selected Broken filter stays intact.
+		return selectSearchFilterFallback(
+			pane.search,
+			visibleRows,
+			wholeCollectionActive
+				? sortRows(
+						filterRows(pane.search_results, '', uiPrefs.hide_broken_links),
+						pane.sort_key,
+						pane.sort_dir
+					)
+				: visibleRowsOf(pane, uiPrefs.hide_broken_links),
+			complete
+		);
+	});
+	const renderedRows = $derived(searchFilterFallback ?? visibleRows);
+	const filterBypassNote = $derived(
+		searchFilterFallback === null
+			? null
+			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with Next-only filter bypassed.`
+	);
 	// Read contract handed to TrackTable (getters stay reactive through
-	// visibleRows/pane). The virtualization lane replaces THIS provider,
+	// renderedRows/pane). The virtualization lane replaces THIS provider,
 	// not TrackTable's props.
 	const provider = makeClientRowProvider(
-		() => visibleRows,
+		() => renderedRows,
 		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
 	);
 	const searchPlaceholder = $derived(
@@ -525,6 +562,7 @@
 				: 'Search within this track list'
 	);
 	const emptyMessage = $derived.by((): string | null => {
+		if (searchFilterFallback !== null) return null;
 		if (searchMode === 'find') {
 			if (pane.loading) return 'loading...';
 			else if (pane.error !== null) return `load failed: ${pane.error}`;
@@ -1551,7 +1589,7 @@
 		const decision = autoPlayFeed.step(
 			uiPrefs.auto_play_enabled,
 			pane.playlist_id,
-			visibleRows.map((r) => ({
+			renderedRows.map((r) => ({
 				stable_id: r.stable_id,
 				key: r.key,
 				bpm: r.bpm,
@@ -1864,7 +1902,7 @@
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
 		const orderedIds = range
-			? visibleRows.map((r) => r.stable_id)
+			? renderedRows.map((r) => r.stable_id)
 			: [];
 		p.select(row.stable_id, extend, range, orderedIds);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
@@ -1910,7 +1948,7 @@
 			coalescedMs: settle.coalescedMs,
 			computeMs: _lastVisibleComputeMs,
 			rowsIn: wholeCollectionActive ? p.search_results.length : p.rows.length,
-			rowsOut: visibleRows.length
+			rowsOut: renderedRows.length
 		});
 	}
 
@@ -2099,6 +2137,7 @@
 			if (!active.whole_collection || active.search.trim() !== trimmed) return;
 			active.search_results = results.items.map((hit, index) => _rowFromSearchHit(hit, index + 1));
 			active.search_total = results.total;
+			active.search_result_query = trimmed;
 			// One ring row per query that actually published results; a
 			// superseded query returned above and is not a completed search.
 			recordCollectionSearchTiming({
@@ -2401,6 +2440,7 @@
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
+			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
 			removable={editablePane}

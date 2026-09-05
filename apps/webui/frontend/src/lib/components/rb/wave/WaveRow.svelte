@@ -5,7 +5,6 @@
 	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
 	import { vocalsOf } from '$lib/rb/api-rb';
-	import WaveGutter from './WaveGutter.svelte';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -30,6 +29,7 @@
 		withFallbackBeatgrid
 	} from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
+	import { noteWaveformPaintFrame, resetWaveformPaintCadence } from '$lib/rb/audio-health.svelte';
 	import {
 		foldPresentationSample,
 		type PresentationStallState
@@ -59,6 +59,7 @@
 		waveDragTargetMs,
 		waveSnapModeFromModifiers
 	} from './wave-scrub';
+	import WaveGutter from './WaveGutter.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -313,8 +314,9 @@
 		const pulse = syncPlayheadTone === 'drift';
 		const hovered = deckHoverUi.deckId === deckId;
 		if (!(deck.playing || seeking || (hovered && (pulse || masterMoving)))) return;
-		let raf = requestAnimationFrame(function waveRowFrame() {
+		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
+			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);
 			stallState = foldPresentationSample(stallState, {
 				playing: deck.playing,
 				position_ms: deck.position_ms,
@@ -325,7 +327,9 @@
 			else if (stall !== undefined && stall.frozenSinceMs === null) playheadFrozen = false;
 			raf = requestAnimationFrame(waveRowFrame);
 		});
-		return () => cancelAnimationFrame(raf);
+		const onVisibilityChange = () => { if (document.hidden) resetWaveformPaintCadence(deckId); };
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () => { cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', onVisibilityChange); resetWaveformPaintCadence(deckId); };
 	});
 
 	// Static repaint on load/seek/resize/anlz-arrival while stopped. The
