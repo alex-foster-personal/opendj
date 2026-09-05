@@ -44,6 +44,7 @@
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
+	import { columnExplainer } from './column-explainer-placement';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
@@ -737,11 +738,11 @@
 	<th
 		class={`h-${key} sortable`}
 		style={`width:${colWidths[col]}px`}
+		use:columnExplainer={{ text: columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`) }}
 		onclick={(e) => {
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
 		}}
-		title={columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`)}
 	>
 		<span class="th-label">
 			<span>{label}</span>
@@ -818,7 +819,11 @@
 			</colgroup>
 			<thead>
 				<tr>
-					<th class="h-icon" style={`width:${colWidths.funnel}px`} title="filter - not implemented, see PARITY-TODO">
+					<th
+						class="h-icon"
+						style={`width:${colWidths.funnel}px`}
+						use:columnExplainer={{ text: 'filter - not implemented, see PARITY-TODO' }}
+					>
 						<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
 							<path d="M2 3h12l-4.5 5v5l-3-1.5V8z" fill="currentColor" />
 						</svg>
@@ -834,7 +839,7 @@
 					<th
 						class="h-icon h-err"
 						style={`width:${colWidths.err}px`}
-						title="Err - detected analysis data-quality issues, hover a square for detail"
+						use:columnExplainer={{ text: 'Err - detected analysis data-quality issues, hover a square for detail' }}
 					>
 						Err
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -846,7 +851,11 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					<th class="h-icon" style={`width:${colWidths.cloud}px`} title="cloud/streaming flag">
+					<th
+						class="h-icon"
+						style={`width:${colWidths.cloud}px`}
+						use:columnExplainer={{ text: 'cloud/streaming flag' }}
+					>
 						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
 							<path
 								d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
@@ -899,7 +908,7 @@
 					<th
 						class="h-preview"
 						style={`width:${colWidths.preview}px`}
-						title={columnHeaderTitle('preview')}
+						use:columnExplainer={{ text: columnHeaderTitle('preview') }}
 					>
 						Preview
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -912,11 +921,14 @@
 						></span>
 					</th>
 					<th
-						class="h-art"
+						class="h-icon h-art"
 						style={`width:${colWidths.art}px`}
-						title={columnHeaderTitle('art')}
+						use:columnExplainer={{ text: columnHeaderTitle('art') }}
 					>
-						Artwork
+						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+							<path d="M1 3h14v10H1zm1 9 3.4-3.9 2.3 2.6 2.1-2.3L14 12V4H2z" fill="currentColor" />
+							<circle cx="5" cy="6" r="1" fill="currentColor" />
+						</svg>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -933,16 +945,18 @@
 					<th
 						class="h-key sortable"
 						style={`width:${colWidths.key}px`}
+						use:columnExplainer={{
+							text: columnHeaderTitle(
+								'key',
+								masterKey !== null
+									? `Master key ${masterKey} - sort by key (asc → desc → clear)`
+									: 'Sort by key (asc → desc → clear)'
+							)
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('key');
 						}}
-						title={columnHeaderTitle(
-							'key',
-							masterKey !== null
-								? `Master key ${masterKey} - sort by key (asc → desc → clear)`
-								: 'Sort by key (asc → desc → clear)'
-						)}
 					>
 						<span class="th-label">
 							{#if masterKey !== null}
@@ -971,16 +985,18 @@
 					<th
 						class="h-bpm sortable"
 						style={`width:${colWidths.bpm}px`}
+						use:columnExplainer={{
+							text: columnHeaderTitle(
+								'bpm',
+								masterBpm !== null
+									? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
+									: 'Sort by BPM (asc → desc → clear)'
+							)
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('bpm');
 						}}
-						title={columnHeaderTitle(
-							'bpm',
-							masterBpm !== null
-								? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
-								: 'Sort by BPM (asc → desc → clear)'
-						)}
 					>
 						<span class="th-label">
 							{#if masterBpm !== null}
@@ -1011,7 +1027,7 @@
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						title="biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps"
+						use:columnExplainer={{ text: 'biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps' }}
 					>
 						<span class="th-label"><span>Venue</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1043,7 +1059,7 @@
 					<th
 						class="h-stems"
 						style={`width:${colWidths.stems}px`}
-						title="Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes"
+						use:columnExplainer={{ text: 'Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes' }}
 					>
 						<span class="th-label"><span>Stems</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1535,6 +1551,26 @@
 	}
 	.table-wrap::-webkit-scrollbar-button:horizontal {
 		display: none;
+	}
+	/* Static column explanations are portalled to body by columnExplainer(), so
+	 * scope this deliberately-global skin here and outrank sticky headers and
+	 * the table's own curve/load overlays. */
+	:global(.column-explain-panel) {
+		position: fixed;
+		z-index: 100;
+		width: min(280px, calc(100vw - 16px));
+		max-height: calc(100vh - 16px);
+		overflow-y: auto;
+		padding: 6px 8px;
+		background: var(--rb-panel-raised, #0a0c0f);
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 10px;
+		line-height: 1.4;
+		pointer-events: none;
 	}
 	table {
 		width: 100%;

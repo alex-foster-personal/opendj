@@ -43,10 +43,10 @@
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverUi.deckId === deckId);
 
-	/** 70% of the Knob default (30px) diameter = 30% smaller circumference (MIXUX-03). */
-	const TRIM_SIZE = 21;
+	/** Halfway between TRIM's former 21px and the 30px EQ dials. */
+	const TRIM_SIZE = 25.5;
 	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
-	const FILTER_SLOT_SIZE = 39;
+	const FILTER_SLOT_SIZE = 35.1;
 </script>
 
 <div

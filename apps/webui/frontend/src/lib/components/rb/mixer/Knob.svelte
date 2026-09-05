@@ -43,7 +43,7 @@
 		inert?: boolean;
 		/** Indicator stroke tone. */
 		tone?: 'accent' | 'white' | 'rainbow';
-		/** Rendered dial diameter in px. The caption-inclusive wrapper is the hit area and scales with the dial. */
+		/** Rendered dial diameter in px. The caption-inclusive wrapper is the hit area. */
 		size?: number;
 	}
 
@@ -52,17 +52,15 @@
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
-	const KNOB_BASE_SIZE = 30;
 	const RAINBOW_STOPS = ['#e23a32', '#e8a13a', '#d7d83a', '#35c04f'] as const;
 	const visualStyle = $derived.by(() => {
 		if (!Number.isFinite(size) || size <= 0) {
 			throw new Error(`Knob size must be a positive finite number, got ${size}`);
 		}
-		const scale = size / KNOB_BASE_SIZE;
 		return (
 			`--knob-dial-size: ${size}px; ` +
-			`--knob-caption-size: ${8 * scale}px; ` +
-			`--knob-caption-gap: ${scale}px; ` +
+			`--knob-caption-size: 8px; ` +
+			`--knob-caption-gap: 1px; ` +
 			`--knob-rainbow-0: ${RAINBOW_STOPS[0]}; ` +
 			`--knob-rainbow-1: ${RAINBOW_STOPS[1]}; ` +
 			`--knob-rainbow-2: ${RAINBOW_STOPS[2]}; ` +
