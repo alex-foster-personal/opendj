@@ -77,6 +77,7 @@ from apps.webui.server.routes.ingest_job import (
     _systemic_message,
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
+from apps.webui.server.routes.ingest_track import select_track_target
 from apps.webui.server.stem_artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -456,8 +457,7 @@ def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
 def validate_track_order_target(stable_id: str) -> None:
     """Fail before queueing when a requested track is absent or ambiguous."""
     targets, _unreachable = _tracks_on_disk()
-    if sum(sid == stable_id for sid, _path in targets) != 1:
-        raise HTTPException(422, f"track {stable_id!r} is not an on-disk library track")
+    select_track_target(stable_id, targets)
 
 
 def _track_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
@@ -466,9 +466,8 @@ def _track_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
         raise RuntimeError("track scope requires exactly one analysis order")
     stable_id, kind = next(iter(job.analysis_orders.items()))
     step = "stems" if kind == "stems" else "vocals" if kind == "vocals" else "analysis"
-    validate_track_order_target(stable_id)
     targets, _unreachable = _tracks_on_disk()
-    selected = [(sid, path) for sid, path in targets if sid == stable_id]
+    selected = [select_track_target(stable_id, targets)]
     _log(job, f"track scope: ordering {kind} for {stable_id} through {step}")
     return {"analysis": selected if step == "analysis" else [],
             "stems": selected if step == "stems" else [],
