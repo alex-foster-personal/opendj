@@ -2,16 +2,24 @@
 	/** Interactive comment-pin controls in FeedbackWidget's explainer. */
 	let {
 		pinsVisible,
-		ontoggle
+		showAgentPins,
+		ontoggle,
+		onToggleAgentPins
 	}: {
 		pinsVisible: boolean;
+		showAgentPins: boolean;
 		ontoggle: () => void;
+		onToggleAgentPins: () => void;
 	} = $props();
 </script>
 
 <label class="fb-toggle-row">
 	<input type="checkbox" checked={pinsVisible} onchange={ontoggle} />
 	Show feedback comment pins
+</label>
+<label class="fb-toggle-row">
+	<input type="checkbox" checked={showAgentPins} onchange={onToggleAgentPins} />
+	Show agent pins
 </label>
 <label class="fb-toggle-row rb-inert" title="not implemented - see PARITY-TODO">
 	<input type="checkbox" disabled />

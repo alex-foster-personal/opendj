@@ -158,9 +158,7 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
     )
 
 
-@router.post(
-    "/comments/{comment_id}/archive", response_model=CommentArchiveOut
-)
+@router.post("/comments/{comment_id}/archive", response_model=CommentArchiveOut)
 def archive_comment(comment_id: str, request: Request) -> CommentArchiveOut:
     """Archive ONE pin, with its full history (issue #858).
 
@@ -213,9 +211,7 @@ def archive_comment(comment_id: str, request: Request) -> CommentArchiveOut:
     )
 
 
-@router.post(
-    "/comments/{comment_id}/follow-on", response_model=CommentOut, status_code=201
-)
+@router.post("/comments/{comment_id}/follow-on", response_model=CommentOut, status_code=201)
 def follow_on_comment(
     comment_id: str, request: Request, body: CommentFollowOnIn | None = None
 ) -> CommentOut:
@@ -239,8 +235,7 @@ def follow_on_comment(
                     detail={
                         "code": "PIN_NOT_DONE",
                         "message": (
-                            f"pin {comment_id!r} is {status!r}; "
-                            "follow-on needs fixed/merged"
+                            f"pin {comment_id!r} is {status!r}; follow-on needs fixed/merged"
                         ),
                     },
                 )
@@ -256,6 +251,8 @@ def follow_on_comment(
                 created_at=_now(),
                 build=_build_stamp(request),
                 status="open",
+                author=parent.get("author", "operator"),
+                agent_kind=parent.get("agent_kind"),
             )
             items.append(child.model_dump())
             _save(path, "comments", items)

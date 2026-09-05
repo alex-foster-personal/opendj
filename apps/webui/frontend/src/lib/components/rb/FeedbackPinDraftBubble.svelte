@@ -70,7 +70,8 @@
 				text: submittedText,
 				ui: pinUiKind(),
 				viewport_width: submitted.viewport.width,
-				viewport_height: submitted.viewport.height
+				viewport_height: submitted.viewport.height,
+				author: 'operator'
 			});
 			if (saved && pinDraft === submitted && pinDraft.text.trim() === submittedText)
 				pinDraft = null;

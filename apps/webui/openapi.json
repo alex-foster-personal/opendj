@@ -2019,6 +2019,17 @@
       },
       "CommentCreateIn": {
         "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
           "anchor": {
             "anyOf": [
               {
@@ -2029,6 +2040,14 @@
               }
             ],
             "title": "Anchor"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
           },
           "page": {
             "minLength": 1,
@@ -2121,6 +2140,17 @@
       },
       "CommentOut": {
         "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
           "agent_note": {
             "anyOf": [
               {
@@ -2142,6 +2172,14 @@
               }
             ],
             "title": "Anchor"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
           },
           "build": {
             "$ref": "#/components/schemas/BuildStampOut"
@@ -10337,6 +10375,11 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "show_agent_pins": {
+            "default": true,
+            "title": "Show Agent Pins",
+            "type": "boolean"
+          },
           "technically_working_animate": {
             "default": true,
             "title": "Technically Working Animate",
@@ -10389,6 +10432,17 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "show_agent_pins": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Agent Pins"
           },
           "technically_working_animate": {
             "anyOf": [

@@ -3625,8 +3625,15 @@ export interface components {
         };
         /** CommentCreateIn */
         CommentCreateIn: {
+            /** Agent Kind */
+            agent_kind?: string | null;
             /** Anchor */
             anchor?: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author?: "operator" | "agent";
             /** Page */
             page: string;
             /** Text */
@@ -3660,10 +3667,17 @@ export interface components {
         };
         /** CommentOut */
         CommentOut: {
+            /** Agent Kind */
+            agent_kind?: string | null;
             /** Agent Note */
             agent_note?: string | null;
             /** Anchor */
             anchor: string | null;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author?: "operator" | "agent";
             build: components["schemas"]["BuildStampOut"];
             /** Created At */
             created_at: string;
@@ -6681,6 +6695,11 @@ export interface components {
              */
             hide_todo_settings: boolean;
             /**
+             * Show Agent Pins
+             * @default true
+             */
+            show_agent_pins: boolean;
+            /**
              * Technically Working Animate
              * @default true
              */
@@ -6701,6 +6720,8 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            /** Show Agent Pins */
+            show_agent_pins?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Theme */
