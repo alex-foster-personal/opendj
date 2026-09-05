@@ -1,9 +1,11 @@
 <script lang="ts">
 	// Build unit: wavestack - ONE deck row (COMPONENT-MAP 1.2, SCREENSHOT-SPEC 2).
 	// Canvas window scrolls under a fixed center playhead; left gutter shows
-	// the deck number + bars-to-next-cue counter. Empty deck = flat dark row.
+	// deck identity, artwork, and a readable track title. Empty deck is named,
+	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
 	import { vocalsOf } from '$lib/rb/api-rb';
+	import WaveGutter from './WaveGutter.svelte';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -462,10 +464,7 @@
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
 	}}
 >
-	<div class="gutter">
-		<span class="deck-num">{deckId}</span>
-		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
-	</div>
+	<WaveGutter {deck} {deckId} {barsLabel} />
 	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
 		{#if clockUntrusted}
 			<span
@@ -546,27 +545,6 @@ estimated from the render clock and may run ahead of what you hear."
 	}
 	.rb-waverow.secondary.deck-focus {
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, #1a1f28);
-	}
-	.gutter {
-		width: 56px;
-		flex: none;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		gap: 1px;
-		padding: 0 4px 0 6px;
-		border-right: 1px solid var(--rb-border);
-	}
-	.deck-num {
-		color: var(--rb-text);
-		font-size: var(--rb-fs-deck-title);
-		font-weight: 600;
-		line-height: 1.1;
-	}
-	.bars {
-		color: var(--rb-text-dim);
-		font-size: var(--rb-fs-label);
-		white-space: nowrap;
 	}
 	.canvas-wrap {
 		position: relative;
