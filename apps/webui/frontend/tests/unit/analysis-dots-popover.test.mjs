@@ -73,6 +73,11 @@ test('AnalysisDotsPopover.svelte orders through the track-scoped HTTP client', (
 	assert.ok(src.includes('getTrackAnalysisOrders'), 'must read agent-created track orders');
 });
 
+test('AnalysisDotsPopover.svelte derives coverage states through the shared job helper', () => {
+	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
+	assert.ok(src.includes('analysisStatus('), 'must show the same queued/running state as job progress');
+});
+
 test('AnalysisDotsPopover.svelte states unavailability when there is no track', () => {
 	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
 	assert.ok(src.includes('No track for this row - ordering is unavailable.'));

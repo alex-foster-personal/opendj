@@ -83,6 +83,7 @@
 		ANALYSIS_COLORS,
 		ANALYSIS_ISSUE_COLORS,
 		ANALYSIS_LABELS,
+		analysisStatus,
 		jobProgress,
 		type AnalysisBadge,
 		type AnalysisIssues,
@@ -185,7 +186,8 @@
 
 	function rowStateFor(kind: AnalysisKind): RowState {
 		const phase = jobPhaseFor(kind);
-		if (phase !== null) return { text: phase === 'queued' ? 'queued' : 'in-progress', clickable: false };
+		const status = analysisStatus(badge[kind] === true, phase);
+		if (status === 'queued' || status === 'in-progress') return { text: status, clickable: false };
 		if (kind === 'load') return { text: 'deck/audio only - not tracked here', clickable: false };
 
 		if (stableId !== null) {
@@ -221,10 +223,10 @@
 		}
 
 		if (mode === 'coverage') {
-			if (badge[kind] === true) return { text: 'done', clickable: false };
+			if (status === 'done') return { text: status, clickable: false };
 			return stableId === null
-				? { text: 'not analyzed', clickable: false }
-				: { text: 'not analyzed - click to queue', clickable: true, kind };
+				? { text: 'missing', clickable: false }
+				: { text: 'missing - click to queue', clickable: true, kind };
 		}
 		const issue = issues[kind];
 		if (issue === undefined) return { text: 'no detected issue', clickable: false };
