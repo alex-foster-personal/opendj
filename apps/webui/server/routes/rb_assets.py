@@ -9,6 +9,7 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -109,6 +110,7 @@ def get_track_audio(
 
 @router.get("/{stable_id}/artwork", response_class=FileResponse, response_model=None)
 def get_track_artwork(
+    request: Request,
     stable_id: str,
     size: Literal["s", "m", "orig"] = Query(
         "s", description="s=80x80 browser rows, m=240x240 deck thumbs, orig"
@@ -130,16 +132,30 @@ def get_track_artwork(
         if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
             raise
         data, mime = rb_vendor.local_artwork(stable_id)
+        etag = f'"{hashlib.sha256(data).hexdigest()}"'
+        headers = {"Cache-Control": _CACHE_ARTWORK, "ETag": etag}
+        if _etag_matches(request.headers.get("if-none-match"), etag):
+            return Response(status_code=304, headers=headers)
         return Response(
             content=data,
             media_type=mime,
-            headers={"Cache-Control": _CACHE_ARTWORK},
+            headers=headers,
         )
     path = rb_vendor.artwork_file(content, size)
     return FileResponse(
         path,
         media_type="image/jpeg",
         headers={"Cache-Control": _CACHE_ARTWORK},
+    )
+
+
+def _etag_matches(if_none_match: str | None, etag: str) -> bool:
+    """Return whether an If-None-Match value weakly matches this GET ETag."""
+    if if_none_match is None:
+        return False
+    return any(
+        candidate.strip() == "*" or candidate.strip().removeprefix("W/") == etag
+        for candidate in if_none_match.split(",")
     )
 
 

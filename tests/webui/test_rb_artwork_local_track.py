@@ -14,6 +14,7 @@ Needs the optional ``tags`` extra (mutagen); skips (never fails) when absent.
 Regression one-liners:
   - if /artwork 404s for an unmapped track with real embedded art then broken
   - if /artwork serves anything but the real embedded jpeg bytes then broken
+  - if /artwork omits a byte-derived ETag or ignores If-None-Match then broken
   - if /artwork still 404s ARTWORK_NOT_FOUND for an unmapped track with NO embedded art then broken
   - if rb-meta.artwork_available stays False once embedded art exists then broken
   - if a genuinely unknown stable_id stops 404ing TRACK_NOT_FOUND then broken
@@ -24,6 +25,7 @@ The mutagen-less 503 ARTWORK_READER_UNAVAILABLE path lives in
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -127,6 +129,38 @@ def test_serves_real_embedded_jpeg_bytes(
     assert resp.status_code == 200, resp.text
     assert resp.headers["content-type"] == "image/jpeg"
     assert resp.content == jpeg_bytes
+
+
+def test_embedded_artwork_is_revalidatable(
+    client: TestClient, jpeg_bytes: bytes
+) -> None:
+    first = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork")
+    assert first.status_code == 200, first.text
+    etag = first.headers["etag"]
+    assert etag == f'"{hashlib.sha256(jpeg_bytes).hexdigest()}"'
+
+    revalidated = client.get(
+        f"/api/v1/tracks/{WITH_ART_SID}/artwork",
+        headers={"If-None-Match": etag},
+    )
+
+    assert revalidated.status_code == 304
+    assert revalidated.headers["etag"] == etag
+    assert revalidated.headers["cache-control"] == "public, max-age=86400"
+    assert revalidated.content == b""
+
+    wildcard = client.get(
+        f"/api/v1/tracks/{WITH_ART_SID}/artwork",
+        headers={"If-None-Match": "*"},
+    )
+    assert wildcard.status_code == 304
+
+    changed = client.get(
+        f"/api/v1/tracks/{WITH_ART_SID}/artwork",
+        headers={"If-None-Match": '"different-artwork"'},
+    )
+    assert changed.status_code == 200
+    assert changed.content == jpeg_bytes
 
 
 @pytest.mark.parametrize("size", ["s", "m", "orig"])
