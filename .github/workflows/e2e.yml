@@ -168,6 +168,12 @@ jobs:
             || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
           echo "[OK] apps.engine_core imports"
 
+      - name: Runner preflight - node tools and disk
+        # Fail here, naming the runner, rather than mid-install with a cryptic
+        # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh
+        # (it deliberately does not run `pnpm store status`; see the script).
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
+
       - name: Install frontend dependencies
         working-directory: apps/webui/frontend
         run: pnpm install --frozen-lockfile
@@ -467,6 +473,12 @@ jobs:
 
       - name: Install Python deps into the project venv
         run: uv sync
+
+      - name: Runner preflight - node tools and disk
+        # Fail here, naming the runner, rather than mid-install with a cryptic
+        # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh
+        # (it deliberately does not run `pnpm store status`; see the script).
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
 
       - name: Install frontend dependencies
         working-directory: apps/webui/frontend
