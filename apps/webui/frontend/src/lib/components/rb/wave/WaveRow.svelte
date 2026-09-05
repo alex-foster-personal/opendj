@@ -33,11 +33,19 @@
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
 	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
+	import {
+		initPaintScheduleState,
+		initPositionInterpolatorState,
+		paintPositionMs,
+		paintScrollPx,
+		shouldSkipRepaint
+	} from './paint-position';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
 		drawPlayhead,
 		drawWaveRow,
 		readPalette,
+		resolvePaintPalette,
 		WAVE_WINDOW_S,
 		type PlayheadTone,
 		type WavePalette
@@ -197,8 +205,7 @@
 	let scrubWidthPx = 0;
 	let scrubMoved = false;
 	let scrubDispatchError: unknown = null;
-	let lastPaintScrollPx: number | null = null;
-	let lastPaintInputs: readonly unknown[] | null = null;
+	const _paintScheduleState = initPaintScheduleState();
 	const DRAG_THRESHOLD_PX = 3;
 	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
@@ -214,8 +221,13 @@
 		});
 	}
 
+	// Pin 53ba89ca8ddc (waveform jitter): see `./paint-position.ts` for the
+	// measurement + rationale (tested there, a `.svelte` file cannot be).
+	// `stallState` below folds raw `deck.position_ms`, never this value.
+	const _paintPositionState = initPositionInterpolatorState();
+
 	function _paintPositionMs(): number {
-		return scrubPreviewMs !== null ? scrubPreviewMs : deck.position_ms;
+		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now());
 	}
 
 	$effect(() => {
@@ -235,9 +247,7 @@
 		const el = canvasEl;
 		if (el === undefined || palette === null || cssW === 0 || cssH === 0) return;
 		const paintPositionMs = _paintPositionMs();
-		const scrollPx =
-			(deck.duration_ms === null ? 0 : paintPositionMs / 1000) *
-			(cssW / (WAVE_WINDOW_S * deck.pitch));
+		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
 		const visualInputs = [
 			deck.stable_id,
 			deck.duration_ms,
@@ -249,14 +259,7 @@
 			cssH,
 			palette
 		] as const;
-		const visualsChanged =
-			lastPaintInputs === null ||
-			visualInputs.some((value, index) => !Object.is(value, lastPaintInputs?.[index]));
-		if (!force && !visualsChanged && lastPaintScrollPx !== null && Math.abs(scrollPx - lastPaintScrollPx) < 1) {
-			return;
-		}
-		lastPaintScrollPx = scrollPx;
-		lastPaintInputs = visualInputs;
+		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
 		const dpr = window.devicePixelRatio;
 		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
 			el.width = cssW * dpr;
@@ -265,10 +268,7 @@
 		const ctx = el.getContext('2d');
 		if (ctx === null) throw new Error(`wavestack deck ${deckId}: 2d context unavailable`);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		// CH3/4: lighter fill than --rb-bg (#0d0f12) so secondary rows read
-		// clearly under the opaque canvas (CSS alone cannot show through).
-		const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
-		const paintPalette = rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
+		const paintPalette = resolvePaintPalette(deckId, palette);
 		if (deck.stable_id === null || deck.duration_ms === null) {
 			// Empty deck: flat dark row + state-derived center line - never an invented waveform.
 			ctx.fillStyle = paintPalette.bg;
@@ -302,11 +302,12 @@
 	// Either the device clock stalled (presentation.ts is coasting on the sample
 	// clock) or the painted number itself stopped moving for any other reason.
 	const clockUntrusted = $derived(playheadFrozen || isPresentationClockStalled(deckId));
+	// A synced-but-not-master follower riding the master's motion, so it must
+	// keep painting while `deck.playing` is false. Read by both effects below.
+	const masterMoving = $derived(deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false));
 
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
-		const masterMoving =
-			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
 		const pulse = syncPlayheadTone === 'drift';
 		const hovered = deckHoverUi.deckId === deckId;
 		if (!(deck.playing || seeking || (hovered && (pulse || masterMoving)))) return;
@@ -329,8 +330,6 @@
 	// early return keeps position_ms untracked during playback so this
 	// effect stays quiet while the rAF loop owns the canvas.
 	$effect(() => {
-		const masterMoving =
-			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
 		if (deck.playing || seeking || syncPlayheadTone === 'drift' || masterMoving) return;
 		void deck.stable_id;
 		void deck.position_ms;

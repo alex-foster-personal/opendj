@@ -28,6 +28,8 @@
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
@@ -538,29 +540,43 @@
 	<RefreshAnalysisButton />
 
 	<!-- master volume: REAL -> engine master GainNode -->
-	<div
-		class="master-slider"
-		role="slider"
-		aria-label="master volume"
-		title="Master volume - final output gain"
-		aria-orientation="horizontal"
-		aria-valuemin={0}
-		aria-valuemax={1}
-		aria-valuenow={mixerState.master}
-		tabindex="0"
-		use:wheelAdjust={{
-			step: WHEEL_STEP.fader,
-			get: () => mixerState.master,
-			set: _setMaster
-		}}
-		onpointerdown={handleMasterDown}
-		onpointermove={handleMasterMove}
-		onpointerup={handleMasterUp}
-		onkeydown={handleMasterKeyDown}
-	>
-		<div class="master-track"></div>
-		<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
-		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
+	<div class="master-slider-wrap">
+		<div
+			class="master-slider"
+			role="slider"
+			aria-label="master volume"
+			title="Master volume - final output gain"
+			aria-orientation="horizontal"
+			aria-valuemin={0}
+			aria-valuemax={1}
+			aria-valuenow={mixerState.master}
+			tabindex="0"
+			use:wheelAdjust={{
+				step: WHEEL_STEP.fader,
+				get: () => mixerState.master,
+				set: _setMaster
+			}}
+			onpointerdown={handleMasterDown}
+			onpointermove={handleMasterMove}
+			onpointerup={handleMasterUp}
+			onkeydown={handleMasterKeyDown}
+		>
+			<div class="master-track"></div>
+			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
+		</div>
+
+		<!-- output-to-device bar: REAL -> audio-output-liveness verdict (pin
+		     93c82bb36eb7). A 1px line under the master slider distinguishing "we
+		     are sending audio" (the slider above) from "a device is actually
+		     receiving it" (this line). Idle paints nothing rather than a false
+		     "ok", per the pin's own "never healthy when the probe cannot tell"
+		     rule. -->
+		<div
+			class={`output-health-bar ${describeAudioOutputHealth(audioOutputHealth.snapshot).cssClass}`}
+			title={describeAudioOutputHealth(audioOutputHealth.snapshot).title}
+			aria-label="output to audio device"
+		></div>
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.
@@ -1036,6 +1052,12 @@
 		line-height: 1.4;
 	}
 
+	.master-slider-wrap {
+		display: flex;
+		flex-direction: column;
+		flex: 0 0 auto;
+		gap: 2px;
+	}
 	.master-slider {
 		position: relative;
 		width: 80px;
@@ -1044,6 +1066,28 @@
 		touch-action: none;
 		outline: none;
 		flex: 0 0 auto;
+	}
+	.output-health-bar {
+		width: 80px;
+		height: 1px;
+		flex: 0 0 auto;
+		background: transparent;
+	}
+	.output-health-bar.ok {
+		background: var(--rb-accent);
+		opacity: 0.5;
+	}
+	.output-health-bar.dead {
+		/* --rb-danger is never defined (see StemsPrompt.svelte); --rb-red is the
+		   palette's real danger colour (theme.css). */
+		background: var(--rb-red, #e55);
+		opacity: 1;
+		height: 2px;
+		margin-top: -0.5px;
+	}
+	.output-health-bar.unknown {
+		background: var(--rb-text-dim);
+		opacity: 0.25;
 	}
 	.master-track {
 		position: absolute;

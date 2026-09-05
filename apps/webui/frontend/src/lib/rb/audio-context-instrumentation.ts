@@ -14,6 +14,7 @@
 import { installAudioContextWatchdog } from '$lib/rb/audio-context-watchdog';
 import { installOutputRebind, type OutputRebindHandle } from '$lib/rb/audio-output-rebind';
 import { installOutputLiveness, type AudioOutputSnapshot } from '$lib/rb/audio-output-liveness';
+import { clearAudioOutputHealth, setAudioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -141,6 +142,9 @@ export function disarmContextInstrumentation(): void {
 	// stops it, and `_ensureGraph` arms a fresh one on the way back in.
 	_outputLiveness?.uninstall();
 	_outputLiveness = null;
+	// The bar under master volume must go back to "no data" rather than keep
+	// quoting a device snapshot from the context just closed.
+	clearAudioOutputHealth();
 	// The exported reader closes over the liveness handle above, so without this
 	// it keeps answering after uninstall with whatever verdict was last frozen
 	// (dead or ok) instead of reflecting that no graph is armed. Deleted rather
@@ -211,7 +215,8 @@ export function armAudioContextWatchdog(
 			pushToast,
 			recordPerfEvent: (kind, message, severity) => recordPerfEvent(kind, message, null, severity),
 			setInterval: (fn, ms) => setInterval(fn, ms),
-			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>)
+			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+			onSnapshot: (snapshot) => setAudioOutputHealth(snapshot)
 		},
 		isAnyDeckPlaying
 	);

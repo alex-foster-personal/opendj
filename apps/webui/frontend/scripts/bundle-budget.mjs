@@ -66,6 +66,16 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              carries the app's real weight and may not silently grow. The
 //              measurement includes the xrun sentinel AudioWorklet (1,636),
 //              which the predecessor gate never counted at all.
+//              RAISED Sat 5 Sep 2026 (PR #1288, pin 93c82bb36eb7): the output
+//              liveness health bar under master volume adds a real, permanent
+//              part of the always-rendered performance UI (audio-output-health
+//              .svelte.ts, audio-output-health-display.ts, the liveness
+//              onSnapshot hook) - genuine new weight, not padding. Clean
+//              origin/main (54a6220cc) already measured 204,275 of 204,800
+//              (525 bytes headroom) before this PR landed, so this was going
+//              to trip on the next few bytes of ordinary feature work
+//              regardless. With this PR: measured 205,141, +5% ceil-to-KiB
+//              => 216,064 (211 KiB).
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
 //              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
 //              policy matrix, machines, pins, overview + api-cloudsync client)
@@ -85,7 +95,7 @@ const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
-  { name: 'performance', limit: 204800, measured: 193544, note: '/performance and children' },
+  { name: 'performance', limit: 216064, measured: 205141, note: '/performance and children' },
   { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
 ];
 
