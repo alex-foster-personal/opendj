@@ -115,9 +115,14 @@ import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$li
 import {
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
+	installAuthoritativeAnlzGridSink,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
-	refreshAnlzCacheEntry
+	refreshAnlzCacheEntry,
+	upgradeDeckBeatgrid,
+	createBeatgridResyncGuards,
+	createBeatgridResyncTracking,
+	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	beatJumpTargetMs,
@@ -130,13 +135,7 @@ import {
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
-import {
-	effectiveBeatSync,
-	effectiveQuantize,
-	GRID_FEATURE_TIP,
-	gridFeaturesInert,
-	hasRealBeatGrid
-} from '$lib/player/grid-features';
+import { deckHasRealBeatGrid, effectiveBeatSync, effectiveQuantize, GRID_FEATURE_TIP, gridFeaturesInert, hasRealBeatGrid } from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
 	beatSyncMaxFollowers,
@@ -410,7 +409,6 @@ interface _PendingSegment {
 }
 
 type _DeckProcessor = StretchDeckProcessor | AlignedStemDeckProcessor;
-
 interface _DeckRuntime {
 	processor: _DeckProcessor | null;
 	durationSec: number;
@@ -505,6 +503,15 @@ let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
+/** Monotonic engine-session id, bumped by dispose(). Deck loadTokens cannot
+ * carry a guard across a route remount: dispose() installs a fresh
+ * `_emptyRuntime()` per deck whose loadToken restarts at 0, so a token
+ * captured before disposal compares equal again after the same number of
+ * loads in the NEW session (discussion_r3919692507 P1 BLOCKING). This counter
+ * never repeats a value, so anything that captures it at entry can tell
+ * "still my session" from "a different session that happens to look like
+ * mine" after any await. */
+let _engineSession = 0;
 
 /** The actual AudioContext state, not a transport-state inference. */
 export function audioContextState(): AudioContextState | 'uninitialized' {
@@ -952,62 +959,6 @@ export function presentedSlipAnchor(
 	});
 }
 
-export function naturalEndNeedsRevisionedStop(
-	playing: boolean,
-	observation: Pick<
-		PresentedTransportObservation,
-		'audible' | 'transport_pending' | 'position_sec'
-	>,
-	durationSec: number,
-	scheduleIntentCount: number
-): boolean {
-	if (typeof playing !== 'boolean') {
-		throw new TypeError(`playing must be boolean, got ${String(playing)}`);
-	}
-	if (!Number.isFinite(durationSec) || durationSec <= 0) {
-		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
-	}
-	if (
-		typeof observation.audible !== 'boolean' ||
-		typeof observation.transport_pending !== 'boolean'
-	) {
-		throw new TypeError('natural-end observation flags must be boolean');
-	}
-	if (!Number.isFinite(observation.position_sec) || observation.position_sec < 0) {
-		throw new RangeError(
-			`natural-end position must be finite and non-negative, got ${observation.position_sec}`
-		);
-	}
-	if (!Number.isInteger(scheduleIntentCount) || scheduleIntentCount < 0) {
-		throw new RangeError(
-			`scheduleIntentCount must be a non-negative integer, got ${scheduleIntentCount}`
-		);
-	}
-	return (
-		playing &&
-		!observation.audible &&
-		!observation.transport_pending &&
-		scheduleIntentCount === 0 &&
-		observation.position_sec >= durationSec
-	);
-}
-
-export interface TransportMutationActivity {
-	playing: boolean;
-	audible: boolean;
-	controlActive: boolean;
-	pendingScheduleCount: number;
-	scheduleIntentCount: number;
-	/** Presentation clock lag: desired_revision !== presented_revision.
-	 * The control clock (`pendingScheduleCount`) drains off `ctx.currentTime`,
-	 * but the presentation clock only advances inside the rAF tick. When rAF
-	 * stops - a hidden tab, or a natural end that left nothing audible to
-	 * animate - the control clock reaches idle while presentation still lags.
-	 * Without this flag a seek takes the paused-cursor branch, which then
-	 * throws in setPausedTransportTimelineCursor and wedges the deck. */
-	presentationPending: boolean;
-}
-
 /** True while the rAF-driven presentation clock has not caught up to the last
  * acknowledged schedule. Read this, never `st.transport_pending`, when gating a
  * transport mutation: the state flag also folds in reanchor ramps. */
@@ -1057,7 +1008,9 @@ export {
 	loadCandidateCanPublish,
 	assertPausedMasterSelectionAllowed,
 	pausedMasterSelectionBlockers,
-	masterSwitchFollowers
+	masterSwitchFollowers,
+	naturalEndNeedsRevisionedStop,
+	type TransportMutationActivity
 } from './audio-engine-guards';
 import {
 	assertDeckReplacementAllowed,
@@ -1066,7 +1019,9 @@ import {
 	nextPlayingMaster,
 	pausedMasterSelectionBlockers,
 	assertPausedMasterSelectionAllowed,
-	masterSwitchFollowers
+	masterSwitchFollowers,
+	naturalEndNeedsRevisionedStop,
+	type TransportMutationActivity
 } from './audio-engine-guards';
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
@@ -1220,7 +1175,6 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	st.processor_error = message;
 	st.sync_error = message;
 	pushToast(`Deck ${deck} processor failed - ${message}`, 'error');
-	if (_masterDeck === deck) _electPlayingMaster();
 }
 
 export function stretchScheduleChange(
@@ -1266,6 +1220,9 @@ async function _scheduleDeck(
 	keyShiftSemitones?: number,
 	pressT0Ms?: number
 ): Promise<number> {
+	const scheduleSession = _engineSession;
+	const isCurrent = (): boolean => scheduleSession === _engineSession;
+	if (!isCurrent()) throw new Error(`_scheduleDeck: engine session changed before deck ${deck} scheduled`);
 	const rt = _rt[deck];
 	const expectedLoadToken = rt.loadToken;
 	const expectedProcessor = rt.processor;
@@ -1288,6 +1245,7 @@ async function _scheduleDeck(
 	});
 	await predecessor;
 	try {
+		if (!isCurrent()) throw new Error(`_scheduleDeck: engine session changed before deck ${deck} was scheduled`);
 		if (rt.loadToken !== expectedLoadToken || rt.processor !== expectedProcessor) {
 			throw new Error(`_scheduleDeck: deck ${deck} changed while the command was queued`);
 		}
@@ -1308,7 +1266,7 @@ async function _scheduleDeck(
 		// rolling back to a stale value would clobber it. A processor failure and
 		// a mid-queue reload both reset desiredActive to false first, so this
 		// lands on "not playing" for a genuinely failed start.
-		deckStates[deck].playing = rt.desiredActive;
+		if (isCurrent()) deckStates[deck].playing = rt.desiredActive;
 		throw error;
 	} finally {
 		rt.scheduleIntentCount -= 1;
@@ -1367,6 +1325,9 @@ async function _scheduleDeckSerial(
 	keyShiftSemitones: number | undefined,
 	pressT0Ms: number | undefined
 ): Promise<number> {
+	const scheduleSession = _engineSession;
+	const isCurrent = (): boolean => scheduleSession === _engineSession;
+	if (!isCurrent()) throw new Error(`_scheduleDeck: engine session changed before deck ${deck} was scheduled`);
 	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
 	_commitPendingIfDue(deck);
 	const processor = rt.processor;
@@ -1430,9 +1391,10 @@ async function _scheduleDeckSerial(
 			)
 		);
 	} catch (error) {
-		if (rt.processor === processor) _recordProcessorFailure(deck, error);
+		if (isCurrent() && rt.processor === processor) _recordProcessorFailure(deck, error);
 		throw error;
 	}
+	if (!isCurrent()) throw new Error(`_scheduleDeck: engine session changed before deck ${deck} acknowledged`);
 	if (rt.processor !== processor) {
 		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
@@ -1958,6 +1920,12 @@ function _displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopStat
 }
 
 function _clearLoadedTrackState(st: DeckState): void {
+	const deck = st.deck_id, wasMaster = _masterDeck === deck;
+	// audible flips BEFORE re-election (excludes this deck as its own replacement) and election runs BEFORE reconciling (r3912339497); stranded is captured NOW, before clearForDeck wipes it and before the scoped continuation below starts (r3912339491, second pass).
+	st.playing = false; st.audible = false;
+	if (wasMaster) _electPlayingMaster();
+	const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck);
+	_beatgridGuards.beforeClear(deck, stranded, 'reload');
 	st.stable_id = null;
 	st.title = null;
 	st.artist = null;
@@ -1968,8 +1936,6 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.key_sync_enabled = false;
 	st.duration_ms = null;
 	st.position_ms = 0;
-	st.playing = false;
-	st.audible = false;
 	st.transport_pending = false;
 	st.cue_ms = null;
 	st.pitch = 1;
@@ -2118,8 +2084,12 @@ async function _scheduleFollowerBackwardBlend(
 	landingSec: number,
 	tempoRatio: number,
 	masterTempoEnabled: boolean,
-	currentSec: number
+	currentSec: number,
+	isScheduleCurrent?: () => boolean
 ): Promise<number> {
+	if (isScheduleCurrent !== undefined && !isScheduleCurrent()) {
+		throw new Error(`sync seek blend: engine session changed before deck ${deck} scheduled`);
+	}
 	const { st, rt } = _requireLoaded(deck, 'sync seek blend');
 	const ctx = _ctx;
 	const buffer = rt.audioBuffer;
@@ -2243,8 +2213,12 @@ async function _scheduleReanchoredFollower(
 	syncAt: number,
 	inputSec: number,
 	toTempoRatio: number,
-	masterTempoEnabled: boolean
+	masterTempoEnabled: boolean,
+	isScheduleCurrent?: () => boolean
 ): Promise<number> {
+	if (isScheduleCurrent !== undefined && !isScheduleCurrent()) {
+		throw new Error(`sync re-anchor: engine session changed before deck ${deck} scheduled`);
+	}
 	const fromTempoRatio = _tempoAt(deck, syncAt);
 	const ramp = planTempoRatioRamp(fromTempoRatio, toTempoRatio);
 	const rt = _rt[deck];
@@ -2310,6 +2284,18 @@ async function _synchronizeFollowers(
 	options: _SyncOptions = {}
 ): Promise<void> {
 	if (followers.length === 0 && options.masterSchedule === undefined) return;
+	// Every guard the two beatgrid-resync callers apply to their PORTS is asked
+	// before this function is entered; none of them survives the awaits INSIDE
+	// it. `_resumeContext()` alone is an open-ended wait, and everything below
+	// reads and writes the module-global `_rt` / `deckStates` by deck id - so a
+	// dispose() plus route remount landing in that window let this continuation
+	// schedule transport on a brand new session's decks
+	// (discussion_r3919692507 P1 BLOCKING). The session id is captured once
+	// here and re-asked after each await, which abandons the whole call rather
+	// than threading a cancellation token through every port.
+	const session = _engineSession;
+	const scheduleSessionIsCurrent = (): boolean => session === _engineSession;
+	let succeededDecks: readonly DeckId[] = [];
 	// Invariant, not a defensive nicety: the master is never one of its own
 	// followers. Every call site already filters it out, so reaching here means
 	// a caller inverted the roles - fail loudly rather than schedule the master
@@ -2322,6 +2308,7 @@ async function _synchronizeFollowers(
 	}
 	try {
 		const ctx = await _resumeContext();
+		if (session !== _engineSession) return;
 		_commitPendingIfDue(master);
 		for (const deck of followers) _commitPendingIfDue(deck);
 		const masterState = deckStates[master];
@@ -2330,6 +2317,20 @@ async function _synchronizeFollowers(
 			throw new Error(`Beat Sync master deck ${master} is neither audible nor scheduled to play`);
 		}
 		const masterGrid = _requireBeatGrid(masterState, 'Beat Sync');
+		// Only clear stale pending-membership once the master's own grid
+		// precondition is confirmed - clearing it BEFORE this point (the
+		// original ordering) discarded a follower's pending record on a
+		// synchronization attempt that itself turns out to be against a
+		// gridless master, so a later grid landing never retried it and the
+		// follower stayed enabled with every future PLAY rejecting the same
+		// way (discussion_r3914557002). Once the master's grid is confirmed,
+		// any pending record naming this master IS stale (it can only have
+		// been recorded while the master had no grid), so it is safe to drop
+		// for both master and followers regardless of whether a later plan
+		// or schedule stage in this same call still fails for an unrelated
+		// (tempo/BAR) reason.
+		_resyncTracking.clearPendingMembership(master);
+		for (const deck of followers) _resyncTracking.clearPendingMembership(deck);
 		const now = ctx.currentTime;
 		// Deliberately the RAW self-report, not the round-2 onset lead. A group
 		// launch has a constraint a single deck does not: the shared instant must
@@ -2379,6 +2380,7 @@ async function _synchronizeFollowers(
 						deckStates[snapshot.deck].sync_mode === snapshot.syncMode
 				)
 			);
+			if (session !== _engineSession) return;
 			for (const deck of supersededDecks) _commitPendingIfDue(deck);
 			return _synchronizeFollowers(master, followers, options);
 		}
@@ -2402,6 +2404,7 @@ async function _synchronizeFollowers(
 		// scheduled instant). A deck whose BEAT SYNC went dark inside that
 		// window owns its own tempo again: withdrawing it is the correct
 		// outcome, not a phase-lock failure, so it carries no sync_error.
+		if (session !== _engineSession) return;
 		const owned = followers.filter((deck) => _syncOwnsFollowerTempo(deck));
 		if (owned.length === 0 && options.masterSchedule === undefined) return;
 		for (const deck of owned) {
@@ -2473,8 +2476,7 @@ async function _synchronizeFollowers(
 			}))
 		];
 		const scheduleTimes = commonSyncScheduleTimes(syncAt, schedules.length);
-		const outcomes = await Promise.allSettled(
-			schedules.map((item, index) => {
+		const scheduleOperations = schedules.map((item, index) => {
 				if (item.blendFromSec !== null) {
 					return _scheduleFollowerBackwardBlend(
 						item.deck,
@@ -2482,7 +2484,8 @@ async function _synchronizeFollowers(
 						item.inputSec,
 						item.tempoRatio,
 						item.masterTempoEnabled,
-						item.blendFromSec
+						item.blendFromSec,
+						scheduleSessionIsCurrent
 					);
 				}
 				if (options.reanchorDecks?.has(item.deck) === true) {
@@ -2491,8 +2494,12 @@ async function _synchronizeFollowers(
 						scheduleTimes[index],
 						item.inputSec,
 						item.tempoRatio,
-						item.masterTempoEnabled
+						item.masterTempoEnabled,
+						scheduleSessionIsCurrent
 					);
+				}
+				if (!scheduleSessionIsCurrent()) {
+					throw new Error(`Beat Sync: engine session changed before deck ${item.deck} scheduled`);
 				}
 				return _scheduleDeck(
 					item.deck,
@@ -2500,22 +2507,24 @@ async function _synchronizeFollowers(
 					item.inputSec,
 					true,
 					item.tempoRatio,
-					item.masterTempoEnabled
+					item.masterTempoEnabled,
+					undefined,
+					undefined,
+					undefined
 				);
-			})
-		);
+			});
+		const outcomes = await Promise.allSettled(scheduleOperations);
+		if (session !== _engineSession) return;
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
 		);
 		if (failedDecks.length > 0) {
-			const succeededDecks = schedules
-				.map((item) => item.deck)
-				.filter((deck) => !failedDecks.includes(deck));
+			succeededDecks = schedules.map((item) => item.deck).filter((deck) => !failedDecks.includes(deck));
 			const message =
 				`Beat Sync partial failure: succeeded [${succeededDecks.join(',')}], ` +
 				`failed [${failedDecks.join(',')}]`;
 			for (const item of schedules) {
-				if (failedDecks.includes(item.deck)) item.st.sync_error = message;
+				item.st.sync_error = failedDecks.includes(item.deck) ? message : null;
 			}
 			throw new Error(message, {
 				cause: outcomes.find((outcome) => outcome.status === 'rejected')
@@ -2533,16 +2542,36 @@ async function _synchronizeFollowers(
 			}
 		}
 	} catch (error) {
-		// Only stamp followers that do not already carry a more specific plan error.
+		// Same session gate as the awaits above: a rejection that surfaces only
+		// after disposal must not brand a remounted session's decks with an
+		// error raised against the decks they replaced.
+		if (session !== _engineSession) throw error;
 		for (const deck of followers) {
-			if (deckStates[deck].sync_error === null) {
-				deckStates[deck].sync_error = String(error);
-			}
+			if (!succeededDecks.includes(deck) && deckStates[deck].sync_error === null) deckStates[deck].sync_error = String(error);
 		}
-		if (options.masterSchedule !== undefined) deckStates[master].sync_error = String(error);
+		if (options.masterSchedule !== undefined && !succeededDecks.includes(master)) deckStates[master].sync_error = String(error);
 		throw error;
 	}
 }
+const _resyncTracking = createBeatgridResyncTracking(); // pending/gridless tracking; cleared per deck below, unload() and dispose() - see beatgrid-resync.ts
+const _beatgridResyncPorts: BeatgridResyncPorts = {
+	deckIds: DECK_IDS, syncMaster: _syncMaster, playing: (deck) => deckStates[deck].playing,
+	beatSyncEnabled: (deck) => deckStates[deck].beat_sync_enabled, setBeatSyncEnabled: (deck, enabled) => (deckStates[deck].beat_sync_enabled = enabled),
+	hasRealBeatGrid: (deck) => deckHasRealBeatGrid(deckStates[deck]), hasSyncError: (deck) => deckStates[deck].sync_error !== null,
+	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
+	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
+};
+const _beatgridGuards = createBeatgridResyncGuards({
+	ports: _beatgridResyncPorts,
+	deckRuntime: (deck) => _rt[deck],
+	deckLoadToken: (deck) => _rt[deck].loadToken,
+	deckStableId: (deck) => deckStates[deck].stable_id,
+	deckAnlz: (deck) => deckStates[deck].anlz,
+	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
+	reportError: (message) => pushToast(message, 'error')
+});
+installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);
+export const installScopedSyncRunner = _beatgridGuards.installScopedSyncRunner; // rationale for [deck]-then-widen: performance-ipc.svelte.ts's installScopedSyncRunner
 
 async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promise<T> {
 	const predecessor = rt.swapTail;
@@ -2787,6 +2816,7 @@ class RbAudioEngine implements AudioEngine {
 	async dispose(): Promise<void> {
 		const processors: _DeckProcessor[] = [];
 		const nodes: AudioNode[] = [];
+		_engineSession += 1;
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			rt.loadToken += 1;
@@ -2820,13 +2850,11 @@ class RbAudioEngine implements AudioEngine {
 		for (const deck of DECK_IDS) {
 			_rt[deck] = _emptyRuntime();
 			deckStates[deck] = _emptyDeckState(deck);
-			deckLoadErrors[deck] = null;
-			pitchRanges[deck] = 16;
-			mixerState.channels[deck] = _defaultChannel(deck);
+			deckLoadErrors[deck] = null; pitchRanges[deck] = 16;
+			mixerState.channels[deck] = _defaultChannel(deck); _resyncTracking.clearForDeck(deck); // singleton - reused ids must not inherit stale state (r3912757819)
 		}
 		mixerState.crossfader = 0.5;
-		mixerState.master = 1;
-		mixerState.headphones = _defaultHeadphones();
+		mixerState.master = 1; mixerState.headphones = _defaultHeadphones();
 		await closing;
 	}
 
@@ -2836,6 +2864,7 @@ class RbAudioEngine implements AudioEngine {
 		const rt = _rt[deck];
 		_assertCurrentDeckReplacementAllowed(deck);
 		const token = ++rt.loadToken;
+		const replacingMaster = _masterDeck === deck;
 		deckLoadErrors[deck] = null;
 		let track: Track | null = null;
 		let buffer: AudioBuffer | null = null;
@@ -2971,7 +3000,6 @@ class RbAudioEngine implements AudioEngine {
 				throw new Error(`load: deck ${deck} audio graph is missing`);
 			}
 			const context = _ctx;
-			const replacingMaster = _masterDeck === deck;
 			const incumbentProcessor = rt.processor;
 			try {
 				candidateProcessor.connect(rt.nodes.analyser);
@@ -3053,6 +3081,7 @@ class RbAudioEngine implements AudioEngine {
 		// escape into an unhandled promise.
 		if (loadCtx === null) throw new Error('load: audio context was never resolved');
 		void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+			void upgradeDeckBeatgrid(deck, stable_id, st, () => token !== rt.loadToken, (d, landed, publish) => _beatgridGuards.afterBeatgridUpgrade(d, landed, publish, () => token !== rt.loadToken)); // PARITY-10: same deferral for the grid as _upgradeDeckStems above; errors are handled inside, no unhandled rejection
 	}
 
 	/** Re-read hot cues + display loop after a SAVE/CLEAR, without touching
@@ -3600,6 +3629,18 @@ class RbAudioEngine implements AudioEngine {
 		st.beat_sync_enabled = enabled;
 		if (!enabled) {
 			st.sync_error = null;
+			// An explicit opt-out retires this deck's pending-follower records
+			// too. Without this, a deck marked pending against a gridless
+			// master kept that record after the DJ switched Beat Sync off, and
+			// the master's later gridless settlement still processed it: with
+			// no master elected (the master was paused first),
+			// reconcileAfterBeatgridSettled's null-master branch abandons every
+			// pending follower, which re-wrote a sync_error onto a deck that
+			// had opted out, and flipped beat_sync_enabled back to false if the
+			// DJ had since re-enabled it (discussion_r3919779327 P2 BLOCKING).
+			// The record only ever existed to describe a wait this deck no
+			// longer has, so opting out is exactly when it stops being true.
+			_resyncTracking.clearPendingMembership(deck);
 			return Promise.resolve();
 		}
 		// Same contract as setQuantize: the flag keeps the value the DJ chose,
@@ -3758,7 +3799,12 @@ class RbAudioEngine implements AudioEngine {
 				pushToast(`Deck ${deck} processor disposal failed - ${message}`, 'error');
 			}
 		}
-		const wasMaster = _masterDeck === deck;
+		const wasMaster = _masterDeck === deck; // elect BEFORE reconciling below, same shape as _clearLoadedTrackState (r3912339497)
+		// audible/playing flip BEFORE election, same shape again: the 2s replacement wait above BREAKS on its deadline, so a pause that never reached presentation leaves st.audible true on a deck whose processor is already detached and stopped. nextPlayingMaster picks the lowest audible id, so deck 1 would re-elect ITSELF here and _reconcileStrandedFollowers' master === deck branch would then drop every stranded follower instead of handing them to the deck that is actually audible (PR #765 'Exclude the unloading deck before master election').
+		st.playing = false; st.audible = false;
+		if (wasMaster) _electPlayingMaster();
+		const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck); // stranded captured before clearForDeck, same race as r3912339491
+		_beatgridGuards.beforeClear(deck, stranded, 'unload'); // scoped, not fire-unscoped (r3912960726)
 		_rt[deck] = {
 			..._emptyRuntime(),
 			loadToken: rt.loadToken,
@@ -3778,7 +3824,6 @@ class RbAudioEngine implements AudioEngine {
 		// not state, and history does not un-happen.
 		deckStates[deck] = { ..._emptyDeckState(deck), load_generation: st.load_generation };
 		deckLoadErrors[deck] = null;
-		if (wasMaster) _electPlayingMaster();
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {

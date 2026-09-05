@@ -49,7 +49,11 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 	['lib/components/rb/wave/anlz-cache.svelte.ts', 'the cache module itself'],
 	['lib/components/rb/wave/WaveRow.svelte', 'one per deck wave row, not per library row'],
 	['lib/rb/api-rb.ts', 'the fetch wrapper'],
-	['lib/rb/audio-engine.svelte.ts', 'deck load']
+	['lib/rb/audio-engine.svelte.ts', 'deck load'],
+	[
+		'lib/player/beatgrid-upgrade.ts',
+		'one refetch per deck load, only when a vendor mapping lands mid-flight (PARITY-09)'
+	]
 ]);
 
 let rowVocals;

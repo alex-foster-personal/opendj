@@ -51,6 +51,7 @@ import {
 	deckTransportClock,
 	engine,
 	getDeckState,
+	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
 	mixerState,
@@ -70,6 +71,7 @@ import {
 	ScopedCommandInvalidatedError,
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
+import type { WidenScope } from '$lib/player/scoped-sync-runner';
 import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
 import type { DeckAudioSnapshot, DeckState, LoopState, SafetyLoopSlot, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -80,7 +82,7 @@ import type {
 	MixerChannelState
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
-import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
+import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { noteRecentDeck } from '$lib/rb/recent-deck';
@@ -450,6 +452,99 @@ let _presetClaim: { id: string } | null = null;
 type PersistenceScope = `persistence-${DeckId}`;
 type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+// PARITY-10: the only module that owns the scoped command scheduler, so a
+// beatgrid-landed resync fired long after its load() command released [deck]
+// reclaims scope here rather than racing whatever now holds it. The
+// settlement itself claims ONLY [_deck] (r3913693383 P1 BLOCKING: an earlier
+// design reserved every other deck plus 'sync' up front on every settlement,
+// even the common narrow one that never touches them - rejected as an
+// unacceptable latency/independence cost, not merely a trade-off). `widen`
+// decides fresh, from inside the granted [_deck] claim (r3913350814 P1:
+// never decided before scheduling), whether this settlement needs the wide
+// barrier PERFORMANCE_PRESET_COMMAND_SCOPES below uses for the same
+// coordinate-many-decks reason (headphone deliberately excluded: this resync
+// never touches headphone routing) PLUS [_deck] itself (r3914267990 P1
+// BLOCKING: excluding it left a gap between this narrow claim releasing
+// [_deck] and the wide claim's own registration, where a fresh load/unload
+// on the same deck could race the still-in-flight wide reconciliation -
+// including [_deck] in the wide claim's scopes makes the wide claim the
+// tail map's new occupant of it, so a later command on this deck correctly
+// queues behind the wide work instead of interleaving with it). `widen`
+// fires this as a SEPARATE top-level `_commandScheduler.run` and returns
+// that promise to the caller WITHOUT this settlement's own claim awaiting or
+// returning it (r3913492572 P1 BLOCKING: awaiting a nested wide claim from
+// inside an already-granted claim can deadlock against a successor,
+// submitted in the interim, that shares [_deck] - that successor captures
+// this claim's tail as ITS predecessor, so this claim later depending on
+// the wide claim too, once the successor has taken 'sync' first, closes a
+// cycle). Because [_deck] is now also a wide scope, the wide claim's own
+// predecessors (computed before its registration overwrites the tail map)
+// include this claim's tail too - an acyclic, ordinary "wait for whoever
+// currently holds [_deck]" dependency, safe precisely because this claim
+// never waits on the wide claim back. The caller (audio-engine.svelte.ts)
+// must attach its own `.catch()` directly to what `widen` returns instead of
+// returning it as this settlement's own result - see
+// `_resyncAfterBeatgridUpgrade` and the two `reconcileBeforeClear` call
+// sites. A settlement
+// audio-engine.svelte.ts's resyncSettlementNeedsFullBarrier proves, freshly,
+// can only ever touch its own deck (r3913096141 P1: the common
+// gridless-with-no-master-or-followers case) never calls `widen` at all, so
+// it never touches the other decks' or 'sync' scopes in any way.
+installScopedSyncRunner((_deck, run) => {
+	const statusGeneration = _commandStatusGeneration;
+	let started = false;
+	performanceCommandStatus.queued += 1;
+	performanceCommandStatus.deck_pending[_deck] += 1;
+	const widen: WidenScope = (work) => {
+		let wideStarted = false;
+		if (statusGeneration === _commandStatusGeneration) {
+			performanceCommandStatus.queued += 1;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
+		}
+		const wide = _commandScheduler.run([...DECK_IDS, 'sync'], async () => {
+			wideStarted = true;
+			if (statusGeneration === _commandStatusGeneration) {
+				performanceCommandStatus.queued -= 1;
+				performanceCommandStatus.active += 1;
+			}
+			try {
+				return await work();
+			} finally {
+				if (statusGeneration === _commandStatusGeneration) {
+					performanceCommandStatus.active -= 1;
+				}
+			}
+		});
+		return wide.finally(() => {
+			if (statusGeneration === _commandStatusGeneration) {
+				if (!wideStarted) performanceCommandStatus.queued -= 1;
+				for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+			}
+		});
+	};
+	return _commandScheduler
+		.run([_deck], async () => {
+			started = true;
+			if (statusGeneration === _commandStatusGeneration) {
+				performanceCommandStatus.queued -= 1;
+				performanceCommandStatus.active += 1;
+			}
+			try {
+				return await run(widen);
+			} finally {
+				if (statusGeneration === _commandStatusGeneration) {
+					performanceCommandStatus.active -= 1;
+					performanceCommandStatus.deck_pending[_deck] -= 1;
+				}
+			}
+		})
+		.finally(() => {
+			if (!started && statusGeneration === _commandStatusGeneration) {
+				performanceCommandStatus.queued -= 1;
+				performanceCommandStatus.deck_pending[_deck] -= 1;
+			}
+		});
+});
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -1443,6 +1538,163 @@ function _enqueuePresetPhase<T>(
 	});
 }
 
+/** Bounded poll shared by the two preset settle waits below. Races a
+ * timer-backed deadline against each requestAnimationFrame wait
+ * (discussion_r3919293437 P2 BLOCKING): Chromium suspends rAF callbacks
+ * indefinitely on a hidden or backgrounded tab while setTimeout keeps firing,
+ * so a bound checked only before awaiting rAF never actually expires and can
+ * leave a preset transaction - including unmount stop cleanup - pending
+ * forever. Returning on the deadline rather than throwing is deliberate: the
+ * caller's own assertion is what reports WHICH condition never settled. */
+async function _pollUntilSettled(settled: () => boolean, deadlineMs: number): Promise<void> {
+	let timedOut = false;
+	const timeout = new Promise<void>((resolve) => {
+		setTimeout(() => {
+			timedOut = true;
+			resolve();
+		}, deadlineMs);
+	});
+	while (!timedOut) {
+		if (settled()) return;
+		await Promise.race([
+			timeout,
+			new Promise<void>((resolve) => {
+				requestAnimationFrame(() => resolve());
+			})
+		]);
+	}
+}
+
+/** A settlement's narrow [_deck] claim can detach (its own command() resolves)
+ * before `widen` has even been called, and `widen`'s wide claim only
+ * registers itself in the scheduler's tail map at THAT later point - if a
+ * preset START/STOP claim was submitted in between, it already took over the
+ * tail map for every scope the wide claim needs, so the wide claim ends up
+ * waiting on the PRESET's tail while the preset itself only ever waited on
+ * the narrow claim. The preset's own claim releases its tail (and lets the
+ * wide claim start) BEFORE `_enqueuePresetPhase`'s await here returns, so a
+ * single synchronous idleness check right after it can read the wide claim
+ * as still queued/active every time - not a race, a guaranteed ordering
+ * (discussion_r3919212909 P1 BLOCKING). Poll briefly for the queue to
+ * actually drain, mirroring unload()'s own bounded rAF poll for a scheduler-
+ * adjacent condition (audio-engine.svelte.ts), rather than reordering how
+ * `widen` registers itself - that ordering is the surface responsible for
+ * the last five P1s on this file's sibling. If it is still not idle once the
+ * deadline passes, `_assertPresetSettled` below still throws loudly rather
+ * than silently declaring ready. */
+async function _awaitCommandQueueIdle(deadlineMs = 2000): Promise<void> {
+	await _pollUntilSettled(() => {
+		const state = queryPerformanceState();
+		return !state.command_pending && state.command_queued === 0;
+	}, deadlineMs);
+}
+
+/** Decks whose latest acknowledged schedule revision has not yet crossed the
+ * output presentation clock - the same revision pair
+ * `assertPerformancePresetPresented` reads, generalized to every deck.
+ *
+ * Reported for all four rather than the preset's own, because the work that
+ * can install a late revision is a cross-deck Beat Sync reconciliation, and it
+ * reschedules whichever followers the sync master has. */
+export function performanceDecksAwaitingPresentation(state: PerformanceState): DeckId[] {
+	return DECK_IDS.filter(
+		(deck) =>
+			state.decks[deck].transport_clock.desired_revision !==
+			state.decks[deck].transport_clock.presented_revision
+	);
+}
+
+/** Draining the command queue is not the same guarantee as reaching the audio
+ * output. A deferred beatgrid settlement that widened only AFTER a preset
+ * START claim was submitted sits BEHIND that preset in the tail map (see
+ * `installScopedSyncRunner`), so it runs once START's own
+ * `waitForPerformancePresetPresented` has already returned, and the cross-deck
+ * phase-lock it performs acknowledges a fresh schedule revision. Waiting for
+ * the queue makes that reconciliation FINISH; it does not make its revision
+ * audible (discussion_r3919293425 P1 BLOCKING). AGENTS.md's preset contract
+ * publishes ready only "after all decks are audible with matching
+ * desired/presented revisions and an idle command queue", so wait for the
+ * revision half too before asserting it. Bounded like the queue wait, but at
+ * the presentation timeout performance-preset.ts already uses for the same
+ * physical event: a phase-locked reschedule starts at the master's next
+ * aligned boundary, which is a musical bar away, not a frame.
+ *
+ * Restoring the settlement's queue POSITION instead would mean claiming the
+ * wide scopes at submission time - the design r3913693383 P1 BLOCKING already
+ * rejected as an unacceptable latency and independence cost, and the exact
+ * opposite of the narrowing r3919411682 asks for. The postcondition is the
+ * surface that can hold both. */
+async function _awaitPresentedScheduleRevisions(deadlineMs = 30_000): Promise<void> {
+	await _pollUntilSettled(
+		() => performanceDecksAwaitingPresentation(queryPerformanceState()).length === 0,
+		deadlineMs
+	);
+}
+
+/** The one readiness postcondition both preset phases publish against, read
+ * from a single state snapshot so the two halves cannot disagree. */
+function _assertPresetSettled(id: string, phase: 'start' | 'stop'): void {
+	const state = queryPerformanceState();
+	if (state.command_pending || state.command_queued !== 0) {
+		throw new Error(`performance preset ${id} ${phase} returned before the command queue became idle`);
+	}
+	const awaiting = performanceDecksAwaitingPresentation(state);
+	if (awaiting.length > 0) {
+		throw new Error(
+			`performance preset ${id} ${phase} returned with deck ${awaiting.join(', ')} holding a schedule ` +
+				`revision that has not reached the audio output`
+		);
+	}
+}
+
+/** The compensating action a preset phase runs when its POST-work settle wait
+ * fails, so a late failure cannot leave the decks playing.
+ *
+ * `startPerformancePreset` rolls its own failures back - hard mute, then stop
+ * every deck in reverse order - but that rollback boundary closes when it
+ * returns, and the two settle waits below deliberately run AFTER it, outside
+ * the all-scope claim (holding the claim while waiting for the widened
+ * reconciliation that needs those very scopes is the r3913492572 deadlock).
+ * A timeout there therefore used to throw with playback already unmuted, and
+ * the route's `_start` catch only records `routeError` - decks kept playing
+ * while the lifecycle said error (discussion_r3919692501 P1 BLOCKING).
+ *
+ * So the transaction re-creates that boundary explicitly, in the order the
+ * teardown coordinator uses: mute is the hard safety edge and is taken
+ * IMMEDIATELY and un-queued, because anything queued waits behind the very
+ * work that just failed to settle; the reverse-order stop then runs through a
+ * fresh all-scope claim, which serializes it behind that work rather than
+ * racing it. Both failures are reported together with the settle failure that
+ * triggered them - none is swallowed. */
+async function _compensateLateSettlement(
+	id: string,
+	settleError: unknown,
+	compensate: (driver: PerformancePresetTransactionDriver) => Promise<unknown>
+): Promise<never> {
+	const rollbackErrors: unknown[] = [];
+	try {
+		engine.setMaster(MUTED_MASTER_VOLUME);
+		mixerState.master = MUTED_MASTER_VOLUME;
+	} catch (muteError) {
+		rollbackErrors.push(muteError);
+	}
+	try {
+		await _enqueuePresetPhase(id, compensate);
+	} catch (stopError) {
+		rollbackErrors.push(stopError);
+	}
+	const failure =
+		rollbackErrors.length === 0
+			? settleError
+			: new AggregateError(
+					[settleError, ...rollbackErrors],
+					`performance preset ${id} did not settle and its mute/full-stop rollback failed`,
+					{ cause: settleError }
+				);
+	_recordPresetFailure(id, failure);
+	throw failure;
+}
+
 function _recordPresetFailure(id: string, error: unknown): void {
 	const message = _errorMessage(error);
 	if (performanceCommandStatus.last_error !== message) _persistCommandError(null, error);
@@ -1477,30 +1729,36 @@ export async function preparePerformancePresetTransaction<T>(
 
 export async function startPerformancePresetTransaction<T>(
 	id: string,
-	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>,
+	compensate: (driver: PerformancePresetTransactionDriver) => Promise<unknown>
 ): Promise<T> {
 	_assertPresetId(id);
 	if (_presetClaim?.id !== id || performancePresetLifecycle.phase !== 'awaiting_audio') {
 		throw new Error(`performance preset ${id} is not prepared and awaiting audio activation`);
 	}
 	performancePresetLifecycle.phase = 'starting';
+	let result: T;
 	try {
-		const result = await _enqueuePresetPhase(id, work);
-		const state = queryPerformanceState();
-		if (state.command_pending || state.command_queued !== 0) {
-			throw new Error(`performance preset ${id} start returned before the command queue became idle`);
-		}
-		_releasePreset(id, 'ready', null);
-		return result;
+		result = await _enqueuePresetPhase(id, work);
 	} catch (error) {
 		_recordPresetFailure(id, error);
 		throw error;
 	}
+	try {
+		await _awaitCommandQueueIdle();
+		await _awaitPresentedScheduleRevisions();
+		_assertPresetSettled(id, 'start');
+	} catch (settleError) {
+		await _compensateLateSettlement(id, settleError, compensate);
+	}
+	_releasePreset(id, 'ready', null);
+	return result;
 }
 
 export async function stopPerformancePresetTransaction<T>(
 	id: string,
-	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>,
+	compensate: (driver: PerformancePresetTransactionDriver) => Promise<unknown>
 ): Promise<T> {
 	_assertPresetId(id);
 	if (_presetClaim !== null) {
@@ -1516,18 +1774,22 @@ export async function stopPerformancePresetTransaction<T>(
 	performancePresetLifecycle.phase = 'queued';
 	performancePresetLifecycle.active = true;
 	performancePresetLifecycle.error = null;
+	let result: T;
 	try {
-		const result = await _enqueuePresetPhase(id, work);
-		const state = queryPerformanceState();
-		if (state.command_pending || state.command_queued !== 0) {
-			throw new Error(`performance preset ${id} stop returned before the command queue became idle`);
-		}
-		_releasePreset(id, 'idle', null);
-		return result;
+		result = await _enqueuePresetPhase(id, work);
 	} catch (error) {
 		_recordPresetFailure(id, error);
 		throw error;
 	}
+	try {
+		await _awaitCommandQueueIdle();
+		await _awaitPresentedScheduleRevisions();
+		_assertPresetSettled(id, 'stop');
+	} catch (settleError) {
+		await _compensateLateSettlement(id, settleError, compensate);
+	}
+	_releasePreset(id, 'idle', null);
+	return result;
 }
 
 export function abortPreparedPerformancePreset(id: string, reason: string): void {

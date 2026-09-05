@@ -11,6 +11,7 @@
 // own re-export exists for exactly this pairing.
 import { DECK_IDS, type DeckId } from '$lib/player/constants';
 import type { DeckState } from '$lib/rb/deck-state-types';
+import type { PresentedTransportObservation } from '$lib/player/transport/presentation';
 
 export function nextPlayingMaster(playingDecks: readonly DeckId[]): DeckId | null {
 	return DECK_IDS.find((deck) => playingDecks.includes(deck)) ?? null;
@@ -113,4 +114,60 @@ export function masterSwitchFollowers(
 			activity[candidate].playing &&
 			activity[candidate].beat_sync_enabled
 	);
+}
+
+export function naturalEndNeedsRevisionedStop(
+	playing: boolean,
+	observation: Pick<
+		PresentedTransportObservation,
+		'audible' | 'transport_pending' | 'position_sec'
+	>,
+	durationSec: number,
+	scheduleIntentCount: number
+): boolean {
+	if (typeof playing !== 'boolean') {
+		throw new TypeError(`playing must be boolean, got ${String(playing)}`);
+	}
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
+	}
+	if (
+		typeof observation.audible !== 'boolean' ||
+		typeof observation.transport_pending !== 'boolean'
+	) {
+		throw new TypeError('natural-end observation flags must be boolean');
+	}
+	if (!Number.isFinite(observation.position_sec) || observation.position_sec < 0) {
+		throw new RangeError(
+			`natural-end position must be finite and non-negative, got ${observation.position_sec}`
+		);
+	}
+	if (!Number.isInteger(scheduleIntentCount) || scheduleIntentCount < 0) {
+		throw new RangeError(
+			`scheduleIntentCount must be a non-negative integer, got ${scheduleIntentCount}`
+		);
+	}
+	return (
+		playing &&
+		!observation.audible &&
+		!observation.transport_pending &&
+		scheduleIntentCount === 0 &&
+		observation.position_sec >= durationSec
+	);
+}
+
+export interface TransportMutationActivity {
+	playing: boolean;
+	audible: boolean;
+	controlActive: boolean;
+	pendingScheduleCount: number;
+	scheduleIntentCount: number;
+	/** Presentation clock lag: desired_revision !== presented_revision.
+	 * The control clock (`pendingScheduleCount`) drains off `ctx.currentTime`,
+	 * but the presentation clock only advances inside the rAF tick. When rAF
+	 * stops - a hidden tab, or a natural end that left nothing audible to
+	 * animate - the control clock reaches idle while presentation still lags.
+	 * Without this flag a seek takes the paused-cursor branch, which then
+	 * throws in setPausedTransportTimelineCursor and wedges the deck. */
+	presentationPending: boolean;
 }

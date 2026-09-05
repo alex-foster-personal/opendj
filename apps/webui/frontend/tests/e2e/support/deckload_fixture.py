@@ -18,7 +18,7 @@ primary checkout's ``data/``. This module builds a throwaway one instead:
 What that honestly leaves OUT is named rather than faked: these tracks have no
 rekordbox vendor mapping, so ``/anlz`` serves a payload whose beatgrid, cues
 and phrases are all empty. Since Tue 1 Sep 2026 its WAVEFORM is not: those
-peaks come from our own ffmpeg decode of the fixture audio (PARITY-03), so a
+peaks come from our own ffmpeg decode of the fixture audio (PARITY-08), so a
 lane drawn here describes the real tone. The only in-repo beatgrid producer
 for arbitrary audio is ``apps.analysis`` (librosa+madmom), which is
 deliberately absent from the repo venv, so nothing here invents a grid.

@@ -13,6 +13,10 @@ let audio;
 let presentation;
 let headphones;
 let computeFollowerSyncPlan;
+// The pure SLIP hidden-timeline math lives in the player's pure leaf
+// (transport/schedule-math.ts); only the two timeline-shaped helpers
+// (presentedSlipAnchor, slipTempoBoundariesAfterAnchor) are still the engine's.
+let slip;
 let disposeAudioResources;
 let beatLoopFitsWithinDuration;
 
@@ -33,6 +37,7 @@ before(async () => {
 		'src/lib/rb/audio-resource-disposal.ts'
 	));
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
+	slip = await loadTypeScriptModule('src/lib/player/transport/slip-anchor.ts');
 	({ beatLoopFitsWithinDuration } = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
@@ -580,17 +585,17 @@ test('key shift composes with Master Tempo compensation in the native Signalsmit
 });
 
 test('Slip hidden playhead advances linearly from its acknowledged loop schedule without wrapping', () => {
-	const anchor = audio.createSlipAnchor({
+	const anchor = slip.createSlipAnchor({
 		startContextTime: 10,
 		startPositionSec: 30,
 		tempoRatio: 1.25,
 		durationSec: 120
 	});
-	assert.equal(audio.slipHiddenPositionSec(anchor, 10), 30);
-	assert.equal(audio.slipHiddenPositionSec(anchor, 14), 35);
-	assert.equal(audio.slipHiddenPositionSec(anchor, 200), 120);
+	assert.equal(slip.slipHiddenPositionSec(anchor, 10), 30);
+	assert.equal(slip.slipHiddenPositionSec(anchor, 14), 35);
+	assert.equal(slip.slipHiddenPositionSec(anchor, 200), 120);
 	assert.throws(
-		() => audio.createSlipAnchor({ startContextTime: 1, startPositionSec: 2, tempoRatio: 0, durationSec: 3 }),
+		() => slip.createSlipAnchor({ startContextTime: 1, startPositionSec: 2, tempoRatio: 0, durationSec: 3 }),
 		/tempoRatio must be positive/i
 	);
 });
@@ -633,7 +638,7 @@ test('SLIP activation carries acknowledged future tempo boundaries through loop 
 	const boundaries = audio.slipTempoBoundariesAfterAnchor(timeline, anchor);
 	assert.deepEqual(boundaries, [{ startContextTime: 15, tempoRatio: 1.5 }]);
 	assert.equal(
-		audio.slipHiddenPositionWithTempoBoundaries(anchor, boundaries, 17),
+		slip.slipHiddenPositionWithTempoBoundaries(anchor, boundaries, 17),
 		18,
 		'loop release at 17s resumes 4s at the old rate plus 2s at 1.5x'
 	);
@@ -681,9 +686,9 @@ test('KEY SYNC uses the same presented manual-shift baseline for pending desired
 	assert.equal(target, 2, 'the second unpresented command must not compound the pending +1 into +3');
 });
 test('Slip activation is limited to playing decks with SLIP enabled', () => {
-	assert.equal(audio.shouldActivateSlip(true, true), true);
-	assert.equal(audio.shouldActivateSlip(false, true), false);
-	assert.equal(audio.shouldActivateSlip(true, false), false);
+	assert.equal(slip.shouldActivateSlip(true, true), true);
+	assert.equal(slip.shouldActivateSlip(false, true), false);
+	assert.equal(slip.shouldActivateSlip(true, false), false);
 });
 
 test('central seek quantization snaps to real PQTZ and missing grids fail explicitly', () => {

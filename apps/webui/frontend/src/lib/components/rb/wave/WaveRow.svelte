@@ -21,7 +21,12 @@
 		unregisterAnlzConsumer
 	} from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
-	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
+	import {
+		hasAnlzBeatgrid,
+		shouldUseBeatgridFallback,
+		toSyntheticAnlzData,
+		withFallbackBeatgrid
+	} from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
 	import {
 		foldPresentationSample,
@@ -82,20 +87,41 @@
 	// ---- beatgrid fallback: only reached once /anlz has confirmed no
 	// rekordbox ANLZ exists (anlz-fallback-beatgrid, LANE analysis-router).
 	// ANLZ always preferred - this never races or overrides a real payload.
+	//
+	// vendor is passed as null ON PURPOSE. The gate's other branch - a 200
+	// /anlz payload with an empty grid on an UNMAPPED track - is owned by the
+	// engine's deferred _upgradeDeckBeatgrid, which merges that grid into
+	// deck.anlz so quantize, beat loops and Beat Sync get it too. Probing
+	// /rb-meta again here would only duplicate that fetch, so this row stays
+	// on the ANALYSIS_NOT_FOUND lane and picks the merged grid up via anlzData.
+	const fallbackGate = $derived({
+		anlzErrorCode,
+		anlz: anlzData,
+		vendor: null
+	});
 	$effect(() => {
 		const sid = deck.stable_id;
-		if (sid !== null && shouldUseBeatgridFallback(anlzErrorCode)) ensureBeatgridFallback(sid);
+		if (sid !== null && shouldUseBeatgridFallback(fallbackGate)) ensureBeatgridFallback(sid);
 	});
 	const beatgridFallback = $derived.by(() => {
-		if (deck.stable_id === null || !shouldUseBeatgridFallback(anlzErrorCode)) return null;
+		if (deck.stable_id === null || !shouldUseBeatgridFallback(fallbackGate)) return null;
 		const entry = getBeatgridFallbackEntry(deck.stable_id);
 		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
 	});
-	// What the painter/bars-label actually consume: the real ANLZ payload
-	// when present, else a synthesized beatgrid-only payload, else null.
-	const paintAnlz = $derived(
-		anlzData ?? (beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null)
-	);
+	// What the painter/bars-label actually consume: the real ANLZ payload when
+	// present (its own grid, or the fallback grid merged into it), else a
+	// synthesized beatgrid-only payload, else null.
+	const paintAnlz = $derived.by(() => {
+		if (anlzData === null) {
+			return beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null;
+		}
+		// hasAnlzBeatgrid is re-asked rather than inferred from the gate: a stale
+		// cache entry can report ANALYSIS_NOT_FOUND while deck.anlz still holds a
+		// real grid, and withFallbackBeatgrid throws on that - which a $derived
+		// must never do. A real ANLZ grid wins here exactly as it does in the gate.
+		if (beatgridFallback === null || hasAnlzBeatgrid(anlzData)) return anlzData;
+		return withFallbackBeatgrid(anlzData, beatgridFallback);
+	});
 
 	// Bars until next cue; null (hidden) without a beatgrid or upcoming cue.
 	const barsLabel = $derived(

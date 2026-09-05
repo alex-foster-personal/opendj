@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { before, test } from 'node:test';
 
+import { readFrontendSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let ipc;
@@ -56,6 +57,342 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
+});
+
+test('a beatgrid-landed resync claims only its own deck, and widening never makes that claim wait on the wide work', () => {
+	// PARITY-09 / PR #765 P1 ("Route deferred resync through the scoped
+	// scheduler") + three further BLOCKING findings on the fix itself ("Claim
+	// follower scopes during the deferred resync", then r3913350814, then
+	// r3913492572, then r3913693383): audio-engine.svelte.ts's deferred
+	// beatgrid upgrade fires its resync from a continuation that runs well
+	// after the load() command already released its own [deck] scope. That
+	// callback cannot import _commandScheduler directly (this module already
+	// imports audio-engine.svelte.ts, so the reverse import would be cycle #2
+	// against frontend.import_cycles' floor of 1) - so the engine calls back
+	// into a runner installed here, and that runner must be the SAME
+	// scheduler every other performance command uses, not a bypass.
+	//
+	// r3913693383 P1 BLOCKING "keep narrow settlements off unrelated deck
+	// tails": an earlier design reserved [_deck] plus every other deck and
+	// 'sync' up front on EVERY settlement, even the common narrow one that
+	// never touches them - rejected as an unacceptable latency/independence
+	// cost. This claim must reserve [_deck] ALONE.
+	//
+	// r3913492572 P1 BLOCKING "no acquisition that can observe a successor
+	// registered in between": claiming [_deck] alone, then LATER claiming the
+	// wide scopes from a nested call AWAITED by this claim, can deadlock - a
+	// successor submitted in between that shares [_deck] depends on this
+	// claim, and this claim depending on the wide work too (once the
+	// successor has taken a wide scope first) closes a cycle. The fix is
+	// that `widen`'s wide claim must never be awaited or returned by this
+	// claim's own body - fired and left detached, this claim's own tail
+	// resolves independent of the wide work, breaking the only edge that
+	// could close the cycle.
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const start = source.indexOf('installScopedSyncRunner((_deck, run) => {');
+	assert.ok(start > 0, 'installScopedSyncRunner call not found - this test is reading the wrong file');
+	const end = source.indexOf('\nlet _commandGeneration', start);
+	assert.ok(end > start, 'end of installScopedSyncRunner call not found');
+	const body = source.slice(start, end);
+	assert.match(
+		body,
+		/_commandScheduler\s*\n?\s*\.run\(\[_deck\],/,
+		'installScopedSyncRunner must claim ONLY [_deck] up front - reserving the wide scopes too, ' +
+			'even for a settlement that turns out narrow, reopens the r3913693383 finding'
+	);
+	assert.doesNotMatch(body, /\breserve\(/, 'installScopedSyncRunner must not call the removed reserve() primitive');
+	const widenStart = body.indexOf('const widen: WidenScope = (work) => {');
+	assert.ok(widenStart > 0, 'widen closure not found');
+	const runCallStart = body.indexOf('.run([_deck],');
+	assert.ok(runCallStart > widenStart, 'widen must be defined BEFORE the [_deck] claim so it can be passed in, never awaited by it');
+	const widenBody = body.slice(widenStart, runCallStart);
+	assert.match(
+		widenBody,
+		/_commandScheduler\.run\(\[\.\.\.DECK_IDS, 'sync'\],/,
+		"widen must fire a SEPARATE top-level claim for every deck (INCLUDING [_deck] itself, r3914267990) plus 'sync' - " +
+			'excluding [_deck] leaves a gap, the instant this claim releases it, where a fresh command on the same deck ' +
+			'can race the still in-flight wide reconciliation'
+	);
+	assert.match(
+		widenBody,
+		/await work\(\)/,
+		'the wide claim must still actually run the caller-supplied work, even once wrapped in its own ' +
+			'queued/active bookkeeping (discussion_r3914921214)'
+	);
+	const outerClaimBody = body.slice(runCallStart);
+	assert.doesNotMatch(
+		outerClaimBody,
+		/await widen\(/,
+		"the [_deck] claim's own body must never await widen(...) - doing so reopens the r3913492572 deadlock"
+	);
+});
+
+test('the deferred resync is counted in performanceCommandStatus while it holds the scheduler, not invisible to it', () => {
+	// P1 raised on re-review, Tue 2 Sep 2026: every OTHER caller of
+	// _commandScheduler.run (_enqueuePresetPhase, the regular command
+	// dispatcher) bumps queued/active/deck_pending around the call so
+	// startPerformancePresetTransaction's `state.command_pending ||
+	// state.command_queued !== 0` readiness check can see in-flight work. The
+	// installScopedSyncRunner callback claims the SAME scheduler scope but,
+	// before this fix, was a bare pass-through with none of that bookkeeping -
+	// so a preset transaction could observe command_pending === false and
+	// publish 'ready' while this resync was still queued or running behind
+	// it, letting it silently alter transport schedules after the preset
+	// claimed to be settled. Bookkeeping now bumps [_deck] around the outer
+	// claim and, separately, every deck (including [_deck] again, r3914267990:
+	// the widen closure's own claim now covers [_deck] too, so its pending
+	// count must stay elevated across the same span) around the widen closure -
+	// never an unconditional DECK_IDS sweep for the OUTER claim, which would
+	// count a narrow-scope resync against decks it never actually claimed.
+	//
+	// discussion_r3914921214 (P1 BLOCKING, further re-review): the widen
+	// closure bumped deck_pending for the wide phase but never queued/active,
+	// so queryPerformanceState()'s AGGREGATE command_pending (active > 0 ||
+	// queued > 0) stayed false the entire time the wide reconciliation was
+	// queued or running - only the PER-DECK command_pending (deck_pending >
+	// 0) saw it. A preset transaction's readiness check reads the aggregate
+	// field, so it could still publish 'ready' while the wide phase ran. The
+	// wide phase now gets its own queued-to-active transition, mirroring the
+	// outer [_deck] claim's, so the aggregate field sees it too.
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const start = source.indexOf('installScopedSyncRunner((_deck, run) => {');
+	assert.ok(start > 0, 'installScopedSyncRunner call not found - this test is reading the wrong file');
+	const end = source.indexOf('\nlet _commandGeneration', start);
+	const body = source.slice(start, end);
+	for (const bump of [
+		'performanceCommandStatus.queued += 1',
+		'performanceCommandStatus.deck_pending[_deck] += 1',
+		'performanceCommandStatus.active += 1',
+		'performanceCommandStatus.active -= 1',
+		'performanceCommandStatus.deck_pending[_deck] -= 1',
+		'for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1',
+		'for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1'
+	]) {
+		assert.ok(
+			body.includes(bump),
+			`installScopedSyncRunner's callback must include "${bump}" - otherwise the ` +
+				'deferred resync is invisible to command_pending/command_queued while it ' +
+				'holds the scheduler scope, or counts against decks it never actually claimed'
+		);
+	}
+	const widenStart = body.indexOf('const widen: WidenScope = (work) => {');
+	assert.ok(widenStart > 0, 'widen closure not found');
+	const widenBody = body.slice(widenStart, body.indexOf('.run([_deck],'));
+	assert.ok(
+		widenBody.includes('performanceCommandStatus.queued += 1'),
+		"widen's own wide claim must bump queued when it is scheduled, not just deck_pending - " +
+			'otherwise queryPerformanceState()\'s aggregate command_pending (active > 0 || queued > 0) ' +
+			'never sees the wide phase, even though the per-deck field does (discussion_r3914921214)'
+	);
+	assert.ok(
+		widenBody.includes('performanceCommandStatus.active += 1') &&
+			widenBody.includes('performanceCommandStatus.active -= 1'),
+		"widen's own wide claim must transition queued -> active once its work actually starts, " +
+			'mirroring the outer [_deck] claim (discussion_r3914921214)'
+	);
+});
+
+test('startPerformancePresetTransaction and stopPerformancePresetTransaction poll for the queue to drain before their readiness check', () => {
+	// discussion_r3919212909 (P1 BLOCKING): a settlement's narrow [_deck] claim
+	// can detach (its own command() resolves) before widen() has even been
+	// called, so the wide claim only registers itself in the scheduler's tail
+	// map at that later point. If a preset START/STOP claim is submitted in
+	// between, it already took over the tail map for every scope the wide
+	// claim needs, so the wide claim ends up waiting on the PRESET's tail
+	// while the preset itself only ever waited on the narrow claim. The
+	// preset's own claim releases its tail (letting the wide claim start)
+	// BEFORE _enqueuePresetPhase's await in startPerformancePresetTransaction/
+	// stopPerformancePresetTransaction returns, so a single synchronous
+	// idleness check right after it reads the wide claim as still
+	// queued/active EVERY time this ordering occurs - not a rare race, a
+	// guaranteed one, since the very fix that made the wide claim visible to
+	// command_pending/command_queued (r3914921214, the test above) is what
+	// turned this into a hard, deterministic throw instead of a silent miss.
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const pollFnStart = source.indexOf('async function _pollUntilSettled(');
+	assert.ok(pollFnStart > 0, '_pollUntilSettled not found - this test is reading the wrong file');
+	const pollFnEnd = source.indexOf('\nasync function _awaitCommandQueueIdle', pollFnStart);
+	assert.ok(pollFnEnd > pollFnStart, '_awaitCommandQueueIdle marker not found after _pollUntilSettled');
+	const pollFnBody = source.slice(pollFnStart, pollFnEnd);
+	assert.ok(
+		pollFnBody.includes('setTimeout') &&
+			pollFnBody.includes('requestAnimationFrame') &&
+			pollFnBody.includes('Promise.race'),
+		'the shared preset settle poll must race a timer-backed deadline against each requestAnimationFrame wait ' +
+			'(discussion_r3919293437 P2 BLOCKING) - a bound checked only before awaiting rAF never actually ' +
+			'expires on a hidden/backgrounded tab, since Chromium can suspend rAF callbacks indefinitely while ' +
+			'setTimeout keeps firing, so a plain rAF-only poll can leave a preset transaction, including ' +
+			'unmount stop cleanup, pending forever even after the command queue has drained'
+	);
+	const idleFnStart = source.indexOf('async function _awaitCommandQueueIdle(');
+	assert.ok(idleFnStart > 0, '_awaitCommandQueueIdle not found - this test is reading the wrong file');
+	const idleFnBody = source.slice(idleFnStart, source.indexOf('\n/**', idleFnStart));
+	assert.ok(
+		idleFnBody.includes('!state.command_pending && state.command_queued === 0'),
+		'_awaitCommandQueueIdle must poll queryPerformanceState() itself, not a snapshot taken once before the loop'
+	);
+	for (const [name, marker] of [
+		['startPerformancePresetTransaction', 'export async function startPerformancePresetTransaction<T>('],
+		['stopPerformancePresetTransaction', 'export async function stopPerformancePresetTransaction<T>(']
+	]) {
+		const fnStart = source.indexOf(marker);
+		assert.ok(fnStart > 0, `${name} not found - this test is reading the wrong file`);
+		const fnEnd = source.indexOf('\nexport', fnStart + 1);
+		const fnBody = source.slice(fnStart, fnEnd);
+		const enqueueIndex = fnBody.indexOf('await _enqueuePresetPhase(id, work)');
+		const idleIndex = fnBody.indexOf('await _awaitCommandQueueIdle()');
+		const checkIndex = fnBody.indexOf('_assertPresetSettled(id,');
+		assert.ok(enqueueIndex > 0, `${name} must call _enqueuePresetPhase`);
+		assert.ok(
+			idleIndex > enqueueIndex && idleIndex < checkIndex,
+			`${name} must await _awaitCommandQueueIdle() AFTER _enqueuePresetPhase resolves and BEFORE the ` +
+				'readiness check, so a wide claim that only just became visible to command_pending/' +
+				'command_queued gets a real chance to drain instead of failing the check on its first, ' +
+				'guaranteed-non-idle read'
+		);
+	}
+});
+
+test('a preset publishes ready only once every deck has presented its desired schedule revision', () => {
+	// discussion_r3919293425 (P1 BLOCKING): draining the command queue is not the
+	// same guarantee as reaching the audio output. A settlement whose narrow
+	// [_deck] claim preceded START, but which only registered its WIDE claim
+	// after START had claimed every scope, sits BEHIND the preset in the tail
+	// map - so it runs after startPerformancePreset already finished its own
+	// waitForPerformancePresetPresented, and its cross-deck phase-lock can
+	// acknowledge a fresh schedule revision on any deck it touches. Waiting for
+	// the queue makes that reconciliation FINISH; it does not make its revision
+	// audible. AGENTS.md's preset contract is explicit that ready comes only
+	// "after all decks are audible with matching desired/presented revisions and
+	// an idle command queue", and the revision half was never rechecked here.
+	//
+	// Restoring the settlement's queue POSITION instead would mean claiming the
+	// wide scopes up front, at submission time - the design r3913693383 already
+	// rejected as an unacceptable latency and independence cost, and the exact
+	// opposite of what r3919411682 asks for. So the fix is the postcondition.
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const assertStart = source.indexOf('function _assertPresetSettled(');
+	assert.ok(assertStart > 0, '_assertPresetSettled not found - this test is reading the wrong file');
+	const assertBody = source.slice(assertStart, source.indexOf('\nfunction _recordPresetFailure', assertStart));
+	assert.ok(
+		assertBody.includes('state.command_pending || state.command_queued !== 0'),
+		'the readiness assertion must still reject a non-idle command queue'
+	);
+	assert.ok(
+		assertBody.includes('performanceDecksAwaitingPresentation(state)'),
+		'the readiness assertion must ALSO reject a deck whose desired schedule revision has not been presented'
+	);
+	for (const [name, marker] of [
+		['startPerformancePresetTransaction', 'export async function startPerformancePresetTransaction<T>('],
+		['stopPerformancePresetTransaction', 'export async function stopPerformancePresetTransaction<T>(']
+	]) {
+		const fnStart = source.indexOf(marker);
+		const fnBody = source.slice(fnStart, source.indexOf('\nexport', fnStart + 1));
+		const idleIndex = fnBody.indexOf('await _awaitCommandQueueIdle()');
+		const presentedIndex = fnBody.indexOf('await _awaitPresentedScheduleRevisions()');
+		const assertIndex = fnBody.indexOf('_assertPresetSettled(id,');
+		const releaseIndex = fnBody.indexOf('_releasePreset(id,');
+		assert.ok(
+			presentedIndex > idleIndex && assertIndex > presentedIndex && releaseIndex > assertIndex,
+			`${name} must drain the queue, then wait for every deck's desired revision to be presented, ` +
+				'then assert both, and only then publish the lifecycle phase - asserting without waiting ' +
+				'would throw on a reconciliation that is merely still in flight'
+		);
+	}
+});
+
+test('a preset settle failure raised after the work returned still mutes and stops the decks', () => {
+	// discussion_r3919692501 (P1 BLOCKING): the two settle waits above run
+	// AFTER _enqueuePresetPhase resolves, and they have to - holding the
+	// all-scope claim while waiting for the widened reconciliation that needs
+	// those very scopes is the r3913492572 deadlock. But that also puts them
+	// outside startPerformancePreset's own rollback boundary, which closed when
+	// it returned with playback already unmuted. A timeout therefore threw with
+	// four decks audible, and the route's _start catch only records routeError.
+	// So the transaction re-creates the boundary itself.
+	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const compStart = source.indexOf('async function _compensateLateSettlement(');
+	assert.ok(compStart > 0, '_compensateLateSettlement not found - this test is reading the wrong file');
+	const compBody = source.slice(compStart, source.indexOf('\nfunction _recordPresetFailure', compStart));
+	const muteIndex = compBody.indexOf('engine.setMaster(MUTED_MASTER_VOLUME)');
+	const stopIndex = compBody.indexOf('await _enqueuePresetPhase(id, compensate)');
+	assert.ok(muteIndex > 0, 'the compensation must hard-mute the master output');
+	assert.ok(
+		stopIndex > muteIndex,
+		'the hard mute must be taken BEFORE the reverse-order stop is enqueued - the stop queues behind the ' +
+			'very work that just failed to settle, so muting after it would keep the decks audible for exactly ' +
+			'as long as the failure lasts (same ordering createFailClosedPerformanceTeardown uses)'
+	);
+	assert.ok(
+		compBody.includes('_recordPresetFailure(id, failure)') && compBody.includes('throw failure'),
+		'the settle failure must still be recorded and propagated - compensating must not swallow it'
+	);
+	assert.ok(
+		compBody.includes('new AggregateError('),
+		'a rollback that itself fails must be reported alongside the settle failure, not instead of it'
+	);
+	for (const [name, marker, phase] of [
+		['startPerformancePresetTransaction', 'export async function startPerformancePresetTransaction<T>(', 'ready'],
+		['stopPerformancePresetTransaction', 'export async function stopPerformancePresetTransaction<T>(', 'idle']
+	]) {
+		const fnStart = source.indexOf(marker);
+		const fnBody = source.slice(fnStart, source.indexOf('\nexport', fnStart + 1));
+		assert.ok(
+			fnBody.includes('compensate: (driver: PerformancePresetTransactionDriver) => Promise<unknown>'),
+			`${name} must take the caller's compensating action - only the caller knows the preset's deck order`
+		);
+		const catchIndex = fnBody.indexOf('await _compensateLateSettlement(id, settleError, compensate)');
+		const releaseIndex = fnBody.indexOf(`_releasePreset(id, '${phase}', null)`);
+		assert.ok(
+			catchIndex > 0,
+			`${name} must route a settle failure through _compensateLateSettlement, not let it escape to the ` +
+				'route with the decks left as they were'
+		);
+		assert.ok(
+			releaseIndex > catchIndex,
+			`${name} must only publish '${phase}' after the settle block has passed`
+		);
+		assert.ok(
+			fnBody.indexOf('await _awaitCommandQueueIdle()') > fnBody.indexOf('_enqueuePresetPhase(id, work)'),
+			`${name} must not move the settle waits back inside the all-scope claim (r3913492572 deadlock)`
+		);
+	}
+});
+
+test('performanceDecksAwaitingPresentation names exactly the decks whose desired revision has not reached the output', () => {
+	// The pure half of the fix above, so the postcondition itself is proven
+	// rather than only its call order. A revision pair is the same signal
+	// assertPerformancePresetPresented reads, generalized to every deck: a
+	// deferred reconciliation reschedules whichever followers the sync master
+	// has, and those need not be the preset's own decks.
+	const fresh = ipc.queryPerformanceState();
+	assert.deepEqual(
+		ipc.performanceDecksAwaitingPresentation(fresh),
+		[],
+		'a freshly booted engine has every deck at desired 0 / presented 0 and owes the output nothing'
+	);
+	const clocks = { 1: [4, 4], 2: [7, 5], 3: [0, 0], 4: [2, 1] };
+	const state = {
+		...fresh,
+		decks: Object.fromEntries(
+			Object.entries(clocks).map(([deck, [desired, presented]]) => [
+				deck,
+				{
+					...fresh.decks[deck],
+					transport_clock: {
+						...fresh.decks[deck].transport_clock,
+						desired_revision: desired,
+						presented_revision: presented
+					}
+				}
+			])
+		)
+	};
+	assert.deepEqual(
+		ipc.performanceDecksAwaitingPresentation(state),
+		[2, 4],
+		'only the decks whose acknowledged schedule revision has not crossed the presentation clock may be reported'
+	);
 });
 
 test('key controls validate through IPC and round-trip serializable shift state', async () => {

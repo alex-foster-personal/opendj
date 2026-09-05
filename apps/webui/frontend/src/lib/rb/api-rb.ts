@@ -46,7 +46,14 @@ export class RbApiError extends Error {
 	constructor(
 		public status: number,
 		public code: string,
-		message: string
+		message: string,
+		/** The raw `{detail: {...}}` error body, when a caller chose to keep
+		 * it - most callers only need code/message, so this defaults to null
+		 * rather than forcing every construction site to thread it through.
+		 * beatgrid-upgrade.ts reads `body.detail.anlz_available` off a 404
+		 * here: the same field a 200 response carries, but otherwise lost the
+		 * moment ApiError converts onto this type. */
+		public body: unknown = null
 	) {
 		super(`${code}: ${message}`);
 		this.name = 'RbApiError';
@@ -495,16 +502,29 @@ export async function listTracksHydrated(params: {
  * a library prefetch and a deck load do not double-hit the backend. */
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
-export async function fetchAnlz(stable_id: string, points = 38400): Promise<AnlzWithVocals> {
+/** `bypassCache: true` forces a `no-store` network read and skips the
+ * in-flight de-dup below: an authoritative recheck (a vendor mapping that
+ * may have landed after the deck's own /anlz already served the empty
+ * local payload, which the backend caches for an hour) must never be
+ * satisfied by either cache. */
+export async function fetchAnlz(
+	stable_id: string,
+	points = 38400,
+	bypassCache = false
+): Promise<AnlzWithVocals> {
 	const key = `${stable_id}:${points}`;
-	const existing = _inflightAnlz.get(key);
-	if (existing !== undefined) return existing;
+	if (!bypassCache) {
+		const existing = _inflightAnlz.get(key);
+		if (existing !== undefined) return existing;
+	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		bypassCache ? 'no-store' : undefined
 	).then((data) => {
 		vocalsOf(data);
 		return data;
 	});
+	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
 		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
 	});

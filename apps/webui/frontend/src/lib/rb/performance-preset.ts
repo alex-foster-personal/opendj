@@ -25,7 +25,7 @@ const LOOP_BOUNDARY_TOLERANCE_MS = 0.01;
 const DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS = 750;
 const DEFAULT_PRESENTATION_TIMEOUT_MS = 30_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
-const MUTED_MASTER_VOLUME = 0;
+export const MUTED_MASTER_VOLUME = 0;
 
 export type PerformancePresetPhase =
 	| 'loading'
