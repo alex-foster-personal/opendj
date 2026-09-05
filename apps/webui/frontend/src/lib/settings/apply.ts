@@ -3,12 +3,16 @@
  * Unknown keys throw (fail-loud).
  */
 import {
+	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
 	setAutoPlayEnforceOrder,
 	setAutoPlayMaximizeReach,
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setConfirmPref,
+	setDeckLayoutAnimate,
+	setDeckLayoutDurationMs,
+	setDeckLayoutMode,
 	setHideBrokenLinks,
 	setHideTodoSettings,
 	setLibraryDensity,
@@ -17,6 +21,8 @@ import {
 	setTheme,
 	uiPrefs,
 	type AutoSyncDestination,
+	type DeckLayoutDurationMs,
+	type DeckLayoutMode,
 	type LibraryDensity,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
@@ -32,6 +38,9 @@ export const ALLOWED_SETTING_KEYS = [
 	'next_only_filter',
 	'hide_todo_settings',
 	'technically_working_animate',
+	'deck_layout',
+	'deck_layout_animate',
+	'deck_layout_duration_ms',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
 	'auto_sync.open_dj',
@@ -69,6 +78,12 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.hide_todo_settings;
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
+		case 'deck_layout':
+			return uiPrefs.deck_layout;
+		case 'deck_layout_animate':
+			return uiPrefs.deck_layout_animate;
+		case 'deck_layout_duration_ms':
+			return String(uiPrefs.deck_layout_duration_ms);
 		case 'auto_sync.rekordbox':
 			return uiPrefs.auto_sync.rekordbox;
 		case 'auto_sync.djay':
@@ -125,6 +140,26 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'technically_working_animate':
 			setTechnicallyWorkingAnimate(_asBool(value, key));
 			return;
+		case 'deck_layout': {
+			if (value !== 'more' && value !== 'less') {
+				throw new Error(`deck_layout must be more|less, got ${String(value)}`);
+			}
+			setDeckLayoutMode(value as DeckLayoutMode);
+			return;
+		}
+		case 'deck_layout_animate':
+			setDeckLayoutAnimate(_asBool(value, key));
+			return;
+		case 'deck_layout_duration_ms': {
+			const n = Number(value);
+			if (!(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(n)) {
+				throw new Error(
+					`deck_layout_duration_ms must be one of ${DECK_LAYOUT_DURATIONS_MS.join(', ')}, got ${String(value)}`
+				);
+			}
+			setDeckLayoutDurationMs(n as DeckLayoutDurationMs);
+			return;
+		}
 		case 'auto_sync.rekordbox':
 		case 'auto_sync.djay':
 		case 'auto_sync.open_dj': {

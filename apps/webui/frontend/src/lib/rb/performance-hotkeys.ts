@@ -12,6 +12,12 @@ import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
 
+// Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
+// can take DeckId from here instead of a fresh direct import of deck-slots.ts,
+// which sits at its frontend.max_fan_in allowance (same pairing as DECK_IDS
+// alongside DeckId in $lib/player/constants).
+export type { DeckId };
+
 const HOVER_ARM_MS = 250;
 const MIN_BEATS = 1;
 const MAX_BEATS = 512;

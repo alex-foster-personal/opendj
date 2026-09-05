@@ -19,7 +19,6 @@
 	import type { AnlzBeat } from '$lib/rb/anlz-types';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
-	import { beatLoopFitsWithinDuration } from '$lib/player/transport/loops';
 	import {
 		armLoopHover,
 		clearLoopHover,
@@ -32,6 +31,17 @@
 		loopIntervalView,
 		shiftedLoopIntervalBase
 	} from '$lib/rb/loop-interval-view.svelte';
+	import {
+		canChooseInterval,
+		intervalChoiceTip,
+		loopDisabledTip,
+		loopRestartTip,
+		reapplyEngageArgs,
+		resizeAnchorOf,
+		restartEngageArgs,
+		safetyLoopTip
+	} from './loop-cluster-actions';
+	import LoopSafetyControls from './LoopSafetyControls.svelte';
 
 	let {
 		deck,
@@ -118,17 +128,7 @@
 	// a real grid. Bounds are the only gate.
 	const canGridDown: boolean = $derived(prevGridBase < gridBase);
 	const canGridUp: boolean = $derived(nextGridBase > gridBase);
-	const disabledTip: string = $derived(
-		pending
-			? 'deck command pending'
-			: deck.stable_id === null
-			? 'no track loaded'
-			: deck.anlz === null || deck.anlz.beatgrid.beats.length === 0
-				? 'track has no beatgrid - beat loop unavailable'
-				: deck.anlz.beatgrid.beats.length <= beatLength
-					? `beatgrid has too few beats for a ${beatLength}-beat loop`
-				: ''
-	);
+	const disabledTip: string = $derived(loopDisabledTip({ pending, deck, beatLength }));
 
 	// ----------------------------------------------------------- _helpers
 
@@ -138,32 +138,23 @@
 
 	/** A choice is engageable when `n` beats actually fit from the loop
 	 * anchor (the engaged loop's in point, or the live position otherwise)
-	 * AND end at or before the decoded duration - not merely when the total
-	 * grid is longer than `n`, which can be true with fewer than `n` beats
-	 * left ahead near the end of a track, or true only because the engine
-	 * would silently clip the engaged loop shorter than `n` beats.
-	 *
-	 * The currently engaged length is always choosable regardless of that
-	 * fit check: a loop engaged by another surface (e.g. a direct
-	 * `beat_loop` command) can report a `beat_length` the grid's own fit
-	 * math would refuse, since the engine clips the endpoint to duration
-	 * rather than rejecting it. Without this exception that choice renders
-	 * `selected` but `disabled`, and `chooseInterval`'s disengage branch
-	 * becomes unreachable - there is no way to exit that loop from here. */
+	 * AND end at or before the decoded duration - see canChooseInterval's
+	 * own doc comment (loop-cluster-actions.ts) for the full reasoning,
+	 * including why the currently engaged length is always choosable
+	 * regardless of that fit check. */
 	function _canChoose(n: number): boolean {
-		if (pending || deck.stable_id === null || deck.duration_ms === null) return false;
-		if (engagedIntervalLength === n) return true;
-		const startMs = engaged && deck.loop !== null ? deck.loop.in_ms : undefined;
-		return beatLoopFitsWithinDuration(gridBeats, deck.position_ms, n, deck.duration_ms, startMs);
+		return canChooseInterval({ n, pending, deck, engaged, engagedIntervalLength, gridBeats });
 	}
 
 	function _choiceTip(n: number): string {
-		if (pending) return 'deck command pending';
-		if (deck.stable_id === null) return 'no track loaded';
-		if (gridBeatCount === 0) return 'track has no beatgrid - beat loop unavailable';
-		if (!_canChoose(n)) return `${n} beatgrid beats do not fit from here`;
-		if (engagedIntervalLength === n) return 'exit loop';
-		return `loop ${_fmtBeats(n)} beats`;
+		return intervalChoiceTip({
+			n,
+			pending,
+			deck,
+			gridBeatCount,
+			engagedIntervalLength,
+			canChoose: _canChoose(n)
+		});
 	}
 
 	async function chooseInterval(n: number): Promise<void> {
@@ -200,10 +191,18 @@
 		await onIntervalBase(next);
 	}
 
-	async function _reapply(): Promise<void> {
-		// Resize a live loop keeping its in point.
-		if (!engaged || deck.loop === null) return;
-		await onEngage(beatLength, deck.loop.in_ms);
+	/** Which side of the loop stays fixed while resizing - see
+	 * resizeAnchorOf's own doc comment (loop-cluster-actions.ts) for the
+	 * click-modifier mapping. */
+	function _resizeAnchor(event: MouseEvent): 'start' | 'end' | 'center' {
+		return resizeAnchorOf(event);
+	}
+
+	async function _reapply(anchor: 'start' | 'end' | 'center' = 'start'): Promise<void> {
+		if (!engaged) return;
+		const args = reapplyEngageArgs({ anchor, deck, gridBeats, beatLength });
+		if (args === null) return;
+		await onEngage(args.beats, args.startMs);
 	}
 
 	async function toggleLoop(): Promise<void> {
@@ -216,19 +215,37 @@
 		}
 	}
 
-	async function halve(): Promise<void> {
+	async function halve(event: MouseEvent): Promise<void> {
 		if (!canHalve) return;
 		noteLoopInteraction(deckId);
+		const anchor = _resizeAnchor(event);
 		beatLength = nextHalved;
-		await _reapply();
+		await _reapply(anchor);
 	}
 
-	async function double(): Promise<void> {
+	async function double(event: MouseEvent): Promise<void> {
 		if (!canDouble) return;
 		noteLoopInteraction(deckId);
+		const anchor = _resizeAnchor(event);
 		beatLength = nextDoubled;
-		await _reapply();
+		await _reapply(anchor);
 	}
+
+	/** Reissue the live loop's own beat length + in point unchanged - see
+	 * restartEngageArgs' own doc comment (loop-cluster-actions.ts) for why
+	 * the engine treats the exact match as a restart. */
+	async function restartLoop(): Promise<void> {
+		if (pending || !engaged) return;
+		const args = restartEngageArgs(deck);
+		if (args === null) return;
+		noteLoopInteraction(deckId);
+		await onEngage(args.beats, args.startMs);
+	}
+
+	const canRestart: boolean = $derived(
+		!pending && engaged && deck.loop !== null && deck.loop.beat_length !== null
+	);
+	const restartTip: string = $derived(loopRestartTip({ pending, engaged, canRestart }));
 
 	// ------------------------------------------------------ safety loop
 
@@ -236,31 +253,7 @@
 	/** The engine throws unless a loop is actually engaged, so gate the
 	 * button on the same condition rather than letting it error. */
 	const canSaveSafety: boolean = $derived(!pending && engaged);
-	const safetyTip: string = $derived(
-		canSaveSafety
-			? 'save the engaged loop as this deck armed safety loop'
-			: pending
-				? 'deck command pending'
-				: 'engage a loop first - there is nothing to save'
-	);
-
-	async function saveSafety(): Promise<void> {
-		if (!canSaveSafety) return;
-		noteLoopInteraction(deckId);
-		await onSafetySave();
-	}
-
-	async function toggleSafetyArmed(): Promise<void> {
-		if (pending || safety === null) return;
-		noteLoopInteraction(deckId);
-		await onSafetyArm(!safety.armed);
-	}
-
-	async function clearSafety(): Promise<void> {
-		if (pending || safety === null) return;
-		noteLoopInteraction(deckId);
-		await onSafetyClear();
-	}
+	const safetyTip: string = $derived(safetyLoopTip({ pending, canSaveSafety }));
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -339,28 +332,58 @@
 			{/each}
 		</div>
 	{:else}
-		<button
-			class="readout"
-			class:engaged
-			disabled={!canToggle}
-			data-performance-control="loop"
-			data-testid={`loop-deck-${deckId}`}
-			aria-label={`loop deck ${deckId}`}
-			aria-pressed={engaged}
-			data-state={engaged ? 'on' : 'off'}
-			title={canToggle ? (engaged ? 'exit loop' : `loop ${_fmtBeats(beatLength)} beats`) : disabledTip}
-			onclick={toggleLoop}
-		>
-			{_fmtBeats(beatLength)}
-		</button>
+		<div class="readout-wrap">
+			<button
+				class="readout"
+				class:engaged
+				disabled={!canToggle}
+				data-performance-control="loop"
+				data-testid={`loop-deck-${deckId}`}
+				aria-label={`loop deck ${deckId}`}
+				aria-pressed={engaged}
+				data-state={engaged ? 'on' : 'off'}
+				title={canToggle ? (engaged ? 'exit loop' : `loop ${_fmtBeats(beatLength)} beats`) : disabledTip}
+				onclick={toggleLoop}
+			>
+				{_fmtBeats(beatLength)}
+			</button>
+			<button
+				class="restart-btn"
+				disabled={!canRestart}
+				data-performance-control="loop-restart"
+				aria-label="restart loop"
+				title={restartTip}
+				onclick={() => void restartLoop()}
+			>
+				<svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true" focusable="false">
+					<path
+						d="M8 2.5a5.5 5.5 0 1 1-5.196 3.7"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+					/>
+					<path
+						d="M1.6 3.4v3.1h3.1"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</button>
+		</div>
 		<div class="halve-double">
 			<button
 				disabled={!canHalve}
 				data-performance-control="loop-halve"
 				data-testid={`loop-halve-deck-${deckId}`}
 				aria-label={`halve loop deck ${deckId}`}
-				title={canHalve ? 'halve loop length' : disabledTip}
-				onclick={halve}
+				title={canHalve
+					? 'halve loop length - shift: anchor loop end, opt: anchor center'
+					: disabledTip}
+				onclick={(event) => void halve(event)}
 			>
 				&lt;
 			</button>
@@ -369,54 +392,25 @@
 				data-performance-control="loop-double"
 				data-testid={`loop-double-deck-${deckId}`}
 				aria-label={`double loop deck ${deckId}`}
-				title={canDouble ? 'double loop length' : disabledTip}
-				onclick={double}
+				title={canDouble
+					? 'double loop length - shift: anchor loop end, opt: anchor center'
+					: disabledTip}
+				onclick={(event) => void double(event)}
 			>
 				&gt;
 			</button>
 		</div>
 	{/if}
-	<div class="safety">
-		{#if safety === null}
-			<button
-				class="safety-btn"
-				disabled={!canSaveSafety}
-				data-performance-control="safety-loop-save"
-				data-testid={`save-safety-loop-deck-${deckId}`}
-				aria-label={`save safety loop deck ${deckId}`}
-				title={safetyTip}
-				onclick={saveSafety}
-			>
-				SAFE
-			</button>
-		{:else}
-			<button
-				class="safety-btn"
-				class:armed={safety.armed}
-				disabled={pending}
-				data-performance-control="safety-loop-arm"
-				data-testid={`safety-loop-deck-${deckId}`}
-				aria-label={`safety loop deck ${deckId}`}
-				data-state={safety.armed ? 'on' : 'off'}
-				aria-pressed={safety.armed}
-				title={`safety loop ${safety.beat_length ?? '?'} beats at ${Math.round(safety.in_ms)} ms - ${safety.armed ? 'armed, engages instead of running off the end' : 'saved but disarmed'}`}
-				onclick={toggleSafetyArmed}
-			>
-				SAFE {safety.beat_length ?? ''}
-			</button>
-			<button
-				class="safety-clear"
-				disabled={pending}
-				data-performance-control="safety-loop-clear"
-				title="clear the saved safety loop"
-				aria-label={`clear safety loop deck ${deckId}`}
-				data-testid={`clear-safety-loop-deck-${deckId}`}
-				onclick={clearSafety}
-			>
-				&times;
-			</button>
-		{/if}
-	</div>
+	<LoopSafetyControls
+		{deckId}
+		{pending}
+		{safety}
+		{canSaveSafety}
+		{safetyTip}
+		{onSafetySave}
+		{onSafetyArm}
+		{onSafetyClear}
+	/>
 </div>
 
 <style>
@@ -512,6 +506,34 @@
 	.caret {
 		color: var(--rb-text-dim);
 	}
+	.readout-wrap {
+		position: relative;
+		width: 44px;
+	}
+	.restart-btn {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 12px;
+		height: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		background: rgba(8, 10, 13, 0.75);
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.restart-btn:hover:not(:disabled) {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
+	}
+	.restart-btn:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
 	.readout {
 		width: 44px;
 		background: #080a0d;
@@ -553,37 +575,6 @@
 		cursor: pointer;
 	}
 	.halve-double button:disabled {
-		color: var(--rb-text-dim);
-		cursor: default;
-		opacity: 0.6;
-	}
-	.safety {
-		display: flex;
-		gap: 2px;
-		width: 100%;
-	}
-	.safety button {
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		color: var(--rb-text);
-		font-family: var(--rb-font);
-		font-size: var(--rb-fs-label);
-		padding: 1px 0;
-		cursor: pointer;
-	}
-	.safety-btn {
-		flex: 1;
-		font-variant-numeric: tabular-nums;
-	}
-	.safety-btn.armed {
-		border-color: var(--rb-orange);
-		color: var(--rb-orange);
-	}
-	.safety-clear {
-		flex: 0 0 16px;
-	}
-	.safety button:disabled {
 		color: var(--rb-text-dim);
 		cursor: default;
 		opacity: 0.6;

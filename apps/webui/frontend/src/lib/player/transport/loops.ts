@@ -213,6 +213,101 @@ export function targetWithinShiftedLiveLoopMs(
 	return inLoopTargetMs;
 }
 
+/** The latest real PQTZ downbeat (bar 1, `n === 1`) at or before `positionMs`,
+ * never the upcoming one. A fresh loop engaged with no explicit anchor should
+ * feel forgiving about exact click timing: if the DJ's click landed slightly
+ * late relative to the bar, quantizing forward to the NEXT downbeat would
+ * silently skip a whole bar, which reads as far more wrong than starting a
+ * beat or two behind where they meant to loop from. Matching the preceding
+ * beat is the safer assumption. Only ever used for a fresh four-beat loop
+ * with no explicit start_ms - every other loop length or an explicit anchor
+ * keeps the existing nearest-beat behaviour. */
+export function precedingDownbeatMs(beats: readonly AnlzBeat[], positionMs: number): number {
+	validateBeatGrid(beats);
+	if (!Number.isFinite(positionMs) || positionMs < 0) {
+		throw new RangeError(`positionMs must be finite and non-negative, got ${positionMs}`);
+	}
+	const positionSec = positionMs / 1000;
+	let candidate: AnlzBeat | null = null;
+	for (const beat of beats) {
+		if (beat.t > positionSec) break;
+		if (beat.n === 1) candidate = beat;
+	}
+	if (candidate === null) {
+		throw new RangeError(`no PQTZ downbeat (n===1) at or before ${positionMs}ms`);
+	}
+	return candidate.t * 1000;
+}
+
+/** Resize an engaged, beat-aligned loop to `beatCount` beats, anchored so
+ * one side stays fixed (or both move together for `center`):
+ *   - 'start': loop-in fixed, loop-out moves (current halve/double behaviour).
+ *   - 'end': loop-out fixed, loop-in moves.
+ *   - 'center': loop-out and loop-in move by equal, opposite PQTZ beat
+ *     counts, like a Photoshop centered transform.
+ * All three land on real PQTZ beat timestamps or throw - a centered resize
+ * whose beat delta cannot be split evenly across both sides is refused
+ * rather than guessed at, since sub-beat loops are not supported. */
+export function resizedLoopRangeMs(
+	beats: readonly AnlzBeat[],
+	loop: { in_ms: number; out_ms: number },
+	beatCount: number,
+	anchor: 'start' | 'end' | 'center',
+	durationMs: number
+): { in_ms: number; out_ms: number } {
+	validateBeatGrid(beats);
+	if (!Number.isInteger(beatCount) || beatCount <= 0) {
+		throw new RangeError(`beatCount must be a positive integer, got ${beatCount}`);
+	}
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		throw new RangeError(`decoded duration must be finite and positive, got ${durationMs}`);
+	}
+	if (
+		!Number.isFinite(loop.in_ms) ||
+		!Number.isFinite(loop.out_ms) ||
+		loop.in_ms < 0 ||
+		loop.out_ms <= loop.in_ms
+	) {
+		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
+	}
+	const inSec = quantizeToNearestBeat(beats, loop.in_ms / 1000);
+	const outSec = quantizeToNearestBeat(beats, loop.out_ms / 1000);
+	const inIndex = beats.findIndex((beat) => beat.t === inSec);
+	const outIndex = beats.findIndex((beat) => beat.t === outSec);
+	if (inIndex < 0 || outIndex <= inIndex) {
+		throw new RangeError(`loop ${loop.in_ms}..${loop.out_ms}ms does not align to real PQTZ beats`);
+	}
+	let newIn: number;
+	let newOut: number;
+	if (anchor === 'start') {
+		newIn = inIndex;
+		newOut = inIndex + beatCount;
+	} else if (anchor === 'end') {
+		newIn = outIndex - beatCount;
+		newOut = outIndex;
+	} else {
+		const currentLength = outIndex - inIndex;
+		const delta = beatCount - currentLength;
+		if (delta % 2 !== 0) {
+			throw new RangeError(
+				`centered resize from ${currentLength} to ${beatCount} beats is not evenly splittable across both sides`
+			);
+		}
+		const half = delta / 2;
+		newIn = inIndex - half;
+		newOut = outIndex + half;
+	}
+	if (newIn < 0 || newOut <= newIn || newOut >= beats.length) {
+		throw new RangeError(
+			`resized loop (${anchor}) to ${beatCount} beats does not fit on the grid from ${loop.in_ms}..${loop.out_ms}ms`
+		);
+	}
+	if (beats[newOut].t * 1000 > durationMs) {
+		throw new RangeError(`resized loop exceeds decoded duration ${durationMs}ms`);
+	}
+	return { in_ms: beats[newIn].t * 1000, out_ms: beats[newOut].t * 1000 };
+}
+
 export function exactBeatLoopRangeMs(
 	beats: readonly AnlzBeat[],
 	positionMs: number,

@@ -12,6 +12,17 @@
  */
 
 import { api, unwrap } from '../api/client';
+import {
+	validateDeckLayoutFields,
+	makeDeckLayoutSetters,
+	DECK_LAYOUT_DURATIONS_MS,
+	type DeckLayoutDurationMs,
+	type DeckLayoutMode
+} from './deck-layout-prefs';
+import { parseAutoSync, parseLastPlaylist } from './prefs-fields';
+import type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
+export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
@@ -29,12 +40,6 @@ export type UiTheme = 'dark' | 'light';
 
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
-
-export interface AutoSyncPrefs {
-	rekordbox: boolean;
-	djay: boolean;
-	open_dj: boolean;
-}
 
 export interface RbUiPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
@@ -109,15 +114,13 @@ export interface RbUiPrefs {
 	 * never restored, so a stale number can never reach the screen.
 	 */
 	last_playlist: LastPlaylistPref | null;
-}
-
-/** Persisted pane identity. Mirrors BootPlaylistChoice in the pane contract,
- * declared here so prefs owns its own storage shape rather than importing a
- * component module into the prefs layer. */
-export interface LastPlaylistPref {
-	playlist_id: string;
-	name: string;
-	kind: 'all_tracks' | 'playlist';
+	/** Pin 862cd3: MORE/LESS two-deck performance layout. Default 'more'. */
+	deck_layout: DeckLayoutMode;
+	/** Animate the deck_layout switch. Off = instant swap. prefers-reduced-motion
+	 * always forces 0ms regardless of this setting. */
+	deck_layout_animate: boolean;
+	/** Transition duration in ms when deck_layout_animate is true. */
+	deck_layout_duration_ms: DeckLayoutDurationMs;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -137,7 +140,10 @@ const DEFAULTS: RbUiPrefs = {
 	usb_auto_open_panel: false,
 	technically_working_animate: true,
 	confirm: {},
-	last_playlist: null
+	last_playlist: null,
+	deck_layout: 'more',
+	deck_layout_animate: true,
+	deck_layout_duration_ms: 200
 };
 
 // ----------------------------------------------------------- _helpers
@@ -269,8 +275,13 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
-	const lastPlaylist = _parseLastPlaylist(parsed.last_playlist);
-	const autoSync = _parseAutoSync(parsed.auto_sync);
+	const {
+		deck_layout: deckLayout,
+		deck_layout_animate: deckLayoutAnimate,
+		deck_layout_duration_ms: deckLayoutDurationMs
+	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
+	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
 	if (confirm !== null && typeof confirm !== 'object') {
 		throw new Error(
@@ -305,66 +316,11 @@ function _load(): RbUiPrefs {
 		technically_working_animate:
 			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
-		last_playlist: lastPlaylist
+		last_playlist: lastPlaylist,
+		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
+		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
+		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms
 	};
-}
-
-function _parseAutoSync(raw: unknown): AutoSyncPrefs {
-	if (raw === undefined) return { ...DEFAULTS.auto_sync };
-	if (raw === null || typeof raw !== 'object') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (auto_sync must be an object) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	const obj = raw as Partial<AutoSyncPrefs>;
-	for (const key of ['rekordbox', 'djay', 'open_dj'] as const) {
-		if (obj[key] !== undefined && typeof obj[key] !== 'boolean') {
-			throw new Error(
-				`${STORAGE_KEY}: malformed prefs blob (auto_sync.${key} is not a boolean) - ` +
-					'clear the localStorage key to recover'
-			);
-		}
-	}
-	return {
-		rekordbox: obj.rekordbox ?? DEFAULTS.auto_sync.rekordbox,
-		djay: obj.djay ?? DEFAULTS.auto_sync.djay,
-		open_dj: obj.open_dj ?? DEFAULTS.auto_sync.open_dj
-	};
-}
-
-/** Absent (old blob written before this field existed) is the real first-run
- * state and yields null; present but the wrong shape throws, same as every
- * other field here - a half-valid pane identity would restore into a load
- * against an id that is not a string. */
-function _parseLastPlaylist(raw: unknown): LastPlaylistPref | null {
-	if (raw === undefined || raw === null) return null;
-	if (typeof raw !== 'object') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist must be an object or null) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	const obj = raw as Partial<LastPlaylistPref>;
-	if (typeof obj.playlist_id !== 'string' || obj.playlist_id === '') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist.playlist_id must be a non-empty string) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	if (typeof obj.name !== 'string') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist.name must be a string) - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	if (obj.kind !== 'all_tracks' && obj.kind !== 'playlist') {
-		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (last_playlist.kind must be 'all_tracks'|'playlist') - ` +
-				'clear the localStorage key to recover'
-		);
-	}
-	return { playlist_id: obj.playlist_id, name: obj.name, kind: obj.kind };
 }
 
 function _persist(): void {
@@ -377,6 +333,9 @@ type DiskPrefsPatch = {
 	hide_todo_settings?: boolean;
 	auto_sync?: AutoSyncPrefs;
 	technically_working_animate?: boolean;
+	deck_layout?: DeckLayoutMode;
+	deck_layout_animate?: boolean;
+	deck_layout_duration_ms?: DeckLayoutDurationMs;
 };
 
 async function _syncDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
@@ -491,6 +450,15 @@ export function setTechnicallyWorkingAnimate(next: boolean): void {
 	void _syncDiskPrefs({ technically_working_animate: next });
 }
 
+/** The MORE/LESS deck-layout setters (pin 862cd3), built against this
+ * module's own uiPrefs/_persist/_syncDiskPrefs (deck-layout-prefs.ts). */
+export const {
+	setDeckLayoutMode,
+	toggleDeckLayoutMode,
+	setDeckLayoutAnimate,
+	setDeckLayoutDurationMs
+} = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;
 	_persist();
@@ -526,6 +494,9 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 			hide_todo_settings?: boolean;
 			auto_sync?: AutoSyncPrefs;
 			technically_working_animate?: boolean;
+			deck_layout?: DeckLayoutMode;
+			deck_layout_animate?: boolean;
+			deck_layout_duration_ms?: DeckLayoutDurationMs;
 		};
 		if (body.confirm !== undefined) {
 			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
@@ -538,10 +509,22 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 			uiPrefs.hide_todo_settings = body.hide_todo_settings;
 		}
 		if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
-			uiPrefs.auto_sync = _parseAutoSync(body.auto_sync);
+			uiPrefs.auto_sync = parseAutoSync(body.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 		}
 		if (typeof body.technically_working_animate === 'boolean') {
 			uiPrefs.technically_working_animate = body.technically_working_animate;
+		}
+		if (body.deck_layout === 'more' || body.deck_layout === 'less') {
+			uiPrefs.deck_layout = body.deck_layout;
+		}
+		if (typeof body.deck_layout_animate === 'boolean') {
+			uiPrefs.deck_layout_animate = body.deck_layout_animate;
+		}
+		if (
+			typeof body.deck_layout_duration_ms === 'number' &&
+			(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
+		) {
+			uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
 		}
 		_persist();
 	} catch {

@@ -15,13 +15,23 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { CrossfaderAssign, EqBand } from '$lib/rb/mixer-types';
+	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
 
-	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). */
+	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). Always
+	 * 4 entries, MORE or LESS - pin 862cd3's LESS mode collapses strips 3/4
+	 * (columns 0 and 3 below) to width 0 via CSS only; it never filters this
+	 * array, so all four ChannelStrip instances - and their engine state -
+	 * stay mounted. */
 	const STRIP_ORDER: DeckId[] = [3, 1, 2, 4];
+
+	/** Pin 862cd3: MORE/LESS two-deck performance layout, read from the
+	 * persisted preference (also driven by Cmd/Ctrl+2/+4 via
+	 * deck-layout-hotkeys.ts - same setter, single source of truth). */
+	const deckLayoutLess = $derived(uiPrefs.deck_layout === 'less');
 
 	const assigns: Record<DeckId, CrossfaderAssign> = $derived({
 		1: mixerState.channels[1].assign,
@@ -76,21 +86,43 @@
 </script>
 
 <section class="rb-mixer rb-panel">
-	<div class="strips">
+	<div class="deck-layout-toggle" role="group" aria-label="Deck layout">
+		<button
+			type="button"
+			class="deck-layout-btn"
+			class:active={!deckLayoutLess}
+			title="Show all 4 decks (Cmd/Ctrl+4)"
+			onclick={() => setDeckLayoutMode('more')}
+		>
+			MORE
+		</button>
+		<button
+			type="button"
+			class="deck-layout-btn"
+			class:active={deckLayoutLess}
+			title="Show 2 decks, more library space (Cmd/Ctrl+2)"
+			onclick={() => setDeckLayoutMode('less')}
+		>
+			LESS
+		</button>
+	</div>
+	<div class="strips" class:less={deckLayoutLess}>
 		{#each STRIP_ORDER as deck (deck)}
-			<ChannelStrip
-				deckId={deck}
-				trim={mixerState.channels[deck].trim}
-				eqHigh={mixerState.channels[deck].eq_high}
-				eqMid={mixerState.channels[deck].eq_mid}
-				eqLow={mixerState.channels[deck].eq_low}
-				fader={mixerState.channels[deck].fader}
-				cueEnabled={mixerState.channels[deck].cue_enabled}
-				ontrim={(v) => handleTrim(deck, v)}
-				oneq={(band, v) => handleEq(deck, band, v)}
-				onfader={(v) => handleFader(deck, v)}
-				oncue={(enabled) => handleCue(deck, enabled)}
-			/>
+			<div class="strip-slot" class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}>
+				<ChannelStrip
+					deckId={deck}
+					trim={mixerState.channels[deck].trim}
+					eqHigh={mixerState.channels[deck].eq_high}
+					eqMid={mixerState.channels[deck].eq_mid}
+					eqLow={mixerState.channels[deck].eq_low}
+					fader={mixerState.channels[deck].fader}
+					cueEnabled={mixerState.channels[deck].cue_enabled}
+					ontrim={(v) => handleTrim(deck, v)}
+					oneq={(band, v) => handleEq(deck, band, v)}
+					onfader={(v) => handleFader(deck, v)}
+					oncue={(enabled) => handleCue(deck, enabled)}
+				/>
+			</div>
 		{/each}
 	</div>
 	<div class="lower">
@@ -121,12 +153,58 @@
 		padding: 6px 6px 4px;
 		overflow: hidden;
 	}
+	.deck-layout-toggle {
+		flex: 0 0 auto;
+		display: flex;
+		justify-content: center;
+		gap: 2px;
+		padding-bottom: 4px;
+	}
+	.deck-layout-btn {
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		padding: 2px 10px;
+		border: 1px solid var(--rb-border);
+		background: transparent;
+		color: var(--rb-text-dim, #9aa4b2);
+		cursor: pointer;
+	}
+	.deck-layout-btn:first-child {
+		border-radius: 3px 0 0 3px;
+		border-right: none;
+	}
+	.deck-layout-btn:last-child {
+		border-radius: 0 3px 3px 0;
+	}
+	.deck-layout-btn.active {
+		background: var(--rb-accent, #3d7bfd);
+		color: #fff;
+	}
 	.strips {
 		flex: 1;
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		gap: 2px;
 		min-height: 0;
+		overflow: hidden;
+		transition: grid-template-columns var(--rb-deck-layout-duration, 200ms) ease;
+	}
+	/* LESS: STRIP_ORDER is [3,1,2,4] - columns 0 (deck 3) and 3 (deck 4)
+	 * collapse to 0, columns 1/2 (decks 1/2) expand into the released
+	 * width. Chrome only - deck.less below hides visually, the strip
+	 * component (and its engine wiring above) stays mounted. */
+	.strips.less {
+		grid-template-columns: 0 1fr 1fr 0;
+	}
+	.strip-slot {
+		min-width: 0;
+		overflow: hidden;
+		transition: opacity var(--rb-deck-layout-duration, 200ms) ease;
+	}
+	.strip-slot.collapsed {
+		opacity: 0;
+		pointer-events: none;
 	}
 	.lower {
 		flex: 0 0 auto;

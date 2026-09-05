@@ -89,7 +89,16 @@ export interface CursorPage<T> {
  * advancing) fails loudly instead of looping forever. */
 export async function fetchAllPages<T>(
 	fetchPage: (cursor: string | undefined) => Promise<CursorPage<T>>,
-	opts: { maxPages?: number } = {}
+	opts: {
+		maxPages?: number;
+		/** Called after every successful page append, including the final
+		 * confirming empty page - the honest, page-granular progress signal
+		 * for ad59ac's load indicator. `loaded` is cumulative rows fetched so
+		 * far; `pageCount` is how many page fetches have landed. Never
+		 * interpolated between pages - a stalled request simply does not
+		 * call this again, which is what makes a hang visible. */
+		onPage?: (info: { loaded: number; pageCount: number }) => void;
+	} = {}
 ): Promise<T[]> {
 	const maxPages = opts.maxPages ?? 20000;
 	if (!Number.isSafeInteger(maxPages) || maxPages <= 0) {
@@ -111,6 +120,7 @@ export async function fetchAllPages<T>(
 		const page = await fetchPage(cursor);
 		out.push(...page.items);
 		pages += 1;
+		opts.onPage?.({ loaded: out.length, pageCount: pages });
 		if (page.next_cursor === null) return out;
 		if (pages >= maxPages) {
 			throw new Error(

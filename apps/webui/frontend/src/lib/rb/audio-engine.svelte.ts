@@ -226,6 +226,7 @@ import {
 	exactBeatLoopRangeMs,
 	loopEndpointsWithinDurationMs,
 	phaseLockedSafetyLoopAtTrackEnd,
+	precedingDownbeatMs,
 	quantizedLoopEndpointsMs,
 	replaceMatchingSafetyLoopSnapshot,
 	shiftLiveBeatLoopRangeMs,
@@ -1017,108 +1018,28 @@ export function transportNeedsScheduledMutation(
 	);
 }
 
-export function nextPlayingMaster(playingDecks: readonly DeckId[]): DeckId | null {
-	return DECK_IDS.find((deck) => playingDecks.includes(deck)) ?? null;
-}
-
-export function assertDeckLoadConsistency(
-	stableId: string | null,
-	durationSec: number,
-	hasProcessor: boolean
-): void {
-	const stateLoaded = stableId !== null;
-	const runtimeLoaded = hasProcessor && durationSec > 0;
-	if (stateLoaded !== runtimeLoaded) {
-		throw new Error(
-			`inconsistent deck load state: stable_id=${String(stableId)}, ` +
-				`duration=${durationSec}, processor=${hasProcessor}`
-		);
-	}
-}
-
-export interface DeckReplacementActivity {
-	playing: boolean;
-	audible: boolean;
-	transportPending: boolean;
-	controlActive: boolean;
-	pendingScheduleCount: number;
-	scheduleIntentCount: number;
-}
-
-export function assertDeckReplacementAllowed(
-	deck: DeckId,
-	activity: DeckReplacementActivity
-): void {
-	for (const [name, value] of Object.entries({
-		playing: activity.playing,
-		audible: activity.audible,
-		transportPending: activity.transportPending,
-		controlActive: activity.controlActive
-	})) {
-		if (typeof value !== 'boolean') {
-			throw new TypeError(`${name} must be boolean, got ${String(value)}`);
-		}
-	}
-	for (const [name, value] of Object.entries({
-		pendingScheduleCount: activity.pendingScheduleCount,
-		scheduleIntentCount: activity.scheduleIntentCount
-	})) {
-		if (!Number.isInteger(value) || value < 0) {
-			throw new RangeError(`${name} must be a non-negative integer, got ${value}`);
-		}
-	}
-	const activeReasons = Object.entries(activity)
-		.filter(([, value]) => value === true || (typeof value === 'number' && value > 0))
-		.map(([name]) => name);
-	if (activeReasons.length === 0) return;
-	throw new Error(
-		`load: deck ${deck} must be fully stopped before replacement; active state: ` +
-			activeReasons.join(', ')
-	);
-}
-
-export function loadCandidateCanPublish(candidateToken: number, currentToken: number): boolean {
-	for (const [name, value] of Object.entries({ candidateToken, currentToken })) {
-		if (!Number.isInteger(value) || value <= 0) {
-			throw new RangeError(`${name} must be a positive integer, got ${value}`);
-		}
-	}
-	return candidateToken === currentToken;
-}
-
-export function assertPausedMasterSelectionAllowed(
-	deck: DeckId,
-	audible: boolean,
-	otherActiveDecks: readonly DeckId[]
-): void {
-	if (audible || otherActiveDecks.length === 0) return;
-	throw new Error(
-		`setDeckMaster: cannot select paused deck ${deck} while decks ` +
-			`[${otherActiveDecks.join(',')}] are audible or scheduled to play`
-	);
-}
-
-export function pausedMasterSelectionBlockers(
-	deck: DeckId,
-	activity: Readonly<Record<DeckId, Pick<DeckState, 'audible' | 'playing'>>>
-): DeckId[] {
-	return DECK_IDS.filter(
-		(candidate) =>
-			candidate !== deck && (activity[candidate].audible || activity[candidate].playing)
-	);
-}
-
-export function masterSwitchFollowers(
-	deck: DeckId,
-	activity: Readonly<Record<DeckId, Pick<DeckState, 'playing' | 'beat_sync_enabled'>>>
-): DeckId[] {
-	return DECK_IDS.filter(
-		(candidate) =>
-			candidate !== deck &&
-			activity[candidate].playing &&
-			activity[candidate].beat_sync_enabled
-	);
-}
+// Deck-load/replacement/master-selection guards moved to
+// ./audio-engine-guards (pure functions, no engine state) - re-exported here
+// so external importers and the bundled unit tests keep one import site.
+export {
+	nextPlayingMaster,
+	assertDeckLoadConsistency,
+	type DeckReplacementActivity,
+	assertDeckReplacementAllowed,
+	loadCandidateCanPublish,
+	assertPausedMasterSelectionAllowed,
+	pausedMasterSelectionBlockers,
+	masterSwitchFollowers
+} from './audio-engine-guards';
+import {
+	assertDeckReplacementAllowed,
+	assertDeckLoadConsistency,
+	loadCandidateCanPublish,
+	nextPlayingMaster,
+	pausedMasterSelectionBlockers,
+	assertPausedMasterSelectionAllowed,
+	masterSwitchFollowers
+} from './audio-engine-guards';
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
 	const st = deckStates[deck];
@@ -3506,12 +3427,50 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
-	/** Engage a beat loop using exact consecutive PQTZ timestamps. */
+	/** Engage a beat loop using exact consecutive PQTZ timestamps.
+	 *
+	 * A fresh (no explicit start_ms) four-beat loop anchors on the preceding
+	 * PQTZ downbeat rather than the nearest beat, so timing is forgiving of a
+	 * click that landed slightly late - see precedingDownbeatMs. Every other
+	 * length, or an explicit start_ms, keeps the ordinary nearest-beat anchor.
+	 *
+	 * Reissuing the exact same beats + resulting range as the already-engaged
+	 * loop is a RESTART, not a re-engage: instead of leaving the playhead
+	 * running wherever it is (setLoop's ordinary behaviour), it schedules the
+	 * playhead back to loop-in while retaining the same loop object, in one
+	 * engine transaction. Paused decks publish loop-in immediately.
+	 */
 	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
 		const grid = _requireBeatGrid(st, 'engageBeatLoop');
 		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
-		const range = exactBeatLoopRangeMs(grid, currentMs, beats, startMs);
+		const anchorMs =
+			beats === 4 && startMs === undefined ? precedingDownbeatMs(grid, currentMs) : startMs;
+		const range = exactBeatLoopRangeMs(grid, currentMs, beats, anchorMs);
+		const isRestart =
+			st.loop !== null &&
+			st.loop.engaged &&
+			st.loop.beat_length === beats &&
+			st.loop.in_ms === range.in_ms &&
+			st.loop.out_ms === range.out_ms;
+		if (isRestart) {
+			const retainedLoop = st.loop as LoopState;
+			if (st.playing) {
+				if (_ctx === null) throw new Error('engageBeatLoop: audio graph not initialised');
+				await _scheduleDeck(
+					deck,
+					_futureScheduleTime(deck),
+					range.in_ms / 1000,
+					true,
+					undefined,
+					undefined,
+					retainedLoop
+				);
+			} else {
+				_setPausedPosition(deck, range.in_ms);
+			}
+			return;
+		}
 		const previousLoop = st.loop === null ? null : { ...st.loop };
 		await this.setLoop(deck, range);
 		if (st.loop !== null) st.loop.beat_length = beats;

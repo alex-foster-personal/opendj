@@ -210,6 +210,14 @@ export class PaneStore {
 	 * node) - '' for the All Tracks / blank pane, which have no single
 	 * playlist row to CAS against. Required If-Match for the next mutation. */
 	etag = $state('');
+	/** Page-granular load progress for the LibraryLoadIndicator (ad59ac).
+	 * null when there is no load in flight, or once one has settled -
+	 * a terminal state has nothing left to show progress toward.
+	 * `total` is null until a track_count / health figure is known; the
+	 * indicator must never fabricate a percentage in that case. Updated
+	 * ONLY via updateLoadProgress under the current load's token, so a
+	 * superseded page fetch can never paint over the pane that replaced it. */
+	load_progress = $state<{ loaded: number; total: number | null } | null>(null);
 
 	/** Monotonic load token - deliberately NOT reactive. */
 	#load_seq = 0;
@@ -228,12 +236,24 @@ export class PaneStore {
 		this.truncated = false;
 		this.scroll_top = 0;
 		this.etag = '';
+		this.load_progress = null;
 		return this.#load_seq;
 	}
 
 	/** True while `seq` is still the newest load on this pane. */
 	isCurrentLoad(seq: number): boolean {
 		return this.#load_seq === seq;
+	}
+
+	/** Publish one page's worth of load progress for `seq` (ad59ac). Stale
+	 * tokens are a full no-op, same guard as completeLoad/failLoad - a
+	 * superseded pane's late-arriving page must never paint over the pane
+	 * that replaced it. `total` is null until a total is known; callers must
+	 * not invent one. */
+	updateLoadProgress(seq: number, loaded: number, total: number | null): boolean {
+		if (!this.isCurrentLoad(seq)) return false;
+		this.load_progress = { loaded, total };
+		return true;
 	}
 
 	/** Publish rows for load `seq`. Stale tokens are a full no-op
@@ -245,6 +265,7 @@ export class PaneStore {
 		this.truncated = truncated;
 		this.loading = false;
 		this.etag = etag;
+		this.load_progress = null;
 		return true;
 	}
 
@@ -253,6 +274,7 @@ export class PaneStore {
 		if (!this.isCurrentLoad(seq)) return false;
 		this.error = error;
 		this.loading = false;
+		this.load_progress = null;
 		return true;
 	}
 
@@ -507,55 +529,26 @@ export function applyDecodedStripAcrossPanes(
 }
 
 // ---------------------------------------------------------------- pane tabs
-// RECOVERED, not designed. `BrowserPanel.svelte` has imported both of these
-// since cfbfe55 ("wip(spike)", Fri 24 Jul 2026 01:19) but they were never
-// committed anywhere -- not in the branch, not in the Cursor backup snapshot
-// 718cc81 -- so /performance could not build for anyone. Reconstructed from
-// the two call sites; semantics are inferred, so treat as provisional and
-// replace if the original turns up.
+// Tab reordering + new-tab placement moved to ./pane-tabs (plain array/index
+// math, a distinct concern from the reactive PaneStore contract above).
+// Re-exported here so BrowserPanel.svelte and the existing tests keep one
+// import site for the pane vocabulary.
+export { reorderPanesInPlace, resolveNewTabIndex } from './pane-tabs';
 
-/**
- * Move a pane tab and return where the ACTIVE pane ended up.
- *
- * Mutates ``panes`` in place because the caller holds the same array
- * reference (hence "InPlace" in the name); returns the new active index
- * rather than mutating it, since the caller owns that state.
- */
-export function reorderPanesInPlace<T>(
-	panes: T[],
-	from: number,
-	to: number,
-	activePane: number
-): number {
-	if (
-		from === to ||
-		from < 0 ||
-		to < 0 ||
-		from >= panes.length ||
-		to >= panes.length
-	) {
-		return activePane;
-	}
-	const [moved] = panes.splice(from, 1);
-	panes.splice(to, 0, moved);
-	// Follow the dragged tab if it was the active one; otherwise shift only
-	// when the move crossed the active index.
-	if (activePane === from) return to;
-	if (from < activePane && to >= activePane) return activePane - 1;
-	if (from > activePane && to <= activePane) return activePane + 1;
-	return activePane;
-}
-
-/**
- * Index of the tab a newly opened playlist should take, or null if none is free.
- *
- * Null means every tab is sticky (locked); the caller surfaces that as an
- * explicit toast rather than silently stealing a locked tab.
- */
-export function resolveNewTabIndex(panes: { sticky?: boolean }[]): number | null {
-	const free = panes.findIndex((p) => p.sticky !== true);
-	return free === -1 ? null : free;
-}
+// ---------------------------------------------- playlist deck-context tints
+// Pin 2ac3a0: the tint derivations + the tree's CURRENT fold control moved to
+// ./playlist-context (a distinct concern from the pane store itself - pure
+// derivations over already-hydrated pane state). Re-exported here so existing
+// importers (BrowserPanel.svelte, PlaylistTree.svelte, tests) keep one import
+// site for the pane vocabulary, matching the playlist-drag re-export below.
+export {
+	type PlaylistTint,
+	playlistTintOf,
+	derivePlaylistDeckMembership,
+	derivePlaylistPaneOpenCounts,
+	multiPanePlaylistIds,
+	computeTreeCurrentFold
+} from './playlist-context';
 
 // -------------------------------------------------- playlist drag payload
 // The codec itself lives in ./playlist-drag (pure, runeless, importless).

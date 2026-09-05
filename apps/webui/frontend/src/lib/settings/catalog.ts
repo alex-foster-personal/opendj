@@ -176,6 +176,54 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'deck_layout',
+		label: 'Deck layout (MORE/LESS)',
+		group: 'performance',
+		keywords: ['deck', 'layout', 'more', 'less', '2 deck', '4 deck', 'library', 'space', 'toggle'],
+		title: 'Two vs four deck performance view',
+		detail:
+			'LESS collapses deck 3/4 chrome (mixer strips + waveform rows) and gives the library more room. Decks 3/4 keep playing and stay controllable over IPC - chrome only. Cmd/Ctrl+2 = less, Cmd/Ctrl+4 = more.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'more', label: 'More (4 deck)' },
+				{ value: 'less', label: 'Less (2 deck)' }
+			]
+		}
+	},
+	{
+		id: 'deck_layout_animate',
+		label: 'Animate deck layout switch',
+		group: 'performance',
+		keywords: ['deck', 'layout', 'animate', 'transition', 'more', 'less'],
+		title: 'Animate the MORE/LESS deck layout switch',
+		detail:
+			'When on (default), switching MORE/LESS cross-fades and shrinks the collapsing panels. Off swaps instantly. prefers-reduced-motion always forces instant regardless.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_layout_duration_ms',
+		label: 'Deck layout switch duration',
+		group: 'performance',
+		keywords: ['deck', 'layout', 'duration', 'ms', 'speed', 'transition'],
+		title: 'MORE/LESS transition duration',
+		detail:
+			'How long the MORE/LESS deck layout transition takes when animation is on. Default 200ms.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: '0', label: '0ms' },
+				{ value: '100', label: '100ms' },
+				{ value: '200', label: '200ms' },
+				{ value: '300', label: '300ms' },
+				{ value: '400', label: '400ms' }
+			]
+		}
+	},
+	{
 		id: 'confirm.dblclick_load_play',
 		label: 'Confirm double-click Load+play',
 		group: 'confirmations',

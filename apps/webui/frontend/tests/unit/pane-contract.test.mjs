@@ -21,6 +21,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   decode, and not a matching row's copy loaded in another pane, then broken
 // - if a row's audience-ambiguous, listing-hydrated strip survives a fresh
 //   audience-scoped /anlz decode for the same selected track then broken
+// - if a stale load's updateLoadProgress can still write load_progress then a
+//   superseded pane's late page paints over the pane that replaced it -- broken
+// - if completeLoad/failLoad don't clear load_progress then a finished pane
+//   goes on showing a loading bar with nothing left to load -- broken
+// - if library progress claims work finer than completed cursor pages then the pin is broken
 
 let contract;
 
@@ -149,6 +154,48 @@ test('failLoad records the error and clears loading for the current load', () =>
 	assert.equal(p.failLoad(seq, 'Error: 500'), true);
 	assert.equal(p.error, 'Error: 500');
 	assert.equal(p.loading, false);
+});
+
+test('a stale page cannot overwrite the current pane\'s load progress', () => {
+	const p = contract.createPaneStore();
+	const stale = p.beginLoad('pl-1', 'First');
+	const fresh = p.beginLoad('pl-2', 'Second');
+
+	assert.equal(p.updateLoadProgress(stale, 500, null), false);
+	assert.equal(p.load_progress, null); // the newer load still owns the pane
+
+	assert.equal(p.updateLoadProgress(fresh, 500, null), true);
+	assert.deepEqual(p.load_progress, { loaded: 500, total: null });
+
+	// the stale load still cannot clobber it after the fresh one has data
+	assert.equal(p.updateLoadProgress(stale, 999999, null), false);
+	assert.deepEqual(p.load_progress, { loaded: 500, total: null });
+});
+
+test('terminal success and failure both clear load progress', () => {
+	const p = contract.createPaneStore();
+	const seq = p.beginLoad('pl-1', 'Warmup');
+	p.updateLoadProgress(seq, 500, 1000);
+	assert.deepEqual(p.load_progress, { loaded: 500, total: 1000 });
+	p.completeLoad(seq, [_row()], false);
+	assert.equal(p.load_progress, null);
+
+	const seq2 = p.beginLoad('pl-2', 'Broken');
+	p.updateLoadProgress(seq2, 250, null);
+	assert.deepEqual(p.load_progress, { loaded: 250, total: null });
+	p.failLoad(seq2, 'Error: 500');
+	assert.equal(p.load_progress, null);
+});
+
+test('if library progress claims work finer than completed cursor pages then the pin is broken', () => {
+	// updateLoadProgress must publish EXACTLY the count a completed cursor
+	// page reported - never an interpolated/smoothed value in between pages.
+	const p = contract.createPaneStore();
+	const seq = p.beginLoad('pl-1', 'Warmup');
+	p.updateLoadProgress(seq, 500, null); // page 1 of 500 rows landed
+	assert.equal(p.load_progress.loaded, 500);
+	p.updateLoadProgress(seq, 1000, null); // page 2 landed
+	assert.equal(p.load_progress.loaded, 1000); // exactly the reported cursor total, no smoothing
 });
 
 test('toggleSort: asc → desc → clear (natural order)', () => {

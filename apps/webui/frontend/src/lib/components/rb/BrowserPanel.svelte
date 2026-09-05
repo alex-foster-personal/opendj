@@ -108,8 +108,11 @@
 		applyDecodedStripAcrossPanes,
 		canMutatePlaylist,
 		createPaneStore,
+		derivePlaylistDeckMembership,
+		derivePlaylistPaneOpenCounts,
 		filterRows,
 		makeClientRowProvider,
+		multiPanePlaylistIds,
 		reorderPanesInPlace,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
@@ -123,6 +126,7 @@
 		SortKey
 	} from './browser/pane-contract.svelte';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
+	import LibraryLoadIndicator from './browser/LibraryLoadIndicator.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import { fetchAllPages } from './browser/virtual-window';
@@ -252,6 +256,11 @@
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
 	);
+	// Pin 2ac3a0: playlist deck-membership + multi-pane tints for PlaylistTree,
+	// derived from panes' ALREADY HYDRATED rows only - never a fetch of an
+	// unopened playlist just to colour it in.
+	const deckLoadedPlaylistIds = $derived(derivePlaylistDeckMembership(panes, loadedIds));
+	const multiPanePlaylistIds_ = $derived(multiPanePlaylistIds(derivePlaylistPaneOpenCounts(panes)));
 	// Vocals for PreviewStrip blue bars: listing hydrate (row.vocals) is
 	// the base; loaded-deck / client anlz overwrite only when analyzed.
 	// Strips never fan-out /anlz themselves.
@@ -1188,7 +1197,9 @@
 		try {
 			const result =
 				node.kind === 'all_tracks'
-					? await _fetchAllRows()
+					? await _fetchAllRows((info) =>
+							p.updateLoadProgress(seq, info.loaded, allTracksPlayableCount)
+						)
 					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
@@ -1293,7 +1304,9 @@
 		};
 	}
 
-	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+	async function _fetchAllRows(
+		onPage?: (info: { loaded: number; pageCount: number }) => void
+	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		// All Tracks: walk every cursor page with inline preview/file_exists
 		// (contract 1). PAGE_SIZE is per request, while TrackTable's DOM
 		// virtualization keeps the rendered pane bounded. ?available stays
@@ -1304,7 +1317,10 @@
 		// load and the background refresh land here, and both are the same
 		// ~8k-row cost, so this is the one place that needs the clock.
 		const startedAt = performance.now();
-		const items = await fetchAllPages((cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }));
+		const items = await fetchAllPages(
+			(cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
+			onPage !== undefined ? { onPage } : {}
+		);
 		const rows = items.map((t, i) => _rowFromListWire(t, i + 1));
 		recordLibraryLoadTiming('all-tracks', {
 			fetchMs: performance.now() - startedAt,
@@ -2118,6 +2134,8 @@
 				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
 				trackSelectedId={pane.selected_id}
+				{deckLoadedPlaylistIds}
+				multiPanePlaylistIds={multiPanePlaylistIds_}
 				onselect={selectPlaylist}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}
@@ -2292,6 +2310,7 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
+		<LibraryLoadIndicator progress={pane.load_progress} />
 		<TrackTable
 			{provider}
 			selectedIds={pane.selected_ids}
