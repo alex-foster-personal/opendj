@@ -320,6 +320,67 @@ class TestRoundTripReads:
         s = backend.stats()
         assert s == {"tracks": 3, "playlists": 2, "pairings": 0}
 
+    def test_get_file_paths_bulk_matches_tracks_bulk_file_paths(
+        self, fresh_state_db: Path,
+    ) -> None:
+        """pin e0f3a90652a9: the narrow read must agree with the general
+        one on the one field they share, dedupe repeats, and omit ids that
+        do not exist -- same absence contract as get_tracks_bulk."""
+        backend = SqliteBackend(fresh_state_db)
+        ids = ["sid-001", "sid-002", "sid-001", "missing-id"]
+
+        narrow = backend.get_file_paths_bulk(ids)
+        full = backend.get_tracks_bulk(ids)
+
+        assert narrow == {
+            sid: t.file_path for sid, t in full.items()
+        }
+        assert narrow == {
+            "sid-001": "/music/midnight.mp3",
+            "sid-002": "/music/oxide.mp3",
+        }
+        assert "missing-id" not in narrow
+
+    def test_get_file_paths_bulk_empty_input(self, fresh_state_db: Path) -> None:
+        backend = SqliteBackend(fresh_state_db)
+        assert backend.get_file_paths_bulk([]) == {}
+
+    def test_get_file_paths_bulk_never_invokes_the_eav_fetch(
+        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """pin e0f3a90652a9, review thread PRRT_kwDOSEvNd86fkJ-n: the
+        InMemoryBackend/get_tracks_bulk-monkeypatch guards in
+        tests/webui/test_playlists.py cannot detect a regression back to
+        full-Track hydration on SqliteBackend, because InMemoryBackend has
+        no EAV fetch to begin with. Exercise SqliteBackend directly and make
+        ``_fetch_fields`` (the ``track_fields`` EAV pass -- see module
+        docstring) raise if called at all, so this test can only pass while
+        get_file_paths_bulk's SQL stays narrowed to ``stable_id, file_path``.
+
+        Mutation-proved: reverting get_file_paths_bulk to route through
+        get_tracks_bulk (which calls _fetch_fields for every row) makes this
+        raise AssertionError from fail_if_called, confirmed locally before
+        this test was pushed -- sid-001 alone carries 5 EAV rows in
+        fresh_state_db, so the regression is not a near-miss."""
+        def fail_if_called(*args: object, **kwargs: object) -> dict[str, dict]:
+            raise AssertionError(
+                "get_file_paths_bulk must never invoke _fetch_fields -- "
+                "its whole point is skipping the EAV pass get_tracks_bulk pays"
+            )
+
+        monkeypatch.setattr(sb_mod, "_fetch_fields", fail_if_called)
+
+        backend = SqliteBackend(fresh_state_db)
+        result = backend.get_file_paths_bulk(
+            ["sid-001", "sid-002", "sid-003", "missing-id"]
+        )
+
+        assert result == {
+            "sid-001": "/music/midnight.mp3",
+            "sid-002": "/music/oxide.mp3",
+            "sid-003": "/music/gulf.flac",
+        }
+
 
 # --- fallbacks for Phase-5-missing entities ------------------------------
 
@@ -395,6 +456,26 @@ class TestFallbackPaths:
         assert any("list_tracks" in m for m in msgs)
         assert any("get_track" in m for m in msgs)
         assert any("list_playlists" in m for m in msgs)
+
+    def test_missing_tracks_table_falls_back_for_file_paths_bulk(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        db_path = tmp_path / "nostate.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE only_noise (x INTEGER)")
+        conn.close()
+        fallback = InMemoryBackend()
+        now = _iso_now()
+        fallback.seed_track(Track(
+            stable_id="fb-1", file_path="/music/fb-1.mp3",
+            created_at=now, updated_at=now,
+        ))
+        backend = SqliteBackend(db_path, fallback=fallback)
+        with caplog.at_level(logging.WARNING, logger=sb_mod.log.name):
+            got = backend.get_file_paths_bulk(["fb-1"])
+        assert got == {"fb-1": "/music/fb-1.mp3"}
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("get_file_paths_bulk" in m for m in msgs)
 
     def test_missing_playlists_table_falls_back_for_get(
         self, tmp_path: Path,

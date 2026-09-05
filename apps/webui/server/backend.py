@@ -202,6 +202,7 @@ class StateBackend(Protocol):
     def list_tracks(self, flt: TrackFilter) -> Page: ...
     def get_track(self, stable_id: str) -> Track: ...
     def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]: ...
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
@@ -307,6 +308,16 @@ class InMemoryBackend:
         with self._mutex:
             return {
                 sid: self._tracks[sid]
+                for sid in stable_ids if sid in self._tracks
+            }
+
+    def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]:
+        """``file_path`` only, for callers (playlist availability) that never
+        touch the rest of the Track -- skips hydrating every EAV field for
+        rows the caller was going to discard anyway."""
+        with self._mutex:
+            return {
+                sid: self._tracks[sid].file_path
                 for sid in stable_ids if sid in self._tracks
             }
 

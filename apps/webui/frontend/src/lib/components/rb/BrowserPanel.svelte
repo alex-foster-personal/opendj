@@ -2133,6 +2133,8 @@
 		{:else}
 			<PlaylistTree
 				nodes={treeNodes}
+				playlistsLoading={playlistsLoading}
+				playlistsError={playlistsError}
 				allTracksCount={allTracksPlayableCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}

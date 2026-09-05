@@ -36,11 +36,13 @@ def list_playlists(
     # stat fan-out. A membership pointing at a stable_id with no track row
     # counts as unavailable (it is certainly not playable from disk).
     member_ids = sorted({sid for pl in playlists for sid in pl.items})
-    tracks_map = backend.get_tracks_bulk(member_ids)
-    available = rb_vendor.bulk_availability(
-        member_ids,
-        {sid: t.file_path for sid, t in tracks_map.items()},
-    )
+    # get_file_paths_bulk, not get_tracks_bulk: available_count only ever
+    # reads .file_path, and hydrating a full Track (EAV pass included) per
+    # member for a field the summary discards was ~37% of this route's wall
+    # time (pin e0f3a90652a9, measured Sat 5 Sep 2026 against the real
+    # library: 7155 unique members).
+    file_paths = backend.get_file_paths_bulk(member_ids)
+    available = rb_vendor.bulk_availability(member_ids, file_paths)
     return [
         PlaylistSummary(
             playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,

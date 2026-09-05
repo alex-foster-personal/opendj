@@ -13,6 +13,13 @@ test('reopened comment card closes on a real column resize pointerdown', async (
 	try {
 		await runScenario(page);
 	} finally {
+		// Archive requires the pin to be fixed/merged first (409 PIN_NOT_DONE
+		// otherwise, apps/webui/server/routes/feedback_pins.py:archive_comment) -
+		// this pin is only ever seeded `open`, so transition it before archiving.
+		const patched = await page.request.patch(`/api/v1/feedback/comments/${seededId}`, {
+			data: { status: 'fixed' }
+		});
+		if (!patched.ok()) throw new Error(`marking the seeded pin ${seededId} fixed failed: HTTP ${patched.status()}`);
 		const archived = await page.request.post(`/api/v1/feedback/comments/${seededId}/archive`);
 		if (!archived.ok()) throw new Error(`archiving the seeded pin ${seededId} failed: HTTP ${archived.status()}`);
 	}

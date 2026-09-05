@@ -24,6 +24,8 @@
 
 	let {
 		nodes,
+		playlistsLoading,
+		playlistsError,
 		allTracksCount,
 		allTracksBrokenCount,
 		allTracksError,
@@ -41,6 +43,15 @@
 		ondroptracks
 	}: {
 		nodes: PlaylistNode[];
+		/** Pin e0f3a90652a9: names/counts is a cheap read, but available_count
+		 * is a real per-member disk-existence pass and can take a couple of
+		 * seconds cold (first load after app focus). Required, not optional --
+		 * an unwired caller must fail the Svelte type check rather than silently
+		 * render as if already loaded (a missed wire previously read as a
+		 * healthy empty playlist panel, the exact silent-success failure the
+		 * pin was about). */
+		playlistsLoading: boolean;
+		playlistsError: string | null;
 		allTracksCount: number | null;
 		allTracksBrokenCount: number | null;
 		allTracksError: string | null;
@@ -255,6 +266,11 @@
 			{/if}
 		</div>
 		{#if playlistsOpen}
+			{#if nodes.length === 0 && playlistsLoading}
+				<div class="row child rb-inert" data-testid="playlists-loading">Loading playlists...</div>
+			{:else if nodes.length === 0 && playlistsError !== null}
+				<div class="row child rb-inert" title={playlistsError}>Playlist load failed</div>
+			{/if}
 			{#each nodes as node (node.playlist_id)}
 				<div
 					class="row child"
