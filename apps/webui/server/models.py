@@ -256,6 +256,34 @@ class HealthOut(BaseModel):
     version: str
 
 
+class PreflightCheckOut(BaseModel):
+    """One row of PREFLIGHT-01's boot gate (issue #771).
+
+    ``status`` is never a two-way pass/fail: ``pending`` covers a check that
+    genuinely could not be exercised (e.g. audio-access with no resolvable
+    track anywhere in a small sample), which is an honest denominator, never
+    a fabricated pass. ``remediation`` is null on a pass or a pending row and
+    a real sentence on a fail.
+    """
+
+    id: str
+    label: str
+    status: Literal["pass", "fail", "pending"]
+    detail: str
+    remediation: str | None = None
+
+
+class PreflightOut(BaseModel):
+    """``GET /api/v1/preflight`` -- the ONE source of truth for the boot
+    gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
+    check never blocks it, because a check that could not be exercised is
+    not a defect on its own.
+    """
+
+    status: Literal["pass", "fail"]
+    checks: list[PreflightCheckOut]
+
+
 __all__ = [
     "HealthCloud",
     "HealthOut",
@@ -267,6 +295,8 @@ __all__ = [
     "PlaylistDetail",
     "PlaylistDiff",
     "PlaylistSummary",
+    "PreflightCheckOut",
+    "PreflightOut",
     "ProvenanceOut",
     "QueueItemOut",
     "QueueOut",

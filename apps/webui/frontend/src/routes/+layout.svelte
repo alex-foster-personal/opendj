@@ -11,6 +11,8 @@
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
 	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
+	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
+	import { preflightGate } from '$lib/preflight/preflight.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
 	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
@@ -102,6 +104,13 @@
 	<title>Open DJ</title>
 </svelte:head>
 
+{#if !preflightGate.cleared}
+	<!-- PREFLIGHT-01 (#771): the boot gate. Nothing else renders until a real
+	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
+	     see PreflightScreen.svelte for the polling policy. -->
+	<PreflightScreen mode="boot" />
+{:else}
+
 {#if health.bindWarning}
 	<BannerWarning message={health.bindWarning} />
 {/if}
@@ -173,6 +182,8 @@
 		<BuildIdentity />
 	</footer>
 </div>
+{/if}
+
 {/if}
 
 <SettingsOverlay />

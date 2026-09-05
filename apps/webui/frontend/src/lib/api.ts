@@ -363,3 +363,30 @@ export async function getHealth(): Promise<{ health: HealthOut; bindWarning: str
 	const { data, response } = requireBody(await api.GET('/api/v1/health'));
 	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
 }
+
+/** PREFLIGHT-01's boot gate (issue #771) reads `GET /api/v1/preflight`.
+ *
+ * It lives HERE, beside `getHealth`, rather than in its own
+ * `src/lib/preflight/` transport module, for one measured reason: every new
+ * direct importer of `src/lib/api/client.ts` moves `frontend.max_fan_in`,
+ * which sits at its recorded floor with zero headroom (ops/quality/README.md
+ * -- allowances only shrink). This module already depends on the client, so
+ * routing the call through it adds no edge, and preflight is a health-family
+ * read anyway: same daemon, same "is this thing ready" question.
+ *
+ * One call serves both "Re-check" and "Re-request permissions": the server's
+ * audio-access check performs the real gated read every time it runs, so a
+ * second GET after granting an OS permission is both at once. There is no
+ * separate mutating endpoint to keep in sync with this one -- see
+ * `apps/webui/server/routes/preflight.py`.
+ *
+ * The verdict is READ, never recomputed: callers take `PreflightOut.status`
+ * as given rather than deriving pass/fail from the check list, so the server
+ * stays the one source of truth (this issue's own parity clause).
+ */
+export type PreflightResult = components['schemas']['PreflightOut'];
+export type PreflightCheck = components['schemas']['PreflightCheckOut'];
+
+export async function getPreflight(): Promise<PreflightResult> {
+	return unwrap(api.GET('/api/v1/preflight'));
+}

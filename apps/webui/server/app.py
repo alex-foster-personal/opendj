@@ -72,6 +72,7 @@ from .routes import play_it as play_it_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
+from .routes import preflight as preflight_routes
 from .routes import progress as progress_routes
 from .routes import quality as quality_routes
 from .routes import queues as queues_routes
@@ -356,6 +357,7 @@ def create_app(
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(library_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
+    app.include_router(preflight_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
     app.include_router(state_routes.router, prefix=api_prefix)

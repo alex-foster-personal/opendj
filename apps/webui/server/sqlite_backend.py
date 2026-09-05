@@ -89,21 +89,22 @@ class StaleStateSchemaError(RuntimeError):
     """
 
 
-def _stale_tracks_schema_version(path: Path) -> Optional[int]:
-    """Return the on-disk ``schema_meta`` version iff migration was skipped.
+def read_tracks_schema_version(path: Path) -> tuple[bool, int]:
+    """Return ``(has_tracks_table, schema_meta_version)`` read fresh off disk.
 
-    ``None`` means either "not a Phase 5 db at all" (no ``tracks`` table --
-    the existing per-table InMemory-fallback tests deliberately construct
-    dbs like this and must keep working) or "already current". A non-None
-    result means a real Phase 5 db exists but predates SCHEMA_VERSION.
+    Shared by :func:`_stale_tracks_schema_version` (the boot-time construction
+    guard) and the PREFLIGHT-01 state-db check (``apps.webui.server.
+    preflight_checks``), which polls the SAME question live after boot rather
+    than trusting whatever an already-constructed backend decided once. A db
+    with no ``tracks`` table at all (not yet a Phase 5 db) reads back version
+    0 alongside ``has_tracks_table=False`` so a caller can tell "nothing here
+    yet" from "here, but behind".
     """
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
         has_tracks = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
         ).fetchone() is not None
-        if not has_tracks:
-            return None
         has_meta = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
         ).fetchone() is not None
@@ -113,9 +114,23 @@ def _stale_tracks_schema_version(path: Path) -> Optional[int]:
             ).fetchone()[0]
             if has_meta else 0
         )
-        return version if version < _state_schema.SCHEMA_VERSION else None
+        return has_tracks, version
     finally:
         conn.close()
+
+
+def _stale_tracks_schema_version(path: Path) -> Optional[int]:
+    """Return the on-disk ``schema_meta`` version iff migration was skipped.
+
+    ``None`` means either "not a Phase 5 db at all" (no ``tracks`` table --
+    the existing per-table InMemory-fallback tests deliberately construct
+    dbs like this and must keep working) or "already current". A non-None
+    result means a real Phase 5 db exists but predates SCHEMA_VERSION.
+    """
+    has_tracks, version = read_tracks_schema_version(path)
+    if not has_tracks:
+        return None
+    return version if version < _state_schema.SCHEMA_VERSION else None
 
 
 # Track which fallback warnings we've already emitted, keyed by method name.
@@ -919,4 +934,5 @@ def make_backend(
 
 __all__ = [
     "SqliteBackend", "StaleStateSchemaError", "make_backend",
+    "read_tracks_schema_version",
 ]

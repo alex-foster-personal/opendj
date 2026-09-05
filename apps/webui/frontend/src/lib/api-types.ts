@@ -1602,6 +1602,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Preflight */
+        get: operations["read_preflight_api_v1_preflight_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/queues/{kind}": {
         parameters: {
             query?: never;
@@ -4970,6 +4987,47 @@ export interface components {
             vendor: string;
             /** Vendor Pl Id */
             vendor_pl_id: string;
+        };
+        /**
+         * PreflightCheckOut
+         * @description One row of PREFLIGHT-01's boot gate (issue #771).
+         *
+         *     ``status`` is never a two-way pass/fail: ``pending`` covers a check that
+         *     genuinely could not be exercised (e.g. audio-access with no resolvable
+         *     track anywhere in a small sample), which is an honest denominator, never
+         *     a fabricated pass. ``remediation`` is null on a pass or a pending row and
+         *     a real sentence on a fail.
+         */
+        PreflightCheckOut: {
+            /** Detail */
+            detail: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Remediation */
+            remediation?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "fail" | "pending";
+        };
+        /**
+         * PreflightOut
+         * @description ``GET /api/v1/preflight`` -- the ONE source of truth for the boot
+         *     gate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``
+         *     check never blocks it, because a check that could not be exercised is
+         *     not a defect on its own.
+         */
+        PreflightOut: {
+            /** Checks */
+            checks: components["schemas"]["PreflightCheckOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "fail";
         };
         /** ProvenanceOut */
         ProvenanceOut: {
@@ -9795,6 +9853,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_preflight_api_v1_preflight_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreflightOut"];
                 };
             };
         };

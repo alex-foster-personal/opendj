@@ -5883,6 +5883,77 @@
         "title": "PlaylistWriteOut",
         "type": "object"
       },
+      "PreflightCheckOut": {
+        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status",
+          "detail"
+        ],
+        "title": "PreflightCheckOut",
+        "type": "object"
+      },
+      "PreflightOut": {
+        "description": "``GET /api/v1/preflight`` -- the ONE source of truth for the boot\ngate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``\ncheck never blocks it, because a check that could not be exercised is\nnot a defect on its own.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/PreflightCheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "PreflightOut",
+        "type": "object"
+      },
       "ProvenanceOut": {
         "properties": {
           "confidence": {
@@ -14969,6 +15040,27 @@
         "summary": "Get Writeback Targets",
         "tags": [
           "playlist-writeback"
+        ]
+      }
+    },
+    "/api/v1/preflight": {
+      "get": {
+        "operationId": "read_preflight_api_v1_preflight_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreflightOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Preflight",
+        "tags": [
+          "preflight"
         ]
       }
     },
