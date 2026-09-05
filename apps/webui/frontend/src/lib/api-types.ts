@@ -5685,6 +5685,12 @@ export interface components {
             comments: string | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
             /** Etag */
             etag: string;
             /** File Exists */
@@ -6353,6 +6359,12 @@ export interface components {
             created_at: string;
             /** Duration Ms */
             duration_ms?: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
             /** File Exists */
             file_exists: boolean;
             /** File Path */
@@ -6490,6 +6502,12 @@ export interface components {
             comments: string | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
             /** Etag */
             etag: string;
             /** File Exists */

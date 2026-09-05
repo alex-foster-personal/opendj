@@ -62,6 +62,7 @@ Exact command lines:
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -71,6 +72,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.equivalence import verdict_path
+from apps.shared.mik_energy import readable_mik_energy
 from apps.shared.state import db as state_db
 
 from . import availability as avail
@@ -79,7 +81,6 @@ from . import match as matcher
 from . import mikdb
 from .cli_common import UNVERIFIED_FLAG, _emit, _gate, _state_db_path
 from .cli_promote import cmd_promote
-
 
 # ------------------------------------------------------------ availability
 
@@ -115,23 +116,16 @@ def cmd_availability(args: argparse.Namespace) -> int:
         conn.close()
     total = sum(payload["classified"].values())
     if total != payload["tracks"]:
-        raise SystemExit(
-            f"classified {total} rows but tracks has {payload['tracks']}"
-        )
+        raise SystemExit(f"classified {total} rows but tracks has {payload['tracks']}")
     _emit(
         payload,
         as_json=args.json,
         lines=[
             f"[{payload['mode']}] {payload['tracks']} tracks in {path}",
-            (
-                "  classified: "
-                + ", ".join(f"{k}={v}" for k, v in sorted(histogram.items()))
-            ),
+            ("  classified: " + ", ".join(f"{k}={v}" for k, v in sorted(histogram.items()))),
             (
                 "  stored:     "
-                + ", ".join(
-                    f"{k}={v}" for k, v in sorted(payload["stored"].items())
-                )
+                + ", ".join(f"{k}={v}" for k, v in sorted(payload["stored"].items()))
             ),
             f"  written:    changed={written['changed']} "
             f"unchanged={written['unchanged']}"
@@ -151,9 +145,7 @@ def _song_presence_counts(songs: list[mikdb.MikSong]) -> dict[str, int]:
     return {
         "with_path": sum(1 for song in songs if song.path),
         "with_key": sum(1 for song in songs if song.key_camelot),
-        "with_key_confidence": sum(
-            1 for song in songs if song.key_confidence is not None
-        ),
+        "with_key_confidence": sum(1 for song in songs if song.key_confidence is not None),
     }
 
 
@@ -220,9 +212,7 @@ def cmd_read(args: argparse.Namespace) -> int:
             f"{payload['songs_with_segments']} songs",
             (
                 "  rejected: "
-                + ", ".join(
-                    f"{k}={v}" for k, v in sorted(payload["rejected"].items())
-                )
+                + ", ".join(f"{k}={v}" for k, v in sorted(payload["rejected"].items()))
             ),
         ]
         + [f"    {reason}: {count}" for reason, count in sorted(stats.reasons.items())],
@@ -266,9 +256,7 @@ def cmd_match(args: argparse.Namespace) -> int:
             "tracks_indexed": index.track_count,
             "mik_songs": len(songs),
             "matched": len(report.matches),
-            "distinct_tracks_matched": len(
-                {m.stable_id for m in report.matches.values()}
-            ),
+            "distinct_tracks_matched": len({m.stable_id for m in report.matches.values()}),
             "by_tier": report.by_tier(),
             "rows_with_candidates_per_tier": report.tier_candidate_counts(),
             "unmatched": len(report.unmatched),
@@ -284,16 +272,49 @@ def cmd_match(args: argparse.Namespace) -> int:
             f"{payload['mik_songs']} MIK songs vs {payload['tracks_indexed']} tracks",
             f"  matched {payload['matched']} -> "
             f"{payload['distinct_tracks_matched']} distinct tracks",
-            (
-                "  by tier: "
-                + ", ".join(f"{k}={v}" for k, v in payload["by_tier"].items())
-            ),
+            ("  by tier: " + ", ".join(f"{k}={v}" for k, v in payload["by_tier"].items())),
             (
                 f"  unmatched {payload['unmatched']}: "
-                + ", ".join(
-                    f"{k}={v}" for k, v in sorted(payload["by_reason"].items())
-                )
+                + ", ".join(f"{k}={v}" for k, v in sorted(payload["by_reason"].items()))
             ),
+        ],
+    )
+    return 0
+
+
+# ---------------------------------------------------------------- coverage
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    """Measure the library's usable MIK 1-9 energy coverage without writes."""
+    songs, _stats, conn, index, report, store, path = _read_and_match(args)
+    try:
+        readable = {
+            match.stable_id
+            for song_id, match in report.matches.items()
+            if readable_mik_energy(songs[song_id].energy) is not None
+        }
+        tracks_matched = len({match.stable_id for match in report.matches.values()})
+        payload = {
+            "mode": "read-only",
+            "store": str(store),
+            "state_db": str(path),
+            "tracks_indexed": index.track_count,
+            "tracks_matched": tracks_matched,
+            "tracks_with_readable_mik_energy": len(readable),
+            "fraction": len(readable) / tracks_matched if tracks_matched else 0.0,
+            "scale": "1-9",
+        }
+    finally:
+        conn.close()
+    _emit(
+        payload,
+        as_json=args.json,
+        lines=[
+            f"{payload['tracks_with_readable_mik_energy']} of {tracks_matched} matched "
+            "tracks have readable MIK energy (1-9)",
+            f"  fraction: {payload['fraction']:.2%}",
+            f"  MIK store: {store}",
         ],
     )
     return 0
@@ -302,9 +323,7 @@ def cmd_match(args: argparse.Namespace) -> int:
 # -------------------------------------------------------------------- load
 
 
-def _load_plan_detail_lines(
-    plan: loader.LoadPlan, applied: dict[str, Any] | None
-) -> list[str]:
+def _load_plan_detail_lines(plan: loader.LoadPlan, applied: dict[str, Any] | None) -> list[str]:
     """The optional per-block detail lines for ``cmd_load``'s report, split
     out to keep it under the complexity ceiling: each block is independent
     and only appears when that condition on the plan actually fired."""
@@ -318,17 +337,12 @@ def _load_plan_detail_lines(
     if plan.blocked_by_precedence:
         lines.append(
             "  skipped, a higher-precedence source already holds the field: "
-            + ", ".join(
-                f"{k}={v}" for k, v in sorted(plan.blocked_by_precedence.items())
-            )
+            + ", ".join(f"{k}={v}" for k, v in sorted(plan.blocked_by_precedence.items()))
         )
     if plan.blocked_by_promotion_conflict:
         lines.append(
             "  skipped, already promoted to a different track: "
-            + ", ".join(
-                f"{k}={v}"
-                for k, v in sorted(plan.blocked_by_promotion_conflict.items())
-            )
+            + ", ".join(f"{k}={v}" for k, v in sorted(plan.blocked_by_promotion_conflict.items()))
         )
     if plan.blocked_by_key_floor:
         lines.append(
@@ -344,10 +358,7 @@ def _load_plan_detail_lines(
             f"{len(plan.key_review_band)} tracks (never silently overwritten)"
         )
     if applied is not None:
-        lines.append(
-            "  applied: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(applied.items()))
-        )
+        lines.append("  applied: " + ", ".join(f"{k}={v}" for k, v in sorted(applied.items())))
     else:
         lines.append("  (dry-run: pass --live to write)")
     return lines
@@ -405,10 +416,7 @@ def cmd_load(args: argparse.Namespace) -> int:
         f"[{payload['mode']}] MIK load into {path}",
         f"  verdict file: {payload['verdict_file']} "
         f"({'present' if gate.file_present else 'ABSENT -> all fields untested'})",
-        (
-            "  equivalence: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(plan.gate_summary.items()))
-        ),
+        ("  equivalence: " + ", ".join(f"{k}={v}" for k, v in sorted(plan.gate_summary.items()))),
         f"  planned: {payload['planned']['field_writes']} track_fields, "
         f"{payload['planned']['segment_rows']} segment rows across "
         f"{payload['planned']['segment_tracks']} tracks, "
@@ -478,8 +486,7 @@ def _common_options() -> argparse.ArgumentParser:
     parser.add_argument(
         "--discover",
         action="store_true",
-        help="promote only: re-match pending staged rows against tracks as it "
-        "is now",
+        help="promote only: re-match pending staged rows against tracks as it is now",
     )
     parser.add_argument("--source-row-id", default=None, help="promote only")
     parser.add_argument("--stable-id", default=None, help="promote only")
@@ -499,6 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("availability", cmd_availability, "classify + record audio availability"),
         ("read", cmd_read, "report what MIK holds (read-only, no DB writes)"),
         ("match", cmd_match, "three-tier match report"),
+        ("coverage", cmd_coverage, "measure readable MIK energy coverage"),
         ("load", cmd_load, "plan/write scalars, energy series and staging rows"),
         ("promote", cmd_promote, "staged analysis -> track_fields"),
     ):
@@ -508,9 +516,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.handler(args))

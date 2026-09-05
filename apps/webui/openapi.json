@@ -7698,6 +7698,33 @@
             ],
             "title": "Duration Ms"
           },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
           "etag": {
             "title": "Etag",
             "type": "string"
@@ -7833,6 +7860,9 @@
           "has_rb_mapping",
           "artwork_available",
           "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason",
           "match_context"
         ],
         "title": "SearchHit",
@@ -9363,6 +9393,33 @@
             ],
             "title": "Duration Ms"
           },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
           "file_exists": {
             "title": "File Exists",
             "type": "boolean"
@@ -9514,7 +9571,10 @@
           "vocals",
           "stems",
           "artwork_available",
-          "artwork_status"
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason"
         ],
         "title": "TrackListItemOut",
         "type": "object"
@@ -9802,6 +9862,33 @@
             ],
             "title": "Duration Ms"
           },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
           "etag": {
             "title": "Etag",
             "type": "string"
@@ -9932,7 +10019,10 @@
           "stems",
           "has_rb_mapping",
           "artwork_available",
-          "artwork_status"
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason"
         ],
         "title": "TrackRowOut",
         "type": "object"

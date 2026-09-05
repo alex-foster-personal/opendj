@@ -44,6 +44,7 @@ export type SortKey =
 	| 'rating'
 	| 'comments'
 	| 'time'
+	| 'energy'
 	| 'genre';
 
 /** Sort direction: 1 = ascending, -1 = descending. */
@@ -62,13 +63,12 @@ export interface BrowserRow {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
-	/** MIK energy (1-9); null on every row today - no listing/rb-meta
-	 * payload projects it yet (sqlite backend's _EAV_FIELDS does not
-	 * include "energy", see apps/webui/server/sqlite_backend.py). The
-	 * import that would populate this is issue #903's engine half; this
-	 * field exists so the display (TrackTable's Energy column) needs no
-	 * further wiring once that lands. */
+	/** MIK energy on the display's explicit 1-9 scale. */
 	energy: number | null;
+	/** `mik` only. A future computed value must not masquerade as MIK. */
+	energy_source: 'mik' | null;
+	/** Honest reason shown when energy is null, never a fallback value. */
+	energy_reason: string;
 	/** '' for All Tracks rows (listing carries no ETag) - rating edits
 	 * lazily fetch one. Playlist rows carry it inline (contract 4). */
 	etag: string;
@@ -479,6 +479,7 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'rating') return row.rating;
 	else if (key === 'comments') return row.comments;
 	else if (key === 'time') return row.duration_ms;
+	else if (key === 'energy') return row.energy;
 	else return row.genre ?? row.rb_meta?.genre ?? null;
 }
 

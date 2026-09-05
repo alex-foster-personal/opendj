@@ -7,7 +7,7 @@
 <script lang="ts">
 	// Browser track table (SCREENSHOT-SPEC 5c). Columns in screenshot order:
 	// funnel | cloud | # | Preview | Artwork | Track Title | Artist | K | B |
-	// Rating | Comments | Time | Venue (quality badge) | Genre | Stems.
+	// Rating | Comments | Time | Venue (quality badge) | Energy | Genre | Stems.
 	// Preview strips + file_exists arrive
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
@@ -1039,13 +1039,21 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<th
 						class="h-energy"
+						class:h-icon={true}
+						class:sortable={true}
 						style={`width:${colWidths.energy}px`}
-						title="Energy 1-9, from Mixed In Key"
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('energy');
+						}}
+						title="Energy 1-9, from Mixed In Key - sort ascending, descending, then clear"
 						aria-label="Energy 1-9, from Mixed In Key"
 					>
-						<span class="th-label"><span class="energy-icon" aria-hidden="true">⚡</span></span>
+						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg><span class="energy-glyph" aria-hidden="true">⚡</span>{#if sortKey === 'energy'}<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>{/if}</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -1309,7 +1317,7 @@
 						<td class="c-quality">
 							<QualityBadge quality={row.quality} />
 						</td>
-						<td class="c-energy" class:energy-unset={row.energy === null} title="Energy 1-9, from Mixed In Key">
+						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
@@ -1882,9 +1890,11 @@
 		color: var(--rb-text-dim);
 	}
 	.energy-icon {
-		font-size: 11px;
-		line-height: 1;
+		width: 11px;
+		height: 11px;
+		fill: currentColor;
 	}
+	.energy-glyph { display: none; }
 	.c-order .grip {
 		margin-right: 2px;
 		font-size: 8px;

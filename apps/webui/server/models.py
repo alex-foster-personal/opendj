@@ -94,6 +94,11 @@ class TrackListItemOut(TrackOut):
     # so TrackTable does not depend on IntersectionObserver hydration.
     artwork_available: bool | None
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    # Display-only MIK value. Null means the browser must render an empty
+    # Energy cell and use energy_reason rather than inventing a number.
+    energy: int | None
+    energy_source: Literal["mik"] | None
+    energy_reason: str
 
 
 class TracksPage(BaseModel):
@@ -173,6 +178,9 @@ class TrackRowOut(BaseModel):
     has_rb_mapping: bool
     artwork_available: bool | None
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    energy: int | None
+    energy_source: Literal["mik"] | None
+    energy_reason: str
 
 
 class PlaylistDetail(BaseModel):

@@ -314,6 +314,9 @@ export interface PlaylistTrackRowWire {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;
@@ -443,6 +446,9 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
  * absent here - the browser falls back to lazy rb-meta for those. */
 export type TrackListItemWire = Track & {
 	duration_ms?: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
 	preview_b64: string | null;
 	preview_max: number | null;
 	file_exists: boolean;
