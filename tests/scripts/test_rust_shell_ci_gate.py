@@ -1,8 +1,7 @@
 """DEVLOOP-05 keeps the desktop shell's Rust tests in the pull-request gate.
 
 Acceptance:
-  - [if] a shell change lands [then] a Rust test ran against it in the gate
-    broken
+  - [if] a shell change lands [then] the pull-request gate ran cargo test against it, [else stop].
 """
 
 from pathlib import Path
