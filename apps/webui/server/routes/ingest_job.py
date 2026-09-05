@@ -23,6 +23,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from apps.analysis import run as analysis_run
 from apps.shared.paths import PROJECT_ROOT
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed
@@ -68,6 +70,23 @@ ACTIVE_PHASES: tuple[str, ...] = ("queued", "running")
 #: an unmapped job's silence is a statement, and only the scope tells them
 #: apart.
 UNMAPPED_SCOPE: str = "unmapped"
+
+
+class RefreshStatusOut(BaseModel):
+    """The one-slot job's public, serializable state."""
+
+    running: bool
+    phase: str
+    steps: list[str]
+    current_step: str | None
+    step_done: int
+    step_total: int
+    steps_completed: list[str]
+    started_at: float | None
+    finished_at: float | None
+    error: str | None
+    log_tail: list[str]
+    recently_done_ids: list[str]
 
 
 @dataclass

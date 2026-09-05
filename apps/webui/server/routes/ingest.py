@@ -52,7 +52,7 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal, NoReturn
+from typing import NoReturn
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -69,12 +69,14 @@ from apps.webui.server.routes.ingest_job import (
     _PER_TARGET_EXITS,
     ACTIVE_PHASES,
     UNMAPPED_SCOPE,
+    RefreshStatusOut,
     _job_lock,
     _log,
     _RefreshJob,
     _run_cli,
     _systemic_message,
 )
+from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.stem_artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -98,8 +100,6 @@ ANALYSIS_CHUNK: int = 25                # progress granularity for the analysis 
 ANALYSIS_BACKEND: str = backlog.DRAIN_BACKEND
 STEMS_TRICKLE_LIMIT: int = 5
 BATCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$")
-
-StepId = Literal["analysis", "stems", "vocals"]
 
 # Registry of pipeline steps. ``requires_rb_row`` steps need the track in
 # Rekordbox + state.db first (stems/vocals are keyed by stable_id), so the
@@ -285,21 +285,6 @@ def get_coverage() -> CoverageOut:
 
 
 # ----- refresh job ----------------------------------------------------------
-class RefreshStatusOut(BaseModel):
-    running: bool
-    phase: str
-    steps: list[str]
-    current_step: str | None
-    step_done: int
-    step_total: int
-    steps_completed: list[str]
-    started_at: float | None
-    finished_at: float | None
-    error: str | None
-    log_tail: list[str]
-    recently_done_ids: list[str]
-
-
 def _run_analysis_chunk(
     job: _RefreshJob, chunk: list[tuple[str, str]], *, backend: str = ANALYSIS_BACKEND
 ) -> None:
@@ -374,6 +359,14 @@ def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
     job.step_done = 0
     _log(job, f"stems: {len(targets)} missing; trickling {job.step_total}")
     if job.step_total:
+        if job.scope == "track":
+            stable_id, _path = targets[0]
+            _run_cli(
+                job,
+                [sys.executable, "-m", "apps.stems", "one", "--stable-id", stable_id, "--live"],
+            )
+            job.step_done = 1
+            return
         _run_cli(
             job,
             [sys.executable, "-m", "apps.stems", "trickle", "--live",
@@ -386,7 +379,11 @@ def _step_vocals(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
     job.step_total = len(targets)
     job.step_done = 0
     _log(job, f"vocals: {len(targets)} missing cache; from-stems backfill")
-    _run_cli(job, [sys.executable, "-m", "apps.vocals", "from-stems", "--live"])
+    argv = [sys.executable, "-m", "apps.vocals", "from-stems", "--live"]
+    if job.scope == "track":
+        stable_id, _path = targets[0]
+        argv += ["--stable-id", stable_id]
+    _run_cli(job, argv)
     job.step_done = job.step_total
 
 
@@ -460,13 +457,16 @@ def _track_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     """One explicit track order, selected before the shared worker starts."""
     if len(job.analysis_orders) != 1:
         raise RuntimeError("track scope requires exactly one analysis order")
-    stable_id = next(iter(job.analysis_orders))
+    stable_id, kind = next(iter(job.analysis_orders.items()))
+    step = "stems" if kind == "stems" else "vocals" if kind == "vocals" else "analysis"
     targets, _unreachable = _tracks_on_disk()
     selected = [(sid, path) for sid, path in targets if sid == stable_id]
     if len(selected) != 1:
         raise HTTPException(422, f"track {stable_id!r} is not an on-disk library track")
-    _log(job, f"track scope: ordering analysis for {stable_id}")
-    return {"analysis": selected, "stems": [], "vocals": []}
+    _log(job, f"track scope: ordering {kind} for {stable_id} through {step}")
+    return {"analysis": selected if step == "analysis" else [],
+            "stems": selected if step == "stems" else [],
+            "vocals": selected if step == "vocals" else []}
 
 
 # Exhaustiveness guard in the dispatch, same as _STEP_RUNNERS below.
@@ -508,56 +508,6 @@ def _refresh_worker(job: _RefreshJob) -> None:
         publish("library.changed", {"kind": "tracks", "ids": []})
 
 
-class RefreshIn(BaseModel):
-    # Optional scope: run only over freshly staged files in this dir (must
-    # live under the ingest inbox). Absent = whole-library coverage sweep.
-    batch_dir: str | None = None
-    # "library" sweeps everything missing an artifact; "unmapped" restricts
-    # analysis to tracks with no rekordbox mapping. Batch scope is
-    # selected by ``batch_dir``, not by this field.
-    scope: Literal["library", "unmapped", "track"] = "library"
-    #: Required only by the analysis-grid order route. Keeping this on the
-    #: shared refresh contract makes the HTTP agent path and UI path identical.
-    stable_id: str | None = None
-    analysis_kind: str | None = None
-
-
-def _unmapped_steps(steps: list[str]) -> tuple[list[str], list[str]]:
-    """(runnable, dropped) for the unmapped scope: analysis only, or 422. The
-    id-keyed steps are impossible for a track with no rekordbox row."""
-    if "analysis" not in steps:
-        raise HTTPException(
-            422, "scope=unmapped runs the analysis step only, and analysis "
-                 "is disabled in the ingest config",
-        )
-    return ["analysis"], [s for s in steps if s != "analysis"]
-
-
-def _resolve_scope(body: RefreshIn | None) -> tuple[str, Path | None]:
-    """(scope, batch_dir). A staged batch_dir IS the batch scope, not a flag."""
-    if body is None:
-        return "library", None
-    if body.scope == "track":
-        if body.batch_dir is not None:
-            raise HTTPException(422, "track scope cannot be combined with batch_dir")
-        if body.stable_id is None or body.stable_id.strip() == "":
-            raise HTTPException(422, "track scope requires stable_id")
-        if body.analysis_kind is None or body.analysis_kind.strip() == "":
-            raise HTTPException(422, "track scope requires analysis_kind")
-        return "track", None
-    if body.batch_dir is None:
-        return body.scope, None
-    if body.scope != "library":
-        raise HTTPException(422, f"batch_dir cannot be combined with scope="
-                            f"{body.scope!r}; a job has exactly one scope")
-    batch_dir = Path(body.batch_dir).resolve()
-    if not batch_dir.is_dir():
-        raise HTTPException(422, f"batch_dir not found: {batch_dir}")
-    if not batch_dir.is_relative_to(INGEST_INBOX.resolve()):
-        raise HTTPException(422, f"batch_dir must live under {INGEST_INBOX}")
-    return "batch", batch_dir
-
-
 def _start_refresh_job(
     body: RefreshIn | None, guard: Callable[[], None] | None = None
 ) -> _RefreshJob:
@@ -571,7 +521,7 @@ def _start_refresh_job(
     ``guard`` runs UNDER the lock, so a caller whose decision to start depends
     on the registry decides and claims in one step; it refuses by raising.
     """
-    scope, batch_dir = _resolve_scope(body)
+    scope, batch_dir = resolve_scope(body, INGEST_INBOX)
     with _job_lock:
         if _JOBS.current is not None and _JOBS.current.phase in ACTIVE_PHASES:
             raise HTTPException(409, "a refresh job is already running")
@@ -583,12 +533,20 @@ def _start_refresh_job(
             raise HTTPException(422, "no steps enabled in ingest config")
         skipped: list[str] = []
         if scope == UNMAPPED_SCOPE:
-            steps, skipped = _unmapped_steps(steps)
+            steps, skipped = unmapped_steps(steps)
         if scope == "track":
-            if "analysis" not in steps:
-                raise HTTPException(422, "track analysis requires the analysis step enabled")
-            skipped = [step for step in steps if step != "analysis"]
-            steps = ["analysis"]
+            assert body is not None and body.analysis_kind is not None
+            track_step = (
+                "stems" if body.analysis_kind == "stems"
+                else "vocals" if body.analysis_kind == "vocals"
+                else "analysis"
+            )
+            if track_step not in steps:
+                raise HTTPException(
+                    422, f"track {body.analysis_kind} requires the {track_step} step enabled"
+                )
+            skipped = [step for step in steps if step != track_step]
+            steps = [track_step]
         is_track_order = (
             scope == "track"
             and body is not None

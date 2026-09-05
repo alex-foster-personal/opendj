@@ -166,6 +166,28 @@ def test_order_rejects_an_unknown_analysis_kind(client, app, tmp_path):
     assert "unknown analysis kind" in response.text
 
 
+@pytest.mark.parametrize(("kind", "step"), [("stems", "stems"), ("vocals", "vocals")])
+def test_track_order_runs_its_requested_coarse_step(client, app, tmp_path, kind, step):
+    """A track order must not silently run the generic analysis worker."""
+    _seed(app, f"{kind}001", _audio(tmp_path, f"{kind}.mp3"))
+    _enable_all_steps(client)
+
+    response = client.post(f"/api/v1/analysis-queue/orders/{kind}001/{kind}")
+
+    assert response.status_code == 202
+    assert response.json()["phase"] in {"queued", "running", "done", "error"}
+    assert ingest_mod._JOBS.current is not None
+    assert ingest_mod._JOBS.current.steps == [step]
+
+
+def test_analysis_order_phase_rejects_unknown_job_states():
+    """The analysis-order wire contract only permits frontend-renderable phases."""
+    from apps.webui.server.routes.analysis_queue import AnalysisOrderOut
+
+    with pytest.raises(ValueError, match="phase"):
+        AnalysisOrderOut(stable_id="order003", kind="beatgrid", phase="mystery")
+
+
 # ----- the drain ------------------------------------------------------------
 
 @pytest.mark.requirement("PARITY-06")

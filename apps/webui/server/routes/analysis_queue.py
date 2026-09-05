@@ -40,6 +40,8 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -95,7 +97,7 @@ class AnalysisQueueOut(BaseModel):
 class AnalysisOrderOut(BaseModel):
     stable_id: str
     kind: str
-    phase: str
+    phase: Literal["queued", "running", "done", "error"]
 
 
 class AnalysisOrdersOut(BaseModel):
