@@ -41,6 +41,17 @@
  *   ✔︎ 🎯 describeAnchor: nearest stable identifier (id > data-testid >
  *     aria-label > class), null when nothing stable exists - never a guess.
  *     [if] an anonymous div chain yields a fabricated selector [then ⛔️] broken
+ *   ✔︎ 🎯 parsePinsVisible/serializePinsVisible: a new viewer (no stored
+ *     value) defaults pin markers OFF; an existing viewer's choice round-trips;
+ *     any other stored value is rejected, never silently read as OFF.
+ *     [if] a brand-new viewer sees pins already drawn [then ⛔️] broken
+ *     [if] an opted-in viewer loses that choice on reload [then ⛔️] broken
+ *     [if] a corrupted stored value is read as a silent OFF [then ⛔️] broken
+ *   ✔︎ 🎯 linkifyAgentNote: splits plain text around bare http/https URLs
+ *     without dropping or mangling any character; never markup.
+ *     [if] a bare URL in an agent note is not its own link segment [then ⛔️] broken
+ *     [if] joining every segment's value does not reconstruct the original
+ *       text exactly [then ⛔️] broken
  */
 
 export interface PanelPos {
@@ -398,6 +409,91 @@ export function parsePinSeen(raw: string | null): PinSeen {
 
 export function serializePinSeen(seen: PinSeen): string {
   return JSON.stringify(seen);
+}
+
+// ----- pin visibility preference (pin 88e3abec02a0) ----------------------
+/** Per-viewer, localStorage-only: whether comment pin markers are drawn on
+ * the canvas at all. A NEW viewer (no stored value) defaults OFF - the
+ * feature is opt-in until this ships far enough that showing pins by default
+ * is itself decided. An existing viewer's own choice always round-trips.
+ * Fail-fast: only null (no stored value yet), "0" and "1" are valid: every
+ * other value is corrupted or future-version state, and hiding that behind
+ * a silent OFF would mask exactly the failure this file exists to surface. */
+export const PINS_VISIBLE_KEY = "mdt.feedback.pinsVisible.v1";
+
+export function parsePinsVisible(raw: string | null): boolean {
+  if (raw === null) return false;
+  if (raw === "0") return false;
+  if (raw === "1") return true;
+  throw new Error(`pinsVisible: unrecognised stored value ${JSON.stringify(raw)}`);
+}
+
+export function serializePinsVisible(visible: boolean): string {
+  return visible ? "1" : "0";
+}
+
+// ----- linkifying an agent's plain-text note (pin 27fe1e3e61b5) ----------
+export interface NoteSegment {
+  type: "text" | "link";
+  value: string;
+}
+
+/** Bare http/https URLs only - never markup. A note is plain text an agent
+ * wrote, so turning it into real anchors must never risk innerHTML of
+ * untrusted content; this only ever produces text nodes and <a> hrefs built
+ * from a URL this same regex already matched. Stops at the first whitespace,
+ * which is the same boundary a human reading the note would use. */
+const URL_PATTERN = /https?:\/\/\S+/g;
+
+/** Trailing prose punctuation (a period ending a sentence, a comma before
+ * "and", a closing paren that belongs to the sentence rather than the URL)
+ * is not part of the link - it is moved back into the surrounding text so
+ * the href is not silently corrupted. A trailing ")" is only trimmed when
+ * it does not close a "(" that is genuinely inside the URL, so a URL whose
+ * own path legitimately contains balanced parens is left alone. */
+const ALWAYS_TRAILING_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?", "'", '"']);
+
+function splitTrailingPunctuation(url: string): { core: string; trailing: string } {
+  let core = url;
+  let trailing = "";
+  while (core.length > 0) {
+    const last = core[core.length - 1];
+    if (ALWAYS_TRAILING_PUNCTUATION.has(last)) {
+      trailing = last + trailing;
+      core = core.slice(0, -1);
+      continue;
+    }
+    if (last === ")") {
+      const opens = (core.match(/\(/g) ?? []).length;
+      const closes = (core.match(/\)/g) ?? []).length;
+      if (closes > opens) {
+        trailing = last + trailing;
+        core = core.slice(0, -1);
+        continue;
+      }
+    }
+    break;
+  }
+  return { core, trailing };
+}
+
+export function linkifyAgentNote(text: string): NoteSegment[] {
+  if (text === "") return [];
+  const segments: NoteSegment[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      segments.push({ type: "text", value: text.slice(lastIndex, start) });
+    }
+    const { core } = splitTrailingPunctuation(match[0]);
+    segments.push({ type: "link", value: core });
+    lastIndex = start + core.length;
+  }
+  if (lastIndex < text.length) {
+    segments.push({ type: "text", value: text.slice(lastIndex) });
+  }
+  return segments;
 }
 
 // ----- nearest stable anchor ---------------------------------------------

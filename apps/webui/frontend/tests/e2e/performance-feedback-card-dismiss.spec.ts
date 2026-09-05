@@ -19,6 +19,12 @@ test('reopened comment card closes on a real column resize pointerdown', async (
 });
 
 async function runScenario(page: import('@playwright/test').Page): Promise<void> {
+	// Pin 88e3abec02a0 defaults "show feedback comment pins" OFF for a new
+	// viewer (per-viewer localStorage). This spec is exercising the pins
+	// themselves, so opt this viewer in before the widget mounts and reads it.
+	await page.addInitScript(() => {
+		window.localStorage.setItem('mdt.feedback.pinsVisible.v1', '1');
+	});
 	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
 	const existingPin = page.locator(`button.fb-pin[title^="${SEED_TEXT}"]`);
 	await expect(existingPin).toBeVisible({ timeout: 60_000 });

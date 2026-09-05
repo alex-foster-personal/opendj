@@ -18,17 +18,16 @@
 		describeAnchor,
 		followOnText,
 		isPinDrawn,
-		isPinUnread,
 		markPinSeen,
 		parsePinSeen,
 		pinFromClient,
-		pinStatus,
 		pinStyle,
 		serializePinSeen,
 		PIN_SEEN_KEY,
 		type PinPoint,
 		type PinSeen
 	} from '$lib/rb/feedback';
+	import { readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
 	import {
 		addPin,
 		archivePin,
@@ -44,10 +43,18 @@
 		type FeedbackPin
 	} from '$lib/rb/feedback-store.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import FeedbackPanel from './FeedbackPanel.svelte';
 	import FeedbackPinCard from './FeedbackPinCard.svelte';
+	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
+	import FeedbackPinMarkers from './feedback/FeedbackPinMarkers.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+
+	/** Pin 88e3abec02a0: worded for an end user, not the agent-facing PRD copy
+	 * elsewhere in this file. Shown in the shared ControlExplainer's heading. */
+	const FEEDBACK_EXPLAINER_TITLE =
+		'Give feedback, ideas and suggestions to the developer, and track them in-app.';
 
 	/** A placed-but-unsaved pin: the bubble the user is typing into.
 	 *
@@ -79,9 +86,15 @@
 	let openPinId: string | null = $state(null);
 	let pinSeen: PinSeen = $state({});
 
+	/** Pin 88e3abec02a0: whether comment pin markers are drawn on the canvas
+	 * at all. A per-viewer, browser-only preference - a NEW viewer (nothing in
+	 * localStorage yet) defaults OFF; an existing viewer's own choice is read
+	 * in onMount and always wins over this initial value. */
+	let pinsVisible: boolean = $state(false);
+
 	const openCount = $derived(feedbackState.todos.filter((t) => !t.done).length);
 	const pagePins = $derived(
-		feedbackState.pins.filter((p) => p.page === pathname && isPinDrawn(p))
+		pinsVisible ? feedbackState.pins.filter((p) => p.page === pathname && isPinDrawn(p)) : []
 	);
 	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
 
@@ -94,6 +107,21 @@
 		return feedbackState.placementArmed
 			? `${summary}. Click anywhere to drop a comment pin (Esc cancels)`
 			: `${summary}. Click to drop a comment pin anywhere on the UI`;
+	});
+
+	/** Rich explainer bullets (pin 6af63c5e9b7c): the same breakdown as
+	 * commentPinTitle, plus - since the hover-count work already landed on
+	 * main - the honest statement of what the comment API does NOT track,
+	 * stated plainly rather than silently omitted. */
+	const commentPinBullets = $derived.by(() => {
+		if (unavailable) return [INERT_TITLE];
+		if (feedbackState.availability === 'unknown') {
+			return ['Probing the daemon for /api/v1/feedback'];
+		}
+		return [
+			describePinStatusSummary(feedbackState.pins),
+			'Delegated / in-progress / queued are not tracked by the comment API yet.'
+		];
 	});
 	const chevronTitle = $derived.by(() => {
 		if (unavailable) return INERT_TITLE;
@@ -117,11 +145,17 @@
 		// the app open never appears until a full page reload.
 		startPinWatch();
 		pinSeen = _readSeen();
+		pinsVisible = readPinsVisible(window.localStorage);
 		// Agent parity: the seen stamp is the one piece of this feature that
 		// lives only in the browser, so it needs a programmatic twin.
 		_globals().__mdtPinSeen = {
 			get: () => ({ ...pinSeen }),
 			markSeen: (id: string) => markSeen(id)
+		};
+		// Same reasoning: the pins-visible preference is also browser-only.
+		_globals().__mdtPinsVisible = {
+			get: () => pinsVisible,
+			set: (value: boolean) => _writePinsVisible(value)
 		};
 		const flush = () => flushFeedbackSaves();
 		window.addEventListener('pagehide', flush);
@@ -129,6 +163,7 @@
 			stopPinWatch();
 			flushFeedbackSaves();
 			delete _globals().__mdtPinSeen;
+			delete _globals().__mdtPinsVisible;
 			window.removeEventListener('pagehide', flush);
 		};
 	});
@@ -159,6 +194,19 @@
 	function markSeen(pinId: string): void {
 		const pin = feedbackState.pins.find((p) => p.id === pinId);
 		if (pin !== undefined) _writeSeen(markPinSeen(pinSeen, pin));
+	}
+
+	// ----- pin visibility preference (pin 88e3abec02a0) --------------------
+	// Fail-fast, deliberately: a blocked or corrupted store here must not be
+	// swallowed into a silent OFF (read) or a checkbox that lies about having
+	// persisted (write) - both hid a real failure behind a plausible default.
+	function _writePinsVisible(next: boolean): void {
+		pinsVisible = next;
+		writePinsVisible(window.localStorage, next);
+	}
+
+	function togglePinsVisible(): void {
+		_writePinsVisible(!pinsVisible);
 	}
 
 	// ----- pin body -------------------------------------------------------
@@ -283,46 +331,36 @@
 			>
 		{/if}
 	</button>
-	<button
-		type="button"
-		class="fb-btn"
-		class:rb-inert={unavailable}
-		class:armed={feedbackState.placementArmed}
-		disabled={unavailable}
-		title={commentPinTitle}
-		aria-label="Drop a comment pin"
-		aria-pressed={feedbackState.placementArmed}
-		onclick={armPinPlacement}
-	>
-		<svg width="11" height="10" viewBox="0 0 12 11" aria-hidden="true">
-			<path
-				d="M1.5 1.5 h9 v6 h-4.5 l-2.5 2.4 v-2.4 h-2 z"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.2"
-				stroke-linejoin="round"
-			/>
-		</svg>
-	</button>
+	{#snippet pinVisibilityActions()}
+		<FeedbackPinVisibilityActions {pinsVisible} ontoggle={togglePinsVisible} />
+	{/snippet}
+	<ControlExplainer title={FEEDBACK_EXPLAINER_TITLE} bullets={commentPinBullets} action={pinVisibilityActions}>
+		<button
+			type="button"
+			class="fb-btn"
+			class:rb-inert={unavailable}
+			class:armed={feedbackState.placementArmed}
+			disabled={unavailable}
+			title={commentPinTitle}
+			aria-label="Drop a comment pin"
+			aria-pressed={feedbackState.placementArmed}
+			onclick={armPinPlacement}
+		>
+			<svg width="11" height="10" viewBox="0 0 12 11" aria-hidden="true">
+				<path
+					d="M1.5 1.5 h9 v6 h-4.5 l-2.5 2.4 v-2.4 h-2 z"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.2"
+					stroke-linejoin="round"
+				/>
+			</svg>
+		</button>
+	</ControlExplainer>
 </span>
 
-<!-- comment pins on this page (#858): colour is status, click opens the body -->
-{#each pagePins as pin (pin.id)}
-	{@const status = pinStatus(pin)}
-	<button
-		type="button"
-		class="fb-pin fb-{status}"
-		class:fb-unread={isPinUnread(pin, pinSeen)}
-		style={pinStyle(pin)}
-		title={`${pin.text} - ${pin.created_at}${pin.anchor ? ` (near ${pin.anchor})` : ''}`}
-		aria-label={`Comment pin (${status}) - open`}
-		onclick={() => openPin(pin)}
-	>
-		<svg class="fb-mark" width="12" height="11" viewBox="0 0 12 11" aria-hidden="true">
-			<path d="M1.5 1.5 h9 v6 h-4.5 l-2.5 2.4 v-2.4 h-2 z" />
-		</svg>
-	</button>
-{/each}
+<!-- comment pins on this page (#858): color is status, click opens the body -->
+<FeedbackPinMarkers pins={pagePins} seen={pinSeen} onopen={openPin} />
 
 <!-- pin body: the original text, the agent's reply, its issue, its actions -->
 {#if bodyPin !== null}
@@ -426,58 +464,8 @@
 		color: var(--rb-orange);
 	}
 
-	/* #858 pin lifecycle. open = amber (unchanged), issued = amber + link
-	   glyph, fixed = green OUTLINE, merged = SOLID green, archived = not
-	   drawn at all (filtered out of pagePins, never merely hidden). */
-	.fb-pin {
-		position: fixed;
-		z-index: 80;
-		transform: translate(-50%, -50%);
-		color: var(--rb-orange);
-		cursor: pointer;
-		background: none;
-		border: none;
-		padding: 0;
-		line-height: 0;
-	}
-	.fb-mark path {
-		fill: currentColor;
-	}
-	.fb-fixed,
-	.fb-merged {
-		color: var(--rb-green);
-	}
-	.fb-fixed .fb-mark path {
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.3;
-		stroke-linejoin: round;
-	}
-	.fb-merged .fb-mark path {
-		fill: currentColor;
-	}
-	/* issued: amber still, plus the link mark that says it has been filed */
-	.fb-issued::before {
-		content: '';
-		position: absolute;
-		left: 7px;
-		bottom: 0;
-		width: 6px;
-		height: 3px;
-		border: 1px solid currentColor;
-		border-radius: 2px;
-	}
-	/* the unread dot: an agent has written to this pin since the maintainer read it */
-	.fb-unread::after {
-		content: '';
-		position: absolute;
-		top: -2px;
-		right: -3px;
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
-		background: var(--rb-accent);
-	}
+	/* The pin markers themselves (.fb-pin and the status palette) live in
+	   feedback/FeedbackPinMarkers.svelte, next to the markup they paint. */
 
 	.fb-place-overlay {
 		position: fixed;
@@ -541,4 +529,5 @@
 		margin: 2px 0 0;
 		color: var(--rb-text-dim);
 	}
+
 </style>

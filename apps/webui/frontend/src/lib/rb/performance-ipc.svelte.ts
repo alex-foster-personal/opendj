@@ -146,6 +146,9 @@ export type PerformanceCommand =
 	| { type: 'headphone_output_select'; device_id: string }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
+	/** UI contract only: the "show other users' pins" toggle (pin 88e3abec02a0)
+	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
+	| { type: 'pins_show_other_users' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
@@ -699,6 +702,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, device_id: record.device_id };
 	}
 	if (type === 'auto_play_two_track') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'pins_show_other_users') {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -1367,6 +1374,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'auto_play_two_track') {
 		throw new Error('auto_play_two_track must be rejected at the dispatch boundary');
+	} else if (command.type === 'pins_show_other_users') {
+		throw new Error('pins_show_other_users must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {
 		toggleTechMode();
 	} else if (command.type === 'tech_mode_peek') {
@@ -1825,6 +1834,13 @@ async function _dispatchUnknown(
 	if (command.type === 'auto_play_two_track') {
 		const error = new Error(
 			'auto_play_two_track: not_implemented - second-track matching and independent rules are planned'
+		);
+		_persistCommandError(null, error);
+		throw error;
+	}
+	if (command.type === 'pins_show_other_users') {
+		const error = new Error(
+			'pins_show_other_users: not_implemented - community feature, no cloudsync channel yet'
 		);
 		_persistCommandError(null, error);
 		throw error;

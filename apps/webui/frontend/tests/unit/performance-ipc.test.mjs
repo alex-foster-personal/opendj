@@ -1081,3 +1081,24 @@ test('master mute and browser playlist selection are bus commands with queryable
 		delete globalThis.window;
 	}
 });
+
+// ----- pin 88e3abec02a0: "show other users' pins" is stubbed, not silent --
+// The community-pins toggle in FeedbackWidget is inert (rb-inert, disabled),
+// but per AGENT-NATIVE PARITY every UI control still needs a matching
+// performance-bus command - one that answers honestly rather than pretending
+// to work. Modelled on auto_play_two_track, the existing precedent for a
+// UI-contract-only command that is rejected at the dispatch boundary before
+// it ever reaches deck/engine logic.
+test('pins_show_other_users is a registered performance command that refuses not_implemented', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			() => ipc.dispatchPerformanceCommand({ type: 'pins_show_other_users' }),
+			/not_implemented/
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
