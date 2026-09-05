@@ -27,6 +27,7 @@
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
+	import { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
 	import { compactOrderWidth } from '$lib/rb/library-column-widths';
@@ -499,6 +500,17 @@
 
 	const apCurveX = $derived(Math.max(8, colWidths.autoplay / 2));
 
+	/** r3919185343: `table-layout: fixed` at `width: 100%` redistributes any
+	 * extra space beyond the configured column total across the columns on a
+	 * wide wrap, so the rendered title column drifts right of where
+	 * masterFoldCenterPx (computed from the raw colWidths) puts the badge.
+	 * Pinning the table to exactly this sum removes the extra space there is
+	 * to redistribute - narrower than the wrap just leaves blank space to the
+	 * right, same as any wrap wider than its content. */
+	const tableWidthPx = $derived(
+		Object.values(colWidths).reduce((sum, w) => sum + w, 0)
+	);
+
 	// ------------------------------------------- per-pane scroll cursor
 	// Restore ONLY when the rendered pane changes (restoreKey): reading
 	// scrollTop through untrack keeps live scrolling from re-triggering.
@@ -508,7 +520,22 @@
 	// Starts at 0; the restore $effect below syncs it from the prop before
 	// paint (same tick it sets el.scrollTop), so there is no row-0 flash.
 	let liveScrollTop = $state(0);
+	/* Only the master-jump badge needs this, and the wrap's existing onscroll
+	 * already has the value in hand - so tracking it costs one assignment, not
+	 * a listener (pin b44c957f082f). */
+	let liveScrollLeft = $state(0);
 	let viewportHeight = $state(0);
+	/** Wrap's own rendered width, for the master-fold badge's right-edge
+	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
+	 * extra (pin b44c957f082f follow-up). */
+	let wrapWidth = $state(0);
+	/** The master-jump badge's own rendered width, so its clamp can account
+	 * for `translateX(-50%)` pushing its edge half a badge-width past the
+	 * clamped centre (Sol review r3941617671). `bind:clientWidth` below is a
+	 * one-off read of an element whose size only changes with its own text/
+	 * font, never with a window resize, so this is not the listener the
+	 * pin's "lazy on resize" requirement was written against. */
+	let masterFoldBadgeWidth = $state(0);
 
 	$effect(() => {
 		void restoreKey; // the one tracked dependency
@@ -525,9 +552,13 @@
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
+		wrapWidth = el.clientWidth;
 		if (typeof ResizeObserver === 'undefined') return; // SSR guard
 		const ro = new ResizeObserver((entries) => {
-			for (const entry of entries) viewportHeight = entry.contentRect.height;
+			for (const entry of entries) {
+				viewportHeight = entry.contentRect.height;
+				wrapWidth = entry.contentRect.width;
+			}
 		});
 		ro.observe(el);
 		return () => ro.disconnect();
@@ -773,8 +804,10 @@
 		<button
 			type="button"
 			class="master-fold above"
+			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is above - click to jump"
+			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			▲ MASTER
 		</button>
@@ -783,8 +816,10 @@
 		<button
 			type="button"
 			class="master-fold below"
+			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is below - click to jump"
+			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			▼ MASTER
 		</button>
@@ -795,10 +830,11 @@
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
 			liveScrollTop = top;
+			liveScrollLeft = e.currentTarget.scrollLeft;
 			onscrollcursor(top);
 		}}
 	>
-		<table data-testid="track-table">
+		<table data-testid="track-table" style={`width:${tableWidthPx}px`}>
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
 				<col style={`width:${colWidths.err}px`} />
@@ -1475,6 +1511,10 @@
 		color: inherit;
 	}
 	.ap-curve {
+		/* r3919669577: anchored to the sum of the columns before autoplay
+		   (funnel/err/cloud/order), not table-wrap's right edge - table-wrap
+		   can be wider than the table, and `right: 0` against table-wrap left
+		   the curve floating in that blank space instead of over the column. */
 		position: absolute;
 		top: 0;
 		left: var(--ap-curve-left);
@@ -1587,7 +1627,9 @@
 		pointer-events: none;
 	}
 	table {
-		width: 100%;
+		/* width set inline below, from the sum of colWidths (r3919185343) -
+		   never 100%, so table-layout: fixed has no extra space to
+		   redistribute across columns on a wrap wider than the content. */
 		border-collapse: collapse;
 		table-layout: fixed;
 		font-size: var(--rb-fs-browser);
@@ -1829,9 +1871,11 @@
 		background: color-mix(in srgb, var(--rb-green) 26%, var(--rb-panel-raised));
 	}
 
+	/* `left` comes from masterFoldCenterPx as an inline style: the middle of
+	 * the TABLE pointed at Rating / Comments, which is not what the badge is
+	 * about. See src/lib/rb/master-fold-anchor.ts (pin b44c957f082f). */
 	.master-fold {
 		position: absolute;
-		left: 50%;
 		transform: translateX(-50%);
 		z-index: 4;
 		padding: 3px 14px;
@@ -1883,6 +1927,7 @@
 	.c-plays {
 		font-size: 10px;
 	}
+
 	.c-quality {
 		overflow: hidden;
 		white-space: nowrap;

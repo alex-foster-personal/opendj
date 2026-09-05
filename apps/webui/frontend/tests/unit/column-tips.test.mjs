@@ -112,8 +112,12 @@ test('the Preview and Artwork headers carry their shared custom explanation (the
 		['h-preview', 'preview'],
 		['h-art', 'art']
 	]) {
+		// Match the class as a TOKEN: the artwork header gained the shared
+		// `h-icon` modifier when it went back to being an icon (pin
+		// e28577797642), and an exact-string match would read that as the
+		// header having vanished.
 		const at = source.search(new RegExp(`class="(?:[a-z0-9-]+ )*${cls}(?: [a-z0-9-]+)*"`));
-		assert.ok(at > 0, `no <th> carrying ${cls} found - the header moved, find it`);
+		assert.ok(at > 0, `no <th> carrying the ${cls} class found - the header moved, find it`);
 		// The opening tag runs from the `<th` before the class to the next `>`
 		// at brace depth zero; the action's text must live inside it.
 		const open = source.lastIndexOf('<th', at);

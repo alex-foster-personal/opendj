@@ -2538,7 +2538,9 @@
 				<path d="M8 3l5 6H3zM3 11h10v2H3z" fill="currentColor" />
 			</svg>
 		</button>
-		<span class="wordmark">rekordbox</span>
+		<!-- This is our own app, not the vendor whose library format it reads
+		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
+		<span class="wordmark">open dj</span>
 		{#if jobProgress.ribbon()}
 			{@const ribbon = jobProgress.ribbon()!}
 			<span

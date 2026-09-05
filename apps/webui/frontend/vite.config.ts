@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 
 import { claimAndCheckWebuiDevConfig, resolveAllowedHosts } from './webui-port-config';
+import { holdFullReloadPlugin } from './vite-hold-full-reload';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -21,7 +22,7 @@ export default defineConfig(({ command, mode }) => {
 	if (devConfig !== null) process.title = `Open DJ · Frontend :${devConfig.frontendPort}`;
 	return {
 		envDir: REPOSITORY_ROOT,
-		plugins: [sveltekit()],
+		plugins: [sveltekit(), holdFullReloadPlugin()],
 		build: {
 			// Terser instead of Vite's default esbuild minifier. Measured on
 			// origin/main at 59248abb9, gzip under build/_app/immutable/, which is

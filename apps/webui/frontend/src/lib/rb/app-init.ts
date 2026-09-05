@@ -13,6 +13,7 @@
 
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { installPerfEventLogGlobal } from './perf-event-log';
+import { installReloadCountdown } from './reload-countdown';
 import { startUsageHeartbeat } from './usage-heartbeat';
 
 /**
@@ -34,8 +35,12 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	// Tell the engine this page exists, so "is the app open" is a question
 	// it can answer on its own instead of anyone having to ask a human.
 	const stopUsageHeartbeat = startUsageHeartbeat(scheduler);
+	// REFRESH-01 (#891): a full reload while the maintainer is looking at the tab gets a
+	// 10 s on-top countdown first. Also installs __mdtScheduleReload for agents.
+	const stopReloadCountdown = installReloadCountdown();
 
 	return () => {
+		stopReloadCountdown();
 		stopUsageHeartbeat();
 		stopBootScheduler();
 	};

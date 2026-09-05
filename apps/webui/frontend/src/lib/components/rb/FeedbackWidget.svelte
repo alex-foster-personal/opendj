@@ -12,24 +12,23 @@
 	 * comment icon render inert with the standard PARITY-TODO tooltip, never
 	 * a broken panel.
 	 */
-	import { onMount, tick } from 'svelte';
+	import { onMount } from 'svelte';
 	import {
 		describePinStatusSummary,
 		describeAnchor,
 		followOnText,
 		isPinDrawn,
 		markPinSeen,
-		parsePinSeen,
 		pinFromClient,
-		pinStyle,
-		serializePinSeen,
-		PIN_SEEN_KEY,
-		type PinPoint,
+		type PinDraft,
 		type PinSeen
 	} from '$lib/rb/feedback';
 	import { readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
+	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
+	import { readParkedPinDraft } from '$lib/rb/feedback-pin-draft-restore';
+	import { persistParkedPinDraft } from '$lib/rb/feedback-pin-draft-persist';
+	import { pushToast } from '$lib/stores.svelte';
 	import {
-		addPin,
 		archivePin,
 		armPinPlacement,
 		disarmPinPlacement,
@@ -38,15 +37,14 @@
 		hydrateFeedback,
 		startPinWatch,
 		stopPinWatch,
-		submitFollowOn,
 		toggleFeedbackPanel,
 		type FeedbackPin
 	} from '$lib/rb/feedback-store.svelte';
-	import { readShellBuild } from '$lib/rb/build-identity';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import FeedbackPanel from './FeedbackPanel.svelte';
 	import FeedbackPinCard from './FeedbackPinCard.svelte';
+	import FeedbackPinDraftBubble from './FeedbackPinDraftBubble.svelte';
 	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
 	import FeedbackPinMarkers from './feedback/FeedbackPinMarkers.svelte';
 
@@ -65,24 +63,39 @@
 	 * parent) and the display-only label naming that parent. Saving a
 	 * follow-on always goes through the dedicated `/follow-on` endpoint,
 	 * which generates the real reference server-side; `text` is just the
-	 * reviewer's own addition. */
-	let pinDraft: {
-		point: PinPoint;
-		anchor: string | null;
-		viewport: { width: number; height: number };
-		text: string;
-		followOn: { parentId: string; label: string } | null;
-	} | null = $state(null);
-	let pinDraftTextarea: HTMLTextAreaElement | null = $state(null);
+	 * reviewer's own addition. `page` (from the imported PinDraft) is the
+	 * pathname the point/anchor were computed against - see the persistence
+	 * effect below for why a draft restored under a different pathname is
+	 * dropped rather than reattached. `viewport` is captured at creation time
+	 * (main) so a saved pin always carries the viewport it was placed under. */
+	let pinDraft:
+		| (PinDraft & {
+				viewport: { width: number; height: number };
+				followOn: { parentId: string; label: string } | null;
+		  })
+		| null = $state(null);
+	/** Viewport fallback for a draft restored from before this field existed. */
+	function _currentViewport(): { width: number; height: number } {
+		return { width: window.innerWidth, height: window.innerHeight };
+	}
+	let draftBubble: { focusPinDraftTextarea: () => Promise<void> } | undefined = $state();
+
+	/** Gates the persistence $effect below until onMount's restore has run.
+	 * $effect bodies run in declaration order on first flush, before onMount's
+	 * callback body executes - so without this gate the effect's first pass
+	 * (pinDraft still null) wipes the saved draft before onMount reads it back. */
+	let draftHydrated = $state(false);
+
+	/** True from onMount when a parked draft exists but is tagged to a
+	 * different page (r3919460207). pinDraft stays null in that case - the
+	 * page-mismatch guard from r3919185341 - but that null must NOT be read
+	 * by the persistence effect as "nothing to save": the draft is still
+	 * sitting in localStorage for its own page and just was not loaded here.
+	 * Cleared the moment this page starts its own draft, at which point the
+	 * normal null-means-clear lifecycle resumes for real. */
+	let foreignDraftParked = $state(false);
 
 	let pathname = $state('/');
-
-	/** True while a savePinDraft() POST is in flight. Guards the Save button:
-	 * without it, a double-click reaches submitFollowOn/addPin twice before
-	 * `pinDraft` clears, and the dedicated follow-on endpoint mints a fresh
-	 * child id per request, so one intended follow-on becomes two pins
-	 * (issue #914 review, Wed 3 Sep 2026). */
-	let savingPin = $state(false);
 
 	/** Which pin's body is open, and what this viewer has already read. */
 	let openPinId: string | null = $state(null);
@@ -132,8 +145,54 @@
 		return `Review todos - ${openCount} open item(s) agents queued for the maintainer's review; check done, pick options, type feedback (auto-saves)`;
 	});
 
+	/** Park the unsent draft so a refresh cannot eat it (pin 307e0e84bfbe).
+	 * $effect, not a keystroke handler: it must also catch Escape-to-cancel
+	 * and the save that clears it. */
+	/** Never throws inside the $effect itself - that would tear down the whole
+	 * component over a draft that is still perfectly usable in memory.
+	 * `persistParkedPinDraft` reports a write failure through `onError` rather
+	 * than swallowing it (Sol review r3941617668): `pinDraft` is left
+	 * untouched either way, so the text the user typed stays on screen and
+	 * editable even when the disk copy could not be written. */
+	$effect(() => {
+		if (!draftHydrated) return;
+		persistParkedPinDraft(localStorage, pinDraft, foreignDraftParked, (err) => {
+			pushToast(
+				`comment draft could not be saved: ${err instanceof Error ? err.message : String(err)}`,
+				'error',
+				undefined,
+				err,
+				{ source: 'feedback-pin-draft-storage' }
+			);
+		});
+	});
+
 	onMount(() => {
 		pathname = window.location.pathname;
+		// A read failure (storage blocked in a private window, or storage
+		// disabled by policy) used to collapse silently into "no draft" -
+		// indistinguishable from there simply being none, which is exactly the
+		// data-loss condition REFRESH-01 exists to make loud (Sol review
+		// r3941617668). readParkedPinDraft reports it through onError before
+		// falling back to no draft - there is nothing else safe to restore from
+		// a read that failed outright.
+		const { draft, foreign } = readParkedPinDraft(
+			localStorage,
+			pathname,
+			_currentViewport(),
+			(err) => {
+				pushToast(
+					`comment draft could not be restored: ${err instanceof Error ? err.message : String(err)}`,
+					'error',
+					undefined,
+					err,
+					{ source: 'feedback-pin-draft-storage' }
+				);
+			}
+		);
+		pinDraft = draft;
+		foreignDraftParked = foreign;
+		draftHydrated = true;
 		// Three GETs (todos, comments, general) behind a chevron nobody has
 		// clicked yet: the single biggest block of the boot burst, and the
 		// easiest to move (PERF-R6). Deferred, never dropped -- and the
@@ -177,7 +236,7 @@
 
 	function _readSeen(): PinSeen {
 		try {
-			return parsePinSeen(window.localStorage.getItem(PIN_SEEN_KEY));
+			return readPinSeen(window.localStorage);
 		} catch {
 			return {}; // storage blocked: every update simply reads as unread
 		}
@@ -186,7 +245,7 @@
 	function _writeSeen(next: PinSeen): void {
 		pinSeen = next;
 		try {
-			window.localStorage.setItem(PIN_SEEN_KEY, serializePinSeen(next));
+			writePinSeen(window.localStorage, next);
 		} catch {
 			// storage blocked: the dot returns on reload, which is the safe way round
 		}
@@ -231,22 +290,28 @@
 	 * display-only labelling, never what gets saved. */
 	function startFollowOn(pin: FeedbackPin): void {
 		openPinId = null;
+		// This page now owns the draft slot for real, overwriting any foreign
+		// one on purpose - same rule as handlePlacementClick below (review
+		// FeedbackWidget.svelte:225): a foreign draft is superseded, not
+		// merged, the moment this page starts writing its own.
+		foreignDraftParked = false;
 		pinDraft = {
 			point: { x_pct: pin.x_pct, y_pct: pin.y_pct },
 			anchor: pin.anchor,
 			viewport: { width: window.innerWidth, height: window.innerHeight },
 			text: '',
+			page: pathname,
 			followOn: { parentId: pin.id, label: followOnText(pin).trim() }
 		};
 		void focusPinDraftTextarea();
 	}
 
+	/** Thin forwarder to the draft bubble component - kept here (rather than
+	 * calling draftBubble?.focusPinDraftTextarea() at each call site) so
+	 * startFollowOn/handlePlacementClick read the same either way regardless
+	 * of which component now owns the implementation. */
 	async function focusPinDraftTextarea(): Promise<void> {
-		await tick();
-		if (pinDraftTextarea === null) {
-			throw new Error('pin draft textarea did not render before focus');
-		}
-		pinDraftTextarea.focus();
+		await draftBubble?.focusPinDraftTextarea();
 	}
 
 	// ----- pin placement --------------------------------------------------
@@ -262,52 +327,18 @@
 			.elementsFromPoint(e.clientX, e.clientY)
 			.find((el) => !el.classList.contains('fb-place-overlay'));
 		disarmPinPlacement();
+		// This page now owns the draft slot for real, overwriting any foreign
+		// one on purpose - the persistence effect's clear guard applies again.
+		foreignDraftParked = false;
 		pinDraft = {
 			point,
 			anchor: describeAnchor(under ?? null),
 			viewport: { width: window.innerWidth, height: window.innerHeight },
 			text: '',
+			page: pathname,
 			followOn: null
 		};
 		void focusPinDraftTextarea();
-	}
-
-	async function savePinDraft(): Promise<void> {
-		if (pinDraft === null || savingPin) return;
-		savingPin = true;
-		try {
-			// Textarea and Cancel stay enabled during the await below, so the
-			// reviewer can edit, cancel, or start a replacement draft before this
-			// save resolves; only clear `pinDraft` if it is still THIS draft.
-			const submitted = pinDraft;
-			const text = submitted.text.trim();
-			if (submitted.followOn !== null) {
-				// Always through the dedicated endpoint: the parent reference is
-				// server-generated from submitted.followOn.parentId, independent of
-				// whatever is (or is not) left in `text`.
-				const saved = await submitFollowOn(submitted.followOn.parentId, text);
-				if (saved && pinDraft === submitted) pinDraft = null;
-				return;
-			}
-			if (text === '') return;
-			const saved = await addPin({
-				x_pct: submitted.point.x_pct,
-				y_pct: submitted.point.y_pct,
-				anchor: submitted.anchor,
-				page: pathname,
-				text,
-				ui: pinUiKind(),
-				viewport_width: submitted.viewport.width,
-				viewport_height: submitted.viewport.height
-			});
-			if (saved && pinDraft === submitted) pinDraft = null;
-		} finally {
-			savingPin = false;
-		}
-	}
-
-	function pinUiKind(): 'chrome-loop' | 'packaged-app' {
-		return readShellBuild().kind === 'absent' ? 'chrome-loop' : 'packaged-app';
 	}
 
 	function handleEscape(e: KeyboardEvent): void {
@@ -394,34 +425,7 @@
 {/if}
 
 <!-- pin text bubble -->
-{#if pinDraft !== null}
-	<div class="fb-bubble" style={pinStyle(pinDraft.point)} role="dialog" aria-label="New comment pin">
-		{#if pinDraft.followOn !== null}
-			<p class="fb-hint" title="Sent through the dedicated follow-on endpoint; the reference below is generated server-side">{pinDraft.followOn.label}</p>
-		{/if}
-		<textarea
-			class="fb-bubble-text"
-			rows="3"
-			placeholder="What is wrong / right here?"
-			bind:this={pinDraftTextarea}
-			bind:value={pinDraft.text}
-		></textarea>
-		{#if pinDraft.anchor !== null}
-			<p class="fb-hint" title="Best-effort nearest stable element under the click">near {pinDraft.anchor}</p>
-		{/if}
-		<div class="fb-row-btns">
-			<button
-				type="button"
-				class="fb-mini"
-				onclick={savePinDraft}
-				disabled={savingPin || (pinDraft.followOn === null && pinDraft.text.trim() === '')}
-			>
-				Save pin
-			</button>
-			<button type="button" class="fb-mini" onclick={() => (pinDraft = null)}>Cancel</button>
-		</div>
-	</div>
-{/if}
+<FeedbackPinDraftBubble bind:pinDraft bind:this={draftBubble} />
 
 <FeedbackPanel />
 
@@ -488,57 +492,11 @@
 		padding: 0;
 	}
 
-	.fb-bubble {
-		position: fixed;
-		z-index: 310;
-		width: 200px;
-		padding: 6px;
-		background: #0a0c0f;
-		border: 1px solid var(--rb-border);
-		border-radius: 3px;
-		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-	}
-
-	.fb-bubble-text {
-		width: 100%;
-		box-sizing: border-box;
-		background: var(--rb-inset);
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		color: var(--rb-text);
-		font-family: var(--rb-font);
-		font-size: 10px;
-		padding: 3px 4px;
-	}
-
-	:global(.fb-row-btns) {
-		display: flex;
-		gap: 4px;
-		margin-top: 4px;
-	}
-
-	:global(.fb-mini) {
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		color: var(--rb-text-dim);
-		font-family: var(--rb-font);
-		font-size: 9px;
-		padding: 2px 6px;
-		line-height: 1.2;
-		cursor: pointer;
-	}
-	:global(.fb-mini:hover:not(:disabled)) {
-		color: var(--rb-text);
-	}
-	:global(.fb-close) {
-		margin-left: auto;
-		min-width: 20px;
-	}
-
-	:global(.fb-hint) {
-		margin: 2px 0 0;
-		color: var(--rb-text-dim);
-	}
-
+	/* .fb-bubble / .fb-bubble-text / .fb-row-btns / .fb-mini / .fb-close /
+	   .fb-hint moved into FeedbackPinDraftBubble.svelte (Thu 3 Sep 2026, pin
+	   review v2), next to the markup they paint - same pattern as the pin
+	   marker comment above. FeedbackPinCard.svelte's use of the :global()
+	   ones still resolves: that stylesheet ships as long as this widget
+	   imports the component, regardless of whether pinDraft is currently
+	   non-null. */
 </style>

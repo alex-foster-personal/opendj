@@ -6,10 +6,15 @@
  * math are the parts most worth unit-testing, so they live where node:test
  * can bundle them without a DOM or a Svelte runtime.
  *
- * localStorage carries ONLY the panel position and, since #858, which pin
- * updates this viewer has already read - both per-viewer conveniences.
- * Feedback CONTENT never touches client storage; it goes straight to
- * /api/v1/feedback so an agent harvest can never miss it.
+ * localStorage carries the panel position, ONE unsent pin draft, and since
+ * #858 which pin updates this viewer has already read - all per-viewer
+ * conveniences. Feedback CONTENT still never touches client storage: the
+ * moment a pin is saved it goes to /api/v1/feedback and the draft is dropped,
+ * so an agent harvest can never miss anything the store has. A draft is the
+ * other thing - text that has never been submitted, so there is nothing for a
+ * harvest to miss, and losing it on a refresh was pin 307e0e84bfbe. Parking it
+ * locally rather than POSTing it half-written is deliberate: autosaving
+ * drafts to the daemon would fill the maintainer's own review list with fragments.
  *
  * Requirements (mini-PRD):
  *   ✔︎ 🎯 clampPanelPos: a dragged position is kept fully on-viewport.
@@ -60,6 +65,9 @@ export interface PanelPos {
 }
 
 export const PANEL_POS_KEY = "odj-feedback-panel-pos";
+
+/** Where an UNSENT pin draft is parked so a refresh cannot eat it. */
+export const PIN_DRAFT_KEY = "odj-feedback-pin-draft";
 
 /** Keep at least this many px of the panel header reachable on both axes. */
 // ----- panel position ----------------------------------------------------
@@ -433,68 +441,10 @@ export function serializePinsVisible(visible: boolean): string {
 }
 
 // ----- linkifying an agent's plain-text note (pin 27fe1e3e61b5) ----------
-export interface NoteSegment {
-  type: "text" | "link";
-  value: string;
-}
-
-/** Bare http/https URLs only - never markup. A note is plain text an agent
- * wrote, so turning it into real anchors must never risk innerHTML of
- * untrusted content; this only ever produces text nodes and <a> hrefs built
- * from a URL this same regex already matched. Stops at the first whitespace,
- * which is the same boundary a human reading the note would use. */
-const URL_PATTERN = /https?:\/\/\S+/g;
-
-/** Trailing prose punctuation (a period ending a sentence, a comma before
- * "and", a closing paren that belongs to the sentence rather than the URL)
- * is not part of the link - it is moved back into the surrounding text so
- * the href is not silently corrupted. A trailing ")" is only trimmed when
- * it does not close a "(" that is genuinely inside the URL, so a URL whose
- * own path legitimately contains balanced parens is left alone. */
-const ALWAYS_TRAILING_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?", "'", '"']);
-
-function splitTrailingPunctuation(url: string): { core: string; trailing: string } {
-  let core = url;
-  let trailing = "";
-  while (core.length > 0) {
-    const last = core[core.length - 1];
-    if (ALWAYS_TRAILING_PUNCTUATION.has(last)) {
-      trailing = last + trailing;
-      core = core.slice(0, -1);
-      continue;
-    }
-    if (last === ")") {
-      const opens = (core.match(/\(/g) ?? []).length;
-      const closes = (core.match(/\)/g) ?? []).length;
-      if (closes > opens) {
-        trailing = last + trailing;
-        core = core.slice(0, -1);
-        continue;
-      }
-    }
-    break;
-  }
-  return { core, trailing };
-}
-
-export function linkifyAgentNote(text: string): NoteSegment[] {
-  if (text === "") return [];
-  const segments: NoteSegment[] = [];
-  let lastIndex = 0;
-  for (const match of text.matchAll(URL_PATTERN)) {
-    const start = match.index ?? 0;
-    if (start > lastIndex) {
-      segments.push({ type: "text", value: text.slice(lastIndex, start) });
-    }
-    const { core } = splitTrailingPunctuation(match[0]);
-    segments.push({ type: "link", value: core });
-    lastIndex = start + core.length;
-  }
-  if (lastIndex < text.length) {
-    segments.push({ type: "text", value: text.slice(lastIndex) });
-  }
-  return segments;
-}
+// Moved to feedback-note.ts (Thu 3 Sep 2026, pin review v2) to bring this
+// file back under the 600-line file-size gate; re-exported here so nothing
+// importing it from feedback.ts needs to change.
+export { linkifyAgentNote } from "./feedback-note";
 
 // ----- nearest stable anchor ---------------------------------------------
 /** The slice of Element the anchor walk reads; tests pass plain objects. */
@@ -535,4 +485,98 @@ export function describeAnchor(start: AnchorishElement | null): string | null {
     hops += 1;
   }
   return null;
+}
+
+
+// ----- unsent pin draft ---------------------------------------------------
+export interface PinDraft {
+  point: PinPoint;
+  anchor: string | null;
+  text: string;
+  /** The pathname the draft's point/anchor were computed against, captured
+   * at creation time (r3919185341). A draft is only ever meaningful on the
+   * page it was placed on - restoring it under a different pathname and
+   * saving with the CURRENT page would silently attach the comment to the
+   * wrong page and reinterpret stale coordinates against a different UI. */
+  page: string;
+  /** Viewport captured at creation time. Optional only because an
+   * older-shaped stored draft (pre this field) must still parse. */
+  viewport?: { width: number; height: number };
+  /** Follow-on parent link, if this draft is a reply-in-progress. Persisted
+   * across a refresh (pin b0f-followon, FeedbackWidget.svelte:138 review):
+   * dropping it on restore silently downgraded a follow-on draft to a
+   * plain top-level draft, which is the bug this field exists to close. */
+  followOn?: { parentId: string; label: string } | null;
+}
+
+export function serializePinDraft(draft: PinDraft): string {
+  return JSON.stringify(draft);
+}
+
+
+/**
+ * Restore a parked draft, or null. Strict on purpose, the same way
+ * parsePanelPos is: a half-shaped record must read as "no draft" rather than
+ * restore a bubble with an undefined position on it. Whitespace-only text is
+ * nothing to restore either - it would reopen an empty bubble over the page
+ * on every load.
+ */
+export function parsePinDraft(raw: string | null): PinDraft | null {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const d = parsed as Record<string, unknown>;
+  const point = d.point as Record<string, unknown> | undefined;
+  if (
+    typeof point !== "object" ||
+    point === null ||
+    !Number.isFinite(point.x_pct as number) ||
+    !Number.isFinite(point.y_pct as number)
+  ) {
+    return null;
+  }
+  if (typeof d.text !== "string" || d.text.trim() === "") return null;
+  if (d.anchor !== null && typeof d.anchor !== "string") return null;
+  if (typeof d.page !== "string" || d.page === "") return null;
+  // followOn is optional and, when present, must be a well-formed
+  // { parentId, label } record - a half-shaped one is worse than none,
+  // since saving against a bad parentId would fail server-side.
+  let followOn: { parentId: string; label: string } | null | undefined;
+  if (d.followOn === null || d.followOn === undefined) {
+    followOn = d.followOn === null ? null : undefined;
+  } else if (
+    typeof d.followOn === "object" &&
+    typeof (d.followOn as Record<string, unknown>).parentId === "string" &&
+    typeof (d.followOn as Record<string, unknown>).label === "string"
+  ) {
+    const fo = d.followOn as Record<string, unknown>;
+    followOn = { parentId: fo.parentId as string, label: fo.label as string };
+  } else {
+    return null; // corrupt follow-on link - do not restore a broken draft
+  }
+  const vp = d.viewport as Record<string, unknown> | undefined;
+  const viewport =
+    typeof vp === "object" &&
+    vp !== null &&
+    Number.isFinite(vp.width as number) &&
+    Number.isFinite(vp.height as number)
+      ? { width: vp.width as number, height: vp.height as number }
+      : undefined;
+  // exactOptionalPropertyTypes forbids `viewport: undefined` / `followOn:
+  // undefined` against PinDraft's optional (not `| undefined`) properties -
+  // the key must be ABSENT, not present-with-undefined, when there is no
+  // value to restore.
+  return {
+    point: { x_pct: point.x_pct as number, y_pct: point.y_pct as number },
+    page: d.page,
+    anchor: d.anchor,
+    text: d.text,
+    ...(viewport !== undefined ? { viewport } : {}),
+    ...(followOn !== undefined ? { followOn } : {}),
+  };
 }

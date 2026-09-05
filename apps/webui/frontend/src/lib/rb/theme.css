@@ -189,7 +189,9 @@ html[data-theme='light'] .perf-root {
 /* -------- star rating: outline stars per SCREENSHOT-SPEC 6 -------- */
 .perf-root .rb-star {
 	color: #3a3f46;
-	font-size: var(--rb-fs-browser);
+	/* Set by the rating cell when the column is too narrow for five stars at
+	 * full size; falls back to normal browser text everywhere else. */
+	font-size: var(--rb-star-size, var(--rb-fs-browser));
 	line-height: 1;
 	transition: color 60ms linear;
 }

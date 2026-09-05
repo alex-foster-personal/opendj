@@ -74,6 +74,7 @@ export default defineConfig({
 	// vite/chromium AND the webkit artifact config is documented in both files.
 	testIgnore: [
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
+		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
@@ -87,7 +88,8 @@ export default defineConfig({
 		'**/hot-cue-mapping-gate.spec.ts', // playwright.hotcue-mapping-gate.config.ts (real backend, fixture library)
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
-		'**/stretch-quality.spec.ts' // playwright.stretch-quality.config.ts (no server)
+		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)
+		'**/full-reload-gate.spec.ts' // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
 	],
 	fullyParallel: false,
 	workers: 1,

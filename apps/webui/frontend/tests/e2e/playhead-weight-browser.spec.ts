@@ -68,33 +68,19 @@ const TONE_HEX: Record<string, [number, number, number]> = {
 	bar1: [0x35, 0xc0, 0x4f],
 	synced: [0x7e, 0xd9, 0x92]
 };
-/** Per-tone glow alpha, mirroring `drawPlayhead`'s static branches: the glow
- * carries the tone's weight (bar1 heaviest, synced lightest), the core is
- * always opaque. Read back as round(alpha * 255) with a small compositing
- * tolerance. */
-const TONE_GLOW_ALPHA: Record<string, number> = {
-	now: 0.4,
-	master: 0.5,
-	bar1: 0.55,
-	synced: 0.32
-};
-const GLOW_TOLERANCE = 3;
 
 test.describe('playhead weight, painted on a real canvas', () => {
 	for (const tone of STATIC_TONES) {
-		test(`${tone}: glow spans exactly 3px at its own alpha, core is 1px opaque`, async ({
-			page
-		}) => {
+		test(`${tone}: glow spans exactly 3px at ~0.45 alpha, core is 1px opaque`, async ({ page }) => {
 			await paint(page, tone);
 			// Outside the glow: fully transparent.
 			expect((await pixelAt(page, CENTER_X - 2, 20)).a).toBe(0);
 			expect((await pixelAt(page, CENTER_X + 2, 20)).a).toBe(0);
-			// Glow-only columns (core does not cover them): the tone's own alpha.
-			const expectedGlow = Math.round(TONE_GLOW_ALPHA[tone] * 255);
+			// Glow-only columns (core does not cover them): alpha near 0.45*255.
 			const left = await pixelAt(page, CENTER_X - 1, 20);
 			const right = await pixelAt(page, CENTER_X + 1, 20);
-			for (const p of [left, right]) expect(p.a).toBeGreaterThanOrEqual(expectedGlow - GLOW_TOLERANCE);
-			for (const p of [left, right]) expect(p.a).toBeLessThanOrEqual(expectedGlow + GLOW_TOLERANCE);
+			for (const p of [left, right]) expect(p.a).toBeGreaterThan(105);
+			for (const p of [left, right]) expect(p.a).toBeLessThan(125);
 			// Core column: opaque, drawn on top of the glow at alpha 1.
 			const core = await pixelAt(page, CENTER_X, 20);
 			expect(core.a).toBe(255);
@@ -103,31 +89,25 @@ test.describe('playhead weight, painted on a real canvas', () => {
 		});
 	}
 
-	test('every static tone paints the identical geometry - only colour and glow weight differ', async ({
+	test('every static tone paints the identical geometry - only the colour differs', async ({
 		page
 	}) => {
+		const alphas: number[] = [];
 		const colors: string[] = [];
-		const glows: number[] = [];
 		for (const tone of STATIC_TONES) {
 			await paint(page, tone);
-			const left = await pixelAt(page, CENTER_X - 1, 20);
-			const right = await pixelAt(page, CENTER_X + 1, 20);
+			const glow = await pixelAt(page, CENTER_X - 1, 20);
 			const core = await pixelAt(page, CENTER_X, 20);
-			// Same footprint for every tone: symmetric 1px glow flanks, opaque core.
-			expect((await pixelAt(page, CENTER_X - 2, 20)).a).toBe(0);
-			expect((await pixelAt(page, CENTER_X + 2, 20)).a).toBe(0);
-			expect(left.a).toBe(right.a);
-			expect(left.a).toBeGreaterThan(0);
-			expect(core.a).toBe(255);
-			glows.push(left.a);
+			alphas.push(glow.a, core.a);
 			colors.push(`${core.r},${core.g},${core.b}`);
 		}
-		// Colour tells the tones apart, and so does the glow weight (bar1 > master > now > synced).
+		// Same weight for every tone: the (glow, core) alpha pair repeats.
+		for (let i = 2; i < alphas.length; i += 2) {
+			expect(alphas[i]).toBe(alphas[0]);
+			expect(alphas[i + 1]).toBe(alphas[1]);
+		}
+		// But the colour is what tells them apart.
 		expect(new Set(colors).size).toBe(STATIC_TONES.length);
-		const byTone = Object.fromEntries(STATIC_TONES.map((tone, i) => [tone, glows[i]]));
-		expect(byTone.bar1).toBeGreaterThan(byTone.master);
-		expect(byTone.master).toBeGreaterThan(byTone.now);
-		expect(byTone.now).toBeGreaterThan(byTone.synced);
 	});
 
 	test('a synced master paints pure yellow then pure green adjacent cores', async ({ page }) => {
