@@ -17,7 +17,7 @@
 		droppedStableIds,
 		endTrackDrag
 	} from '$lib/rb/track-drag.svelte';
-	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './pane-contract.svelte';
+	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
 
 	let {
 		nodes,

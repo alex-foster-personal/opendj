@@ -1243,6 +1243,8 @@
 			vocals: parseVocals(wire.vocals),
 			stems: parseStemSummary(wire.stems),
 			has_rb_mapping: wire.has_rb_mapping,
+			artwork_available: wire.artwork_available,
+			artwork_status: wire.artwork_status,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1283,6 +1285,8 @@
 			vocals: parseVocals(track.vocals),
 			stems: parseStemSummary(track.stems),
 			has_rb_mapping: track.has_rb_mapping,
+			artwork_available: track.artwork_available,
+			artwork_status: track.artwork_status,
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1332,8 +1336,8 @@
 	}
 
 	// -------------------------------------------- lazy per-row hydration
-	// Only rb-meta remains lazy (artwork_available + genre/streaming
-	// fallback for All Tracks rows). Strips/file_exists arrive inline; the
+	// rb-meta remains lazy for genre/streaming and analysis fallbacks. Artwork,
+	// strips, and file_exists arrive inline; the
 	// observer also flips row.revealed for the one-time canvas draw.
 
 	function rowVisible(row: BrowserRow): void {

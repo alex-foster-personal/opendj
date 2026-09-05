@@ -310,6 +310,8 @@ export interface PlaylistTrackRowWire {
 	 * CONTRACT - the browser skips the lazy per-row fetch rather than
 	 * provoke a 404 the console logs unsuppressably on every visible row. */
 	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 }
 
 /** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
@@ -425,6 +427,8 @@ export type TrackListItemWire = Track & {
 	stems: StemSummary;
 	/** See PlaylistTrackRowWire.has_rb_mapping - same flag, same purpose. */
 	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 };
 
 export interface TracksPageHydrated {

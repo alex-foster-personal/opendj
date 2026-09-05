@@ -5354,6 +5354,13 @@ export interface components {
         SearchHit: {
             /** Artist */
             artist: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
             /** Comments */
@@ -6015,6 +6022,13 @@ export interface components {
             album?: string | null;
             /** Artist */
             artist?: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm?: number | null;
             /** Created At */
@@ -6145,6 +6159,13 @@ export interface components {
         TrackRowOut: {
             /** Artist */
             artist: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
             /** Comments */

@@ -125,6 +125,8 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
+                artwork_available=row["artwork_available"],
+                artwork_status=row["artwork_status"],
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)

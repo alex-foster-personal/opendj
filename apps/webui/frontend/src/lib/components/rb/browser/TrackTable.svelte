@@ -1196,15 +1196,15 @@
 						</td>
 						<td
 							class="c-art"
-							title={row.rb_meta !== null && !row.rb_meta.artwork_available
-								? row.rb_meta.artwork_available === null
+							title={row.artwork_available !== true
+								? row.artwork_available === null
 									? 'artwork could not be checked (tag reader not installed in this build)'
-									: (artworkStatusLabel(row.rb_meta.artwork_status) ??
+									: (artworkStatusLabel(row.artwork_status) ??
 										'artwork unavailable')
 								: undefined}
 						>
 							<span class="art-slate" aria-hidden="true"></span>
-							{#if row.rb_meta !== null && row.rb_meta.artwork_available}
+							{#if row.artwork_available === true}
 								<img
 									src={artworkUrl(row.stable_id, 's')}
 									alt=""

@@ -7117,6 +7117,27 @@
             ],
             "title": "Artist"
           },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -7283,6 +7304,8 @@
           "vocals",
           "stems",
           "has_rb_mapping",
+          "artwork_available",
+          "artwork_status",
           "match_context"
         ],
         "title": "SearchHit",
@@ -8773,6 +8796,27 @@
             ],
             "title": "Artist"
           },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -8948,7 +8992,9 @@
           "file_exists",
           "quality",
           "vocals",
-          "stems"
+          "stems",
+          "artwork_available",
+          "artwork_status"
         ],
         "title": "TrackListItemOut",
         "type": "object"
@@ -9182,6 +9228,27 @@
             ],
             "title": "Artist"
           },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -9343,7 +9410,9 @@
           "quality",
           "vocals",
           "stems",
-          "has_rb_mapping"
+          "has_rb_mapping",
+          "artwork_available",
+          "artwork_status"
         ],
         "title": "TrackRowOut",
         "type": "object"

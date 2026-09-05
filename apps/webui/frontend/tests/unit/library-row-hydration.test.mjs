@@ -34,6 +34,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const BROWSER_PANEL = join(SRC, 'lib/components/rb/BrowserPanel.svelte');
+const TRACK_TABLE = join(SRC, 'lib/components/rb/browser/TrackTable.svelte');
 
 /** Every ANLZ fetch entry point. Anything calling these can hit the network. */
 const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'fetchAnlz'];
@@ -229,6 +230,24 @@ test('_hydrateRowMeta does not skip the round-trip for unmapped rows', () => {
 		'_hydrateRowMeta still returns early for !row.has_rb_mapping - unmapped rows never ' +
 			'fetch rb-meta, so a real embedded-tag artwork_available is never observed by the ' +
 			'main library browser (PR #773 finding)'
+	);
+});
+
+test('artwork renders from its inline row verdict, not rb-meta hydration', () => {
+	const table = readFileSync(TRACK_TABLE, 'utf8');
+	const artStart = table.indexOf('class="c-art"');
+	const artEnd = table.indexOf('<td class="c-title"', artStart);
+	assert.ok(artStart >= 0 && artEnd > artStart, 'artwork cell not found in TrackTable.svelte');
+	const artCell = table.slice(artStart, artEnd);
+	assert.match(
+		artCell,
+		/\{#if row\.artwork_available === true\}/,
+		'artwork must render from the listing row so disabled rb-meta hydration cannot blank it'
+	);
+	assert.doesNotMatch(
+		artCell,
+		/row\.rb_meta/,
+		'artwork cell still depends on lazy rb-meta hydration instead of inline artwork facts'
 	);
 });
 

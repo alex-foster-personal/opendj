@@ -96,7 +96,11 @@ export interface BrowserRow {
 	 * #505 rb-meta would answer 200, but with nothing the row does not
 	 * already carry, so rb_meta stays null and no request is made. */
 	has_rb_mapping: boolean;
-	/** Lazy rb-meta (artwork_available + genre/streaming fallback);
+	/** Inline listing verdict. The artwork cell must not rely on visibility
+	 * hydration, which can be absent for a virtualized row. */
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	/** Lazy rb-meta (genre/streaming and analysis fallback);
 	 * null until the row first scrolls into view, and permanently null when
 	 * has_rb_mapping is false. */
 	rb_meta: RbMeta | null;
@@ -554,46 +558,7 @@ export function resolveNewTabIndex(panes: { sticky?: boolean }[]): number | null
 }
 
 // -------------------------------------------------- playlist drag payload
-
-/** dataTransfer type for a playlist dragged out of the tree onto the tabs. */
-export const PLAYLIST_DRAG_MIME = 'application/x-mdt-playlist';
-
-/**
- * The subset of PlaylistNode that survives a drag. Children are dropped
- * because the payload crosses a dataTransfer JSON round trip and the tab
- * bar only ever opens the dragged node itself.
- */
-export interface PlaylistDragPayload {
-	playlist_id: string;
-	name: string;
-	track_count: number;
-	kind: 'all_tracks' | 'playlist' | 'folder';
-}
-
-/** Serialize a playlist for dataTransfer. */
-export function encodePlaylistDrag(payload: PlaylistDragPayload): string {
-	return JSON.stringify(payload);
-}
-
-/**
- * Parse a dropped playlist payload, or null when the drop is not one of
- * ours. Returns null rather than throwing because a drop handler receives
- * whatever the OS hands it - foreign drags are an expected input, not a bug.
- */
-export function decodePlaylistDrag(raw: string): PlaylistDragPayload | null {
-	if (raw.trim() === '') return null;
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-	if (typeof parsed !== 'object' || parsed === null) return null;
-	const record = parsed as Record<string, unknown>;
-	const { playlist_id, name, track_count, kind } = record;
-	if (typeof playlist_id !== 'string' || playlist_id === '') return null;
-	if (typeof name !== 'string') return null;
-	if (typeof track_count !== 'number' || !Number.isFinite(track_count)) return null;
-	if (kind !== 'all_tracks' && kind !== 'playlist' && kind !== 'folder') return null;
-	return { playlist_id, name, track_count, kind };
-}
+// The codec itself lives in ./playlist-drag (pure, runeless, importless).
+// The payload type stays exported here so BrowserPanel keeps ONE import
+// site for the pane vocabulary, matching TrackTable's row re-exports.
+export type { PlaylistDragPayload } from './playlist-drag';

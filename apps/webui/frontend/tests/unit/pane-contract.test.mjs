@@ -372,9 +372,6 @@ test('fetchWindow fails fast on negative window args', () => {
 // - if shift-click range select doesn't span the visible order, or doesn't
 //   fall back to a single select when either end is missing, then broken
 // - if the two-argument select call sites change behaviour then broken
-// - if decodePlaylistDrag accepts a foreign or malformed payload, or throws
-//   instead of returning null, then a drag from another app crashes the
-//   tab bar -- broken
 
 test('a new pane is not sticky, and beginLoad leaves the lock alone', () => {
 	const p = contract.createPaneStore();
@@ -456,37 +453,6 @@ test('extend and plain select keep their pre-range behaviour', () => {
 	p.select('c', false); // plain click collapses the selection
 	assert.deepEqual(p.selected_ids, ['c']);
 });
-
-test('playlist drag payloads round-trip, and junk decodes to null', () => {
-	const payload = {
-		playlist_id: 'pl-7',
-		name: 'Peak Time',
-		track_count: 42,
-		kind: 'playlist'
-	};
-	assert.deepEqual(
-		contract.decodePlaylistDrag(contract.encodePlaylistDrag(payload)),
-		payload
-	);
-
-	for (const junk of [
-		'',
-		'   ',
-		'not json at all',
-		'null',
-		'[]',
-		'"a string"',
-		JSON.stringify({ playlist_id: '', name: 'n', track_count: 1, kind: 'playlist' }),
-		JSON.stringify({ name: 'n', track_count: 1, kind: 'playlist' }),
-		JSON.stringify({ playlist_id: 'p', track_count: 1, kind: 'playlist' }),
-		JSON.stringify({ playlist_id: 'p', name: 'n', kind: 'playlist' }),
-		JSON.stringify({ playlist_id: 'p', name: 'n', track_count: 1 }),
-		JSON.stringify({ playlist_id: 'p', name: 'n', track_count: 1, kind: 'nope' })
-	]) {
-		assert.equal(contract.decodePlaylistDrag(junk), null, `should reject ${junk}`);
-	}
-});
-
 
 // ------------------------------------------------------ strip propagation
 

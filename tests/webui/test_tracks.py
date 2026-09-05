@@ -16,6 +16,22 @@ def test_list_tracks_happy_path(client):
 
 
 @pytest.mark.requirement("CAT-05")
+def test_list_tracks_includes_artwork_facts_without_rb_meta_hydration(client):
+    """The table can decide whether to render art from its listing row alone."""
+    response = client.get("/api/v1/tracks")
+
+    assert response.status_code == 200
+    for item in response.json()["items"]:
+        assert isinstance(item["artwork_available"], bool) or item["artwork_available"] is None
+        assert item["artwork_status"] in {
+            "ok",
+            "no_image_path",
+            "unresolved",
+            "file_missing",
+        }
+
+
+@pytest.mark.requirement("CAT-05")
 def test_list_tracks_filter_q(client):
     r = client.get("/api/v1/tracks", params={"q": "midnight"})
     assert r.status_code == 200

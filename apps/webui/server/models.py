@@ -90,6 +90,10 @@ class TrackListItemOut(TrackOut):
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
+    # Artwork facts are computed in the listing's existing bulk row assembly,
+    # so TrackTable does not depend on IntersectionObserver hydration.
+    artwork_available: bool | None
+    artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
 
 
 class TracksPage(BaseModel):
@@ -167,6 +171,8 @@ class TrackRowOut(BaseModel):
     stems: dict[str, Any]
     # Whether GET /tracks/{sid}/rb-meta can resolve (see TrackListItemOut).
     has_rb_mapping: bool
+    artwork_available: bool | None
+    artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
 
 
 class PlaylistDetail(BaseModel):
