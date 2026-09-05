@@ -13,7 +13,6 @@ import pytest
 
 from apps.shared import platform_paths as pp
 
-
 # ----- AssetResolver: per-call containment memo (pin ad59ac) --------------
 #
 # A prior fix cached the containment verdict for 30s ACROSS REQUESTS and was
