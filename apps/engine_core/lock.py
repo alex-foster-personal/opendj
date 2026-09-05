@@ -1,7 +1,7 @@
 """Engine singleton lock.
 
 An exclusive ``flock`` on ``<data_dir>/.engine.lock`` whose contents are the
-holder's identity JSON ``{pid, boot_id, started_at, heartbeat_at}``. The
+holder's identity JSON ``{pid, role, port, boot_id, started_at, heartbeat_at}``. The
 flock is the authority -- the kernel drops it when the holder dies -- and the
 JSON exists so a refusal can NAME the holder instead of saying "busy".
 """
@@ -82,11 +82,13 @@ class EngineLock:
         boot_id: str | None = None,
         host: str | None = None,
         port: int | None = None,
+        role: str = "opendj-engine",
     ) -> None:
         self.path = Path(path)
         self.boot_id = boot_id or str(uuid.uuid4())
         self.host = host
         self.port = port
+        self.role = role
         self.started_at = _now()
         self._fd: int | None = None
 
@@ -141,6 +143,7 @@ class EngineLock:
             raise EngineLockError(f"write on an unheld lock {self.path}")
         data: dict[str, Any] = {
             "pid": os.getpid(),
+            "role": self.role,
             "boot_id": self.boot_id,
             "started_at": self.started_at,
             "heartbeat_at": _now(),

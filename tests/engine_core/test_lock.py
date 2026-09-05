@@ -183,6 +183,7 @@ def test_lock_records_the_loopback_endpoint_for_live_tier_discovery(
 
     assert recorded["host"] == "127.0.0.1"
     assert recorded["port"] == 8585
+    assert recorded["role"] == "opendj-engine"
 
 
 def test_heartbeat_refreshes_the_holder_record(tmp_path: Path) -> None:

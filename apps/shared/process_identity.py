@@ -8,24 +8,32 @@ names, while the page title and icon provide their Open DJ presentation.
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import sys
+from collections.abc import Sequence
 
 import setproctitle
 
 PROCESS_ROLE_ENV = "OPEN_DJ_PROCESS_ROLE"
-_PREFIX = "Open DJ"
+_ROLE_SEPARATOR = re.compile(r"[^a-z0-9.]+")
 
 
 def process_title(role: str, instance: str | int | None = None) -> str:
-    """Return a short, namespaced title suitable for Activity Monitor and ps."""
-    clean_role = " ".join(role.split())
+    """Return a ``pgrep -f opendj-`` discoverable OS process title."""
+    clean_role = _ROLE_SEPARATOR.sub("-", role.lower()).strip("-")
     if not clean_role:
         raise ValueError("process role must be non-empty")
-    suffix = "" if instance is None else f" :{instance}"
-    return f"{_PREFIX} · {clean_role}{suffix}"
+    name = f"opendj-{clean_role}"
+    port = "" if instance is None else f" --port {instance}"
+    return f"{name} --name {name}{port}"
 
 
-def _os_title(title: str, invocation_marker: str | None) -> str:
+def _os_title(
+    title: str,
+    invocation_marker: str | None,
+    invocation_argv: Sequence[str] | None,
+) -> str:
     """The string actually handed to setproctitle: the title, argv appended.
 
     setproctitle REPLACES the OS-visible command line wholesale, confirmed
@@ -54,9 +62,23 @@ def _os_title(title: str, invocation_marker: str | None) -> str:
     the original argv follows in brackets so every substring those probes
     grep for is still present somewhere on the line.
     """
-    marker = invocation_marker if invocation_marker is not None else " ".join(sys.argv[1:])
-    original = " ".join(part for part in (sys.executable, marker) if part)
+    if invocation_argv is not None:
+        original = shlex.join(invocation_argv)
+    else:
+        marker = invocation_marker if invocation_marker is not None else " ".join(sys.argv[1:])
+        original = " ".join(part for part in (sys.executable, marker) if part)
     return f"{title} [{original}]"
+
+
+def process_command(
+    role: str,
+    instance: str | int | None = None,
+    *,
+    invocation_marker: str | None = None,
+    invocation_argv: Sequence[str] | None = None,
+) -> str:
+    """Return the exact OS-visible command line for an Open DJ process."""
+    return _os_title(process_title(role, instance), invocation_marker, invocation_argv)
 
 
 def set_process_identity(
@@ -64,6 +86,7 @@ def set_process_identity(
     instance: str | int | None = None,
     *,
     invocation_marker: str | None = None,
+    invocation_argv: Sequence[str] | None = None,
 ) -> str:
     """Set this process's OS-visible Open DJ title; return the clean title.
 
@@ -75,11 +98,26 @@ def set_process_identity(
     The RETURNED string (and ``PROCESS_ROLE_ENV``) is the clean title without
     the argv marker: callers and tests reading either want the display name,
     not the probe-compatibility payload riding along on the OS-level string.
+    ``invocation_argv`` is for a supervised child whose parent persists its
+    exact spawn argv for later identity checks; it preserves that full argv,
+    including the executable, without reconstructing it from Python globals.
     """
     title = process_title(role, instance)
-    setproctitle.setproctitle(_os_title(title, invocation_marker))
+    setproctitle.setproctitle(
+        process_command(
+            role,
+            instance,
+            invocation_marker=invocation_marker,
+            invocation_argv=invocation_argv,
+        )
+    )
     os.environ[PROCESS_ROLE_ENV] = title
     return title
 
 
-__all__ = ["PROCESS_ROLE_ENV", "process_title", "set_process_identity"]
+__all__ = [
+    "PROCESS_ROLE_ENV",
+    "process_command",
+    "process_title",
+    "set_process_identity",
+]
