@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,24 @@ import pytest
 
 from scripts import ci_fixer, ci_health_core
 from scripts import ci_fixer_core as cf
+
+
+def _require_bwrap() -> None:
+    """The credential-free sandbox cannot run without bubblewrap; say so.
+
+    `run_recheck` wraps its command in `bwrap` and raises PreconditionError
+    when the binary is absent, which is correct production behavior but, let
+    loose in a test, turns a runner that merely lacks the tool into a red that
+    looks like the sandbox regressed. The self-hosted fleet is inconsistent
+    here (measured: `bwrap is required for credential-free rechecks` on main
+    run dad4ef330). A host without bwrap cannot exercise the sandbox at all, so
+    the honest verdict is UNAVAILABLE, matching the sshd fixture next door.
+    """
+    if shutil.which("bwrap") is None:
+        pytest.skip(
+            "UNAVAILABLE: bwrap (bubblewrap) is not installed, so the "
+            "credential-free recheck sandbox cannot run on this host"
+        )
 
 
 def _job_dict(
@@ -138,6 +157,7 @@ def test_capture_diff_excludes_the_worker_transcript_from_a_real_git_worktree(tm
 
 
 def test_run_recheck_terminates_a_real_hanging_subprocess(tmp_path):
+    _require_bwrap()
     with pytest.raises(subprocess.TimeoutExpired):
         ci_fixer.run_recheck(
             ["/usr/bin/python3", "-c", "import time; time.sleep(1)"],
@@ -150,6 +170,7 @@ def test_run_recheck_terminates_a_real_hanging_subprocess(tmp_path):
 def test_run_recheck_hides_host_credentials_and_files_from_pr_controlled_code(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
+    _require_bwrap()
     worktree = tmp_path / "worktree"
     worktree.mkdir()
     host_secret = tmp_path / "persistent-credential"
@@ -172,6 +193,28 @@ def test_run_recheck_hides_host_credentials_and_files_from_pr_controlled_code(
 
     assert result.returncode == 0
     assert result.stdout == "hidden False\n"
+
+
+def test_run_recheck_terminate_skips_when_bwrap_is_unavailable(tmp_path, monkeypatch):
+    """The sandbox tests report UNAVAILABLE, not PreconditionError, sans bwrap.
+
+    Each regression drives the REAL test function with `bwrap` hidden from
+    PATH: the guard must convert the absence into a skip. If someone removes
+    the guard from `test_run_recheck_terminates_a_real_hanging_subprocess`,
+    this fails - `run_recheck` raises PreconditionError instead of skipping.
+    """
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    with pytest.raises(pytest.skip.Exception, match="UNAVAILABLE"):
+        test_run_recheck_terminates_a_real_hanging_subprocess(tmp_path)
+
+
+def test_run_recheck_hides_skips_when_bwrap_is_unavailable(tmp_path, monkeypatch):
+    """Same guard regression for the credential-hiding sandbox test."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    with pytest.raises(pytest.skip.Exception, match="UNAVAILABLE"):
+        test_run_recheck_hides_host_credentials_and_files_from_pr_controlled_code(
+            tmp_path, monkeypatch
+        )
 
 
 def test_fetch_pr_head_sha_refuses_a_stale_proposal_before_any_post(

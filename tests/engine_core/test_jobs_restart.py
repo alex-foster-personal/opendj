@@ -18,12 +18,14 @@ would prove nothing.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import psutil
@@ -43,12 +45,39 @@ from apps.engine_core.jobs.store import RESTART_ERROR, JobConflict, JobStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: How long the orphaned worker may take to become reapable after the engine's
+#: SIGKILL before the test reports UNKNOWN rather than red. Normally the group
+#: is there the instant the engine dies; the bound exists so a host that cannot
+#: satisfy the premise names it as UNKNOWN instead of failing recovery code for
+#: the scheduler's own lateness (issue #1156). The UNKNOWN skip, not this
+#: number, is the backstop.
+ORPHAN_GRACE_S: float = 10.0
+
+
+def _poll_until(
+    predicate: Callable[[], bool], *, deadline_s: float, poll_s: float = 0.05
+) -> bool:
+    """First True from `predicate` before `deadline_s`; False once it elapses.
+
+    The bounded poll for this module's liveness control. A control that checks
+    once measures the scheduler, not the subject; polling to a deadline turns a
+    slow start into a late start, and a fixed `time.sleep(N)` would be the same
+    defect one constant later. The caller decides what an expired deadline
+    means - here, an UNKNOWN skip, never a red.
+    """
+    deadline = time.monotonic() + deadline_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(poll_s)
+    return predicate()
+
 # A whole engine, in its own process, holding one live worker. The test
 # SIGKILLs THIS, which is the only way to produce a genuinely orphaned worker
 # rather than a tidy simulation of one. It prints the running row and then
 # blocks forever waiting to be killed.
 _ENGINE_SOURCE = """
-import asyncio, json, os, sys
+import asyncio, json, os, sys, time
 from apps.engine_core.jobs.runner import JobRunner, register_worker
 from apps.engine_core.jobs.store import JobStore
 
@@ -72,12 +101,30 @@ async def main():
     runner = JobRunner(store)
     await runner.start()
     job = store.enqueue("test-sleeper", {})
-    while True:
+    # Readiness means the worker has run far enough to emit its FIRST progress
+    # line, not merely that a pid was recorded. The worker writes to a pipe
+    # whose read end this engine holds; if the test SIGKILLs the engine while
+    # the worker is still between fork and that first write, the write lands on
+    # a closed pipe and the worker dies with it (BrokenPipeError). On a loaded
+    # box the pid is recorded before the worker's interpreter has started, so
+    # announcing on the pid alone is exactly the "orphan died before the test
+    # ran" race of issue #1156. A worker whose progress line was READ is past
+    # its only write and cannot die with the engine, so the orphan genuinely
+    # survives the SIGKILL.
+    deadline = time.time() + 30
+    while time.time() < deadline:
         row = store.get(job["id"])
-        if row["status"] == "running" and row["worker_pgid"] is not None:
+        if (
+            row["status"] == "running"
+            and row["worker_pgid"] is not None
+            and (row["progress"] or 0) > 0
+        ):
             print(json.dumps(row), flush=True)
             break
         await asyncio.sleep(0.05)
+    else:
+        print("engine: worker never emitted its first progress line", file=sys.stderr)
+        sys.exit(3)
     await asyncio.sleep(600)
 
 asyncio.run(main())
@@ -208,8 +255,25 @@ def test_restart_flips_running_to_unknown_and_reaps_the_worker(
 
     try:
         assert running["status"] == "running"
-        dead = _why_not_live(pgid)
-        assert dead is None, f"orphan died before the test ran: {dead}"
+        # Bounded poll, not a single check: on a loaded box the kernel may
+        # not have settled the group at the instant we look, and a control that
+        # probes once measures the scheduler rather than the subject. If the
+        # premise never holds, the honest verdict is UNKNOWN, not a red blaming
+        # recovery (issue #1156).
+        #
+        # The predicate is _why_not_live, NOT process_group_exists: a pgid stays
+        # allocated while its last member is a zombie, so process_group_exists
+        # answers yes for a group that is already a corpse, and polling it would
+        # establish the premise against a dead orphan.
+        if not _poll_until(
+            lambda: _why_not_live(pgid) is None, deadline_s=ORPHAN_GRACE_S
+        ):
+            pytest.skip(
+                f"UNKNOWN, not a pass: orphaned worker group {pgid} never had a "
+                f"live member within {ORPHAN_GRACE_S:.0f}s of the engine's "
+                f"SIGKILL ({_why_not_live(pgid)}), so recovery had no live "
+                "orphan to reap and the kill-ladder is not demonstrable this run"
+            )
 
         boot_b = _store(db_path, "boot-b")
         recovered = boot_b.recover()
@@ -221,7 +285,13 @@ def test_restart_flips_running_to_unknown_and_reaps_the_worker(
         assert "reap:" in row["error"], row["error"]
         # Live members, not the pgid: the group stays allocated while the
         # corpse waits to be reaped by whatever inherited it, and "still
-        # allocated" is not "still running".
+        # allocated" is not "still running". Bounded rather than instant,
+        # because on a loaded box the reap can still be in flight when recovery
+        # returns (issue #1156); the assertion below is what goes red if the
+        # reap genuinely lied.
+        _poll_until(
+            lambda: not group_has_live_member(pgid), deadline_s=ORPHAN_GRACE_S
+        )
         assert not group_has_live_member(pgid), row["error"]
 
         # A second recovery pass has nothing left to do: the row is now owned
@@ -230,6 +300,37 @@ def test_restart_flips_running_to_unknown_and_reaps_the_worker(
         boot_b.close()
     finally:
         _kill_group(pgid)
+
+
+def test_liveness_poll_waits_for_a_process_group_that_appears_late() -> None:
+    """if the bounded wait collapses to a single probe then a slow start reddens.
+
+    The regression for `_poll_until` with a REAL late subject: the child calls
+    `setsid` only after a delay, so for that delay the pid does not exist as a
+    process group (the child is still in ours) and a single
+    `process_group_exists` reads False. The poll must wait for the setsid to
+    land. This fails if the wait is removed - the exact shape that reddened
+    issue #1156.
+    """
+    child = os.fork()
+    if child == 0:
+        time.sleep(1.0)
+        os.setsid()
+        time.sleep(600)
+        os._exit(0)  # pragma: no cover - only the parent reaches here
+    try:
+        assert _poll_until(
+            lambda: process_group_exists(child), deadline_s=ORPHAN_GRACE_S
+        ), "the poll never saw the late process group"
+    finally:
+        # Signal the child BY PID, not by group: until the child calls setsid
+        # it is still in OUR group and killpg(child) is ESRCH, which would
+        # strand it in its 600s sleep and hang the waitpid below - exactly the
+        # slow failure this module must not hand back (a mutation run caught
+        # it: 601s). The pid is always killable while the child exists.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(child, signal.SIGKILL)
+        os.waitpid(child, 0)
 
 
 def test_recovery_refuses_to_kill_a_pgid_it_cannot_prove(
