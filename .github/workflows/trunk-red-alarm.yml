@@ -7,7 +7,7 @@ name: Trunk Red Alarm
 # failed CI run cannot prevent the alarm from being recorded.
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, E2E]
     types: [completed]
 
 # workflow_run uses the default branch's workflow definition. Do not check out
@@ -37,25 +37,27 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
         run: |
           set -euo pipefail
           short="${HEAD_SHA:0:8}"
-          title="Trunk red: CI failed on main at $short"
+          title="Trunk red: $WORKFLOW_NAME failed on main at $short"
 
           gh label create ci:trunk-red \
             --color B60205 \
-            --description "A push-to-main CI run failed and needs immediate triage" \
+            --description "A push-to-main watched workflow failed and needs immediate triage" \
             --force
 
           report_file="${RUNNER_TEMP}/trunk-red-${RUN_ID}.md"
           cat > "$report_file" <<EOF
-          # Trunk CI is red
+          # Trunk workflow is red
 
           - Commit: \`$HEAD_SHA\`
-          - CI run: [$RUN_ID]($RUN_URL)
-          - Detection: the push-to-main CI run measured the actual merge result and failed.
+          - Workflow: \`$WORKFLOW_NAME\`
+          - Run: [$RUN_ID]($RUN_URL)
+          - Detection: the push-to-main workflow run measured the actual merge result and failed.
 
-          This issue is updated for every failed push-to-main CI run until a human resolves it.
+          This issue is updated for every failed push-to-main watched workflow run until a human resolves it.
           EOF
 
           existing=$(gh issue list --label ci:trunk-red --state open \
@@ -67,5 +69,5 @@ jobs:
             issue_url=$(gh issue create --title "$title" --label ci:trunk-red --body-file "$report_file")
           fi
 
-          echo "::error title=$title::CI failed on the real main merge result. Alert: $issue_url"
+          echo "::error title=$title::$WORKFLOW_NAME failed on the real main merge result. Alert: $issue_url"
           exit 1
