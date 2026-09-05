@@ -24,6 +24,7 @@
 	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
+	import { hotCueTitle } from '$lib/rb/hot-cue-label';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
@@ -82,13 +83,6 @@
 	let hoverCol: 1 | 2 | null = $state(null);
 	let focusCol: 1 | 2 | null = $state(null);
 	const activeCol = $derived(hoverCol ?? focusCol);
-
-	function fmtMs(ms: number): string {
-		const total = Math.floor(ms / 1000);
-		const m = Math.floor(total / 60);
-		const s = total % 60;
-		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-	}
 
 	async function acquireBusySlot(slot: HotCueSlot): Promise<() => void> {
 		const previousCompletion = busySlotCompletion;
@@ -262,13 +256,12 @@
 									: deck.has_rb_mapping
 										? 'empty hot cue slot - click to save the current position'
 										: MAPPING_TIP
-								: (entry.cue.comment ?? `hot cue ${entry.slot}`)}
+								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [])}
 							onclick={() => onSlotClick(entry)}
 						>
 							<span class="letter">{entry.slot}</span>
 							{#if entry.cue !== null}
 								<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
-								<span class="cue-time">{fmtMs(entry.cue.in_ms)}</span>
 								<span
 									class="edit"
 									role="button"
@@ -544,12 +537,6 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-weight: 400;
-	}
-	.cue-time {
-		flex: 0 0 auto;
-		color: var(--rb-text-dim);
-		font-weight: 400;
-		font-variant-numeric: tabular-nums;
 	}
 	.clear {
 		flex: 0 0 auto;

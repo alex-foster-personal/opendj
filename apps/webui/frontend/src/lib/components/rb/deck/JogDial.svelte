@@ -73,10 +73,11 @@
 	// Range readout is REAL from the engine's per-deck pitchRanges store;
 	// 100 renders as WIDE per SCREENSHOT-SPEC 3.
 	const rangeText: string = $derived(pitchRange === 100 ? 'WIDE' : `+-${pitchRange}`);
+	const dialCircumference = 2 * Math.PI * 46;
 	const tickAngle: number = $derived(
-		deck.duration_ms === null || deck.duration_ms === 0
+		deck.duration_ms === null || deck.duration_ms <= 0
 			? 0
-			: (deck.position_ms / deck.duration_ms) * 360
+			: Math.min(1, Math.max(0, deck.position_ms / deck.duration_ms)) * 360
 	);
 
 	const slipTitle: string = $derived(
@@ -126,6 +127,13 @@
 			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
 			<circle cx="50" cy="50" r="40" fill="#14171d" stroke="#1a1e25" stroke-width="1" />
 			{#if deck.stable_id !== null}
+				<circle
+					class="progress-trail"
+					cx="50" cy="50" r="46" fill="none" stroke="#fff" stroke-width="1.5"
+					stroke-dasharray={`${(tickAngle / 360) * dialCircumference} ${dialCircumference}`}
+					transform="rotate(-90 50 50)"
+				/>
+				<line class="progress-zero" x1="50" y1="3" x2="50" y2="13" stroke="#fff" stroke-opacity="0.3" stroke-width="1" />
 				<line
 					x1="50"
 					y1="4"

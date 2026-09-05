@@ -237,3 +237,24 @@ html[data-theme='light'] .perf-root {
 .perf-root .rb-row-selected {
 	background: var(--rb-select); /* blue full-row highlight */
 }
+
+/* -------- finished-track eject: overlaid on the waveform once the transport
+ * has actually settled at silence, reusing WaveRow's own unload dispatcher -------- */
+.perf-root .rb-waverow .finished-eject {
+	position: absolute;
+	left: calc(50% + 10px);
+	top: 50%;
+	transform: translateY(-50%);
+	max-width: calc(50% - 18px);
+	z-index: 2;
+	padding: 4px 8px;
+	color: var(--rb-text);
+	background: var(--rb-panel);
+	border: 1px solid var(--rb-border);
+	border-radius: 3px;
+	font-size: var(--rb-fs-label);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
