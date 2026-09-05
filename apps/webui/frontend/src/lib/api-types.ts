@@ -5650,7 +5650,7 @@ export interface components {
          */
         RefreshIn: {
             /** Analysis Kind */
-            analysis_kind?: string | null;
+            analysis_kind?: ("vocals" | "beatgrid" | "key" | "cues" | "waveform" | "phrase" | "loudness" | "stems" | "other") | null;
             /** Batch Dir */
             batch_dir?: string | null;
             /**

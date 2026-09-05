@@ -7419,6 +7419,17 @@
           "analysis_kind": {
             "anyOf": [
               {
+                "enum": [
+                  "vocals",
+                  "beatgrid",
+                  "key",
+                  "cues",
+                  "waveform",
+                  "phrase",
+                  "loudness",
+                  "stems",
+                  "other"
+                ],
                 "type": "string"
               },
               {
