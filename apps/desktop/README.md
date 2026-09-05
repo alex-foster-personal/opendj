@@ -87,10 +87,13 @@ by the packaged interface.
 
 ### Engine loop
 
-Run `just webui-backend`. It starts the FastAPI engine with `--reload`, so
-Python changes restart the daemon while the browser or attached shell stays on
-the same claimed backend origin. A reload that cannot boot fails in that
-terminal instead of falling through to another engine.
+Run `just webui-backend`. It starts the FastAPI engine with `--reload` through
+this worktree's `.venv/bin/python`, so Python changes restart the daemon while
+the browser or attached shell stays on the same claimed backend origin. This
+is deliberately not `uv run`: macOS attributes a Media Library permission to
+the executable that touches the protected track, so the engine must be the
+venv Python rather than uv. A reload that cannot boot fails in that terminal
+instead of falling through to another engine.
 
 ### Shell loop
 
