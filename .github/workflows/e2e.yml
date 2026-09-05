@@ -121,7 +121,14 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.14.0"
-          cache: pnpm
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
 
       - name: Setup Python
@@ -431,7 +438,14 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.14.0"
-          cache: pnpm
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
           cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
 
       - name: Setup Python
