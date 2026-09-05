@@ -311,7 +311,7 @@ def local_artwork_available(file_path: str | None) -> bool | None:
         return None
     from apps.shared import audio_files as _audio_files
 
-    return _audio_files.read_embedded_artwork(resolved) is not None
+    return _audio_files.embedded_artwork_available(resolved)
 
 
 def local_track_row(stable_id: str) -> tuple[str | None, int | None]:

@@ -17,6 +17,8 @@ Regression one-liners:
   - if /artwork omits a byte-derived ETag or ignores If-None-Match then broken
   - if /artwork still 404s ARTWORK_NOT_FOUND for an unmapped track with NO embedded art then broken
   - if rb-meta.artwork_available stays False once embedded art exists then broken
+  - if an embedded picture exceeds the response memory limit then /artwork
+    404s and rb-meta reports it unavailable then broken
   - if a genuinely unknown stable_id stops 404ing TRACK_NOT_FOUND then broken
 
 The mutagen-less 503 ARTWORK_READER_UNAVAILABLE path lives in
@@ -40,7 +42,11 @@ from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
 from tests.fixtures.conftest import resolve_required_fixture
 
-pytestmark = [pytest.mark.requires_mutagen, pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
+pytestmark = [
+    pytest.mark.requires_mutagen,
+    pytest.mark.requirement("CAT-05"),
+    pytest.mark.rb_parity,
+]
 
 WITH_ART_SID = "e" * 40
 NO_ART_SID = "f" * 40
@@ -200,6 +206,35 @@ def test_rb_meta_artwork_available_false_without_embedded_art(
     resp = client.get(f"/api/v1/tracks/{NO_ART_SID}/rb-meta")
     assert resp.status_code == 200, resp.text
     assert resp.json()["artwork_available"] is False
+
+
+def test_oversized_embedded_artwork_is_not_served_or_advertised(
+    client: TestClient, track_with_art: Path, jpeg_bytes: bytes
+) -> None:
+    """The route and rb-meta share the embedded-artwork size ceiling."""
+    from mutagen.id3 import APIC
+    from mutagen.mp3 import MP3
+
+    audio = MP3(track_with_art)
+    audio.tags.delall("APIC")
+    audio.tags.add(
+        APIC(
+            encoding=3,
+            mime="image/jpeg",
+            type=3,
+            desc="oversized cover",
+            data=jpeg_bytes + b"\x00" * (4 * 1024 * 1024),
+        )
+    )
+    audio.save()
+
+    artwork = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork")
+    assert artwork.status_code == 404
+    assert artwork.json()["detail"]["code"] == "ARTWORK_NOT_FOUND"
+
+    meta = client.get(f"/api/v1/tracks/{WITH_ART_SID}/rb-meta")
+    assert meta.status_code == 200, meta.text
+    assert meta.json()["artwork_available"] is False
 
 
 # test_503_reader_unavailable_when_mutagen_missing moved to

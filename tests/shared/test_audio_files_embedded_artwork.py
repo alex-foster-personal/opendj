@@ -24,13 +24,17 @@ Regression one-liners:
     rejected by a case-sensitive allow-list lookup then broken
   - if a picture frame with an empty declared mime is rewritten to
     image/jpeg and served then broken
+  - if an embedded picture exceeds the response memory limit then it is
+    rejected before the reader copies its payload then broken
 """
 from __future__ import annotations
 
 import shutil
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from apps.shared import audio_files
 from tests.fixtures.conftest import resolve_required_fixture
@@ -155,6 +159,37 @@ def test_apic_declaring_non_image_mime_is_rejected(tmp_path: Path, jpeg_bytes: b
     audio.save()
 
     assert audio_files.read_embedded_artwork(dst) is None
+    assert audio_files.embedded_artwork_available(dst) is False
+
+
+@pytest.mark.requirement("CAT-05")
+def test_apic_at_embedded_artwork_limit_round_trips(tmp_path: Path) -> None:
+    """The limit is inclusive, preventing an accidental stricter guard."""
+    from mutagen.id3 import APIC
+    from mutagen.mp3 import MP3
+
+    dst = tmp_path / "at-limit.mp3"
+    shutil.copy2(FIXTURE_ROOT / "src-320.mp3", dst)
+    image = BytesIO()
+    Image.new("RGB", (1, 1)).save(image, format="JPEG")
+    jpeg_bytes = image.getvalue()
+    bounded_jpeg = jpeg_bytes + b"\x00" * (
+        audio_files.MAX_EMBEDDED_ARTWORK_BYTES - len(jpeg_bytes)
+    )
+    audio = MP3(dst)
+    audio.tags.add(
+        APIC(
+            encoding=3,
+            mime="image/jpeg",
+            type=3,
+            desc="maximum cover",
+            data=bounded_jpeg,
+        )
+    )
+    audio.save()
+
+    assert audio_files.read_embedded_artwork(dst) == (bounded_jpeg, "image/jpeg")
+    assert audio_files.embedded_artwork_available(dst) is True
 
 
 @pytest.mark.requirement("CAT-05")
@@ -322,3 +357,32 @@ def test_flac_picture_with_empty_mime_and_jpeg_bytes_is_rejected(
     audio.save()
 
     assert audio_files.read_embedded_artwork(dst) is None
+
+
+@pytest.mark.requirement("CAT-05")
+def test_apic_larger_than_embedded_artwork_limit_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """An oversized frame is rejected before the reader copies its payload."""
+    from mutagen.id3 import APIC
+    from mutagen.mp3 import MP3
+
+    dst = tmp_path / "oversized.mp3"
+    shutil.copy2(FIXTURE_ROOT / "src-320.mp3", dst)
+    image = BytesIO()
+    Image.new("RGB", (1, 1)).save(image, format="JPEG")
+    oversized_jpeg = image.getvalue() + b"\x00" * (4 * 1024 * 1024)
+    audio = MP3(dst)
+    audio.tags.add(
+        APIC(
+            encoding=3,
+            mime="image/jpeg",
+            type=3,
+            desc="oversized cover",
+            data=oversized_jpeg,
+        )
+    )
+    audio.save()
+
+    assert audio_files.read_embedded_artwork(dst) is None
+    assert audio_files.embedded_artwork_available(dst) is False
