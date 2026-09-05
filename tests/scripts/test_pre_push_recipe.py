@@ -6,6 +6,12 @@ and #1188 all changed a route or a model and pushed without regenerating BOTH
 `apps/webui/openapi.json` and `apps/webui/frontend/src/lib/api-types.ts`; #1181
 collided a new requirement id with one already on main; #1178 and #1181 also
 crossed a file size ratchet. Each red cost a fixer agent and 20+ minutes of CI.
+#1238 landed a fifth kind of red twice in one morning: step 4 used to run
+`quality_gate --only size`, which never touches
+frontend.import_cycles/max_fan_in/max_fan_out, so it passed here and reddened
+CI's "Quality ratchet" job ~12 minutes later. Step 4 now runs the SAME
+invocation that job runs (no `--only`), and this test's step 4 pattern was
+updated to match -- see justfile `pre-push` and AGENTS.md.
 
 `just pre-push` is the answer, so this test is the guard over the answer. The
 failure mode it defends against is the ordinary one for a convenience recipe:
@@ -25,7 +31,9 @@ reason; this is the same technique pointed at a different recipe.
 Regression lines:
   - if the justfile stops carrying a `pre-push` recipe then broken
   - if any of the four steps (reqs check, openapi dump + diff, api:gen + diff,
-    size ratchet) disappears from that recipe then broken
+    full quality gate) disappears from that recipe then broken
+  - if step 4 goes back to a `--only` subset (e.g. `--only size`) instead of
+    the full gate then broken
   - if the four steps stop appearing in that order then broken
   - if the openapi step stops using the shared `engine_openapi_dump` variable
     then it can drift away from what ci.yml dumps, so broken
@@ -70,8 +78,8 @@ REQUIRED_STEPS: list[tuple[str, str]] = [
         r"git diff --exit-code src/lib/api-types\.ts",
     ),
     (
-        "file size ratchets",
-        r"scripts\.quality_gate\s+--only\s+size",
+        "full quality gate, same invocation as ci.yml's Quality ratchet job",
+        r"scripts\.quality_gate\s+--report\s+ops/quality/report\.md\s+--json\s+ops/quality/metrics\.json",
     ),
 ]
 
