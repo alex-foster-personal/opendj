@@ -133,6 +133,30 @@ def test_run_is_rejected_while_a_refresh_is_running(client, app, tmp_path):
     _wait(client)
 
 
+def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, app, tmp_path):
+    """The hover action and an HTTP agent order share this narrow, real drain."""
+    _seed(app, "order001", _audio(tmp_path, "order.mp3"))
+    _enable_all_steps(client)
+
+    ordered = client.post("/api/v1/analysis-queue/orders/order001/beatgrid")
+    assert ordered.status_code == 202
+    assert ordered.json() == {
+        "stable_id": "order001",
+        "kind": "beatgrid",
+        "phase": "queued",
+    }
+
+    status = client.get("/api/v1/analysis-queue/orders/order001")
+    assert status.status_code == 200
+    items = status.json()["items"]
+    assert len(items) == 1
+    assert items[0]["stable_id"] == "order001"
+    assert items[0]["kind"] == "beatgrid"
+    assert items[0]["phase"] in {"queued", "running"}
+    assert client.post("/api/v1/analysis-queue/orders/order001/beatgrid").status_code == 409
+    _wait(client)
+
+
 # ----- the drain ------------------------------------------------------------
 
 @pytest.mark.requirement("PARITY-06")

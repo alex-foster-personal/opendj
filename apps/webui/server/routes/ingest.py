@@ -456,11 +456,25 @@ def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     return _missing_by_step(on_disk)
 
 
+def _track_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+    """One explicit track order, selected before the shared worker starts."""
+    if len(job.analysis_orders) != 1:
+        raise RuntimeError("track scope requires exactly one analysis order")
+    stable_id = next(iter(job.analysis_orders))
+    targets, _unreachable = _tracks_on_disk()
+    selected = [(sid, path) for sid, path in targets if sid == stable_id]
+    if len(selected) != 1:
+        raise HTTPException(422, f"track {stable_id!r} is not an on-disk library track")
+    _log(job, f"track scope: ordering analysis for {stable_id}")
+    return {"analysis": selected, "stems": [], "vocals": []}
+
+
 # Exhaustiveness guard in the dispatch, same as _STEP_RUNNERS below.
 _SCOPE_TARGETS = {
     "batch": _batch_targets,
     UNMAPPED_SCOPE: _unmapped_targets,
     "library": _library_targets,
+    "track": _track_targets,
 }
 
 
@@ -501,7 +515,11 @@ class RefreshIn(BaseModel):
     # "library" sweeps everything missing an artifact; "unmapped" restricts
     # analysis to tracks with no rekordbox mapping. Batch scope is
     # selected by ``batch_dir``, not by this field.
-    scope: Literal["library", "unmapped"] = "library"
+    scope: Literal["library", "unmapped", "track"] = "library"
+    #: Required only by the analysis-grid order route. Keeping this on the
+    #: shared refresh contract makes the HTTP agent path and UI path identical.
+    stable_id: str | None = None
+    analysis_kind: str | None = None
 
 
 def _unmapped_steps(steps: list[str]) -> tuple[list[str], list[str]]:
@@ -519,6 +537,14 @@ def _resolve_scope(body: RefreshIn | None) -> tuple[str, Path | None]:
     """(scope, batch_dir). A staged batch_dir IS the batch scope, not a flag."""
     if body is None:
         return "library", None
+    if body.scope == "track":
+        if body.batch_dir is not None:
+            raise HTTPException(422, "track scope cannot be combined with batch_dir")
+        if body.stable_id is None or body.stable_id.strip() == "":
+            raise HTTPException(422, "track scope requires stable_id")
+        if body.analysis_kind is None or body.analysis_kind.strip() == "":
+            raise HTTPException(422, "track scope requires analysis_kind")
+        return "track", None
     if body.batch_dir is None:
         return body.scope, None
     if body.scope != "library":
@@ -558,8 +584,20 @@ def _start_refresh_job(
         skipped: list[str] = []
         if scope == UNMAPPED_SCOPE:
             steps, skipped = _unmapped_steps(steps)
+        if scope == "track":
+            if "analysis" not in steps:
+                raise HTTPException(422, "track analysis requires the analysis step enabled")
+            skipped = [step for step in steps if step != "analysis"]
+            steps = ["analysis"]
+        is_track_order = (
+            scope == "track"
+            and body is not None
+            and body.stable_id is not None
+            and body.analysis_kind is not None
+        )
+        orders = {body.stable_id: body.analysis_kind} if is_track_order and body is not None else {}
         job = _RefreshJob(started_at=time.time(), steps=steps, scope=scope,
-                          batch_dir=batch_dir, skipped_steps=skipped)
+                          batch_dir=batch_dir, skipped_steps=skipped, analysis_orders=orders)
         _JOBS.current = job
         if scope == UNMAPPED_SCOPE:
             _JOBS.last_unmapped = job

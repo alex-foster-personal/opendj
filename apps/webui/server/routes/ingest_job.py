@@ -91,6 +91,10 @@ class _RefreshJob:
     recently_done_ids: deque = field(default_factory=lambda: deque(maxlen=200))
     queue_signature: str | None = None   # unmapped scope: what the worker read
     finished_at: float | None = None
+    #: Explicit one-track requests keyed by the analysis kind the caller asked
+    #: for. The worker still uses the one shared analysis CLI, never a UI-only
+    #: imitation of an analyzer.
+    analysis_orders: dict[str, str] = field(default_factory=dict)
 
 
 _job_lock = threading.Lock()

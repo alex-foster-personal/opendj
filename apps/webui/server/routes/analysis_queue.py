@@ -50,6 +50,9 @@ router = APIRouter(prefix="/analysis-queue", tags=["analysis"])
 
 MAX_ITEMS: int = 1000
 DEFAULT_ITEMS: int = 200
+ANALYSIS_KINDS: frozenset[str] = frozenset({
+    "vocals", "beatgrid", "key", "cues", "waveform", "phrase", "loudness", "stems", "other"
+})
 
 
 class AnalysisQueueItemOut(BaseModel):
@@ -87,6 +90,16 @@ class AnalysisQueueOut(BaseModel):
     items: list[AnalysisQueueItemOut]
     job: ingest.RefreshStatusOut
     auto: AutoAnalyzeOut
+
+
+class AnalysisOrderOut(BaseModel):
+    stable_id: str
+    kind: str
+    phase: str
+
+
+class AnalysisOrdersOut(BaseModel):
+    items: list[AnalysisOrderOut]
 
 
 def _auto_state(request: Request) -> AutoAnalyzeState:
@@ -134,13 +147,41 @@ def run_analysis_queue() -> ingest.RefreshStatusOut:
     return ingest.start_refresh(ingest.RefreshIn(scope="unmapped"))
 
 
+@router.post("/orders/{stable_id}/{kind}", response_model=AnalysisOrderOut, status_code=202)
+def order_track_analysis(stable_id: str, kind: str) -> AnalysisOrderOut:
+    """Order one real analysis CLI run through the same single refresh slot."""
+    if kind not in ANALYSIS_KINDS:
+        raise ValueError(f"unknown analysis kind {kind!r}")
+    ingest.start_refresh(ingest.RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind))
+    return AnalysisOrderOut(stable_id=stable_id, kind=kind, phase="queued")
+
+
+@router.get("/orders/{stable_id}", response_model=AnalysisOrdersOut)
+def get_track_analysis_orders(stable_id: str) -> AnalysisOrdersOut:
+    """Current shared-job state for a track, readable by UI and HTTP agents."""
+    job = ingest._JOBS.current
+    if job is None or stable_id not in job.analysis_orders:
+        return AnalysisOrdersOut(items=[])
+    return AnalysisOrdersOut(
+        items=[AnalysisOrderOut(
+            stable_id=stable_id,
+            kind=job.analysis_orders[stable_id],
+            phase=job.phase,
+        )]
+    )
+
+
 __all__ = [
     "DEFAULT_ITEMS",
     "MAX_ITEMS",
+    "AnalysisOrderOut",
+    "AnalysisOrdersOut",
     "AnalysisQueueItemOut",
     "AnalysisQueueOut",
     "AutoAnalyzeOut",
     "get_analysis_queue",
+    "get_track_analysis_orders",
+    "order_track_analysis",
     "router",
     "run_analysis_queue",
 ]
