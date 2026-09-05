@@ -13,7 +13,7 @@
  *   - the SPA is served by the ENGINE from `apps/webui/frontend/build`, not
  *     by vite. Dev serves packages untransformed; the artifact does not.
  *
- * FIVE SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
+ * SIX SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
  * so the root chromium/vite config would pick it up, and that run still
  * happens. It is ALSO run here, because everything it asserts is exactly what
  * a tester meets in the installed app and nowhere else: the Cmd+, accelerator
@@ -42,9 +42,9 @@
  * - ✔︎ The production build must already exist; a stale/absent build fails at
  *   config load with the command to run, never mid-test as a mystery.
  * - ✔︎ No retries and one worker: a flaky worklet is the defect under test.
- * - ✔︎ Five tier-1 artifact suites run here: the deck-load contract, setup
- *   entry points, cross-browser deck-load smoke, AutoPlay explainer, and
- *   playlist detail.
+ * - ✔︎ Six tier-1 artifact suites run here: the deck-load contract, setup
+ *   entry points, cross-browser deck-load smoke, AutoPlay explainer, playlist
+ *   detail, and production AutoPlay playlist-switch acceptance.
  * - ✔︎ The chromium project is scoped to the smoke only, so it never doubles
  *   the deck-load contract or setup-entry-points suites under a second
  *   browser.
@@ -146,7 +146,8 @@ export default defineConfig({
 		'setup-entry-points.spec.ts',
 		'deckload-smoke.spec.ts',
 		'autoplay-explainer-placement.spec.ts',
-		'playlist-detail.spec.ts'
+		'playlist-detail.spec.ts',
+		'zz-autoplay-playlist-switch.spec.ts'
 	],
 	fullyParallel: false,
 	workers: 1,
@@ -182,15 +183,19 @@ export default defineConfig({
 			name: 'webkit',
 			use: { ...devices['Desktop Safari'], viewport: { width: 1600, height: 1000 } }
 		},
-		// #770: the deck-load smoke gains a chromium project too, restricted to
-		// ONLY those files via its own testMatch -- otherwise this project would
+		// #770: the cross-browser production acceptances gain a chromium project
+		// too, restricted via their own testMatch -- otherwise this project would
 		// also pick up webkit-deckload.spec.ts and setup-entry-points.spec.ts,
 		// doubling the whole suite under a second browser nobody asked to gate
 		// them under. CI additionally passes --project so the scoping holds
 		// even if this testMatch drifts.
 		{
 			name: 'chromium',
-			testMatch: ['deckload-smoke.spec.ts', 'playlist-detail.spec.ts'],
+			testMatch: [
+				'deckload-smoke.spec.ts',
+				'playlist-detail.spec.ts',
+				'zz-autoplay-playlist-switch.spec.ts'
+			],
 			use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 1000 } }
 		}
 	]

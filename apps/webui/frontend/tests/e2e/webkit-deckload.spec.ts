@@ -390,6 +390,15 @@ async function _dblClickLoad(page: Page, index: number): Promise<string> {
 	return stableId;
 }
 
+async function _clickLoadOntoDeck(page: Page, index: number, deck: DeckId): Promise<string> {
+	const row = page.locator(TRACK_ROW).nth(index);
+	const stableId = await row.getAttribute('data-stable-id');
+	if (stableId === null) throw new Error(`row ${index} has no data-stable-id`);
+	await row.hover();
+	await row.locator(`button[title="Load onto deck ${deck}"]`).click();
+	return stableId;
+}
+
 /**
  * Wait until the deck's PRESENTED transport state matches `audible`.
  *

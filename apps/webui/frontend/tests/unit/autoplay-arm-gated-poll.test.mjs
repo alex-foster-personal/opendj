@@ -184,7 +184,7 @@ test('RUNNING it: a published plan survives, and the pref still arms/disarms', a
 		assert.equal(autoPlay.autoPlayQueue.active, true, 'arming creates the inspectable queue');
 
 		// Exactly what the poll does once _refreshChartedOrder has a plan.
-		autoPlay.setAutoPlayTrackFeed([
+		autoPlay.setAutoPlayTrackFeed('armed-poll', [
 			{ stable_id: 'nx-1', key: '8A', bpm: 124, file_exists: true, title: 'One', artist: 'A' },
 			{ stable_id: 'nx-2', key: '9A', bpm: 126, file_exists: true, title: 'Two', artist: 'B' }
 		]);

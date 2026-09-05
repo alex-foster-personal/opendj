@@ -283,22 +283,23 @@ describe('auto-play track pick', () => {
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			'a'
+			'a',
+			'when the source is absent after a playlist switch, ordered mode begins at the new feed start'
 		);
-		// ...and an empty playlist still has nothing to offer.
 		assert.equal(
 			pickNextStableId({
-				playlist: [],
-				current_stable_id: 'missing',
+				playlist: [row('first', '8A', 120), row('last', '8A', 122)],
+				current_stable_id: 'last',
 				current_key: '8A',
-				current_bpm: 120,
+				current_bpm: 122,
 				exclude_ids: new Set(),
 				played_ids: new Set(),
 				enforce_play_order: true,
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			null
+			null,
+			'ordered playback never wraps after the true final membership row'
 		);
 	});
 
@@ -449,7 +450,7 @@ describe('auto-play track pick', () => {
 		assert.equal(bpmWithinPhaseLockRange(60, 120, 0.84, 1.16), false);
 	});
 
-	it('publishes browser feed getters; epoch only on membership identity change', () => {
+	it('publishes browser feed getters; epoch follows playlist scope and membership identity', () => {
 		const {
 			setAutoPlayTrackFeed,
 			getAutoPlayPlaylist,
@@ -457,17 +458,26 @@ describe('auto-play track pick', () => {
 			getAutoPlayFeedEpoch
 		} = mod;
 		const before = getAutoPlayFeedEpoch();
-		setAutoPlayTrackFeed([
+		setAutoPlayTrackFeed('playlist-a', [
 			{ stable_id: 'p1', key: '1A', bpm: 120, file_exists: true },
 			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: false }
 		]);
 		const afterId = getAutoPlayFeedEpoch();
 		assert.equal(afterId > before, true);
-		setAutoPlayTrackFeed([
+		setAutoPlayTrackFeed('playlist-a', [
 			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
 			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
 		]);
 		assert.equal(getAutoPlayFeedEpoch(), afterId);
+		setAutoPlayTrackFeed('playlist-b', [
+			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
+			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
+		]);
+		assert.equal(
+			getAutoPlayFeedEpoch() > afterId,
+			true,
+			'a different playlist with identical ordered members must advance the feed epoch'
+		);
 		assert.deepEqual(
 			[...getAutoPlayPlaylist()],
 			[
@@ -575,6 +585,28 @@ describe('auto-play maximize reach (slack path)', () => {
 		})], ['a', 'b']);
 		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, max_chain_length: 3 })], ['a', 'b', 'c']);
 		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, enforce_play_order: true })], ['a', 'b', 'c', 'd']);
+	});
+
+	it('charts a switched playlist from the external source metadata', () => {
+		const result = chain.simulateAutoPlayChain({
+			playlist: [row('b', '8A', 120), row('c', '8A', 120)],
+			start_stable_id: 'external', start_key: '8A', start_bpm: 120,
+			enforce_play_order: false, maximize_reach: false,
+			min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+		});
+		assert.deepEqual([...result], ['external', 'b', 'c']);
+	});
+
+	it('never substitutes external-source metadata for an existing unknown row', () => {
+		for (const [key, bpm] of [[null, 120], ['8A', null]]) {
+			const result = chain.simulateAutoPlayChain({
+				playlist: [row('source', key, bpm), row('b', '8A', 120)],
+				start_stable_id: 'source', start_key: '8A', start_bpm: 120,
+				enforce_play_order: false, maximize_reach: false,
+				min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+			});
+			assert.deepEqual([...result], ['source']);
+		}
 	});
 
 	it('no-stranding fixture: greedy and slack produce identical order', () => {
@@ -990,34 +1022,6 @@ describe('auto-play live-set replay (bugs 1 and 2, Mon 31 Aug 2026)', () => {
 			'AutoPlay must never load one stable_id twice'
 		);
 		assert.equal(new Set(loaded).size, loaded.length, 'no duplicate loads at all');
-	});
-
-	it('waits through a playlist-switch empty feed, then commits exactly one new candidate', () => {
-		const state = freshState();
-		const inWindow = deck({
-			id: 1,
-			stable_id: 'hypnosis',
-			playing: true,
-			is_master: true,
-			position_ms: 290_000,
-			duration_ms: 300_000
-		});
-
-		// BrowserPanel publishes [] while PaneStore clears the old playlist
-		// before the new rows hydrate. This is unavailable input, not a
-		// handoff decision, so it must not consume the source arm.
-		state.playlist = [];
-		assert.equal(tickDecision(state, inWindow), null);
-		assert.equal(state.triggeredFor, null);
-
-		state.playlist = [
-			row('hypnosis', '8A', 124),
-			row('vas-next', '8A', 124),
-			row('vas-later', '8A', 124)
-		];
-		assert.equal(tickDecision(state, inWindow), 'vas-next');
-		assert.equal(tickDecision(state, inWindow), null, 'committed handoff stays pinned');
-		assert.deepEqual([...state.claimed], ['vas-next']);
 	});
 
 	it('scenario 6/7: a looped master arms once; a seek back out re-arms once', () => {

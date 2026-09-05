@@ -7,7 +7,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if createPaneStore() defaults differ from the blank pane then broken
 // - if beginLoad doesn't reset rows/selection/scroll then broken
 // - if a stale completeLoad/failLoad mutates a newer load's pane then broken
-// - if toggleSort same-key doesn't cycle asc → desc → clear then broken
+// - if ordinary toggleSort same-key doesn't cycle asc → desc → clear then broken
+// - if AutoPlay toggles only ascending → natural order, or puts unranked rows
+//   ahead of a real queue rank, then its playback order view is misleading
 // - if filterRows hide-broken doesn't compose with search then broken
 // - if sortRows doesn't keep nulls last in BOTH directions then broken
 // - if provider rows/total/truncated don't live-track sources then broken
@@ -216,6 +218,16 @@ test('toggleSort: asc → desc → clear (natural order)', () => {
 	assert.equal(p.sort_dir, 1);
 });
 
+test('toggleSort: AutoPlay is ascending once, then restores natural order', () => {
+	const p = contract.createPaneStore();
+	p.toggleSort('autoplay');
+	assert.equal(p.sort_key, 'autoplay');
+	assert.equal(p.sort_dir, 1);
+	p.toggleSort('autoplay');
+	assert.equal(p.sort_key, null);
+	assert.equal(p.sort_dir, 1);
+});
+
 test('sortRows: MIK energy is numeric and missing values stay last in both directions', () => {
 	const rows = [
 		_row({ stable_id: 'missing', energy: null }),
@@ -370,6 +382,33 @@ test('sortRows: string keys use locale compare; null key returns rows unsorted',
 		['a', 'b', 'n']
 	);
 	assert.equal(contract.sortRows(rows, null, 1), rows);
+});
+
+test('sortRowsByAutoPlayOrder: numeric ranks ascend, unranked rows stay last and stable', () => {
+	const rows = [
+		_row({ stable_id: 'unranked-first' }),
+		_row({ stable_id: 'rank-two' }),
+		_row({ stable_id: 'rank-one' }),
+		_row({ stable_id: 'unranked-last' })
+	];
+	const ordered = contract.sortRows(
+		rows,
+		'autoplay',
+		1,
+		new Map([
+			['rank-one', 1],
+			['rank-two', 2]
+		])
+	);
+	assert.deepEqual(
+		ordered.map((row) => row.stable_id),
+		['rank-one', 'rank-two', 'unranked-first', 'unranked-last']
+	);
+	assert.deepEqual(
+		rows.map((row) => row.stable_id),
+		['unranked-first', 'rank-two', 'rank-one', 'unranked-last'],
+		'AutoPlay sorting must not mutate the pane membership order'
+	);
 });
 
 test('sortValue maps time to duration_ms and genre to the rb_meta fallback', () => {

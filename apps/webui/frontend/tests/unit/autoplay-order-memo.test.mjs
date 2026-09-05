@@ -99,10 +99,10 @@ describe('chartedOrderKey', () => {
 			{ stable_id: 'sid-a', key: '8A', bpm: 124, file_exists: true },
 			{ stable_id: 'sid-b', key: '9A', bpm: 126, file_exists: true }
 		];
-		mod.setAutoPlayTrackFeed(feed);
+		mod.setAutoPlayTrackFeed('playlist:a', feed);
 		const membershipEpoch = mod.getAutoPlayFeedEpoch();
 		const playlistRevision = mod.getAutoPlayPlaylistRevision();
-		mod.setAutoPlayTrackFeed([
+		mod.setAutoPlayTrackFeed('playlist:a', [
 			feed[0],
 			{ ...feed[1], bpm: 128 }
 		]);

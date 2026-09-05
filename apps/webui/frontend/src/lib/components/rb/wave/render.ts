@@ -460,19 +460,21 @@ export function drawPlayhead(
 		return;
 	}
 	const color = PLAYHEAD_COLORS[tone];
-	let glow = 0.4;
+	// One weight for every tone. The geometry was always identical, but the
+	// glow alpha ran 0.32 (synced) to 0.55 (bar1), and a dimmer line at the
+	// same width reads as a THINNER line - which is why pin 4a1e7e603f49
+	// reported this as a width bug when nothing was ever a different width.
+	// The tone carries its meaning in the colour; making it carry meaning in
+	// the weight as well meant neither read cleanly.
+	let glow = 0.45;
 	let core = 1;
 	if (tone === 'drift') {
-		// Bright pulsing red - light-touch warning, still unmissable.
+		// Bright pulsing red - light-touch warning, still unmissable. The
+		// exception that stays: a pulse is a change over time, not a
+		// permanently different weight.
 		const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(timeMs / 160));
 		glow = 0.45 * pulse;
 		core = pulse;
-	} else if (tone === 'bar1') {
-		glow = 0.55;
-	} else if (tone === 'synced') {
-		glow = 0.32;
-	} else if (tone === 'master') {
-		glow = 0.5;
 	}
 	ctx.fillStyle = color;
 	ctx.globalAlpha = glow;

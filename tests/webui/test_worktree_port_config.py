@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 from unittest import mock
 
@@ -38,8 +39,8 @@ def _write_env(root: Path, backend: int, frontend: int) -> None:
     )
 
 
-def _free_ports(count: int) -> list[int]:
-    """Allocate `count` DISTINCT free ports.
+def _free_ports(count: int, exclude: Iterable[int] = ()) -> list[int]:
+    """Allocate `count` DISTINCT free ports, none of them in `exclude`.
 
     Every probe is held open until all of them are bound. Binding one socket,
     reading its port and CLOSING it before binding the next lets the kernel
@@ -56,21 +57,37 @@ def _free_ports(count: int) -> list[int]:
     evidence here: the two kernels allocate ephemeral ports differently. Holding
     the sockets open removes the race on both, because `bind` cannot assign a
     port another live socket already holds.
+
+    `exclude` covers the OTHER half of that race, which the batch alone cannot:
+    a caller that already holds a port from somewhere else -- a live server
+    socket it bound itself -- needs its next port to differ from that one too.
+    Trunk broke this way a second time on 2026-09-05 at 9be4e5daa, in
+    `test_frontend_check_rejects_an_unidentified_backend`: it allocated the
+    frontend from a probe it then closed, and the backend's `bind(0)` was handed
+    that exact port straight back, so the assertion for "backend port already in
+    use" met "backend and frontend ports must be different" instead. A rejected
+    probe is NOT closed before the batch finishes, so the kernel cannot offer
+    the same excluded port twice and the loop terminates.
     """
+    forbidden = set(exclude)
     probes: list[socket.socket] = []
+    chosen: list[int] = []
     try:
-        for _ in range(count):
+        while len(chosen) < count:
             probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             probe.bind(("127.0.0.1", 0))
             probes.append(probe)
-        return [int(probe.getsockname()[1]) for probe in probes]
+            port = int(probe.getsockname()[1])
+            if port not in forbidden:
+                chosen.append(port)
+        return chosen
     finally:
         for probe in probes:
             probe.close()
 
 
-def _free_port() -> int:
-    return _free_ports(1)[0]
+def _free_port(exclude: Iterable[int] = ()) -> int:
+    return _free_ports(1, exclude=exclude)[0]
 
 
 def test_free_ports_holds_every_probe_open_until_all_are_bound() -> None:
@@ -111,6 +128,63 @@ def test_free_ports_holds_every_probe_open_until_all_are_bound() -> None:
     assert first_close > last_bind, (
         "a probe was released before the batch finished binding, which is exactly "
         f"the race that broke trunk: {events}"
+    )
+
+
+def test_free_ports_rejects_a_probe_that_lands_on_an_excluded_port() -> None:
+    """If the kernel offers a port the caller already holds then the batch binds
+    another probe and keeps the rejected one open.
+
+    Guards the second trunk break of 2026-09-05, at 9be4e5daa:
+    `test_frontend_check_rejects_an_unidentified_backend` allocated the frontend
+    from a probe it CLOSED, then bound the backend with `bind(0)`, and the
+    kernel handed that just-released port straight back. Backend equalled
+    frontend, so `resolve_ports` raised "backend and frontend ports must be
+    different" in place of the error the test was asserting.
+
+    The real kernel cannot be made to collide on demand -- that is a coin flip
+    that did not come up once in local trials -- so the collision is EMULATED:
+    the first probe reports the excluded port. What is asserted is the
+    MECHANISM, not distinctness of the result: a second bind happens, the
+    rejected probe is still open when it does (otherwise the kernel could offer
+    the same port again), and the excluded port is not returned. A helper with
+    no exclusion satisfies a distinctness check almost every run, so distinctness
+    alone would not be a guard.
+    """
+    held = 61234
+    events: list[str] = []
+    reported: list[int] = []
+    real_socket = socket.socket
+
+    class _Racy(real_socket):  # type: ignore[misc, valid-type]
+        def bind(self, *args: object, **kwargs: object) -> None:
+            super().bind(*args, **kwargs)  # type: ignore[misc]
+            events.append("bind")
+
+        def getsockname(self) -> tuple[str, int]:
+            host, port = super().getsockname()  # type: ignore[misc]
+            if not reported:
+                reported.append(held)
+                return (host, held)
+            return (host, port)
+
+        def close(self) -> None:
+            events.append("close")
+            super().close()  # type: ignore[misc]
+
+    with mock.patch.object(socket, "socket", _Racy):
+        ports = _free_ports(1, exclude=(held,))
+
+    assert reported == [held], "the emulated collision never fired"
+    assert ports != [held], f"an excluded port was handed out: {ports}"
+    assert events.count("bind") == 2, (
+        f"the rejected probe was not replaced by a second bind: {events}"
+    )
+    first_close = events.index("close")
+    last_bind = len(events) - 1 - events[::-1].index("bind")
+    assert first_close > last_bind, (
+        "the rejected probe was released before the batch finished binding, so "
+        f"the kernel could offer that same port again: {events}"
     )
 
 
@@ -215,12 +289,17 @@ def test_frontend_check_rejects_an_unidentified_backend(tmp_path: Path) -> None:
     common_dir = tmp_path / "common"
     repo_root.mkdir()
     common_dir.mkdir()
-    frontend = _free_port()
-
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as backend_socket:
         backend_socket.bind(("127.0.0.1", 0))
         backend_socket.listen()
         backend = int(backend_socket.getsockname()[1])
+        # The backend socket is bound and still open, and the frontend port is
+        # excluded from it explicitly, so the pair cannot collide by
+        # construction. Allocating the frontend FIRST and closing its probe let
+        # the kernel hand that port back to `bind(0)` below, which broke trunk
+        # at 9be4e5daa (2026-09-05) with "backend and frontend ports must be
+        # different" in place of the error this test is about.
+        frontend = _free_port(exclude=(backend,))
         _write_env(repo_root, backend, frontend)
         registry_dir = common_dir / "music-dj-tools"
         registry_dir.mkdir()

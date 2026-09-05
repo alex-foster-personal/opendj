@@ -32,7 +32,19 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 THREAD_CAPS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMBA_NUM_THREADS")
 
 #: (workflow, job id) for every job that runs the Python suite or its tools.
-PYTEST_JOBS = (("ci.yml", "test"), ("ci.yml", "contracts"), ("full-ci.yml", "test"))
+PYTEST_JOBS = (
+    ("ci.yml", "test"),
+    ("ci.yml", "contracts"),
+    ("full-ci.yml", "test"),
+    # The e2e jobs boot the real engine, whose refresh job forks
+    # apps.analysis.run's ProcessPoolExecutor: agentbox logged 238 python3
+    # "segfault at 0 ip 0" today (Sat 5 Sep 2026), 5-20/hour all day and
+    # 100-136/hour once eight e2e runners shared the host, and the Root
+    # Playwright suite failed five times on BrokenProcessPool. A pool worker
+    # forked while OpenBLAS/numba threads are live is the classic cause.
+    ("e2e.yml", "gate"),
+    ("e2e.yml", "extended"),
+)
 
 #: (workflow, job id) for jobs that run `apps.analysis.run` subprocesses
 #: OUTSIDE pytest. e2e.yml's `gate` job never runs pytest, but its "Root

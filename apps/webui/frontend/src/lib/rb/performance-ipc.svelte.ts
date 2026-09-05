@@ -109,6 +109,10 @@ import {
 	type EdgeRegion
 } from '$lib/rb/technically-working.svelte';
 import { waveformStutterSnapshot } from '$lib/rb/audio-health.svelte';
+import {
+	performanceFeedbackSummary,
+	recordPerformanceFeedback
+} from '$lib/rb/vibe.svelte';
 
 export type PerformanceCommand =
 	// refuseIfMaster: opt-in, checked live inside _execute rather than at the
@@ -171,6 +175,7 @@ export type PerformanceCommand =
 	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
+	| { type: 'feedback_mark'; vote: 'bad' | 'good' | 'great' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
 	| { type: 'safety_loop_clear'; deck: DeckId }
@@ -284,6 +289,7 @@ export interface PerformanceState {
 	preset: PerformancePresetLifecycleSnapshot;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
+	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	technically_working: {
@@ -822,6 +828,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
+	if (type === 'feedback_mark') {
+		_exactKeys(record, ['type', 'vote']);
+		if (record.vote !== 'bad' && record.vote !== 'good' && record.vote !== 'great') {
+			throw new TypeError(`feedback vote must be bad, good, or great; got ${String(record.vote)}`);
+		}
+		return { type, vote: record.vote };
+	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
 		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
@@ -1224,6 +1237,30 @@ export function queryPerformanceState(): PerformanceState {
 		library_panels: {
 			next_collapsed: uiPrefs.next_panel_collapsed,
 			recommended_collapsed: uiPrefs.recommended_panel_collapsed
+		},
+		feedback_marks: performanceFeedbackSummary()
+	};
+}
+
+function _feedbackMark(vote: 'bad' | 'good' | 'great') {
+	return {
+		recorded_at_ms: Date.now(),
+		vote,
+		decks: DECK_IDS.map((deckId) => {
+			const deck = getDeckState(deckId);
+			return {
+				deck_id: deckId,
+				stable_id: deck.stable_id,
+				playing: deck.playing,
+				audible: deck.audible,
+				position_ms: deck.position_ms,
+				loop: deck.loop === null ? null : { ...deck.loop }
+			};
+		}),
+		mixer: {
+			crossfader: mixerState.crossfader,
+			master: mixerState.master,
+			channels: DECK_IDS.map((deckId) => ({ ...mixerState.channels[deckId] }))
 		}
 	};
 }
@@ -1578,6 +1615,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			from_stable_id: from.stable_id, to_stable_id: to.stable_id,
 			snapshot: { ..._pairingSnapshot, decks: [from, to] }
 		});
+	} else if (command.type === 'feedback_mark') {
+		throw new Error('feedback_mark must be captured at the dispatch boundary');
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
@@ -2020,8 +2059,18 @@ async function _dispatchUnknown(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
 				`command ${command.type} rejected`
 		);
-		_persistCommandError(deck, error, command);
+		_persistCommandError(deck, error);
 		throw error;
+	}
+	if (command.type === 'feedback_mark') {
+		try {
+			const mark = _feedbackMark(command.vote);
+			await recordPerformanceFeedback(mark);
+			return queryPerformanceState();
+		} catch (error) {
+			_persistCommandError(null, error);
+			throw error;
+		}
 	}
 	if (command.type === 'auto_play_two_track') {
 		const error = new Error(

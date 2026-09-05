@@ -1021,6 +1021,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/performance-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Performance Marks */
+        get: operations["get_performance_marks_api_v1_feedback_performance_marks_get"];
+        put?: never;
+        /** Create Performance Mark */
+        post: operations["create_performance_mark_api_v1_feedback_performance_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/todos": {
         parameters: {
             query?: never;
@@ -3818,6 +3836,20 @@ export interface components {
             /** Survivor */
             survivor: string;
         };
+        /** DeckMarkOut */
+        DeckMarkOut: {
+            /** Audible */
+            audible: boolean;
+            /** Deck Id */
+            deck_id: number;
+            loop: components["schemas"]["LoopMarkOut"] | null;
+            /** Playing */
+            playing: boolean;
+            /** Position Ms */
+            position_ms: number;
+            /** Stable Id */
+            stable_id: string | null;
+        };
         /**
          * DeckObservationsRequest
          * @description A batch of Open DJ deck-state snapshots, oldest first.
@@ -4497,6 +4529,13 @@ export interface components {
             /** State */
             state: string;
         };
+        /** LoopMarkOut */
+        LoopMarkOut: {
+            /** In Ms */
+            in_ms: number;
+            /** Out Ms */
+            out_ms: number;
+        };
         /**
          * MachineModel
          * @description One ``machines`` row on the wire.
@@ -4602,6 +4641,32 @@ export interface components {
              * @description Complete desired membership in position order. Duplicates allowed; unknown ids -> 422.
              */
             stable_ids: string[];
+        };
+        /** MixerChannelMarkOut */
+        MixerChannelMarkOut: {
+            /** Assign */
+            assign: string;
+            /** Deck Id */
+            deck_id: number;
+            /** Eq High */
+            eq_high: number;
+            /** Eq Low */
+            eq_low: number;
+            /** Eq Mid */
+            eq_mid: number;
+            /** Fader */
+            fader: number;
+            /** Trim */
+            trim: number;
+        };
+        /** MixerMarkOut */
+        MixerMarkOut: {
+            /** Channels */
+            channels: components["schemas"]["MixerChannelMarkOut"][];
+            /** Crossfader */
+            crossfader: number;
+            /** Master */
+            master: number;
         };
         /** MyTagAssignIn */
         MyTagAssignIn: {
@@ -4865,6 +4930,25 @@ export interface components {
             suggested_sources: components["schemas"]["SuggestedSourcesOut"];
             /** Title */
             title: string;
+        };
+        /** PerformanceFeedbackMarkIn */
+        PerformanceFeedbackMarkIn: {
+            /** Decks */
+            decks: components["schemas"]["DeckMarkOut"][];
+            mixer: components["schemas"]["MixerMarkOut"];
+            /** Recorded At Ms */
+            recorded_at_ms: number;
+            /**
+             * Vote
+             * @enum {string}
+             */
+            vote: "bad" | "good" | "great";
+        };
+        /** PerformanceFeedbackMarksOut */
+        PerformanceFeedbackMarksOut: {
+            /** Count */
+            count: number;
+            last_mark: components["schemas"]["PerformanceFeedbackMarkIn"] | null;
         };
         /**
          * PermissionsOut
@@ -8875,6 +8959,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneralNoteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_performance_marks_api_v1_feedback_performance_marks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
+                };
+            };
+        };
+    };
+    create_performance_mark_api_v1_feedback_performance_marks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PerformanceFeedbackMarkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PerformanceFeedbackMarksOut"];
                 };
             };
             /** @description Validation Error */

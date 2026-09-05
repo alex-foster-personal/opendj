@@ -18,9 +18,13 @@
 		quality: TrackQuality | null;
 		/** Hide the container suffix where the row is very tight. */
 		showContainer?: boolean;
+		/** Initial only (C, W, S...) instead of the rung name. The colour and
+		 * the hover title carry the rest, and the column stops paying for a
+		 * word it repeats on every row (pin f875e746d40a). */
+		compact?: boolean;
 	}
 
-	const { quality, showContainer = true }: Props = $props();
+	const { quality, showContainer = true, compact = false }: Props = $props();
 
 	/** '.mp3' -> 'mp3'; '' stays '' so nothing renders a bare dot. */
 	function _ext(container: string): string {
@@ -46,12 +50,13 @@
 		);
 	}
 
-	const label = $derived(quality === null ? '...' : quality.label);
+	const full = $derived(quality === null ? '...' : quality.label);
+	const label = $derived(compact ? full.slice(0, 1).toUpperCase() : full);
 	const ext = $derived(quality === null ? '' : _ext(quality.container));
 	const rung = $derived(quality === null || quality.venue === null ? 'unknown' : quality.venue);
 </script>
 
-<span class="q-badge q-{rung}" title={_title(quality)} data-venue={rung}>
+<span class="q-badge q-{rung}" class:compact title={_title(quality)} data-venue={rung}>
 	<span class="q-label">{label}</span>
 	{#if showContainer && ext}<span class="q-ext">{ext}</span>{/if}
 </span>
@@ -77,6 +82,12 @@
 	.q-label {
 		font-weight: 600;
 		letter-spacing: 0.02em;
+	}
+	/* One glyph, centred, so the column can be as narrow as the letter. */
+	.q-badge.compact {
+		padding: 0 3px;
+		justify-content: center;
+		min-width: 12px;
 	}
 
 	.q-ext {

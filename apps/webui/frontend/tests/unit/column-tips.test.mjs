@@ -112,8 +112,12 @@ test('the Preview and Artwork headers carry their shared custom explanation (the
 		['h-preview', 'preview'],
 		['h-art', 'art']
 	]) {
+		// Match the class as a TOKEN: the artwork header gained the shared
+		// `h-icon` modifier when it went back to being an icon (pin
+		// e28577797642), and an exact-string match would read that as the
+		// header having vanished.
 		const at = source.search(new RegExp(`class="(?:[a-z0-9-]+ )*${cls}(?: [a-z0-9-]+)*"`));
-		assert.ok(at > 0, `no <th> carrying ${cls} found - the header moved, find it`);
+		assert.ok(at > 0, `no <th> carrying the ${cls} class found - the header moved, find it`);
 		// The opening tag runs from the `<th` before the class to the next `>`
 		// at brace depth zero; the action's text must live inside it.
 		const open = source.lastIndexOf('<th', at);
@@ -150,9 +154,19 @@ test('no header inlines its own copy of a tip string', () => {
 	}
 });
 
-test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable dynamic analysis', () => {
-	assert.match(source, /key: 36/);
-	assert.match(source, /bpm: 42/);
+test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable dynamic analysis', async () => {
+	// COL_DEFAULTS moved to the shared $lib/rb/library-column-widths module
+	// (pin batch: compact library display), so the 36/42px widths are asserted
+	// against that module rather than a literal `key: 36` in this component's
+	// own source - see the equivalent fix in track-table-energy-column.test.mjs.
+	const { COL_DEFAULTS } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
+	assert.equal(COL_DEFAULTS.key, 36);
+	assert.equal(COL_DEFAULTS.bpm, 42);
+	assert.equal(
+		COL_DEFAULTS.autoplay,
+		28,
+		'AutoPlay uses its compact 12px icon plus 8px side padding'
+	);
 	assert.match(source, /camelot-suffix/);
 	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
 	assert.match(source, /Dynamic key.*not analyzed/);

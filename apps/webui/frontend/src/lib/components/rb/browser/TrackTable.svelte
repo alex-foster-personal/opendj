@@ -27,9 +27,10 @@
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
+	import { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
+	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
-	import { compactOrderWidth } from '$lib/rb/library-column-widths';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
@@ -70,55 +71,13 @@
 	const ROW_HEIGHT_COSY = 30;
 	const OVERSCAN = 10;
 
-	type ColId =
-		| 'funnel'
-		| 'err'
-		| 'cloud'
-		| 'order'
-		| 'preview'
-		| 'art'
-		| 'title'
-		| 'artist'
-		| 'key'
-		| 'bpm'
-		| 'plays'
-		| 'rating'
-		| 'comments'
-		| 'time'
-		| 'quality'
-		| 'energy'
-		| 'genre'
-		| 'stems'
-		| 'autoplay';
-
 	// ----- AUTOPLAY-COL -----------------------------------------------------
 	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
 	const AUTOPLAY_THEAD_H = 20;
 
-	const COL_DEFAULTS: Record<ColId, number> = {
-		funnel: 24,
-		err: 24,
-		cloud: 24,
-		order: 34,
-		preview: 177,
-		art: 54,
-		title: 220,
-		artist: 140,
-		key: 36,
-		bpm: 42,
-		plays: 36,
-		rating: 80,
-		comments: 110,
-		time: 48,
-		quality: 92,
-		energy: 22,
-		genre: 90,
-		stems: 148,
-		autoplay: 46
-	};
-
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
+	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
 	let resizeStartX = 0;
 	let resizeStartW = 0;
@@ -143,14 +102,15 @@
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		resizeCol = col;
+		manuallyResizedColumns.add(col);
 		resizeStartX = event.clientX;
 		resizeStartW = colWidths[col];
 	}
 
 	function onColResizeMove(event: PointerEvent): void {
 		if (resizeCol === null) return;
-		const minWidth = resizeCol === 'order' ? compactOrderWidth(maxRowOrder) : 28;
-		const next = Math.max(minWidth, resizeStartW + (event.clientX - resizeStartX));
+		const minimum = Math.min(28, COL_DEFAULTS[resizeCol]);
+		const next = Math.max(minimum, resizeStartW + (event.clientX - resizeStartX));
 		colWidths = { ...colWidths, [resizeCol]: next };
 	}
 
@@ -457,17 +417,23 @@
 	}
 
 	const rows = $derived(provider.rows);
-	const maxRowOrder = $derived(rows.reduce((maximum, row) => Math.max(maximum, row.order), 0));
+	const maxRowOrder = $derived(rows.reduce((max, row) => Math.max(max, row.order), 0));
+	$effect(() => {
+		const compact = compactUtilityWidths(maxRowOrder);
+		const musical = compactMusicalWidths(rows);
+		void wrapWidth;
+		// Manual K/B drags stay authoritative; other utility widths reflow with data.
+		const current = untrack(() => colWidths);
+		colWidths = {
+			...current,
+			...compact,
+			...autoMusicalWidths(current, musical, manuallyResizedColumns)
+		};
+	});
 	const selectedIdSet = $derived(new Set(selectedIds));
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
-
-	$effect(() => {
-		const orderWidth = compactOrderWidth(maxRowOrder);
-		if (untrack(() => colWidths.order) === orderWidth) return;
-		colWidths = { ...untrack(() => colWidths), order: compactOrderWidth(maxRowOrder) };
-	});
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
 	let hoveredApId = $state<string | null>(null);
@@ -498,6 +464,18 @@
 	});
 
 	const apCurveX = $derived(Math.max(8, colWidths.autoplay / 2));
+	const apCurveArrowId = $derived(`ap-curve-arrow-${restoreKey}`);
+
+	/** r3919185343: `table-layout: fixed` at `width: 100%` redistributes any
+	 * extra space beyond the configured column total across the columns on a
+	 * wide wrap, so the rendered title column drifts right of where
+	 * masterFoldCenterPx (computed from the raw colWidths) puts the badge.
+	 * Pinning the table to exactly this sum removes the extra space there is
+	 * to redistribute - narrower than the wrap just leaves blank space to the
+	 * right, same as any wrap wider than its content. */
+	const tableWidthPx = $derived(
+		Object.values(colWidths).reduce((sum, w) => sum + w, 0)
+	);
 
 	// ------------------------------------------- per-pane scroll cursor
 	// Restore ONLY when the rendered pane changes (restoreKey): reading
@@ -508,7 +486,22 @@
 	// Starts at 0; the restore $effect below syncs it from the prop before
 	// paint (same tick it sets el.scrollTop), so there is no row-0 flash.
 	let liveScrollTop = $state(0);
+	/* Only the master-jump badge needs this, and the wrap's existing onscroll
+	 * already has the value in hand - so tracking it costs one assignment, not
+	 * a listener (pin b44c957f082f). */
+	let liveScrollLeft = $state(0);
 	let viewportHeight = $state(0);
+	/** Wrap's own rendered width, for the master-fold badge's right-edge
+	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
+	 * extra (pin b44c957f082f follow-up). */
+	let wrapWidth = $state(0);
+	/** The master-jump badge's own rendered width, so its clamp can account
+	 * for `translateX(-50%)` pushing its edge half a badge-width past the
+	 * clamped centre (Sol review r3941617671). `bind:clientWidth` below is a
+	 * one-off read of an element whose size only changes with its own text/
+	 * font, never with a window resize, so this is not the listener the
+	 * pin's "lazy on resize" requirement was written against. */
+	let masterFoldBadgeWidth = $state(0);
 
 	$effect(() => {
 		void restoreKey; // the one tracked dependency
@@ -525,9 +518,13 @@
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
+		wrapWidth = el.clientWidth;
 		if (typeof ResizeObserver === 'undefined') return; // SSR guard
 		const ro = new ResizeObserver((entries) => {
-			for (const entry of entries) viewportHeight = entry.contentRect.height;
+			for (const entry of entries) {
+				viewportHeight = entry.contentRect.height;
+				wrapWidth = entry.contentRect.width;
+			}
 		});
 		ro.observe(el);
 		return () => ro.disconnect();
@@ -773,8 +770,10 @@
 		<button
 			type="button"
 			class="master-fold above"
+			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is above - click to jump"
+			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			▲ MASTER
 		</button>
@@ -783,8 +782,10 @@
 		<button
 			type="button"
 			class="master-fold below"
+			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is below - click to jump"
+			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			▼ MASTER
 		</button>
@@ -795,10 +796,11 @@
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
 			liveScrollTop = top;
+			liveScrollLeft = e.currentTarget.scrollLeft;
 			onscrollcursor(top);
 		}}
 	>
-		<table data-testid="track-table">
+		<table data-testid="track-table" style={`width:${tableWidthPx}px`}>
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
 				<col style={`width:${colWidths.err}px`} />
@@ -882,29 +884,35 @@
 							title={autoPlayQueue.active
 								? `AutoPlay queue - ${autoPlayQueue.entries.length} planned handoff${autoPlayQueue.entries.length === 1 ? '' : 's'}`
 								: 'AutoPlay queue - starts when AutoPlay is enabled'}
-							aria-label="AutoPlay order"
 							data-autoplay-queue-active={autoPlayQueue.active}
 						>
 							<AutoPlayExplainer queue={autoPlayQueue.entries}>
 								{#snippet demo()}
 									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
 								{/snippet}
-								<svg
-									class="autoplay-icon"
-									viewBox="0 0 16 16"
-									width="12"
-									height="12"
-									aria-hidden="true"
+								<button
+									class="autoplay-sort"
+									aria-pressed={sortKey === 'autoplay'}
+									aria-label={sortKey === 'autoplay' ? 'AutoPlay order, sorted 1 to n - activate to restore pane order' : 'AutoPlay order - activate to sort 1 to n'}
+									onclick={() => onsort('autoplay')}
 								>
-									<path
-										d="M8 1.5v2M5.5 2.5h5M4 5.5h8v6H4zM6.25 8h.01M9.75 8h.01M6.25 10h3.5M2.5 7.5H4M12 7.5h1.5"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="1.25"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
+									<svg
+										class="autoplay-icon"
+										viewBox="0 0 16 16"
+										width="12"
+										height="12"
+										aria-hidden="true"
+									>
+										<path
+											d="M8 1.5v2M5.5 2.5h5M4 5.5h8v6H4zM6.25 8h.01M9.75 8h.01M6.25 10h3.5M2.5 7.5H4M12 7.5h1.5"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</button>
 							</AutoPlayExplainer>
 						</th>
 					{/if}
@@ -1030,9 +1038,9 @@
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						use:columnExplainer={{ text: 'biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps' }}
+						use:columnExplainer={{ text: "QLT - audio quality as the biggest venue this file survives, from effective bitrate (size over duration) and container. The badge shows the rung's initial and its colour; hover a badge for the full rung name, the kbps and the container" }}
 					>
-						<span class="th-label"><span>Venue</span></span>
+						<span class="th-label"><span>QLT</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -1308,7 +1316,9 @@
 							class="c-plays"
 							title="play count (rekordbox history + djay)"
 						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
-						<td class="c-rating">
+						<!-- The cell hands its own width to CSS so the stars can
+						     tighten then shrink to fit it (pin 8f60606750c6). -->
+						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
 						</td>
 						<td class="c-comments" title={row.comments ?? ''}>
@@ -1318,7 +1328,7 @@
 						</td>
 						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
-							<QualityBadge quality={row.quality} />
+							<QualityBadge quality={row.quality} compact showContainer={false} />
 						</td>
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
@@ -1373,12 +1383,18 @@
 				aria-hidden="true"
 				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.funnel + colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
+				<defs>
+					<marker id={apCurveArrowId} viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto">
+						<path d="M0 0L6 3L0 6z" class="ap-curve-arrow" />
+					</marker>
+				</defs>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
 					<path
 						d={segmentPath(seg, apCurveX)}
 						class="ap-curve-seg"
 						class:skips={seg.skips}
 						fill="none"
+						marker-end={`url(#${apCurveArrowId})`}
 					/>
 					<circle
 						cx={apCurveX}
@@ -1471,10 +1487,22 @@
 	.ap-rank:focus {
 		color: var(--rb-accent);
 	}
+	.autoplay-sort {
+		display: inline-flex;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+	}
 	.h-autoplay :global(.ap-explain-wrap) {
 		color: inherit;
 	}
 	.ap-curve {
+		/* r3919669577: anchored to the sum of the columns before autoplay
+		   (funnel/err/cloud/order), not table-wrap's right edge - table-wrap
+		   can be wider than the table, and `right: 0` against table-wrap left
+		   the curve floating in that blank space instead of over the column. */
 		position: absolute;
 		top: 0;
 		left: var(--ap-curve-left);
@@ -1499,6 +1527,9 @@
 	}
 	.ap-curve-node.hot {
 		opacity: 1;
+	}
+	.ap-curve-arrow {
+		fill: var(--rb-accent);
 	}
 
 	.tt-root {
@@ -1587,7 +1618,9 @@
 		pointer-events: none;
 	}
 	table {
-		width: 100%;
+		/* width set inline below, from the sum of colWidths (r3919185343) -
+		   never 100%, so table-layout: fixed has no extra space to
+		   redistribute across columns on a wrap wider than the content. */
 		border-collapse: collapse;
 		table-layout: fixed;
 		font-size: var(--rb-fs-browser);
@@ -1627,6 +1660,16 @@
 		font-size: 9px;
 		font-weight: 600;
 		letter-spacing: 0.02em;
+	}
+	thead th:nth-child(-n + 3),
+	.c-funnel,
+	.c-err,
+	.c-cloud {
+		padding: 0 2px;
+	}
+	thead th:nth-child(4) .th-label {
+		padding: 0 2px;
+		font-size: 9px;
 	}
 	th.sortable {
 		padding: 0;
@@ -1829,9 +1872,11 @@
 		background: color-mix(in srgb, var(--rb-green) 26%, var(--rb-panel-raised));
 	}
 
+	/* `left` comes from masterFoldCenterPx as an inline style: the middle of
+	 * the TABLE pointed at Rating / Comments, which is not what the badge is
+	 * about. See src/lib/rb/master-fold-anchor.ts (pin b44c957f082f). */
 	.master-fold {
 		position: absolute;
-		left: 50%;
 		transform: translateX(-50%);
 		z-index: 4;
 		padding: 3px 14px;
@@ -1883,7 +1928,36 @@
 	.c-plays {
 		font-size: 10px;
 	}
+	.c-order {
+		font-size: 9px;
+		padding: 0 2px;
+	}
+
+	/* Five stars are a fixed-width control, so truncating them is never the
+	 * right answer: at 11px with 1px gaps they come to ~67px of advance width
+	 * inside 68px of usable cell, and the generic td rule then hangs an
+	 * ellipsis off the sliver that did not fit - all five stars painted, and a
+	 * '..' after them (pin 8f60606750c6, the maintainer, Wed 2 Sep 2026).
+	 *
+	 * Two stages, in the order the pin asks for: give back the 1px gaps first,
+	 * and only shrink the glyphs once there is no gap left to give. Both
+	 * measure against --rating-w, which the cell publishes from colWidths -
+	 * state the table already owns, so no ResizeObserver and no layout read.
+	 * STAR_ADV (1.2em) is the ★ glyph's advance, which is wider than 1em; using
+	 * 1em here would under-measure and let the overflow back in. */
+	.c-rating {
+		--rating-avail: calc(var(--rating-w, 80px) - 2 * var(--tt-td-pad-x));
+		/* Four gaps, each tripled for unrated stars. */
+		--rb-star-gap: clamp(
+			0px,
+			calc((var(--rating-avail) - 5 * 1.2 * var(--rb-fs-browser)) / 12),
+			1px
+		);
+		--rb-star-size: min(var(--rb-fs-browser), calc(var(--rating-avail) / 6));
+		text-overflow: clip;
+	}
 	.c-quality {
+		padding: 0 2px;
 		overflow: hidden;
 		white-space: nowrap;
 	}
@@ -1901,6 +1975,15 @@
 		fill: currentColor;
 	}
 	.energy-glyph { display: none; }
+	/* At the compact 34px default the base 6-8px td/th padding plus
+	 * .th-label's own inner padding leaves too little room for the "QLT"
+	 * label and clips the compact badge's border (the maintainer, review thread on
+	 * PR #1095): give this column the same tight 2px treatment as the
+	 * funnel/err/cloud utility columns instead of widening it back out. */
+	.h-quality,
+	.h-quality .th-label {
+		padding: 0 2px;
+	}
 	.c-order .grip {
 		margin-right: 2px;
 		font-size: 8px;
@@ -2005,7 +2088,8 @@
 		border-radius: 1px;
 	}
 
-	/* preview cell hosts the hover deck-load buttons */
+	/* The loader opens only from artwork or title. It is fixed to escape the
+	 * scrolling table and flips below a top-row trigger when needed. */
 	.c-preview {
 		position: relative;
 	}
@@ -2044,25 +2128,6 @@
 		margin-right: 2px;
 		white-space: nowrap;
 	}
-	.deck-btns button {
-		width: 16px;
-		height: 16px;
-		padding: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		color: var(--rb-text);
-		font-size: 9px;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.deck-btns button:hover {
-		background: var(--rb-accent);
-		color: #fff;
-	}
 	/* Per-deck state on the quick-load targets, per the pin: dim by default
 	   (empty deck = blank, no extra class), yellow border while that deck is
 	   master, the shared loading-wheel spinner while a command for that deck
@@ -2089,8 +2154,13 @@
 		color: var(--rb-red);
 		font-size: 11px;
 		font-weight: 700;
+		line-height: 1;
+		cursor: pointer;
 	}
-	.deck-btns button.remove-btn:hover {
+	tbody tr:hover .row-remove {
+		display: block;
+	}
+	.row-remove:hover {
 		background: var(--rb-red);
 		color: #fff;
 	}

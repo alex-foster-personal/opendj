@@ -59,6 +59,7 @@ from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import feedback as feedback_routes
+from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
@@ -314,10 +315,7 @@ def create_app(
     async def add_bind_warning(request: Request, call_next):
         response = await call_next(request)
         if bind_host and bind_host != "127.0.0.1" and bind_host != "localhost":
-            response.headers["X-Bind-Warning"] = (
-                f"server is bound to {bind_host}; "
-                "do not expose without Tailscale"
-            )
+            response.headers["X-Bind-Warning"] = f"server is bound to {bind_host}; do not expose without Tailscale"
         return response
 
     api_prefix = "/api/v1"
@@ -337,6 +335,7 @@ def create_app(
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
     app.include_router(feedback_routes.router, prefix=api_prefix)
+    app.include_router(feedback_performance_marks_routes.router, prefix=api_prefix)
     app.include_router(feedback_pins_routes.router, prefix=api_prefix)
     app.include_router(share_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)

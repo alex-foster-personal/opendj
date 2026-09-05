@@ -217,8 +217,10 @@ test('a synthetic payload drives the same bars-to-grid-end countdown as a real o
 
 	// No cues/phrases in the fallback payload, so the countdown target is
 	// the end of the measured grid (wave-math.ts priority tier 3): 7 beats
-	// from t=0 to the last beat at t=3.5 -> 1 full bar + 3 beats.
-	assert.equal(waveMath.barsToNextCueLabel(synth, 0), '1.3Bars');
+	// from t=0 to the last beat at t=3.5 -> 1 full bar, and the 3 leftover
+	// beats are floored away. The label is whole bars as of pin d56d98cd9c53
+	// (Wed 2 Sep 2026); see tests/unit/bars-to-next-cue-label.test.mjs for why.
+	assert.equal(waveMath.barsToNextCueLabel(synth, 0), '1Bars');
 	// Past the end of the grid: nothing left to count down to.
 	assert.equal(waveMath.barsToNextCueLabel(synth, 4000), null);
 });

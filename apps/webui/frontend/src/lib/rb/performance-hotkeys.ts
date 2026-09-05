@@ -11,6 +11,7 @@ import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
 import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
+import { armPinPlacement } from './feedback-store.svelte';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
 // can take DeckId from here instead of a fresh direct import of deck-slots.ts,
@@ -133,6 +134,13 @@ export function installPerformanceHotkeys(): () => void {
 		} else if (e.key === ')') {
 			e.preventDefault();
 			void _exitLast();
+		} else if (e.key === 'm' || e.key === 'M') {
+			// Drop a comment pin without reaching for the topbar icon. The
+			// guard above already answers the other half of pin 919d65b350b1:
+			// nothing here fires while a text field has focus, and a modifier
+			// held (Cmd+Enter to submit) returns early too.
+			e.preventDefault();
+			armPinPlacement();
 		}
 	};
 	window.addEventListener('keydown', onKey);

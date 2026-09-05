@@ -165,7 +165,7 @@ describe('PLAY-05 queue agrees with the handoff pitch range', () => {
 				key: '8A',
 				bpm: 124
 			});
-			controller.setAutoPlayTrackFeed(FEED);
+			controller.setAutoPlayTrackFeed('queue-pitch-range', FEED);
 
 			uninstall = controller.installAutoPlay();
 			const deadline = Date.now() + 8_000;
