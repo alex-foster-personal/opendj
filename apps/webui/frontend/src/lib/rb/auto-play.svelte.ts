@@ -35,6 +35,7 @@ import {
 	formatAutoPlaySyncSkipToast,
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
+	getAutoPlayPlaylistRevision,
 	pickFollowerDeck,
 	pickNextStableId,
 	pickSourceDeck,
@@ -63,6 +64,7 @@ import {
 } from '$lib/rb/autoplay-queue.svelte';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
+import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
@@ -113,17 +115,13 @@ let _claimedIds = new Set<string>();
 let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;
 let _promoting = false;
 
-/** Carries how far a handoff got, so the caller knows if a retry is legal. */
-class AutoPlayHandoffError extends Error {
-	readonly phase: AutoPlayHandoffPhase;
-	constructor(phase: AutoPlayHandoffPhase, cause: unknown) {
-		super(cause instanceof Error ? cause.message : String(cause), { cause });
-		this.name = 'AutoPlayHandoffError';
-		this.phase = phase;
-	}
-}
-
 export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
+
+/** Clear a published chart and its memo together, so recovery always re-plans. */
+function _clearChartedOrder(): void {
+	_chartedOrderKey = null;
+	publishAutoPlayOrder([]);
+}
 
 function _refreshChartedOrder(
 	source: AutoPlayDeckSnap | null,
@@ -131,13 +129,13 @@ function _refreshChartedOrder(
 	excludeIds: ReadonlySet<string>
 ): void {
 	if (!uiPrefs.auto_play_enabled || source === null || source.stable_id === null) {
-		publishAutoPlayOrder([]);
+		_clearChartedOrder();
 		return;
 	}
 	_syncPlayedSet();
 	const follower = pickFollowerDeck(snaps, source.id);
 	if (follower === null) {
-		publishAutoPlayOrder([]);
+		_clearChartedOrder();
 		return;
 	}
 	const followerPitchRange = pitchRanges[follower];
@@ -147,7 +145,10 @@ function _refreshChartedOrder(
 	// unless one of these inputs did, so an unchanged key is a no-op tick.
 	const key = chartedOrderKey({
 		feed_epoch: _playedFeedEpoch,
+		playlist_revision: getAutoPlayPlaylistRevision(),
 		source_stable_id: source.stable_id,
+		source_key: deckStates[source.id].key,
+		source_bpm: deckStates[source.id].bpm,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
 		min_tempo_ratio: bounds.min,
@@ -352,7 +353,7 @@ async function _promoteMaster(): Promise<void> {
 
 async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) {
-		publishAutoPlayOrder([]);
+		_clearChartedOrder();
 		_pendingMaster = null;
 		return;
 	}
@@ -374,7 +375,7 @@ async function _tick(): Promise<void> {
 			_waitingFollowerFor = null;
 			_waitingEmptyFeedEpoch = null;
 		}
-		publishAutoPlayOrder([]);
+		_clearChartedOrder();
 		return;
 	}
 
@@ -589,7 +590,7 @@ export function installAutoPlay(): () => void {
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', count: 0 };
 		_playedFeedEpoch = -1;
-		publishAutoPlayOrder([]);
+		_clearChartedOrder();
 		clearAutoPlayQueue();
 	};
 }
