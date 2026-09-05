@@ -70,6 +70,9 @@ def _run_gate(
 
     monkeypatch.setattr(qg, "EVALUATORS", (qg.Evaluator("fake", "fake title", _fake_eval),))
     monkeypatch.setattr(qg, "_load_baseline", lambda: {_METRIC_KEY: _ALLOWANCE})
+    # #1219 gave metrics a slack band; this suite is about inheritance, so it
+    # pins slack to nothing and keeps measuring the bare-allowance behavior.
+    monkeypatch.setattr(qg, "_load_slack", dict)
     monkeypatch.setattr(qg, "_hotspots", list)
     monkeypatch.setattr(qg, "_resolve_base", _fail if fail_if_called else lambda: resolve)
     monkeypatch.setattr(

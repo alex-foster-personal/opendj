@@ -99,6 +99,25 @@ REG  Q-11 Tell an inherited trunk regression from one this change introduced.
            then the run exits 1]
           [if the merge base cannot be measured then the message is unchanged
            and the output says why, never a silent pass]
+REG  Q-12 Judge a run against its allowance PLUS a small declared slack, so a
+          normal PR can land while debt still trends down (issue #1219: all
+          seven count metrics sat at zero headroom at once because each
+          landing PR lowered the allowance to whatever it achieved, and the
+          wall therefore moved with every burn-down). Slack is a per-metric
+          constant in baseline.json's `slack` block, worth roughly one
+          ordinary PR, justified in ops/quality/README.md. Allowances still
+          only shrink; the band is headroom at gate time, never a recorded
+          allowance, and a metric with no slack entry gets zero.
+          [if a metric lands exactly at allowance + slack then the run prints
+           WITHIN SLACK with both raw numbers and exits 0]
+          [if it lands one past allowance + slack then the run exits 1]
+          [if baseline.json declares no slack for a metric then that metric is
+           gated at its bare allowance, exactly as before]
+          [if --update-baseline rewrites the file then the `slack` block
+           survives, so a ratchet-down cannot silently re-tighten to zero]
+          [if --update-baseline runs on a tree whose metric sits inside its
+           slack band then the recorded allowance is KEPT, not raised to the
+           measurement, so repeated updates cannot walk the ceiling upward]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -1120,28 +1139,71 @@ def _load_baseline() -> dict[str, float]:
     return json.loads(BASELINE.read_text())["metrics"]
 
 
-def _ratchet_exceeded(m: Metric, baseline: dict[str, float]) -> bool:
-    """True when a plain ratchet metric is over its allowance.
+def _load_slack() -> dict[str, float]:
+    """Per-metric headroom above the allowance, from baseline.json's `slack` (Q-12).
+
+    A metric with no entry gets zero, which is the pre-slack gate exactly. The
+    band therefore only ever exists where someone wrote it down and justified
+    it in ops/quality/README.md; a missing key can never widen a gate quietly.
+    """
+    if not BASELINE.exists():
+        return {}
+    return json.loads(BASELINE.read_text()).get("slack", {})
+
+
+def _ceiling(key: str, baseline: dict[str, float], slack: dict[str, float]) -> float:
+    """The number a run must not exceed: allowance plus this metric's slack."""
+    return baseline[key] + slack.get(key, 0.0)
+
+
+def _allowed_text(key: str, baseline: dict[str, float], slack: dict[str, float]) -> str:
+    """`49 allowed`, or `49 allowed + 1 slack` when the metric declares slack.
+
+    The allowance and the slack print separately, never pre-added, so a reader
+    can always see which number is the recorded debt and which is the band.
+    """
+    extra = slack.get(key, 0.0)
+    if not extra:
+        return f"{baseline[key]:g} allowed"
+    return f"{baseline[key]:g} allowed + {extra:g} slack"
+
+
+def _ratchet_exceeded(
+    m: Metric, baseline: dict[str, float], slack: dict[str, float] | None = None
+) -> bool:
+    """True when a plain ratchet metric is over its allowance PLUS its slack.
 
     The only metrics a regression can be INHERITED on. A hard-zero rule has no
     allowance to be over on main (a broken architecture contract must stay red
     whoever caused it), and a report-only metric never regresses at all, so
-    neither is ever offered the inherited downgrade.
+    neither is ever offered the inherited downgrade. Slack defaults to empty,
+    so a caller that does not pass one gets the strict allowance.
     """
     return (
         m.key not in HARD_ZERO
         and m.key not in REPORT_ONLY
         and m.key in baseline
-        and m.value > baseline[m.key]
+        and m.value > _ceiling(m.key, baseline, slack or {})
     )
 
 
 def _compare(
-    metrics: list[Metric], baseline: dict[str, float]
-) -> tuple[list[str], list[str], list[str]]:
+    metrics: list[Metric],
+    baseline: dict[str, float],
+    slack: dict[str, float] | None = None,
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Split every metric into regressions, ratchets, unknowns and slack users.
+
+    A value above the allowance but at or under allowance + slack is neither a
+    failure nor a ratchet: it is one ordinary PR's worth of movement inside a
+    declared band, reported as WITHIN SLACK with the raw numbers so it can
+    never pass unseen.
+    """
+    slack_of = slack or {}
     regressions: list[str] = []
     ratchets: list[str] = []
     unknown: list[str] = []
+    within_slack: list[str] = []
     for m in metrics:
         if m.key in HARD_ZERO:
             if m.value > 0:
@@ -1151,11 +1213,19 @@ def _compare(
             continue
         if m.key not in baseline:
             unknown.append(f"{m.key}: {m.value:g} (no baseline; run --update-baseline)")
-        elif _ratchet_exceeded(m, baseline):
-            regressions.append(f"{m.key}: {m.value:g} > {baseline[m.key]:g} allowed")
+        elif _ratchet_exceeded(m, baseline, slack_of):
+            regressions.append(
+                f"{m.key}: {m.value:g} > {_allowed_text(m.key, baseline, slack_of)}"
+            )
+        elif m.value > baseline[m.key]:
+            within_slack.append(
+                f"{m.key}: {m.value:g} > {baseline[m.key]:g} allowed, inside the "
+                f"{slack_of.get(m.key, 0.0):g} slack "
+                f"(ceiling {_ceiling(m.key, baseline, slack_of):g})"
+            )
         elif m.value < baseline[m.key]:
             ratchets.append(f"{m.key}: {m.value:g} < {baseline[m.key]:g} allowed")
-    return regressions, ratchets, unknown
+    return regressions, ratchets, unknown, within_slack
 
 
 # ----- inherited trunk regressions (Q-11) ----------------------------------
@@ -1308,11 +1378,16 @@ def _inherited_classification(
 
 
 def _inherited_block(
-    m: Metric, base_value: float, base_sha: str, baseline: dict[str, float]
+    m: Metric,
+    base_value: float,
+    base_sha: str,
+    baseline: dict[str, float],
+    slack: dict[str, float] | None = None,
 ) -> tuple[str, str]:
     """The two console lines an INHERITED metric prints in place of REGRESSION."""
     return (
-        f"INHERITED  {m.key}: {m.value:g} > {baseline[m.key]:g} allowed",
+        f"INHERITED  {m.key}: {m.value:g} > "
+        f"{_allowed_text(m.key, baseline, slack or {})}",
         f"          main ({base_sha}) is ALSO at {base_value:g} - this is a trunk "
         "regression, not yours",
     )
@@ -1321,11 +1396,57 @@ def _inherited_block(
 # ----- report --------------------------------------------------------------
 
 
+def _report_allowed(
+    key: str, baseline: dict[str, float], slack: dict[str, float]
+) -> str:
+    """The report's `allowed` cell: the allowance, and its slack band if any."""
+    if key in HARD_ZERO:
+        return "0 (hard)"
+    if key in REPORT_ONLY:
+        return "n/a"
+    if key not in baseline:
+        return "-"
+    extra = slack.get(key, 0.0)
+    if not extra:
+        return f"{baseline[key]:g}"
+    return f"{baseline[key]:g} (+{extra:g} slack)"
+
+
+def _report_status(
+    m: Metric,
+    baseline: dict[str, float],
+    slack: dict[str, float],
+    inherited: frozenset[str],
+) -> str:
+    """The report's `status` cell for one metric.
+
+    A regression the merge-base main already carries is not this change's
+    doing, so INHERITED wins over REGRESSED; saying otherwise would put the
+    status column in contradiction with the exit code.
+    """
+    if m.key in inherited:
+        return "INHERITED (on main too)"
+    if m.key in HARD_ZERO:
+        return "PASS" if m.value == 0 else "FAIL"
+    if m.key in REPORT_ONLY:
+        return "report only"
+    if m.key not in baseline:
+        return "NEW"
+    if m.value > _ceiling(m.key, baseline, slack):
+        return "REGRESSED"
+    if m.value > baseline[m.key]:
+        return "within slack"
+    if m.value < baseline[m.key]:
+        return "RATCHET"
+    return "held"
+
+
 def _markdown(
     metrics: list[Metric],
     baseline: dict[str, float],
     hotspots: list,
     inherited: frozenset[str] = frozenset(),
+    slack: dict[str, float] | None = None,
 ) -> str:
     lines = [
         "# Code quality report",
@@ -1333,38 +1454,17 @@ def _markdown(
         f"Generated {datetime.now(UTC).isoformat(timespec='seconds')} by "
         "`python -m scripts.quality_gate`.",
         "",
-        "Every number is compared against `ops/quality/baseline.json`. Only a worse",
-        "number fails the build; a better number is a ratchet you can bank with",
-        "`--update-baseline`.",
+        "Every number is compared against `ops/quality/baseline.json`. Only a number",
+        "past the allowance PLUS that metric's declared slack fails the build; a",
+        "better number is a ratchet you can bank with `--update-baseline`.",
         "",
         "| metric | value | allowed | status | unit | worst offender |",
         "| ------ | ----: | ------: | ------ | ---- | -------------- |",
     ]
+    slack_of = slack or {}
     for m in metrics:
-        if m.key in HARD_ZERO:
-            allowed = "0 (hard)"
-        elif m.key in REPORT_ONLY:
-            allowed = "n/a"
-        elif m.key in baseline:
-            allowed = f"{baseline[m.key]:g}"
-        else:
-            allowed = "-"
-        if m.key in HARD_ZERO:
-            status = "PASS" if m.value == 0 else "FAIL"
-        elif m.key in REPORT_ONLY:
-            status = "report only"
-        elif m.key not in baseline:
-            status = "NEW"
-        elif m.value > baseline[m.key]:
-            status = "REGRESSED"
-        elif m.value < baseline[m.key]:
-            status = "RATCHET"
-        else:
-            status = "held"
-        # A regression the merge-base main already carries is not this change's
-        # doing; say so here or the report's status column contradicts the exit.
-        if m.key in inherited:
-            status = "INHERITED (on main too)"
+        allowed = _report_allowed(m.key, baseline, slack_of)
+        status = _report_status(m, baseline, slack_of, inherited)
         lines.append(
             f"| `{m.key}` | {m.value:g} | {allowed} | {status} | {m.unit} | {m.detail} |"
         )
@@ -1393,33 +1493,85 @@ def _preflight(selected: list[Evaluator]) -> None:
         raise RuntimeError("pnpm is not on PATH but a frontend evaluator was selected")
 
 
-def _marker(metric: Metric, allowed: float | None) -> str:
-    """Two-character status flag for one metric line."""
+def _marker(metric: Metric, allowed: float | None, slack: float = 0.0) -> str:
+    """Two-character status flag for one metric line.
+
+    `~~` is the slack band: over the recorded allowance, under the ceiling.
+    It is deliberately not `  ` (held), so a reader can see at a glance that
+    the tree floated up even though the run passed.
+    """
     if metric.key in HARD_ZERO:
         return "!!" if metric.value > 0 else "OK"
     if metric.key in REPORT_ONLY:
         return "--"
     if allowed is None:
         return "??"
-    if metric.value > allowed:
+    if metric.value > allowed + slack:
         return "!!"
+    if metric.value > allowed:
+        return "~~"
     if metric.value < allowed:
         return "->"
     return "  "
 
 
-def _print_metrics(metrics: list[Metric], baseline: dict[str, float]) -> None:
+def _print_metrics(
+    metrics: list[Metric],
+    baseline: dict[str, float],
+    slack: dict[str, float] | None = None,
+) -> None:
     print()
+    slack_of = slack or {}
     for m in metrics:
         allowed = baseline.get(m.key)
+        extra = slack_of.get(m.key, 0.0)
         if m.key in REPORT_ONLY:
             suffix = " (report only, not gated)"
+        elif allowed is not None and extra:
+            suffix = f" (allowed {allowed:g} + {extra:g} slack)"
         elif allowed is not None:
             suffix = f" (allowed {allowed:g})"
         else:
             suffix = ""
         detail = f"  [{m.detail}]" if m.detail else ""
-        print(f" {_marker(m, allowed):2s} {m.key:38s} {m.value:>8g} {m.unit}{suffix}{detail}")
+        marker = _marker(m, allowed, extra)
+        print(f" {marker:2s} {m.key:38s} {m.value:>8g} {m.unit}{suffix}{detail}")
+
+
+def _recorded_allowances(
+    metrics: list[Metric], previous: dict[str, float]
+) -> tuple[dict[str, float], list[str]]:
+    """The allowances a rewrite records: today's numbers, but only downward.
+
+    --update-baseline must never RAISE an allowance, and slack is exactly what
+    makes that possible to do by accident. A run inside its band measures above
+    the recorded allowance and still passes (Q-12); writing that measurement
+    back would bank the pass, and repeating it would walk the ceiling up one
+    band per run -- the opposite of a ratchet, and a hole straight through the
+    shrink-only invariant this file's own `note` states.
+
+    So a metric measured ABOVE its recorded allowance keeps the old number and
+    the run says which ones it kept. Only a lower measurement moves the file, a
+    metric with no prior allowance is recorded as a first one, and REPORT_ONLY
+    metrics are deliberately absent (this file lists allowances, and a number
+    nothing is allowed to exceed is not one). Raising an allowance is still
+    possible, and still exactly as visible as it was: hand-edit the number in a
+    diff someone reviews, with a `burn_down` entry saying why.
+    """
+    recorded: dict[str, float] = {}
+    retained: list[str] = []
+    for m in metrics:
+        if m.key in REPORT_ONLY:
+            continue
+        prior = previous.get(m.key)
+        if prior is not None and m.value > prior:
+            recorded[m.key] = prior
+            retained.append(
+                f"{m.key}: measured {m.value:g}, allowance kept at {prior:g}"
+            )
+        else:
+            recorded[m.key] = m.value
+    return recorded, retained
 
 
 def _write_baseline(metrics: list[Metric]) -> None:
@@ -1432,18 +1584,28 @@ def _write_baseline(metrics: list[Metric]) -> None:
     # raised and which refactor is committed to lowering it again. Dropping it
     # on the next --update-baseline would turn a tracked burn-down into an
     # anonymous number nobody remembers agreeing to.
+    # `slack` is carried for the same reason: it is a reviewed, justified band
+    # (ops/quality/README.md), and a --update-baseline that silently dropped it
+    # would re-tighten seven gates to zero headroom without saying so.
+    previous: dict[str, float] = {}
     if BASELINE.exists():
         existing = json.loads(BASELINE.read_text())
-        if "burn_down" in existing:
-            payload["burn_down"] = existing["burn_down"]
-    # REPORT_ONLY metrics are deliberately absent: this file is a list of
-    # allowances, and a number nothing is allowed to exceed does not belong
-    # in it.
-    payload["metrics"] = {
-        m.key: m.value for m in metrics if m.key not in REPORT_ONLY
-    }
+        previous = existing.get("metrics", {})
+        for carried in ("slack", "burn_down"):
+            if carried in existing:
+                payload[carried] = existing[carried]
+    payload["metrics"], retained = _recorded_allowances(metrics, previous)
     BASELINE.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"\n[quality] baseline written to {BASELINE}")
+    for line in retained:
+        print(f"[quality] ALLOWANCE KEPT   {line}")
+    if retained:
+        print(
+            f"[quality] {len(retained)} allowance(s) were NOT raised to today's "
+            "measurement. Allowances only ever shrink; slack is headroom at "
+            "gate time, never a recorded number. To raise one, edit "
+            "ops/quality/baseline.json by hand with a burn_down entry."
+        )
 
 
 def _select(only: str | None) -> list[Evaluator]:
@@ -1460,25 +1622,32 @@ def _print_ratchet_verdict(
     regressions: list[str],
     check: BaseCheck,
     baseline: dict[str, float],
+    within_slack: list[str] | None = None,
+    slack: dict[str, float] | None = None,
 ) -> int:
     """Print the ratchet/regression readout and return the run's exit code.
 
     An inherited metric prints INHERITED where its REGRESSION line would have
     been, so the distinction appears at the metric's own place in the list.
     Metric keys never contain a colon, so the line prefix names the metric.
+    A metric inside its slack band prints WITHIN SLACK with both raw numbers:
+    the run passes, but the movement is never invisible.
     Extracted from main so main stays under the gate's own complexity ceilings.
     """
+    used_slack = within_slack or []
     print()
     for line in ratchets:
         print(f"[quality] RATCHET AVAILABLE  {line}")
     for line in unknown:
         print(f"[quality] NO BASELINE       {line}")
+    for line in used_slack:
+        print(f"[quality] WITHIN SLACK      {line}")
     regressions_kept = 0
     for line in regressions:
         key = line.split(":", 1)[0]
         if key in check.inherited:
             m, base_value = check.inherited[key]
-            line1, line2 = _inherited_block(m, base_value, check.sha, baseline)
+            line1, line2 = _inherited_block(m, base_value, check.sha, baseline, slack)
             print(f"[quality] {line1}")
             print(line2)
         else:
@@ -1493,6 +1662,12 @@ def _print_ratchet_verdict(
         print(
             f"\n[quality] PASS: {len(check.inherited)} metric(s) over allowance "
             "are INHERITED from main (above); this change made none worse."
+        )
+        return 0
+    if used_slack:
+        print(
+            f"\n[quality] PASS: {len(used_slack)} metric(s) used declared slack "
+            "(above); none passed its ceiling."
         )
         return 0
     print("\n[quality] PASS: nothing got worse.")
@@ -1528,20 +1703,21 @@ def main(argv: list[str] | None = None) -> int:
         metrics.extend(measured)
 
     baseline = _load_baseline()
-    regressions, ratchets, unknown = _compare(metrics, baseline)
+    slack = _load_slack()
+    regressions, ratchets, unknown, within_slack = _compare(metrics, baseline, slack)
 
     # Ask the merge-base main whether it is over too, but only when something
     # actually regressed: a green run must not pay for a second scan.
     check = BaseCheck("")
     if not args.update_baseline:
-        over = [m for m in metrics if _ratchet_exceeded(m, baseline)]
+        over = [m for m in metrics if _ratchet_exceeded(m, baseline, slack)]
         check = _inherited_classification(
             over, owner_of, _resolve_base, _measure_owners_at_base
         )
 
     hotspots = _hotspots()
 
-    _print_metrics(metrics, baseline)
+    _print_metrics(metrics, baseline, slack)
 
     # Absolute paths in the readout: this runs from justfile, Makefile and CI
     # with three different working directories, so a relative path is a path
@@ -1549,7 +1725,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(
-            _markdown(metrics, baseline, hotspots, inherited=frozenset(check.inherited))
+            _markdown(
+                metrics,
+                baseline,
+                hotspots,
+                inherited=frozenset(check.inherited),
+                slack=slack,
+            )
         )
         print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
@@ -1563,7 +1745,9 @@ def main(argv: list[str] | None = None) -> int:
         _write_baseline(metrics)
         return 0
 
-    return _print_ratchet_verdict(ratchets, unknown, regressions, check, baseline)
+    return _print_ratchet_verdict(
+        ratchets, unknown, regressions, check, baseline, within_slack, slack
+    )
 
 
 if __name__ == "__main__":
