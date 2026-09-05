@@ -236,17 +236,16 @@ test('the sentinel writes no audio, and is muted on the way out anyway', () => {
 	);
 });
 
-test('a healthy window costs nothing: no post, no ring row', () => {
+test('a healthy window sends a bounded liveness report but no ring row', () => {
 	const processor = readSource('src/lib/rb/xrun-sentinel-processor.js');
 	assert.ok(
-		processor.includes('if (this.xruns > 0 || this.parked > 0) {'),
-		'an idle set must produce zero MessagePort traffic, or the instrument becomes the ' +
-			'load it is measuring'
+		processor.includes('this.port.postMessage({'),
+		'LIVE-01 needs a bounded callback report to distinguish a healthy worklet from a stalled one'
 	);
 	const sentinel = readSource('src/lib/rb/xrun-sentinel.ts');
 	assert.ok(
-		sentinel.includes("recordPerfEvent('xrun'"),
-		'a report that reaches the main thread must land in the ring'
+		sentinel.includes('if (data.xruns === 0) return;'),
+		'a healthy liveness report must not become an xrun ring row'
 	);
 });
 

@@ -116,6 +116,7 @@ function _onReport(data: unknown): void {
 		return;
 	}
 	_session = foldXrunReport(_session, data);
+	if (data.xruns === 0) return;
 	// error severity, so perf-event-log escalates it to /api/v1/client-errors
 	// (rate-limited there to one POST per kind per minute). A window the audio
 	// thread reports as late is an audio-liveness failure, not a notice.

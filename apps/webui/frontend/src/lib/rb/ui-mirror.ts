@@ -3,6 +3,7 @@ import { toasts } from '$lib/stores.svelte';
 import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState } from './master-silence-report';
 import { queryPerformanceState } from './performance-ipc.svelte';
+import { readXrunSessionCounter } from './xrun-sentinel';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
@@ -45,6 +46,7 @@ export function buildUiMirror(): Record<string, unknown> {
 		client_open: true,
 		context_state: audioContextState(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
+		xrun_sentinel: readXrunSessionCounter(),
 		mixer: state.mixer,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {

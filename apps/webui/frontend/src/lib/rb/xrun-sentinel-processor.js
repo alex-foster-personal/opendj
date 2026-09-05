@@ -159,20 +159,19 @@ class XrunSentinelProcessor extends AudioWorkletProcessor {
 		const windowMs = nowMs - this.windowStartMs;
 		const flushRequestIds = this.flushRequestIds.splice(0);
 		if (windowMs < this.reportIntervalMs && flushRequestIds.length === 0) return true;
-		// Silence is the healthy case and it must cost nothing: a window with
-		// nothing in it rolls over without posting, so an idle set produces no
-		// MessagePort traffic and no ring rows at all.
-		if (this.xruns > 0 || this.parked > 0) {
-			this.port.postMessage({
-				xruns: this.xruns,
-				parked: this.parked,
-				callbacks: this.callbacks,
-				worst_gap_ms: this.worstGapMs,
-				window_ms: windowMs,
-				threshold_ms: this.thresholdMs,
-				clock: this.clock
-			});
-		}
+		// LIVE-01 needs a positive callback count to distinguish a healthy,
+		// rendering worklet from a silently stalled one. One report per two
+		// seconds is intentionally bounded and does not become a perf-ring row
+		// unless it contains a real xrun (the main thread makes that decision).
+		this.port.postMessage({
+			xruns: this.xruns,
+			parked: this.parked,
+			callbacks: this.callbacks,
+			worst_gap_ms: this.worstGapMs,
+			window_ms: windowMs,
+			threshold_ms: this.thresholdMs,
+			clock: this.clock
+		});
 		if (this.judging) this.remeasureCadence();
 		this.windowStartMs = nowMs;
 		this.callbacks = 0;

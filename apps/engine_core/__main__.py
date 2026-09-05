@@ -152,7 +152,7 @@ def _telemetry_decision():
 
 
 def _serve(cfg: EngineConfig, *, log_level: str) -> int:
-    lock = EngineLock(cfg.lock_path)
+    lock = EngineLock(cfg.lock_path, host=cfg.host, port=cfg.port)
     try:
         lock.acquire()
     except EngineLockError as exc:

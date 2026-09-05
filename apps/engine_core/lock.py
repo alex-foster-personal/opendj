@@ -75,9 +75,18 @@ class LockHolder:
 class EngineLock:
     """Context manager around the exclusive lock file."""
 
-    def __init__(self, path: Path, *, boot_id: str | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        boot_id: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
+    ) -> None:
         self.path = Path(path)
         self.boot_id = boot_id or str(uuid.uuid4())
+        self.host = host
+        self.port = port
         self.started_at = _now()
         self._fd: int | None = None
 
@@ -130,15 +139,17 @@ class EngineLock:
         fd = self._fd
         if fd is None:
             raise EngineLockError(f"write on an unheld lock {self.path}")
-        blob = json.dumps(
-            {
-                "pid": os.getpid(),
-                "boot_id": self.boot_id,
-                "started_at": self.started_at,
-                "heartbeat_at": _now(),
-            },
-            sort_keys=True,
-        ).encode("utf-8")
+        data: dict[str, Any] = {
+            "pid": os.getpid(),
+            "boot_id": self.boot_id,
+            "started_at": self.started_at,
+            "heartbeat_at": _now(),
+        }
+        if self.host is not None:
+            data["host"] = self.host
+        if self.port is not None:
+            data["port"] = self.port
+        blob = json.dumps(data, sort_keys=True).encode("utf-8")
         os.lseek(fd, 0, os.SEEK_SET)
         os.ftruncate(fd, 0)
         os.write(fd, blob)
