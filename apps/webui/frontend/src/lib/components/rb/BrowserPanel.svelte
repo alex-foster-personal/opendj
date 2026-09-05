@@ -2465,7 +2465,7 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		<LibraryLoadIndicator progress={pane.load_progress} />
+		<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
 		<TrackTable
 			{provider}
 			selectedIds={pane.selected_ids}
