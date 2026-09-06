@@ -7423,12 +7423,7 @@
                   "vocals",
                   "beatgrid",
                   "key",
-                  "cues",
-                  "waveform",
-                  "phrase",
-                  "loudness",
-                  "stems",
-                  "other"
+                  "stems"
                 ],
                 "type": "string"
               },

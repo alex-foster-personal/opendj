@@ -7,9 +7,8 @@ from typing import Literal
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-AnalysisKind = Literal[
-    "vocals", "beatgrid", "key", "cues", "waveform", "phrase", "loudness", "stems", "other"
-]
+TrackAnalysisKind = Literal["vocals", "beatgrid", "key", "stems"]
+ORDERABLE_ANALYSIS_KINDS: frozenset[str] = frozenset({"vocals", "beatgrid", "key", "stems"})
 
 
 class RefreshIn(BaseModel):
@@ -18,7 +17,7 @@ class RefreshIn(BaseModel):
     batch_dir: str | None = None
     scope: Literal["library", "unmapped", "track"] = "library"
     stable_id: str | None = None
-    analysis_kind: AnalysisKind | None = None
+    analysis_kind: TrackAnalysisKind | None = None
 
 
 def resolve_scope(body: RefreshIn | None, ingest_inbox: Path) -> tuple[str, Path | None]:

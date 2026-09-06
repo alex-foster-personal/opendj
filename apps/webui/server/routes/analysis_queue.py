@@ -47,16 +47,12 @@ from pydantic import BaseModel
 
 from ..analysis_autostart import AutoAnalyzeState
 from . import ingest
+from .ingest_scope import ORDERABLE_ANALYSIS_KINDS
 
 router = APIRouter(prefix="/analysis-queue", tags=["analysis"])
 
 MAX_ITEMS: int = 1000
 DEFAULT_ITEMS: int = 200
-ANALYSIS_KINDS: frozenset[str] = frozenset({
-    "vocals", "beatgrid", "key", "cues", "waveform", "phrase", "loudness", "stems", "other"
-})
-
-
 class AnalysisQueueItemOut(BaseModel):
     """One queued track. ``file_path`` is what the runner decodes.
 
@@ -152,8 +148,8 @@ def run_analysis_queue() -> ingest.RefreshStatusOut:
 @router.post("/orders/{stable_id}/{kind}", response_model=AnalysisOrderOut, status_code=202)
 def order_track_analysis(stable_id: str, kind: str) -> AnalysisOrderOut:
     """Order one real analysis CLI run through the same single refresh slot."""
-    if kind not in ANALYSIS_KINDS:
-        raise HTTPException(422, f"unknown analysis kind {kind!r}")
+    if kind not in ORDERABLE_ANALYSIS_KINDS:
+        raise HTTPException(422, f"analysis kind cannot be ordered: {kind!r}")
     with ingest._job_lock:
         job = ingest._JOBS.current
         if job is not None and job.phase in ingest.ACTIVE_PHASES:

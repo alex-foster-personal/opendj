@@ -162,13 +162,15 @@ def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, a
     _wait(client)
 
 
-def test_order_rejects_an_unknown_analysis_kind(client, app, tmp_path):
+@pytest.mark.parametrize("kind", ["unknown", "cues", "waveform", "phrase", "other"])
+def test_order_rejects_an_unknown_or_unproducible_analysis_kind(client, app, tmp_path, kind):
+    """A 202 is reserved for a command that can materialize the requested dot."""
     _seed(app, "order002", _audio(tmp_path, "order.mp3"))
     _enable_all_steps(client)
 
-    response = client.post("/api/v1/analysis-queue/orders/order002/unknown")
+    response = client.post(f"/api/v1/analysis-queue/orders/order002/{kind}")
     assert response.status_code == 422
-    assert "unknown analysis kind" in response.text
+    assert "cannot be ordered" in response.text
 
 
 def test_order_rejects_a_missing_track_before_acknowledging(client):

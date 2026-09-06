@@ -164,6 +164,10 @@
 		return 'analysis'; // beatgrid/key/cues/waveform/phrase/loudness/other share the one coarse step
 	}
 
+	function _isOrderable(kind: AnalysisKind): boolean {
+		return kind === 'vocals' || kind === 'beatgrid' || kind === 'key' || kind === 'stems';
+	}
+
 	function _ingestStepLabel(kind: AnalysisKind): string {
 		return _ingestStepId(kind);
 	}
@@ -189,6 +193,9 @@
 		const status = analysisStatus(badge[kind] === true, phase);
 		if (status === 'queued' || status === 'in-progress') return { text: status, clickable: false };
 		if (kind === 'load') return { text: 'deck/audio only - not tracked here', clickable: false };
+		if (!_isOrderable(kind)) {
+			return { text: 'no producer is available for this analysis', clickable: false };
+		}
 
 		if (stableId !== null) {
 			if (ingestConfigStatus === 'error') {
