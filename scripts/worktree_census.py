@@ -345,6 +345,22 @@ def _pr_index(use_github: bool) -> dict[str, PullRequest]:
 # ------------------------------------------------------------------ collection
 
 
+def recheck(worktree: Path) -> tuple[str, str, list[str]]:
+    """Fresh liveness + dirty/kept read, taken immediately before a destructive verb.
+
+    `collect()` measures the whole worktree set once, up front, which is exactly
+    what a reap loop must NOT rely on right before it deletes: everything the
+    KEEP/REAP call rests on can go stale during the scan and the per-target
+    backup that follows it. This re-reads only the two things liveness and a
+    destructive removal actually need, for one worktree, so it is cheap enough
+    to call again right before each `git worktree remove`.
+    """
+    self_marker = Path(__file__).name
+    liveness, detail = _liveness(worktree, self_marker)
+    paths = sorted(set(_dirty_paths(worktree)) | set(_kept_ignored(worktree)))
+    return liveness, detail, paths
+
+
 def collect(repo: Path, *, use_github: bool, with_size: bool) -> list[Worktree]:
     primary = _primary_checkout(repo)
     pr_index = _pr_index(use_github)

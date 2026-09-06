@@ -233,6 +233,166 @@ def test_reap_refuses_when_the_archive_is_incomplete(
     assert (worktree / "notes" / "scratch.md").exists()
 
 
+def test_reap_aborts_when_the_worktree_goes_live_between_scan_and_removal(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] a process starts using a worktree after `collect()` but before its
+    turn in the removal loop [then] the reaper re-checks liveness right before
+    `git worktree remove` and leaves it standing, [else stop].
+
+    This is issue #1400: `cmd_reap` took one `collect()` snapshot for the whole
+    set, then relied on it for every subsequent removal, so a worktree that
+    went live during the scan/backup pass was still removed `--force`.
+    """
+    worktree = tmp_path / "wt-goes-live"
+    _add_worktree(primary, worktree, "af--goes-live")
+    _age(worktree, STALE_AGE_H)
+    backups = tmp_path / "backups"
+    calls = {"n": 0}
+
+    def _liveness(path: Path, marker: str) -> tuple[str, str]:
+        calls["n"] += 1
+        if calls["n"] == 1:                 # the collect() scan: REAP candidate
+            return "idle", ""
+        return "live", "pgrep pids 424242"  # the reap loop's re-check: in use now
+
+    monkeypatch.setattr(census, "_liveness", _liveness)
+
+    assert _reap(primary, backups, "--apply") == 0
+    assert worktree.exists(), "a worktree that went live must not be removed"
+    out = capsys.readouterr().out
+    assert "[ABORT]" in out and "live" in out
+    assert not list(backups.glob("af--goes-live-*.manifest.json")), (
+        "nothing should be archived for a worktree that was never actually removed"
+    )
+    log = mod.json.loads((backups / "reap-log.jsonl").read_text().splitlines()[-1])
+    assert log["removed"] is False
+    assert "live" in log["aborted"]
+
+
+def test_reap_archives_work_that_appears_after_the_scan(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] a worktree goes dirty between `collect()` and its removal [then] the
+    new work is archived before the worktree is removed, [else stop].
+
+    The failure scenario from issue #1400: an agent starts editing a worktree
+    that was measured `clean` at scan time. The old code backed up the STALE
+    (empty) path list and then `--force`-removed the tree, destroying the new
+    work with nothing archived. The fix re-reads dirty paths immediately before
+    removal, so this must now show up in the archive instead.
+    """
+    worktree = tmp_path / "wt-goes-dirty"
+    _add_worktree(primary, worktree, "af--goes-dirty")
+    _age(worktree, STALE_AGE_H)
+    backups = tmp_path / "backups"
+    late_content = b"written after the scan, before the reap reached this worktree\n"
+    calls = {"n": 0}
+
+    def _liveness(path: Path, marker: str) -> tuple[str, str]:
+        calls["n"] += 1
+        if calls["n"] == 2:                 # the reap loop's first re-check
+            (worktree / "late.txt").write_bytes(late_content)
+        return "idle", ""
+
+    monkeypatch.setattr(census, "_liveness", _liveness)
+
+    assert _reap(primary, backups, "--apply") == 0
+    assert not worktree.exists()
+    manifest = mod.json.loads(next(backups.glob("af--goes-dirty-*.manifest.json")).read_text())
+    assert manifest["paths"] == ["late.txt"], (
+        "the path written after the scan must be archived, not silently dropped"
+    )
+
+    restored = tmp_path / "wt-goes-dirty-restored"
+    assert mod.main(["restore", "af--goes-dirty", "--repo", str(primary),
+                     "--backup-root", str(backups), "--into", str(restored)]) == 0
+    assert (restored / "late.txt").read_bytes() == late_content
+
+
+def test_reap_aborts_when_an_already_dirty_file_is_edited_after_the_backup(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] a path already present in `fresh_paths` at backup time is edited
+    again before the `--force` removal [then] the reaper detects the content
+    mismatch and leaves the worktree standing, [else stop].
+
+    This is the P1 from PR #1412's review: `new_paths` only diffs PATH NAMES
+    between the pre-backup and pre-force rechecks, so an agent that keeps
+    writing to a file that was ALREADY dirty at backup time produces an empty
+    name delta. `live_now` can still read idle (the writer need not hold the
+    worktree as cwd), so the old code proceeded straight to `--force`,
+    destroying the newer content while the archive held the pre-edit version.
+    """
+    worktree = tmp_path / "wt-edited-after-backup"
+    _add_worktree(primary, worktree, "af--edited-after-backup")
+    (worktree / "already-dirty.txt").write_bytes(b"version backed up by back_up()\n")
+    _age(worktree, STALE_AGE_H)
+    backups = tmp_path / "backups"
+    calls = {"n": 0}
+
+    def _liveness(path: Path, marker: str) -> tuple[str, str]:
+        calls["n"] += 1
+        if calls["n"] == 3:          # right before --force: same path, new bytes
+            (worktree / "already-dirty.txt").write_bytes(b"edited after the backup ran\n")
+        return "idle", ""
+
+    monkeypatch.setattr(census, "_liveness", _liveness)
+
+    assert _reap(primary, backups, "--apply") == 0
+    assert worktree.exists(), "content edited after the backup must not be force-removed"
+    assert (worktree / "already-dirty.txt").read_bytes() == b"edited after the backup ran\n"
+    out = capsys.readouterr().out
+    assert "[ABORT]" in out and "already-dirty.txt" in out
+    log = mod.json.loads((backups / "reap-log.jsonl").read_text().splitlines()[-1])
+    assert log["removed"] is False
+    assert "already-dirty.txt" in log["aborted"]
+    assert log["backup_orphaned"] is True, (
+        "an archive that was uploaded but never matched by a removal must be flagged"
+    )
+
+
+def test_reap_aborts_when_a_new_path_appears_between_backup_and_force(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] a brand new path appears in the worktree between the backup pass and
+    the `--force` retry [then] the reaper aborts on the name delta and leaves
+    the worktree standing, [else stop].
+
+    Companion to the edited-content case above: this exercises `new_paths`
+    itself, the other half of `if live_now != "idle" or new_paths or
+    edited_paths`, by planting the new file only at the post-refusal recheck --
+    too late for `back_up` to have archived it. Nothing previously exercised
+    this branch, so a regression here (an inverted condition, a dropped
+    `continue`) could delete unarchived work with the suite still green.
+    """
+    worktree = tmp_path / "wt-new-path-before-force"
+    _add_worktree(primary, worktree, "af--new-path-before-force")
+    (worktree / "already-dirty.txt").write_bytes(b"backed up as usual\n")
+    _age(worktree, STALE_AGE_H)
+    backups = tmp_path / "backups"
+    calls = {"n": 0}
+
+    def _liveness(path: Path, marker: str) -> tuple[str, str]:
+        calls["n"] += 1
+        if calls["n"] == 3:          # right before --force: an unbacked-up new file
+            (worktree / "surprise.txt").write_bytes(b"nobody archived this\n")
+        return "idle", ""
+
+    monkeypatch.setattr(census, "_liveness", _liveness)
+
+    assert _reap(primary, backups, "--apply") == 0
+    assert worktree.exists(), "a new path just before --force must not be force-removed"
+    out = capsys.readouterr().out
+    assert "[ABORT]" in out and "surprise.txt" in out
+    log = mod.json.loads((backups / "reap-log.jsonl").read_text().splitlines()[-1])
+    assert log["removed"] is False
+    assert "surprise.txt" in log["aborted"]
+
+
 def test_dry_run_changes_nothing(primary: Path, tmp_path: Path, idle: None,
                                  capsys: pytest.CaptureFixture[str]) -> None:
     """[if] reap runs with --dry-run [then] the worktree and disk are untouched, [else stop]."""

@@ -70,6 +70,7 @@ from scripts.worktree_census import (
     _parse_worktree_list,
     _primary_checkout,
     collect,
+    recheck,
 )
 
 # ------------------------------------------------------------------ CFG
@@ -153,6 +154,22 @@ def classify(worktree: Worktree, stale_hours: int) -> Verdict:
 
 def _backup_paths(worktree: Worktree) -> list[str]:
     return sorted(set(worktree.dirty_paths) | set(worktree.kept_ignored))
+
+
+def _edited_since_backup(root: Path, digests: dict[str, str]) -> list[str]:
+    """Names of paths whose content no longer matches the backed-up digest.
+
+    A path-name diff (`new_paths`) only catches paths that did not exist at
+    backup time. An agent that keeps writing to a path already in the archive
+    produces an empty name delta and no signal at all, so this reads the
+    ACTUAL bytes on disk right now and compares them against the sha256 the
+    archive already recorded for that path.
+    """
+    def _changed(rel: str, digest: str) -> bool:
+        target = root / rel
+        return not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest
+
+    return sorted(rel for rel, digest in digests.items() if _changed(rel, digest))
 
 
 def _archive_name(worktree: Worktree) -> str:
@@ -351,6 +368,22 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _abort_reap(record: dict, log_path: Path, reason: str) -> None:
+    """Leave the worktree standing: log why, print why, never remove.
+
+    If `back_up` already ran, its archive is a KEPT copy, not a removal record --
+    the worktree it describes is still standing, so mark it orphaned in the log
+    rather than letting the entry read as a backup for a completed removal.
+    """
+    record["removed"] = False
+    record["aborted"] = reason
+    if "backup" in record:
+        record["backup_orphaned"] = True
+    print(f"    [ABORT] {reason}; left standing")
+    with log_path.open("a") as handle:
+        handle.write(json.dumps(record) + "\n")
+
+
 def cmd_reap(args: argparse.Namespace) -> int:
     worktrees = collect(args.repo, use_github=args.github, with_size=args.size)
     targets = [w for w in worktrees if classify(w, args.stale_hours).action == "REAP"]
@@ -376,21 +409,51 @@ def cmd_reap(args: argparse.Namespace) -> int:
         record: dict = {"worktree": str(worktree.path), "branch": worktree.branch,
                         "reason": verdict.reason, "size_kb": size,
                         "utc": dt.datetime.now(dt.UTC).isoformat()}
-        if paths:
-            record["backup"] = back_up(worktree, args.backup_root,
+        args.backup_root.mkdir(parents=True, exist_ok=True)
+
+        # R-2 re-check: `worktree` came from the whole-set collect() above, which
+        # can be many minutes and a du/lsof/tar pass old by now. Re-read fresh.
+        liveness, detail, fresh_paths = recheck(worktree.path)
+        record["recheck"] = {"liveness": liveness, "detail": detail, "paths": fresh_paths}
+        if liveness != "idle":
+            _abort_reap(record, log_path, f"liveness={liveness} at removal time ({detail})")
+            continue
+        if fresh_paths:
+            fresh = dataclasses.replace(worktree, dirty_paths=fresh_paths, kept_ignored=[])
+            record["backup"] = back_up(fresh, args.backup_root,
                                        remote=None if args.no_remote else args.remote)
             print(f"    saved    {record['backup']['archive']} "
                   f"({record['backup']['archive_bytes'] / 1024:.0f} KiB) "
                   f"-> {record['backup']['remote']}")
-        removal = _git("worktree", "remove", "--force", str(worktree.path), cwd=args.repo)
+
+        # Unforced first: git's own clean-worktree refusal is the second line of
+        # defense, never switched off unconditionally. It is expected to refuse
+        # whenever fresh_paths is non-empty (now archived) and to succeed
+        # outright for a genuinely clean worktree.
+        removal = _git("worktree", "remove", str(worktree.path), cwd=args.repo)
+        if removal.returncode != 0 and fresh_paths:
+            # As close to the destructive call as this gets: force past git's
+            # refusal only if nothing changed since the backup. A path-name
+            # diff alone misses an agent still writing to a path that was
+            # ALREADY dirty at backup time, so also re-hash every archived
+            # path and abort on any content mismatch, not just a new name.
+            live_now, _detail_now, latest_paths = recheck(worktree.path)
+            new_paths = sorted(set(latest_paths) - set(fresh_paths))
+            edited_paths = _edited_since_backup(worktree.path, record["backup"]["sha256"])
+            if live_now != "idle" or new_paths or edited_paths:
+                _abort_reap(record, log_path,
+                           f"changed just before --force (liveness={live_now}, "
+                           f"new={new_paths}, edited={edited_paths})")
+                continue
+            removal = _git("worktree", "remove", "--force", str(worktree.path), cwd=args.repo)
+            record["forced"] = True
         if removal.returncode != 0:
             record["removed"] = False
             record["error"] = removal.stderr.strip()
             print(f"    [ERROR] git worktree remove refused: {removal.stderr.strip()}")
         else:
             record["removed"] = True
-            print("    removed  git worktree remove --force")
-        args.backup_root.mkdir(parents=True, exist_ok=True)
+            print(f"    removed  git worktree remove{' --force' if record.get('forced') else ''}")
         with log_path.open("a") as handle:
             handle.write(json.dumps(record) + "\n")
     print(f"\n[reap {mode}] {recovered_kb / 1024**2:.1f}G "
