@@ -22,7 +22,12 @@ from collections.abc import Callable, Sequence
 from enum import StrEnum
 from pathlib import Path
 
-from scripts import ci_health_core as health_core
+try:
+    from scripts import ci_health_core as health_core
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.redteam_trigger") from None
+    raise
 from scripts import ci_health_trunk as health_trunk
 
 DEFAULT_IGNORED_PATHS = (

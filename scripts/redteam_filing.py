@@ -22,7 +22,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from scripts.redteam_findings import Finding, FindingStore, Verdict
+try:
+    from scripts.redteam_findings import Finding, FindingStore, Verdict
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.redteam_filing") from None
+    raise
 
 DEFAULT_REPOSITORY = "maintainer/music-dj-tools"
 LABEL_COLOR = "b60205"

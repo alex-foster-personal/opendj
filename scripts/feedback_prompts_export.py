@@ -19,7 +19,12 @@ import math
 from pathlib import Path
 from typing import Any
 
-from scripts.provenance_sources import main_worktree
+try:
+    from scripts.provenance_sources import main_worktree
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.feedback_prompts_export") from None
+    raise
 from scripts.provenance_state import _write_atomic, sweep_lock
 
 OUT_DIRNAME = "docs/threads"

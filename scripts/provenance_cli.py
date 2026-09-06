@@ -28,7 +28,12 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.feedback_prompts_export import exportable_rows, write_export
+try:
+    from scripts.feedback_prompts_export import exportable_rows, write_export
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.provenance_cli") from None
+    raise
 from scripts.provenance_links import GhUnavailable, attach_links, branch_windows, pr_map
 from scripts.provenance_probe import (
     Probe,
