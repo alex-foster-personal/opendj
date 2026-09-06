@@ -224,6 +224,56 @@ def test_green_fixture_reports_expected_kpis(tmp_path):
     assert "missing" not in proc.stderr
 
 
+def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
+    """If a retired lane and a driven lane with no ticks render alike then broken.
+
+    The watchdog fixture is the authority for driven residents.  The retired
+    lane exists only in its captured resident log, which is how KPI discovery
+    preserves an auditable retirement without maintaining a second resident
+    list in the KPI script.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "residents-watchdog.sh").write_text(
+        'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
+    )
+    (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
+        "2026-09-02T16:29:22Z resident stopped as control\n"
+    )
+    tick_gate = fixture / "jobs" / "logs" / "tick-gate.log"
+    tick_gate.write_text(
+        "\n".join(line for line in tick_gate.read_text().splitlines() if " merge-odd " not in line)
+        + "\n"
+    )
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+    out = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, out
+    assert (
+        "ticks lane=merge-even RETIRED (not driven by residents-watchdog.sh; "
+        "last log 2026-09-02T16:29:22Z)"
+    ) in out
+    assert "ticks lane=merge-odd ran=0 skipped=0 skip_ratio=ALERT" in out
+    assert "skip_ratio=n/a" not in out
+
+
+def test_retired_lane_without_timestamp_fails_loudly(tmp_path):
+    """If a retired log lacks an exact UTC timestamp but KPI reports it then broken."""
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "residents-watchdog.sh").write_text(
+        'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
+    )
+    (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
+        "2026-09-02T16:29:22+01:00 resident stopped outside UTC\n"
+    )
+
+    proc = _run(_env(fixture, _home(tmp_path, token_profile=True)))
+
+    assert proc.returncode == 2
+    assert "retired lane merge-even has no valid UTC timestamp" in proc.stderr
+    assert "ticks lane=merge-even RETIRED" not in proc.stdout
+
+
 def test_copy_fixture_pins_report_mtimes_inside_the_frozen_window(tmp_path):
     """The report window must be measured against the test's frozen clock."""
     fixture = _copy_fixture(tmp_path)
