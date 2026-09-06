@@ -23,14 +23,19 @@ import argparse
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 
-from scripts.ci_health_core import (
-    EXIT_OK,
-    EXIT_PRECONDITION,
-    REPO,
-    PreconditionError,
-    _gh_api_json,
-    _run_gh,
-)
+try:
+    from scripts.ci_health_core import (
+        EXIT_OK,
+        EXIT_PRECONDITION,
+        REPO,
+        PreconditionError,
+        _gh_api_json,
+        _run_gh,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.pr_ci_coverage") from None
+    raise
 
 # ----- configuration ---------------------------------------------------------------
 

@@ -62,6 +62,15 @@ concurrency:
   group: ci-cost-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
 
+env:
+  # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
+  # made actions/checkout fail with EACCES and skip every test step (#1338).
+  # This covers interpreters these workflows start directly. It does NOT reach
+  # anything run through `sudo`, which resets the environment with no env_keep
+  # for this name, so the pre-checkout hygiene step below is the repair path
+  # for a root-run interpreter.
+  PYTHONDONTWRITEBYTECODE: "1"
+
 jobs:
   assess:
     name: Price completed workflow run
@@ -79,6 +88,76 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
+      # checkout cleans the tree as the runner user, so one root-owned file in
+      # it fails the unlink with EACCES, dies at step 2, and skips every test
+      # step after it -- a red carrying no test evidence. The runner user has
+      # NOPASSWD sudo (e2e.yml documents it). This runs as root, so it is
+      # bounded three ways, and each bound is load-bearing. A mount point
+      # beneath the workspace fails the step outright: `-xdev` alone is not
+      # enough, because a bind mount from elsewhere on the SAME filesystem
+      # keeps the same st_dev and is traversed regardless (measured on the
+      # runner host, Fri 5 Sep 2026). `-xdev` then stops a cross-filesystem
+      # mount appearing after that check. The workspace path is escaped the way
+      # mountinfo escapes field 5 and handed to awk through ENVIRON, NOT `-v`:
+      # `-v` processes escape sequences, so it decodes \040 straight back to a
+      # space and undoes the escaping it was given. `chown -h` acts on a symlink
+      # itself rather than its referent, so a link pointing out of the tree cannot
+      # drag the repair outside. One `find` expression drives the count and
+      # the repair, so the number reported is the set acted on.
+      #
+      # The counts come from `find`, not from `chown -c`: GNU coreutils prints
+      # that report on stdout but uutils prints it on stderr, so a piped count
+      # reads 0 forever on a uutils host and the log would claim the step found
+      # nothing when it had just repaired thousands of files. `remaining` is
+      # the proof the repair landed, and a non-zero one fails here rather than
+      # letting checkout die at the next step with a worse message.
+      #
+      # It also NAMES the offending entries -- owner, UTC mtime, path -- and
+      # names them BEFORE the chown, because the repair destroys the very
+      # evidence that identifies the writer. #1338 could say 957 to 1130 files
+      # per runner but not which process wrote them, and cost a forensic
+      # session for want of exactly this. The listing goes to a file rather
+      # than into `head` down a pipe: under `pipefail` a SIGPIPE'd `find`
+      # fails the step. TZ reaches `find` through `env` because sudo here is
+      # `env_reset` with no SETENV, so `sudo TZ=UTC find` is refused outright,
+      # and an mtime printed in local time under a `Z` suffix is a lie.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           clean: true

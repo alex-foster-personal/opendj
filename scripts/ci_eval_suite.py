@@ -21,11 +21,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from scripts.ci_eval_collection import (
-    CampaignError,
-    collect_campaign,
-    render_campaign_report,
-)
+try:
+    from scripts.ci_eval_collection import (
+        CampaignError,
+        collect_campaign,
+        render_campaign_report,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.ci_eval_suite") from None
+    raise
 
 CASE_COUNT = 10
 EXPECTED_WORKFLOWS = ("CI", "Build docs")

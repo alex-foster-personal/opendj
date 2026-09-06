@@ -94,7 +94,12 @@ import argparse
 import json
 import sys
 
-from scripts import review_coverage
+try:
+    from scripts import review_coverage
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
+    raise
 from scripts.review_ledger import OWNER, REPO, LedgerReadError, _debt_permalinks
 from scripts.review_thread_parse import PullRequest, Thread, build_thread
 from scripts.review_thread_refs import (

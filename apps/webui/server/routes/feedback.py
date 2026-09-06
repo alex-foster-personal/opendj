@@ -146,12 +146,16 @@ class CommentOut(BaseModel):
     created_at: str
     build: BuildStampOut
     # Pins created before issue #904 have no environment record.
-    environment: "PinEnvironmentOut | None" = None
+    environment: PinEnvironmentOut | None = None
     # Pin lifecycle (issue #858): absent on pins created before Wed 2 Sep 2026.
     status: str | None = None  # open | issued | fixed | merged | archived
     issue_url: str | None = None
     agent_note: str | None = None
     updated_at: str | None = None
+    # PIN-AGENT-01: older operator pins retain their original identity when
+    # read through this newer contract.
+    author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
+    agent_kind: str | None = None
 
 
 class CommentListOut(BaseModel):
@@ -171,6 +175,8 @@ class CommentCreateIn(BaseModel):
     ui: Literal["chrome-loop", "packaged-app"]
     viewport_width: int = Field(ge=1, le=100_000)
     viewport_height: int = Field(ge=1, le=100_000)
+    author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
+    agent_kind: str | None = None
 
 
 class PinEnvironmentOut(BaseModel):
@@ -248,9 +254,7 @@ def _load(path: Path, root_key: str) -> list[dict[str, Any]]:
 
 def _save(path: Path, root_key: str, items: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({root_key: items}, indent=2) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps({root_key: items}, indent=2) + "\n", encoding="utf-8")
 
 
 def _load_general(path: Path) -> dict[str, Any]:
@@ -286,14 +290,8 @@ def _repo_stamp() -> BuildStampOut:
     try:
         sha = _git("rev-parse", "HEAD")
         committed = _git("log", "-1", "--format=%cI")
-        built_at = (
-            datetime.fromisoformat(committed)
-            .astimezone(UTC)
-            .strftime("%Y-%m-%dT%H:%M:%SZ")
-        )
-        return BuildStampOut(
-            git_sha=sha[:8], built_at_utc=built_at, source="repo"
-        )
+        built_at = datetime.fromisoformat(committed).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return BuildStampOut(git_sha=sha[:8], built_at_utc=built_at, source="repo")
     except (OSError, subprocess.CalledProcessError, ValueError) as exc:
         return BuildStampOut(error=f"git describe of {PROJECT_ROOT} failed: {exc}")
 
@@ -369,9 +367,9 @@ def patch_todo(todo_id: str, body: TodoPatchIn, request: Request) -> TodoOut:
             continue
         patch = body.model_dump(exclude_unset=True)
         merged = {**item, **patch, "updated_at": _now()}
-        if merged.get("chosen_option") is not None and merged[
-            "chosen_option"
-        ] not in merged.get("options", []):
+        if merged.get("chosen_option") is not None and merged["chosen_option"] not in merged.get(
+            "options", []
+        ):
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -399,9 +397,7 @@ def patch_todo(todo_id: str, body: TodoPatchIn, request: Request) -> TodoOut:
 @router.get("/comments", response_model=CommentListOut)
 def list_comments(request: Request) -> CommentListOut:
     items = _load(_dir(request) / _COMMENTS_FILE, "comments")
-    return CommentListOut(
-        comments=[CommentOut.model_validate(c) for c in items]
-    )
+    return CommentListOut(comments=[CommentOut.model_validate(c) for c in items])
 
 
 @router.post("/comments", response_model=CommentOut, status_code=201)
@@ -417,6 +413,8 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
         created_at=_now(),
         build=_build_stamp(request),
         environment=_pin_environment(body, request),
+        author=body.author,
+        agent_kind=body.agent_kind,
     )
     with _COMMENTS_LOCK:
         items = _load(path, "comments")
@@ -428,21 +426,15 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
 # ----- general note -------------------------------------------------------
 @router.get("/general", response_model=GeneralNoteOut)
 def get_general(request: Request) -> GeneralNoteOut:
-    return GeneralNoteOut.model_validate(
-        _load_general(_dir(request) / _GENERAL_FILE)
-    )
+    return GeneralNoteOut.model_validate(_load_general(_dir(request) / _GENERAL_FILE))
 
 
 @router.put("/general", response_model=GeneralNoteOut)
 def put_general(body: GeneralNotePutIn, request: Request) -> GeneralNoteOut:
     path = _dir(request) / _GENERAL_FILE
-    note = GeneralNoteOut(
-        text=body.text, updated_at=_now(), build=_build_stamp(request)
-    )
+    note = GeneralNoteOut(text=body.text, updated_at=_now(), build=_build_stamp(request))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(note.model_dump(), indent=2) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps(note.model_dump(), indent=2) + "\n", encoding="utf-8")
     return note
 
 
@@ -480,10 +472,7 @@ def archive_feedback(request: Request) -> ArchiveOut:
 
         general_archived = bool(general["text"])
         nothing_to_do = (
-            not archived_todos
-            and not archived_feedback
-            and not comments
-            and not general_archived
+            not archived_todos and not archived_feedback and not comments and not general_archived
         )
         if nothing_to_do:
             return ArchiveOut(

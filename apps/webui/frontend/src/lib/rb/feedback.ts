@@ -39,6 +39,10 @@
  *     fixed/merged pin offers Archive and Follow-on.
  *     [if] a pre-#858 pin (status null) stops being drawn [then ⛔️] broken
  *     [if] an open pin offers Archive [then ⛔️] broken
+ *   ✔︎ 🎯 isPartialNote/pinVisualState (feedback-pin-partial.ts, split out to
+ *     stay under the file-size gate): a HALF-FIXED pin (pin 58a16ac781db,
+ *     follow-on to #907) is a reply convention, not a new persisted status.
+ *     See that file's own docstring for the acceptance tests.
  *   ✔︎ 🎯 isPinUnread/markPinSeen/parsePinSeen: stamp-compared unread marker;
  *     junk in storage reads as an empty map.
  *     [if] a pin no agent touched wears a blue dot [then ⛔️] broken
@@ -297,6 +301,7 @@ export interface LifecyclePin {
   status?: string | null;
   issue_url?: string | null;
   updated_at?: string | null;
+  agent_note?: string | null;
 }
 
 /**
@@ -311,6 +316,12 @@ export function pinStatus(pin: LifecyclePin): PinStatus {
   const raw = pin.status ?? "open";
   return (PIN_STATUSES.includes(raw) ? raw : "open") as PinStatus;
 }
+
+// Partial state (pin 58a16ac781db, follow-on to #907) lives in
+// feedback-pin-partial.ts, split out to keep this file under the 600-line
+// file-size gate (Amendment 17: extraction, never a raised budget). It
+// imports pinStatus/LifecyclePin/PinStatus from here; nothing here imports
+// it back.
 
 export interface PinStatusSummary {
 	total: number;

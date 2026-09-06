@@ -11,10 +11,14 @@
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */
-	import { mixerState } from '$lib/rb/audio-engine.svelte';
-	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
+	import {
+		performanceCommandStatus,
+		runPerformanceCommandFromUi
+	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { CrossfaderAssign, EqBand } from '$lib/rb/mixer-types';
+	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
@@ -62,6 +66,16 @@
 
 	function handleCue(deck: DeckId, enabled: boolean): void {
 		void runPerformanceCommandFromUi({ type: 'channel_cue', deck, enabled });
+	}
+
+	async function handleStemMute(deck: DeckId, stem: StemControl): Promise<void> {
+		const muted = getDeckState(deck).stems.controls[stem].muted;
+		await runPerformanceCommandFromUi({ type: 'stem_mute', deck, stem, muted: !muted });
+	}
+
+	async function handleStemSolo(deck: DeckId, stem: StemControl): Promise<void> {
+		const solo = getDeckState(deck).stems.controls[stem].solo;
+		await runPerformanceCommandFromUi({ type: 'stem_solo', deck, stem, solo: !solo });
 	}
 
 	function handleHeadphoneMix(value: number): void {
@@ -117,10 +131,13 @@
 					eqLow={mixerState.channels[deck].eq_low}
 					fader={mixerState.channels[deck].fader}
 					cueEnabled={mixerState.channels[deck].cue_enabled}
+					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
 					oneq={(band, v) => handleEq(deck, band, v)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
+					onStemMute={(stem) => handleStemMute(deck, stem)}
+					onStemSolo={(stem) => handleStemSolo(deck, stem)}
 				/>
 			</div>
 		{/each}

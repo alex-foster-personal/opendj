@@ -14,12 +14,23 @@
 	 *
 	 * The percentage is only ever shown once `total` is known (All Tracks
 	 * health, or the selected playlist's track_count) - never invented.
+	 *
+	 * pin 0e8d6e -- `progress` alone is NOT the render gate. PaneStore.beginLoad
+	 * resets load_progress to null for the WHOLE duration of a load, until the
+	 * first page callback fires (All Tracks) or forever (an ordinary
+	 * playlist load passes no onPage at all). Gating on `progress !== null`
+	 * made the spinner invisible for the entire "loading..." text state, which
+	 * is the opposite of the point. `loading` is the real gate: while loading
+	 * and progress is still null this shows an INDETERMINATE state (spinner +
+	 * "Loading" label, no bar) - an indeterminate spinner is still a spinner.
 	 */
 	import SpinnerIcon from './SpinnerIcon.svelte';
 
 	let {
+		loading,
 		progress
 	}: {
+		loading: boolean;
 		progress: { loaded: number; total: number | null } | null;
 	} = $props();
 
@@ -53,13 +64,17 @@
 	});
 </script>
 
-{#if progress !== null}
+{#if loading || progress !== null}
 	<div class="lli-root" role="status" aria-live="polite">
 		<span class="lli-icon"><SpinnerIcon size={10} /></span>
 		<span class="lli-label">
-			Loaded {progress.loaded}{progress.total !== null ? ` of ${progress.total}` : ''}
-			{#if rowsPerSecond > 0}
-				<span class="lli-rate">· {Math.round(rowsPerSecond)} rows/s</span>
+			{#if progress === null}
+				Loading
+			{:else}
+				Loaded {progress.loaded}{progress.total !== null ? ` of ${progress.total}` : ''}
+				{#if rowsPerSecond > 0}
+					<span class="lli-rate">· {Math.round(rowsPerSecond)} rows/s</span>
+				{/if}
 			{/if}
 		</span>
 		{#if pct !== null}

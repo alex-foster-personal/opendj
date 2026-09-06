@@ -118,6 +118,18 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
     open -> issued -> fixed -> merged, ``issue_url`` links the queue item, and
     ``agent_note`` is the one-paragraph reply the widget renders under the
     original text. Every write is a partial update; unset fields are untouched.
+
+    Partial-fix convention (pin 58a16ac781db, follow-on to #907): when only
+    PART of a pin's defect is fixed, do NOT invent a new ``status`` value
+    (there isn't one, and there is no plan to add one - see that pin's PR
+    body for the sizing call). Leave ``status`` at ``open`` or ``issued`` and
+    write an ``agent_note`` that starts with the literal prefix ``PARTIAL:``
+    and names where the remaining work went (a ``#123`` issue/PR reference,
+    or a URL) - e.g. ``"PARTIAL: markers fixed, remainder tracked in #1150"``.
+    The frontend (``pinVisualState`` in ``feedback.ts``) recognises that
+    convention and paints the pin's marker half orange/half green instead of
+    plain amber. A ``PARTIAL:`` note with nothing to point at is NOT
+    recognised - a partial pin must always say where the rest of the work is.
     """
     path = _dir(request) / _COMMENTS_FILE
     with _COMMENTS_LOCK:
@@ -146,9 +158,7 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
     )
 
 
-@router.post(
-    "/comments/{comment_id}/archive", response_model=CommentArchiveOut
-)
+@router.post("/comments/{comment_id}/archive", response_model=CommentArchiveOut)
 def archive_comment(comment_id: str, request: Request) -> CommentArchiveOut:
     """Archive ONE pin, with its full history (issue #858).
 
@@ -201,9 +211,7 @@ def archive_comment(comment_id: str, request: Request) -> CommentArchiveOut:
     )
 
 
-@router.post(
-    "/comments/{comment_id}/follow-on", response_model=CommentOut, status_code=201
-)
+@router.post("/comments/{comment_id}/follow-on", response_model=CommentOut, status_code=201)
 def follow_on_comment(
     comment_id: str, request: Request, body: CommentFollowOnIn | None = None
 ) -> CommentOut:
@@ -227,8 +235,7 @@ def follow_on_comment(
                     detail={
                         "code": "PIN_NOT_DONE",
                         "message": (
-                            f"pin {comment_id!r} is {status!r}; "
-                            "follow-on needs fixed/merged"
+                            f"pin {comment_id!r} is {status!r}; follow-on needs fixed/merged"
                         ),
                     },
                 )
@@ -244,6 +251,8 @@ def follow_on_comment(
                 created_at=_now(),
                 build=_build_stamp(request),
                 status="open",
+                author=parent.get("author", "operator"),
+                agent_kind=parent.get("agent_kind"),
             )
             items.append(child.model_dump())
             _save(path, "comments", items)

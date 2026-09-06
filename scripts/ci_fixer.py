@@ -37,7 +37,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from scripts import ci_fixer_core as cf
+try:
+    from scripts import ci_fixer_core as cf
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.ci_fixer") from None
+    raise
 from scripts.ci_fixer_sandbox import run_recheck
 from scripts.ci_health_core import REPO, PreconditionError, _gh_api_json, _run_gh
 

@@ -65,6 +65,11 @@
 
 	const deck = $derived(getDeckState(deckId));
 	const commandPending = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
+	const finished = $derived(
+		deck.stable_id !== null && deck.duration_ms !== null && deck.duration_ms > 0 &&
+		deck.position_ms >= deck.duration_ms && !deck.audible && !deck.playing &&
+		!deck.transport_pending && !commandPending
+	);
 
 	// ---- anlz source: prefer the engine-populated payload; else our own
 	// cached /anlz fetch keyed by the deck's stable_id (deck-load event).
@@ -470,6 +475,15 @@
 >
 	<WaveGutter {deck} {deckId} {barsLabel} />
 	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
+		{#if finished}
+			<button
+				class="finished-eject"
+				title={`Eject ${deck.title ?? 'track'} from deck ${deckId}`}
+				onclick={() => runPerformanceCommandFromUi({ type: 'unload', deck: deckId })}
+			>
+				⏏ {deck.title ?? 'Track'} - deck {deckId}
+			</button>
+		{/if}
 		{#if clockUntrusted}
 			<span
 				class="clock-stalled"
@@ -488,6 +502,7 @@ estimated from the render clock and may run ahead of what you hear."
 			aria-valuenow={Math.round(deck.position_ms)}
 			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
 			tabindex="-1"
+			data-hotkey-pointer-only
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
@@ -528,7 +543,6 @@ estimated from the render clock and may run ahead of what you hear."
 		letter-spacing: 0.06em;
 		pointer-events: auto;
 	}
-
 	.rb-waverow {
 		display: flex;
 		height: var(--rb-waverow-h);

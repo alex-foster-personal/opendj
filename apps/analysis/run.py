@@ -52,21 +52,16 @@ import hashlib
 import json
 import logging
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from rich.console import Console
 from rich.table import Table
 
 from .backends import DEFAULT_BACKEND, get_backend
-from .backends.base import (
-    BackendNotAvailable,
-    TrackTooLong,
-    TrackUnreadable,
-    TrackVanished,
-)
+from .backends.base import TrackVanished
+from .pool import analyze_one, run_pool
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, open_conn, upsert_record
 
@@ -238,37 +233,6 @@ def filter_missing(
 
 
 # ---------------------------------------------------------------------------
-# Worker
-# ---------------------------------------------------------------------------
-
-
-def _analyze_one(
-    backend_name: str, stable_id: str, path_str: str
-) -> tuple[str, AnalysisRecord | None, str | None]:
-    """Analyze one track, or say why this FILE could not be.
-
-    Only failures a backend has declared to be about the input are turned
-    into a per-track error here. Everything else propagates: a broad catch at
-    this level relabels a machine-wide fault - an unreadable analyzer config,
-    a backend that failed to initialize, a dead worker - as "this file
-    failed", which the CLI then reports as EXIT_TRACK_FAILURES, which is the
-    one status a chunking caller is allowed to continue past. The caller then
-    meets the identical fault once per chunk across the whole library.
-
-    ``get_backend`` is outside the guard for the same reason: an unresolvable
-    backend name is a configuration fact, not a property of this track.
-    """
-    backend = get_backend(backend_name)
-    try:
-        rec = backend.analyze(Path(path_str), stable_id)
-    except (
-        BackendNotAvailable, TrackTooLong, TrackUnreadable, TrackVanished
-    ) as exc:
-        return stable_id, None, f"{type(exc).__name__}: {exc}"
-    return stable_id, rec, None
-
-
-# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -321,17 +285,18 @@ def run(
 
     rows: list[tuple[str, AnalysisRecord | None, str | None]] = []
 
+    backend = get_backend(backend_name)
     if workers > 1:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            futs = [
-                pool.submit(_analyze_one, backend_name, r.stable_id, str(r.path))
-                for r in queue
-            ]
-            for fut in as_completed(futs):
-                rows.append(fut.result())
+        rows.extend(
+            run_pool(
+                ((r.stable_id, str(r.path)) for r in queue),
+                backend=backend,
+                workers=workers,
+            )
+        )
     else:
         for r in queue:
-            rows.append(_analyze_one(backend_name, r.stable_id, str(r.path)))
+            rows.append(analyze_one(backend, r.stable_id, str(r.path)))
 
     table = Table(title="analysis run")
     table.add_column("stable_id")
@@ -508,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _dispatch(args: argparse.Namespace) -> int:
     # Resolve the backend BEFORE the queue. An unknown name is a
-    # configuration error, and letting it reach _analyze_one turns it into a
+    # configuration error, and letting it reach analyze_one turns it into a
     # per-track KeyError repeated once per file, which reads to a chunking
     # caller as "these files failed" and invites it to try the next chunk
     # against the same bad name.

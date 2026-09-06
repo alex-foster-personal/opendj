@@ -312,7 +312,12 @@ function main() {
       );
     }
   }
-  if (failed) process.exit(1);
+  if (failed) {
+    console.error(
+      '[ERROR] reproduce locally: cd apps/webui/frontend && pnpm build && bash scripts/check-bundle-size.sh',
+    );
+    process.exit(1);
+  }
   console.log('[OK] all bundle budgets satisfied and every emitted chunk is measured.');
 }
 

@@ -143,7 +143,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from scripts import shell_construct_lint
+try:
+    from scripts import shell_construct_lint
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.quality_gate") from None
+    raise
 
 # ----- config --------------------------------------------------------------
 

@@ -88,6 +88,13 @@ test('the "show feedback comment pins" toggle has an agent-facing programmatic t
 	assert.match(WIDGET, /__mdtPinsVisible/, 'the pins-visible preference lives only in the browser, so it needs a twin');
 });
 
+test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs preference', () => {
+	assert.match(WIDGET, /show_agent_pins/);
+	assert.match(WIDGET, /setShowAgentPins/);
+	assert.match(VISIBILITY_ACTIONS, /Show agent pins/);
+	assert.match(WIDGET, /p\.author !== 'agent' \|\| uiPrefs\.show_agent_pins/);
+});
+
 test('"show other users\' pins" is stubbed: rb-inert, explains why, never actually toggles', () => {
 	assert.match(WIDGET, /import FeedbackPinVisibilityActions from '\.\/FeedbackPinVisibilityActions\.svelte'/);
 	assert.match(WIDGET, /<FeedbackPinVisibilityActions/);

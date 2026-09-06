@@ -83,17 +83,28 @@ gh plumbing (`TriageError`, `_gh`, `_checks`, `_head_sha`, `_flatten_pages`,
 `_paginated_json_list`) lives in scripts/review_gh.py, split out so this
 module's own domain logic can grow the fixes above without crossing this
 repo's 600-line file-size ratchet -- see that module's docstring for why.
+`_body_is_at_head` joined it there Sun 6 Sep 2026 for the same reason (#T8).
 """
 
 from __future__ import annotations
 
-import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from scripts.review_gh import TriageError, _checks, _head_sha, _paginated_json_list
+try:
+    from scripts.review_gh import (
+        TriageError,
+        _body_is_at_head,
+        _checks,
+        _head_sha,
+        _paginated_json_list,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
+    raise
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
 REPO = "maintainer/music-dj-tools"
@@ -177,10 +188,10 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 # gh plumbing (`TriageError`, `_gh`, `_checks`, `_head_sha`, `_flatten_pages`,
-# `_paginated_json_list`) lives in scripts/review_gh.py; `TriageError`,
-# `_checks` and `_head_sha` are re-exported here (via the import above) for
-# this module's own use and for scripts/review_thread_triage.py's
-# `review_coverage.TriageError` reference.
+# `_paginated_json_list`, `_body_is_at_head`) lives in scripts/review_gh.py;
+# `TriageError`, `_checks` and `_head_sha` are re-exported here (via the
+# import above) for this module's own use and for
+# scripts/review_thread_triage.py's `review_coverage.TriageError` reference.
 
 
 # ----- review artifacts ---------------------------------------------------
@@ -212,49 +223,6 @@ def _matches(login: str, name: str) -> bool:
     applies to its own bot-identity check.
     """
     return login.removesuffix("[bot]").lower() in REVIEWER_LOGINS.get(name, ())
-
-
-#: A commit SHA GitHub renders in backtick-quoted code, e.g. the summary
-#: table's `` `7cbe749` `` Commit column or a review body's `` **Reviewed
-#: commit:** `7cbe7496d2` ``. GitHub abbreviates to 7+ hex chars, never fewer,
-#: so the floor here matches GitHub's own minimum rather than inventing one.
-_SHA_IN_BACKTICKS = re.compile(r"`([0-9a-f]{7,40})`", re.IGNORECASE)
-
-#: The summary table's Status cell reads e.g. `` ✅ **Completed** ``,
-#: `` ⏳ **Queued** ``, `` 🔄 **In progress** `` or `` ❌ **Failed** ``. Only
-#: the first of those is a claim that Codex finished looking at this head.
-_STATUS_COMPLETED = re.compile(r"completed", re.IGNORECASE)
-
-
-def _body_is_at_head(body: str, head_sha: str) -> bool:
-    """Does this comment's OWN embedded commit reference match the PR head,
-    AND does that same line say the review of it is done?
-
-    Issue comments (as opposed to submitted reviews or inline review
-    comments) carry no `commit_id` field at all -- GitHub does not tie them to
-    any specific push -- so a bot's summary comment is otherwise untethered
-    from any particular head. Codex's summary comment is edited in place each
-    round and embeds the SHA it reviewed, so require that embedded prefix to
-    match the CURRENT head. That alone is not enough (issue #1016 P1
-    BLOCKING, thread r3927558602): the summary's Commit column takes on the
-    new head's SHA the moment a round STARTS, before Codex has looked at
-    anything, so a row read as `Queued`/`In progress`/`Failed` for the current
-    head is a promise, not a review. Require both the SHA and a `completed`
-    marker on the SAME table row -- table rows are one line each in Codex's
-    rendered markdown, so line-scoping ties the status to the SHA it actually
-    describes rather than to any other row of a multi-row table. A body with
-    no such row is treated as NOT evidence for this push, the same
-    fail-closed direction as zero artifacts.
-    """
-    for line in body.splitlines():
-        shas = _SHA_IN_BACKTICKS.findall(line)
-        if not shas:
-            continue
-        if not any(head_sha.lower().startswith(sha.lower()) for sha in shas):
-            continue
-        if _STATUS_COMPLETED.search(line):
-            return True
-    return False
 
 
 def _collect_evidence(

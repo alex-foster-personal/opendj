@@ -71,7 +71,12 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from scripts.review_gh import TriageError, _gh, _paginated_json_list
+try:
+    from scripts.review_gh import TriageError, _gh, _paginated_json_list
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.sol_review") from None
+    raise
 from scripts.review_sol import is_sol_artifact, marker
 from scripts.sol_prompt import (
     JSON_CLOSE,

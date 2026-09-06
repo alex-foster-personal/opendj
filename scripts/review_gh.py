@@ -5,12 +5,61 @@ the head-race and pagination fixes below without crossing this repo's
 600-line file-size ratchet -- a real refactor along an existing seam rather
 than a shrink to fit the gate: this module has no idea what a "reviewer" is,
 it only knows how to ask `gh` for JSON and fail loudly when it cannot.
+
+`_body_is_at_head` joined it Sun 6 Sep 2026 for the same reason (#T8): it is
+generic comment-body parsing (does THIS line carry the head SHA and a
+completed marker), with no idea what a "reviewer" is either, and moving it
+here is what kept scripts/review_coverage.py's own module-resolution guard
+(added the same day) from pushing the file over the 600-line ceiling.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+
+#: A commit SHA GitHub renders in backtick-quoted code, e.g. the summary
+#: table's `` `7cbe749` `` Commit column or a review body's `` **Reviewed
+#: commit:** `7cbe7496d2` ``. GitHub abbreviates to 7+ hex chars, never fewer,
+#: so the floor here matches GitHub's own minimum rather than inventing one.
+_SHA_IN_BACKTICKS = re.compile(r"`([0-9a-f]{7,40})`", re.IGNORECASE)
+
+#: The summary table's Status cell reads e.g. `` ✅ **Completed** ``,
+#: `` ⏳ **Queued** ``, `` 🔄 **In progress** `` or `` ❌ **Failed** ``. Only
+#: the first of those is a claim that Codex finished looking at this head.
+_STATUS_COMPLETED = re.compile(r"completed", re.IGNORECASE)
+
+
+def _body_is_at_head(body: str, head_sha: str) -> bool:
+    """Does this comment's OWN embedded commit reference match the PR head,
+    AND does that same line say the review of it is done?
+
+    Issue comments (as opposed to submitted reviews or inline review
+    comments) carry no `commit_id` field at all -- GitHub does not tie them to
+    any specific push -- so a bot's summary comment is otherwise untethered
+    from any particular head. Codex's summary comment is edited in place each
+    round and embeds the SHA it reviewed, so require that embedded prefix to
+    match the CURRENT head. That alone is not enough (issue #1016 P1
+    BLOCKING, thread r3927558602): the summary's Commit column takes on the
+    new head's SHA the moment a round STARTS, before Codex has looked at
+    anything, so a row read as `Queued`/`In progress`/`Failed` for the current
+    head is a promise, not a review. Require both the SHA and a `completed`
+    marker on the SAME table row -- table rows are one line each in Codex's
+    rendered markdown, so line-scoping ties the status to the SHA it actually
+    describes rather than to any other row of a multi-row table. A body with
+    no such row is treated as NOT evidence for this push, the same
+    fail-closed direction as zero artifacts.
+    """
+    for line in body.splitlines():
+        shas = _SHA_IN_BACKTICKS.findall(line)
+        if not shas:
+            continue
+        if not any(head_sha.lower().startswith(sha.lower()) for sha in shas):
+            continue
+        if _STATUS_COMPLETED.search(line):
+            return True
+    return False
 
 
 class TriageError(RuntimeError):

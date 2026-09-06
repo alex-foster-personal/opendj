@@ -2064,6 +2064,17 @@
       },
       "CommentCreateIn": {
         "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
           "anchor": {
             "anyOf": [
               {
@@ -2074,6 +2085,14 @@
               }
             ],
             "title": "Anchor"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
           },
           "page": {
             "minLength": 1,
@@ -2166,6 +2185,17 @@
       },
       "CommentOut": {
         "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
           "agent_note": {
             "anyOf": [
               {
@@ -2187,6 +2217,14 @@
               }
             ],
             "title": "Anchor"
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
           },
           "build": {
             "$ref": "#/components/schemas/BuildStampOut"
@@ -10413,6 +10451,11 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "show_agent_pins": {
+            "default": true,
+            "title": "Show Agent Pins",
+            "type": "boolean"
+          },
           "technically_working_animate": {
             "default": true,
             "title": "Technically Working Animate",
@@ -10465,6 +10508,17 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "show_agent_pins": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Agent Pins"
           },
           "technically_working_animate": {
             "anyOf": [
@@ -13775,7 +13829,7 @@
     },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
-        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.",
+        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
         "operationId": "update_comment_api_v1_feedback_comments__comment_id__patch",
         "parameters": [
           {

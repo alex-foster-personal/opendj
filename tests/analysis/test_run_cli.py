@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ class _MockBackend:
             stable_id=stable_id,
             backend=cls.name,
             backend_version=cls.version,
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             duration_s=42.0, sample_rate=44100,
             bpm=123.4, bpm_confidence=0.9,
             key_camelot="8A", key_openkey="8m", key_confidence=0.9,
@@ -108,7 +109,6 @@ def test_run_main_argparse(
     assert rc == 0
 
 
-
 @pytest.mark.requirement("PARITY-06")
 def test_a_pairs_file_with_a_non_string_member_is_a_usage_error(
     tmp_path: Path,
@@ -144,3 +144,59 @@ def test_a_pairs_file_with_a_non_string_member_is_a_usage_error(
         f"a malformed handoff file reported {caught.value.code}, which tells "
         "the chunking caller its machine is broken rather than its input"
     )
+
+
+class _StartMethodBackend:
+    """Reports how the WORKER process was started, in the key field.
+
+    Module-level, so a spawned worker can import it by reference. It is the
+    real production path: ``run`` resolves the backend once in the parent and
+    the pool pickles the class, not a name that a spawned child could not
+    find in its own, empty registry.
+    """
+
+    name = "start-method"
+    version = "1"
+
+    @classmethod
+    def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
+        return AnalysisRecord(
+            stable_id=stable_id,
+            backend=cls.name,
+            backend_version=cls.version,
+            analyzed_at=datetime.now(UTC),
+            duration_s=1.0, sample_rate=44100,
+            bpm=120.0, bpm_confidence=1.0,
+            key_camelot="1A", key_openkey=multiprocessing.get_start_method(), key_confidence=1.0,
+            energy=1,
+        )
+
+
+@pytest.mark.requirement("META-01")
+def test_parallel_workers_are_spawned_not_forked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if the pool forks then a worker inherits librosa/numba/OpenBLAS thread and
+    JIT state from the parent and can die with "segfault at 0 ip 0" (#1316);
+    a spawned worker reports "spawn" from inside itself, and a forked one
+    cannot, because the forked child shares the parent's start method"""
+    from apps.analysis import backends
+
+    monkeypatch.setitem(backends.BACKENDS, "start-method", _StartMethodBackend)
+    refs = []
+    for i in range(2):
+        audio = tmp_path / f"t{i}.wav"
+        audio.write_bytes(b"0")
+        refs.append(run_mod.TrackRef(stable_id=f"sid{i:05d}", path=audio))
+    db = tmp_path / "state.db"
+    summary = run_mod.run(
+        refs, backend_name="start-method", workers=2, only_missing=False, db_path=db
+    )
+    assert summary.failed == 0, summary.errors
+    con = sqlite3.connect(db)
+    try:
+        methods = {row[0] for row in con.execute("SELECT key_openkey FROM analysis")}
+    finally:
+        con.close()
+    assert methods == {"spawn"}, methods
+

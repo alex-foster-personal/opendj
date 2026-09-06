@@ -24,6 +24,7 @@
 		type PinSeen
 	} from '$lib/rb/feedback';
 	import { readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
+	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
 	import { readParkedPinDraft } from '$lib/rb/feedback-pin-draft-restore';
 	import { persistParkedPinDraft } from '$lib/rb/feedback-pin-draft-persist';
@@ -109,7 +110,11 @@
 
 	const openCount = $derived(feedbackState.todos.filter((t) => !t.done).length);
 	const pagePins = $derived(
-		pinsVisible ? feedbackState.pins.filter((p) => p.page === pathname && isPinDrawn(p)) : []
+		pinsVisible
+			? feedbackState.pins.filter(
+				(p) => p.page === pathname && isPinDrawn(p) && (p.author !== 'agent' || uiPrefs.show_agent_pins)
+			)
+			: []
 	);
 	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
 
@@ -270,6 +275,10 @@
 		_writePinsVisible(!pinsVisible);
 	}
 
+	function toggleAgentPins(): void {
+		setShowAgentPins(!uiPrefs.show_agent_pins);
+	}
+
 	// ----- pin body -------------------------------------------------------
 	function openPin(pin: FeedbackPin): void {
 		openPinId = pin.id;
@@ -374,7 +383,12 @@
 		{/if}
 	</button>
 	{#snippet pinVisibilityActions()}
-		<FeedbackPinVisibilityActions {pinsVisible} ontoggle={togglePinsVisible} />
+		<FeedbackPinVisibilityActions
+			{pinsVisible}
+			showAgentPins={uiPrefs.show_agent_pins}
+			ontoggle={togglePinsVisible}
+			onToggleAgentPins={toggleAgentPins}
+		/>
 	{/snippet}
 	<ControlExplainer title={FEEDBACK_EXPLAINER_TITLE} bullets={commentPinBullets} action={pinVisibilityActions}>
 		<button

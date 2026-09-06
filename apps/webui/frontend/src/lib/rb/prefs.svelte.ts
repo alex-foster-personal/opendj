@@ -103,6 +103,8 @@ export interface RbUiPrefs {
 	 * fade transitions (default); false = instant appear/disappear.
 	 */
 	technically_working_animate: boolean;
+	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
+	show_agent_pins: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -148,6 +150,7 @@ const DEFAULTS: RbUiPrefs = {
 	usb_toast_ms: 5000,
 	usb_auto_open_panel: false,
 	technically_working_animate: true,
+	show_agent_pins: true,
 	confirm: {},
 	last_playlist: null,
 	deck_layout: 'more',
@@ -300,6 +303,12 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.show_agent_pins !== undefined && typeof parsed.show_agent_pins !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (show_agent_pins is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const {
 		deck_layout: deckLayout,
 		deck_layout_animate: deckLayoutAnimate,
@@ -343,6 +352,7 @@ function _load(): RbUiPrefs {
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
 		technically_working_animate:
 			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
+		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
@@ -361,6 +371,7 @@ type DiskPrefsPatch = {
 	hide_todo_settings?: boolean;
 	auto_sync?: AutoSyncPrefs;
 	technically_working_animate?: boolean;
+	show_agent_pins?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
 	deck_layout_duration_ms?: DeckLayoutDurationMs;
@@ -485,6 +496,13 @@ export function setTechnicallyWorkingAnimate(next: boolean): void {
 	void _syncDiskPrefs({ technically_working_animate: next });
 }
 
+/** Persist the agent-pin layer through both local state and its HTTP twin. */
+export function setShowAgentPins(next: boolean): void {
+	uiPrefs.show_agent_pins = next;
+	_persist();
+	void _syncDiskPrefs({ show_agent_pins: next });
+}
+
 /** The MORE/LESS deck-layout setters (pin 862cd3), built against this
  * module's own uiPrefs/_persist/_syncDiskPrefs (deck-layout-prefs.ts). */
 export const {
@@ -529,6 +547,7 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 			hide_todo_settings?: boolean;
 			auto_sync?: AutoSyncPrefs;
 			technically_working_animate?: boolean;
+			show_agent_pins?: boolean;
 			deck_layout?: DeckLayoutMode;
 			deck_layout_animate?: boolean;
 			deck_layout_duration_ms?: DeckLayoutDurationMs;
@@ -548,6 +567,9 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 		}
 		if (typeof body.technically_working_animate === 'boolean') {
 			uiPrefs.technically_working_animate = body.technically_working_animate;
+		}
+		if (typeof body.show_agent_pins === 'boolean') {
+			uiPrefs.show_agent_pins = body.show_agent_pins;
 		}
 		if (body.deck_layout === 'more' || body.deck_layout === 'less') {
 			uiPrefs.deck_layout = body.deck_layout;

@@ -2465,7 +2465,7 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		<LibraryLoadIndicator progress={pane.load_progress} />
+		<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
 		<TrackTable
 			{provider}
 			selectedIds={pane.selected_ids}
@@ -2574,7 +2574,7 @@
 		</button>
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
-		<span class="wordmark">open dj</span>
+		<span class="wordmark"><em>oDj</em> open Dj</span>
 		{#if jobProgress.ribbon()}
 			{@const ribbon = jobProgress.ribbon()!}
 			<span
@@ -2930,6 +2930,7 @@
 		font-weight: 600;
 		letter-spacing: 0.5px;
 	}
+	.wordmark em { color: #fff; font-style: italic; font-weight: 800; letter-spacing: -0.08em; }
 	.grip {
 		/* No auto margin: the build identity that now precedes it already
 		   carries one, and TWO auto margins split the free space between them

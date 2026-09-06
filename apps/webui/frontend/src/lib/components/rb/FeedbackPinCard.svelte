@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
+	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
@@ -75,7 +76,9 @@
 	aria-label="Comment pin"
 	bind:this={pinBodyElement}
 >
-	<p class="fb-hint">{pinStatus(pin)} - {pin.created_at}</p>
+	<p class="fb-hint">
+		{pinStatus(pin)}{pinVisualState(pin) === 'partial' ? ' (partial)' : ''} - {pin.created_at}
+	</p>
 	<p class="fb-body-text">{pin.text}</p>
 	{#if pin.agent_note}
 		<p class="fb-note" title="What an agent did about this pin">

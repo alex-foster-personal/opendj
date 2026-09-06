@@ -126,6 +126,78 @@ export function enclosingBeatPhase(
 	return { n: a.n, phase: Math.min(1, Math.max(0, phase)) };
 }
 
+/** Rekordbox's normal bar has four numbered PQTZ beats. Keep this beside
+ * pqtzBarPhase so every visual consumer shares one explicit fallback
+ * contract instead of inlining "4" wherever a bar length is needed. */
+export const DEFAULT_PQTZ_BAR_BEATS = 4;
+
+/** Fraction through the current PQTZ bar ("phase"), or null when the real
+ * grid cannot establish it. Callers may park their visual at the downbeat
+ * for null. `barBeats` is the config anchor (pin 67a4ce88805f) - pass the
+ * deck's own beats-per-phase setting; it defaults here only for a caller
+ * with none to give.
+ *
+ * Deliberately does NOT use `enclosingBeatPhase`'s `n` field for the cycle
+ * position: captured PQTZ beats number 1..4 and RESET every bar regardless
+ * of `barBeats` (rekordbox's own bar length, always 4). Keying phase on `n`
+ * directly made an 8-beat phase snap backwards every 4 beats instead of
+ * completing one real revolution, and made a 1-beat phase null on 3 beats
+ * out of 4 (n>1 never satisfies n<=1). The SEQUENTIAL beat index in the
+ * ordered array has no such reset, so `index % barBeats` is the one value
+ * that actually walks 0..barBeats-1 once per configured phase, matching the
+ * pin's "rotates one full journey per phase" regardless of what barBeats is. */
+export function pqtzBarPhase(
+	beats: AnlzBeat[],
+	positionSec: number,
+	barBeats: number = DEFAULT_PQTZ_BAR_BEATS
+): number | null {
+	if (!Number.isInteger(barBeats) || barBeats < 1) {
+		throw new RangeError(`pqtzBarPhase: barBeats must be a positive integer, got ${barBeats}`);
+	}
+	if (beats.length < 2 || !Number.isFinite(positionSec) || positionSec < 0) return null;
+	let i = firstBeatAtOrAfter(beats, positionSec) - 1;
+	if (i < 0) i = 0;
+	if (i >= beats.length - 1) return null;
+	const a = beats[i];
+	const b = beats[i + 1];
+	const dur = b.t - a.t;
+	if (!(dur > 0)) return null;
+	const rawPhase = (positionSec - a.t) / dur;
+	if (!Number.isFinite(rawPhase)) return null;
+	const phase = Math.min(1, Math.max(0, rawPhase));
+	return ((i % barBeats) + phase) / barBeats;
+}
+
+/** One radial-grid spoke for the JogDial phase visual: the angle (degrees,
+ * before the group's own phase rotation) and its center-to-edge endpoint on
+ * the r=40 wheel. Pure geometry so the section COUNT is unit-testable
+ * without rendering Svelte - pin 67a4ce88805f requires the grid to actually
+ * divide into `barBeats` sections, not a hardcoded cross. */
+export interface PhaseGridSpoke {
+	angleDeg: number;
+	x2: number;
+	y2: number;
+}
+
+/** Matches the old hardcoded cross's reach (lines ran from y=12 to y=88 on
+ * a wheel centered at 50,50 - i.e. radius 38 from center). */
+const PHASE_GRID_SPOKE_RADIUS = 38;
+
+export function phaseGridSpokes(barBeats: number): PhaseGridSpoke[] {
+	if (!Number.isInteger(barBeats) || barBeats < 1) {
+		throw new RangeError(`phaseGridSpokes: barBeats must be a positive integer, got ${barBeats}`);
+	}
+	return Array.from({ length: barBeats }, (_, i) => {
+		const angleDeg = (360 * i) / barBeats;
+		const angleRad = (angleDeg * Math.PI) / 180;
+		return {
+			angleDeg,
+			x2: 50 + PHASE_GRID_SPOKE_RADIUS * Math.sin(angleRad),
+			y2: 50 - PHASE_GRID_SPOKE_RADIUS * Math.cos(angleRad)
+		};
+	});
+}
+
 /** Center-playhead sync tone for a Beat Sync follower vs the master. */
 export type SyncPlayheadTone = 'bar1' | 'synced' | 'drift';
 

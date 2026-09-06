@@ -24,6 +24,11 @@ test('responsive TopBar keeps priority controls reachable and reports the two-tr
 
 	for (const viewport of [
 		{ width: 1864, height: 947 },
+		// 1366px: a very common laptop width, and inside the band between the
+		// 1400px and 1340px topbar breakpoints (pin T3, packet 9h) that had no
+		// coverage until this line - both 1280px and 1366px are asserted here
+		// so neither breakpoint's neighbourhood can silently regress again.
+		{ width: 1366, height: 768 },
 		{ width: 1280, height: 800 },
 		{ width: 1024, height: 800 },
 		{ width: 820, height: 800 }
