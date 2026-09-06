@@ -1648,9 +1648,19 @@
 		overflow: visible;
 	}
 	.col-resize {
+		/* `thead th` is `position: sticky` (below), which gives every th its
+		 * own stacking context - z-index only orders paint WITHIN one th, so
+		 * it can never win against a later-DOM-order sibling th regardless
+		 * of this element's z-index. `right: -3px` used to let half this
+		 * handle's box sit outside its own th (poking into the next
+		 * column's th box), which that later th always painted over. Fixed
+		 * by absorbing the whole 7px width leftward (`right: 0`) so the
+		 * handle never depends on painting above a sibling's stacking
+		 * context - verified via document.elementFromPoint at the handle's
+		 * own center, see performance-col-resize-hit-target.spec.ts. */
 		position: absolute;
 		top: 0;
-		right: -3px;
+		right: 0;
 		width: 7px;
 		height: 100%;
 		cursor: col-resize;
