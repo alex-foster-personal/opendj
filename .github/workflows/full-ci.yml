@@ -170,6 +170,16 @@ jobs:
         run: |
           scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just'
 
+      - name: Runner preflight - host binaries the suite shells out to
+        # Name the missing binary at second five rather than minute four:
+        # `file`, `bwrap` (#1056), the Tauri toolchain (93e11a47f) and `just`
+        # (#1363) each reddened a trunk shard as a bare FileNotFoundError when
+        # its test landed on the host that lacked it, green on the PR because
+        # that shard had landed on the other host. The list is pinned by
+        # tests/scripts/test_ci_shard_binary_preflight.py; provisioning lives in
+        # docs/ci-actions-cost-review-2026-08-16.md item 7.
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv
+
       - name: Run full pytest with coverage
         # coverage: apps/* only. --cov-report=xml for external tools.
         # --cov-fail-under enforces a minimum coverage gate; tune as the
