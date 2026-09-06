@@ -681,9 +681,62 @@
 		.rb-topbar .free-badge,
 		.rb-topbar .topbar-slot-utility { display: none; }
 	}
-	@media (max-width: 1180px) {
+	/* Pin T3 (packet 9h): between 1400px and 1180px nothing else yielded room,
+	   so at 1280px the row's total natural content width exceeded the
+	   viewport while every OTHER flex child still had its default
+	   `min-width: auto` floor (it can shrink to its own min-content size and
+	   no further). CommandEntry's `.cmd-entry { min-width: 0; }` (set so its
+	   inline `.cmd-status` result text can ellipsis) is the one flex child
+	   with NO such floor, so it silently absorbed the entire deficit and got
+	   crushed to a few px - present in the DOM, invisible and unhittable,
+	   with no console error. Measured Sun 6 Sep 2026 at 1280px: `.cmd-entry`
+	   offsetWidth 5px against a natural width of ~132px, a ~127px deficit
+	   nothing else could give back.
+
+	   TRIED FIRST, MEASURED, REJECTED: pulling ONLY the 1180px tier's
+	   non-hiding `.cmd-input` shrink (130px -> 86px, ~44px) forward, without
+	   touching pairing/vibe. This does NOT clear the deficit - measured
+	   page.evaluate offsetWidth with that rule alone active:
+	     1280px: cmd-entry  5px (not hittable) <- the reported bug, UNFIXED
+	     1300px: cmd-entry 25px (not hittable)
+	     1340px: cmd-entry 65px (hittable, but see next paragraph)
+	   Shrinking `.cmd-input`'s declared width does not stop `.cmd-entry`
+	   from being crushed further, because `.cmd-entry`'s `min-width: 0`
+	   removes ITS OWN floor as a flex item of `.rb-topbar` - the ~127px
+	   deficit at 1280px is far larger than the ~44px the input shrink can
+	   ever give back. Only pairing (47px) + vibe (150px) carry enough real
+	   width to close a deficit that size.
+
+	   TRIED SECOND, MEASURED, REJECTED: hiding pairing+vibe only up to
+	   1300px (leaving them reappearing above it, as before) reopens the
+	   SAME crush from 1301px onward while the deficit is still large:
+	   1301px 26px, 1305px 30px, 1320px 45px (all not hittable) - and the
+	   point where offsetWidth alone predicts "hittable" is NOT reliably
+	   safe either: real elementFromPoint hit-tests measured 1310px
+	   hittable but 1315-1330px NOT hittable despite a slightly LARGER
+	   offsetWidth than 1310px, i.e. non-monotonic near the crush boundary.
+	   Threading a breakpoint through that band is not a safe fix.
+
+	   FIX: hide pairing+vibe up to 1340px - 25px of margin above the last
+	   point measured inside the unstable band (1315-1330px) above, and
+	   well short of the existing 1400px free-badge/utility breakpoint so
+	   the eviction window stays as narrow as the geometry allows rather
+	   than matching 1400px for convenience. Verified at 5px granularity
+	   across the FULL [1280px, 1400px] band (26 points, plus 1366px, a
+	   very common laptop width) with this rule active: `.cmd-entry`
+	   offsetWidth is a flat 130px through 1340px, then rises smoothly and
+	   monotonically from 68px (1345px) to 101px (1400px) once pairing+vibe
+	   reappear - and every one of those 26 points is hittable via a real
+	   elementFromPoint check, none borderline. 1401px shows a DIFFERENT,
+	   pre-existing crush (free-badge/utility reappearing past the
+	   untouched 1400px boundary) that reproduces identically with this
+	   diff fully reverted - out of scope for this fix, flagged separately
+	   (spawned task investigates it alongside the CI e2e-gate flake). */
+	@media (max-width: 1340px) {
 		.rb-topbar .topbar-slot-pairing,
 		.rb-topbar .topbar-slot-vibe { display: none; }
+	}
+	@media (max-width: 1180px) {
 		.rb-topbar :global(.cmd-input) { width: 86px; }
 		.rb-topbar :global(.cmd-status) { display: none; }
 	}
