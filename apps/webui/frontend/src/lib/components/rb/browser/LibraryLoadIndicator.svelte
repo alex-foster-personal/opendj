@@ -19,13 +19,11 @@
 	 * resets load_progress to null for the WHOLE duration of a load, until the
 	 * first page callback fires (All Tracks) or forever (an ordinary
 	 * playlist load passes no onPage at all). Gating on `progress !== null`
-	 * made the spinner invisible for the entire "loading..." text state, which
-	 * is the opposite of the point. `loading` is the real gate: while loading
-	 * and progress is still null this shows an INDETERMINATE state (spinner +
-	 * "Loading" label, no bar) - an indeterminate spinner is still a spinner.
+	 * made the loading indicator invisible for the entire "loading..." text
+	 * state, which is the opposite of the point. `loading` is the real gate:
+	 * while loading and progress is still null this shows an indeterminate
+	 * track and received-row count, never a made-up percentage.
 	 */
-	import SpinnerIcon from './SpinnerIcon.svelte';
-
 	let {
 		loading,
 		progress
@@ -62,67 +60,89 @@
 		if (progress === null || progress.total === null || progress.total <= 0) return null;
 		return Math.min(100, Math.round((progress.loaded / progress.total) * 100));
 	});
+
+	const label = $derived.by((): string => {
+		if (progress === null) return 'loading...';
+		if (progress.total === null) return `loading... ${progress.loaded.toLocaleString()} rows received`;
+		return `loading... ${progress.loaded.toLocaleString()} of ${progress.total.toLocaleString()} rows`;
+	});
 </script>
 
 {#if loading || progress !== null}
 	<div class="lli-root" role="status" aria-live="polite">
-		<span class="lli-icon"><SpinnerIcon size={10} /></span>
-		<span class="lli-label">
-			{#if progress === null}
-				Loading
-			{:else}
-				Loaded {progress.loaded}{progress.total !== null ? ` of ${progress.total}` : ''}
-				{#if rowsPerSecond > 0}
-					<span class="lli-rate">· {Math.round(rowsPerSecond)} rows/s</span>
-				{/if}
-			{/if}
-		</span>
-		{#if pct !== null}
-			<div class="lli-track" title={`${pct}%`}>
-				<div class="lli-bar" style={`width:${pct}%`}></div>
-			</div>
-		{/if}
+		<span class="lli-mark" aria-hidden="true"></span>
+		<div
+			class="lli-track"
+			class:lli-indeterminate={pct === null}
+			role="progressbar"
+			aria-label={label}
+			aria-valuemin={pct === null ? undefined : 0}
+			aria-valuemax={pct === null ? undefined : 100}
+			aria-valuenow={pct ?? undefined}
+			title={pct === null ? 'Loading progress is not yet knowable' : `${pct}%`}
+		>
+			<div class="lli-bar" style={pct === null ? undefined : `width:${pct}%`}></div>
+		</div>
+		<span class="lli-label">{label}{#if rowsPerSecond > 0}<span class="lli-rate"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
 	</div>
 {/if}
 
 <style>
-	/* 2px lower than the pane header text baseline, per the pin - a small
-	 * top margin does that without fighting the header's own layout. */
 	.lli-root {
-		display: flex;
-		align-items: center;
-		gap: 6px;
+		display: grid;
+		justify-items: center;
+		gap: 5px;
 		margin-top: 2px;
-		padding: 2px 8px;
-		color: var(--rb-accent);
+		padding: 6px 8px;
+		color: var(--rb-text-dim);
 		font-family: var(--rb-font);
 		font-size: 10px;
 		line-height: 1.2;
 	}
-	.lli-icon {
-		display: flex;
-		flex: none;
-		color: var(--rb-accent);
+	.lli-mark {
+		width: 20px;
+		height: 20px;
+		background: currentColor;
+		mask: url('/favicon.svg') center / contain no-repeat;
+		animation: library-mark-reveal 180ms step-end both, library-mark-spin 420ms linear infinite;
 	}
 	.lli-label {
-		flex: none;
-		color: var(--rb-accent);
 		white-space: nowrap;
 	}
 	.lli-rate {
 		opacity: 0.8;
 	}
 	.lli-track {
-		flex: 1;
-		max-width: 220px;
-		height: 3px;
-		border-radius: 2px;
-		background: color-mix(in srgb, var(--rb-accent) 20%, transparent);
+		position: relative;
+		width: min(220px, 70vw);
+		height: 2px;
+		background: color-mix(in srgb, #4fb2ff 18%, transparent);
+		outline: 1px solid color-mix(in srgb, #4fb2ff 70%, transparent);
 		overflow: hidden;
 	}
 	.lli-bar {
 		height: 100%;
-		background: var(--rb-accent);
+		background: #4fb2ff;
 		transition: width 0.15s linear;
+	}
+	.lli-indeterminate .lli-bar {
+		position: absolute;
+		inset: 0 auto 0 -45%;
+		width: 45%;
+		animation: library-load-sweep 800ms ease-in-out infinite;
+	}
+	@keyframes library-mark-reveal {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+	@keyframes library-mark-spin {
+		to { transform: rotate(360deg); }
+	}
+	@keyframes library-load-sweep {
+		to { transform: translateX(325%); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.lli-mark { animation: library-mark-reveal 180ms step-end both; }
+		.lli-indeterminate .lli-bar { animation: none; inset-inline-start: 28%; }
 	}
 </style>
