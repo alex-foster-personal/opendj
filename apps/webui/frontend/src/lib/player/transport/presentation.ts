@@ -40,6 +40,8 @@ import {
 	pausedSeekClock
 } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
+import { createSlipAnchor } from '$lib/player/transport/slip-anchor';
+import type { SlipAnchor, SlipTempoBoundary } from '$lib/player/transport/slip-anchor';
 
 export interface PresentedTransportSchedule extends _ClockSegment {
 	revision: number;
@@ -478,6 +480,57 @@ export function observePresentedTransportTimeline(
 	}
 
 	return _presentedObservation(timeline, false, outputStarted, clockStalled, 'output');
+}
+
+/** Retain accepted, effective future presentation schedules after a SLIP anchor. */
+export function slipTempoBoundariesAfterAnchor(
+	timeline: PresentedTransportTimeline,
+	anchor: SlipAnchor
+): SlipTempoBoundary[] {
+	const validAnchor = createSlipAnchor(anchor);
+	const candidates = timeline.schedules
+		.filter(
+			(schedule) =>
+				schedule.supersededByRevision === null &&
+				schedule.active &&
+				schedule.startContextTime > validAnchor.startContextTime
+		)
+		.sort(
+			(left, right) =>
+				left.startContextTime - right.startContextTime || left.revision - right.revision
+		);
+	const boundaries: SlipTempoBoundary[] = [];
+	for (const schedule of candidates) {
+		const previous = boundaries[boundaries.length - 1];
+		if (previous?.startContextTime === schedule.startContextTime) {
+			previous.tempoRatio = schedule.tempoRatio;
+		} else {
+			boundaries.push({ startContextTime: schedule.startContextTime, tempoRatio: schedule.tempoRatio });
+		}
+	}
+	return boundaries;
+}
+
+/** Create a hidden SLIP anchor from the listener-facing engaged loop only. */
+export function presentedSlipAnchor(
+	timeline: PresentedTransportTimeline,
+	durationSec: number
+): SlipAnchor {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`SLIP duration must be positive and finite, got ${durationSec}`);
+	}
+	const presentedAt = timeline.last_presentation_context_time_s;
+	if (presentedAt === null) throw new Error('SLIP requires output presentation truth before activation');
+	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
+	if (schedule === null || !schedule.active || schedule.loop?.engaged !== true) {
+		throw new Error('SLIP requires an output-presented engaged loop before activation');
+	}
+	return createSlipAnchor({
+		startContextTime: presentedAt,
+		startPositionSec: _positionForSegment(schedule, presentedAt, durationSec),
+		tempoRatio: schedule.tempoRatio,
+		durationSec
+	});
 }
 
 // ---------------------------------------------------- slip anchor re-export

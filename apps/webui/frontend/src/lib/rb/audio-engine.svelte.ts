@@ -230,6 +230,7 @@ import {
 	phaseLockedSafetyLoopAtTrackEnd,
 	precedingDownbeatMs,
 	quantizedLoopEndpointsMs,
+	quantizedPositionMs,
 	quantizedSeekDecisionMs,
 	replaceMatchingSafetyLoopSnapshot,
 	shiftLiveBeatLoopRangeMs,
@@ -240,6 +241,7 @@ import {
 	pausedSeekClock,
 	commonSyncScheduleTimes,
 	deckReachedEnd,
+	decodedTransportDurationMs,
 	normalizeEngagedLoopPositionSec,
 	normalizeScheduledTransportEntrySec,
 	pendingSyncWaitTarget,
@@ -263,11 +265,13 @@ import {
 	keySyncPreviewAvailable,
 	observePresentedTransportTimeline,
 	presentedKeyShiftSemitonesAt,
+	presentedSlipAnchor,
 	rebaseSlipAnchor,
 	setPausedTransportTimelineCursor,
 	shouldActivateSlip,
 	slipHiddenPositionSec,
-	slipHiddenPositionWithTempoBoundaries
+	slipHiddenPositionWithTempoBoundaries,
+	slipTempoBoundariesAfterAnchor
 } from '$lib/player/transport/presentation';
 import type {
 	PresentedTransportObservation,
@@ -310,10 +314,16 @@ export {
 	keySyncManualShiftBaseline,
 	presentedKeyShiftSemitonesAt
 };
-export { exactBeatLoopRangeMs, loopEndpointsWithinDurationMs, quantizedLoopEndpointsMs };
+export {
+	exactBeatLoopRangeMs,
+	loopEndpointsWithinDurationMs,
+	quantizedLoopEndpointsMs,
+	quantizedPositionMs
+};
 export {
 	commonSyncScheduleTimes,
 	deckReachedEnd,
+	decodedTransportDurationMs,
 	normalizeEngagedLoopPositionSec,
 	normalizeScheduledTransportEntrySec,
 	pendingSyncWaitTarget,
@@ -339,10 +349,12 @@ export {
 };
 export {
 	createSlipAnchor,
+	presentedSlipAnchor,
 	rebaseSlipAnchor,
 	shouldActivateSlip,
 	slipHiddenPositionSec,
-	slipHiddenPositionWithTempoBoundaries
+	slipHiddenPositionWithTempoBoundaries,
+	slipTempoBoundariesAfterAnchor
 };
 export type { SlipAnchor, SlipTempoBoundary };
 export type {
@@ -808,29 +820,6 @@ export function applyPausedDeckControlSettings(
 	};
 }
 
-export function quantizedPositionMs(
-	beats: readonly AnlzBeat[],
-	positionMs: number,
-	quantizeEnabled: boolean,
-	/** The deck's selected quantize grid (pin a67bafbfc4b0); unused when quantizeEnabled is false - callers with nothing to snap to may pass 1. */
-	gridBeats: 1 | 4 | 8 = 1
-): number {
-	if (!Number.isFinite(positionMs) || positionMs < 0) {
-		throw new RangeError(`positionMs must be a finite non-negative number, got ${positionMs}`);
-	}
-	if (!quantizeEnabled) return positionMs;
-	return quantizeToNearestGridBeat(beats, positionMs / 1000, gridBeats) * 1000;
-}
-
-export function decodedTransportDurationMs(decodedDurationSec: number): number {
-	if (!Number.isFinite(decodedDurationSec) || decodedDurationSec <= 0) {
-		throw new RangeError(
-			`decoded audio duration must be finite and positive, got ${decodedDurationSec}`
-		);
-	}
-	return decodedDurationSec * 1000;
-}
-
 /** Listener-facing KEY SYNC plan for UI and browser agents. The preview is
  * deliberately calculated from the exact same control and presented-audio
  * sources as `syncKey`, never from a visible but potentially stale deck field. */
@@ -912,57 +901,6 @@ export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
 	}
 }
 
-/** Retain accepted, effective future presentation schedules after a SLIP anchor. */
-export function slipTempoBoundariesAfterAnchor(
-	timeline: PresentedTransportTimeline,
-	anchor: SlipAnchor
-): SlipTempoBoundary[] {
-	const validAnchor = createSlipAnchor(anchor);
-	const candidates = timeline.schedules
-		.filter(
-			(schedule) =>
-				schedule.supersededByRevision === null &&
-				schedule.active &&
-				schedule.startContextTime > validAnchor.startContextTime
-		)
-		.sort(
-			(left, right) =>
-				left.startContextTime - right.startContextTime || left.revision - right.revision
-		);
-	const boundaries: SlipTempoBoundary[] = [];
-	for (const schedule of candidates) {
-		const previous = boundaries[boundaries.length - 1];
-		if (previous?.startContextTime === schedule.startContextTime) {
-			previous.tempoRatio = schedule.tempoRatio;
-		} else {
-			boundaries.push({ startContextTime: schedule.startContextTime, tempoRatio: schedule.tempoRatio });
-		}
-	}
-	return boundaries;
-}
-
-/** Create a hidden SLIP anchor from the listener-facing engaged loop only. */
-export function presentedSlipAnchor(
-	timeline: PresentedTransportTimeline,
-	durationSec: number
-): SlipAnchor {
-	if (!Number.isFinite(durationSec) || durationSec <= 0) {
-		throw new RangeError(`SLIP duration must be positive and finite, got ${durationSec}`);
-	}
-	const presentedAt = timeline.last_presentation_context_time_s;
-	if (presentedAt === null) throw new Error('SLIP requires output presentation truth before activation');
-	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
-	if (schedule === null || !schedule.active || schedule.loop?.engaged !== true) {
-		throw new Error('SLIP requires an output-presented engaged loop before activation');
-	}
-	return createSlipAnchor({
-		startContextTime: presentedAt,
-		startPositionSec: _positionForSegment(schedule, presentedAt, durationSec),
-		tempoRatio: schedule.tempoRatio,
-		durationSec
-	});
-}
-
 /** True while the rAF-driven presentation clock has not caught up to the last
  * acknowledged schedule. Read this, never `st.transport_pending`, when gating a
  * transport mutation: the state flag also folds in reanchor ramps. */
@@ -970,38 +908,6 @@ function _presentationPending(rt: _DeckRuntime): boolean {
 	return rt.presentation.desired_revision !== rt.presentation.presented_revision;
 }
 
-export function transportNeedsScheduledMutation(
-	activity: TransportMutationActivity
-): boolean {
-	for (const [name, value] of Object.entries({
-		playing: activity.playing,
-		audible: activity.audible,
-		controlActive: activity.controlActive,
-		presentationPending: activity.presentationPending
-	})) {
-		if (typeof value !== 'boolean') {
-			throw new TypeError(`${name} must be boolean, got ${String(value)}`);
-		}
-	}
-	for (const [name, value] of Object.entries({
-		pendingScheduleCount: activity.pendingScheduleCount,
-		scheduleIntentCount: activity.scheduleIntentCount
-	})) {
-		if (!Number.isInteger(value) || value < 0) {
-			throw new RangeError(`${name} must be a non-negative integer, got ${value}`);
-		}
-	}
-	return (
-		activity.playing ||
-		activity.audible ||
-		activity.controlActive ||
-		activity.presentationPending ||
-		activity.pendingScheduleCount > 0 ||
-		activity.scheduleIntentCount > 0
-	);
-}
-
-// Deck-load/replacement/master-selection guards moved to
 // ./audio-engine-guards (pure functions, no engine state) - re-exported here
 // so external importers and the bundled unit tests keep one import site.
 export {
@@ -1014,6 +920,7 @@ export {
 	pausedMasterSelectionBlockers,
 	masterSwitchFollowers,
 	naturalEndNeedsRevisionedStop,
+	transportNeedsScheduledMutation,
 	type TransportMutationActivity
 } from './audio-engine-guards';
 import {
@@ -1025,6 +932,7 @@ import {
 	assertPausedMasterSelectionAllowed,
 	masterSwitchFollowers,
 	naturalEndNeedsRevisionedStop,
+	transportNeedsScheduledMutation,
 	type TransportMutationActivity
 } from './audio-engine-guards';
 

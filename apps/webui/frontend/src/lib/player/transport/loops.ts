@@ -74,6 +74,20 @@ export function phaseLockedSafetyLoopAtTrackEnd(
 	}
 }
 
+export function quantizedPositionMs(
+	beats: readonly AnlzBeat[],
+	positionMs: number,
+	quantizeEnabled: boolean,
+	/** The deck's selected quantize grid (pin a67bafbfc4b0); unused when quantizeEnabled is false - callers with nothing to snap to may pass 1. */
+	gridBeats: 1 | 4 | 8 = 1
+): number {
+	if (!Number.isFinite(positionMs) || positionMs < 0) {
+		throw new RangeError(`positionMs must be a finite non-negative number, got ${positionMs}`);
+	}
+	if (!quantizeEnabled) return positionMs;
+	return quantizeToNearestGridBeat(beats, positionMs / 1000, gridBeats) * 1000;
+}
+
 export function quantizedLoopEndpointsMs(
 	beats: readonly AnlzBeat[],
 	loop: { in_ms: number; out_ms: number },

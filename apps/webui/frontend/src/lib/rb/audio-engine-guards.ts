@@ -171,3 +171,36 @@ export interface TransportMutationActivity {
 	 * throws in setPausedTransportTimelineCursor and wedges the deck. */
 	presentationPending: boolean;
 }
+
+export function transportNeedsScheduledMutation(
+	activity: TransportMutationActivity
+): boolean {
+	for (const [name, value] of Object.entries({
+		playing: activity.playing,
+		audible: activity.audible,
+		controlActive: activity.controlActive,
+		presentationPending: activity.presentationPending
+	})) {
+		if (typeof value !== 'boolean') {
+			throw new TypeError(`${name} must be boolean, got ${String(value)}`);
+		}
+	}
+	for (const [name, value] of Object.entries({
+		pendingScheduleCount: activity.pendingScheduleCount,
+		scheduleIntentCount: activity.scheduleIntentCount
+	})) {
+		if (!Number.isInteger(value) || value < 0) {
+			throw new RangeError(`${name} must be a non-negative integer, got ${value}`);
+		}
+	}
+	return (
+		activity.playing ||
+		activity.audible ||
+		activity.controlActive ||
+		activity.presentationPending ||
+		activity.pendingScheduleCount > 0 ||
+		activity.scheduleIntentCount > 0
+	);
+}
+
+// Deck-load/replacement/master-selection guards moved to

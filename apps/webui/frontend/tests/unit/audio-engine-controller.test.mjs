@@ -14,8 +14,9 @@ let presentation;
 let headphones;
 let computeFollowerSyncPlan;
 // The pure SLIP hidden-timeline math lives in the player's pure leaf
-// (transport/schedule-math.ts); only the two timeline-shaped helpers
-// (presentedSlipAnchor, slipTempoBoundariesAfterAnchor) are still the engine's.
+// (transport/schedule-math.ts); the two timeline-shaped helpers
+// (presentedSlipAnchor, slipTempoBoundariesAfterAnchor) live in
+// transport/presentation.ts and reach here through the engine barrel.
 let slip;
 let disposeAudioResources;
 let beatLoopFitsWithinDuration;
