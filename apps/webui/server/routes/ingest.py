@@ -514,7 +514,9 @@ def _refresh_worker(job: _RefreshJob) -> None:
 
 
 def _start_refresh_job(
-    body: RefreshIn | None, guard: Callable[[], None] | None = None
+    body: RefreshIn | None,
+    guard: Callable[[], None] | None = None,
+    active_job: Callable[[_RefreshJob], _RefreshJob | None] | None = None,
 ) -> _RefreshJob:
     """Claim the one slot and hand back THE job created, not the slot.
 
@@ -529,6 +531,10 @@ def _start_refresh_job(
     scope, batch_dir = resolve_scope(body, INGEST_INBOX)
     with _job_lock:
         if _JOBS.current is not None and _JOBS.current.phase in ACTIVE_PHASES:
+            if active_job is not None:
+                shared_job = active_job(_JOBS.current)
+                if shared_job is not None:
+                    return shared_job
             raise HTTPException(409, "a refresh job is already running")
         if guard is not None:
             guard()
@@ -571,6 +577,23 @@ def _start_refresh_job(
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
 def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
     return _status_of(_start_refresh_job(body))
+
+
+def start_track_order(stable_id: str, kind: str) -> RefreshStatusOut:
+    """Start one track order, or atomically return its matching active job."""
+    body = RefreshIn(scope="track", stable_id=stable_id, analysis_kind=kind)
+
+    def _matching_order(job: _RefreshJob) -> _RefreshJob | None:
+        if job.scope == "track" and job.analysis_orders == {stable_id: kind}:
+            return job
+        return None
+
+    job = _start_refresh_job(
+        body,
+        guard=lambda: validate_track_order_target(stable_id),
+        active_job=_matching_order,
+    )
+    return _status_of(job)
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)

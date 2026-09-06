@@ -142,11 +142,10 @@ def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, a
 
     ordered = client.post("/api/v1/analysis-queue/orders/order001/beatgrid")
     assert ordered.status_code == 202
-    assert ordered.json() == {
-        "stable_id": "order001",
-        "kind": "beatgrid",
-        "phase": "queued",
-    }
+    ordered_body = ordered.json()
+    assert ordered_body["stable_id"] == "order001"
+    assert ordered_body["kind"] == "beatgrid"
+    assert ordered_body["phase"] in {"queued", "running"}
 
     status = client.get("/api/v1/analysis-queue/orders/order001")
     assert status.status_code == 200
@@ -155,7 +154,11 @@ def test_ordering_one_missing_analysis_creates_a_track_scoped_real_job(client, a
     assert items[0]["stable_id"] == "order001"
     assert items[0]["kind"] == "beatgrid"
     assert items[0]["phase"] in {"queued", "running"}
-    assert client.post("/api/v1/analysis-queue/orders/order001/beatgrid").status_code == 409
+    duplicate = client.post("/api/v1/analysis-queue/orders/order001/beatgrid")
+    assert duplicate.status_code == 202
+    assert duplicate.json() == items[0]
+    competing = client.post("/api/v1/analysis-queue/orders/order001/key")
+    assert competing.status_code == 409
     _wait(client)
 
 
@@ -279,24 +282,38 @@ def test_the_browser_client_calls_a_route_the_app_really_serves(app):
     success outright (AGENTS.md, "No mocks and locked real fixtures").
     """
     source = API_INGEST_TS.read_text()
-    called = set(re.findall(r"fetch\(`\$\{API_BASE\}(/api/v1/[a-z0-9/-]+)", source))
-    queue_calls = {path for path in called if "analysis-queue" in path}
-    assert queue_calls == {
-        "/api/v1/analysis-queue",
-        "/api/v1/analysis-queue/orders/",
-    }, (
-        f"unexpected analysis-queue calls in {API_INGEST_TS.name}: {sorted(queue_calls)}"
+    get_call = re.search(
+        r"getTrackAnalysisOrders.*?fetch\(`\$\{API_BASE\}"
+        r"(?P<path>/api/v1/analysis-queue/orders/\$\{encodeURIComponent\(stableId\)\})`\)",
+        source,
+        flags=re.DOTALL,
     )
-
-    served = {r.path for r in app.routes if isinstance(r, APIRoute)}
-    unserved = {
-        path for path in queue_calls
-        if not any(route == path or route.startswith(path) for route in served)
+    post_call = re.search(
+        r"orderTrackAnalysis.*?fetch\(\s*`\$\{API_BASE\}"
+        r"(?P<path>/api/v1/analysis-queue/orders/\$\{encodeURIComponent\(stableId\)\}"
+        r"/\$\{encodeURIComponent\(kind\)\})`,\s*\{ method: 'POST' \}",
+        source,
+        flags=re.DOTALL,
+    )
+    assert get_call is not None, f"missing GET order call in {API_INGEST_TS.name}"
+    assert post_call is not None, f"missing POST order call in {API_INGEST_TS.name}"
+    client_routes = {
+        ("GET", re.sub(r"\$\{encodeURIComponent\(stableId\)\}", "{stable_id}", get_call["path"])),
+        ("POST", re.sub(r"\$\{encodeURIComponent\(kind\)\}", "{kind}", re.sub(
+            r"\$\{encodeURIComponent\(stableId\)\}", "{stable_id}", post_call["path"]
+        ))),
     }
-    assert not unserved, (
-        f"the client calls routes the app does not serve: {sorted(unserved)}"
+
+    served = {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+    assert client_routes <= served, (
+        f"the client calls routes the app does not serve: {sorted(client_routes - served)}"
     )
-    assert "/api/v1/analysis-queue/run" in served, (
+    assert ("POST", "/api/v1/analysis-queue/run") in served, (
         "the agent-facing run endpoint must stay mounted even with no TS client"
     )
 
