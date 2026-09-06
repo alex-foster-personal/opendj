@@ -427,6 +427,7 @@ jobs:
         # blocking and this --grep deleted.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
             pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --grep "setup entry points" \
@@ -471,6 +472,7 @@ jobs:
         # review, PR #860).
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
             pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --project chromium --grep "deck-load smoke" \
@@ -497,6 +499,7 @@ jobs:
         # 'is already used'. Same reason as the webkit-deckload steps.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" rekordbox-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5399 -- \
             pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
 
       - name: Hermetic gate - stretch quality smoke
@@ -539,6 +542,7 @@ jobs:
         # 'is already used'. Same reason as the webkit-deckload steps.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" comment-hotkey-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 8696 -- \
             pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate
 
       - name: Root Playwright suite (real engine + Vite)
@@ -796,6 +800,7 @@ jobs:
           MDT_CI_HOST_LOCK_TIMEOUT_S: 1800
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
             pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
 
       - name: Extended - desktop setup page
@@ -806,6 +811,7 @@ jobs:
         # 'is already used'. Same reason as the webkit-deckload steps.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" desktop-setup \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5216 9473 -- \
             pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
 
       - name: Extended - play analytics
@@ -817,6 +823,7 @@ jobs:
         # 'is already used'. Same reason as the webkit-deckload steps.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" play-analytics \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 9414 5214 -- \
             pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
 
       - name: Extended - stretch artifact (chromium + webkit)
@@ -827,6 +834,7 @@ jobs:
         # 'is already used'. Same reason as the webkit-deckload steps.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" stretch-artifact \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5311 -- \
             pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
 
       - name: Extended - stems progress

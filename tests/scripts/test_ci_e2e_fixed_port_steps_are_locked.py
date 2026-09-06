@@ -36,6 +36,8 @@ FIXED_PORT = re.compile(r"(?:PORT[A-Za-z_]*\s*=\s*|127\.0\.0\.1:|localhost:)(\d{
 LOCAL_CONFIG_REF = re.compile(r"(?:from\s+['\"]\./|tests/e2e/)([\w.-]+\.config)(?:\.ts)?['\"\s]")
 STEP_CONFIG = re.compile(r"--config\s+tests/e2e/([\w.-]+\.config\.ts)")
 LOCK_NAME = re.compile(r"scripts/ci_host_lock\.sh\"?\s+([\w-]+)\s")
+REAP = re.compile(r"scripts/ci_reap_port_holders\.sh\"?((?:\s+\d{4,5})+)\s+--\s")
+SUITE = re.compile(r"pnpm exec playwright test")
 
 
 def _fixed_ports(config_name: str) -> frozenset[str]:
@@ -82,7 +84,7 @@ def test_every_fixed_port_e2e_step_runs_under_the_host_lock() -> None:
         checked += 1
         if not LOCK_NAME.search(run):
             unlocked.append(f"{job}/{name}: {config}")
-    assert checked >= 4, f"expected the deckload, hermetic and extended fixed-port steps, saw {checked}"
+    assert checked >= 4, f"expected deckload, hermetic and extended fixed-port steps, saw {checked}"
     assert not unlocked, f"fixed-port steps without scripts/ci_host_lock.sh: {unlocked}"
 
 
@@ -99,3 +101,22 @@ def test_steps_that_share_a_port_share_a_lock_name() -> None:
     split = {port: sorted(locks) for port, locks in lock_by_port.items() if len(locks) > 1}
     assert lock_by_port, "no locked fixed-port step found; the probe is broken"
     assert not split, f"one port, several lock names: {split}"
+
+
+def test_each_fixed_port_suite_reaps_its_own_ports_inside_the_lock() -> None:
+    """if the reap sits outside the lock, or names other ports, then a holder cancelled
+    during the lock wait still collides"""
+    checked = 0
+    for job, name, run in _playwright_steps():
+        ports = _fixed_ports(STEP_CONFIG.search(run).group(1))
+        if not ports:
+            continue
+        checked += 1
+        lock, reap, suite = LOCK_NAME.search(run), REAP.search(run), SUITE.search(run)
+        assert reap is not None, f"{job}/{name}: no ci_reap_port_holders.sh in the locked command"
+        reaped = set(reap.group(1).split())
+        assert reaped == ports, f"{job}/{name}: reaps {sorted(reaped)}, binds {sorted(ports)}"
+        assert lock is not None and suite is not None, f"{job}/{name}: lock or suite missing"
+        order = (lock.start(), reap.start(), suite.start())
+        assert order == tuple(sorted(order)), f"{job}/{name}: order is lock, reap, suite"
+    assert checked >= 4, f"expected deckload, hermetic and extended fixed-port steps, saw {checked}"
