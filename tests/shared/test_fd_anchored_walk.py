@@ -374,3 +374,113 @@ def test_resolve_under_root_still_works_when_root_is_a_symlink_from_the_start(
 
     assert first == leaf.resolve()
     assert second == leaf.resolve()
+
+
+# ----- Root identity change: false-positive vs. hostile-swap (issue #1402) -
+
+
+@pytest.mark.skipif(pp.IS_WINDOWS, reason="symlink/rename fixtures are POSIX-only")
+def test_contained_asset_path_root_identity_change_gets_a_distinct_reason_and_logs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] the share root itself is recreated at its own unchanged path (a
+    remount or a crate-sync rebuild, not an attacker swap) [then ⛔️]
+    the result carries its own reason -- 'unsafe:root-identity-changed', never
+    the hostile-swap 'unsafe:share-symlink' -- and the diagnostic reaches a
+    log instead of being silently discarded (post-hoc review of PR #1357)."""
+    monkeypatch.setattr(fd_anchored_walk, "_ROOT_ANCHORS", {})
+    share_root = tmp_path / "share"
+    target = share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"dat")
+    monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
+    mapped = pp.MappedPath(
+        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share"
+    )
+
+    first = pp._contained_asset_path(mapped, target)
+
+    # Recreate the root at the SAME configured path -- a fresh directory
+    # (different st_ino, same st_dev) with identical, legitimate content
+    # underneath. This is what a crate re-sync or `rsync --delete` rebuild
+    # of pioneer-share does; it is not an attacker directory.
+    rebuilt = tmp_path / "share-rebuilt"
+    (rebuilt / "PIONEER" / "USB").mkdir(parents=True)
+    (rebuilt / "PIONEER" / "USB" / "ANLZ0000.DAT").write_bytes(b"dat")
+    share_root.rename(tmp_path / "share-before-rebuild")
+    rebuilt.rename(share_root)
+
+    with caplog.at_level("ERROR", logger="apps.shared.fd_anchored_walk"):
+        second = pp._contained_asset_path(mapped, target)
+
+    assert first.resolved == target
+    assert second.resolved is None
+    assert second.mapped is False
+    assert second.reason == "unsafe:root-identity-changed"
+    assert "no longer resolves to the identity" in caplog.text
+
+
+@pytest.mark.skipif(
+    not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED,
+    reason="fd-anchored walk needs O_NOFOLLOW + dir_fd support",
+)
+def test_reset_root_anchor_lets_the_next_call_re_anchor_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] ``reset_root_anchor`` is called for a root between two calls
+    [then ⛔️] the changed identity is trusted fresh instead of
+    raising ``RootIdentityChanged`` -- the explicit invalidation seam a
+    deliberate library-mode/crate change needs (issue #1402 fix shape)."""
+    monkeypatch.setattr(fd_anchored_walk, "_ROOT_ANCHORS", {})
+    root = tmp_path / "share"
+    leaf = root / "PIONEER" / "USB" / "ANLZ0000.DAT"
+    leaf.parent.mkdir(parents=True)
+    leaf.write_bytes(b"legitimate")
+    fd_anchored_walk.resolve_under_root(leaf, root)
+
+    rebuilt = tmp_path / "share-rebuilt"
+    (rebuilt / "PIONEER" / "USB").mkdir(parents=True)
+    (rebuilt / "PIONEER" / "USB" / "ANLZ0000.DAT").write_bytes(b"legitimate")
+    root.rename(tmp_path / "share-before-rebuild")
+    rebuilt.rename(root)
+
+    with pytest.raises(fd_anchored_walk.RootIdentityChanged):
+        fd_anchored_walk.resolve_under_root(leaf, root)
+
+    fd_anchored_walk.reset_root_anchor(root)
+
+    resolved = fd_anchored_walk.resolve_under_root(leaf, root)
+    assert resolved == leaf.resolve()
+
+
+@pytest.mark.skipif(pp.IS_WINDOWS, reason="symlink/rename fixtures are POSIX-only")
+def test_refresh_share_root_resets_the_identity_anchor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] ``platform_paths.refresh_share_root`` runs between two asset
+    resolutions (a deliberate library-mode/crate change) [then ⛔️]
+    a root recreated in that window re-anchors instead of tripping
+    ``RootIdentityChanged`` -- the wiring the fix shape requires."""
+    monkeypatch.setattr(fd_anchored_walk, "_ROOT_ANCHORS", {})
+    share_root = tmp_path / "share"
+    target = share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"dat")
+    monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
+    mapped = pp.MappedPath(
+        original="/PIONEER/USB/ANLZ0000.DAT", resolved=target, mapped=True, reason="share"
+    )
+    pp._contained_asset_path(mapped, target)
+
+    rebuilt = tmp_path / "share-rebuilt"
+    (rebuilt / "PIONEER" / "USB").mkdir(parents=True)
+    (rebuilt / "PIONEER" / "USB" / "ANLZ0000.DAT").write_bytes(b"dat")
+    share_root.rename(tmp_path / "share-before-rebuild")
+    rebuilt.rename(share_root)
+
+    monkeypatch.setattr(pp, "compute_share_root", lambda: share_root)
+    pp.refresh_share_root()
+
+    result = pp._contained_asset_path(mapped, target)
+    assert result.resolved == target
+    assert result.reason == "share"

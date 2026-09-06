@@ -52,10 +52,13 @@ root while still tolerating one that was a symlink from the start.
 """
 from __future__ import annotations
 
+import logging
 import os
 import stat
 import sys
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 FD_ANCHORED_WALK_SUPPORTED: bool = (
     sys.platform != "win32"
@@ -140,6 +143,34 @@ def _verify_root_anchor(root: Path, root_fd: int) -> None:
             "attacker-controlled location) after being trusted; refusing "
             "to walk it."
         )
+
+
+def log_root_identity_changed(exc: RootIdentityChanged) -> None:
+    """Log a caught :class:`RootIdentityChanged` at ERROR.
+
+    The rich message on the exception was previously constructed and then
+    discarded by a bare ``except OSError`` at the only call site
+    (``platform_paths._contained_asset_path``) -- this was the sole
+    diagnostic the module produced, and it never reached a log.
+    """
+    log.error(str(exc))
+
+
+def reset_root_anchor(root: Path) -> None:
+    """Drop the recorded anchor for ``root``, so the next call re-anchors.
+
+    For a deliberate library-mode or crate-root change (see
+    ``platform_paths.refresh_share_root``), where the new identity is
+    legitimately different and should be trusted fresh -- not a general
+    escape hatch. The identity check in :func:`_verify_root_anchor` still
+    runs on every call after this; only the recorded baseline is cleared.
+    """
+    _ROOT_ANCHORS.pop(str(root), None)
+
+
+def reset_root_anchors() -> None:
+    """Drop every recorded root anchor. See :func:`reset_root_anchor`."""
+    _ROOT_ANCHORS.clear()
 
 
 def path_from_fd(fd: int) -> Path:

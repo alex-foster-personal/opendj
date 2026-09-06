@@ -84,6 +84,7 @@ def refresh_share_root() -> Path:
     """Recompute :data:`SHARE_ROOT` after library-mode env is applied."""
     global SHARE_ROOT
     SHARE_ROOT = compute_share_root()
+    fd_anchored_walk.reset_root_anchors()
     return SHARE_ROOT
 
 
@@ -472,6 +473,9 @@ def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
                 resolved = fd_anchored_walk.resolve_under_root(candidate, root)
             except ValueError:
                 continue
+            except fd_anchored_walk.RootIdentityChanged as exc:
+                fd_anchored_walk.log_root_identity_changed(exc)
+                return MappedPath(mapped.original, None, False, "unsafe:root-identity-changed")
             except OSError:
                 break
             return MappedPath(
