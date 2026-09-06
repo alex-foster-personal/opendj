@@ -1222,6 +1222,33 @@
 								nowRatio={_nowRatioFor(row.stable_id)}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
+						</td>
+						<td
+							class="c-art"
+							title={row.artwork_available !== true
+								? row.artwork_available === null
+									? 'artwork could not be checked (tag reader not installed in this build)'
+									: (artworkStatusLabel(row.artwork_status) ??
+										'artwork unavailable')
+								: undefined}
+						>
+							<span class="art-slate" aria-hidden="true"></span>
+							{#if row.artwork_available === true}
+								<img
+									src={artworkUrl(row.stable_id, 's')}
+									alt=""
+									loading="lazy"
+									onerror={_hideBrokenImg}
+								/>
+							{/if}
+						</td>
+						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''}>
+							<!-- Pin 27f889893790: the quick-load box is anchored here (not
+							     .c-preview) so its hitbox can never sit over the mini preview
+							     strip (.preview-hit) - hovering it must never block the
+							     journey from artwork/title to the mini preview. Revealed by
+							     hovering .c-art or .c-title specifically (CSS below), never
+							     the bare row or the preview cell. -->
 							<span class="deck-btns">
 								<span class="deck-btns-title">load to deck:</span>
 								{#each DECKS as d (d)}
@@ -1261,27 +1288,6 @@
 									</button>
 								{/if}
 							</span>
-						</td>
-						<td
-							class="c-art"
-							title={row.artwork_available !== true
-								? row.artwork_available === null
-									? 'artwork could not be checked (tag reader not installed in this build)'
-									: (artworkStatusLabel(row.artwork_status) ??
-										'artwork unavailable')
-								: undefined}
-						>
-							<span class="art-slate" aria-hidden="true"></span>
-							{#if row.artwork_available === true}
-								<img
-									src={artworkUrl(row.stable_id, 's')}
-									alt=""
-									loading="lazy"
-									onerror={_hideBrokenImg}
-								/>
-							{/if}
-						</td>
-						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''}>
 							{#each hl(row.title) as part, i (i)}
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
@@ -2088,38 +2094,67 @@
 		border-radius: 1px;
 	}
 
-	/* The loader opens only from artwork or title. It is fixed to escape the
-	 * scrolling table and flips below a top-row trigger when needed. */
+	/* preview cell hosts only the mini preview strip: pin 27f889893790 moved
+	 * the quick-load box off this cell entirely (onto .c-title, below) so
+	 * its hitbox can never sit over .preview-hit and block the mouse
+	 * journey to the mini preview. */
 	.c-preview {
 		position: relative;
 	}
-	/* Visible on hover+selected (mouse), per the pin: hover-only used to block
-	   visibility outright. display stays inline-flex always (never `none`) so
-	   the buttons remain Tab-reachable regardless of hover/selection - a
-	   keyboard user tabbing through the row must have an equal path to the
-	   mouse's hover, and a display:none element cannot receive the very
-	   focus that would reveal it. opacity+pointer-events do the hiding
-	   instead, and :focus-within always wins so Tab landing on any of these
-	   buttons reveals the whole group before the very next Tab press. */
+	/* The loader opens only from artwork or title (pin 27f889893790), and is
+	 * anchored inside .c-title so it renders clear of the preview column while
+	 * remaining bounded by that cell. It must never extend below the row: that
+	 * would either be clipped by the cell's title-truncation overflow or cover
+	 * the following row's normal targets. Visible
+	 * on hover+selected (mouse), per pin 616aaf77b792: hover-only used to
+	 * block visibility outright. display stays inline-flex always (never
+	 * `none`) so the buttons remain Tab-reachable regardless of
+	 * hover/selection - a keyboard user tabbing through the row must have
+	 * an equal path to the mouse's hover, and a display:none element cannot
+	 * receive the very focus that would reveal it. opacity+pointer-events
+	 * do the hiding instead, and :focus-within always wins so Tab landing
+	 * on any of these buttons reveals the whole group before the very next
+	 * Tab press. Hiding pointer-events lags 100ms behind losing hover (pin
+	 * 27f889893790's corridor): the pointer can leave .c-art/.c-title,
+	 * cross the short gap, and still land on a deck button before the
+	 * group goes fully inert. Showing has no such delay. */
+	.c-title {
+		position: relative;
+	}
 	.deck-btns {
 		display: inline-flex;
 		position: absolute;
-		top: 2px;
-		right: 4px;
+		top: 0;
+		right: 0;
+		height: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
 		gap: 2px;
 		align-items: center;
 		opacity: 0;
 		pointer-events: none;
-		transition: opacity 120ms ease;
+		z-index: 5;
+		transition:
+			opacity 120ms ease,
+			pointer-events 0s 100ms;
 	}
-	tbody tr:hover.rb-row-selected .deck-btns,
+	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns,
+	.deck-btns:hover,
 	.deck-btns:focus-within {
 		opacity: 1;
 		pointer-events: auto;
+		transition-delay: 0s;
 	}
 	@media (prefers-reduced-motion: reduce) {
+		/* Pin 27f889893790's corridor grace (pointer-events lagging 100ms
+		 * behind hover) must survive reduced motion - it is not decorative,
+		 * it is what lets the mouse travel .c-art/.c-title -> deck button
+		 * without the box going inert underfoot. Only the opacity fade is a
+		 * pure animation; disable that alone, never the whole transition. */
 		.deck-btns {
-			transition: none;
+			transition:
+				opacity 0s,
+				pointer-events 0s 100ms;
 		}
 	}
 	.deck-btns-title {

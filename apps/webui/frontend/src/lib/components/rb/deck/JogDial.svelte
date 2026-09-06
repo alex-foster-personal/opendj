@@ -6,6 +6,7 @@
 	import { DECK_IDS, deckEffectiveBpm, deckStates } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
+	import { DEFAULT_PQTZ_BAR_BEATS, pqtzBarPhase, phaseGridSpokes } from '$lib/components/rb/wave/wave-math';
 	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -80,6 +81,34 @@
 			: Math.min(1, Math.max(0, deck.position_ms / deck.duration_ms)) * 360
 	);
 
+	// Pin 67a4ce88805f: an obviously-playing deck needs a fast second line
+	// completing one revolution per "phase" (a PQTZ bar), plus a rotating
+	// radial grid dividing that bar into sections. barBeats is the config
+	// anchor - the deck's OWN quantize grid (1/4/8 beats, the one real,
+	// already-plumbed per-deck "beats per phase" setting in this codebase),
+	// falling back to DEFAULT_PQTZ_BAR_BEATS only when that setting is the
+	// unimplemented 'phase' sentinel (pin a67bafbfc4b0 - never reaches a real
+	// beat count). position_ms is the engine-published presentation
+	// position, never a browser clock, so this only ever moves with real
+	// playback.
+	const barBeats: number = $derived(
+		deck.quantize_grid_beats === 'phase' ? DEFAULT_PQTZ_BAR_BEATS : deck.quantize_grid_beats
+	);
+	const barPhase: number | null = $derived(
+		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, deck.position_ms / 1000), barBeats)
+	);
+	const phaseAngle: number = $derived((barPhase ?? 0) * 360);
+	const phaseTitle: string = $derived(
+		barPhase === null
+			? 'PQTZ phase unavailable - phase visual parked at the downbeat'
+			: `${Math.round(barPhase * 100)}% through the ${barBeats}-beat phase`
+	);
+	// Section count must track barBeats (pin 67a4ce88805f review: a
+	// hardcoded 2-line cross always rendered 4 sections regardless of what
+	// quantize grid was selected). phaseGridSpokes is pure geometry, unit
+	// tested directly for count and endpoint values at barBeats 1/4/8.
+	const gridSpokes = $derived(phaseGridSpokes(barBeats));
+
 	const slipTitle: string = $derived(
 		deck.slip_active
 			? 'SLIP active - exit loop or turn off to jump to the hidden playhead'
@@ -122,10 +151,30 @@
 </script>
 
 	<div class="jog" role="group" aria-label={`jog controls deck ${deck.deck_id}`}>
-	<div class="dial-wrap" class:jog-off-tempo={offTempoTitle !== null} title={offTempoTitle ?? undefined}>
-		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label="jog dial readout">
+	<div
+		class="dial-wrap"
+		class:jog-off-tempo={offTempoTitle !== null}
+		class:dial-playing={deck.audible}
+		title={offTempoTitle ?? undefined}
+	>
+		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label={`jog dial readout, ${phaseTitle}`}>
 			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
-			<circle cx="50" cy="50" r="40" fill="#14171d" stroke="#1a1e25" stroke-width="1" />
+			<circle class="wheel-fill" cx="50" cy="50" r="40" fill="#14171d" stroke="#1a1e25" stroke-width="1" />
+			{#if deck.audible}
+				<g class="playing-phase-grid" transform={`rotate(${phaseAngle} 50 50)`}>
+					{#each gridSpokes as spoke (spoke.angleDeg)}
+						<line class="grid-spoke" x1="50" y1="50" x2={spoke.x2} y2={spoke.y2} />
+					{/each}
+				</g>
+				<line
+					class="phase-marker"
+					x1="50"
+					y1="4"
+					x2="50"
+					y2="12"
+					transform={`rotate(${phaseAngle} 50 50)`}
+				/>
+			{/if}
 			{#if deck.stable_id !== null}
 				<circle
 					class="progress-trail"
@@ -279,6 +328,35 @@
 	.dial .range {
 		fill: var(--rb-text-dim);
 		font-size: 8px;
+	}
+	/* Pin 67a4ce88805f: an audible deck's wheel flips to an off-white face
+	 * with black/grey text so a playing deck reads unmistakably differently
+	 * from a stopped one - "audible" is the committed OUTPUT state, never the
+	 * requested transport state, so this cannot light up ahead of real sound.
+	 * The phase geometry (grid + marker) is SVG-only: it moves solely when
+	 * the presented position changes, with no CSS clock animation. */
+	.dial-wrap.dial-playing .wheel-fill {
+		fill: #f2f0e8;
+		stroke: #fff;
+	}
+	.playing-phase-grid {
+		stroke: #1f2329;
+		stroke-width: 1;
+		stroke-opacity: 0.7;
+	}
+	.phase-marker {
+		stroke: #fff;
+		stroke-width: 2;
+		stroke-linecap: round;
+	}
+	.dial-wrap.dial-playing .bpm {
+		fill: #101216;
+	}
+	.dial-wrap.dial-playing .pitch {
+		fill: #34383d;
+	}
+	.dial-wrap.dial-playing .range {
+		fill: #62666b;
 	}
 	.side-buttons {
 		display: flex;
