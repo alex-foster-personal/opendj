@@ -109,7 +109,6 @@ def test_run_main_argparse(
     assert rc == 0
 
 
-
 @pytest.mark.requirement("PARITY-06")
 def test_a_pairs_file_with_a_non_string_member_is_a_usage_error(
     tmp_path: Path,
