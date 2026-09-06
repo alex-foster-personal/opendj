@@ -201,15 +201,36 @@ export function shiftLiveBeatLoopRangeMs(
 	const outOffsetMs = loop.out_ms - outSec * 1000;
 	const nextInMs = beats[nextIn].t * 1000 + inOffsetMs;
 	const nextOutMs = beats[nextOut].t * 1000 + outOffsetMs;
-	if (nextInMs < 0 || nextOutMs <= nextInMs || nextOutMs > durationMs) {
-		throw new RangeError(`shifted live loop exceeds decoded duration bounds 0..${durationMs}ms`);
+	// sol-review P1/P2 (334a50710ef0): the beat INDEX check above cannot see
+	// a preserved manual offset - a negative inOffsetMs on an early beat can
+	// push nextInMs below zero, and sufficiently different in/out offsets can
+	// make the range empty or reversed, even though nextIn/nextOut are valid
+	// indices. Refuse the whole shift rather than install it, matching this
+	// function's existing policy above of refusing a boundary it cannot keep
+	// whole instead of silently clamping or exiting.
+	if (nextInMs < 0 || nextOutMs <= nextInMs) {
+		throw new RangeError(
+			`shifted live loop with preserved offsets ${nextInMs}..${nextOutMs}ms is empty, reversed, or negative`
+		);
+	}
+	if (nextOutMs > durationMs) {
+		throw new RangeError(`shifted live loop exceeds decoded duration ${durationMs}ms`);
 	}
 	return { in_ms: nextInMs, out_ms: nextOutMs };
 }
 
-/** An engaged loop's out point is exclusive. A beat jump that lands exactly
- * there must use the preceding real PQTZ beat, otherwise quantized seek exits
- * the loop by contract. All other targets retain their exact grid position. */
+/** An engaged loop's out point is exclusive and its in point is inclusive.
+ * A beat jump that lands at or past out, or strictly before in, must be
+ * pulled back inside, otherwise quantized seek exits the loop by contract.
+ * All other targets retain their exact grid position.
+ *
+ * `beatJumpTargetMs` always returns a grid-EXACT time, but a preserved
+ * manual loop endpoint can be off-grid (pin 334a50710ef0 defect B). An
+ * exact-equality check against `loop.out_ms` can therefore never fire for
+ * an off-grid out - defect A resurfacing for exactly the loops defect B
+ * exists to preserve - so both boundaries are compared with < / >=
+ * against the loop's real (possibly off-grid) ms values, not matched to a
+ * specific beat index. */
 export function targetWithinShiftedLiveLoopMs(
 	beats: readonly AnlzBeat[],
 	targetMs: number,
@@ -219,16 +240,24 @@ export function targetWithinShiftedLiveLoopMs(
 	if (!Number.isFinite(targetMs) || targetMs < 0) {
 		throw new RangeError(`targetMs must be finite and non-negative, got ${targetMs}`);
 	}
-	if (targetMs !== loop.out_ms) return targetMs;
-	const outIndex = beats.findIndex((beat) => beat.t * 1000 === loop.out_ms);
-	if (outIndex < 1) {
-		throw new RangeError(`shifted live loop out ${loop.out_ms}ms is not a movable PQTZ beat`);
+	if (targetMs >= loop.in_ms && targetMs < loop.out_ms) return targetMs;
+	if (targetMs < loop.in_ms) {
+		const followingBeat = beats.find((beat) => beat.t * 1000 >= loop.in_ms);
+		const followingMs = followingBeat === undefined ? null : followingBeat.t * 1000;
+		if (followingMs === null || followingMs >= loop.out_ms) {
+			throw new RangeError(`shifted live loop in ${loop.in_ms}ms has no PQTZ beat before its exclusive out`);
+		}
+		return followingMs;
 	}
-	const inLoopTargetMs = beats[outIndex - 1].t * 1000;
-	if (inLoopTargetMs < loop.in_ms) {
+	let precedingMs: number | null = null;
+	for (const beat of beats) {
+		if (beat.t * 1000 >= loop.out_ms) break;
+		precedingMs = beat.t * 1000;
+	}
+	if (precedingMs === null || precedingMs < loop.in_ms) {
 		throw new RangeError(`shifted live loop has no PQTZ beat before exclusive out ${loop.out_ms}ms`);
 	}
-	return inLoopTargetMs;
+	return precedingMs;
 }
 
 /** Whether a quantized seek target must exit an engaged loop. Exclusive out:

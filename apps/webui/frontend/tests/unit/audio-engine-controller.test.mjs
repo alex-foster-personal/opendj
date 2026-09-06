@@ -798,6 +798,67 @@ test('a beat jump exactly at a shifted loop out boundary must not disengage the 
 	assert.equal(loopExitOnSeekMs(withFix.targetMs, engagedLoop), withFix.exitLoop);
 });
 
+// Blinded-reviewer P0, pin 334a50710ef0: defect A resurfaces for exactly the
+// loops defect B exists to preserve. beatJumpTargetMs always returns a
+// grid-EXACT time, but a preserved manual endpoint can be off-grid - an
+// exact-equality check against loop.out_ms (the pre-fix contract) can never
+// fire for an off-grid out, and the mirrored case (an off-grid in) was never
+// checked at all. Real PQTZ grid, drifting BPM, same fixture as
+// deck-loop-beatjump.test.mjs: beats at 135/608/1080/1553/2040/2530/3030/3540/4060ms.
+const DRIFTING_GRID_FOR_BOUNDARY = [
+	{ n: 1, bpm: 127, t: 0.135 },
+	{ n: 2, bpm: 127, t: 0.608 },
+	{ n: 3, bpm: 127, t: 1.08 },
+	{ n: 4, bpm: 127, t: 1.553 },
+	{ n: 1, bpm: 126, t: 2.04 },
+	{ n: 2, bpm: 126, t: 2.53 },
+	{ n: 3, bpm: 126, t: 3.03 },
+	{ n: 4, bpm: 126, t: 3.54 },
+	{ n: 1, bpm: 125, t: 4.06 }
+];
+
+test('a forward beat jump onto an off-grid loop-out must not disengage the loop', () => {
+	// out_ms sits 10ms EARLY of its nearest real beat (3540ms) - a manual
+	// nudge preserved by defect B's fix. The beat jump's own target is always
+	// grid-exact, so it lands on 3540 itself, never on the off-grid 3530.
+	const shiftedLoop = { in_ms: 1553, out_ms: 3530 };
+
+	// Pre-fix contract: only an EXACT match against loop.out_ms pulled the
+	// target back. 3540 !== 3530, so the exact-equality check never fires and
+	// the grid-exact target passes straight through.
+	assert.equal(
+		loopExitOnSeekMs(3540, { ...shiftedLoop, engaged: true }),
+		true,
+		'an uncorrected grid-exact target 10ms past an off-grid out disengages the loop - the P0 reproduction'
+	);
+
+	// Fixed contract: targetWithinShiftedLiveLoopMs compares against the real
+	// (possibly off-grid) out_ms with < / >=, not equality, so it still pulls
+	// back to the preceding real beat (3030ms).
+	const correctedMs = targetWithinShiftedLiveLoopMs(DRIFTING_GRID_FOR_BOUNDARY, 3540, shiftedLoop);
+	assert.equal(correctedMs, 3030, 'must pull back to the last real beat before the off-grid out, not 3540');
+	assert.equal(loopExitOnSeekMs(correctedMs, { ...shiftedLoop, engaged: true }), false);
+});
+
+test('a backward beat jump onto an off-grid loop-in must not disengage the loop', () => {
+	// in_ms sits 10ms LATE of its nearest real beat (1553ms) - the symmetric
+	// manual nudge. The beat jump's own target is grid-exact, so a backward
+	// jump lands on 1553 itself, never on the off-grid 1563.
+	const shiftedLoop = { in_ms: 1563, out_ms: 3540 };
+
+	// Pre-fix contract had no in-side correction at all: 1553 passes straight
+	// through and is strictly less than the off-grid in (1563).
+	assert.equal(
+		loopExitOnSeekMs(1553, { ...shiftedLoop, engaged: true }),
+		true,
+		'an uncorrected grid-exact target 10ms before an off-grid in disengages the loop - the symmetric P0 case'
+	);
+
+	const correctedMs = targetWithinShiftedLiveLoopMs(DRIFTING_GRID_FOR_BOUNDARY, 1553, shiftedLoop);
+	assert.equal(correctedMs, 2040, 'must pull forward to the first real beat at or after the off-grid in, not 1553');
+	assert.equal(loopExitOnSeekMs(correctedMs, { ...shiftedLoop, engaged: true }), false);
+});
+
 test('paused seek produces one frozen UI and runtime clock position', () => {
 	assert.deepEqual(audio.pausedSeekClock(608, 4000), {
 		position_ms: 608,

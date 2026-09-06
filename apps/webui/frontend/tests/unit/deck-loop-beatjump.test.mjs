@@ -118,12 +118,12 @@ test('a live beat loop shifts by the same real PQTZ beat count as its jump', () 
 	);
 	assert.throws(
 		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 372, out_ms: 2530 }, -1, 4000),
-		/decoded duration bounds/i,
+		/empty, reversed, or negative/i,
 		'a preserved negative endpoint offset must not move a shifted loop before zero'
 	);
 	assert.throws(
 		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2531 }, 2, 3540),
-		/decoded duration bounds/i,
+		/exceeds decoded duration/i,
 		'a preserved positive endpoint offset must not move a shifted loop past duration'
 	);
 });
@@ -147,6 +147,47 @@ test('a beat jump shift preserves manually-set, non-grid-aligned loop endpoints'
 	assert.deepEqual(
 		loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2530 }, 2, 4000),
 		{ in_ms: 1553, out_ms: 3540 }
+	);
+});
+
+// sol-review v1 P1 (BLOCKING) + P2 (non-blocking), pin 334a50710ef0: the beat
+// INDEX bounds check alone cannot see a preserved manual offset. A negative
+// in-offset on an early beat can push the shifted nextInMs below zero, and
+// sufficiently different in/out offsets can make the shifted range empty or
+// reversed - both while nextIn/nextOut are perfectly valid beat indices.
+// Policy: refuse the whole shift (RangeError), matching this function's
+// existing contract of refusing a boundary it cannot keep whole rather than
+// silently clamping, reversing, or exiting.
+test('a beat jump shift refuses a preserved offset that goes negative or reverses the range', () => {
+	// in_ms is 140ms BEFORE its nearest real beat (608ms) - the DJ nudged the
+	// loop-in early. Nearest-beat quantization still resolves to beat 608
+	// (140ms is closer to 608 than to the prior beat at 135ms), so the offset
+	// is preserved as -140ms. Shifting back 1 beat relocates that beat to the
+	// very start of the grid (135ms), and 135 - 140 = -5: a negative endpoint.
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 468, out_ms: 2530 }, -1, 4000),
+		/empty, reversed, or negative/i,
+		'a preserved offset that pushes nextInMs below zero must be refused, not installed as a negative loop-in'
+	);
+
+	// A synthetic grid with alternating wide (1000ms) and narrow (50ms) gaps,
+	// so an offset large enough to still be "nearest" its source beat becomes
+	// larger than the narrow gap at the shifted destination. in_ms is 450ms
+	// after beat 0 (nearest of [0, 1000]); out_ms is 450ms before beat 1000
+	// (nearest of [0, 1000]). Shifting forward 1 beat lands in at 1000+450=1450
+	// and out at 1050-450=600: out is now BEFORE in.
+	const ALTERNATING_GRID = [
+		{ n: 1, bpm: 120, t: 0 },
+		{ n: 2, bpm: 120, t: 1.0 },
+		{ n: 3, bpm: 120, t: 1.05 },
+		{ n: 4, bpm: 120, t: 2.05 },
+		{ n: 1, bpm: 120, t: 2.1 },
+		{ n: 2, bpm: 120, t: 3.1 }
+	];
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(ALTERNATING_GRID, { in_ms: 450, out_ms: 550 }, 1, 6000),
+		/empty, reversed, or negative/i,
+		'a shift landing on a narrower destination gap must be refused rather than returning a reversed range'
 	);
 });
 
