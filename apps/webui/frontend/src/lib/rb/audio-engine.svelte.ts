@@ -230,6 +230,7 @@ import {
 	phaseLockedSafetyLoopAtTrackEnd,
 	precedingDownbeatMs,
 	quantizedLoopEndpointsMs,
+	quantizedSeekDecisionMs,
 	replaceMatchingSafetyLoopSnapshot,
 	shiftLiveBeatLoopRangeMs,
 	targetWithinShiftedLiveLoopMs
@@ -3221,14 +3222,14 @@ class RbAudioEngine implements AudioEngine {
 		await this.quantizedSeek(deck, ms);
 	}
 
-	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {
+	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
 			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
 		}
 		const seekBeats = _quantizeGrid(st);
-		const targetMs = seekBeats !== null ? quantizedPositionMs(seekBeats, ms, true, _quantizeGridBeats(st)) : ms;
+		const { targetMs, exitLoop } = quantizedSeekDecisionMs(seekBeats, ms, _quantizeGridBeats(st), skipGridQuantize, st.loop);
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
@@ -3236,10 +3237,6 @@ class RbAudioEngine implements AudioEngine {
 		// from the clicked point. Keep modulo wrap only for in-loop transport.
 		// Clear the loop BEFORE phase sync so the shared schedule path does not
 		// wrap the target back into the old loop (BeatSyncMax / follower sync).
-		const exitLoop =
-			st.loop !== null &&
-			st.loop.engaged &&
-			(targetMs < st.loop.in_ms || targetMs >= st.loop.out_ms);
 		if (exitLoop) st.loop = null;
 		const scheduleLoop: LoopState | null | undefined = exitLoop ? null : undefined;
 		const needsScheduledMutation = transportNeedsScheduledMutation({
@@ -3574,8 +3571,9 @@ class RbAudioEngine implements AudioEngine {
 		if (st.loop !== null && st.loop.engaged) {
 			const previousLoop = st.loop;
 			// quantizedSeek preserves an in-range loop. Shift its exact PQTZ
-			// endpoints first so the jump is in the relocated live loop rather
-			// than triggering quantizedSeek's ordinary out-of-loop exit rule.
+			// endpoints first, then pass skipGridQuantize=true (334a50710ef0
+			// defect A): the deck's own coarser 1/4/8-beat grid must never
+			// re-snap the already-safe exact-beat target onto the out bound.
 			const shiftedLoop = shiftLiveBeatLoopRangeMs(
 				grid,
 				previousLoop,
@@ -3588,7 +3586,7 @@ class RbAudioEngine implements AudioEngine {
 				beat_length: previousLoop.beat_length
 			};
 			try {
-				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop));
+				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop), true);
 			} catch (error) {
 				st.loop = previousLoop;
 				throw error;

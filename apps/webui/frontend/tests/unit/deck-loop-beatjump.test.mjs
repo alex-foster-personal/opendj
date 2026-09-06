@@ -116,6 +116,38 @@ test('a live beat loop shifts by the same real PQTZ beat count as its jump', () 
 		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: -1, out_ms: 2530 }, 2, 4000),
 		/finite 0 <= in_ms < out_ms/i
 	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 372, out_ms: 2530 }, -1, 4000),
+		/decoded duration bounds/i,
+		'a preserved negative endpoint offset must not move a shifted loop before zero'
+	);
+	assert.throws(
+		() => loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2531 }, 2, 3540),
+		/decoded duration bounds/i,
+		'a preserved positive endpoint offset must not move a shifted loop past duration'
+	);
+});
+
+// pin 334a50710ef0 defect B: a manually-set, non-grid-aligned loop must keep
+// its own off-grid endpoints (not snap to the grid) when a beat jump shifts
+// it. Before the fix, shiftLiveBeatLoopRangeMs always returned the grid-exact
+// beats/{beats[nextIn].t*1000, beats[nextOut].t*1000}, discarding this offset.
+test('a beat jump shift preserves manually-set, non-grid-aligned loop endpoints', () => {
+	// in_ms is 7ms after the nearest real beat (608ms); out_ms is 4ms before
+	// the nearest real beat (2530ms) - neither sits exactly on the grid.
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 615, out_ms: 2526 }, 2, 4000),
+		{ in_ms: 1560, out_ms: 3536 },
+		'the +7ms/-4ms manual offsets from the nearest grid beat must carry ' +
+			'forward onto the shifted (+2 beat) endpoints, not collapse to the ' +
+			'grid-exact 1553/3540'
+	);
+	// A loop that happens to already sit exactly on the grid is unaffected -
+	// offset zero shifts to offset zero, matching the existing grid-aligned test.
+	assert.deepEqual(
+		loops.shiftLiveBeatLoopRangeMs(DRIFTING_GRID, { in_ms: 608, out_ms: 2530 }, 2, 4000),
+		{ in_ms: 1553, out_ms: 3540 }
+	);
 });
 
 test('resizing the saved engaged beat loop replaces its matching safety snapshot', () => {

@@ -158,7 +158,14 @@ export function beatLoopFitsWithinDuration(
 
 /** Move an engaged, beat-aligned loop by whole real PQTZ beats without
  * changing its beat length. A boundary that cannot retain the whole loop is
- * refused rather than silently exiting or shortening the live loop. */
+ * refused rather than silently exiting or shortening the live loop.
+ *
+ * A manually-set loop endpoint is not required to sit exactly on a real PQTZ
+ * beat (pin 334a50710ef0 defect B) - the DJ may have nudged it a few ms off
+ * grid on purpose. The shift is computed on the nearest grid beat so the
+ * whole-beat delta still makes sense, but each endpoint's own off-grid offset
+ * from that nearest beat is carried forward unchanged rather than discarded,
+ * so a manual loop never gets silently snapped to the grid by a beat jump. */
 export function shiftLiveBeatLoopRangeMs(
 	beats: readonly AnlzBeat[],
 	loop: { in_ms: number; out_ms: number },
@@ -190,10 +197,14 @@ export function shiftLiveBeatLoopRangeMs(
 	if (inIndex < 0 || beatLength <= 0 || nextIn < 0 || nextOut >= beats.length) {
 		throw new RangeError(`shifted live loop does not fit after ${deltaBeats} PQTZ beats`);
 	}
-	if (beats[nextOut].t * 1000 > durationMs) {
-		throw new RangeError(`shifted live loop exceeds decoded duration ${durationMs}ms`);
+	const inOffsetMs = loop.in_ms - inSec * 1000;
+	const outOffsetMs = loop.out_ms - outSec * 1000;
+	const nextInMs = beats[nextIn].t * 1000 + inOffsetMs;
+	const nextOutMs = beats[nextOut].t * 1000 + outOffsetMs;
+	if (nextInMs < 0 || nextOutMs <= nextInMs || nextOutMs > durationMs) {
+		throw new RangeError(`shifted live loop exceeds decoded duration bounds 0..${durationMs}ms`);
 	}
-	return { in_ms: beats[nextIn].t * 1000, out_ms: beats[nextOut].t * 1000 };
+	return { in_ms: nextInMs, out_ms: nextOutMs };
 }
 
 /** An engaged loop's out point is exclusive. A beat jump that lands exactly
@@ -218,6 +229,41 @@ export function targetWithinShiftedLiveLoopMs(
 		throw new RangeError(`shifted live loop has no PQTZ beat before exclusive out ${loop.out_ms}ms`);
 	}
 	return inLoopTargetMs;
+}
+
+/** Whether a quantized seek target must exit an engaged loop. Exclusive out:
+ * a target landing at or past the loop's out boundary always exits, matching
+ * real Rekordbox behaviour for an ordinary manual seek that snaps outside a
+ * loop. A beat-jump loop shift keeps this from firing by having its caller
+ * skip the deck's coarser grid re-snap upstream (`quantizedSeek`'s
+ * `skipGridQuantize`), so `targetMs` here is already the exact, loop-safe
+ * beat and never arrives re-snapped onto that boundary (pin 334a50710ef0
+ * defect A). */
+export function loopExitOnSeekMs(
+	targetMs: number,
+	loop: { in_ms: number; out_ms: number; engaged: boolean } | null
+): boolean {
+	return loop !== null && loop.engaged && (targetMs < loop.in_ms || targetMs >= loop.out_ms);
+}
+
+/** `quantizedSeek`'s whole target-and-exit decision in one call, so the
+ * production seek path and a direct test call are the same code (pin
+ * 334a50710ef0 defect A). `beats` is null exactly when `quantizedSeek` has
+ * nothing to snap to (quantize off or a gridless deck) - `ms` passes
+ * through unchanged. `skipGridQuantize` is the beat-jump loop-shift escape:
+ * true bypasses the deck's own coarser 1/4/8-beat re-snap entirely, so an
+ * already loop-safe exact beat can never be pushed back onto the loop's
+ * exclusive out boundary and disengage it underneath the jump. */
+export function quantizedSeekDecisionMs(
+	beats: readonly AnlzBeat[] | null,
+	ms: number,
+	gridBeats: 1 | 4 | 8,
+	skipGridQuantize: boolean,
+	loop: { in_ms: number; out_ms: number; engaged: boolean } | null
+): { targetMs: number; exitLoop: boolean } {
+	const targetMs =
+		beats !== null && !skipGridQuantize ? quantizeToNearestGridBeat(beats, ms / 1000, gridBeats) * 1000 : ms;
+	return { targetMs, exitLoop: loopExitOnSeekMs(targetMs, loop) };
 }
 
 /** The latest real PQTZ downbeat (bar 1, `n === 1`) at or before `positionMs`,

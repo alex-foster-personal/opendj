@@ -32,6 +32,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const JOG_DIAL = readFileSync(`${SRC}/lib/components/rb/deck/JogDial.svelte`, 'utf8');
 const AUDIO_ENGINE = readFileSync(`${SRC}/lib/rb/audio-engine.svelte.ts`, 'utf8');
+const LOOPS = readFileSync(`${SRC}/lib/player/transport/loops.ts`, 'utf8');
 
 let ipc;
 
@@ -117,7 +118,11 @@ test('every quantized seek/cue/pause/loop call site threads the deck\'s own sele
 	// supplies one instead of relying on the 1-only default.
 	const callSites = [
 		/quantizedPositionMs\(pauseBeats, positionSec \* 1000, true, _quantizeGridBeats\(st\)\)/,
-		/quantizedPositionMs\(seekBeats, ms, true, _quantizeGridBeats\(st\)\)/,
+		// Pin 334a50710ef0 defect A: this call site moved into
+		// quantizedSeekDecisionMs (loops.ts) so the deck's coarser grid can be
+		// skipped for a beat-jump loop shift; checked below that it still
+		// threads _quantizeGridBeats(st) rather than a hardcoded default.
+		/quantizedSeekDecisionMs\(seekBeats, ms, _quantizeGridBeats\(st\), skipGridQuantize, st\.loop\)/,
 		/quantizedPositionMs\(cueBeats, st\.position_ms, true, _quantizeGridBeats\(st\)\)/,
 		/quantizedLoopEndpointsMs\(loopBeats, loop, true, _quantizeGridBeats\(st\)\)/
 	];
@@ -129,4 +134,7 @@ test('every quantized seek/cue/pause/loop call site threads the deck\'s own sele
 		AUDIO_ENGINE,
 		/function _quantizeGridBeats\(st: DeckState\): 1 \| 4 \| 8 \{[\s\S]{0,200}beats === 'phase'/
 	);
+	// quantizedSeekDecisionMs (the moved seek call site) must actually pass
+	// gridBeats into the snap, not a hardcoded 1.
+	assert.match(LOOPS, /quantizeToNearestGridBeat\(beats, ms \/ 1000, gridBeats\)/);
 });

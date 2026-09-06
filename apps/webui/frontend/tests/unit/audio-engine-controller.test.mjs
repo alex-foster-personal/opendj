@@ -19,6 +19,10 @@ let computeFollowerSyncPlan;
 let slip;
 let disposeAudioResources;
 let beatLoopFitsWithinDuration;
+let shiftLiveBeatLoopRangeMs;
+let targetWithinShiftedLiveLoopMs;
+let loopExitOnSeekMs;
+let quantizedSeekDecisionMs;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
 // builds a `new Request(url)` before any stub sees it. Node has no document to
@@ -38,7 +42,13 @@ before(async () => {
 	));
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
 	slip = await loadTypeScriptModule('src/lib/player/transport/slip-anchor.ts');
-	({ beatLoopFitsWithinDuration } = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
+	({
+		beatLoopFitsWithinDuration,
+		shiftLiveBeatLoopRangeMs,
+		targetWithinShiftedLiveLoopMs,
+		loopExitOnSeekMs,
+		quantizedSeekDecisionMs
+	} = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
 test('controller defaults enable quantize, Beat Sync, and Master Tempo with no static master', () => {
@@ -741,6 +751,51 @@ test('quantizedLoopEndpointsMs snaps both endpoints to the selected grid, not al
 		in_ms: 4000,
 		out_ms: 8000
 	});
+});
+
+/**
+ * Pin 334a50710ef0 defect A: a beat-jump target landing exactly on a shifted
+ * live loop's EXCLUSIVE out boundary must not disengage the loop. This is
+ * the exact composition `quantizedSeek` runs for beatJump's in-loop branch:
+ * shift the loop, pull the target off the exclusive boundary
+ * (targetWithinShiftedLiveLoopMs), then decide whether to exit
+ * (loopExitOnSeekMs) using the FINAL seek target quantizedSeek would use.
+ *
+ * A regular 4/4, 500ms/beat, 4-bar grid (16 beats): a 4-beat loop shifted by
+ * 8 beats lands at {in:4000, out:6000}; the beat jump's raw target is chosen
+ * to equal that new out (6000) exactly, so targetWithinShiftedLiveLoopMs
+ * pulls it back one real beat to 5500.
+ */
+const GRID_4BAR_500MS = _regularGrid(120, 16);
+
+test('a beat jump exactly at a shifted loop out boundary must not disengage the loop', () => {
+	const shiftedLoop = shiftLiveBeatLoopRangeMs(GRID_4BAR_500MS, { in_ms: 0, out_ms: 2000 }, 8, 10_000);
+	assert.deepEqual(shiftedLoop, { in_ms: 4000, out_ms: 6000 });
+	const inLoopTargetMs = targetWithinShiftedLiveLoopMs(GRID_4BAR_500MS, 6000, shiftedLoop);
+	assert.equal(inLoopTargetMs, 5500, 'exclusive out must resolve to the preceding real beat');
+	const engagedLoop = { ...shiftedLoop, engaged: true };
+
+	// This is the exact call quantizedSeek makes (production quantizedSeekDecisionMs,
+	// not a reimplementation): gridBeats=4 is the deck's own coarser quantize
+	// grid (nearest bar downbeat). Without skipGridQuantize, 5500ms is nearer
+	// the 6000ms downbeat than the 4000ms one, so the deck's own coarser grid
+	// would resnap the already-safe in-loop target right back onto the
+	// excluded out boundary and exit the loop - the reproduction of the bug.
+	const withoutFix = quantizedSeekDecisionMs(GRID_4BAR_500MS, inLoopTargetMs, 4, false, engagedLoop);
+	assert.equal(withoutFix.targetMs, 6000, 'the coarse grid resnaps the safe target back onto the out boundary');
+	assert.equal(withoutFix.exitLoop, true, 'the pre-fix composition disengages the loop - defect A reproduction');
+
+	// beatJump's in-loop branch calls quantizedSeek with skipGridQuantize=true,
+	// so the coarse-grid re-quantization above never runs and the exact
+	// in-loop target reaches the exit decision unchanged.
+	const withFix = quantizedSeekDecisionMs(GRID_4BAR_500MS, inLoopTargetMs, 4, true, engagedLoop);
+	assert.equal(withFix.targetMs, 5500, 'skipGridQuantize passes the exact beat-jump target through unchanged');
+	assert.equal(withFix.exitLoop, false, 'skipping the coarse re-quantize keeps the beat jump inside the shifted loop');
+
+	// quantizedSeekDecisionMs delegates its exit call to loopExitOnSeekMs - assert
+	// the two agree directly on both targets rather than trusting it silently.
+	assert.equal(loopExitOnSeekMs(withoutFix.targetMs, engagedLoop), withoutFix.exitLoop);
+	assert.equal(loopExitOnSeekMs(withFix.targetMs, engagedLoop), withFix.exitLoop);
 });
 
 test('paused seek produces one frozen UI and runtime clock position', () => {
