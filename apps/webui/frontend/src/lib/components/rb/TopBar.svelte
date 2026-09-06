@@ -88,7 +88,7 @@
 	}
 
 	function _placeAutoPlayMenu(): void {
-		if (autoPlayWrapEl === undefined) return;
+		if (!autoPlayWrapEl) return;
 		const r = autoPlayWrapEl.getBoundingClientRect();
 		autoPlayMenuStyle = `left:${Math.round(r.right)}px;top:${Math.round(r.bottom + 6)}px`;
 	}
@@ -110,19 +110,19 @@
 	}
 
 	function _placeModeMenu(): void {
-		if (modePickerEl === undefined || !modePickerEl.open) return;
+		if (!modePickerEl?.open) return;
 		const rect = modePickerEl.getBoundingClientRect();
 		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
 	}
 
 	function _dismissModeMenuOnOutsidePointer(e: PointerEvent): void {
-		if (modePickerEl === undefined || !modePickerEl.open) return;
+		if (!modePickerEl?.open) return;
 		if (e.target instanceof Node && modePickerEl.contains(e.target)) return;
 		modePickerEl.open = false;
 	}
 
 	function _dismissModeMenuOnEscape(e: KeyboardEvent): void {
-		if (e.key !== 'Escape' || modePickerEl === undefined || !modePickerEl.open) return;
+		if (e.key !== 'Escape' || !modePickerEl?.open) return;
 		modePickerEl.open = false;
 	}
 
