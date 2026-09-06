@@ -3743,6 +3743,10 @@ export interface components {
         };
         /** CoverageOut */
         CoverageOut: {
+            /** Corrupt */
+            corrupt: {
+                [key: string]: number;
+            };
             /** Generated At */
             generated_at: number;
             /** Missing */

@@ -206,7 +206,7 @@
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
 	type LibraryHealthDot = {
-		label: 'Library health' | 'Vocals completion' | 'Stems completion';
+		label: 'Library health' | 'Vocals completion' | 'Stems completion' | 'Lyrics completion';
 		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
 		detail: string;
 	};
@@ -224,6 +224,11 @@
 		label: 'Stems completion',
 		state: 'loading',
 		detail: 'checking stems coverage'
+	});
+	let lyricsCompletion = $state<LibraryHealthDot>({
+		label: 'Lyrics completion',
+		state: 'loading',
+		detail: 'checking lyrics coverage'
 	});
 	/** Suggest-next hover → temporary table scroll/highlight. */
 	let suggestHoverId = $state<string | null>(null);
@@ -694,7 +699,7 @@
 	function _coverageDot(
 		label: LibraryHealthDot['label'],
 		coverage: IngestCoverage,
-		step: 'vocals' | 'stems'
+		step: 'vocals' | 'stems' | 'lyrics'
 	): LibraryHealthDot {
 		const missing = coverage.missing[step];
 		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
@@ -706,6 +711,23 @@
 		const completed = coverage.on_disk - missing;
 		if (completed < 0) {
 			throw new Error(`${step} coverage missing count exceeds on-disk tracks`);
+		}
+		// Corruption is a DISTINCT, always-surfaced state - never folded into a
+		// quiet 'incomplete'. It is a subset of `missing` (a malformed entry is
+		// not done, whatever else it is), so it is checked after validating
+		// `missing` but before the ordinary complete/incomplete split. lyrics
+		// has no refresh runner (see routes/ingest.py), so a corrupt lyrics
+		// entry has NO repair path except this dot saying so.
+		const corrupt = coverage.corrupt[step];
+		if (typeof corrupt !== 'number' || !Number.isInteger(corrupt) || corrupt < 0) {
+			throw new Error(`${step} coverage corrupt count must be a nonnegative integer`);
+		}
+		if (corrupt > 0) {
+			return {
+				label,
+				state: 'error',
+				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+			};
 		}
 		return {
 			label,
@@ -719,10 +741,12 @@
 			const coverage = await getIngestCoverage();
 			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
 			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
+			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
 		} catch (error: unknown) {
 			const detail = error instanceof Error ? error.message : String(error);
 			vocalsCompletion = { label: 'Vocals completion', state: 'error', detail };
 			stemsCompletion = { label: 'Stems completion', state: 'error', detail };
+			lyricsCompletion = { label: 'Lyrics completion', state: 'error', detail };
 		}
 	}
 
@@ -2546,7 +2570,7 @@
 		</div>
 	</div>
 	<div class="library-health" aria-label="library processing health">
-		{#each [libraryHealth, vocalsCompletion, stemsCompletion] as dot (dot.label)}
+		{#each [libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
 			<button
 				type="button"
 				class:complete={dot.state === 'complete'}

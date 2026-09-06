@@ -2423,6 +2423,13 @@
       },
       "CoverageOut": {
         "properties": {
+          "corrupt": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Corrupt",
+            "type": "object"
+          },
           "generated_at": {
             "title": "Generated At",
             "type": "number"
@@ -2452,6 +2459,7 @@
           "on_disk",
           "unreachable",
           "missing",
+          "corrupt",
           "generated_at"
         ],
         "title": "CoverageOut",
