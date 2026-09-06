@@ -166,6 +166,25 @@ def _sensitivity_ceiling(wall_swing: float) -> float:
     return 1.0 + (wall_swing - 1.0) / LOAD_SENSITIVITY_RATIO
 
 
+def _quiet_phase_load() -> str:
+    """Describe machine contention before the control phase begins."""
+    loadavg_1m, _, _ = os.getloadavg()
+    cpu_count = os.cpu_count()
+    if cpu_count is None:
+        raise RuntimeError("CPU count is unavailable, so quiet-phase load is ambiguous")
+    return f"quiet-start loadavg_1m={loadavg_1m:.2f}, cpus={cpu_count}"
+
+
+def test_quiet_phase_load_reports_the_box_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """if the baseline is already busy then the failure identifies that condition"""
+    monkeypatch.setattr(os, "getloadavg", lambda: (12.34, 9.87, 6.54))
+    monkeypatch.setattr(os, "cpu_count", lambda: 16)
+
+    assert _quiet_phase_load() == "quiet-start loadavg_1m=12.34, cpus=16"
+
+
 @contextmanager
 def _cpu_hogs(
     count: int, commands: Sequence[Sequence[str]] | None = None
@@ -322,6 +341,7 @@ def test_cpu_time_holds_while_wall_time_swings_with_the_machine() -> None:
     marker = _probe_marker("sensitivity")
     plan = [_marked_hog(marker)] * HOG_COUNT
     _phase()  # discard: process start and first-touch page faults are not the subject
+    quiet_start_load = _quiet_phase_load()
     quiet_cpu_ms, quiet_wall_ms = _phase()
     try:
         with _cpu_hogs(len(plan), plan) as hogs:
@@ -336,7 +356,7 @@ def test_cpu_time_holds_while_wall_time_swings_with_the_machine() -> None:
     measured = (
         f"cpu {quiet_cpu_ms:.1f} -> {loaded_cpu_ms:.1f}ms ({cpu_swing:.2f}x swing), "
         f"wall {quiet_wall_ms:.1f} -> {loaded_wall_ms:.1f}ms ({wall_swing:.2f}x swing), "
-        f"{spinning}/{len(hogs)} hogs spinning"
+        f"{spinning}/{len(hogs)} hogs spinning, {quiet_start_load}"
     )
     if spinning < HOG_LIVENESS_FLOOR:
         pytest.skip(
