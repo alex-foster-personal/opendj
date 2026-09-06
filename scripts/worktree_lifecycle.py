@@ -60,6 +60,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 
 from scripts.worktree_census import (
@@ -101,6 +102,18 @@ DISK_REAP_TARGET_GB: int = 25
 STALE_HOURS: int = 72
 
 BACKUP_ROOT: Path = Path.home() / ".cache" / "mdt-worktree-backups"
+
+# Archives are written with the stdlib (tarfile + gzip) and nothing else. An
+# earlier revision shelled out to the `zstd` binary, which is not a host tool
+# this fleet declares: the pytest lane on the nucbox runners has no zstd, so
+# three cases died on FileNotFoundError and took trunk red with them (same
+# class as the `just` incident, #1370). Compression ratio was never the
+# constraint here -- these archives hold a few uncommitted files -- so the
+# dependency bought nothing and cost a red main. Reading a LEGACY .tar.zst
+# still needs the binary; that path says so by name instead of guessing.
+ARCHIVE_SUFFIX: str = ".tar.gz"
+LEGACY_ZSTD_SUFFIX: str = ".tar.zst"
+
 REMOTE_HOST: str = "nucbox-wsl"
 REMOTE_DIR: str = "wt-backups"
 REMOTE_PROBE_TIMEOUT_S: int = 10
@@ -160,16 +173,16 @@ def back_up(worktree: Worktree, backup_root: Path, *, remote: str | None) -> dic
         raise RuntimeError(f"back_up called for {worktree.path} which has no uncommitted work")
     backup_root.mkdir(parents=True, exist_ok=True)
     name = _archive_name(worktree)
-    plain = backup_root / f"{name}.tar"
-    with tarfile.open(plain, "w") as tar:
+    compressed = backup_root / f"{name}{ARCHIVE_SUFFIX}"
+    with tarfile.open(compressed, "w:gz") as tar:
         for rel in paths:
             tar.add(worktree.path / rel, arcname=rel, recursive=False)
 
-    with tarfile.open(plain, "r") as tar:
+    with tarfile.open(compressed, "r:gz") as tar:
         packed = sorted(m.name for m in tar.getmembers())
     missing = sorted(set(paths) - set(packed))
     if missing:
-        plain.unlink(missing_ok=True)
+        compressed.unlink(missing_ok=True)
         raise RuntimeError(
             f"archive for {worktree.path} is missing {len(missing)} path(s), "
             f"first: {missing[:3]}; the worktree has NOT been touched"
@@ -179,15 +192,6 @@ def back_up(worktree: Worktree, backup_root: Path, *, remote: str | None) -> dic
         rel: hashlib.sha256((worktree.path / rel).read_bytes()).hexdigest()
         for rel in paths if (worktree.path / rel).is_file()
     }
-    compressed = backup_root / f"{name}.tar.zst"
-    zstd = subprocess.run(
-        ["zstd", "-q", "-19", "-f", str(plain), "-o", str(compressed)],
-        capture_output=True, text=True, check=False,
-    )
-    if zstd.returncode != 0:
-        plain.unlink(missing_ok=True)
-        raise RuntimeError(f"zstd failed for {worktree.path}: {zstd.stderr.strip()}")
-    plain.unlink()
 
     manifest = {
         "branch": worktree.branch,
@@ -201,11 +205,11 @@ def back_up(worktree: Worktree, backup_root: Path, *, remote: str | None) -> dic
     }
     (backup_root / f"{name}.manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
 
-    manifest["remote"] = _push_remote(backup_root, name, remote)
+    manifest["remote"] = _push_remote(backup_root, compressed.name, remote)
     return manifest
 
 
-def _push_remote(backup_root: Path, name: str, remote: str | None) -> str:
+def _push_remote(backup_root: Path, archive_name: str, remote: str | None) -> str:
     if not remote:
         return "skipped (--no-remote)"
     probe = subprocess.run(
@@ -215,14 +219,15 @@ def _push_remote(backup_root: Path, name: str, remote: str | None) -> str:
     )
     if probe.returncode != 0 or "ok" not in probe.stdout:
         return f"unreachable ({probe.stderr.strip()[:80] or 'no answer'}); local copy only"
-    files = [str(backup_root / f"{name}.tar.zst"), str(backup_root / f"{name}.manifest.json")]
+    stem = archive_name[: -len(ARCHIVE_SUFFIX)]
+    files = [str(backup_root / archive_name), str(backup_root / f"{stem}.manifest.json")]
     rsync = subprocess.run(
         ["rsync", "-a", *files, f"{remote}:{REMOTE_DIR}/"],
         capture_output=True, text=True, check=False,
     )
     if rsync.returncode != 0:
         return f"rsync failed ({rsync.stderr.strip()[:80]}); local copy only"
-    return f"{remote}:{REMOTE_DIR}/{name}.tar.zst"
+    return f"{remote}:{REMOTE_DIR}/{archive_name}"
 
 
 # ------------------------------------------------------------------ registry
@@ -396,6 +401,51 @@ def cmd_reap(args: argparse.Namespace) -> int:
     return 0
 
 
+def _extract_archive(archive: Path, target: Path) -> None:
+    """Unpack a backup archive into `target`, whichever format it is in.
+
+    Two formats, deliberately asymmetric. `.tar.gz` is what this module WRITES
+    and it needs nothing but the stdlib. `.tar.zst` is what the first revision
+    wrote, and roughly 130 of them are already sitting in
+    ~/.cache/mdt-worktree-backups and on nucbox-wsl:~/wt-backups, so dropping
+    the reader would strand real uncommitted work. That reader needs the `zstd`
+    binary and there is no stdlib substitute, so when it is absent this raises
+    and NAMES it rather than falling back to something that would silently hand
+    back an empty or partial tree. A restore that half-succeeds is worse than
+    one that refuses.
+    """
+    if archive.name.endswith(ARCHIVE_SUFFIX):
+        with tarfile.open(archive, "r:gz") as tar:
+            # Our own archive, written by back_up(); "data" would drop the mode
+            # bits a byte-for-byte restore is supposed to keep.
+            tar.extractall(target, filter="fully_trusted")
+        return
+    if archive.name.endswith(LEGACY_ZSTD_SUFFIX):
+        if shutil.which("zstd") is None:
+            raise RuntimeError(
+                f"{archive.name} is a legacy zstd archive and the 'zstd' binary is not on "
+                f"PATH, so it cannot be read here. Install zstd (brew install zstd / "
+                f"apt-get install zstd) and re-run, or restore this archive on a host that "
+                f"has it. New backups are written as {ARCHIVE_SUFFIX} and need no binary."
+            )
+        # The intermediate tar goes to a tempdir, never beside the archive: the
+        # backup root is a SHARED cache that concurrent reaps write into, and
+        # two restores of the same branch would otherwise race on one path.
+        with tempfile.TemporaryDirectory(prefix="mdt-restore-") as scratch:
+            plain = Path(scratch) / archive.with_suffix("").name   # <n>.tar.zst -> <n>.tar
+            unzstd = subprocess.run(["zstd", "-d", "-q", "-f", str(archive), "-o", str(plain)],
+                                    capture_output=True, text=True, check=False)
+            if unzstd.returncode != 0:
+                raise RuntimeError(f"zstd -d failed for {archive.name}: {unzstd.stderr.strip()}")
+            with tarfile.open(plain, "r") as tar:
+                tar.extractall(target, filter="fully_trusted")
+        return
+    raise RuntimeError(
+        f"{archive.name} is in no format this restores; expected {ARCHIVE_SUFFIX} "
+        f"or the legacy {LEGACY_ZSTD_SUFFIX}"
+    )
+
+
 def cmd_restore(args: argparse.Namespace) -> int:
     label = args.branch.replace("/", "--")
     archives = sorted(args.backup_root.glob(f"{label}-*.manifest.json"))
@@ -413,17 +463,11 @@ def cmd_restore(args: argparse.Namespace) -> int:
         print(f"[ERROR] git worktree add failed: {add.stderr.strip()}", file=sys.stderr)
         return 1
     archive = args.backup_root / manifest["archive"]
-    plain = args.backup_root / (archive.stem)
-    unzstd = subprocess.run(["zstd", "-d", "-q", "-f", str(archive), "-o", str(plain)],
-                            capture_output=True, text=True, check=False)
-    if unzstd.returncode != 0:
-        print(f"[ERROR] zstd -d failed: {unzstd.stderr.strip()}", file=sys.stderr)
+    try:
+        _extract_archive(archive, target)
+    except RuntimeError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
-    with tarfile.open(plain, "r") as tar:
-        # Our own archive, written minutes earlier by back_up(); "data" would
-        # drop the mode bits a byte-for-byte restore is supposed to keep.
-        tar.extractall(target, filter="fully_trusted")
-    plain.unlink()
     mismatched = [rel for rel, digest in manifest["sha256"].items()
                   if not (target / rel).is_file()
                   or hashlib.sha256((target / rel).read_bytes()).hexdigest() != digest]

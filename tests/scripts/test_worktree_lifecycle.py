@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -494,6 +495,143 @@ def test_restore_without_a_backup_fails_loudly(primary: Path, tmp_path: Path,
     assert mod.main(["restore", "af--never-saved", "--repo", str(primary),
                      "--backup-root", str(tmp_path / "backups")]) == 1
     assert "no backup for branch" in capsys.readouterr().err
+
+
+def test_backup_and_restore_need_no_host_binary(
+    primary: Path, tmp_path: Path, idle: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] no compression binary is on PATH [then] the round trip still works, [else stop].
+
+    The regression this pins: back_up shelled out to `zstd`, the nucbox pytest
+    runners have no zstd, and three cases died on FileNotFoundError with trunk
+    red behind them. PATH is REPLACED with a directory holding git and nothing
+    else, rather than trusted to be bare: the developer machine writing this
+    test almost certainly HAS zstd, so a case that merely ran green locally
+    would prove nothing about a runner that does not. git stays because this
+    module is a git tool and cannot pretend otherwise; every other host binary
+    is gone, so re-introducing any of them turns this red. `--no-size` is passed
+    for the same reason: the size column shells out to `du`, which is coreutils
+    and present on every runner, so leaving it in would make this case fail for
+    a reason it is not about.
+    """
+    only_git = tmp_path / "path-with-only-git"
+    only_git.mkdir()
+    real_git = shutil.which("git")
+    assert real_git is not None, "no git on PATH; this case cannot be set up"
+    (only_git / "git").symlink_to(real_git)
+    monkeypatch.setenv("PATH", str(only_git))
+    assert shutil.which("zstd") is None, "PATH masking failed; this case would prove nothing"
+    worktree = tmp_path / "wt-no-binaries"
+    _add_worktree(primary, worktree, "af--no-binaries")
+    originals = _make_dirty(worktree)
+    _age(worktree, STALE_AGE_H)
+    backups = tmp_path / "backups"
+
+    assert _reap(primary, backups, "--apply", "--no-size") == 0
+    archive = next(backups.glob("af--no-binaries-*.tar.gz"))
+    assert tarfile.is_tarfile(archive), f"{archive.name} is not a readable tar"
+
+    restored = tmp_path / "wt-no-binaries-back"
+    assert mod.main([
+        "restore", "af--no-binaries", "--repo", str(primary),
+        "--backup-root", str(backups), "--into", str(restored),
+    ]) == 0
+    for rel, blob in originals.items():
+        assert (restored / rel).read_bytes() == blob, f"{rel} did not survive the round trip"
+
+
+def _write_legacy_zstd_backup(backups: Path, worktree: Path, label: str) -> dict[str, bytes]:
+    """Hand-build a pre-#1387-format `.tar.zst` backup plus its manifest."""
+    backups.mkdir(parents=True, exist_ok=True)
+    originals = {"legacy.txt": b"legacy work\n", "legacy.bin": BINARY_BLOB}
+    for rel, blob in originals.items():
+        (worktree / rel).write_bytes(blob)
+    plain = backups / f"{label}-20260101T000000Z.tar"
+    with tarfile.open(plain, "w") as tar:
+        for rel in originals:
+            tar.add(worktree / rel, arcname=rel, recursive=False)
+    archive = plain.with_suffix(".tar.zst")
+    subprocess.run(["zstd", "-q", "-19", "-f", str(plain), "-o", str(archive)], check=True)
+    plain.unlink()
+    (backups / f"{label}-20260101T000000Z.manifest.json").write_text(mod.json.dumps({
+        "branch": label,
+        "head": "0" * 40,
+        "worktree": str(worktree),
+        "archive": archive.name,
+        "created_utc": "2026-01-01T00:00:00+00:00",
+        "paths": sorted(originals),
+        "sha256": {rel: hashlib.sha256(blob).hexdigest() for rel, blob in originals.items()},
+        "archive_bytes": archive.stat().st_size,
+    }))
+    return originals
+
+
+@pytest.mark.skipif(shutil.which("zstd") is None, reason="legacy reader needs the zstd binary")
+def test_legacy_zstd_archive_still_restores(primary: Path, tmp_path: Path) -> None:
+    """[if] a backup predates the gzip switch [then] restore still returns it, [else stop].
+
+    ~130 `.tar.zst` archives already exist under ~/.cache/mdt-worktree-backups
+    and on nucbox-wsl:~/wt-backups. Dropping the reader would strand real
+    uncommitted work, so the format switch is write-only.
+    """
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    _git(primary, "branch", "af--legacy")
+    backups = tmp_path / "backups"
+    originals = _write_legacy_zstd_backup(backups, staging, "af--legacy")
+
+    restored = tmp_path / "wt-legacy"
+    assert mod.main(["restore", "af--legacy", "--repo", str(primary),
+                     "--backup-root", str(backups), "--into", str(restored)]) == 0
+    for rel, blob in originals.items():
+        assert (restored / rel).read_bytes() == blob, f"legacy {rel} did not survive"
+
+
+def test_legacy_zstd_archive_without_the_binary_names_it(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] a .tar.zst is restored with no zstd on PATH [then] it fails naming it, [else stop].
+
+    The overshoot this guards against is a silent fallback: an empty or partial
+    restore that exits 0 is worse than a refusal, because the worktree is
+    already gone by then.
+
+    Deliberately NOT skipped when zstd is absent, and the archive is a STUB of
+    arbitrary bytes rather than a real zstd stream. The guard fires on
+    `which("zstd")` before anything is decompressed, so the contents are
+    irrelevant -- and a skipif here would skip this case on precisely the hosts
+    whose missing zstd it exists to describe.
+    """
+    _git(primary, "branch", "af--legacy-nozstd")
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    stub = backups / "af--legacy-nozstd-20260101T000000Z.tar.zst"
+    stub.write_bytes(b"not a real zstd frame; never reached")
+    (backups / "af--legacy-nozstd-20260101T000000Z.manifest.json").write_text(mod.json.dumps({
+        "branch": "af--legacy-nozstd", "head": "0" * 40,
+        "worktree": str(tmp_path / "gone"), "archive": stub.name,
+        "created_utc": "2026-01-01T00:00:00+00:00", "paths": ["legacy.txt"],
+        "sha256": {"legacy.txt": "0" * 64}, "archive_bytes": stub.stat().st_size,
+    }))
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None if name == "zstd" else "/bin/true")
+    restored = tmp_path / "wt-legacy-nozstd"
+    assert mod.main(["restore", "af--legacy-nozstd", "--repo", str(primary),
+                     "--backup-root", str(backups), "--into", str(restored)]) == 1
+    err = capsys.readouterr().err
+    # Assert the GUARD's own wording, not merely the substring "zstd". Both this
+    # message and the generic "zstd -d failed for <archive>" contain "zstd", and
+    # the archive name here contains "legacy", so the obvious pair of assertions
+    # passes for either path -- measured, not assumed: with the `which` guard
+    # stubbed out so the subprocess runs and fails on the stub bytes, the weaker
+    # assertions stayed green. That is a test that cannot fail for the reason it
+    # exists. These two discriminate: the first is unique to the guard, and the
+    # second refuses the fall-through message outright.
+    assert "not on PATH" in err, f"the error must name the missing binary; got: {err}"
+    assert "zstd -d failed" not in err, (
+        f"the guard must refuse BEFORE shelling out, not report a subprocess failure; got: {err}"
+    )
 
 
 def test_manifest_digests_are_of_the_real_bytes(primary: Path, tmp_path: Path,
