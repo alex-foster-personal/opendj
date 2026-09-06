@@ -24,6 +24,8 @@
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
+	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
+	import OdjWordmark from '$lib/components/OdjWordmark.svelte';
 
 	let { children } = $props();
 
@@ -120,7 +122,7 @@
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
-		<h1>Open DJ</h1>
+		<h1><OdjWordmark /></h1>
 		<nav>
 			<a href="/">Library</a>
 			<a href="/pairings">Pairings</a>
@@ -198,6 +200,7 @@
 <AccountOverlay />
 
 <ToastStack items={toasts} />
+<BrandLaunch />
 
 <style>
 	/* One extra row for the tray. Declared here rather than in app.css so the
