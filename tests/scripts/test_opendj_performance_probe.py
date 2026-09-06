@@ -18,6 +18,7 @@ from scripts.diagnostics.opendj_performance_probe import (
     suspected_orphans,
     trend_logs,
 )
+from scripts.diagnostics.probe_log_store import TREND_MINUTES
 from tests.scripts.probe_sample_fixtures import captured_record as _captured_record
 from tests.scripts.probe_sample_fixtures import write_trend_rows as _write_trend_rows
 
@@ -214,6 +215,137 @@ def test_trend_is_amber_when_the_window_has_no_measurable_process_slope(tmp_path
     assert result["verdict"] == "AMBER"
     assert result["exit_code"] == 0
     assert result["verdict_reason"] == "no process slope is measurable"
+
+
+def test_trend_cannot_be_red_from_a_window_shorter_than_its_own_floor(
+    tmp_path: Path,
+) -> None:
+    """A sub-minute, two-sample window reports UNKNOWN, never RED.
+
+    Two samples 30 seconds apart with a 1 MB footprint step extrapolate to
+    120 MB/hour - over the RED threshold - but the window is shorter than
+    TREND_MINUTES, the module's own shortest window for saying anything about
+    growth. verification.md: a tool that cannot measure reports UNKNOWN, never
+    a verdict, so the steep slope stays an observation in the payload instead
+    of failing the gate with a fabricated regression (issue #1404).
+    """
+
+    rows = [
+        _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
+        _captured_record("2026-08-21T20:00:30Z", 300.0, 101.0),
+    ]
+    _write_trend_rows(tmp_path, rows)
+
+    result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
+
+    assert result["window"]["duration_minutes"] < TREND_MINUTES
+    assert result["verdict"] == "UNKNOWN"
+    assert result["exit_code"] == 0
+    assert "minutes sampled" in result["verdict_reason"]
+    assert result["per_process"]["1183"]["slope_mb_per_hour"] == 120.0
+
+
+def test_trend_is_red_when_the_same_slope_spans_the_full_floor(
+    tmp_path: Path,
+) -> None:
+    """Control: the identical 120 MB/hour rate over >= TREND_MINUTES is RED.
+
+    Without this, an implementation that made every window UNKNOWN would pass
+    the floor test above while silencing real regressions. The floor must gate
+    RED without making RED unreachable (issue #1404).
+    """
+
+    rows = [
+        _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
+        _captured_record("2026-08-21T20:30:00Z", 300.0, 160.0),
+    ]
+    _write_trend_rows(tmp_path, rows)
+
+    result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
+
+    assert result["window"]["duration_minutes"] >= TREND_MINUTES
+    assert result["verdict"] == "RED"
+    assert result["exit_code"] == 1
+    assert "process slope 120.0 MB/hour" in result["verdict_reason"]
+
+
+def test_trend_is_red_from_an_orphan_in_a_sub_floor_window(tmp_path: Path) -> None:
+    """An observed orphan is RED even inside a sub-floor window.
+
+    Orphan count is a direct observation, not an extrapolation over time: an
+    orphan that exists, exists, whether the window is thirty seconds or thirty
+    minutes. Only the slope signal needs TREND_MINUTES to be trustworthy, so
+    the sufficiency floor must not suppress this (issue #1404 review, PR #1407).
+    """
+
+    rows = [
+        _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
+        _captured_record("2026-08-21T20:00:30Z", 300.0, 100.0),
+    ]
+    rows[1]["suspected_orphan_count"] = 1
+    _write_trend_rows(tmp_path, rows)
+
+    result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
+
+    assert result["window"]["duration_minutes"] < TREND_MINUTES
+    assert result["verdict"] == "RED"
+    assert result["exit_code"] == 1
+    assert "1 suspected orphan(s)" in result["verdict_reason"]
+
+
+def test_trend_is_red_from_a_failed_unload_in_a_sub_floor_window(tmp_path: Path) -> None:
+    """A failed unload check is RED even inside a sub-floor window.
+
+    A retained-footprint unload failure is a directly observed comparison, not
+    a rate extrapolated from the window's duration, so the sufficiency floor
+    must not suppress it (issue #1404 review, PR #1407).
+    """
+
+    path = tmp_path / "opendj-performance-2026-08-21.jsonl"
+    rows = [
+        _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
+        _captured_record("2026-08-21T20:10:00Z", 900.0, 700.0),
+        _captured_record("2026-08-21T20:20:00Z", 700.0, 500.0),
+    ]
+    rows[0]["browser_perf_ring"] = {"available": True, "loaded_deck_count": 0}
+    rows[1]["browser_perf_ring"] = {"available": True, "loaded_deck_count": 4}
+    rows[2]["browser_perf_ring"] = {"available": True, "loaded_deck_count": 0}
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+    result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
+
+    assert result["window"]["duration_minutes"] < TREND_MINUTES
+    assert result["verdict"] == "RED"
+    assert result["exit_code"] == 1
+    assert "400.0 MB" in result["verdict_reason"]
+
+
+def test_trend_reports_orphan_red_and_leaves_a_sub_floor_slope_uncounted(
+    tmp_path: Path,
+) -> None:
+    """Mixed case: orphan present AND a steep slope, both in a sub-floor window.
+
+    The verdict is RED on the orphan (a direct observation). The steep slope
+    stays visible in the reason text as an observation, but explicitly marked
+    as not counted toward the verdict, because the window is too short to
+    trust the extrapolation on its own (issue #1404 review, PR #1407).
+    """
+
+    rows = [
+        _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
+        _captured_record("2026-08-21T20:00:30Z", 300.0, 101.0),
+    ]
+    rows[1]["suspected_orphan_count"] = 1
+    _write_trend_rows(tmp_path, rows)
+
+    result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
+
+    assert result["window"]["duration_minutes"] < TREND_MINUTES
+    assert result["verdict"] == "RED"
+    assert result["exit_code"] == 1
+    assert "1 suspected orphan(s)" in result["verdict_reason"]
+    assert "observed but not counted" in result["verdict_reason"]
+    assert result["per_process"]["1183"]["slope_mb_per_hour"] == 120.0
 
 
 def test_trend_refuses_a_window_with_a_malformed_jsonl_record(tmp_path: Path) -> None:

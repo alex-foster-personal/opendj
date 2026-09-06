@@ -493,26 +493,43 @@ def trend_logs(output_dir: Path, since: str) -> dict[str, Any]:
     unload = _unload_check(samples, history_samples)
     normalized = _deck_normalized_footprints(samples)
     reasons: list[str] = []
-    red = (
-        orphan_count > 0
-        or (max_slope is not None and max_slope > TREND_RED_SLOPE_MB_PER_HOUR)
-        or unload.get("passed") is False
-    )
+    # The sufficiency floor gates only the SLOPE-derived signal. A window
+    # shorter than TREND_MINUTES has not observed enough time to extrapolate a
+    # rate, so a steep slope in that window is an observation, not a finding
+    # (verification.md: a tool that cannot measure reports UNKNOWN, never a
+    # verdict). Orphan count and a failed unload check are direct observations,
+    # not extrapolations: an orphan that exists, exists, and a failed unload
+    # check failed, regardless of how long the window was. Suppressing those
+    # behind the floor would report UNKNOWN with exit 0 for a real, directly
+    # observed failure, which is worse than the false alarm the floor exists
+    # to prevent (issue #1404 review, PR #1407).
+    sufficient_window = duration_minutes >= TREND_MINUTES
+    slope_exceeds_red = max_slope is not None and max_slope > TREND_RED_SLOPE_MB_PER_HOUR
+    red_from_observation = orphan_count > 0 or unload.get("passed") is False
     if orphan_count:
         reasons.append(f"{orphan_count} suspected orphan(s)")
     if unload.get("passed") is False:
         reasons.append(f"unload retained {unload['delta_mb']} MB above baseline")
-    if max_slope is not None and max_slope > TREND_RED_SLOPE_MB_PER_HOUR:
-        reasons.append(f"process slope {max_slope} MB/hour")
-    if red:
+    if red_from_observation:
         verdict = "RED"
+        if slope_exceeds_red:
+            if sufficient_window:
+                reasons.append(f"process slope {max_slope} MB/hour")
+            else:
+                reasons.append(
+                    f"process slope {max_slope} MB/hour observed but not counted "
+                    f"(only {duration_minutes:.1f} minutes sampled, need {TREND_MINUTES:.0f})"
+                )
+    elif not sufficient_window:
+        verdict = "UNKNOWN"
+        reasons.append(f"only {duration_minutes:.1f} minutes sampled, need {TREND_MINUTES:.0f}")
+    elif slope_exceeds_red:
+        verdict = "RED"
+        reasons.append(f"process slope {max_slope} MB/hour")
     elif max_slope is None:
         verdict = "AMBER"
         reasons.append("no process slope is measurable")
-    elif duration_minutes < TREND_MINUTES:
-        verdict = "AMBER"
-        reasons.append(f"only {duration_minutes:.1f} minutes sampled, need {TREND_MINUTES:.0f}")
-    elif max_slope is not None and max_slope > TREND_AMBER_SLOPE_MB_PER_HOUR:
+    elif max_slope > TREND_AMBER_SLOPE_MB_PER_HOUR:
         verdict = "AMBER"
         reasons.append(f"process slope {max_slope} MB/hour")
     else:
