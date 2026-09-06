@@ -116,7 +116,7 @@ class _RefreshJob:
     analysis_orders: dict[str, str] = field(default_factory=dict)
 
 
-_job_lock = threading.Lock()
+_job_lock = threading.RLock()
 
 
 class _JOBS:
