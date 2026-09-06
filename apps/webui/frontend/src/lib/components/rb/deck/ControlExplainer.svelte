@@ -58,7 +58,7 @@
 	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
 
 	function _place(): void {
-		if (wrapEl === undefined) return;
+		if (!wrapEl) return;
 		const r = wrapEl.getBoundingClientRect();
 		const preferAbove =
 			placement === 'above' || (placement === 'auto' && r.top > 170);

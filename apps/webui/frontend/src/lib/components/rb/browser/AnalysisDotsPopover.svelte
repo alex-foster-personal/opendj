@@ -283,7 +283,7 @@
 	}
 
 	function _openNow(): void {
-		if (wrapEl !== undefined) {
+		if (wrapEl) {
 			const r = wrapEl.getBoundingClientRect();
 			popStyle = `left:${Math.round(r.left)}px;top:${Math.round(r.bottom + 4)}px`;
 		}
@@ -326,7 +326,7 @@
 
 	function onFocusOut(e: FocusEvent): void {
 		const next = e.relatedTarget as Node | null;
-		if (wrapEl !== undefined && next !== null && wrapEl.contains(next)) return; // moved to a child row button - stay open
+		if (next !== null && wrapEl?.contains(next)) return; // moved to a child row button - stay open
 		hovered = false;
 	}
 

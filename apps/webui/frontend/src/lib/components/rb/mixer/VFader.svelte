@@ -40,7 +40,7 @@
 
 	function _valueFromEvent(e: PointerEvent): number {
 		const el = trackEl;
-		if (el === undefined) return value;
+		if (!el) return value;
 		const rect = el.getBoundingClientRect();
 		const y = e.clientY - rect.top - THUMB_H / 2;
 		return _clamp01(1 - y / Math.max(1, rect.height - THUMB_H));
@@ -75,7 +75,7 @@
 
 	$effect(() => {
 		const el = trackEl;
-		if (el === undefined) return;
+		if (!el) return;
 		const ro = new ResizeObserver((entries) => {
 			trackH = Math.max(1, Math.round(entries[0].contentRect.height));
 		});

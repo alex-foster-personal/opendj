@@ -240,7 +240,7 @@
 
 	$effect(() => {
 		const el = canvasEl;
-		if (el === undefined) return;
+		if (!el) return;
 		palette = readPalette(el); // throws if not under .perf-root
 		const observer = new ResizeObserver((entries) => {
 			const rect = entries[0].contentRect;
@@ -253,7 +253,7 @@
 
 	function draw(force = false): void {
 		const el = canvasEl;
-		if (el === undefined || palette === null || cssW === 0 || cssH === 0) return;
+		if (!el || palette === null || cssW === 0 || cssH === 0) return;
 		const paintPositionMs = _paintPositionMs();
 		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
 		const visualInputs = [
