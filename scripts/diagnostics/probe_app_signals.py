@@ -12,6 +12,7 @@ import re
 import sqlite3
 import urllib.error
 import urllib.request
+import uuid
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -21,6 +22,8 @@ from .probe_types import ProcessRow
 
 TERMINAL_JOB_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 PERF_RING_STORAGE_KEY = "mdt.perfEventLog"
+DECK_LOAD_COMPLETED_KIND = "deck-load"
+CLIENT_ERROR_ACCEPTED_STATUS = 202
 
 
 def _fetch_json(url: str, timeout: float = 1.5) -> Any:
@@ -71,10 +74,112 @@ def engine_metrics(family: list[tuple[ProcessRow, str]]) -> dict[str, Any]:
         except (OSError, ValueError, urllib.error.URLError) as exc:
             result[name] = {"error": type(exc).__name__}
             continue
-        result[name] = (
-            _job_rollup(value) if name == "jobs" and isinstance(value, list) else value
-        )
+        result[name] = _job_rollup(value) if name == "jobs" and isinstance(value, list) else value
     return result
+
+
+class TrendReportError(RuntimeError):
+    """The RED trend could not be written to the engine's durable sink.
+
+    It formats its own message from the url and the detail so that every
+    raise site is one short call and the wording cannot drift between them.
+
+    This is deliberately NOT best-effort like the rest of this module. The
+    other readers here are observations: losing one leaves a sample with a
+    missing field and the probe keeps producing footprints. Posting a RED
+    trend is the opposite - it is the durable RECORD of a failure that the
+    caller has already decided is real, and a swallowed failure there means
+    nothing anywhere says the app regressed.
+    """
+
+    def __init__(self, url: str, detail: str) -> None:
+        super().__init__(f"POST {url} could not record the RED trend: {detail}")
+
+
+def report_red_trend(port: int, trend: dict[str, Any]) -> dict[str, Any]:
+    """Use the engine's durable client-error sink for a RED probe trend.
+
+    Returns the accepted receipt, or raises TrendReportError naming the
+    underlying error. It never returns a falsy value for a failure: the caller
+    has to either see a receipt or handle an exception.
+    """
+
+    base_url = f"http://127.0.0.1:{port}/api/v1"
+    health_url = base_url + "/health"
+    try:
+        health = _fetch_json(health_url)
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise TrendReportError(
+            health_url,
+            f"engine identity check failed: {type(exc).__name__}: {exc}",
+        ) from exc
+    if not isinstance(health, dict) or health.get("status") != "ok" or not isinstance(
+        health.get("version"), str
+    ):
+        raise TrendReportError(
+            health_url, "engine identity check returned an invalid health record"
+        )
+
+    payload = {
+        "client_event_id": f"performance-trend-{uuid.uuid4().hex}",
+        "kind": "ui-error",
+        "message": f"performance probe RED: {trend.get('verdict_reason', 'unknown reason')}",
+        "name": "OpenDJPerformanceTrend",
+        "url": "opendj-performance-probe://trend",
+        "client_timestamp": str(trend.get("window", {}).get("last", "")),
+        "user_agent": "opendj-performance-probe",
+        "secure_context": True,
+        "audio_worklet_available": False,
+        "context": {
+            "source": "performance-probe",
+            "verdict": "RED",
+            "orphan_count": int(trend.get("orphan_count", 0)),
+        },
+    }
+    url = base_url + "/client-errors"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=1.5) as response:
+            status = int(response.status)
+            receipt = json.load(response)
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise TrendReportError(url, f"{type(exc).__name__}: {exc}") from exc
+    if status != CLIENT_ERROR_ACCEPTED_STATUS:
+        raise TrendReportError(
+            url, f"HTTP {status}, expected {CLIENT_ERROR_ACCEPTED_STATUS}"
+        )
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("event_id"), str):
+        raise TrendReportError(url, "engine returned no client-error event id")
+    if receipt.get("stored") is not True:
+        raise TrendReportError(
+            url, "engine accepted the request but did not persist the client-error record"
+        )
+    return {
+        "posted": True,
+        "http_status": status,
+        "client_event_id": payload["client_event_id"],
+        "engine_event_id": receipt["event_id"],
+    }
+
+
+def _is_completed_deck_load(kind: str) -> bool:
+    """True only for a load that actually FINISHED.
+
+    audio-engine.svelte.ts writes `deck-load sid=<id>` once the deck can play,
+    and `deck-load-fail` from the load catch block. A `deck-load` PREFIX test
+    therefore reads a failure as a load, so four failed attempts would
+    fabricate a four-deck loaded state. Allowlist the completion instead of
+    denylisting the failure kinds that exist today: a `deck-load-*` kind added
+    later is then ignored until it is named here, rather than silently read as
+    a completed load.
+    """
+
+    return kind == DECK_LOAD_COMPLETED_KIND or kind.startswith(DECK_LOAD_COMPLETED_KIND + " ")
 
 
 def _decode_local_storage_value(value: Any) -> str:
@@ -146,6 +251,20 @@ def browser_perf_ring(bundle_ids: Iterable[str]) -> dict[str, Any]:
         for event in events
         if isinstance(event, dict) and str(event.get("kind", "")).startswith("deck-load")
     ]
+    deck_state: dict[int, bool] = {}
+    for event in events:
+        if not isinstance(event, dict) or not isinstance(event.get("deck"), int):
+            continue
+        deck = event["deck"]
+        kind = str(event.get("kind", ""))
+        if _is_completed_deck_load(kind):
+            deck_state[deck] = True
+        elif kind in {"deck-state-empty", "deck-unload"}:
+            deck_state[deck] = False
+        # A failed or unrecognized load says nothing about what the deck holds,
+        # so the deck keeps whatever state was last OBSERVED. A deck whose only
+        # ring row is such an event stays absent from deck_state, which keeps
+        # loaded_deck_count at None rather than inventing a count.
     return {
         "available": True,
         "storage_path": str(path),
@@ -154,5 +273,8 @@ def browser_perf_ring(bundle_ids: Iterable[str]) -> dict[str, Any]:
         "last_timestamp": last.get("t"),
         "last_kind": last.get("kind"),
         "deck_load_count_in_ring": len(loads),
+        # A bounded ring can omit a deck's most recent state. Publishing a
+        # made-up zero would turn missing evidence into a false clean unload.
+        "loaded_deck_count": sum(deck_state.values()) if len(deck_state) == 4 else None,
         "last_deck_load": loads[-1] if loads else None,
     }

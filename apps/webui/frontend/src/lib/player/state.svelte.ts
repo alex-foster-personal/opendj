@@ -19,6 +19,7 @@
  */
 
 import { playbackBpm } from '$lib/rb/beat-sync-math';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
 import type { PitchRange } from '$lib/player/constants';
@@ -119,6 +120,10 @@ export const deckStates: Record<DeckId, DeckState> = $state({
 	3: _emptyDeckState(3),
 	4: _emptyDeckState(4)
 });
+
+for (const deck of [1, 2, 3, 4] as const) {
+	recordPerfEvent('deck-state-empty', 'initial deck state is unloaded', deck, 'info');
+}
 
 /** Explicit audio-load error per deck (backend code or decode message);
  * null = no failed load. DeckState has no audio-error field by contract,

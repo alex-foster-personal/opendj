@@ -3755,6 +3755,7 @@ class RbAudioEngine implements AudioEngine {
 		// not state, and history does not un-happen.
 		deckStates[deck] = { ..._emptyDeckState(deck), load_generation: st.load_generation };
 		deckLoadErrors[deck] = null;
+		recordPerfEvent('deck-unload', 'deck resources released', deck, 'info');
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {
