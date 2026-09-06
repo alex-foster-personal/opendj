@@ -36,6 +36,7 @@
 	<button
 		type="button"
 		class="hp-btn"
+		aria-label="ADD OUTPUT"
 		title="Grant browser access to a second audio output for headphones"
 		onclick={onacquire}>+ OUT</button
 	>

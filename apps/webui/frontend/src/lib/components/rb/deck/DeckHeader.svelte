@@ -214,7 +214,7 @@
 
 <div class="deck-header">
 	<div class="art-slot">
-		{#if artSrc !== null && !artworkFailed}
+		{#if deck.stable_id !== null}
 			<button
 				type="button"
 				class="art-btn"
@@ -224,14 +224,18 @@
 				disabled={pending}
 				onclick={() => void onUnload()}
 			>
-				<img
-					class="art"
-					src={artSrc}
-					alt=""
-					onerror={() => {
-						artworkFailed = true;
-					}}
-				/>
+				{#if artSrc !== null && !artworkFailed}
+					<img
+						class="art"
+						src={artSrc}
+						alt=""
+						onerror={() => {
+							artworkFailed = true;
+						}}
+					/>
+				{:else}
+					<span class="art placeholder"></span>
+				{/if}
 				<span class="art-eject" aria-hidden="true">⏏</span>
 			</button>
 		{:else}
