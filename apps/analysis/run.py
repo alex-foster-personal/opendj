@@ -61,6 +61,7 @@ from rich.table import Table
 
 from .backends import DEFAULT_BACKEND, get_backend
 from .backends.base import TrackVanished
+from .jit_warmup import warm_backend_jit
 from .pool import analyze_one, run_pool
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, open_conn, upsert_record
@@ -286,6 +287,17 @@ def run(
     rows: list[tuple[str, AnalysisRecord | None, str | None]] = []
 
     backend = get_backend(backend_name)
+
+    # Compile the backend's cached JIT paths HERE, in the parent, before any
+    # second process exists. Concurrent cold compiles into one shared numba
+    # cache corrupt it, and every later process that loads the corrupt cache
+    # dies at a NULL instruction pointer with no traceback (issue #1316). Not
+    # behind a flag and not conditional on `workers`: it is the precondition
+    # that makes the rest of this function safe to run at all, and the crash
+    # reproduces at --workers 1 with no child process in sight.
+    warmup = warm_backend_jit(backend, backend_name=backend_name)
+    console.print(f"[cyan]{warmup.render()}[/cyan]")
+
     if workers > 1:
         rows.extend(
             run_pool(

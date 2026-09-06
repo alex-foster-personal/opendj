@@ -55,6 +55,43 @@ class AnalyzerBackend(Protocol):
         """Pure compute; must not write to disk or state layer."""
         ...  # pragma: no cover
 
+    @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        """Directories whose ``*.nbi``/``*.nbc`` artifacts this backend writes.
+
+        Returned so the caller can fingerprint the on-disk cache and tell a
+        cache this process already warmed from one a concurrent writer has
+        touched since. An empty tuple means "this backend writes no JIT cache
+        and I cannot vouch for one", which makes the caller warm every time
+        rather than trust a fingerprint it has no way to compute.
+
+        Must not import the heavy analysis stack: it is called on the fast
+        path where the whole point is not paying that import.
+        """
+        ...  # pragma: no cover
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        """Compile every cached JIT path this backend uses, and say what.
+
+        Called ONCE in the parent, serially, under a cross-process lock,
+        before any concurrency exists (:mod:`apps.analysis.jit_warmup`). A
+        backend whose hot paths are numba ``cache=True`` functions MUST drive
+        them here on a synthetic signal, because two processes compiling into
+        one on-disk cache corrupt it and every later reader of that cache dies
+        at a NULL instruction pointer with no traceback (issue #1316).
+
+        Returns a short human-readable description of what was warmed, which
+        the CLI prints. A backend with no JIT cache says so rather than
+        staying silent, so an empty warm-up is a stated fact and not an
+        unnoticed no-op.
+
+        This is the one place a backend may not be lazy about: it must call
+        the same entry points ``analyze`` calls, with the same dtypes, since
+        numba caches per type signature.
+        """
+        ...  # pragma: no cover
+
 
 __all__ = [
     "AnalyzerBackend",

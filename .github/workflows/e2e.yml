@@ -298,6 +298,44 @@ jobs:
             || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
           echo "[OK] apps.engine_core imports"
 
+      - name: Purge and warm the numba JIT cache (#1316)
+        # The crash this job kept dying on was never fork, the pool, or thread
+        # oversubscription. librosa marks several hot paths
+        # `@numba.guvectorize(..., cache=True)`, which compile on first call
+        # and write `.nbi`/`.nbc` artifacts beside the librosa source. Two
+        # `apps.analysis.run` processes meeting a COLD cache interleave those
+        # writes, the index and the object file stop agreeing, and from then
+        # on every process that LOADS the cache jumps into a partially-mapped
+        # object and dies at a NULL instruction pointer - including runs with
+        # `--workers 1` and no child process at all. Measured on agentbox: 12
+        # concurrent cold-cache processes poisoned the cache, 5 later
+        # SEQUENTIAL runs against it were 5/5 dead, and the same cache warmed
+        # once serially first survived 28/28 concurrent runs.
+        #
+        # Two halves, both load-bearing and in this order:
+        #
+        # PURGE, because the corruption OUTLIVES the job. The workspace and
+        # its `.venv` persist between runs on this self-hosted runner, so one
+        # poisoned cache killed every later e2e job on that runner until the
+        # artifacts were deleted by hand (five runner workspaces on Sat 5 Sep
+        # 2026). Warming cannot repair it: loading the corrupt entry is what
+        # segfaults, so no in-process code runs after it. Only deletion does.
+        #
+        # WARM, because a purge alone leaves the cache cold, which is the
+        # state that corrupts. The engine's refresh route spawns
+        # `apps.analysis.run` per chunk, so a cold cache plus a real drain is
+        # exactly the race. Warming serially here means every process this
+        # job starts finds a complete cache and only ever reads it.
+        #
+        # `apps.analysis.jit_warmup` is the same code path `apps.analysis.run`
+        # calls internally, invoked as a module rather than reimplemented
+        # inline, so this step cannot drift from the warm-up that ships. It
+        # exits non-zero if it warms zero artifacts onto disk, which is the
+        # positive check: a warm-up step that silently warmed nothing is
+        # exactly the green-but-useless signal this issue hid behind.
+        # Pinned by tests/scripts/test_ci_jit_warmup.py.
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge
+
       - name: Runner preflight - node tools and disk
         # Fail here, naming the runner, rather than mid-install with a cryptic
         # pnpm error on a missing tool or a full disk. scripts/ci_node_preflight.sh

@@ -19,6 +19,14 @@ class _MockBackend:
     version = "mock-1.0"
 
     @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        return ()
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        return "mock backend has no JIT cache"
+
+    @classmethod
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
         return AnalysisRecord(
             stable_id=stable_id,
@@ -157,6 +165,14 @@ class _StartMethodBackend:
 
     name = "start-method"
     version = "1"
+
+    @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        return ()
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        return "start-method backend has no JIT cache"
 
     @classmethod
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
