@@ -377,9 +377,10 @@ def _prune_missing_worktrees(
 
 def _port_is_available(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        # Match the actual uvicorn/Vite listener behavior. Without this a
-        # clean restart is falsely blocked by the old socket's TIME_WAIT.
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # A claim is only valid when a fresh listener can bind the socket.
+        # SO_REUSEADDR must remain off: enabling it lets a probe accept a
+        # port which an incompatible leaked server still owns.
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
         try:
             probe.bind(("127.0.0.1", port))
         except OSError:
@@ -388,7 +389,21 @@ def _port_is_available(port: int) -> bool:
 
 
 def _pair_is_available(ports: WebuiPorts) -> bool:
-    return _port_is_available(ports.backend) and _port_is_available(ports.frontend)
+    """Bind-test both candidate sockets together with address reuse disabled."""
+    try:
+        with (
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM) as backend_probe,
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM) as frontend_probe,
+        ):
+            for probe, port in (
+                (backend_probe, ports.backend),
+                (frontend_probe, ports.frontend),
+            ):
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+                probe.bind(("127.0.0.1", port))
+    except OSError:
+        return False
+    return True
 
 
 def _backend_listener_matches_pair(ports: WebuiPorts) -> bool:
@@ -535,7 +550,11 @@ def claim_ports(
             # Remembered under another lane (or before this runner had one):
             # not ours to restore. Fall through to allocation inside the lane.
             current = None
-        if current is not None and (configured is None or configured == current):
+        if (
+            current is not None
+            and (configured is None or configured == current)
+            and (_pair_is_available(current) or _backend_listener_matches_pair(current))
+        ):
             selected = current
         elif (
             configured is not None

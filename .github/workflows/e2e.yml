@@ -239,6 +239,19 @@ jobs:
           echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
           echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
 
+      - name: Assert MUSIC_DJ_PORT_LANE is set
+        run: |
+          set -euo pipefail
+          lane="${MUSIC_DJ_PORT_LANE:-}"
+          [[ "$lane" =~ ^[0-9]+$ ]] || {
+            echo "::error::MUSIC_DJ_PORT_LANE is unset or invalid after lane derivation" >&2
+            exit 1
+          }
+          echo "[OK] MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Reclaim stale E2E servers before port claim
+        run: bash scripts/ci_e2e_port_hygiene.sh
+
       - name: Enable pinned pnpm
         # Order matters: corepack before setup-node, so a `pnpm` shim exists on
         # PATH when setup-node's `cache: pnpm` resolves the store. Same
@@ -728,6 +741,35 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           clean: true
+
+      - name: Derive the worktree-port lane from the runner identity
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Assert MUSIC_DJ_PORT_LANE is set
+        run: |
+          set -euo pipefail
+          lane="${MUSIC_DJ_PORT_LANE:-}"
+          [[ "$lane" =~ ^[0-9]+$ ]] || {
+            echo "::error::MUSIC_DJ_PORT_LANE is unset or invalid after lane derivation" >&2
+            exit 1
+          }
+          echo "[OK] MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Reclaim stale E2E servers before port claim
+        run: bash scripts/ci_e2e_port_hygiene.sh
 
       - name: Enable pinned pnpm
         run: |

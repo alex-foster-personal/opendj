@@ -325,7 +325,7 @@ def test_frontend_check_rejects_an_unidentified_backend(tmp_path: Path) -> None:
                 common_dir=common_dir,
                 environ={},
             )
-        with pytest.raises(PortConfigError, match="backend port .* already in use"):
+        with pytest.raises(PortConfigError, match=r"backend port .* already in use"):
             check_reservation(
                 "backend",
                 repo_root=repo_root,
@@ -395,6 +395,52 @@ def test_repeat_claim_leaves_dotenv_untouched(tmp_path: Path) -> None:
     assert dotenv.read_text(encoding="utf-8") == first_text
     assert dotenv.stat().st_mtime_ns == first_stat.st_mtime_ns
     assert dotenv.stat().st_ino == first_stat.st_ino
+
+
+def test_claim_replaces_its_stale_reserved_pair_when_a_listener_owns_it(
+    tmp_path: Path,
+) -> None:
+    """If a previous job left an engine listening then its registry entry is stale.
+
+    The registry is only a coordination hint. A successful claim must still
+    bind-test both sockets before returning, or Playwright accepts the claimed
+    pair and fails later when its webServer sees the leaked engine.
+    """
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stale_engine:
+        stale_engine.bind(("127.0.0.1", first.backend))
+        stale_engine.listen()
+
+        replacement = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert replacement != first
+    assert replacement.backend == first.backend + 1
+    assert replacement.frontend == first.frontend + 1
+
+
+def test_claim_keeps_its_pair_while_its_matching_engine_is_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Vite config reload must not move the engine's already-running pair."""
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    monkeypatch.setattr(
+        "apps.webui.port_config._backend_listener_matches_pair",
+        lambda ports: ports == first,
+    )
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as engine:
+        engine.bind(("127.0.0.1", first.backend))
+        engine.listen()
+        assert claim_ports(repo_root=repo_root, common_dir=common_dir, environ={}) == first
 
 
 def test_two_runner_clones_with_distinct_lanes_never_select_the_same_pair(
@@ -528,6 +574,7 @@ def test_guard_is_inapplicable_outside_any_git_worktree(
 
     assert assert_source_tree_matches_worktree() is None
 
+
 pytestmark = pytest.mark.rb_parity
 
 
@@ -568,4 +615,3 @@ def test_a_reservation_from_another_lane_is_reallocated_not_restored(tmp_path: P
     # single-claim-per-run contract the rest of the suite relies on holds.
     again = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"})
     assert again == relaid
-

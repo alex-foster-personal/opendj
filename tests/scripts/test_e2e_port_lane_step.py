@@ -1,4 +1,4 @@
-"""The e2e `gate` job must derive MUSIC_DJ_PORT_LANE before claiming a pair.
+"""Every e2e job must derive and assert MUSIC_DJ_PORT_LANE before server work.
 
 `pnpm test:e2e` (apps.webui.port_config, via `apps/webui/frontend/playwright.config.ts`)
 is the only step in this repo's CI that claims a dynamic pair from the shared
@@ -34,17 +34,20 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 LANE_STEP_NAME = "Derive the worktree-port lane from the runner identity"
+LANE_ASSERTION_STEP_NAME = "Assert MUSIC_DJ_PORT_LANE is set"
+STALE_SERVER_HYGIENE_STEP_NAME = "Reclaim stale E2E servers before port claim"
 CLAIMING_RUN_SNIPPET = "test:e2e"
+E2E_JOBS = ("gate", "extended")
 
 
-def _gate_job_steps() -> list[dict]:
+def _e2e_job_steps(job_name: str) -> list[dict]:
     doc = yaml.safe_load((WORKFLOWS / "e2e.yml").read_text(encoding="utf-8"))
-    return doc["jobs"]["gate"]["steps"]
+    return doc["jobs"][job_name]["steps"]
 
 
 def test_lane_derivation_step_precedes_the_dynamic_pool_claim() -> None:
     """if the lane step is missing or late then the claim runs unlaned"""
-    steps = _gate_job_steps()
+    steps = _e2e_job_steps("gate")
     names = [step.get("name") for step in steps]
     runs = [step.get("run") or "" for step in steps]
 
@@ -60,7 +63,7 @@ def test_lane_derivation_step_precedes_the_dynamic_pool_claim() -> None:
 
 
 def _run_lane_script(runner_name: str | None) -> subprocess.CompletedProcess[str]:
-    steps = _gate_job_steps()
+    steps = _e2e_job_steps("gate")
     (lane_step,) = [step for step in steps if step.get("name") == LANE_STEP_NAME]
     script = lane_step["run"]
     env = dict(os.environ)
@@ -113,3 +116,36 @@ def test_missing_runner_name_fails_closed_rather_than_guessing() -> None:
     result = _run_lane_script(None)
     assert result.returncode != 0, result.stdout
     assert "RUNNER_NAME is unset" in result.stderr
+
+
+def test_every_e2e_job_fails_loudly_if_github_env_did_not_set_the_lane() -> None:
+    """if a push, schedule, dispatch, or rerun loses the lane then server work stops"""
+    for job_name in E2E_JOBS:
+        steps = _e2e_job_steps(job_name)
+        names = [step.get("name") for step in steps]
+        assert LANE_STEP_NAME in names, f"{job_name} is missing lane derivation"
+        assert LANE_ASSERTION_STEP_NAME in names, f"{job_name} is missing lane assertion"
+        assert names.index(LANE_STEP_NAME) < names.index(LANE_ASSERTION_STEP_NAME), job_name
+        assertion = next(
+            step["run"] for step in steps if step.get("name") == LANE_ASSERTION_STEP_NAME
+        )
+        assert "MUSIC_DJ_PORT_LANE" in assertion
+        assert "error" in assertion.lower()
+
+
+def test_every_e2e_job_reclaims_stale_servers_after_lane_derivation() -> None:
+    """if an old engine owns the lane then the next job logs and terminates it"""
+    for job_name in E2E_JOBS:
+        steps = _e2e_job_steps(job_name)
+        names = [step.get("name") for step in steps]
+        assert STALE_SERVER_HYGIENE_STEP_NAME in names, f"{job_name} lacks stale-server hygiene"
+        assert names.index(LANE_ASSERTION_STEP_NAME) < names.index(STALE_SERVER_HYGIENE_STEP_NAME)
+        script = next(
+            step["run"] for step in steps if step.get("name") == STALE_SERVER_HYGIENE_STEP_NAME
+        )
+        assert script == "bash scripts/ci_e2e_port_hygiene.sh"
+        helper = (REPO_ROOT / script.removeprefix("bash ")).read_text(encoding="utf-8")
+        assert "apps.webui.server" in helper
+        assert "vite" in helper
+        assert "lsof" in helper
+        assert "[e2e-hygiene] lane=" in helper
