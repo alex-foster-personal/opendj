@@ -502,6 +502,7 @@ estimated from the render clock and may run ahead of what you hear."
 			aria-valuenow={Math.round(deck.position_ms)}
 			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
 			tabindex="-1"
+			data-hotkey-pointer-only
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
