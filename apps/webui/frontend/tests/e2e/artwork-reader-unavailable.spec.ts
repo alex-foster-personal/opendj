@@ -196,7 +196,16 @@ test('null artwork availability identifies an unavailable reader without request
 
 	await page.goto('/performance');
 	const artworkCell = page.locator('td.c-art').first();
-	await expect(artworkCell).toBeVisible({ timeout: 15_000 });
+	// This is the FIRST spec the rekordbox gate runs, so it pays vite's cold
+	// module-transform pipeline for the whole /performance route; the sibling
+	// spec runs warm and renders in ~4 s. On a self-hosted runner sharing its
+	// host with 14 other jobs (load 36 on 16 threads) that pipeline alone took
+	// 16 s from goto to the mocked /api/v1/tracks response (trunk 8d9ded38c,
+	// Sun 6 Sep 2026 17:00 UTC, trace in the e2e-gate-failures artifact), and
+	// a 15 s budget went red on trunk three times that day with the row
+	// arriving one second late. The budget covers the cold pipeline under
+	// that load; the config's 60 s test timeout still bounds the whole test.
+	await expect(artworkCell).toBeVisible({ timeout: 45_000 });
 	await expect(artworkCell).toHaveAttribute('title', READER_UNAVAILABLE);
 	await expect(artworkCell.locator('img')).toHaveCount(0);
 
