@@ -50,11 +50,8 @@ test.describe('refresh analysis button', () => {
 		expect(rendered).toMatch(/auto\s+(on|off)/);
 
 		await btn.click();
-		// This hermetic library deliberately contains two playable, unanalyzed
-		// fixture tracks. This UI test owns dispatch and terminal-state rendering,
-		// not successful audio analysis, which has its own real-stack coverage.
-		// Whatever the engine reports must be visible rather than assumed here.
-		await expect(pop).toContainText(/done|error/, { timeout: 25_000 });
+		await expect(pop).toContainText('done', { timeout: 25_000 });
+		await expect(pop).not.toContainText('error');
 	});
 });
 
