@@ -1,4 +1,4 @@
-"""What the Sol reviewer is asked to look for, and how it must reply.
+"""What a CLI reviewer is asked to look for, and how it must reply.
 
 Split from `scripts/sol_review.py` (which owns the mechanics: seats, head
 pinning, anchors, posting) so the REVIEW CRITERIA can be edited by someone
@@ -6,6 +6,14 @@ tuning what counts as a finding here, without reading a line of subprocess or
 GitHub-API code. The reply contract lives here too rather than with the
 parser, because the prompt and the fence are one agreement: change the fence
 in one place and the other half stops reading it.
+
+SHARED BY BOTH LANES since the Claude lane landed (Sun 6 Sep 2026), and it
+was renamed from `sol_prompt.py` in the same change. The review CRITERIA are
+a property of THIS REPOSITORY, not of which model reads them, so a second
+copy would mean a criterion tightened for one reviewer and not the other --
+the two lanes would then disagree about what is blocking here, which is worse
+than either standard alone. What differs per lane is the FENCE, so that is a
+parameter rather than a module constant.
 
 Requirements (mini-PRD):
   / The prompt states this repo's own blocking criteria, not generic ones.
@@ -18,9 +26,22 @@ Requirements (mini-PRD):
 
 from __future__ import annotations
 
-#: The model's answer is fenced by these so it survives codex's own logging,
-#: which interleaves hook lines and MCP warnings with the reply.
-JSON_OPEN, JSON_CLOSE = "<<<SOL_JSON", "SOL_JSON>>>"
+from typing import NamedTuple
+
+
+#: The model's answer is fenced by these so it survives the CLI's own
+#: logging, which interleaves hook lines and MCP warnings with the reply. One
+#: pair per lane, because a transcript that quotes the other lane's source or
+#: tests then cannot be mistaken for this lane's answer.
+class Fence(NamedTuple):
+    """The pair of tokens one lane's reply is wrapped in."""
+
+    open: str
+    close: str
+
+
+SOL_FENCE = Fence("<<<SOL_JSON", "SOL_JSON>>>")
+CLAUDE_FENCE = Fence("<<<CLAUDE_JSON", "CLAUDE_JSON>>>")
 
 #: The placeholder the example block below carries where a real reply must
 #: carry this run's id. `codex exec` echoes the prompt into its own stdout, so
@@ -89,6 +110,7 @@ def build_prompt(
     run_id: str,
     max_diff_bytes: int,
     max_findings: int,
+    fence: Fence,
 ) -> tuple[str, bool]:
     """The prompt, and whether the diff had to be truncated to fit.
 
@@ -96,6 +118,12 @@ def build_prompt(
     it reviewed part of the diff. A partial review that reports as a whole one
     is the same failure as a coverage figure quoted against the wrong
     denominator.
+
+    `fence` has no default on purpose. A default would make one lane's fence
+    the silent answer for a caller that forgot to say which lane it is, and
+    this repository's rule against hidden defaults exists for exactly that
+    shape: the failure would be a Claude review whose reply is fenced as
+    Sol's, parsed by neither.
     """
     truncated = len(diff.encode()) > max_diff_bytes
     body = diff.encode()[:max_diff_bytes].decode(errors="ignore") if truncated else diff
@@ -110,8 +138,8 @@ def build_prompt(
             pr=pr,
             sha=sha,
             title=title,
-            open=JSON_OPEN,
-            close=JSON_CLOSE,
+            open=fence.open,
+            close=fence.close,
             run_id=run_id,
             placeholder=RUN_ID_PLACEHOLDER,
             truncation=note,
