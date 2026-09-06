@@ -67,6 +67,7 @@ from .routes import ingest as ingest_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import mytag as mytag_routes
+from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
@@ -314,8 +315,10 @@ def create_app(
     @app.middleware("http")
     async def add_bind_warning(request: Request, call_next):
         response = await call_next(request)
-        if bind_host and bind_host != "127.0.0.1" and bind_host != "localhost":
-            response.headers["X-Bind-Warning"] = f"server is bound to {bind_host}; do not expose without Tailscale"
+        if bind_host and bind_host not in {"127.0.0.1", "localhost"}:
+            response.headers["X-Bind-Warning"] = (
+                f"server is bound to {bind_host}; do not expose without Tailscale"
+            )
         return response
 
     api_prefix = "/api/v1"
@@ -332,6 +335,7 @@ def create_app(
     app.include_router(play_it_routes.router, prefix=api_prefix)
     app.include_router(playlist_writeback_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)
+    app.include_router(pairing_capture_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
     app.include_router(feedback_routes.router, prefix=api_prefix)

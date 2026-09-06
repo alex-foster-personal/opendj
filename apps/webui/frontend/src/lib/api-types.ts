@@ -1420,6 +1420,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/pairings/alignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Alignments */
+        get: operations["list_alignments_api_v1_pairings_alignments_get"];
+        put?: never;
+        /** Create Alignment */
+        post: operations["create_alignment_api_v1_pairings_alignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pairings/sync-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sync Snapshots */
+        get: operations["list_sync_snapshots_api_v1_pairings_sync_snapshots_get"];
+        put?: never;
+        /** Create Sync Snapshot */
+        post: operations["create_sync_snapshot_api_v1_pairings_sync_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/pairings/{pairing_id}": {
         parameters: {
             query?: never;
@@ -3001,6 +3037,64 @@ export interface components {
             ids: string[];
             /** Model */
             model: string;
+        };
+        /** AlignmentIn */
+        AlignmentIn: {
+            /**
+             * Anchor A Kind
+             * @enum {string}
+             */
+            anchor_a_kind: "hotcue" | "ms";
+            /** Anchor A Ms */
+            anchor_a_ms: number;
+            /** Anchor A Slot */
+            anchor_a_slot?: string | null;
+            /**
+             * Anchor B Kind
+             * @enum {string}
+             */
+            anchor_b_kind: "hotcue" | "ms";
+            /** Anchor B Ms */
+            anchor_b_ms: number;
+            /** Anchor B Slot */
+            anchor_b_slot?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+        };
+        /** AlignmentOut */
+        AlignmentOut: {
+            /**
+             * Anchor A Kind
+             * @enum {string}
+             */
+            anchor_a_kind: "hotcue" | "ms";
+            /** Anchor A Ms */
+            anchor_a_ms: number;
+            /** Anchor A Slot */
+            anchor_a_slot: string | null;
+            /**
+             * Anchor B Kind
+             * @enum {string}
+             */
+            anchor_b_kind: "hotcue" | "ms";
+            /** Anchor B Ms */
+            anchor_b_ms: number;
+            /** Anchor B Slot */
+            anchor_b_slot: string | null;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string | null;
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
         };
         /**
          * AnalysisQueueItemOut
@@ -6314,6 +6408,76 @@ export interface components {
              * @enum {string}
              */
             mode: "pinned" | "cached" | "stream" | "excluded";
+        };
+        /** SyncSnapshotIn */
+        SyncSnapshotIn: {
+            /** A Position Beat N */
+            a_position_beat_n?: number | null;
+            /** A Position Ms */
+            a_position_ms: number;
+            /** A Position Phase */
+            a_position_phase?: number | null;
+            /** A Tempo Ratio */
+            a_tempo_ratio: number;
+            /** B Position Beat N */
+            b_position_beat_n?: number | null;
+            /** B Position Ms */
+            b_position_ms: number;
+            /** B Position Phase */
+            b_position_phase?: number | null;
+            /** B Tempo Ratio */
+            b_tempo_ratio: number;
+            /**
+             * Master Side
+             * @enum {string}
+             */
+            master_side: "a" | "b";
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "bar" | "beat";
+        };
+        /** SyncSnapshotOut */
+        SyncSnapshotOut: {
+            /** A Position Beat N */
+            a_position_beat_n: number | null;
+            /** A Position Ms */
+            a_position_ms: number;
+            /** A Position Phase */
+            a_position_phase: number | null;
+            /** A Tempo Ratio */
+            a_tempo_ratio: number;
+            /** B Position Beat N */
+            b_position_beat_n: number | null;
+            /** B Position Ms */
+            b_position_ms: number;
+            /** B Position Phase */
+            b_position_phase: number | null;
+            /** B Tempo Ratio */
+            b_tempo_ratio: number;
+            /** Captured At */
+            captured_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Master Side
+             * @enum {string}
+             */
+            master_side: "a" | "b";
+            /** Stable A */
+            stable_a: string;
+            /** Stable B */
+            stable_b: string;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "bar" | "beat";
         };
         /**
          * TierEstimateOut
@@ -9708,6 +9872,137 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PairingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_alignments_api_v1_pairings_alignments_get: {
+        parameters: {
+            query?: {
+                stable_a?: string | null;
+                stable_b?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlignmentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_alignment_api_v1_pairings_alignments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlignmentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlignmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sync_snapshots_api_v1_pairings_sync_snapshots_get: {
+        parameters: {
+            query?: {
+                stable_a?: string | null;
+                stable_b?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncSnapshotOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_sync_snapshot_api_v1_pairings_sync_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncSnapshotIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncSnapshotOut"];
                 };
             };
             /** @description Validation Error */

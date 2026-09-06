@@ -283,6 +283,180 @@
         "title": "AiSearchOut",
         "type": "object"
       },
+      "AlignmentIn": {
+        "properties": {
+          "anchor_a_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor A Kind",
+            "type": "string"
+          },
+          "anchor_a_ms": {
+            "minimum": 0.0,
+            "title": "Anchor A Ms",
+            "type": "number"
+          },
+          "anchor_a_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor A Slot"
+          },
+          "anchor_b_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor B Kind",
+            "type": "string"
+          },
+          "anchor_b_ms": {
+            "minimum": 0.0,
+            "title": "Anchor B Ms",
+            "type": "number"
+          },
+          "anchor_b_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor B Slot"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_a",
+          "stable_b",
+          "anchor_a_kind",
+          "anchor_b_kind",
+          "anchor_a_ms",
+          "anchor_b_ms"
+        ],
+        "title": "AlignmentIn",
+        "type": "object"
+      },
+      "AlignmentOut": {
+        "properties": {
+          "anchor_a_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor A Kind",
+            "type": "string"
+          },
+          "anchor_a_ms": {
+            "title": "Anchor A Ms",
+            "type": "number"
+          },
+          "anchor_a_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor A Slot"
+          },
+          "anchor_b_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor B Kind",
+            "type": "string"
+          },
+          "anchor_b_ms": {
+            "title": "Anchor B Ms",
+            "type": "number"
+          },
+          "anchor_b_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor B Slot"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stable_a",
+          "stable_b",
+          "anchor_a_kind",
+          "anchor_b_kind",
+          "anchor_a_slot",
+          "anchor_b_slot",
+          "anchor_a_ms",
+          "anchor_b_ms",
+          "label",
+          "created_at"
+        ],
+        "title": "AlignmentOut",
+        "type": "object"
+      },
       "AnalysisQueueItemOut": {
         "description": "One queued track. ``file_path`` is what the runner decodes.\n\nNamed apart from ``models.QueueItemOut`` (the M3 triage queues) on\npurpose: two Pydantic models sharing a name collapse into one OpenAPI\nschema, and the loser is served under the winner's shape.",
         "properties": {
@@ -9181,6 +9355,224 @@
         "title": "SyncPolicyPut",
         "type": "object"
       },
+      "SyncSnapshotIn": {
+        "properties": {
+          "a_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Beat N"
+          },
+          "a_position_ms": {
+            "minimum": 0.0,
+            "title": "A Position Ms",
+            "type": "number"
+          },
+          "a_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Phase"
+          },
+          "a_tempo_ratio": {
+            "minimum": 0.0,
+            "title": "A Tempo Ratio",
+            "type": "number"
+          },
+          "b_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Beat N"
+          },
+          "b_position_ms": {
+            "minimum": 0.0,
+            "title": "B Position Ms",
+            "type": "number"
+          },
+          "b_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Phase"
+          },
+          "b_tempo_ratio": {
+            "minimum": 0.0,
+            "title": "B Tempo Ratio",
+            "type": "number"
+          },
+          "master_side": {
+            "enum": [
+              "a",
+              "b"
+            ],
+            "title": "Master Side",
+            "type": "string"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          },
+          "sync_mode": {
+            "enum": [
+              "bar",
+              "beat"
+            ],
+            "title": "Sync Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_a",
+          "stable_b",
+          "master_side",
+          "sync_mode",
+          "a_tempo_ratio",
+          "b_tempo_ratio",
+          "a_position_ms",
+          "b_position_ms"
+        ],
+        "title": "SyncSnapshotIn",
+        "type": "object"
+      },
+      "SyncSnapshotOut": {
+        "properties": {
+          "a_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Beat N"
+          },
+          "a_position_ms": {
+            "title": "A Position Ms",
+            "type": "number"
+          },
+          "a_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Phase"
+          },
+          "a_tempo_ratio": {
+            "title": "A Tempo Ratio",
+            "type": "number"
+          },
+          "b_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Beat N"
+          },
+          "b_position_ms": {
+            "title": "B Position Ms",
+            "type": "number"
+          },
+          "b_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Phase"
+          },
+          "b_tempo_ratio": {
+            "title": "B Tempo Ratio",
+            "type": "number"
+          },
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "master_side": {
+            "enum": [
+              "a",
+              "b"
+            ],
+            "title": "Master Side",
+            "type": "string"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          },
+          "sync_mode": {
+            "enum": [
+              "bar",
+              "beat"
+            ],
+            "title": "Sync Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stable_a",
+          "stable_b",
+          "master_side",
+          "sync_mode",
+          "a_tempo_ratio",
+          "b_tempo_ratio",
+          "a_position_beat_n",
+          "a_position_phase",
+          "a_position_ms",
+          "b_position_beat_n",
+          "b_position_phase",
+          "b_position_ms",
+          "captured_at"
+        ],
+        "title": "SyncSnapshotOut",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -14972,6 +15364,234 @@
         "summary": "Create Pairing",
         "tags": [
           "pairings"
+        ]
+      }
+    },
+    "/api/v1/pairings/alignments": {
+      "get": {
+        "operationId": "list_alignments_api_v1_pairings_alignments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stable_a",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable A"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stable_b",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable B"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlignmentOut"
+                  },
+                  "title": "Response List Alignments Api V1 Pairings Alignments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Alignments",
+        "tags": [
+          "pairings-capture"
+        ]
+      },
+      "post": {
+        "operationId": "create_alignment_api_v1_pairings_alignments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlignmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlignmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Alignment",
+        "tags": [
+          "pairings-capture"
+        ]
+      }
+    },
+    "/api/v1/pairings/sync-snapshots": {
+      "get": {
+        "operationId": "list_sync_snapshots_api_v1_pairings_sync_snapshots_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stable_a",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable A"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stable_b",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable B"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SyncSnapshotOut"
+                  },
+                  "title": "Response List Sync Snapshots Api V1 Pairings Sync Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sync Snapshots",
+        "tags": [
+          "pairings-capture"
+        ]
+      },
+      "post": {
+        "operationId": "create_sync_snapshot_api_v1_pairings_sync_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncSnapshotIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSnapshotOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sync Snapshot",
+        "tags": [
+          "pairings-capture"
         ]
       }
     },

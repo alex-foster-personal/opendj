@@ -1,33 +1,37 @@
 /**
- * The pairings capture surface is RETIRED, not pending.
+ * The pairings capture surface is RETIRED IN THE UI, not pending.
  *
  * `/api/v1/pairings/sync-snapshots` and `/api/v1/pairings/alignments` were
  * phantoms: the frontend called both, no daemon ever published either, and
- * every call 404'd on the legacy and rebuilt engines alike. A router and repo
- * for them exist on two archive branches (718cc812, 6f39ab99) but were never
- * registered in app.py, and their recorded verdict is "rewrite after the
- * durable pairing gate", not "restore". So the UI now says so instead of
- * asking.
+ * every call 404'd on the legacy and rebuilt engines alike. Issue #750 tracked
+ * a durable, three-part rewrite instead of a restore: Part 1 (#1208) landed a
+ * versioned SQLite repository, Part 2 (#1209) registered real, validated
+ * GET/POST routes over it in app.py, and the frontend wiring is Part 3
+ * (#1210). So as of Part 2 the routes are REAL again -- `lib/api-types.ts`
+ * legitimately names both paths, since it is generated straight from the
+ * live OpenAPI schema and carries only type declarations, never a call site
+ * -- but the UI still says so instead of asking, because no frontend module
+ * may call either path until #1210 wires it up.
  *
  * ON PROVING "no phantom request fired": CreatePairingSheet.svelte cannot be mounted
  * here (node:test + esbuild, no component mount infra - same constraint
  * capability-gating-markup.test.mjs documents). A mounted assertion would
  * anyway be the weaker claim. What is asserted instead is stronger: the
- * component holds no fetch call site at all, and no file in src/ names either
- * path outside a comment. A call that does not exist cannot fire. The one
- * execution-grade check that IS available - that the deleted module is gone
- * from the build graph - runs against an armed fetch seam that records and
- * refuses every request.
+ * component holds no fetch call site at all, and no hand-written file in
+ * src/ names either path outside a comment. A call that does not exist
+ * cannot fire. The one execution-grade check that IS available - that the
+ * deleted module is gone from the build graph - runs against an armed fetch
+ * seam that records and refuses every request.
  *
  * Regression lines:
  * - if any Create-pairing action loses `disabled` or its PARITY-TODO title then
  *   a dead control looks live again
  * - if a fetch reappears in CreatePairingSheet.svelte then the sheet is back to
- *   404ing against a route nobody serves
- * - if pairing-alignments.svelte.ts is restored without its server routes then
- *   the phantom is back
- * - if any src/ module starts requesting either pairings path then the retire
- *   decision has been silently reversed
+ *   calling a route no frontend flow is wired to yet
+ * - if pairing-alignments.svelte.ts is restored without a live frontend
+ *   integration behind it (#1210) then the phantom is back
+ * - if any hand-written src/ module starts requesting either pairings path
+ *   before #1210 lands then the retire decision has been silently reversed
  * - if the deck picker goes inert too then real engine state has been thrown
  *   away along with the phantoms
  */
@@ -51,12 +55,17 @@ const RETIRED_ACTIONS = ['Align hotcues', 'Reload sync'];
 
 const sheet = readFileSync(SHEET, 'utf8');
 
+/** Generated straight from the live OpenAPI schema on every backend route
+ * change (`pnpm run api:gen`); it carries only type declarations, never a
+ * call site, so it is exempt from the hand-written-call-site guard below. */
+const GENERATED_FILES = [join(SRC, 'lib/api-types.ts')];
+
 function sourceFiles(dir) {
 	const out = [];
 	for (const entry of readdirSync(dir)) {
 		const path = join(dir, entry);
 		if (statSync(path).isDirectory()) out.push(...sourceFiles(path));
-		else if (/\.(svelte|ts)$/.test(entry)) out.push(path);
+		else if (/\.(svelte|ts)$/.test(entry) && !GENERATED_FILES.includes(path)) out.push(path);
 	}
 	return out;
 }
