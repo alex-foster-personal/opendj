@@ -38,6 +38,16 @@ serialize the other, so the warm-up itself is taken under an advisory
 cross-process file lock. Whoever gets there first compiles; everyone else
 waits and then finds a complete cache.
 
+The lock and its stamp live in a private 0700 directory under the temp root,
+keyed on the cache, so a local user cannot pre-plant a predictable path in the
+world-writable temp root and turn the lock into an arbitrary-file chmod, or
+into a reason to warm a cold cache unlocked. Cross-user sharing (the venv has
+been driven as both ``root`` and ``ghrunner`` on agentbox) survives only by
+explicit opt-in: set ``MDT_NUMBA_WARMUP_DIR`` to a directory you control, on
+every user who must serialize. When no trustworthy lock is possible the warm-up
+is REFUSED, never run unlocked: an unlocked compile of a cold shared cache is
+exactly the corruption this module exists to prevent (issue #1401).
+
 Rejected alternative: a per-invocation ``NUMBA_CACHE_DIR``. It removes the
 race by removing the sharing, and was measured at 6.1s warm against 35.4s
 cold, i.e. +29s on EVERY invocation of a chunked drain. A lock is paid once,
@@ -81,11 +91,20 @@ import os
 import sys
 import tempfile
 import time
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Protocol
+
+from ._warmup_lock import (
+    LOCK_DIR_ENV,
+    _ensure_lock_dir,
+    _lock_dir_override,
+    _open_lock_safe,
+    warmup_lock_path,
+    warmup_stamp_path,
+)
 
 
 class JitWarmable(Protocol):
@@ -137,8 +156,18 @@ class WarmupResult:
     #: so nothing was compiled. Reported rather than hidden: a run that
     #: skipped and a run that compiled are different facts about the host.
     skipped: bool = False
+    #: True when the warm-up was REFUSED outright because no trustworthy lock
+    #: could be established (a hostile or unusable lock directory or file,
+    #: issue #1401). Nothing was compiled - an unlocked compile of a cold
+    #: shared cache is the corruption this module exists to prevent.
+    refused: bool = False
 
     def render(self) -> str:
+        if self.refused:
+            return (
+                f"{WARMUP_LINE_PREFIX} backend={self.backend} "
+                f"seconds={self.seconds:.2f} refused=1 {self.detail}"
+            )
         if self.skipped:
             return (
                 f"{WARMUP_LINE_PREFIX} backend={self.backend} "
@@ -150,40 +179,6 @@ class WarmupResult:
             f"seconds={self.seconds:.2f} lock={lock} "
             f"waited_s={self.waited_s:.2f} {self.detail}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Lock placement
-# ---------------------------------------------------------------------------
-
-
-def _env_key() -> str:
-    """Identify the numba cache this process would write.
-
-    Keyed on what determines the cache location: the interpreter prefix
-    (whose ``site-packages`` numba writes beside) and ``NUMBA_CACHE_DIR``
-    (which overrides that when set). Two processes share a lock and a stamp
-    exactly when they would share a cache.
-    """
-    return hashlib.sha256(
-        "\0".join(
-            [
-                sys.prefix,
-                sys.base_prefix,
-                os.environ.get("NUMBA_CACHE_DIR", ""),
-            ]
-        ).encode("utf-8")
-    ).hexdigest()[:16]
-
-
-def warmup_stamp_path() -> Path:
-    """Where the fingerprint of the last successful serial warm-up is kept.
-
-    Beside the lock, in the system temp directory, for the same reason: the
-    processes racing for one cache on a CI host are not always the same UNIX
-    user, and a stamp only one of them can read is not a stamp.
-    """
-    return Path(tempfile.gettempdir()) / f"mdt-numba-warmup-{_env_key()}.stamp"
 
 
 def cache_fingerprint(roots: Sequence[Path]) -> str:
@@ -266,33 +261,20 @@ def _write_stamp(path: Path, fingerprint: str) -> None:
         )
 
 
-def warmup_lock_path() -> Path:
-    """Where the compile lock for THIS environment's numba cache lives.
-
-    The lock has to be shared by every process that writes the same cache and
-    by nobody else, so it is keyed on what determines the cache location:
-    the interpreter prefix (which venv's ``site-packages`` numba writes beside)
-    and ``NUMBA_CACHE_DIR`` (which overrides that when set).
-
-    The file itself goes in the system temp directory rather than beside the
-    cache. The cache lives inside ``site-packages``, and the processes racing
-    for it on a CI host are not always the same UNIX user - agentbox has run
-    the same venv as both ``root`` and ``ghrunner``, which is how root-owned
-    bytecode there once broke checkout. A lock nobody but the venv owner can
-    open is not a lock. The temp directory is writable by all of them, and the
-    key makes the name unambiguous.
-    """
-    return Path(tempfile.gettempdir()) / f"mdt-numba-warmup-{_env_key()}.lock"
-
-
 @contextmanager
-def _compile_lock(path: Path, timeout_s: float) -> Iterator[tuple[bool, float]]:
-    """Hold an exclusive advisory lock on ``path``; yield (held, waited_s).
+def _compile_lock(
+    path: Path, timeout_s: float, *, require_self_owned: bool
+) -> Iterator[tuple[bool, bool, float]]:
+    """Hold an exclusive advisory lock on ``path``; yield (held, proceed, waited_s).
 
-    Yields ``held=False`` rather than raising when the lock cannot be taken.
-    The warm-up is a mitigation, and failing the whole analysis run because a
-    lock file could not be opened would turn a slow start into an outage. Every
-    such degradation is logged at ERROR with the reason, never swallowed.
+    ``proceed`` is whether the caller may run the compile. It is False only
+    when the lock file itself could not be opened or verified as a safe regular
+    file - a planted symlink, FIFO, or unopenable file at a predictable path
+    (issue #1401). There the warm-up is REFUSED rather than run unlocked:
+    compiling a cold shared cache without the cross-process lock is the state
+    documented as corrupting it permanently. A lock-hold timeout or a missing
+    ``fcntl`` still yields ``proceed=True`` - degraded and logged at ERROR, but
+    the caller may warm, as before.
 
     ``flock`` is released by the kernel when the fd closes, including when the
     holder is killed, so a dead process cannot leave a stale lock behind.
@@ -307,28 +289,18 @@ def _compile_lock(path: Path, timeout_s: float) -> Iterator[tuple[bool, float]]:
             "corrupt the numba cache",
             sys.platform,
         )
-        yield False, 0.0
+        yield False, True, 0.0
         return
 
-    fd: int | None = None
-    try:
-        # 0o666 so a second UNIX user on the same host can take the same lock;
-        # the umask still applies, which is why the mode is repaired below.
-        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o666)
-        try:
-            os.fchmod(fd, 0o666)
-        except OSError:
-            # Not ours to chmod (another user created it). Harmless: we only
-            # need to have opened it, which we just did.
-            pass
-    except OSError as exc:
+    fd = _open_lock_safe(path, require_self_owned=require_self_owned)
+    if fd is None:
         log.error(
-            "jit-warmup: cannot open lock file %s (%s); warming WITHOUT a "
-            "cross-process lock",
+            "jit-warmup: lock %s is not a safe regular file this process may "
+            "open; warm-up REFUSED rather than compile a cold cache unlocked "
+            "(#1401)",
             path,
-            exc,
         )
-        yield False, time.monotonic() - started
+        yield False, False, time.monotonic() - started
         return
 
     try:
@@ -345,12 +317,12 @@ def _compile_lock(path: Path, timeout_s: float) -> Iterator[tuple[bool, float]]:
                         path,
                         timeout_s,
                     )
-                    yield False, time.monotonic() - started
+                    yield False, True, time.monotonic() - started
                     return
                 time.sleep(_LOCK_POLL_S)
         waited = time.monotonic() - started
         try:
-            yield True, waited
+            yield True, True, waited
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
@@ -362,24 +334,18 @@ def _compile_lock(path: Path, timeout_s: float) -> Iterator[tuple[bool, float]]:
 # ---------------------------------------------------------------------------
 
 
-def warm_backend_jit(
-    backend: type[JitWarmable],
-    *,
-    backend_name: str,
-    timeout_s: float = LOCK_TIMEOUT_S,
-) -> WarmupResult:
-    """Compile ``backend``'s cached JIT paths once, under the compile lock.
+def _require_backend_methods(
+    backend: type[JitWarmable], backend_name: str
+) -> None:
+    """Refuse a backend that has not declared how it warms, with a named error.
 
-    Always runs, for every worker count. ``--workers 1`` is not exempt: the
-    corruption needs two PROCESSES, not two workers, and one CLI invocation
-    per chunk is exactly two processes when a drain and a refresh overlap.
+    A backend missing either method used to die with a bare `AttributeError:
+    type object 'X' has no attribute 'jit_cache_roots'` from inside the
+    warm-up, which reads as a bug in this module rather than as "that backend
+    has not declared whether it has a JIT cache". It is not defaulted, because
+    a silent `()` would make an undeclared backend take the "nothing to
+    protect" path, which is exactly the wrong guess.
     """
-    # Named, not inherited. A backend missing either method used to die with a
-    # bare `AttributeError: type object 'X' has no attribute 'jit_cache_roots'`
-    # from inside the warm-up, which reads as a bug in this module rather than
-    # as "that backend has not declared whether it has a JIT cache". It is not
-    # defaulted, because a silent `()` would make an undeclared backend take
-    # the "nothing to protect" path, which is exactly the wrong guess.
     missing = [
         name
         for name in ("jit_cache_roots", "warm_jit_cache")
@@ -394,6 +360,21 @@ def warm_backend_jit(
             "backend with no in-process JIT returns () and a short string "
             "saying so - see MikBackend."
         )
+
+
+def warm_backend_jit(
+    backend: type[JitWarmable],
+    *,
+    backend_name: str,
+    timeout_s: float = LOCK_TIMEOUT_S,
+) -> WarmupResult:
+    """Compile ``backend``'s cached JIT paths once, under the compile lock.
+
+    Always runs, for every worker count. ``--workers 1`` is not exempt: the
+    corruption needs two PROCESSES, not two workers, and one CLI invocation
+    per chunk is exactly two processes when a drain and a refresh overlap.
+    """
+    _require_backend_methods(backend, backend_name)
 
     lock_path = warmup_lock_path()
     stamp_path = warmup_stamp_path()
@@ -412,7 +393,31 @@ def warm_backend_jit(
             skipped=True,
         )
 
-    with _compile_lock(lock_path, timeout_s) as (held, waited):
+    # The lock's directory is the security boundary (issue #1401). Refuse the
+    # warm-up rather than compile a cold cache unlocked when it is not safe.
+    shared = _lock_dir_override() is not None
+    if not _ensure_lock_dir(lock_path.parent, shared=shared):
+        log.error(
+            "jit-warmup: lock directory %s cannot be made trustworthy; warm-up "
+            "REFUSED rather than compile a cold cache unlocked (#1401)",
+            lock_path.parent,
+        )
+        return WarmupResult(
+            backend=backend_name,
+            seconds=time.monotonic() - checked,
+            lock_path=lock_path,
+            lock_held=False,
+            waited_s=0.0,
+            refused=True,
+            detail=(
+                f"lock directory {lock_path.parent} is not trustworthy; "
+                "warm-up refused"
+            ),
+        )
+
+    with _compile_lock(
+        lock_path, timeout_s, require_self_owned=not shared
+    ) as (held, proceed, waited):
         # Re-check inside the lock. The common cold-start shape is several
         # processes arriving together; whoever loses the race must not
         # recompile what the winner just finished writing.
@@ -431,6 +436,22 @@ def warm_backend_jit(
                     ),
                     skipped=True,
                 )
+        if not proceed:
+            # The lock file could not be opened or verified as a safe regular
+            # file. Compiling anyway is the unlocked warm-up a hostile lock
+            # exists to provoke, so refuse instead (issue #1401).
+            return WarmupResult(
+                backend=backend_name,
+                seconds=time.monotonic() - checked,
+                lock_path=lock_path,
+                lock_held=False,
+                waited_s=waited,
+                refused=True,
+                detail=(
+                    f"lock file {lock_path} is not a safe regular file; "
+                    "warm-up refused"
+                ),
+            )
         started = time.monotonic()
         detail = backend.warm_jit_cache()
         seconds = time.monotonic() - started
@@ -537,9 +558,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 __all__ = [
-    "JitWarmable",
+    "LOCK_DIR_ENV",
     "LOCK_TIMEOUT_S",
     "WARMUP_LINE_PREFIX",
+    "JitWarmable",
     "WarmupResult",
     "cache_fingerprint",
     "main",
