@@ -491,7 +491,13 @@ jobs:
         if: ${{ !cancelled() }}
         # Every /api/v1/** call is fulfilled in-page, so this suite needs no
         # backend and no library and can run literally anywhere.
-        run: pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" rekordbox-gate \
+            pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
 
       - name: Hermetic gate - stretch quality smoke
         working-directory: apps/webui/frontend
@@ -527,7 +533,13 @@ jobs:
         # two independent answers into one -- same reasoning as the two
         # hermetic gates above.
         if: ${{ !cancelled() }}
-        run: pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" comment-hotkey-gate \
+            pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate
 
       - name: Root Playwright suite (real engine + Vite)
         working-directory: apps/webui/frontend
@@ -788,16 +800,34 @@ jobs:
 
       - name: Extended - desktop setup page
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" desktop-setup \
+            pnpm exec playwright test --config tests/e2e/playwright.desktop-setup.config.ts
 
       - name: Extended - play analytics
         working-directory: apps/webui/frontend
         # Boots a self-seeding SQLite fixture server; no real library.
-        run: pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" play-analytics \
+            pnpm exec playwright test --config tests/e2e/playwright.play-analytics.config.ts
 
       - name: Extended - stretch artifact (chromium + webkit)
         working-directory: apps/webui/frontend
-        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
+        # Fixed loopback port (see the vite/playwright config it names) on a
+        # host that runs up to eight e2e jobs at once: hold the per-suite host
+        # lock so a second copy of this step WAITS instead of dying on
+        # 'is already used'. Same reason as the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" stretch-artifact \
+            pnpm exec playwright test --config tests/e2e/playwright.stretch-artifact.config.ts
 
       - name: Extended - stems progress
         working-directory: apps/webui/frontend
