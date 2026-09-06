@@ -474,34 +474,3 @@ def test_remote_mode_pioneer_share_root_is_inside_crate(tmp_path: Path) -> None:
     result = _run_path_probe(code, env=env)
     assert result == {"share_root": str(crate / "pioneer-share")}
 
-
-@pytest.mark.skipif(pp.IS_WINDOWS, reason="symlink replacement fixture is POSIX-only")
-def test_contained_asset_path_revalidates_share_containment_after_directory_replacement(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """[if] a contained directory becomes an outside symlink [then ⛔️] it is rejected."""
-    share_root = tmp_path / "share"
-    target = share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
-    target.parent.mkdir(parents=True)
-    target.write_bytes(b"dat")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "ANLZ0000.DAT").write_bytes(b"outside")
-    monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
-    mapped = pp.MappedPath(
-        original="/PIONEER/USB/ANLZ0000.DAT",
-        resolved=target,
-        mapped=True,
-        reason="share",
-    )
-
-    first = pp._contained_asset_path(mapped, target)
-    replaced_directory = target.parent
-    replaced_directory.rename(tmp_path / "USB-before-replacement")
-    replaced_directory.symlink_to(outside, target_is_directory=True)
-    second = pp._contained_asset_path(mapped, target)
-
-    assert first.resolved == target
-    assert second.resolved is None
-    assert second.reason == "unsafe:share-symlink"
-

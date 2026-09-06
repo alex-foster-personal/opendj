@@ -1,0 +1,244 @@
+"""Directory-fd-anchored path-segment walk -- the TOCTOU-safe primitive.
+
+Split out of :mod:`apps.shared.platform_paths` purely to keep that module
+under its file-size ratchet (Amendment 17: extraction into an
+already-imported module is the fix for a budget breach, never a shrink of
+strings/tests/docs). This module carries no policy of its own about the
+share root, ``PathMap``, or ``MappedPath`` -- ``platform_paths.py`` is
+its only caller and owns all of that; this module just answers "resolve
+this candidate under this root, safely." It takes ``root`` as a plain
+argument and never names or imports any live rekordbox constant.
+
+Why this exists (pin from PR #1271 review, packet 9h-T1): the prior
+containment guard called ``candidate.resolve(strict=False)`` and THEN
+checked ``is_relative_to(root)``. Both steps look at the filesystem, but at
+different instants -- a directory inside ``root`` can be replaced by a
+symlink pointing outside it AFTER the check runs and BEFORE whatever opens
+the file for real. Walking the path one segment at a time and opening each
+segment with ``os.open(part, O_RDONLY | O_NOFOLLOW | O_NONBLOCK,
+dir_fd=<parent>)`` -- anchored to the fd of the directory already opened
+above it, never to a path string re-derived from the root -- makes a
+symlink swapped in for ANY segment, at any point during the walk (including
+the leaf), raise ``ELOOP`` the instant that segment is opened. There is no
+separate "check, then act" step left to race, because the check IS the act
+of opening.
+
+Revision note (sol-review v1, BLOCKING P1, same packet): an earlier cut of
+this walk passed ``O_DIRECTORY`` on intermediate opens and, on the
+``NotADirectoryError`` that produces for a NOFOLLOW-rejected symlinked
+directory on macOS, disambiguated it from a legitimate non-symlink file
+with a SECOND, name-based ``os.stat(part, dir_fd=..., follow_symlinks=False)``
+-- itself a fresh check-then-act pair, in a walk whose entire purpose is
+eliminating those. Fixed by dropping ``O_DIRECTORY`` entirely: every segment
+opens with plain ``O_NOFOLLOW`` (a symlink there still raises ``ELOOP``,
+so the security property is unchanged), and the directory-vs-file
+distinction for a non-leaf segment is read off ``os.fstat`` on the FD
+ALREADY HELD from that same open -- no second lookup, no new race.
+``O_NONBLOCK`` additionally guards every open against blocking forever on a
+FIFO a hostile process could plant at that segment.
+
+Second revision note (sol-review v1, BLOCKING P1, packet 9j): the fix above
+only covers segments BELOW the root. The root itself was still opened with
+plain ``O_DIRECTORY`` and no ``O_NOFOLLOW`` at all -- deliberately, since a
+configured root (SHARE_ROOT) is legitimately allowed to be a symlink -- so
+replacing the root ITSELF with a symlink to an attacker-controlled
+directory made every descendant segment check pass against the wrong
+directory; nothing in the per-segment walk below can catch a bad anchor
+above it. Fixed with an identity-checked anchor (see ``_verify_root_anchor``
+below): the root's ``(st_dev, st_ino)`` is recorded once, the first time
+this process trusts it, and every later call re-derives the current
+identity and refuses to walk if it no longer matches -- catching a swapped
+root while still tolerating one that was a symlink from the start.
+"""
+from __future__ import annotations
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+FD_ANCHORED_WALK_SUPPORTED: bool = (
+    sys.platform != "win32"
+    and hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NOFOLLOW")
+    and os.open in os.supports_dir_fd
+)
+
+_IS_DARWIN: bool = sys.platform == "darwin"
+
+# ----- Identity-checked root anchor (sol-review v1 BLOCKING P1, packet 9j) -
+#
+# ``resolve_under_root`` opens ``root`` itself with plain O_DIRECTORY, no
+# O_NOFOLLOW: unlike every other segment in the walk, the root MUST be
+# allowed to be a symlink (SHARE_ROOT legitimately is one under remote
+# mode -- see ``platform_paths.compute_share_root``), so a blanket
+# O_NOFOLLOW there would break that case outright rather than merely
+# narrow a race.
+#
+# But that same tolerance is exactly the P1: a root swapped for a symlink
+# to an ATTACKER-CONTROLLED directory between the moment it was last
+# trusted and the moment this walk opens it is followed exactly the same
+# way, and the walk then anchors below it -- every descendant passes every
+# segment check because the checks are all relative to the wrong
+# directory. A single ``open()`` cannot tell "trusted, pre-existing
+# symlink" apart from "swapped, hostile symlink"; both are just a
+# directory fd once opened.
+#
+# The identity-checked anchor breaks the tie with a second, independent
+# fact: WHAT the root resolves to must not have CHANGED since the first
+# time this exact process trusted it. The first call for a given literal
+# ``root`` path establishes the anchor -- records the ``(st_dev, st_ino)``
+# of whatever that root fd's open landed on, exactly once. Every later
+# call for that same root re-derives the current identity the same way
+# and compares it to the recorded anchor; a mismatch means the path's
+# target changed after being trusted, which is precisely a root-swap
+# attack, and raises rather than silently walking the new target.
+#
+# This is deliberately NOT the "AssetResolver carries no module-level
+# state" pattern this module's only caller documents for itself -- that
+# pattern was rejected because a 30s cache could serve a stale "safe"
+# VERDICT without rerunning the check. This cache never skips a check and
+# never produces a stale pass: every call still opens and walks the whole
+# path fresh, and the anchor can only ever turn a call from "pass" to
+# "fail", never the reverse -- it IS the security control, not a shortcut
+# around it.
+_ROOT_ANCHORS: dict[str, tuple[int, int]] = {}
+
+
+class RootIdentityChanged(OSError):
+    """Raised when a root's on-disk identity no longer matches its anchor.
+
+    Subclasses ``OSError`` so every existing caller that already treats an
+    ``OSError`` from the walk as "unsafe, refuse the path" (see
+    ``platform_paths._contained_asset_path``) handles this the same way
+    with no call-site change required.
+    """
+
+
+def _verify_root_anchor(root: Path, root_fd: int) -> None:
+    """Establish (first call) or enforce (later calls) ``root``'s identity anchor.
+
+    Keyed on the literal ``root`` path string a caller supplies -- SHARE_ROOT
+    switching library modes (a legitimate, different configured root) gets
+    its own independent anchor rather than colliding with a stale one, and
+    a root that does not exist yet never reaches here (the caller only
+    calls this once ``root_fd`` is already a real, opened directory).
+    """
+    key = str(root)
+    current = os.fstat(root_fd)
+    identity = (current.st_dev, current.st_ino)
+    anchor = _ROOT_ANCHORS.get(key)
+    if anchor is None:
+        _ROOT_ANCHORS[key] = identity
+        return
+    if anchor != identity:
+        raise RootIdentityChanged(
+            f"root {str(root)!r} no longer resolves to the identity "
+            f"anchored at first use (anchored dev={anchor[0]} "
+            f"ino={anchor[1]}, now dev={identity[0]} ino={identity[1]}) -- "
+            "the root directory was replaced (e.g. with a symlink to an "
+            "attacker-controlled location) after being trusted; refusing "
+            "to walk it."
+        )
+
+
+def path_from_fd(fd: int) -> Path:
+    """Recover the real filesystem path an open directory/file fd refers to.
+
+    macOS/BSD have no ``/proc``, so ``fcntl.F_GETPATH`` is the primitive
+    there; Linux exposes the same information via ``/proc/self/fd/<fd>``.
+    """
+    if _IS_DARWIN:
+        import fcntl
+
+        buf = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\x00" * 1024)
+        return Path(buf.split(b"\x00", 1)[0].decode())
+    return Path(os.readlink(f"/proc/self/fd/{fd}"))
+
+
+def resolve_under_root(candidate: Path, root: Path) -> Path:
+    """Resolve ``candidate`` via a directory-fd-anchored walk from ``root``.
+
+    ``candidate`` must be ``root`` itself or a lexical descendant of it --
+    raises ``ValueError`` otherwise (the caller decides what that means; this
+    function has no opinion about alternate root forms).
+
+    Raises ``OSError`` the moment any segment -- directory or leaf -- turns
+    out to be a symlink, at the exact instant it is opened: every segment is
+    opened with plain ``O_NOFOLLOW`` (no ``O_DIRECTORY``), so a symlink
+    there raises ``ELOOP`` regardless of whether a directory or a file was
+    expected. Whether a non-leaf segment is actually a directory is then
+    read off ``os.fstat`` on the FD JUST OPENED -- never a second, name-based
+    lookup, which would reopen the exact check-then-act gap this walk exists
+    to close (sol-review v1 P1, see module docstring).
+
+    A missing tail component, or a non-leaf segment that turns out to be a
+    real, non-symlink non-directory (a plain file, FIFO, etc. -- the
+    ``O_NONBLOCK`` on the open guards against blocking forever on a
+    hostile-planted FIFO), is tolerated exactly like ``resolve(strict=False)``
+    was: the unresolved remainder is appended lexically onto the last
+    directory fd's real, symlink-verified path, rather than being treated as
+    an escape attempt.
+
+    Also raises ``RootIdentityChanged`` (an ``OSError`` subclass) the first
+    time ``root`` itself is opened after having been swapped for a symlink
+    to somewhere else since this process last trusted it -- see the module
+    docstring's second revision note and ``_verify_root_anchor``. ``root``
+    is still allowed to be a symlink outright (SHARE_ROOT legitimately is,
+    under remote mode); only a CHANGE in what it resolves to, after the
+    fact, is rejected.
+    """
+    relative_parts = candidate.relative_to(root).parts
+    if ".." in relative_parts:
+        # sol-review v1 BLOCKING P1 (packet 9i-1): Path.relative_to() does
+        # NOT normalize '..' -- a candidate shaped like root/../outside/file
+        # still starts with root's own parts lexically, so relative_to()
+        # succeeds and hands back parts beginning with '..'. Left unchecked,
+        # the walk below would os.open('..', dir_fd=root_fd), stepping to
+        # root's own parent and out of containment before a single symlink
+        # check ever runs. Reject it here, lexically, before opening
+        # anything -- including before the root fd itself is opened.
+        raise ValueError(
+            f"{candidate!r} contains a '..' component relative to "
+            f"{root!r} -- lexical escape, not a descendant of root"
+        )
+    try:
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    except (FileNotFoundError, NotADirectoryError):
+        # root itself does not exist yet -- not an escape attempt, nothing
+        # to walk. Mirror resolve(strict=False)'s tolerance.
+        return root.joinpath(*relative_parts)
+    opened_fds = [root_fd]
+    try:
+        _verify_root_anchor(root, root_fd)
+        current_fd = root_fd
+        for index, part in enumerate(relative_parts):
+            is_last = index == len(relative_parts) - 1
+            try:
+                fd = os.open(
+                    part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=current_fd
+                )
+            except FileNotFoundError:
+                # Not an escape attempt -- the segment (and everything
+                # after it) simply does not exist yet. The returned suffix
+                # is a LEXICAL, non-fd-verified path: never to be confused
+                # with "file existed and got swapped" (that raises ELOOP
+                # above, uncaught here, and propagates to the caller).
+                base = path_from_fd(current_fd)
+                return base.joinpath(*relative_parts[index:])
+            opened_fds.append(fd)
+            if not is_last:
+                # A real, non-symlink non-directory sitting where a
+                # directory was expected is legitimate data (resolve
+                # (strict=False) tolerated this too) -- checked on the fd
+                # we already hold, not by re-deriving the name. Stop
+                # walking and hand back the unresolved remainder lexically,
+                # same as a missing tail.
+                if not stat.S_ISDIR(os.fstat(fd).st_mode):
+                    base = path_from_fd(fd)
+                    return base.joinpath(*relative_parts[index + 1 :])
+            current_fd = fd
+        return path_from_fd(current_fd)
+    finally:
+        for fd in reversed(opened_fds):
+            os.close(fd)
