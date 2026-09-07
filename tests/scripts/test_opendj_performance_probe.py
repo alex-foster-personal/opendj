@@ -410,8 +410,8 @@ def test_trend_unload_check_requires_the_first_sample_to_be_post_boot(tmp_path: 
     }
 
 
-def _write_ring_at(home: Path, bundle_id: str, events: list[dict[str, object]]) -> Path:
-    """Write one exact perf ring into a real WebKit LocalStorage sqlite file."""
+def _write_storage_value(home: Path, bundle_id: str, key: str, value: object) -> Path:
+    """Write one key into a real WebKit LocalStorage sqlite file."""
 
     path = (
         home
@@ -425,12 +425,77 @@ def _write_ring_at(home: Path, bundle_id: str, events: list[dict[str, object]]) 
         connection.execute("CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE, value BLOB)")
         connection.execute(
             "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
-            ("mdt.perfEventLog", json.dumps(events).encode("utf-8")),
+            (key, json.dumps(value).encode("utf-8")),
         )
         connection.commit()
     finally:
         connection.close()
     return path
+
+
+def _write_ring_at(home: Path, bundle_id: str, events: list[dict[str, object]]) -> Path:
+    """Write one exact perf ring into a real WebKit LocalStorage sqlite file."""
+
+    return _write_storage_value(home, bundle_id, "mdt.perfEventLog", events)
+
+
+_PERF_BUCKET_BUDGETS = {"deck-load": 16, "transport-schedule": 16, "deck-state": 8, "other": 8}
+"""Test-side mirror of perf-event-log.ts BUDGETS, so a fixture can be built by
+running candidate rows through the SAME per-bucket FIFO the browser actually
+enforces, instead of writing every candidate row straight into the fixture's
+sqlite file as if the ring were unbounded."""
+
+
+def _perf_bucket_of_kind(kind: str) -> str:
+    """Test-side mirror of perf-event-log.ts `_bucketOf`."""
+
+    if kind.startswith("deck-load"):
+        return "deck-load"
+    if kind.startswith("transport-schedule"):
+        return "transport-schedule"
+    if kind.startswith("deck-state") or kind == "deck-unload":
+        return "deck-state"
+    return "other"
+
+
+def _apply_ring_budgets(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Test-side mirror of perf-event-log.ts `_withinBudgets`: keep the newest
+    N rows per bucket, walking newest-to-oldest so eviction is oldest-first
+    WITHIN a bucket while leaving the other buckets untouched, then restore
+    chronological order.
+
+    A fixture that writes candidate rows straight into sqlite bypasses this
+    entirely, so a flood larger than a bucket's budget sits in the ring as
+    inert padding a real ring could never hold (issue #1403 round-4 P3) -
+    running it through the same budget logic the browser applies is what
+    makes the fixture a real ring instead of an unbounded list.
+    """
+
+    kept: list[dict[str, object]] = []
+    taken = dict.fromkeys(_PERF_BUCKET_BUDGETS, 0)
+    for event in reversed(events):
+        bucket = _perf_bucket_of_kind(str(event.get("kind", "")))
+        if taken[bucket] >= _PERF_BUCKET_BUDGETS[bucket]:
+            continue
+        taken[bucket] += 1
+        kept.append(event)
+    return list(reversed(kept))
+
+
+def _write_empty_deck_baseline(home: Path, bundle_id: str, t: str) -> Path:
+    """Write the `mdt.deckState` empty-deck baseline the frontend stamps per load.
+
+    Mirrors perf-event-log.ts recordDeckStateBaseline: the four decks were
+    created empty at `t`, which is the fact the probe needs to read an idle
+    deck as UNLOADED rather than as "no deck-state evidence".
+    """
+
+    return _write_storage_value(
+        home,
+        bundle_id,
+        "mdt.deckState",
+        {"v": 1, "t": t, "unloaded": [1, 2, 3, 4]},
+    )
 
 
 def test_only_a_completed_deck_load_marks_a_deck_loaded(
@@ -543,3 +608,297 @@ def test_deck_normalized_footprints_still_report_every_loaded_sample(
 
     assert result["deck_load_normalized_footprint_mb"] == [200.0, 225.0]
     assert result["deck_load_normalized_excluded_zero_deck_samples"] == 0
+
+
+def test_loaded_deck_count_resolves_under_an_other_bucket_flood_when_baseline_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An `other`-bucket flood cannot drive loaded_deck_count to None.
+
+    The control issue #1403 asks for. The merged PR's ring tests exercised a
+    ring holding only the new kinds, but a real ring also carries audio-context,
+    sync-failure and beat-sync-skip rows in the shared 8-row `other` budget.
+    Those used to evict the four empty-deck boot rows, so every deck that had
+    no other surviving row dropped out of the probe's reconstruction and
+    `len(deck_state)` fell below 4 - loaded_deck_count read None under ordinary
+    use, indistinguishable from an app that was never exercised.
+
+    The fix records the empty-deck baseline OUTSIDE the ring (mdt.deckState), so
+    an idle deck's unloaded state cannot be evicted. Decks 2-4 below have no
+    ring row at all: only the baseline says they are empty.
+
+    The 20 sync-failure rows are run through `_apply_ring_budgets` before being
+    written, the same per-bucket FIFO perf-event-log.ts applies, so only the
+    newest 8 (the `other` bucket's own budget) actually reach the fixture - a
+    real ring would never hold more of them beside the deck row (round-4 P3:
+    writing all 20 straight into sqlite bypassed the budget logic entirely and
+    left them as inert padding no eviction ever touched).
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    candidate_events = [
+        {"t": "2026-09-06T11:05:00.000Z", "kind": "deck-load sid=aaaaaaaaaaaa1", "deck": 1},
+        # Unrelated quiet kinds, far past the 8-row `other` budget. They must
+        # not decide whether the deck-state signal survives.
+        *[
+            {
+                "t": f"2026-09-06T11:{minute:02d}:00.000Z",
+                "kind": "sync-failure",
+                "deck": 1,
+                "message": "could not phase lock",
+            }
+            for minute in range(6, 26)
+        ],
+    ]
+    surviving_events = _apply_ring_budgets(candidate_events)
+    assert len(surviving_events) == 9, "1 deck-load row + the other bucket's 8-row budget"
+    _write_ring_at(tmp_path, "com.opendj.desktop", surviving_events)
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
+
+    ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
+
+    assert ring["available"] is True
+    assert ring["loaded_deck_count"] == 1
+
+
+def test_empty_baseline_reads_as_zero_loaded_not_as_no_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh boot with nothing loaded resolves to 0, not to None.
+
+    None must be reserved for rings with no deck-state evidence at all; a
+    present empty-deck baseline is positive evidence that all four decks are
+    unloaded, which is what lets the unload check open a post-boot baseline.
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    _write_ring_at(
+        tmp_path,
+        "com.opendj.desktop",
+        [
+            {"t": "2026-09-06T11:06:00.000Z", "kind": "audio-context", "deck": None, "message": "x"}
+            for _ in range(10)
+        ],
+    )
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
+
+    assert browser_perf_ring(DEFAULT_BUNDLE_IDS)["loaded_deck_count"] == 0
+
+
+def test_loaded_deck_count_is_none_when_a_deck_load_row_may_have_been_evicted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An evicted deck-load row must not silently revert a deck to unloaded.
+
+    Deck 1 loads right after the baseline, then 16 more deck-load-bucket rows
+    for other decks pass through the ring - the deck-load bucket's budget - so
+    deck 1's own completed-load row is exactly the kind of row that budget
+    would have evicted by now. The ring below simulates that: it never shows
+    deck 1's completed load at all, only the 16 later rows. Without the fix,
+    `_deck_states` would keep deck 1 at the baseline's default False forever,
+    fabricating a clean unload for a deck that may still be loaded. The fix
+    must drop deck 1 out of the result once the bucket is at budget, which
+    keeps `loaded_deck_count` at None instead of publishing a wrong 3.
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
+    later_loads = [
+        {
+            "t": f"2026-09-06T11:{minute:02d}:00.000Z",
+            "kind": f"deck-load sid=bbbbbbbbbb{minute:02d}",
+            "deck": 2 + (minute % 3),
+        }
+        for minute in range(1, 17)
+    ]
+    _write_ring_at(tmp_path, "com.opendj.desktop", later_loads)
+
+    ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
+
+    assert ring["deck_load_count_in_ring"] == 16
+    assert ring["loaded_deck_count"] is None
+
+
+def test_loaded_deck_count_resolves_from_baseline_when_budget_is_pre_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: a returning user's PRE-gate ring rows must not zero out the baseline.
+
+    The ring persists across page loads, so a returning user who has already
+    done four 4-deck loads in an earlier session can have the deck-load bucket
+    sitting at its budget of 16 rows before this session's baseline is even
+    stamped. None of those rows could have evicted a post-gate row, because
+    eviction is oldest-first and nothing has been appended after the gate yet.
+    The eviction guard must count only post-gate deck-load-bucket rows, so this
+    baseline-only session still resolves loaded_deck_count to 0 (all four decks
+    unloaded per the baseline), not None.
+
+    deck_load_count_in_ring and last_deck_load are gated the same instant as
+    deck_state (round-4 P3): since every prior-session row here is PRE-gate,
+    the gated fields read as empty for this session too, rather than reporting
+    16 loads and a stale last_deck_load next to a 0 that belongs to a
+    different window.
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    prior_session_loads = [
+        {
+            "t": f"2026-09-06T10:{44 + minute:02d}:00.000Z",
+            "kind": f"deck-load sid=aaaaaaaaaaa{minute:02d}",
+            "deck": 1 + (minute % 4),
+        }
+        for minute in range(16)
+    ]
+    _write_ring_at(tmp_path, "com.opendj.desktop", prior_session_loads)
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
+
+    ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
+
+    assert ring["deck_load_count_in_ring"] == 0
+    assert ring["last_deck_load"] is None
+    assert ring["loaded_deck_count"] == 0
+
+
+def test_loaded_deck_count_still_resolves_under_the_deck_load_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: below the deck-load bucket's budget, a baseline-only deck still counts.
+
+    Without this, an implementation that always dropped unobserved baseline
+    decks would pass the eviction-hazard test above while never resolving a
+    deck count under ordinary, well-under-budget use.
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
+    _write_ring_at(
+        tmp_path,
+        "com.opendj.desktop",
+        [
+            {"t": "2026-09-06T11:01:00.000Z", "kind": "deck-load sid=aaaaaaaaaaa1", "deck": 1},
+            {"t": "2026-09-06T11:02:00.000Z", "kind": "deck-load sid=aaaaaaaaaaa2", "deck": 2},
+        ],
+    )
+
+    ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
+
+    assert ring["deck_load_count_in_ring"] == 2
+    assert ring["loaded_deck_count"] == 2
+
+
+def test_loaded_deck_count_is_none_when_a_stale_unload_outlives_its_evicted_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round-4 P1: a surviving unload does not prove a deck is still unloaded.
+
+    `deck-load` (budget 16) and `deck-state` (budget 8) are separate FIFO
+    buckets, so a deck's OWN newer row can be evicted from one bucket while an
+    older row for the SAME deck survives in the other - eviction only orders
+    rows within a bucket, never across buckets. Sequence, all post-gate:
+    decks 1-4 unload (4 `deck-unload` rows, deck-state bucket), decks 1-4 load
+    again (4 fresh completed loads, deck-load bucket), then 16 more deck-load
+    attempts fail (`deck-load-fail`, still the deck-load bucket per
+    perf-event-log.ts `_bucketOf`). The 16 failures push the deck-load bucket
+    to 20 post-gate rows against its 16 budget, evicting exactly the oldest 4 -
+    the fresh reloads - while the 4 stale unloads sit untouched in the
+    deck-state bucket, nowhere near its 8-row budget.
+
+    Every deck now has a post-gate row (its stale unload), so the OLD guard -
+    which only dropped a deck with NO post-gate row at all - does nothing, and
+    last-observation-wins reads all four as unloaded: `loaded_deck_count`
+    would publish 0 while all four decks are actually loaded, exactly the
+    fabricated clean unload issue #1403 exists to prevent. The fix must reject
+    each deck's stale unload because the deck-load bucket, which could hold a
+    newer row for that same deck, is at budget with a horizon newer than the
+    unload.
+
+    The fixture below simulates the ring AFTER that eviction already happened,
+    the same convention `test_loaded_deck_count_is_none_when_a_deck_load_row_
+    may_have_been_evicted` above uses: it omits the 4 fresh reloads entirely
+    (they are what got evicted) and writes only what survives - the 4 stale
+    unloads plus the 16 failed attempts that pushed the deck-load bucket to
+    its budget.
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    gate = "2026-09-06T11:00:00.000Z"
+    unloads: list[dict[str, object]] = [
+        {"t": f"2026-09-06T11:0{deck}:00.000Z", "kind": "deck-unload", "deck": deck}
+        for deck in (1, 2, 3, 4)
+    ]
+    failed_attempts: list[dict[str, object]] = [
+        {
+            "t": f"2026-09-06T11:{9 + minute:02d}:00.000Z",
+            "kind": "deck-load-fail",
+            "deck": 1 + (minute % 4),
+        }
+        for minute in range(16)
+    ]
+    _write_ring_at(tmp_path, "com.opendj.desktop", [*unloads, *failed_attempts])
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", gate)
+
+    ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
+
+    assert ring["loaded_deck_count"] is None
+    assert ring["deck_state_reason"] == "evicted:deck1,deck2,deck3,deck4"
+
+
+def test_loaded_deck_count_resolves_exactly_when_every_deck_is_observed_post_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for the round-4 case above: well under both bucket budgets, a
+    mix of loads and unloads across both buckets still resolves an exact count.
+
+    Without this, an implementation that distrusted a deck whenever the OTHER
+    bucket held any row at all (rather than only when that bucket is AT
+    BUDGET with a newer horizon) would pass the eviction test above while
+    never resolving a count under ordinary, well-under-budget use that touches
+    both buckets.
+    """
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    _write_empty_deck_baseline(tmp_path, "com.opendj.desktop", "2026-09-06T11:00:00.000Z")
+    _write_ring_at(
+        tmp_path,
+        "com.opendj.desktop",
+        [
+            {"t": "2026-09-06T11:01:00.000Z", "kind": "deck-load sid=aaaaaaaaaaa1", "deck": 1},
+            {"t": "2026-09-06T11:02:00.000Z", "kind": "deck-load sid=aaaaaaaaaaa2", "deck": 2},
+            {"t": "2026-09-06T11:03:00.000Z", "kind": "deck-load sid=aaaaaaaaaaa3", "deck": 3},
+            {"t": "2026-09-06T11:04:00.000Z", "kind": "deck-unload", "deck": 3},
+            {"t": "2026-09-06T11:05:00.000Z", "kind": "deck-load sid=aaaaaaaaaaa4", "deck": 4},
+            {"t": "2026-09-06T11:06:00.000Z", "kind": "deck-unload", "deck": 4},
+        ],
+    )
+
+    ring = browser_perf_ring(DEFAULT_BUNDLE_IDS)
+
+    assert ring["loaded_deck_count"] == 2
+    assert ring["deck_state_reason"] is None
+
+
+def test_trend_names_a_ring_without_deck_state_evidence_as_such(
+    tmp_path: Path,
+) -> None:
+    """No resolved deck count is a broken ring, not an idle app.
+
+    Before the fix, loaded_deck_count None meant BOTH "the ring never carried
+    deck-state evidence" and "all four decks are unloaded", and the unload
+    check returned the same generic reason for the two - an operator could not
+    tell a measurement that never happened from one that simply had nothing to
+    flag. A window in which no sample resolves a deck count must name the ring,
+    not imply the app sat idle.
+    """
+
+    rows = [
+        _captured_record("2026-08-21T20:00:00Z", 300.0, 100.0),
+        _captured_record("2026-08-21T20:15:00Z", 700.0, 500.0),
+    ]
+    for row in rows:
+        row["browser_perf_ring"] = {"available": True, "loaded_deck_count": None}
+    _write_trend_rows(tmp_path, rows)
+
+    result = trend_logs(tmp_path, "2026-08-21T20:00:00Z")
+
+    assert result["unload_check"]["available"] is False
+    assert "no deck-state evidence" in result["unload_check"]["reason"]

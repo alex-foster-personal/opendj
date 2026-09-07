@@ -384,6 +384,24 @@ def _deck_normalized_footprints(
     return {"values": values, "excluded_zero_deck": excluded_zero_deck}
 
 
+def _unload_unavailable_reason(has_deck_state_evidence: bool) -> dict[str, Any]:
+    """Why no clean unload cycle completed, phrased to tell absence from idle.
+
+    No sample ever resolving a deck count means the ring carried no deck-state
+    evidence at all - a broken or never-written ring. That is NOT the same as an
+    app that sat idle through the window: an idle app with the empty-deck
+    baseline reads 0 loaded decks and opens a baseline. Conflating the two hid
+    real retained-memory regressions as "the app was never exercised".
+    """
+
+    if not has_deck_state_evidence:
+        return {"available": False, "reason": "no deck-state evidence in perf ring"}
+    return {
+        "available": False,
+        "reason": "need post-boot baseline, four loaded decks, and later all-unloaded sample",
+    }
+
+
 def _unload_check(
     samples: list[tuple[datetime, dict[str, Any]]],
     history: list[tuple[datetime, dict[str, Any]]],
@@ -400,8 +418,11 @@ def _unload_check(
             and isinstance(record["totals"].get("physical_footprint_mb"), (int, float))
         ]
 
+    any_deck_state_evidence = False
     post_boot_baselines: dict[int, float | None] = {}
     for record, decks in footprint_rows(history):
+        if decks is not None:
+            any_deck_state_evidence = True
         shell_pid = record.get("shell_pid")
         if not isinstance(shell_pid, int) or shell_pid in post_boot_baselines:
             continue
@@ -411,6 +432,8 @@ def _unload_check(
     four_loaded_seen: set[int] = set()
     completed: tuple[float, float] | None = None
     for record, decks in footprint_rows(samples):
+        if decks is not None:
+            any_deck_state_evidence = True
         shell_pid = record.get("shell_pid")
         if not isinstance(shell_pid, int):
             continue
@@ -423,10 +446,7 @@ def _unload_check(
         elif decks == 0 and shell_pid in four_loaded_seen:
             completed = (baseline, footprint)
     if completed is None:
-        return {
-            "available": False,
-            "reason": "need post-boot baseline, four loaded decks, and later all-unloaded sample",
-        }
+        return _unload_unavailable_reason(any_deck_state_evidence)
     baseline, latest_unloaded = completed
     delta = round(latest_unloaded - baseline, 2)
     return {

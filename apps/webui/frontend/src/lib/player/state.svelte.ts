@@ -19,7 +19,7 @@
  */
 
 import { playbackBpm } from '$lib/rb/beat-sync-math';
-import { recordPerfEvent } from '$lib/rb/perf-event-log';
+import { recordDeckStateBaseline } from '$lib/rb/perf-event-log';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
 import type { PitchRange } from '$lib/player/constants';
@@ -121,9 +121,12 @@ export const deckStates: Record<DeckId, DeckState> = $state({
 	4: _emptyDeckState(4)
 });
 
-for (const deck of [1, 2, 3, 4] as const) {
-	recordPerfEvent('deck-state-empty', 'initial deck state is unloaded', deck, 'info');
-}
+// The four decks above are created empty on EVERY page load - a constant, not
+// an event. Recording it as four ring rows restated the fact each load and
+// evicted real diagnostics from the shared quiet budget, and a single unrelated
+// row could then evict a deck's only state row and blind the resource probe.
+// Record it once as a durable non-ring baseline instead.
+recordDeckStateBaseline();
 
 /** Explicit audio-load error per deck (backend code or decode message);
  * null = no failed load. DeckState has no audio-error field by contract,
