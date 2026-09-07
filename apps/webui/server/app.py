@@ -36,7 +36,7 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
-from . import analysis_autostart
+from . import analysis_autostart, lyric_index_autostart
 from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
 from .errors import (
@@ -162,6 +162,7 @@ def create_app(
     usage_store: UsageStore | None = None,
     share_config: ShareConfig | None = None,
     auto_analyze: bool = False,
+    lyric_index: bool = False,
 ) -> FastAPI:
     """Build a configured FastAPI app.
 
@@ -170,6 +171,11 @@ def create_app(
     the loop shells out to ``apps.analysis.run``, so only the real daemon
     entry point (``_build_default_app``) turns it on, from
     ``MUSIC_DJ_AUTO_ANALYZE``. Tests opt in explicitly.
+
+    ``lyric_index`` arms the pausable background lyric-index reconcile loop
+    (see :mod:`apps.webui.server.lyric_index_autostart`). It is OFF here on
+    purpose too: only ``_build_default_app`` turns it on, from
+    ``MUSIC_DJ_LYRIC_INDEX``, so no test builds a thread.
     """
 
     if port is None:
@@ -196,9 +202,21 @@ def create_app(
             watcher = build_auto_analyze_watcher(app)
             app.state.auto_analyze_watcher = watcher
         watcher.start()
+        # build_lyric_index_watcher's own layout guard raises RuntimeError
+        # when state_db_path is not data_dir/state/state.db, so its build
+        # and start live INSIDE this try: a raise here must still stop the
+        # auto-analyze watcher above via the finally, not leak its thread.
+        lyric_watcher: lyric_index_autostart.LyricIndexWatcher | None = None
         try:
+            lyric_watcher = getattr(app.state, "lyric_index_watcher", None)
+            if lyric_watcher is None:
+                lyric_watcher = build_lyric_index_watcher(app)
+                app.state.lyric_index_watcher = lyric_watcher
+            lyric_watcher.start()
             yield
         finally:
+            if lyric_watcher is not None:
+                lyric_watcher.stop()
             watcher.stop()
             # playlist_write builds its PlaylistStore lazily from
             # app.state.state_db_path; release its sqlite handle on shutdown.
@@ -225,6 +243,7 @@ def create_app(
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.auto_analyze = analysis_autostart.build(enabled=auto_analyze)
+    app.state.lyric_index = lyric_index_autostart.build(enabled=lyric_index)
     app.state.client_error_log_dir = (
         client_error_log_dir
         if client_error_log_dir is not None
@@ -551,6 +570,46 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
     )
 
 
+def build_lyric_index_watcher(app: FastAPI) -> lyric_index_autostart.LyricIndexWatcher:
+    """Bind the lyric-index reconcile loop to this app's data and usage store.
+
+    Public because it IS the wiring under test: ``create_app`` supplies
+    ``state_db_path`` (whose grandparent directory is the data root that
+    holds ``state/`` - the lyrics cache and the index file both live under
+    ``data_dir/state/``) and ``usage_store`` (the UI-activity probe that
+    pauses the job while someone is using the app).
+    """
+    state_db_path = Path(app.state.state_db_path).resolve()
+    data_dir = state_db_path.parent.parent
+    # A layout mismatch (state_db_path not exactly two levels under the data
+    # root) makes the derivation above point at the wrong tree: the watcher
+    # would then find zero candidates, write the index into that wrong tree,
+    # and report idle forever with no error. Fail loud instead - but only
+    # when the daemon is actually armed to do that reconcile work, so an app
+    # built with the feature off (the default in every test but the lyric
+    # daemon's own) is free to pass a state_db_path with no such layout.
+    if app.state.lyric_index.enabled and (
+        state_db_path.parent.name != "state" or not (data_dir / "state").is_dir()
+    ):
+        raise RuntimeError(
+            f"lyric index data_dir {data_dir} guessed from state_db_path "
+            f"{state_db_path} does not match the required data_dir/state/"
+            "state.db layout; refusing to reconcile a directory that cannot "
+            "hold the lyrics cache."
+        )
+
+    def ui_active() -> bool:
+        # "is the app open and on screen" is the DJ-safe pause signal: index
+        # work never runs while a client could be at the decks.
+        return bool(
+            app.state.usage_store.snapshot()["summary"]["any_client_in_use"]
+        )
+
+    return lyric_index_autostart.LyricIndexWatcher(
+        app.state.lyric_index, data_dir=data_dir, activity_fn=ui_active
+    )
+
+
 def _build_default_app() -> FastAPI:
     from apps.shared import platform_paths
     from apps.shared.library_mode import apply_library_env, assert_ready
@@ -576,6 +635,7 @@ def _build_default_app() -> FastAPI:
         syncthing_status_fn=probe_syncthing_status,
         stem_roots=stems.roots,
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
+        lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
     )
 
 
