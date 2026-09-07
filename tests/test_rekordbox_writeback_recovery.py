@@ -340,8 +340,9 @@ def test_a_manifest_cannot_aim_the_ssh_pull_lane_outside_the_crate(
     key = tmp_path / "fake_key"
     key.write_text("not a key", encoding="utf-8")
     monkeypatch.setattr(crate_sync, "OWNER_SSH_KEY", key)
+    monkeypatch.setenv(crate_sync.OWNER_SSH_TARGETS_ENV, "dev@test-owner-ssh-target")
     crate, outside = _crate_and_outside(tmp_path)
-    owner = sorted(crate_sync.ALLOWED_OWNER_SSH)[0]
+    owner = sorted(crate_sync._owner_ssh_targets())[0]
 
     def _manifest(dest_root: Path) -> dict:
         return {"files": [{

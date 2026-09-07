@@ -2,7 +2,7 @@
 
 Why three tiers and not path equality: OBSERVED Tue 28 Jul 2026, NOT ONE of
 MIK's 7,006 stored paths resolves on disk. They point at the dead
-``/Users/dev`` home and two deleted ``/Users/dev/Documents`` folders.
+``/Users/old`` home and two deleted ``/Users/user/Documents`` folders.
 Path equality against ``tracks.file_path`` still matches a lot, because
 ``tracks`` records the same dead paths, but it cannot be the only tier.
 

@@ -44,10 +44,10 @@ def _song(
 def test_exact_path_wins_over_fuzzy_tiers(
     state_conn: sqlite3.Connection, add_track
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/Music/x.mp3", title="X", artist="Y")
+    add_track("a" * 40, file_path="/Users/user/Music/x.mp3", title="X", artist="Y")
     index = matcher.TrackIndex.from_conn(state_conn)
     report = matcher.match_songs(
-        [_song(1, path="/Users/dev/Music/x.mp3", artist="Y", title="X")], index
+        [_song(1, path="/Users/user/Music/x.mp3", artist="Y", title="X")], index
     )
     assert report.matches[1].tier == "exact_path"
 
@@ -58,7 +58,7 @@ def test_basename_tier_matches_a_moved_file(
     """No MIK path resolves on disk, so basename is load-bearing, not optional."""
     add_track("a" * 40, file_path="/Volumes/NEW/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
-    report = matcher.match_songs([_song(1, path="/Users/dev/Music/x.mp3")], index)
+    report = matcher.match_songs([_song(1, path="/Users/old/Music/x.mp3")], index)
     assert report.matches[1].tier == "basename"
     assert report.matches[1].is_fuzzy is True
 
@@ -105,11 +105,11 @@ def test_ambiguous_tier_yields_no_stable_id(
 def test_collision_winner_is_deterministic_and_losers_are_recorded(
     state_conn: sqlite3.Connection, add_track
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
     songs = [
         _song(7, path="/elsewhere/x.mp3", confidence=0.4),  # basename tier
-        _song(3, path="/Users/dev/x.mp3", confidence=0.1),  # exact path tier
+        _song(3, path="/Users/user/x.mp3", confidence=0.1),  # exact path tier
         _song(9, path="/other/x.mp3", confidence=0.99),  # basename tier
     ]
     report = matcher.match_songs(songs, index)
@@ -124,10 +124,10 @@ def test_collision_winner_is_deterministic_and_losers_are_recorded(
 def test_every_song_lands_in_exactly_one_bucket(
     state_conn: sqlite3.Connection, add_track
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/x.mp3")
+    add_track("a" * 40, file_path="/Users/user/x.mp3")
     songs = [
-        _song(1, path="/Users/dev/x.mp3"),
-        _song(2, path="/Users/dev/nope.mp3"),
+        _song(1, path="/Users/user/x.mp3"),
+        _song(2, path="/Users/user/nope.mp3"),
         _song(3),
     ]
     report = matcher.match_songs(songs, index=matcher.TrackIndex.from_conn(state_conn))
@@ -141,7 +141,7 @@ def test_exact_path_only_mode_refuses_the_fuzzy_tiers(
     add_track("a" * 40, file_path="/Volumes/NEW/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
     report = matcher.match_songs(
-        [_song(1, path="/Users/dev/x.mp3")], index, allow_fuzzy=False
+        [_song(1, path="/Users/old/x.mp3")], index, allow_fuzzy=False
     )
     assert report.matches == {}
     assert report.unmatched[1].reason == "no_candidate"
@@ -149,7 +149,7 @@ def test_exact_path_only_mode_refuses_the_fuzzy_tiers(
 
 def test_matching_is_deterministic(state_conn: sqlite3.Connection, add_track) -> None:
     add_track("a" * 40, file_path="/one/x.mp3")
-    add_track("b" * 40, file_path="/Users/dev/x.mp3")
+    add_track("b" * 40, file_path="/Users/user/x.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
     songs = [_song(i, path=f"/mik/{i}/x.mp3") for i in range(1, 6)]
     first = matcher.match_songs(songs, index)
@@ -180,7 +180,7 @@ def test_exact_path_tier_preserves_case(
     state_conn: sqlite3.Connection, add_track
 ) -> None:
     """Paths are data: two paths differing only in case are not the same path."""
-    add_track("a" * 40, file_path="/Users/dev/X.mp3")
+    add_track("a" * 40, file_path="/Users/user/X.mp3")
     index = matcher.TrackIndex.from_conn(state_conn)
-    report = matcher.match_songs([_song(1, path="/Users/dev/x.mp3")], index)
+    report = matcher.match_songs([_song(1, path="/Users/user/x.mp3")], index)
     assert report.matches[1].tier == "basename"

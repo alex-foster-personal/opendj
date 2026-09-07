@@ -26,7 +26,7 @@ state               meaning
 ``present``         ``file_path`` resolves to an existing file right now
 ``absent``          an absolute path that does not resolve, on a mounted
                     volume. The file is genuinely gone (the dead
-                    ``/Users/dev`` home is 6,153 of these)
+                    ``/Users/old`` home is 6,153 of these)
 ``awaiting_volume`` path is under ``/Volumes/<name>`` and that volume is not
                     mounted. NOT the same as absent: plug the drive in and it
                     is present again, so a relocate pass must not touch it

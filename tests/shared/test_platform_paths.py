@@ -108,8 +108,8 @@ def test_load_path_map_reads_env_json_and_sorts_longest_first(
         json.dumps(
             {
                 "entries": [
-                    {"from": "/Users/dev", "to": "D:/wrong"},
-                    {"from": "/Users/dev/Music", "to": "D:/lib"},
+                    {"from": "/Users/user", "to": "D:/wrong"},
+                    {"from": "/Users/user/Music", "to": "D:/lib"},
                 ]
             }
         ),
@@ -119,8 +119,8 @@ def test_load_path_map_reads_env_json_and_sorts_longest_first(
 
     result = pp.load_path_map()
 
-    assert result.entries[0] == ("/Users/dev/Music", "D:/lib")
-    assert result.entries[1] == ("/Users/dev", "D:/wrong")
+    assert result.entries[0] == ("/Users/user/Music", "D:/lib")
+    assert result.entries[1] == ("/Users/user", "D:/wrong")
 
 
 def test_load_path_map_falls_back_to_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -128,13 +128,13 @@ def test_load_path_map_falls_back_to_data_dir(monkeypatch: pytest.MonkeyPatch, t
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     (data_dir / "path-map.json").write_text(
-        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/lib"}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user", "to": "D:/lib"}]}), encoding="utf-8"
     )
     monkeypatch.setattr(pp, "DATA_DIR", data_dir)
 
     result = pp.load_path_map()
 
-    assert result.entries == (("/Users/dev", "D:/lib"),)
+    assert result.entries == (("/Users/user", "D:/lib"),)
 
 
 def test_load_path_map_raises_on_malformed_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -168,7 +168,7 @@ def test_load_path_map_raises_on_entry_missing_keys(
 def test_load_path_map_rejects_empty_destination(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "incomplete-map.json"
     map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/dev", "to": ""}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user", "to": ""}]}), encoding="utf-8"
     )
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
     with pytest.raises(ValueError, match="empty"):
@@ -178,21 +178,21 @@ def test_load_path_map_rejects_empty_destination(monkeypatch: pytest.MonkeyPatch
 def test_load_path_map_preserves_windows_drive_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     map_file = tmp_path / "drive-root.json"
     map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/"}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user", "to": "D:/"}]}), encoding="utf-8"
     )
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
-    assert pp.load_path_map().entries == (("/Users/dev", "D:/"),)
+    assert pp.load_path_map().entries == (("/Users/user", "D:/"),)
 
 
 def test_load_path_map_uses_mdt_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     data_dir = tmp_path / "snapshot-data"
     data_dir.mkdir()
     (data_dir / "path-map.json").write_text(
-        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/music"}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user", "to": "D:/music"}]}), encoding="utf-8"
     )
     monkeypatch.delenv("MDT_PATH_MAP", raising=False)
     monkeypatch.setattr(pp, "DATA_DIR", data_dir)
-    assert pp.load_path_map().entries == (("/Users/dev", "D:/music"),)
+    assert pp.load_path_map().entries == (("/Users/user", "D:/music"),)
 
 
 def test_load_path_map_uses_explicit_data_dir_over_the_default(
@@ -203,14 +203,14 @@ def test_load_path_map_uses_explicit_data_dir_over_the_default(
     default_data.mkdir()
     explicit_data.mkdir()
     (default_data / "path-map.json").write_text(
-        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/wrong"}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user", "to": "D:/wrong"}]}), encoding="utf-8"
     )
     (explicit_data / "path-map.json").write_text(
-        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/snapshot"}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user", "to": "D:/snapshot"}]}), encoding="utf-8"
     )
     monkeypatch.delenv("MDT_PATH_MAP", raising=False)
     monkeypatch.setattr(pp, "DATA_DIR", default_data)
-    assert pp.load_path_map(explicit_data).entries == (("/Users/dev", "D:/snapshot"),)
+    assert pp.load_path_map(explicit_data).entries == (("/Users/user", "D:/snapshot"),)
 
 
 def test_example_path_map_file_is_valid_and_loadable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -252,7 +252,7 @@ def test_resolve_library_path_native_on_this_platform() -> None:
     if pp.IS_WINDOWS:
         native = r"D:\music\track.wav"
     else:
-        native = "/Users/dev/Music/track.wav"
+        native = "/Users/user/Music/track.wav"
     result = pp.resolve_library_path(native, path_map=pp.PathMap(entries=()))
     assert result.mapped is True
     assert result.reason == "native"
@@ -264,7 +264,7 @@ def test_resolve_library_path_unmapped_on_simulated_win32_with_empty_map(
 ) -> None:
     monkeypatch.setattr(pp, "IS_DARWIN", False)
     monkeypatch.setattr(pp, "IS_WINDOWS", True)
-    result = pp.resolve_library_path("/Users/dev/Music/a.wav", path_map=pp.PathMap(entries=()))
+    result = pp.resolve_library_path("/Users/user/Music/a.wav", path_map=pp.PathMap(entries=()))
     assert result.resolved is None
     assert result.mapped is False
     assert result.reason.startswith("unmapped")
@@ -275,8 +275,8 @@ def test_resolve_library_path_path_map_hit_on_simulated_win32(
 ) -> None:
     monkeypatch.setattr(pp, "IS_DARWIN", False)
     monkeypatch.setattr(pp, "IS_WINDOWS", True)
-    path_map = pp.PathMap(entries=(("/Users/dev/Music", "D:/lib"),))
-    result = pp.resolve_library_path("/Users/dev/Music/a.wav", path_map=path_map)
+    path_map = pp.PathMap(entries=(("/Users/user/Music", "D:/lib"),))
+    result = pp.resolve_library_path("/Users/user/Music/a.wav", path_map=path_map)
     assert result.resolved == Path("D:/lib/a.wav")
     assert result.mapped is True
     assert result.reason == "path-map"
@@ -292,11 +292,11 @@ def test_resolve_library_path_longest_prefix_wins_on_simulated_win32(
     # prefix win end to end.
     path_map = pp.PathMap(
         entries=(
-            ("/Users/dev/Music", "D:/lib"),
-            ("/Users/dev", "D:/wrong"),
+            ("/Users/user/Music", "D:/lib"),
+            ("/Users/user", "D:/wrong"),
         )
     )
-    result = pp.resolve_library_path("/Users/dev/Music/a.wav", path_map=path_map)
+    result = pp.resolve_library_path("/Users/user/Music/a.wav", path_map=path_map)
     assert result.resolved == Path("D:/lib/a.wav")
     assert result.reason == "path-map"
 
@@ -307,8 +307,8 @@ def test_resolve_library_path_does_not_match_a_non_boundary_prefix_on_win32(
     monkeypatch.setattr(pp, "IS_DARWIN", False)
     monkeypatch.setattr(pp, "IS_WINDOWS", True)
     result = pp.resolve_library_path(
-        "/Users/dev/Music-backup/a.wav",
-        path_map=pp.PathMap(entries=(("/Users/dev/Music", "D:/library"),)),
+        "/Users/user/Music-backup/a.wav",
+        path_map=pp.PathMap(entries=(("/Users/user/Music", "D:/library"),)),
     )
     assert result.resolved is None
     assert result.reason.startswith("unmapped")
@@ -339,11 +339,11 @@ def test_resolve_library_path_uses_load_path_map_when_none_passed(
     monkeypatch.setattr(pp, "IS_WINDOWS", True)
     map_file = tmp_path / "map.json"
     map_file.write_text(
-        json.dumps({"entries": [{"from": "/Users/dev/Music", "to": "D:/lib"}]}), encoding="utf-8"
+        json.dumps({"entries": [{"from": "/Users/user/Music", "to": "D:/lib"}]}), encoding="utf-8"
     )
     monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
 
-    result = pp.resolve_library_path("/Users/dev/Music/a.wav")
+    result = pp.resolve_library_path("/Users/user/Music/a.wav")
 
     assert result.resolved == Path("D:/lib/a.wav")
     assert result.reason == "path-map"
@@ -389,8 +389,8 @@ def test_resolve_asset_path_preserves_explicit_path_map(
     asset.write_bytes(b"dat")
 
     result = pp.resolve_asset_path(
-        "/Users/dev/Music/ANLZ0000.DAT",
-        path_map=pp.PathMap(entries=(("/Users/dev/Music", str(local_root)),)),
+        "/Users/user/Music/ANLZ0000.DAT",
+        path_map=pp.PathMap(entries=(("/Users/user/Music", str(local_root)),)),
     )
 
     assert result.resolved == asset.resolve()
@@ -404,8 +404,8 @@ def test_native_missing_path_uses_path_map(tmp_path: Path) -> None:
     audio = dest / "a.flac"
     audio.write_bytes(b"fLaC")
     result = pp.resolve_library_path(
-        "/Users/dev/Music/a.flac",
-        path_map=pp.PathMap(entries=(("/Users/dev/Music", str(dest)),)),
+        "/Users/user/Music/a.flac",
+        path_map=pp.PathMap(entries=(("/Users/user/Music", str(dest)),)),
     )
     assert result.reason == "path-map"
     assert result.resolved == Path(str(dest) + "/a.flac")
@@ -438,8 +438,8 @@ def test_remote_mode_never_uses_native_mac_users_tree(tmp_path: Path) -> None:
     env.update({"MDT_LIBRARY_MODE": "remote", "MDT_CRATE_ROOT": str(crate)})
     code = (
         "import json; from apps.shared import platform_paths as p; "
-        f"r=p.resolve_library_path('/Users/dev/Music/a.flac', "
-        f"path_map=p.PathMap(entries=(('/Users/dev','{mapped_root}'),))); "
+        f"r=p.resolve_library_path('/Users/user/Music/a.flac', "
+        f"path_map=p.PathMap(entries=(('/Users/user','{mapped_root}'),))); "
         "print(json.dumps({'resolved':str(r.resolved),'reason':r.reason}))"
     )
     result = _run_path_probe(code, env=env)
@@ -454,7 +454,7 @@ def test_remote_mode_unmapped_mac_path_is_explicit(tmp_path: Path) -> None:
     env.update({"MDT_LIBRARY_MODE": "remote", "MDT_CRATE_ROOT": str(crate)})
     code = (
         "import json; from apps.shared import platform_paths as p; "
-        "r=p.resolve_library_path('/Users/dev/Music/missing.flac', "
+        "r=p.resolve_library_path('/Users/user/Music/missing.flac', "
         "path_map=p.PathMap(entries=())); "
         "print(json.dumps({'resolved':r.resolved,'reason':r.reason}))"
     )

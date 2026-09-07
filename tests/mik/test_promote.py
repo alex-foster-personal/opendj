@@ -28,7 +28,7 @@ pytestmark = pytest.mark.requirement("META-01")
 def test_promotion_moves_scalars_and_the_series(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     result = promoter.promote(
         state_conn,
         staged["gate"],
@@ -59,7 +59,7 @@ def test_promotion_moves_scalars_and_the_series(
 def test_promotion_is_idempotent(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     first = promoter.promote(
         state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40
     )
@@ -97,7 +97,7 @@ def test_a_rescan_after_promotion_is_re_promoted_to_the_same_target(
     early return in _promote_row must not treat that as still applied --
     every later promotion attempt returns there too, leaving the target
     permanently stale."""
-    add_track("a" * 40, file_path="/Users/dev/target.mp3")
+    add_track("a" * 40, file_path="/Users/old/target.mp3")
     first = promoter.promote(
         state_conn,
         staged["gate"],
@@ -117,7 +117,7 @@ def test_a_rescan_after_promotion_is_re_promoted_to_the_same_target(
         [
             {
                 "pk": 1,
-                "path": "/Users/dev/orphan.mp3",
+                "path": "/Users/old/orphan.mp3",
                 "name": "7 - Orphan",
                 "artist": "Nobody",
                 "key": "9A",
@@ -155,8 +155,8 @@ def test_a_rescan_after_promotion_is_re_promoted_to_the_same_target(
 def test_repointing_to_a_different_track_raises(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
-    add_track("b" * 40, file_path="/Users/dev/other.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
+    add_track("b" * 40, file_path="/Users/old/other.mp3")
     promoter.promote(state_conn, staged["gate"], source_row_id="1", stable_id="a" * 40)
     with pytest.raises(promoter.PromotionConflict, match="already promoted"):
         promoter.promote(
@@ -185,7 +185,7 @@ def test_promoting_to_a_soft_deleted_track_raises(
     live track (soft-delete-read-guard, tests/cloudsync/
     test_soft_delete_read_guard.py).
     """
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     state_conn.execute(
         "UPDATE tracks SET deleted_at = ? WHERE stable_id = ?",
         (datetime.now(UTC).isoformat(), "a" * 40),
@@ -210,7 +210,7 @@ def test_the_gate_still_applies_at_promotion_time(
     state_conn: sqlite3.Connection, add_track, staged, data_dir: Path, write_verdicts
 ) -> None:
     """A field staged under an override cannot sneak in later unverified."""
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     write_verdicts({"energy": "passed"})
     strict = EquivalenceGate.load(data_dir)
     result = promoter.promote(
@@ -229,7 +229,7 @@ def test_the_gate_still_applies_at_promotion_time(
 def test_the_staged_row_survives_as_an_audit_trail(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     promoter.promote(
         state_conn,
         staged["gate"],
@@ -252,14 +252,14 @@ def test_discover_finds_a_row_once_the_track_exists(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
     assert promoter.discover(state_conn) == {}
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     assert promoter.discover(state_conn) == {"1": "a" * 40}
 
 
 def test_discover_ignores_already_promoted_rows(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     promoter.promote_all(state_conn, staged["gate"], {"1": "a" * 40})
     assert promoter.discover(state_conn) == {}
 
@@ -267,8 +267,8 @@ def test_discover_ignores_already_promoted_rows(
 def test_discover_leaves_an_ambiguous_row_staged(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
-    add_track("b" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
+    add_track("b" * 40, file_path="/Users/old/orphan.mp3")
     assert promoter.discover(state_conn) == {}
 
 
@@ -276,6 +276,6 @@ def test_pending_counts_track_the_backlog(
     state_conn: sqlite3.Connection, add_track, staged
 ) -> None:
     assert promoter.pending_counts(state_conn) == {"no_candidate": 1}
-    add_track("a" * 40, file_path="/Users/dev/orphan.mp3")
+    add_track("a" * 40, file_path="/Users/old/orphan.mp3")
     promoter.promote_all(state_conn, staged["gate"], {"1": "a" * 40})
     assert promoter.pending_counts(state_conn) == {}

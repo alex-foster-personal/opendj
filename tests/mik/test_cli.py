@@ -22,11 +22,11 @@ pytestmark = pytest.mark.requirement("META-01")
 
 @pytest.fixture
 def library(state_conn: sqlite3.Connection, add_track, make_mik_store, tmp_path: Path):
-    add_track("a" * 40, file_path="/Users/dev/x.mp3", title="X", artist="Y")
+    add_track("a" * 40, file_path="/Users/user/x.mp3", title="X", artist="Y")
     state_conn.commit()
     return make_mik_store(
         [
-            {"path": "/Users/dev/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]},
+            {"path": "/Users/user/x.mp3", "confidence": 0.9, "segments": [(0.0, 60.0, 5)]},
             {"path": "/none/y.mp3", "confidence": 0.9, "segments": [(0.0, 30.0, 3)]},
         ]
     )
@@ -46,7 +46,7 @@ def test_read_reports_what_mik_holds(library: Path, capsys) -> None:
 def test_coverage_records_the_readable_mik_energy_fraction(
     library: Path, data_dir: Path, add_track, capsys
 ) -> None:
-    add_track("b" * 40, file_path="/Users/dev/unmatched.mp3", title="Unmatched", artist="DJ")
+    add_track("b" * 40, file_path="/Users/user/unmatched.mp3", title="Unmatched", artist="DJ")
     payload = _run(
         ["coverage", "--json", "--data-dir", str(data_dir), "--store", str(library)], capsys
     )

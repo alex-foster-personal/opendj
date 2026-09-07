@@ -9,20 +9,31 @@ R1 ✔︎ Read djmdContent (static decrypted copy) joined to artist names, restr
 R2 ✔︎ Classify each track's file residency using the shared fs_residency helper,
      so iCloud dataless stubs count as MISSING rather than present.
      [if a path is a 0-block iCloud stub then status is missing-stub ⛔️]
-     [if a path lives under an unreachable home (e.g. /Users/dev) then
+     [if a path lives under an unreachable home (an os.pathsep-separated list
+      configured via MDT_DEAD_HOME_PREFIXES, e.g. "/Users/oldname/") then
       status is missing-dead-machine ⛔️]
+     [if MDT_DEAD_HOME_PREFIXES is unset then classification exits nonzero
+      rather than silently matching nothing ⛔️]
 R3 ✔︎ Emit a CSV ranked by play count DESC, ready to paste into a sheet, plus a
      terminal summary. Read-only: touches no live Rekordbox DB.
      [if two runs happen back to back then output is byte-identical ⛔️]
 
 Usage::
 
-    uv run --no-sync python scripts/missing_by_playcount.py [--min-plays N]
+    MDT_DEAD_HOME_PREFIXES=/Users/oldname/ \
+        uv run --no-sync python scripts/missing_by_playcount.py [--min-plays N]
+
+MDT_DEAD_HOME_PREFIXES names this machine's stale/unreachable home
+directories (os.pathsep-separated, e.g. "/Users/oldname/:/Users/older/") --
+a value that is machine-specific and MUST NOT be hardcoded here (#910).
+Required: the script fails fast if it is unset rather than silently
+matching zero rows.
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sqlite3
 import stat as stat_module
 import sys
@@ -33,9 +44,11 @@ from pathlib import Path
 # ----- config -------------------------------------------------------------
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
-MASTER_DB: Path = Path("/Users/dev/Music/music-dj-tools/data/master.plain.db")
+MASTER_DB: Path = REPO_ROOT / "data" / "master.plain.db"
 OUT_CSV: Path = REPO_ROOT / "data" / "reconcile" / "missing-by-playcount.csv"
-DEAD_HOME_PREFIXES: tuple[str, ...] = ("/Users/dev/",)
+#: Env var naming this machine's stale-home prefixes. No default: a real
+#: home name must never be hardcoded in tracked code (#910).
+DEAD_HOME_PREFIXES_ENV: str = "MDT_DEAD_HOME_PREFIXES"
 
 CSV_COLUMNS: tuple[str, ...] = (
     "plays",
@@ -76,11 +89,33 @@ def _is_materialised(path: Path) -> bool:
     return not (st.st_size > 0 and st.st_blocks == 0)
 
 
+def _dead_home_prefixes() -> tuple[str, ...]:
+    """Read this machine's stale-home prefixes from the environment.
+
+    Read fresh (not cached at import time) so a test can set/unset the
+    variable per case. No hidden default: an unset variable means the
+    caller has not configured which home is dead on this machine, and
+    silently matching nothing would mislabel every dead-machine row as
+    a live-but-missing file (#910).
+    """
+    raw = os.environ.get(DEAD_HOME_PREFIXES_ENV)
+    if not raw:
+        sys.exit(
+            f"[ERROR] {DEAD_HOME_PREFIXES_ENV} is not set -- export this "
+            "machine's stale home prefix(es), os.pathsep-separated (e.g. "
+            f"{DEAD_HOME_PREFIXES_ENV}=/Users/oldname/)"
+        )
+    prefixes = tuple(p for p in raw.split(os.pathsep) if p)
+    if not prefixes:
+        sys.exit(f"[ERROR] {DEAD_HOME_PREFIXES_ENV} is set but contains no usable prefixes")
+    return prefixes
+
+
 def _classify(path_text: str | None) -> str:
     """Residency verdict for one Rekordbox FolderPath."""
     if not path_text:
         return "missing-no-path"
-    if path_text.startswith(DEAD_HOME_PREFIXES):
+    if path_text.startswith(_dead_home_prefixes()):
         return "missing-dead-machine"
     path = Path(path_text)
     if _is_materialised(path):
