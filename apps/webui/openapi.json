@@ -15079,6 +15079,74 @@
         ]
       }
     },
+    "/api/v1/lyrics/search": {
+      "get": {
+        "operationId": "search_lyrics_api_v1_lyrics_search_get",
+        "parameters": [
+          {
+            "description": "Search text matched against cached synced lyrics only - never title, artist, genre or tags (see GET /api/v1/search for that).",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Search text matched against cached synced lyrics only - never title, artist, genre or tags (see GET /api/v1/search for that).",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/mytags": {
       "get": {
         "operationId": "list_mytags_api_v1_mytags_get",

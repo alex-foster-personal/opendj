@@ -111,9 +111,7 @@
 		pickDoubleClickDeck,
 		type DeckSlotState
 	} from '$lib/rb/deck-slots';
-	import BulkEditModal from './BulkEditModal.svelte';
-	import FindReplaceModal from './FindReplaceModal.svelte';
-	import MyTagEditorModal from './MyTagEditorModal.svelte';
+	import TrackEditModals from './TrackEditModals.svelte';
 	import AddTrackSearch from './browser/AddTrackSearch.svelte';
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
@@ -142,6 +140,7 @@
 	} from './browser/pane-contract.svelte';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
 	import LibraryLoadIndicator from './browser/LibraryLoadIndicator.svelte';
+	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import { fetchAllPages } from './browser/virtual-window';
@@ -2527,6 +2526,12 @@
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
 		{/if}
+		<LyricSearchResults
+			query={pane.search}
+			active={wholeCollectionActive}
+			primarySettled={!pane.searching}
+			onerror={(message) => pushToast(message, 'error')}
+		/>
 		<div class="suggestion-panels" data-testid="suggestion-panels">
 			<div class="suggestion-panel-content">
 				<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
@@ -2625,13 +2630,13 @@
 	</div>
 </section>
 
-{#if openModal === 'find-replace'}
-	<FindReplaceModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
-{:else if openModal === 'bulk-edit'}
-	<BulkEditModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
-{:else if openModal === 'mytag'}
-	<MyTagEditorModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
-{/if}
+<TrackEditModals
+	{openModal}
+	stableIds={pane.selected_ids}
+	etags={modalEtags}
+	onclose={() => (openModal = null)}
+	onapplied={onEditApplied}
+/>
 
 <style>
 	.rb-browser {

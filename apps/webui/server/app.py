@@ -66,6 +66,7 @@ from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
+from .routes import lyrics_search as lyrics_search_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
@@ -379,6 +380,7 @@ def create_app(
     app.include_router(ingest_routes.router, prefix=api_prefix)
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(library_routes.router, prefix=api_prefix)
+    app.include_router(lyrics_search_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(preflight_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)

@@ -1334,6 +1334,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lyrics/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Lyrics */
+        get: operations["search_lyrics_api_v1_lyrics_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mytags": {
         parameters: {
             query?: never;
@@ -9678,6 +9695,40 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    search_lyrics_api_v1_lyrics_search_get: {
+        parameters: {
+            query?: {
+                /** @description Search text matched against cached synced lyrics only - never title, artist, genre or tags (see GET /api/v1/search for that). */
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

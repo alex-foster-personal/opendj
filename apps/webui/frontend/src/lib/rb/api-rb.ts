@@ -396,6 +396,28 @@ export async function searchCollection(params: {
 	return _fetchJson<SearchResultsWire>(`/api/v1/search?${qs.toString()}`);
 }
 
+// -------------------------------------------- lyric-only search (Part 3 of #935, #1344)
+// Matches cached synced lyrics only (never title/artist/genre/tags), over the
+// durable background index Part 2 builds. Rendered below a divider AFTER the
+// whole-collection search above settles - see LyricSearchResults.svelte.
+//
+// Reuses SearchHitWire/SearchResultsWire rather than declaring a
+// near-identical sibling: a hit is a hydrated track row plus an excerpt of
+// what matched either way. Here `match_context` is the one lyric line that
+// best carries the query, never the full transcript or a bare title.
+
+/** GET /lyrics/search - lyric-only search, not scoped to the active pane. */
+export async function searchLyrics(params: {
+	q: string;
+	limit?: number;
+	offset?: number;
+}): Promise<SearchResultsWire> {
+	const qs = new URLSearchParams({ q: params.q });
+	if (params.limit !== undefined) qs.set('limit', String(params.limit));
+	if (params.offset !== undefined) qs.set('offset', String(params.offset));
+	return _fetchJson<SearchResultsWire>(`/api/v1/lyrics/search?${qs.toString()}`);
+}
+
 /** PlaylistSummary + contract point 2's available_count. */
 export interface PlaylistSummaryHydrated extends PlaylistSummary {
 	/** Tracks whose audio file exists on disk (bulk-stat pass, cached). */
