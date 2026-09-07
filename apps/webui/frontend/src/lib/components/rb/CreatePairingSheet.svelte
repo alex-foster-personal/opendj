@@ -1,13 +1,14 @@
 <script lang="ts">
-	// LV1 Create pairing freezes the loaded deck and EQ state at open.
-	//
-	// INERT (tooltip 'not implemented - see PARITY-TODO'): Capture, Align
-	// hotcues, Reload sync. All three needed `/api/v1/pairings/sync-snapshots`
-	// or `/api/v1/pairings/alignments`, which no daemon publishes - the capture
-	// router and its repo were only ever parked on archive branches and never
-	// routed into app.py, so Align hotcues and Reload sync remain inert.
+	// LV1 Create pairing freezes the loaded deck and EQ state at open, for the
+	// deck picker's display only. Align hotcues and Reload sync (PAIR-03) read
+	// LIVE deck state instead via getDeckState: the frozen PairingSnapshot
+	// carries no stable_id/hot_cues/tempo, and both actions must act on
+	// whatever is on the deck now, not what was loaded when the sheet opened.
+	import { getDeckState } from '$lib/rb/audio-engine.svelte';
 	import { dispatchPerformanceCommand, type PairingSnapshot } from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
+	import { alignHotcues, latestSyncSnapshot, PartialAlignmentError } from '$lib/rb/pairing-capture';
+	import { pushToast } from '$lib/stores.svelte';
 
 	let {
 		open = $bindable(false),
@@ -17,9 +18,8 @@
 		snapshot: PairingSnapshot | null;
 	} = $props();
 
-	const INERT_TITLE = 'not implemented - see PARITY-TODO';
-
 	let selected = $state<DeckId[]>([]);
+	let busy = $state(false);
 	let wasOpen = false;
 
 	$effect(() => {
@@ -54,6 +54,84 @@
 		open = false;
 	}
 
+	interface LoadedPair {
+		da: DeckId;
+		db: DeckId;
+		stableA: string;
+		stableB: string;
+	}
+
+	/** Both selected decks' live identity, or null when the pair isn't ready
+	 * (not loaded, or the same track on both decks). Pushes the user-facing
+	 * toast itself so both actions below share one message. */
+	function _loadedPair(): LoadedPair | null {
+		if (selected.length !== 2) return null;
+		const [da, db] = selected;
+		const a = getDeckState(da);
+		const b = getDeckState(db);
+		if (a.stable_id === null || b.stable_id === null) {
+			pushToast('Both decks must be loaded', 'error');
+			return null;
+		}
+		if (a.stable_id === b.stable_id) {
+			pushToast('Select two different tracks', 'error');
+			return null;
+		}
+		return { da, db, stableA: a.stable_id, stableB: b.stable_id };
+	}
+
+	async function _alignHotcues(): Promise<void> {
+		if (busy) return;
+		const pair = _loadedPair();
+		if (pair === null) return;
+		const { da, db, stableA, stableB } = pair;
+		busy = true;
+		try {
+			const result = await alignHotcues(stableA, stableB, getDeckState(da).hot_cues, getDeckState(db).hot_cues);
+			if (result.paired === 0) {
+				pushToast('No matching hotcue letters on both decks', 'error');
+				return;
+			}
+			pushToast(`Aligned ${result.paired} hotcue pair(s)`, 'info');
+		} catch (exc) {
+			const paired = exc instanceof PartialAlignmentError ? exc.paired : 0;
+			pushToast(
+				paired > 0 ? `Align failed after ${paired} pair(s): ${String(exc)}` : `Align failed: ${String(exc)}`,
+				'error'
+			);
+		} finally {
+			busy = false;
+		}
+	}
+
+	/** Reload the newest sync snapshot for the two selected tracks onto their
+	 * current decks. Uses dispatchPerformanceCommand (not the UI helper that
+	 * swallows errors) so a failed seek never reaches the "reloaded" toast. */
+	async function _reloadSync(): Promise<void> {
+		if (busy) return;
+		const pair = _loadedPair();
+		if (pair === null) return;
+		const { da, db, stableA, stableB } = pair;
+		busy = true;
+		try {
+			const snap = await latestSyncSnapshot(stableA, stableB);
+			if (snap === null) {
+				pushToast('No sync snapshot for this pair', 'error');
+				return;
+			}
+			await dispatchPerformanceCommand({ type: 'tempo', deck: da, ratio: snap.aTempoRatio });
+			await dispatchPerformanceCommand({ type: 'tempo', deck: db, ratio: snap.bTempoRatio });
+			await dispatchPerformanceCommand({ type: 'master', deck: snap.masterIsA ? da : db });
+			await dispatchPerformanceCommand({ type: 'seek', deck: da, position_ms: Math.round(snap.aPositionMs) });
+			await dispatchPerformanceCommand({ type: 'seek', deck: db, position_ms: Math.round(snap.bPositionMs) });
+			pushToast('Pairing sync reloaded', 'info');
+		} catch (exc) {
+			pushToast(`Reload pairing failed: ${String(exc)}`, 'error');
+		} finally {
+			busy = false;
+		}
+	}
+
 </script>
 
 {#if open}
@@ -63,10 +141,6 @@
 			<button type="button" class="x" onclick={() => (open = false)}>×</button>
 		</header>
 		<p class="hint">This pairing is frozen at the moment you opened it.</p>
-		<p class="hint">
-			Capture, align and reload are inert: the pairings capture routes are not
-			implemented - see PARITY-TODO.
-		</p>
 		<ul>
 			{#each snapshot?.decks ?? [] as d (d.deck_id)}
 				<li>
@@ -96,13 +170,13 @@
 			{/each}
 		</ul>
 		<footer>
-			<button type="button" class="ghost rb-inert" disabled title={INERT_TITLE}>
+			<button type="button" class="ghost" disabled={busy || selected.length !== 2} onclick={() => void _alignHotcues()}>
 				Align hotcues
 			</button>
-			<button type="button" class="ghost rb-inert" disabled title={INERT_TITLE}>
+			<button type="button" class="ghost" disabled={busy || selected.length !== 2} onclick={() => void _reloadSync()}>
 				Reload sync
 			</button>
-			<button type="button" class="primary" disabled={selected.length !== 2} onclick={_save}>
+			<button type="button" class="primary" disabled={busy || selected.length !== 2} onclick={_save}>
 				Capture
 			</button>
 		</footer>

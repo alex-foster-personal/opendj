@@ -273,6 +273,28 @@ export async function deletePairing(pairing_id: string, etag: string): Promise<v
 	}
 }
 
+export type SyncSnapshot = components['schemas']['SyncSnapshotOut'];
+export type Alignment = components['schemas']['AlignmentOut'];
+type AlignmentCreateBody = components['schemas']['AlignmentIn'];
+
+/** PAIR-02's durable LV1 snapshots (`/api/v1/pairings/sync-snapshots`, GET).
+ * `stable_a`/`stable_b` match directionally, unlike `listAlignments` below --
+ * see `lib/rb/pairing-capture.ts` for the query-both-orders caller. */
+export async function listSyncSnapshots(
+	stable_a: string,
+	stable_b: string,
+	limit: number
+): Promise<SyncSnapshot[]> {
+	return unwrap(
+		api.GET('/api/v1/pairings/sync-snapshots', { params: { query: { stable_a, stable_b, limit } } })
+	);
+}
+
+/** PAIR-02's durable LV2 alignment marks (`/api/v1/pairings/alignments`, POST). */
+export async function createAlignment(body: AlignmentCreateBody): Promise<Alignment> {
+	return unwrap(api.POST('/api/v1/pairings/alignments', { body }));
+}
+
 export async function getQueue(kind: string): Promise<QueueOut> {
 	return unwrap(api.GET('/api/v1/queues/{kind}', { params: { path: { kind } } }));
 }
