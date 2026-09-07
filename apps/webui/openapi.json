@@ -712,6 +712,35 @@
         "title": "AssistantStatusOut",
         "type": "object"
       },
+      "AttachmentOut": {
+        "description": "A screenshot pasted into a comment pin (issue #1333, part 2 of #928).\n\n``url`` is the GET route that streams the stored bytes back (relative,\nsame convention as ``issue_url`` on ``CommentOut``); ``content_type`` and\n``size_bytes`` are recorded once, at upload time, so a caller can decide\nwhether to fetch the bytes without a HEAD round trip first. The bytes\nthemselves live under ``<data-dir>/feedback/attachments/`` - see\n``feedback_attachments.py``, the module that actually writes and serves\nthem; this file only owns the small record ``comments.json`` carries.",
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content_type",
+          "size_bytes",
+          "url"
+        ],
+        "title": "AttachmentOut",
+        "type": "object"
+      },
       "AutoAnalyzeOut": {
         "description": "State of the daemon's auto-drain reconcile loop.",
         "properties": {
@@ -979,6 +1008,20 @@
           "batch"
         ],
         "title": "Body_upload_api_v1_ingest_upload_post",
+        "type": "object"
+      },
+      "Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
         "type": "object"
       },
       "BrokenTrackList": {
@@ -2346,6 +2389,16 @@
               }
             ],
             "title": "Anchor"
+          },
+          "attachment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "author": {
             "enum": [
@@ -13996,6 +14049,45 @@
         ]
       }
     },
+    "/api/v1/feedback/attachments/{attachment_id}": {
+      "get": {
+        "description": "Stream a stored attachment's bytes back - the agent-native fetch half.",
+        "operationId": "get_attachment_api_v1_feedback_attachments__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Attachment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/comments": {
       "get": {
         "operationId": "list_comments_api_v1_feedback_comments_get",
@@ -14147,6 +14239,59 @@
           }
         },
         "summary": "Archive Comment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/comments/{comment_id}/attachment": {
+      "post": {
+        "description": "Attach one screenshot to an existing pin (issue #1333).\n\nType and size are checked, and the bytes are verified to actually decode\nas the claimed image type, BEFORE anything touches disk or comments.json -\na declared Content-Type header is never trusted alone. Replaces any\nattachment the pin already carried, deleting its old file so attachments\nnever accumulate orphans.",
+        "operationId": "upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Attachment",
         "tags": [
           "feedback"
         ]

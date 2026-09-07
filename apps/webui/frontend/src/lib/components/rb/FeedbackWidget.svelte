@@ -439,7 +439,7 @@
 {/if}
 
 <!-- pin text bubble -->
-<FeedbackPinDraftBubble bind:pinDraft bind:this={draftBubble} />
+<FeedbackPinDraftBubble bind:pinDraft bind:this={draftBubble} {pushToast} />
 
 <FeedbackPanel />
 

@@ -134,6 +134,26 @@ class TodoPatchIn(BaseModel):
     feedback: str | None = None
 
 
+class AttachmentOut(BaseModel):
+    """A screenshot pasted into a comment pin (issue #1333, part 2 of #928).
+
+    ``url`` is the GET route that streams the stored bytes back (relative,
+    same convention as ``issue_url`` on ``CommentOut``); ``content_type`` and
+    ``size_bytes`` are recorded once, at upload time, so a caller can decide
+    whether to fetch the bytes without a HEAD round trip first. The bytes
+    themselves live under ``<data-dir>/feedback/attachments/`` - see
+    ``feedback_attachments.py``, the module that actually writes and serves
+    them; this file only owns the small record ``comments.json`` carries.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    content_type: str
+    size_bytes: int
+    url: str
+
+
 class CommentOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -156,6 +176,9 @@ class CommentOut(BaseModel):
     # read through this newer contract.
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
     agent_kind: str | None = None
+    # Screenshot pasted into the pin (issue #1333): absent until one is
+    # uploaded through POST /feedback/comments/{id}/attachment.
+    attachment: AttachmentOut | None = None
 
 
 class CommentListOut(BaseModel):

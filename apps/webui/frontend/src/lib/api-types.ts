@@ -856,6 +856,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Attachment
+         * @description Stream a stored attachment's bytes back - the agent-native fetch half.
+         */
+        get: operations["get_attachment_api_v1_feedback_attachments__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/comments": {
         parameters: {
             query?: never;
@@ -945,6 +965,32 @@ export interface paths {
          *     interleave with a concurrent archive, PATCH, follow-on, or new pin.
          */
         post: operations["archive_comment_api_v1_feedback_comments__comment_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/comments/{comment_id}/attachment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Attachment
+         * @description Attach one screenshot to an existing pin (issue #1333).
+         *
+         *     Type and size are checked, and the bytes are verified to actually decode
+         *     as the claimed image type, BEFORE anything touches disk or comments.json -
+         *     a declared Content-Type header is never trusted alone. Replaces any
+         *     attachment the pin already carried, deleting its old file so attachments
+         *     never accumulate orphans.
+         */
+        post: operations["upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3214,6 +3260,28 @@ export interface components {
             model: string;
         };
         /**
+         * AttachmentOut
+         * @description A screenshot pasted into a comment pin (issue #1333, part 2 of #928).
+         *
+         *     ``url`` is the GET route that streams the stored bytes back (relative,
+         *     same convention as ``issue_url`` on ``CommentOut``); ``content_type`` and
+         *     ``size_bytes`` are recorded once, at upload time, so a caller can decide
+         *     whether to fetch the bytes without a HEAD round trip first. The bytes
+         *     themselves live under ``<data-dir>/feedback/attachments/`` - see
+         *     ``feedback_attachments.py``, the module that actually writes and serves
+         *     them; this file only owns the small record ``comments.json`` carries.
+         */
+        AttachmentOut: {
+            /** Content Type */
+            content_type: string;
+            /** Id */
+            id: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Url */
+            url: string;
+        };
+        /**
          * AutoAnalyzeOut
          * @description State of the daemon's auto-drain reconcile loop.
          */
@@ -3336,6 +3404,11 @@ export interface components {
              * @default false
              */
             force: boolean;
+        };
+        /** Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post */
+        Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post: {
+            /** File */
+            file: string;
         };
         /** BrokenTrackList */
         BrokenTrackList: {
@@ -3784,6 +3857,7 @@ export interface components {
             agent_note?: string | null;
             /** Anchor */
             anchor: string | null;
+            attachment?: components["schemas"]["AttachmentOut"] | null;
             /**
              * Author
              * @enum {string}
@@ -8853,6 +8927,37 @@ export interface operations {
             };
         };
     };
+    get_attachment_api_v1_feedback_attachments__attachment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_comments_api_v1_feedback_comments_get: {
         parameters: {
             query?: never;
@@ -8959,6 +9064,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentArchiveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_attachment_api_v1_feedback_comments__comment_id__attachment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
                 };
             };
             /** @description Validation Error */

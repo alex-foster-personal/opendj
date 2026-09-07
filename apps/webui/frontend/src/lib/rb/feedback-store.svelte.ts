@@ -40,7 +40,7 @@
  */
 
 import type { components } from "../api-types";
-import { ApiError, api } from "../api/client";
+import { API_BASE, ApiError, api } from "../api/client";
 import { makeDebounce, type Debounced } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
@@ -228,7 +228,7 @@ function _upsertPin(pin: FeedbackPin): void {
 
 export async function addPin(
   pin: components["schemas"]["CommentCreateIn"],
-): Promise<boolean> {
+): Promise<FeedbackPin | null> {
   try {
     const { data } = await api.POST("/api/v1/feedback/comments", { body: pin });
     if (data) {
@@ -236,11 +236,97 @@ export async function addPin(
       _upsertPin(data);
     }
     feedbackState.error = null;
-    return true;
+    return data ?? null;
   } catch (err) {
     feedbackState.error = err instanceof Error ? err.message : String(err);
-    return false;
+    return null;
   }
+}
+
+/** The daemon's `{"detail": {code, message}}` error envelope, read without a
+ * throwing typed client - the multipart attachment upload below is a plain
+ * `fetch()` (openapi-fetch has no first-class multipart support), so it
+ * decodes its own error body the way api-ingest.ts's `_err` does. */
+async function _attachmentErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as {
+      detail?: { message?: string } | string;
+    };
+    if (typeof body.detail === "string") return body.detail;
+    if (typeof body.detail?.message === "string") return body.detail.message;
+  } catch {
+    // fall through to the generic message below
+  }
+  return `HTTP ${response.status}`;
+}
+
+/**
+ * Attach one screenshot to a pin that was just created (issue #1333, part 2
+ * of #928). Not folded into `addPin` itself: the common case (no pasted
+ * image) must keep going through the plain JSON POST unchanged, and a
+ * multipart upload needs the pin's id, which only exists once the create
+ * call above has returned.
+ */
+async function _uploadPinAttachment(
+  pinId: string,
+  file: File,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/feedback/comments/${encodeURIComponent(pinId)}/attachment`,
+      { method: "POST", body: form },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    feedbackState.error = message;
+    return { ok: false, message };
+  }
+  if (!response.ok) {
+    const message = await _attachmentErrorMessage(response);
+    feedbackState.error = message;
+    return { ok: false, message };
+  }
+  const updated = (await response.json()) as FeedbackPin;
+  _pinGeneration++;
+  _upsertPin(updated);
+  feedbackState.error = null;
+  return { ok: true };
+}
+
+/**
+ * The three distinguishable outcomes of `addPinWithAttachment` (review
+ * fixup, PR #1425 P1: the two failure shapes were previously collapsed into
+ * one `{ok: false, attachmentError: ""}`, so a caller could not tell "the
+ * pin was created but the screenshot failed" from "nothing was created at
+ * all" - the bubble hard-coded `saved = true` for both, losing the draft
+ * and typed text on a create failure while showing a false success toast).
+ */
+export type AddPinWithAttachmentResult =
+  | { kind: "created" }
+  | { kind: "created-attachment-failed"; reason: string }
+  | { kind: "create-failed"; reason: string };
+
+/**
+ * Create a pin, then attach a pasted screenshot to it in the same save
+ * (issue #1333). The pin itself is kept even if the attachment upload fails
+ * (a refused screenshot is not a reason to lose the typed text) - but a
+ * failure to create the pin at all is reported distinctly, so the caller
+ * keeps the draft instead of clearing it.
+ */
+export async function addPinWithAttachment(
+  pin: components["schemas"]["CommentCreateIn"],
+  file: File,
+): Promise<AddPinWithAttachmentResult> {
+  const created = await addPin(pin);
+  if (created === null) {
+    return { kind: "create-failed", reason: feedbackState.error ?? "unknown error" };
+  }
+  const uploaded = await _uploadPinAttachment(created.id, file);
+  if (!uploaded.ok) return { kind: "created-attachment-failed", reason: uploaded.message };
+  return { kind: "created" };
 }
 
 /**
@@ -270,10 +356,10 @@ export async function archivePin(pinId: string): Promise<boolean> {
  * deleted in the draft textarea. `text` is the reviewer's own addition,
  * appended after that generated reference; it may be empty.
  */
-export async function submitFollowOn(
+async function _submitFollowOnPin(
   parentId: string,
   text: string,
-): Promise<boolean> {
+): Promise<FeedbackPin | null> {
   try {
     const { data } = await api.POST(
       "/api/v1/feedback/comments/{comment_id}/follow-on",
@@ -287,11 +373,40 @@ export async function submitFollowOn(
       _upsertPin(data);
     }
     feedbackState.error = null;
-    return true;
+    return data ?? null;
   } catch (err) {
     feedbackState.error = err instanceof Error ? err.message : String(err);
-    return false;
+    return null;
   }
+}
+
+export async function submitFollowOn(
+  parentId: string,
+  text: string,
+): Promise<boolean> {
+  return (await _submitFollowOnPin(parentId, text)) !== null;
+}
+
+/**
+ * Follow-on twin of `addPinWithAttachment` (PR #1425 P1 review round 3: a
+ * screenshot pasted into a follow-on draft was staged in the UI but the
+ * follow-on save path returned through `submitFollowOn` alone, so the
+ * attachment upload below never ran and the staged File was silently
+ * discarded). Same three outcomes, using the new child pin's id - which
+ * only exists once the follow-on create call above has returned.
+ */
+export async function submitFollowOnWithAttachment(
+  parentId: string,
+  text: string,
+  file: File,
+): Promise<AddPinWithAttachmentResult> {
+  const created = await _submitFollowOnPin(parentId, text);
+  if (created === null) {
+    return { kind: "create-failed", reason: feedbackState.error ?? "unknown error" };
+  }
+  const uploaded = await _uploadPinAttachment(created.id, file);
+  if (!uploaded.ok) return { kind: "created-attachment-failed", reason: uploaded.message };
+  return { kind: "created" };
 }
 
 // ----- pin polling (same-tab live refresh, issue #914 review) -------------
