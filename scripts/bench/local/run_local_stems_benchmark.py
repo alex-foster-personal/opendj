@@ -175,11 +175,16 @@ def _valid_fixture_checksums(manifest: dict[str, Any]) -> bool:
     tracks = manifest.get("tracks", [])
     if not tracks:
         return False
+    # Name-based lookup alone accepts a manifest that repeats, drops, or
+    # reorders pinned entries (two copies of one canonical track each pass
+    # their own hash check independently). Require the manifest's track names,
+    # IN ORDER, to equal the canonical sequence's prefix of the same length.
+    expected_names = [track["name"] for track in EXPECTED_TRACKS[: len(tracks)]]
+    actual_names = [track.get("name") for track in tracks]
+    if actual_names != expected_names:
+        return False
     for track in tracks:
-        canonical = _CANONICAL_TRACKS_BY_NAME.get(track.get("name"))
-        if canonical is None:
-            return False
-        canonical_sha256 = canonical["sha256"]
+        canonical_sha256 = _CANONICAL_TRACKS_BY_NAME[track["name"]]["sha256"]
         if track.get("sha256", {}) != canonical_sha256:
             return False
         track_dir = Path(track["dir"])
