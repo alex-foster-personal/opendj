@@ -34,21 +34,40 @@
  *      itself rather than re-guessed here) before the final assertions, so
  *      the burst is always inside the observation window instead of
  *      sometimes inside it.
- * Re-audited line-by-line Tue 8 Sep 2026 (packet 9kb-2): both halves confirmed
- * present and correct against the scheduler's real constants, and the
- * failure mode was reproduced on a scratch copy of the pre-#1319 spec under
- * simulated CI load (8 unmocked deferred requests, the same shape as #1319's
- * own repro) then shown absent on this spec under the same simulated load --
- * see PR history for the harness. #1385 (Sun 6 Sep 2026) is a separate,
- * later change to the same file: it widened the `td.c-art` visibility
- * timeout 15s -> 45s for a distinct cold-vite-pipeline symptom on the FIRST
- * spec the rekordbox gate runs, not this catch-all/deferred-burst race.
- * PR #1357's Sun 6 Sep failure (`toBeVisible` 15s timeout) was that separate
- * cold-vite symptom, already fixed by #1385, not evidence this fix is
- * incomplete -- no sibling spec shares this catch-all-plus-assert-on-log
- * pattern either (checked repo-wide Tue 8 Sep 2026: `rekordbox-writeback-
- * disabled.spec.ts` uses a permissive catch-all with no equivalent
- * assertion, so it is not a latent flake of this shape).
+ * Independently re-audited line-by-line Tue 8 Sep 2026 (packet 9kb-2), not
+ * trusting a prior packet's claim that both halves already landed in #1319:
+ * every deferred family boot-scheduler.ts actually defers (confirmed against
+ * its real constants and its callers -- UserBauble/AccountOverlay auth/me,
+ * BuildIdentity build-info, FeedbackWidget feedback/todos+comments+general,
+ * usage-heartbeat telemetry/heartbeat, jobs-store jobs) is mocked explicitly
+ * below, `PAST_BOOT_BURST_MS` correctly covers BOOT_QUIET_MS +
+ * BOOT_IDLE_TIMEOUT_MS with a 1s margin (this route mounts no deck load, so
+ * DECK_LOAD_YIELD_MAX_MS never applies here), and the wait runs before the
+ * final assertions -- both halves confirmed present and correct, no gap
+ * found. Bite proved directly rather than cited: a throwaway scratch copy of
+ * the pre-#1319 shape (catch-all only, no explicit boot-scheduler mocks, no
+ * wait) was run against a 4.5s artificial delay injected into the mocked
+ * `/api/v1/tracks` response, standing in for a loaded CI runner stretching
+ * wall-clock time past the release window without needing 15 concurrent
+ * jobs on one host to do it -- it failed with exactly the deferred family
+ * requests logged as "unexpected" (auth/me x2, telemetry/heartbeat,
+ * feedback/todos, feedback/comments, feedback/general, build-info; jobs did
+ * not fire in that run). This spec, given the identical injected delay,
+ * passed. See this PR's body for the full run output; the
+ * scratch files were deleted immediately after and never committed.
+ * #1385 (Sun 6 Sep 2026) is a separate, later change to the same file: it
+ * widened the `td.c-art` visibility timeout 15s -> 45s for a distinct
+ * cold-vite-pipeline symptom on the FIRST spec the rekordbox gate runs, not
+ * this catch-all/deferred-burst race. PR #1357's Sun 6 Sep failure (job
+ * 101479373895, `e2e gate` attempt 1, `stretch-quality` config) was
+ * confirmed from the raw CI log to be that separate cold-vite symptom --
+ * `toBeVisible` timing out at exactly 15000ms on `td.c-art` with no
+ * unmocked-request log at all -- already fixed by #1385, not evidence this
+ * fix is incomplete. No sibling spec shares this catch-all-plus-assert-on-
+ * log pattern either (re-checked repo-wide Tue 8 Sep 2026:
+ * `rekordbox-writeback-disabled.spec.ts` is the only other spec with a
+ * catch-all `**\/api/v1/**` route, and it fulfils permissively with no
+ * equivalent assertion, so it is not a latent flake of this shape).
  */
 import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
