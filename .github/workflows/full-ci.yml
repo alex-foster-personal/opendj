@@ -19,9 +19,19 @@ on:
   # drift. There is still no schedule or push trigger here; the cadence
   # lives in periodic-checks.yml, with its merge-window gate.
   workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit to check out. A caller that REPORTS on a specific SHA pins it
+          here, so the suite runs against the tree that caller recorded rather
+          than against wherever the branch has moved to since. Empty means the
+          workflow event's own ref, which is what a manual dispatch wants.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
-  group: full-ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
+  group: full-ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || github.event_name == 'pull_request' && 'shared' || github.run_id }}
   # Trunk verification is never cancellable. A merge burst used to cancel each
   # run's predecessor and leave heads whose jobs never executed (Mon 31 Aug 2026:
   # six merges in 25s left main with no completed pytest or frontend job, while
@@ -33,6 +43,14 @@ concurrency:
   # next push run was created. Removing the shared group removes the precondition
   # for cancelling at all, so it does not depend on the mechanism that failed.
   # Pull requests keep the shared group and still cancel superseded runs.
+  #
+  # A reusable-workflow CALL reports the CALLER's event, so neither a periodic
+  # call nor a manual dispatch on main is a `push`: both used to land in the same
+  # `full-ci-refs/heads/main-shared` group and cancel one another. The periodic
+  # window would then record its head with the full suite CANCELLED, and a
+  # cancelled job is not a failed one, so nothing would say the suite had not
+  # run. Everything that is not a pull request now gets a run-scoped group,
+  # which no other run can collide with.
   cancel-in-progress: true
 
 env:
@@ -147,6 +165,9 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # A caller's pinned SHA when there is one; empty falls back to the
+          # workflow event's own ref, which is the dispatch behavior.
+          ref: ${{ inputs.ref }}
           # Progress-tree provenance validates historical feature commit SHAs.
           fetch-depth: 0
           clean: true

@@ -23,18 +23,21 @@ name: Periodic checks
 #
 # THE MERGE WINDOW. `merges:50` is derived, never stored as a counter:
 #   last_sha <- newest ledger comment carrying <!-- periodic-checks state sha=... -->
-#   count    <- gh api compare {last_sha}...main  ->  .total_commits
-# total_commits is a CEILING on the merge count, not an exact one: a squash merge
-# is one commit, but this repo also lands merge commits (5 of the last 30 on main,
-# Tue 8 Sep 2026) whose branch commits also fall in the range. Measured: a base 5
-# entries back compares as 10. That is the right direction to be wrong in.
-# Overcounting fires the window EARLY and costs a little compute; undercounting
-# would let it never fire, which is the failure this workflow exists to prevent.
-# gh api rather than `git rev-list --count` because runner checkouts here are
-# shallow and rev-list clamps silently. A missing marker, or a base that no longer
-# compares, reports `bootstrap` and RUNS rather than computing a small wrong
-# number and disabling this workflow forever. All four arms were dry-run against
-# the live API before this landed.
+#   count    <- git rev-list --count --first-parent {last_sha}..{head}
+# FIRST-PARENT, not the compare API's total_commits. total_commits counts every
+# commit reachable from head and not from base, which is not the number of
+# integrations: this repo lands non-squashed merges (5 of the last 30 on main,
+# Tue 8 Sep 2026; PR #1062 brought 18 commits in for ONE merge), so a few such
+# PRs cross a 50 threshold after a few merges and the cadence stops meaning what
+# it says. main's first-parent chain is exactly one entry per integration: one
+# per merge commit, one per squash. No REST endpoint exposes a first-parent
+# count, so this is computed with git, over REAL history -- runner checkouts
+# default to depth 1 and rev-list clamps silently on a shallow clone, so the job
+# checks out with fetch-depth: 0 and FAILS if the repository is still shallow
+# rather than reporting a small wrong number.
+# A missing marker, a base no longer in history, or a base that is not an
+# ancestor of the head being measured reports `bootstrap` and RUNS rather than
+# computing a small wrong number and disabling this workflow forever.
 
 on:
   schedule:
@@ -90,6 +93,15 @@ jobs:
       threshold: ${{ steps.compute.outputs.threshold }}
       reason: ${{ steps.compute.outputs.reason }}
     steps:
+      # Real history: the merge count below is a first-parent walk, and
+      # rev-list clamps silently on a shallow clone. `filter: blob:none` keeps
+      # it cheap -- this job reads commit topology only, never file content.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          clean: true
+
       - name: Compute the window
         id: compute
         env:
@@ -102,6 +114,19 @@ jobs:
           threshold="${THRESHOLD_IN:-$DEFAULT_THRESHOLD}"
           head="$(gh api "repos/${REPO}/commits/main" --jq .sha)"
           [ -n "$head" ] || { echo "::error::could not resolve main"; exit 1; }
+
+          # Every check below is pinned to this head and the report records it
+          # as the next state marker, so it must be present locally before
+          # anything is counted against it.
+          git fetch --no-tags --quiet origin main
+          [ "$(git rev-parse --is-shallow-repository)" = "false" ] || {
+            echo "::error::checkout is shallow; a first-parent count would clamp silently"
+            exit 1
+          }
+          git cat-file -e "${head}^{commit}" 2>/dev/null || {
+            echo "::error::main head ${head} is absent from this checkout after fetch"
+            exit 1
+          }
 
           # The state marker lives in the newest ledger comment that carries
           # one. Comments are read newest-last, so tail -1 after the grep.
@@ -117,11 +142,21 @@ jobs:
             run="true"
           else
             # An UNRESOLVABLE base is not a small count. If the recorded SHA
-            # has been rewritten out of history, compare 404s, and reporting
-            # that as "0 merges, skip" would silently disable this workflow
-            # forever. Bootstrap instead, loudly.
-            if ! count="$(gh api "repos/${REPO}/compare/${base}...${head}" --jq .total_commits 2>/dev/null)"; then
-              reason="state SHA ${base} no longer compares against main (history rewrite?); bootstrapping"
+            # was rewritten out of history, or is no longer an ancestor of the
+            # head being measured, reporting that as "0 merges, skip" would
+            # silently disable this workflow forever. Bootstrap instead,
+            # loudly. Both arms are negative controls: a base that is absent
+            # must report absent, never resolve to a small number.
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              reason="state SHA ${base} is absent from history (history rewrite?); bootstrapping"
+              count="-1"
+              run="true"
+            elif ! git merge-base --is-ancestor "$base" "$head"; then
+              reason="state SHA ${base} is not an ancestor of ${head:0:9} (history rewrite?); bootstrapping"
+              count="-1"
+              run="true"
+            elif ! count="$(git rev-list --count --first-parent "${base}..${head}")"; then
+              reason="could not count integrations ${base:0:9}..${head:0:9}; bootstrapping"
               count="-1"
               run="true"
             elif [ "$FORCE" = "true" ]; then
@@ -162,6 +197,11 @@ jobs:
     needs: window
     if: needs.window.outputs.run == 'true'
     uses: ./.github/workflows/full-ci.yml
+    # Pinned to the recorded head for the same reason as the checkouts below:
+    # the reusable workflow otherwise checks out the event's ref, which may
+    # already have moved past the SHA this window reports on.
+    with:
+      ref: ${{ needs.window.outputs.head }}
     permissions:
       contents: read
 
@@ -214,8 +254,13 @@ jobs:
             exit 1
           }
 
+      # The SHA the window RECORDED, not the workflow event's ref: main can
+      # advance between the two, and the report persists the window head as
+      # the next state marker, so an unpinned checkout would mark commits
+      # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          ref: ${{ needs.window.outputs.head }}
           clean: true
 
       # corepack BEFORE setup-node, so a pnpm shim exists when setup-node's
@@ -325,8 +370,13 @@ jobs:
             exit 1
           }
 
+      # The SHA the window RECORDED, not the workflow event's ref: main can
+      # advance between the two, and the report persists the window head as
+      # the next state marker, so an unpinned checkout would mark commits
+      # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          ref: ${{ needs.window.outputs.head }}
           clean: true
 
       - name: Enable pinned pnpm
@@ -407,6 +457,8 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # The SHA the window recorded; see the bundle job for why.
+          ref: ${{ needs.window.outputs.head }}
           # git cherry compares patch ids across the whole divergence, so this
           # needs real history, not a depth-1 clone.
           fetch-depth: 0
@@ -504,11 +556,25 @@ jobs:
           # Row 2 runs on its own clock in e2e.yml, so its verdict is READ, not
           # re-run. A workflow with no scheduled run at all reports NO RUNS
           # rather than passing by absence.
-          e2e_line="$(gh run list --workflow e2e.yml --event schedule --limit 1 \
-                        --json conclusion,createdAt,url \
-                        --jq '.[0] | "\(.conclusion // "in progress") (\(.createdAt)) \(.url)"' \
-                      2>/dev/null || true)"
-          [ -n "$e2e_line" ] || e2e_line="NO SCHEDULED RUNS FOUND"
+          #
+          # --repo is REQUIRED here: this job has no checkout, so gh has no
+          # repository to infer and the call dies with "failed to determine
+          # base repo". With stderr dropped and `|| true`, that read as "no
+          # scheduled runs" every window and hid the very nightly failures
+          # this row exists to surface. A FAILED QUERY is not a finding, so
+          # the two outcomes are now distinct and stderr is shown.
+          # `.[]`, not `.[0]`: on an empty array `.[0]` yields null and jq
+          # renders "in progress (null) null", a non-empty line for zero runs.
+          if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
+                           --event schedule --limit 1 \
+                           --json conclusion,createdAt,url \
+                           --jq '.[] | "\(.conclusion // "in progress") (\(.createdAt)) \(.url)"' \
+                         2>e2e.err)"; then
+            [ -n "$e2e_line" ] || e2e_line="NO SCHEDULED RUNS FOUND"
+          else
+            cat e2e.err >&2
+            e2e_line="QUERY FAILED - this row was NOT measured (see run log)"
+          fi
 
           window_desc="${BASE:0:9}..${HEAD:0:9}"
           [ -n "$BASE" ] || window_desc="bootstrap..${HEAD:0:9}"

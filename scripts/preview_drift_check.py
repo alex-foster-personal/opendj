@@ -17,6 +17,19 @@ Two failure shapes this reports:
     Detected with ``git cherry``, which compares PATCH IDS, so a commit that
     landed on main via squash or rebase counts as landed and does not show up.
 
+    ``git cherry`` is wrong in BOTH directions on its own, so two tree-level
+    measurements bound it. It compares patches ONE AT A TIME, so a preview
+    topic of several commits that main landed as a SINGLE squash comes back as
+    several unmatched commits; when the preview tree is IDENTICAL to main's,
+    nothing preview-only is being served and those rows cannot be drift. And it
+    skips MERGE COMMITS, so a merge whose conflict resolution changed the
+    result carries content no ordinary commit records and no ``+`` row can
+    show; every merge on the preview side is replayed with
+    ``git merge-tree --write-tree``, and one whose recorded tree is not what
+    merging its parents produces is counted as preview-only. A trivially
+    resolvable merge reproduces its tree exactly, so an ordinary "merge main
+    into preview" is not flagged.
+
 And one shape that is deliberately NOT either of those:
 
 ``FOSSIL``
@@ -134,6 +147,80 @@ def _rev_parse(cwd: Path, ref: str) -> str:
     return out
 
 
+def _trees_identical(cwd: Path, left: str, right: str) -> bool:
+    """True when two refs have the SAME tree content.
+
+    ``git diff --quiet`` exits 0 for identical and 1 for different; anything
+    else is a FAILED MEASUREMENT and must never be rendered as either answer.
+    """
+    proc = subprocess.run(
+        ["git", "diff", "--quiet", left, right],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode in (0, 1):
+        return proc.returncode == 0
+    raise MeasurementError(
+        f"git diff --quiet {left} {right} failed in {cwd} "
+        f"(exit {proc.returncode}): {proc.stderr.strip()}"
+    )
+
+
+def _merge_commits(cwd: Path, main_ref: str, preview_ref: str) -> list[str]:
+    """Merge commits reachable from the preview and not from main.
+
+    ``git cherry`` never reports these: it walks with ``--no-merges``.
+    """
+    return _git(cwd, "rev-list", "--merges", f"{main_ref}..{preview_ref}").split()
+
+
+def _resolution_carrying_merges(cwd: Path, shas: list[str]) -> list[str]:
+    """Merges whose recorded tree is NOT what merging their parents produces.
+
+    A conflict resolution (or a hand edit made during a merge) is content that
+    exists on no ordinary commit, so patch-id comparison cannot see it at all:
+    the preview can serve code main has never had while every per-commit row
+    says clean. Replaying the merge in the object store is the exact test, and
+    it is a NEGATIVE control by construction -- a merge that resolves trivially
+    reproduces its own tree, so the ordinary "merge main into preview" commit
+    is not flagged and this cannot degenerate into flagging every merge.
+    """
+    carrying: list[str] = []
+    for sha in shas:
+        parents = _git(cwd, "rev-parse", f"{sha}^@").split()
+        if len(parents) != 2:
+            # An octopus merge cannot be replayed pairwise. That is a failed
+            # measurement of that commit, not a clean bill of health, so it is
+            # reported rather than assumed innocent.
+            carrying.append(sha)
+            continue
+        proc = subprocess.run(
+            ["git", "merge-tree", "--write-tree", parents[0], parents[1]],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 1:
+            # The parents conflict, so whatever tree was recorded is a human
+            # resolution and exists nowhere else.
+            carrying.append(sha)
+            continue
+        if proc.returncode != 0:
+            raise MeasurementError(
+                f"git merge-tree failed for {sha} in {cwd} "
+                f"(exit {proc.returncode}): {proc.stderr.strip()}"
+            )
+        replayed = proc.stdout.split("\n", 1)[0].strip()
+        if not replayed:
+            raise MeasurementError(f"git merge-tree printed no tree for {sha}")
+        if replayed != _git(cwd, "rev-parse", f"{sha}^{{tree}}").strip():
+            carrying.append(sha)
+    return carrying
+
+
 def _describe(cwd: Path, shas: list[str]) -> dict[str, tuple[datetime, str]]:
     """Committer date and subject for every sha, in ONE git call.
 
@@ -211,11 +298,23 @@ class Report:
     max_behind: int = DEFAULT_MAX_BEHIND
     max_age_hours: int = DEFAULT_MAX_AGE_HOURS
     preview_only: list[PreviewOnlyCommit] = field(default_factory=list)
+    serves_main_tree: bool = False
     verdict: str = "OK"
     reasons: list[str] = field(default_factory=list)
 
     @property
     def stale(self) -> list[PreviewOnlyCommit]:
+        """The preview-only commits old enough to be a finding.
+
+        Empty whenever the preview TREE is identical to main's: patch-id
+        comparison matches one patch at a time, so a topic of several commits
+        that main landed as one squash is reported as several unmatched
+        commits even though the served tree is exactly main's. Nothing
+        preview-only is being served, so there is nothing for a human to
+        merge. ``preview_only`` keeps the raw rows either way.
+        """
+        if self.serves_main_tree:
+            return []
         return [c for c in self.preview_only if c.age_hours > self.max_age_hours]
 
     def as_dict(self) -> dict[str, object]:
@@ -229,6 +328,7 @@ class Report:
             "behind": self.behind,
             "max_behind": self.max_behind,
             "max_age_hours": self.max_age_hours,
+            "serves_main_tree": self.serves_main_tree,
             "preview_only_count": len(self.preview_only),
             "preview_only_stale": [c.as_dict() for c in self.stale],
             "reasons": self.reasons,
@@ -281,6 +381,49 @@ def evaluate(
     report.behind = int(
         _git(cwd, "rev-list", "--count", f"{preview_ref}..{main_ref}").strip()
     )
+
+    # The TREE is the arbiter of what is actually being served. Both of the
+    # blind spots below are blind spots of per-commit patch-id comparison, and
+    # neither can be closed by looking at commits harder.
+    report.serves_main_tree = _trees_identical(cwd, main_ref, preview_ref)
+    if report.serves_main_tree:
+        if report.preview_only:
+            report.reasons.append(
+                f"{len(report.preview_only)} commit(s) have no single-patch "
+                f"equivalent on {main_ref}, but the preview tree is IDENTICAL "
+                f"to it: they landed together (several commits squashed into "
+                f"one is the usual shape). Nothing preview-only is served."
+            )
+    else:
+        merges = _merge_commits(cwd, main_ref, preview_ref)
+        if len(merges) >= fossil_threshold:
+            # A three-figure merge count is the divergent-lineage shape, and
+            # replaying that many merges is not a cheap check. Say what it is
+            # rather than spending minutes reaching the same answer.
+            report.verdict = "FOSSIL"
+            report.reasons.append(
+                f"{len(merges)} merge commits on the preview and not on "
+                f"{main_ref} (ceiling {fossil_threshold}). That is a divergent "
+                f"lineage left behind by a history rewrite, not unmerged "
+                f"preview work: re-point or delete the ref."
+            )
+            return report
+        carrying = _resolution_carrying_merges(cwd, merges)
+        if carrying:
+            described_merges = _describe(cwd, carrying)
+            report.preview_only.extend(
+                PreviewOnlyCommit(
+                    sha=sha,
+                    committed_at=described_merges[sha][0],
+                    subject=described_merges[sha][1],
+                )
+                for sha in carrying
+            )
+            report.reasons.append(
+                f"{len(carrying)} merge commit(s) carry a conflict resolution "
+                f"that is on no ordinary commit, so git cherry cannot see it; "
+                f"counted as preview-only"
+            )
 
     stale = report.stale
     # FOSSIL is checked BEFORE DRIFT. A ref stranded by a history rewrite has
