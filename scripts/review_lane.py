@@ -65,6 +65,17 @@ COVERAGE_POISON: tuple[str, ...] = (
 )
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+_DEBT_HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+
+#: Characters `normalized_finding_title` keeps, because they carry a title's
+#: MEANING rather than its rendering. Markdown decoration (`*`, `_`, backtick,
+#: `#`) is deliberately absent: a debt heading and a model's own title differ
+#: in exactly that way all the time, which is what the normalization is for.
+_SEMANTIC_OPERATORS: frozenset[str] = frozenset("<>=+")
+
+#: A `-` that is a sign rather than a dash: it precedes a digit and follows
+#: something that is not a word character.
+_SIGN = re.compile(r"(?<!\w)-(?=\d)")
 
 
 def first_group(pattern: re.Pattern[str], text: str) -> str:
@@ -120,6 +131,55 @@ class Finding:
             f"{self.detail}\n\n"
             f"{marker}\n"
         )
+
+
+def normalized_finding_title(text: str) -> str:
+    """Narrow title equivalence for independently rendered debt headings.
+
+    Case, whitespace and DECORATIVE punctuation are presentation and collapse
+    away. `_SEMANTIC_OPERATORS` do not: `Reject values > 5` and
+    `Reject values < 5` are opposite findings, and folding them to one key
+    lets a debt heading suppress the finding that contradicts it -- the worst
+    outcome this module has, because the suppressed thread never appears
+    anywhere for a human to notice.
+
+    `-` is decorative rather than semantic, because this repo writes `--`
+    where other prose writes an U+2014 character, so a bare hyphen is far more often a
+    dash than a minus. It survives only in SIGN position (before a digit,
+    after a non-word character), which is where it is the negation half of
+    `+` and where no dash ever appears.
+    """
+    signs = {match.start() for match in _SIGN.finditer(text)}
+    return " ".join(
+        "".join(_normalized_char(char, index in signs) for index, char in enumerate(text)).split()
+    )
+
+
+def _normalized_char(char: str, is_sign: bool) -> str:
+    """One title character, padded so a kept operator is its own token."""
+    if is_sign or char in _SEMANTIC_OPERATORS:
+        return f" {char} "
+    return char.casefold() if char.isalnum() else " "
+
+
+def debt_logged_findings(
+    findings: list[Finding], debt_text: str
+) -> tuple[list[Finding], list[Finding]]:
+    """Return (post, suppressed), preserving blockers and uncertain matches.
+
+    Title equality after only presentation normalization is intentionally
+    stricter than semantic similarity. A finding with new meaning must post.
+    """
+    headings = {normalized_finding_title(heading) for heading in _DEBT_HEADING.findall(debt_text)}
+    post: list[Finding] = []
+    suppressed: list[Finding] = []
+    for finding in findings:
+        matched = normalized_finding_title(finding.title) in headings
+        if finding.severity not in BLOCKING_SEVERITIES and matched:
+            suppressed.append(finding)
+        else:
+            post.append(finding)
+    return post, suppressed
 
 
 # ----- head pinning -------------------------------------------------------
