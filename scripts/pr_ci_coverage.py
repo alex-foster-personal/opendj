@@ -23,6 +23,23 @@ MINI-PRD
             [then] paginate the full listing and still find it [else stop]
        [if] GitHub returns an incomplete or malformed API response
             [then] exit 10 with an explicit precondition error [else stop]
+    R2 Merge-race correction ..................................... done + regression
+       [if] a PR's head was stamped failure while open, then gains a qualifying run
+            and merges before the next scheduled watchdog run
+            [then] the very next run still republishes success on that exact head,
+                 with a fresh status timestamp [else stop] (issue #1368)
+       [if] a closed PR was never merged (declined, superseded)
+            [then] it is never re-inspected, whatever its update time [else stop]
+       [if] the closed-PR listing page is older than the recheck window
+            [then] pagination stops there rather than reading the whole PR history
+                 [else stop]
+       [if] any PR is inspected, open or recently-merged
+            [then] the run log names it and the verdict reached, so a silent skip
+                 shows up as a missing line rather than an absence [else stop]
+       [if] one PR's inspection raises inside the pool
+            [then] every verdict already reached is logged and the raising PR is
+                 named before the failure ends the run, publishing nothing
+                 [else stop]
 
 -Claude
 """
@@ -30,8 +47,10 @@ MINI-PRD
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 
 try:
     from scripts.ci_health_core import (
@@ -40,6 +59,7 @@ try:
         REPO,
         PreconditionError,
         _gh_api_json,
+        _parse_github_timestamp,
         _run_gh,
     )
 except ModuleNotFoundError as exc:
@@ -52,6 +72,19 @@ except ModuleNotFoundError as exc:
 PAGE_SIZE = 100
 MAX_API_WORKERS = 12
 EXCLUDED_DOCS_PREFIXES = ("docs/", "handoffs/", ".planning/", "specs/", "blog/")
+# ci-budget-watch.yml schedules this script every 12h. A PR can merge in the gap
+# between two runs, dropping out of `pulls?state=open` before its head is ever
+# re-checked - the exact shape of issue #1368, where a status posted `failure`
+# minutes before a merge stayed `failure` forever because nothing looked again.
+# Double the cadence so the very next scheduled run, not just a lucky one, always
+# still sees a PR that merged since the last run.
+RECHECK_WINDOW_HOURS = 24
+
+
+def _now() -> datetime:
+    """Wall clock, isolated so tests can pin it to a real captured moment."""
+    return datetime.now(UTC)
+
 REQUIRED_RUN_EVENTS = frozenset(
     {"pull_request", "push", "workflow_dispatch", "repository_dispatch"}
 )
@@ -112,6 +145,56 @@ def _open_prs() -> list[tuple[int, str]]:
                 )
             result.append((number, sha))
     return result
+
+
+def _pr_timestamp(raw: object, field: str, number: int) -> datetime:
+    """Validate a PR listing timestamp field is a string before parsing it."""
+    if not isinstance(raw, str):
+        raise PreconditionError(f"PR #{number} has a missing or non-string {field}: {raw!r}")
+    return _parse_github_timestamp(raw, field, f"PR #{number}")
+
+
+def _recently_merged_prs(cutoff: datetime) -> list[tuple[int, str]]:
+    """Read merged PRs updated at or after `cutoff`, giving a merged head one more look.
+
+    `_open_prs` alone is what let issue #1368 happen: a PR that merges between two
+    scheduled runs drops out of `state=open` and is never inspected again, so a
+    `failure` status stamped on its head minutes before the merge is stuck forever
+    even once a real run lands there. `pulls?state=closed&sort=updated&direction=desc`
+    returns newest-updated first, and a merge always bumps `updated_at` to at least
+    `merged_at` (nothing can touch a PR before it merges), so once a page's item is
+    older than `cutoff` every later item is provably older too - pagination can stop
+    there instead of reading the PR's whole history for one recheck window.
+    """
+    result: list[tuple[int, str]] = []
+    path = f"repos/{REPO}/pulls?state=closed&sort=updated&direction=desc"
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        payload = _gh_api_json(f"{path}{separator}per_page={PAGE_SIZE}&page={page}")
+        if not isinstance(payload, list):
+            raise PreconditionError(f"{path} page {page} was not a list")
+        for item in payload:
+            if not isinstance(item, dict):
+                raise PreconditionError("closed pull-request listing contained a non-object")
+            number = item.get("number")
+            head = item.get("head")
+            sha = head.get("sha") if isinstance(head, dict) else None
+            if type(number) is not int or not isinstance(sha, str) or not sha:
+                raise PreconditionError(
+                    f"closed pull-request listing has invalid number or head: {item!r}"
+                )
+            updated_at = _pr_timestamp(item.get("updated_at"), "updated_at", number)
+            if updated_at < cutoff:
+                return result
+            merged_at_raw = item.get("merged_at")
+            if merged_at_raw is not None:
+                merged_at = _pr_timestamp(merged_at_raw, "merged_at", number)
+                if merged_at >= cutoff:
+                    result.append((number, sha))
+        if len(payload) < PAGE_SIZE:
+            return result
+        page += 1
 
 
 def _changed_files(pr_number: int) -> list[str]:
@@ -282,7 +365,13 @@ def _inspect_pr(pr: tuple[int, str]) -> tuple[int, str, bool, bool]:
 
 
 def _publish_head_status(inspection: tuple[int, str, bool, bool]) -> None:
-    """Attach an explicit success or failure status to a checked non-docs PR head."""
+    """Attach an explicit success or failure status to a checked non-docs PR head.
+
+    Prints a confirmed-outcome line only once `_run_gh` actually returns: if the
+    POST raises, this PR gets no confirmation line, so a partial publication is
+    truthfully distinguishable from a completed one in the log, not just inferred
+    from the pre-POST intent line in `_log_inspection`.
+    """
     number, head_sha, requires_ci, covered = inspection
     if not requires_ci:
         return
@@ -302,20 +391,117 @@ def _publish_head_status(inspection: tuple[int, str, bool, bool]) -> None:
             f"description={description} for PR #{number}",
         ]
     )
+    print(f"PR_CI_COVERAGE_PUBLISHED pr=#{number} head={head_sha} state={state}")
 
 
-def main(*, publish_status: bool) -> int:
-    """Print named denominators and fail for every untested, non-docs PR head."""
+def _log_inspection(
+    scope: str, inspection: tuple[int, str, bool, bool], *, publish_status: bool
+) -> None:
+    """Name one inspected PR and the verdict this run reached, so a silent skip shows
+    up as a missing log line rather than as an absence nobody can distinguish from
+    "never inspected" (issue #1368's second acceptance criterion).
+
+    `publish_attempted` states intent to publish, decided before any POST is
+    attempted - it is not a confirmed outcome. `_publish_head_status` prints its
+    own `PR_CI_COVERAGE_PUBLISHED` line once a POST actually succeeds, so a
+    reader can tell an attempted-but-failed publish apart from a confirmed one.
+    """
+    number, head_sha, requires_ci, covered = inspection
+    if not requires_ci:
+        verdict = "docs-only-skipped"
+    elif covered:
+        verdict = "success"
+    else:
+        verdict = "failure"
+    print(
+        f"PR_CI_COVERAGE_PR scope={scope} pr=#{number} head={head_sha} "
+        f"verdict={verdict} publish_attempted={publish_status and requires_ci}"
+    )
+
+
+def _inspect_all(
+    prs: list[tuple[int, str]],
+) -> tuple[list[tuple[int, str, bool, bool] | None], BaseException | None]:
+    """Inspect every PR concurrently, keeping the verdicts that DID complete.
+
+    `list(executor.map(...))` re-raises on the first broken future, discarding every
+    result behind it - so one PR returning a malformed payload used to erase the whole
+    run's evidence, leaving PRs that were inspected successfully indistinguishable from
+    PRs that were never looked at (the exact absence issue #1368's second acceptance
+    criterion exists to rule out). Each future is therefore consumed individually, via
+    `Future.exception()` so no `except` clause here can ever swallow one.
+
+    The failure is RETAINED, never handled: the caller logs what completed and then
+    re-raises it, so the run still ends loudly and publishes nothing from a partial
+    inspection set.
+    """
+    with ThreadPoolExecutor(max_workers=MAX_API_WORKERS) as executor:
+        futures = [executor.submit(_inspect_pr, pr) for pr in prs]
+    inspections: list[tuple[int, str, bool, bool] | None] = []
+    failure: BaseException | None = None
+    for future in futures:
+        raised = future.exception()
+        if raised is None:
+            inspections.append(future.result())
+            continue
+        inspections.append(None)
+        if failure is None:
+            failure = raised
+    return inspections, failure
+
+
+def _log_failed_inspection(scope: str, pr: tuple[int, str]) -> None:
+    """Name a PR whose own inspection raised, rather than leaving it out of the log.
+
+    Its verdict is unknown, so it is reported as one - `inspection-error` is not a
+    coverage verdict and never enters a denominator. Without this line the failing
+    PR would be the only one absent from the log, which is the shape a silent skip
+    also has.
+    """
+    number, head_sha = pr
+    print(
+        f"PR_CI_COVERAGE_PR scope={scope} pr=#{number} head={head_sha} "
+        "verdict=inspection-error publish_attempted=False"
+    )
+
+
+def main(*, publish_status: bool, now: datetime | None = None) -> int:
+    """Print named denominators and fail for every untested, non-docs open PR head.
+
+    Also rechecks PRs merged within `RECHECK_WINDOW_HOURS`: a head stamped `failure`
+    while open must still be correctable once a real run lands, even if the PR merged
+    in the gap before the next scheduled run saw it (issue #1368). A merged head's
+    verdict never affects the exit code below - it can no longer block anything - but
+    it is always logged and always republished when `--publish-status` is set.
+
+    `now` is an explicit dependency-injection seam for tests that must pin the
+    recheck cutoff to a real historical moment (real GitHub data captured once is
+    inert against a moving wall clock). Production always omits it and gets the
+    real `_now()`; this keeps the seam a parameter, never a monkeypatched
+    module function.
+    """
+    cutoff = (now if now is not None else _now()) - timedelta(hours=RECHECK_WINDOW_HOURS)
+    open_prs = _open_prs()
+    recheck_prs = _recently_merged_prs(cutoff)
+    inspections, inspection_failure = _inspect_all(open_prs + recheck_prs)
+
+    # Every inspection is logged before any status POST is attempted, and before an
+    # inspection failure is re-raised: neither a transient publish failure nor one
+    # PR's broken payload may erase the acceptance guarantee that every inspected PR
+    # is named (issue #1368's second acceptance criterion).
+    # `publish_attempted` in each log line records intent to publish, not a
+    # confirmed POST outcome - `_publish_head_status` prints its own confirmation
+    # line once a POST actually succeeds.
+    split = len(open_prs)
     required = 0
     skipped_docs_only = 0
     uncovered: list[tuple[int, str]] = []
-    prs = _open_prs()
-    with ThreadPoolExecutor(max_workers=MAX_API_WORKERS) as executor:
-        inspections = list(executor.map(_inspect_pr, prs))
-    if publish_status:
-        with ThreadPoolExecutor(max_workers=MAX_API_WORKERS) as executor:
-            list(executor.map(_publish_head_status, inspections))
-    for number, head_sha, requires_ci, covered in inspections:
+    for pr, inspection in zip(open_prs, inspections[:split], strict=True):
+        if inspection is None:
+            _log_failed_inspection("open", pr)
+            continue
+        _log_inspection("open", inspection, publish_status=publish_status)
+        number, head_sha, requires_ci, covered = inspection
         if not requires_ci:
             skipped_docs_only += 1
         elif covered:
@@ -324,12 +510,44 @@ def main(*, publish_status: bool) -> int:
             required += 1
             uncovered.append((number, head_sha))
 
+    rechecked = 0
+    recovered = 0
+    for pr, inspection in zip(recheck_prs, inspections[split:], strict=True):
+        if inspection is None:
+            _log_failed_inspection("recheck", pr)
+            continue
+        _log_inspection("recheck", inspection, publish_status=publish_status)
+        _, _, requires_ci, covered = inspection
+        if requires_ci:
+            rechecked += 1
+            recovered += 1 if covered else 0
+
+    if inspection_failure is not None:
+        # The inspection set is incomplete, so every count below would be measured
+        # against a denominator missing rows nobody can enumerate, and no status may
+        # be published from a partial set. Flush first: stdout is block-buffered when
+        # the watchdog's output is piped, so an unflushed exit would throw away the
+        # very verdict lines just printed. Then the original failure propagates
+        # unswallowed, exactly as it did before it was retained.
+        sys.stdout.flush()
+        raise inspection_failure
+
     print(
         "PR_CI_COVERAGE "
-        f"open_non_docs={required} docs_only_skipped={skipped_docs_only} uncovered={len(uncovered)}"
+        f"open_non_docs={required} docs_only_skipped={skipped_docs_only} "
+        f"uncovered={len(uncovered)} recheck_candidates={len(recheck_prs)} "
+        f"recheck_non_docs={rechecked} recheck_covered={recovered}"
     )
     for number, head_sha in uncovered:
         print(f"[ERROR] PR #{number} head {head_sha} has no non-bot Actions run")
+
+    if publish_status:
+        # Every entry is non-None here: the raise above is what makes that true, and
+        # this comprehension is that invariant stated in the type rather than assumed.
+        complete = [inspection for inspection in inspections if inspection is not None]
+        with ThreadPoolExecutor(max_workers=MAX_API_WORKERS) as executor:
+            list(executor.map(_publish_head_status, complete))
+
     return EXIT_OK if not uncovered else 1
 
 
