@@ -28,9 +28,11 @@ Exit codes
 ``1``  ``EXIT_TRACK_FAILURES`` -- at least one track was attempted and its
        backend failed on it. The only status that says nothing about the
        next chunk, so the only one a chunking caller may continue past.
-``2``  ``EXIT_USAGE`` -- bad flags, an unknown backend, a malformed handoff
-       file. Argparse's own convention, kept distinct from ``1`` so a
-       configuration mistake is not read as "some tracks failed".
+``2``  ``EXIT_USAGE`` -- bad flags, an unknown backend, a backend refused for
+       licensing reasons (NATIVE-08; e.g. ``librosa+madmom`` without
+       ``MDT_BENCH_NONSHIPPABLE=1``), a malformed handoff file. Argparse's
+       own convention, kept distinct from ``1`` so a configuration mistake
+       is not read as "some tracks failed".
 ``3``  ``EXIT_MISSING_TARGETS`` -- one or more ``--pairs-json`` targets were
        gone before they could be analyzed, either at the admission check or
        later, when the backend opened the file. Never attempted either way.
@@ -60,7 +62,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .backends import DEFAULT_BACKEND, get_backend
-from .backends.base import TrackVanished
+from .backends.base import BackendNonshippable, TrackVanished
 from .jit_warmup import warm_backend_jit
 from .pool import analyze_one, run_pool
 from .record import AnalysisRecord
@@ -491,7 +493,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     # against the same bad name.
     try:
         get_backend(args.backend)
-    except KeyError as exc:
+    except (KeyError, BackendNonshippable) as exc:
         log.error("--backend %r: %s", args.backend, exc.args[0])
         raise SystemExit(EXIT_USAGE) from exc
     if args.pairs_json is not None:

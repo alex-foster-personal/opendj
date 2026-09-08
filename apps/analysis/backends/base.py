@@ -11,6 +11,17 @@ class BackendNotAvailable(RuntimeError):
     """Backend runtime dep missing (e.g. ``mixed-in-key-cli`` not on PATH)."""
 
 
+class BackendNonshippable(RuntimeError):
+    """Backend is registered but refused for licensing reasons.
+
+    Distinct from :class:`BackendNotAvailable`: the backend's dependency may
+    be perfectly importable, but its weights carry a license (e.g. madmom's
+    CC BY-NC-SA pretrained models, NATIVE-08) that forbids shipping it, so
+    the registry refuses to resolve it unless the caller opts in explicitly
+    with ``MDT_BENCH_NONSHIPPABLE=1``.
+    """
+
+
 class TrackTooLong(RuntimeError):
     """Track exceeded ``analyzer.max_track_minutes``."""
 
