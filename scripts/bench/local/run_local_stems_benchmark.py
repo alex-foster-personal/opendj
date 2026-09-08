@@ -31,10 +31,12 @@ records an MPS row. It never fabricates a CoreML or MPS row.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -126,14 +128,15 @@ def _run(command: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]
     # each PEP 723 child resolve its own pinned environment instead of inheriting
     # that virtualenv marker and waiting on an incompatible environment lock.
     environment.pop("VIRTUAL_ENV", None)
-    return subprocess.run(
-        ["timeout", f"{timeout_s}s", *command],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=environment,
-    )
+    try:
+        return subprocess.run(
+            command, cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+            env=environment, timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as error:
+        return subprocess.CompletedProcess(
+            command, 124, error.stdout or "", error.stderr or "",
+        )
 
 
 def _write_ledger(path: Path, ledger: dict[str, Any]) -> None:
@@ -141,9 +144,31 @@ def _write_ledger(path: Path, ledger: dict[str, Any]) -> None:
     path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _valid_fixture_checksums(manifest: dict[str, Any]) -> bool:
+    if "source_version" not in manifest:
+        return False
+    for track in manifest.get("tracks", []):
+        track_dir = Path(track["dir"])
+        for filename, expected in track.get("sha256", {}).items():
+            if _sha256(track_dir / filename) != expected:
+                return False
+        if set(track.get("sha256", {})) != {"mixture.wav", *(f"{stem}.wav" for stem in STEMS)}:
+            return False
+    return True
+
+
 def _candidate_cell(
     candidate: Candidate, track_dir: Path, out_dir: Path, timeout_s: int
 ) -> dict[str, Any]:
+    started = time.perf_counter()
     run = _run(
         [
             "uv",
@@ -156,11 +181,13 @@ def _candidate_cell(
         ],
         timeout_s,
     )
+    process_wall_s = round(time.perf_counter() - started, 3)
     cell: dict[str, Any] = {
         "candidate": candidate.key,
         "track": track_dir.name,
         "timeout_s": timeout_s,
         "exit_code": run.returncode,
+        "process_wall_s": process_wall_s,
         "stderr": run.stderr.strip(),
     }
     if run.returncode != 0:
@@ -192,14 +219,18 @@ def main() -> None:
     manifest_path = fixture_dir / "manifest.json"
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if len(manifest.get("tracks", [])) < args.n:
+        cached = len(manifest.get("tracks", [])) >= args.n and _valid_fixture_checksums(manifest)
+        if not cached:
+            manifest_path.unlink()
+        elif len(manifest.get("tracks", [])) < args.n:
             raise RuntimeError(
                 f"cached fixture manifest has {len(manifest.get('tracks', []))} tracks, "
                 f"need {args.n}; "
                 "delete the cache explicitly before asking this harness to fetch a larger sample"
             )
-        manifest["tracks"] = manifest["tracks"][: args.n]
-    else:
+        if cached:
+            manifest["tracks"] = manifest["tracks"][: args.n]
+    if not manifest_path.is_file():
         fixtures = _run(
             [
                 "uv",

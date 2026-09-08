@@ -65,7 +65,6 @@ def main() -> None:
     parser.add_argument("--device", default=None, help="override auto-detected device")
     args = parser.parse_args()
 
-    from torchaudio.transforms import Fade
 
     device = args.device or _pick_device()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -75,7 +74,11 @@ def main() -> None:
     print("[debug] fetching bundle model...", file=sys.stderr, flush=True)
     load_started = time.perf_counter()
     model = bundle.get_model()
-    print(f"[debug] model loaded in {time.perf_counter() - load_started:.1f}s", file=sys.stderr, flush=True)
+    print(
+        f"[debug] model loaded in {time.perf_counter() - load_started:.1f}s",
+        file=sys.stderr,
+        flush=True,
+    )
     model.to(device)
     model.eval()
     model_sr = bundle.sample_rate

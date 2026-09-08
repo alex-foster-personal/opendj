@@ -15,11 +15,10 @@ Same model and pinned versions as apps/stems/tiers.py's LOCAL rung and
 scripts/stem_bundle_worker.py, so this candidate's numbers are directly
 comparable to that rung's existing evidence, not a parallel reinvention of it.
 
-Device is AUTO-DETECTED (mps > cuda > cpu) and reported in the output JSON --
-never hand-picked -- so the identical command reproduces a real MPS row when
-run on the Air and a real CPU row here on nucbox, per issue #1461's hardware
-boundary. No candidate here ever fabricates an MPS/CoreML number: a machine
-that only has "cpu" available reports "cpu" and nothing else.
+Device is AUTO-DETECTED (cuda > cpu) and reported in the output JSON. htdemucs
+stays on CPU on Apple Silicon because the production LOCAL worker rejects MPS
+for its output-channel limitation. No candidate here fabricates an MPS/CoreML
+number: this candidate reports CPU on an Air and nucbox unless CUDA is real.
 
 Run:
   uv run scripts/bench/local/candidate_htdemucs_cpu.py \\
@@ -46,8 +45,6 @@ STEM_PARTS: tuple[str, ...] = ("drums", "bass", "other", "vocals")  # demucs' ow
 
 
 def _pick_device() -> str:
-    if torch.backends.mps.is_available():
-        return "mps"
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
@@ -82,11 +79,14 @@ def main() -> None:
     if audio.shape[1] == 1:
         audio = np.repeat(audio, 2, axis=1)
     wav = torch.from_numpy(audio.T).unsqueeze(0).to(device)  # (1, ch, frames)
+    reference = wav.mean(0)
+    wav_normalized = (wav - reference.mean()) / reference.std()
 
     separate_started = time.perf_counter()
     with torch.no_grad():
-        sources = apply_model(model, wav, device=device, progress=False)[0]  # (stems, ch, frames)
+        sources = apply_model(model, wav_normalized, device=device, progress=False)[0]
     separate_s = time.perf_counter() - separate_started
+    sources = sources * reference.std() + reference.mean()
 
     disk_bytes = 0
     for i, part in enumerate(STEM_PARTS):
