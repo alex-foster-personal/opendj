@@ -64,7 +64,7 @@ import argparse
 import json
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
@@ -164,7 +164,7 @@ def _describe(cwd: Path, shas: list[str]) -> dict[str, tuple[datetime, str]]:
             continue
         sha, raw_date, subject = line.split("\0", 2)
         described[sha] = (
-            datetime.fromisoformat(raw_date).astimezone(timezone.utc),
+            datetime.fromisoformat(raw_date).astimezone(UTC),
             subject,
         )
     missing = [s for s in shas if s not in described]
@@ -237,7 +237,7 @@ class Report:
 
 def _now() -> datetime:
     """UTC now. Never a hand-typed Z; the tzinfo does the labelling."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ----- the check ----------------------------------------------------------
@@ -327,14 +327,13 @@ def render(report: Report) -> str:
         f"  preview-only commits: {len(report.preview_only)} "
         f"({len(report.stale)} older than {report.max_age_hours}h)",
     ]
-    for commit in report.stale[:20]:
-        lines.append(
-            f"    + {commit.sha[:9]} {commit.age_hours:7.1f}h  {commit.subject[:70]}"
-        )
+    lines.extend(
+        f"    + {commit.sha[:9]} {commit.age_hours:7.1f}h  {commit.subject[:70]}"
+        for commit in report.stale[:20]
+    )
     if len(report.stale) > 20:
         lines.append(f"    ... and {len(report.stale) - 20} more")
-    for reason in report.reasons:
-        lines.append(f"  reason: {reason}")
+    lines.extend(f"  reason: {reason}" for reason in report.reasons)
     if report.mode == "remote":
         lines.append(
             "  NOTE: remote mode reads origin's ref only. It has NOT measured "
@@ -383,9 +382,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         cwd, preview_ref, mode = args.worktree, "HEAD", "worktree"
 
+    # Outside the try: a missing directory is a caller error, and wrapping it
+    # in the same handler as a git failure buys nothing but a TRY301.
+    if not cwd.is_dir():
+        print(f"[UNKNOWN] preview drift check could not measure: not a directory: {cwd}")
+        return EXIT_UNKNOWN
+
     try:
-        if not cwd.is_dir():
-            raise MeasurementError(f"not a directory: {cwd}")
         if args.fetch:
             _git(cwd, "fetch", "--quiet", "origin", "main", args.branch)
         report = evaluate(
