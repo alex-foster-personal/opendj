@@ -116,13 +116,14 @@
 	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
 		event.preventDefault();
 		event.stopPropagation();
-		if (!selectedIds.includes(row.stable_id)) onselectrow(row, event);
+		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
 		contextMenu = { x: event.clientX, y: event.clientY, row };
 	}
 
 	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
 		event.preventDefault();
+		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
 	}
@@ -294,7 +295,7 @@
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
 		onsort: (key: SortKey) => void;
-		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
+		onselectrow: (row: BrowserRow, event?: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
 		 * `reservation` must be set only when `deck` came from onpickdoubledeck
 		 * (it reserved that deck, at that generation) - never for an explicit
