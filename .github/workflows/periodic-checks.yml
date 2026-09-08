@@ -24,10 +24,17 @@ name: Periodic checks
 # THE MERGE WINDOW. `merges:50` is derived, never stored as a counter:
 #   last_sha <- newest ledger comment carrying <!-- periodic-checks state sha=... -->
 #   count    <- gh api compare {last_sha}...main  ->  .total_commits
-# Every squash merge is one commit on main, so total_commits IS the merge count.
+# total_commits is a CEILING on the merge count, not an exact one: a squash merge
+# is one commit, but this repo also lands merge commits (5 of the last 30 on main,
+# Tue 8 Sep 2026) whose branch commits also fall in the range. Measured: a base 5
+# entries back compares as 10. That is the right direction to be wrong in.
+# Overcounting fires the window EARLY and costs a little compute; undercounting
+# would let it never fire, which is the failure this workflow exists to prevent.
 # gh api rather than `git rev-list --count` because runner checkouts here are
-# shallow and rev-list clamps silently. A missing marker reports `bootstrap` and
-# runs, rather than computing a small wrong number.
+# shallow and rev-list clamps silently. A missing marker, or a base that no longer
+# compares, reports `bootstrap` and RUNS rather than computing a small wrong
+# number and disabling this workflow forever. All four arms were dry-run against
+# the live API before this landed.
 
 on:
   schedule:
