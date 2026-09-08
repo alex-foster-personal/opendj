@@ -60,6 +60,12 @@ export class RbApiError extends Error {
 	}
 }
 
+export type TrackLyrics = {
+	stable_id: string;
+	source: string;
+	lines: Array<{ start_ms: number; text: string }>;
+};
+
 // ----------------------------------------------------------- _helpers
 
 async function _throwRbApiError(r: Response): Promise<never> {
@@ -99,6 +105,48 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
+	if (typeof raw !== 'object' || raw === null) throw new Error('lyrics response must be an object');
+	const lyrics = raw as { stable_id?: unknown; source?: unknown; lines?: unknown };
+	if (lyrics.stable_id !== stableId || typeof lyrics.source !== 'string' || !lyrics.source) {
+		throw new Error('lyrics response has invalid stable_id or source');
+	}
+	if (!Array.isArray(lyrics.lines) || lyrics.lines.length === 0) {
+		throw new Error('lyrics response has no line-level lyrics');
+	}
+	let previousStartMs = -1;
+	const lines = lyrics.lines.map((line, index) => {
+		if (typeof line !== 'object' || line === null) throw new Error(`lyrics line ${index} is invalid`);
+		const value = line as { start_ms?: unknown; text?: unknown };
+		if (
+			typeof value.start_ms !== 'number' ||
+			!Number.isInteger(value.start_ms) ||
+			value.start_ms < 0 ||
+			value.start_ms <= previousStartMs ||
+			typeof value.text !== 'string' ||
+			!value.text.trim()
+		) {
+			throw new Error(`lyrics line ${index} is invalid`);
+		}
+		previousStartMs = value.start_ms;
+		return { start_ms: value.start_ms, text: value.text };
+	});
+	return { stable_id: stableId, source: lyrics.source, lines };
+}
+
+/** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
+export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
+	try {
+		return _parseTrackLyrics(
+			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
+			stableId
+		);
+	} catch (error) {
+		if (error instanceof RbApiError && error.status === 404) return null;
+		throw error;
+	}
 }
 
 async function _putJson<T>(path: string, body: unknown, ifMatch?: string): Promise<T> {

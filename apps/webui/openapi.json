@@ -4645,6 +4645,41 @@
         "title": "LoopMarkOut",
         "type": "object"
       },
+      "LyricLineOut": {
+        "description": "One cache-backed line timestamp in integer track milliseconds.",
+        "properties": {
+          "start_ms": {
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "type": "integer"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_ms",
+          "text"
+        ],
+        "title": "LyricLineOut",
+        "type": "object"
+      },
+      "LyricsUnavailableOut": {
+        "description": "The explicit cache-miss response for one track's lyrics timeline.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "LyricsUnavailableOut",
+        "type": "object"
+      },
       "MachineModel": {
         "description": "One ``machines`` row on the wire.",
         "properties": {
@@ -10268,6 +10303,34 @@
           "energy_reason"
         ],
         "title": "TrackListItemOut",
+        "type": "object"
+      },
+      "TrackLyricsOut": {
+        "description": "Agent-native read model for cached line-synced lyrics only.",
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LyricLineOut"
+            },
+            "minItems": 1,
+            "title": "Lines",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "lines"
+        ],
+        "title": "TrackLyricsOut",
         "type": "object"
       },
       "TrackOut": {
@@ -19255,6 +19318,59 @@
         "summary": "Restore Hot Cue",
         "tags": [
           "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/lyrics": {
+      "get": {
+        "description": "Read the real cached line timeline without fetching or inventing lyrics.",
+        "operationId": "get_track_lyrics_api_v1_tracks__stable_id__lyrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLyricsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsUnavailableOut"
+                }
+              }
+            },
+            "description": "No cached line-synced lyrics exist for this track."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Lyrics",
+        "tags": [
+          "tracks"
         ]
       }
     },
