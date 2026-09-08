@@ -97,20 +97,30 @@
  * 101479373895, `e2e gate` attempt 1 of run 34030635926) was confirmed from
  * the raw attempt-1 log to be that separate cold-vite symptom --
  * `toBeVisible` timing out at exactly 15000ms on `td.c-art`, "element(s) not
- * found", with zero occurrences of "unexpected" anywhere in the job log --
- * already fixed by #1385, not evidence this fix is incomplete. THE CONFIG
- * ATTRIBUTION IN AN EARLIER REVISION OF THIS HEADER WAS WRONG and is
- * corrected here (Sol P2 on #1463): that failure came from the `Root
+ * found", with zero occurrences of "unexpected" anywhere in the job log.
+ * THE CONFIG ATTRIBUTION IN AN EARLIER REVISION OF THIS HEADER WAS WRONG and
+ * is corrected here (Sol P2 on #1463): that failure came from the `Root
  * Playwright suite (real engine + Vite)` step, i.e. the ROOT
  * `playwright.config.ts`, project `[chromium]`, NOT from
  * `playwright.stretch-quality.config.ts` -- whose `testMatch` is
  * 'stretch-quality.spec.ts' and which therefore cannot run this file at all.
  * The `Hermetic gate - stretch quality smoke` step in that same job
- * SUCCEEDED. This spec runs TWICE per e2e-gate job because the root config's
- * `testIgnore` list does not exclude it: once under
- * `playwright.rekordbox-gate.config.ts` (project `rekordbox-gate-chromium`,
- * where it passed in 13.1s in that very job) and again under the root
- * config, where it failed. No sibling spec shares this catch-all-plus-assert-on-
+ * SUCCEEDED. NOT FIXED BY #1385 FOR THAT ROOT RUN, AND A LATER REVISION OF
+ * THIS HEADER WAS WRONG TO SAY SO (Sol P2 BLOCKING on #1463, thread
+ * 3961468764): the root config applies a 30-second test-level timeout
+ * (`playwright.config.ts` `timeout: 30_000`), and Playwright counts time
+ * spent inside the test function toward that budget, so #1385's 45-second
+ * `toBeVisible` allowance is inert there -- a render finishing around 25s
+ * can pass the assertion and still blow the overall 30s test timeout during
+ * the unconditional `PAST_BOOT_BURST_MS` wait that follows it. This spec ran
+ * TWICE per e2e-gate job because the root config's `testIgnore` list did not
+ * exclude it: once under `playwright.rekordbox-gate.config.ts` (project
+ * `rekordbox-gate-chromium`, 60s test timeout, where it passed in 13.1s in
+ * that very job) and again under the root config's 30s budget, where it
+ * failed. The actual fix (packet 9n-5) is excluding this spec from the root
+ * config's `testIgnore`, so it now runs only under the rekordbox-gate config
+ * that already gives it the headroom the cold-Vite pipeline needs. No
+ * sibling spec shares this catch-all-plus-assert-on-
  * log pattern either (re-checked repo-wide Tue 8 Sep 2026:
  * `rekordbox-writeback-disabled.spec.ts` is the only other spec with a
  * catch-all `**\/api/v1/**` route, and it fulfils permissively with no
@@ -293,7 +303,12 @@ test('null artwork availability identifies an unavailable reader without request
 	// Sun 6 Sep 2026 17:00 UTC, trace in the e2e-gate-failures artifact), and
 	// a 15 s budget went red on trunk three times that day with the row
 	// arriving one second late. The budget covers the cold pipeline under
-	// that load; the config's 60 s test timeout still bounds the whole test.
+	// that load; this spec is excluded from the root config's testIgnore
+	// (packet 9n-5, Sol P2 BLOCKING on #1463, thread 3961468764) precisely
+	// because the root config's 30s test timeout would make this 45s
+	// allowance inert -- the 60s test timeout that actually bounds the whole
+	// test here is playwright.rekordbox-gate.config.ts's, the only config
+	// this spec now runs under.
 	await expect(artworkCell).toBeVisible({ timeout: 45_000 });
 	await expect(artworkCell).toHaveAttribute('title', READER_UNAVAILABLE);
 	await expect(artworkCell.locator('img')).toHaveCount(0);
