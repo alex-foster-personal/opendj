@@ -102,6 +102,7 @@ from ._warmup_lock import (
     _ensure_lock_dir,
     _lock_dir_override,
     _open_lock_safe,
+    toolchain_identity,
     warmup_lock_path,
     warmup_stamp_path,
 )
@@ -161,6 +162,9 @@ class WarmupResult:
     #: issue #1401). Nothing was compiled - an unlocked compile of a cold
     #: shared cache is the corruption this module exists to prevent.
     refused: bool = False
+    #: Artifacts deleted under the lock because the stamp did not vouch for
+    #: them (``purge_stale``). Zero on a stamped or an empty cache.
+    purged: int = 0
 
     def render(self) -> str:
         if self.refused:
@@ -176,13 +180,13 @@ class WarmupResult:
         lock = "locked" if self.lock_held else "UNLOCKED"
         return (
             f"{WARMUP_LINE_PREFIX} backend={self.backend} "
-            f"seconds={self.seconds:.2f} lock={lock} "
+            f"seconds={self.seconds:.2f} lock={lock} purged={self.purged} "
             f"waited_s={self.waited_s:.2f} {self.detail}"
         )
 
 
-def cache_fingerprint(roots: Sequence[Path]) -> str:
-    """Fingerprint the JIT cache artifacts under ``roots``.
+def cache_fingerprint(roots: Sequence[Path], identity: str | None = None) -> str:
+    """Fingerprint the JIT cache artifacts under ``roots`` and what compiled them.
 
     Empty string when ``roots`` is empty, when no artifact exists, or when a
     root cannot be walked. Every one of those means "I cannot vouch for this
@@ -192,7 +196,15 @@ def cache_fingerprint(roots: Sequence[Path]) -> str:
     Size and mtime rather than content: the point is to notice that something
     wrote to the cache, and hashing tens of megabytes of object code on every
     CLI start would cost more than the warm-up it is avoiding.
+
+    ``identity`` (default :func:`toolchain_identity`) is folded in: a cache
+    that persists across venv recreation outlives a librosa or numba upgrade
+    that touches no artifact, and without it the stamp would still vouch,
+    the warm-up would skip, and numba would reject the artifacts at first
+    use in whichever processes got there first, concurrently and cold.
     """
+    if identity is None:
+        identity = toolchain_identity()
     try:
         artifacts = _cache_artifacts(roots)
     except OSError as exc:
@@ -209,7 +221,7 @@ def cache_fingerprint(roots: Sequence[Path]) -> str:
         entries.append(f"{path}\0{st.st_size}\0{st.st_mtime_ns}")
     if not entries:
         return ""
-    digest = hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
+    digest = hashlib.sha256("\n".join([identity, *entries]).encode("utf-8")).hexdigest()
     return f"{len(entries)}:{digest}"
 
 
@@ -367,8 +379,15 @@ def warm_backend_jit(
     *,
     backend_name: str,
     timeout_s: float = LOCK_TIMEOUT_S,
+    purge_stale: bool = False,
 ) -> WarmupResult:
     """Compile ``backend``'s cached JIT paths once, under the compile lock.
+
+    ``purge_stale`` deletes the artifacts on disk before compiling when, INSIDE
+    the lock, the stamp does not vouch for them: a persistent per-runner cache
+    a killed or racing writer touched, or one a toolchain upgrade left behind,
+    must never be loaded. Under the lock, so no process can delete what the
+    lock holder is writing; the CLI's ``--purge-if-stale`` is this flag.
 
     Always runs, for every worker count. ``--workers 1`` is not exempt: the
     corruption needs two PROCESSES, not two workers, and one CLI invocation
@@ -452,6 +471,7 @@ def warm_backend_jit(
                     "warm-up refused"
                 ),
             )
+        purged = purge_cache(roots) if (purge_stale and held) else 0
         started = time.monotonic()
         detail = backend.warm_jit_cache()
         seconds = time.monotonic() - started
@@ -466,12 +486,26 @@ def warm_backend_jit(
         lock_held=held,
         waited_s=waited,
         detail=detail,
+        purged=purged,
     )
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+
+def stamp_vouches_for(roots: Sequence[Path]) -> bool:
+    """True when the cache on disk is exactly what the last serial warm-up left.
+
+    A persistent per-runner cache makes the warm-up cost 0.3 s instead of a
+    25-45 s cold compile per job, but a cache a racing or killed writer
+    poisoned would persist too, and the stamp is the only witness that none
+    did. The purge itself happens INSIDE the compile lock (``purge_stale``);
+    this is the unlocked read for reporting and tests.
+    """
+    fingerprint = cache_fingerprint(roots)
+    return bool(fingerprint) and fingerprint == _read_stamp(warmup_stamp_path())
 
 
 def purge_cache(roots: Sequence[Path]) -> int:
@@ -497,64 +531,13 @@ def purge_cache(roots: Sequence[Path]) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``python -m apps.analysis.jit_warmup`` - purge and/or warm, and prove it.
+    """``python -m apps.analysis.jit_warmup``; the parser lives in jit_warmup_cli.
 
-    Exists so CI and a developer run the SAME command the analysis CLI runs
-    internally, rather than CI carrying its own inline copy of the warm-up
-    that can drift from the one that ships.
-
-    Exits non-zero when a backend that declares cache roots ends the warm-up
-    with no artifacts on disk. That is the positive check: a warm-up step
-    that silently warmed nothing is exactly the green-but-useless signal this
-    whole issue was hidden behind.
+    Imported lazily because the CLI module imports this one.
     """
-    import argparse
+    from .jit_warmup_cli import main as cli_main
 
-    from .backends import DEFAULT_BACKEND, get_backend
-
-    parser = argparse.ArgumentParser(
-        prog="apps.analysis.jit_warmup",
-        description="Purge and/or warm the analysis backend's numba JIT cache.",
-    )
-    parser.add_argument("--backend", default=DEFAULT_BACKEND)
-    parser.add_argument(
-        "--purge",
-        action="store_true",
-        help="delete existing cache artifacts and the stamp before warming",
-    )
-    args = parser.parse_args(argv)
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    backend = get_backend(args.backend)
-    roots = tuple(backend.jit_cache_roots())
-    print(f"{WARMUP_LINE_PREFIX} roots={[str(r) for r in roots]}")
-
-    if args.purge:
-        removed = purge_cache(roots)
-        left = len(_cache_artifacts(roots))
-        print(f"{WARMUP_LINE_PREFIX} purged={removed} remaining={left}")
-        if left:
-            print(
-                f"[ERROR] {left} JIT cache artifacts survived the purge; a "
-                "corrupt one among them would keep killing every later process",
-                file=sys.stderr,
-            )
-            return 1
-
-    result = warm_backend_jit(backend, backend_name=args.backend)
-    print(result.render())
-
-    artifacts = len(_cache_artifacts(roots))
-    print(f"{WARMUP_LINE_PREFIX} artifacts={artifacts}")
-    if roots and artifacts == 0:
-        print(
-            f"[ERROR] backend {args.backend!r} declares JIT cache roots but "
-            "warmed zero artifacts onto disk; the workers would compile into "
-            "a cold shared cache concurrently, which is issue #1316",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+    return cli_main(argv)
 
 
 __all__ = [
@@ -566,6 +549,8 @@ __all__ = [
     "cache_fingerprint",
     "main",
     "purge_cache",
+    "stamp_vouches_for",
+    "toolchain_identity",
     "warm_backend_jit",
     "warmup_lock_path",
     "warmup_stamp_path",

@@ -180,6 +180,28 @@ jobs:
         # docs/ci-actions-cost-review-2026-08-16.md item 7.
         run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv
 
+      - name: Keep the numba JIT cache across jobs on this runner
+        # librosa's numba artifacts live beside its source by default, and this
+        # job recreates `.venv` every run, so every job paid a 25-45 s cold
+        # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
+        # every shard, 0.3 s once the cache survives venv recreation). One
+        # directory per RUNNER: a runner runs one job at a time, so the
+        # warm-up below is the only cold writer it ever sees, and the stamp
+        # next to it is what lets the warm-up prove the cache is still what
+        # that serial writer left. Hosted runners get a fresh HOME per job
+        # and simply compile once, as before.
+        # Keyed by the toolchain too (python, numba, llvmlite, librosa, numpy
+        # versions, printed by the module that owns the cache): an upgrade
+        # lands in an empty directory and compiles once under the lock,
+        # instead of numba rejecting stale artifacts at first use in whatever
+        # processes got there first, concurrently and cold.
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
       - name: Warm the numba JIT cache before the suite (#1316)
         # librosa's `@numba.guvectorize(..., cache=True)` hot paths compile on
         # first call into `.nbi`/`.nbc` artifacts beside the librosa source.
@@ -192,17 +214,16 @@ jobs:
         # like an unrelated timeout, and it costs nothing on a cache that is
         # already what a previous warm-up left.
         #
-        # No `--purge` here, deliberately, unlike e2e.yml. That job spawns
-        # concurrent `apps.analysis.run` processes from the engine's refresh
-        # route and its poisoned caches were observed on disk; this lane runs
-        # pytest single-process in a venv it recreates from scratch each run
-        # (`uv venv`), so its cache is cold-but-unshared and has never shown
-        # the crash. A purge would force a cold ~35 s compile on every shard
-        # of every PR to insure against a state nothing here has produced.
-        # If a cache in this lane is ever poisoned the shard segfaults loudly,
-        # and `--purge` is the one-word repair.
+        # `--purge-if-stale`, not `--purge`: the cache now persists per runner
+        # (step above), so a purge on every job would buy a cold ~25-45 s
+        # compile each time to insure against a state a single serial writer
+        # cannot produce. The stamp is the witness: a cache the last serial
+        # warm-up left untouched is kept and the step takes ~0.3 s; a cache
+        # without a matching stamp (killed writer, racing writer, librosa
+        # upgrade) is purged before anything loads it, which is the only
+        # repair for a poisoned cache, since loading it is what segfaults.
         # Pinned by tests/scripts/test_ci_jit_warmup.py.
-        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
       - name: Run full pytest with coverage
         # coverage: apps/* only. --cov-report=xml for external tools.

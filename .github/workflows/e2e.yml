@@ -311,6 +311,28 @@ jobs:
             || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
           echo "[OK] apps.engine_core imports"
 
+      - name: Keep the numba JIT cache across jobs on this runner
+        # librosa's numba artifacts live beside its source by default, and this
+        # job recreates `.venv` every run, so every job paid a 25-45 s cold
+        # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
+        # every shard, 0.3 s once the cache survives venv recreation). One
+        # directory per RUNNER: a runner runs one job at a time, so the
+        # warm-up below is the only cold writer it ever sees, and the stamp
+        # next to it is what lets the warm-up prove the cache is still what
+        # that serial writer left. Hosted runners get a fresh HOME per job
+        # and simply compile once, as before.
+        # Keyed by the toolchain too (python, numba, llvmlite, librosa, numpy
+        # versions, printed by the module that owns the cache): an upgrade
+        # lands in an empty directory and compiles once under the lock,
+        # instead of numba rejecting stale artifacts at first use in whatever
+        # processes got there first, concurrently and cold.
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
       - name: Purge and warm the numba JIT cache (#1316)
         # The crash this job kept dying on was never fork, the pool, or thread
         # oversubscription. librosa marks several hot paths
@@ -327,12 +349,17 @@ jobs:
         #
         # Two halves, both load-bearing and in this order:
         #
-        # PURGE, because the corruption OUTLIVES the job. The workspace and
+        # PURGE IF STALE, because the corruption OUTLIVES the job. The workspace and
         # its `.venv` persist between runs on this self-hosted runner, so one
         # poisoned cache killed every later e2e job on that runner until the
         # artifacts were deleted by hand (five runner workspaces on Sat 5 Sep
         # 2026). Warming cannot repair it: loading the corrupt entry is what
         # segfaults, so no in-process code runs after it. Only deletion does.
+        #
+        # `--purge-if-stale` purges exactly when the stamp does not vouch for the
+        # cache on disk: the cache is per runner and persistent (step above), a
+        # runner runs one job at a time, so a stamped cache is one this serial
+        # warm-up left and is kept (0.3 s); anything else is purged first.
         #
         # WARM, because a purge alone leaves the cache cold, which is the
         # state that corrupts. The engine's refresh route spawns
@@ -347,7 +374,7 @@ jobs:
         # positive check: a warm-up step that silently warmed nothing is
         # exactly the green-but-useless signal this issue hid behind.
         # Pinned by tests/scripts/test_ci_jit_warmup.py.
-        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
       - name: Runner preflight - node tools and disk
         # Fail here, naming the runner, rather than mid-install with a cryptic

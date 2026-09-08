@@ -32,6 +32,7 @@ unlocked. Callers treat ``False`` from ``_ensure_lock_dir`` and ``None`` from
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import logging
 import os
 import stat
@@ -175,3 +176,24 @@ def _open_lock_safe(path: Path, *, require_self_owned: bool) -> int | None:
         os.close(fd)
         return None
     return fd
+
+
+#: Distributions whose upgrade invalidates every numba artifact on disk.
+TOOLCHAIN_DISTRIBUTIONS: tuple[str, ...] = ("numba", "llvmlite", "librosa", "numpy")
+
+
+def toolchain_identity() -> str:
+    """What compiled the artifacts: interpreter and JIT toolchain versions.
+
+    Read from dist-info, not by importing numba or librosa, so it is cheap
+    enough to compute on every CLI start. A distribution that is not
+    installed reads as ``absent``, which is itself an identity: a cache
+    compiled with librosa present must not vouch for a venv without it.
+    """
+    parts = [f"py{sys.version_info[0]}.{sys.version_info[1]}"]
+    for name in TOOLCHAIN_DISTRIBUTIONS:
+        try:
+            parts.append(f"{name}{importlib.metadata.version(name)}")
+        except importlib.metadata.PackageNotFoundError:
+            parts.append(f"{name}absent")
+    return "-".join(parts)

@@ -45,18 +45,16 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 WARMUP_MODULE = "apps.analysis.jit_warmup"
 
 #: Jobs that start `apps.analysis.run` processes, or a suite that does.
-#: (workflow, job id, purge required)
+#: (workflow, job id). Every warm-up is `--purge-if-stale`: the cache is per
+#: runner and persistent (Tue 8 Sep 2026), so a bare `--purge` would buy a cold
+#: 25-45 s compile on every job, and no flag at all would load a cache nothing
+#: vouches for.
 JITS = (
-    # The gate spawns concurrent analysis processes from the engine's refresh
-    # route, on a runner whose workspace and .venv survive between jobs. This
-    # is the job whose caches were found poisoned on disk.
-    ("e2e.yml", "gate", True),
-    # The pytest lanes run single-process and have never produced the state,
-    # so they warm without purging: a purge would buy a cold ~35 s compile on
-    # every shard of every PR to insure against a state nothing here creates.
-    ("ci.yml", "test", False),
-    ("full-ci.yml", "test", False),
+    ("e2e.yml", "gate"),
+    ("ci.yml", "test"),
+    ("full-ci.yml", "test"),
 )
+CACHE_STEP = "Keep the numba JIT cache across jobs on this runner"
 
 
 def _job(workflow: str, job_id: str) -> dict:
@@ -65,16 +63,18 @@ def _job(workflow: str, job_id: str) -> dict:
 
 
 def _warmup_step_index(job: dict) -> int | None:
+    """The step that WARMS: invokes the module with a backend, not `--identity`."""
     for i, step in enumerate(job["steps"]):
-        if WARMUP_MODULE in (step.get("run") or ""):
+        run = step.get("run") or ""
+        if WARMUP_MODULE in run and "--identity" not in run:
             return i
     return None
 
 
 @pytest.mark.requirement("JIT-05")
-@pytest.mark.parametrize(("workflow", "job_id", "needs_purge"), JITS)
+@pytest.mark.parametrize(("workflow", "job_id"), JITS)
 def test_job_warms_the_jit_cache_by_invoking_the_shipped_module(
-    workflow: str, job_id: str, needs_purge: bool
+    workflow: str, job_id: str
 ) -> None:
     """[if] a CI job stops invoking the shipped warm-up module [then] fail, [else stop].
 
@@ -89,16 +89,15 @@ def test_job_warms_the_jit_cache_by_invoking_the_shipped_module(
     assert "--backend librosa" in run, (
         f"{workflow}:{job_id} warms an unnamed backend: {run!r}"
     )
-    assert ("--purge" in run) is needs_purge, (
-        f"{workflow}:{job_id} purge is {'--purge' in run}, expected {needs_purge}; "
-        "see the comment on JITS for why each lane differs"
+    assert "--purge-if-stale" in run and " --purge " not in run + " ", (
+        f"{workflow}:{job_id} must warm with --purge-if-stale and never a bare --purge: {run!r}"
     )
 
 
 @pytest.mark.requirement("JIT-05")
-@pytest.mark.parametrize(("workflow", "job_id", "needs_purge"), JITS)
+@pytest.mark.parametrize(("workflow", "job_id"), JITS)
 def test_the_warmup_runs_before_anything_that_analyzes(
-    workflow: str, job_id: str, needs_purge: bool
+    workflow: str, job_id: str
 ) -> None:
     """[if] a job warms the cache after the thing that analyzes [then] fail, [else stop].
 
@@ -134,7 +133,7 @@ def test_the_e2e_gate_purges_before_it_warms() -> None:
     index = _warmup_step_index(job)
     assert index is not None
     run = job["steps"][index]["run"]
-    assert "--purge" in run, run
+    assert "--purge-if-stale" in run, run
     # One command, so the order is the CLI's, not the workflow's. Pinned here
     # because splitting it into two steps is the plausible refactor that would
     # reintroduce the ordering bug.
@@ -218,3 +217,29 @@ def test_some_per_pr_job_runs_the_jit_guards_the_sharded_lane_ignores() -> None:
             "lane without the analysis extra skips the whole directory and "
             "still exits 0. The step must count PASSES."
         )
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), JITS)
+def test_the_cache_persists_per_runner_and_is_declared_before_the_warmup(
+    workflow: str, job_id: str
+) -> None:
+    """[if] the warm-up runs without a per-runner NUMBA_CACHE_DIR and stamp dir [then] fail,
+    [else stop].
+
+    if the cache stays beside librosa inside a venv this job recreates then
+    every job pays the cold compile again (41-46 s per shard, Tue 8 Sep 2026);
+    if the directory is not keyed by runner then two runners on one host share
+    a cache and become the concurrent cold writers the whole issue is about"""
+    job = _job(workflow, job_id)
+    warm = _warmup_step_index(job)
+    assert warm is not None
+    cache = next((i for i, s in enumerate(job["steps"]) if s.get("name") == CACHE_STEP), None)
+    assert cache is not None, f"{workflow}:{job_id} has no '{CACHE_STEP}' step"
+    assert cache < warm, f"{workflow}:{job_id}: the cache step must precede the warm-up"
+    run = job["steps"][cache]["run"]
+    assert "$HOME/.cache/mdt-numba/${RUNNER_NAME:?" in run, run
+    assert "apps.analysis.jit_warmup --identity" in run and "/${identity:?" in run, (
+        f"{workflow}:{job_id}: the cache directory must be keyed by the toolchain identity: {run!r}"
+    )
+    assert "NUMBA_CACHE_DIR=" in run and "MDT_NUMBA_WARMUP_DIR=" in run, run
+    assert '>> "$GITHUB_ENV"' in run, run

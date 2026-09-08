@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -49,9 +50,12 @@ from pathlib import Path
 import pytest
 
 from apps.analysis import jit_warmup
+from apps.analysis.backends import get_backend
 from apps.analysis.jit_warmup import (
     cache_fingerprint,
     purge_cache,
+    stamp_vouches_for,
+    toolchain_identity,
     warm_backend_jit,
     warmup_lock_path,
     warmup_stamp_path,
@@ -290,7 +294,8 @@ def test_the_warmup_completes_in_the_parent_before_any_worker_runs(
     Checked from inside the real workers, not from stdout: a log line proves
     only that something was printed first.
     """
-    from apps.analysis import backends, run as run_mod
+    from apps.analysis import backends
+    from apps.analysis import run as run_mod
     from tests.analysis.pool_probe_backends import WarmupOrderBackend
 
     probe_dir = tmp_path / "probe"
@@ -340,7 +345,8 @@ def test_a_single_worker_run_still_warms(
     if --workers 1 skipped the warm-up then the drain's per-chunk
     invocations would each meet a cold shared cache; the corruption needs two
     PROCESSES, not two workers"""
-    from apps.analysis import backends, run as run_mod
+    from apps.analysis import backends
+    from apps.analysis import run as run_mod
     from tests.analysis.pool_probe_backends import WarmupOrderBackend
 
     probe_dir = tmp_path / "probe"
@@ -493,3 +499,58 @@ def test_a_backend_that_never_declared_its_jit_cache_is_named(
     assert "jit_cache_roots" not in str(half.value), (
         "the error must name only what is missing, or it cannot be acted on"
     )
+
+
+@pytest.mark.slow
+@pytest.mark.requirement("JIT-02")
+def test_a_real_cache_is_vouched_for_by_its_toolchain_and_stamp_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a stale real cache is trusted, or a stamped one purged [then] fail, [else stop].
+
+    Stale: stamp gone (writer killed before stamping) or a different toolchain.
+    Two real librosa compiles (~25-45 s each), so slow: Full CI keeps it.
+
+    if a stale cache were kept then a killed or racing writer's artifacts, or
+    a previous librosa's, would be loaded and segfault; if a stamped cache
+    were purged then every job on a persistent per-runner cache would pay the
+    cold compile again"""
+    monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path / "cache"))
+    lock_dir = tmp_path / "lock"
+    lock_dir.mkdir(mode=0o700)
+    monkeypatch.setenv("MDT_NUMBA_WARMUP_DIR", str(lock_dir))
+    backend = get_backend("librosa")
+    roots = tuple(backend.jit_cache_roots())
+    assert roots == (tmp_path / "cache",), roots
+    assert not stamp_vouches_for(roots), "an empty cache has nothing to vouch for"
+
+    cold = warm_backend_jit(backend, backend_name="librosa", purge_stale=True)
+    assert not cold.skipped and cold.purged == 0 and cold.lock_held
+    assert cache_fingerprint(roots), "the real backend compiled nothing"
+    assert stamp_vouches_for(roots), "the serial warm-up's own cache must be vouched for"
+    assert warm_backend_jit(backend, backend_name="librosa", purge_stale=True).skipped
+
+    compiled_by = cache_fingerprint(roots)
+    assert cache_fingerprint(roots, identity=toolchain_identity() + "-upgraded") != compiled_by, (
+        "the fingerprint ignored the toolchain that compiled the artifacts"
+    )
+    assert toolchain_identity().startswith(f"py{sys.version_info[0]}.{sys.version_info[1]}-numba")
+
+    # A writer killed before it could stamp: real artifacts, no witness. The
+    # repair runs in a FRESH process, as the CI step does: this process has
+    # the dispatchers compiled in memory and would write nothing after a purge.
+    warmup_stamp_path().unlink()
+    assert not stamp_vouches_for(roots)
+    repaired = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup",
+         "--backend", "librosa", "--purge-if-stale"],
+        cwd=REPO_ROOT,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    assert repaired.returncode == 0, repaired.stdout + repaired.stderr
+    assert re.search(r"purged=[1-9]\d*", repaired.stdout), repaired.stdout
+    assert stamp_vouches_for(roots), "the purge-and-warm must leave a vouched-for cache"
