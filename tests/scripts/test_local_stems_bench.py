@@ -10,6 +10,7 @@ from scripts.bench.local.run_local_stems_benchmark import (
     _parse_candidate_json,
     output_parity,
 )
+from scripts.bench.local.fixtures import EXPECTED_TRACKS, SOURCE_VERSION
 
 
 def test_parse_candidate_json_reads_the_final_machine_record():
@@ -36,3 +37,11 @@ def test_fixture_provenance_preserves_source_version_and_selected_checksums():
     }
 
     assert _fixture_provenance(manifest) == manifest
+
+
+def test_local_stems_fixture_is_pinned_to_package_dataset_and_checksums():
+    assert SOURCE_VERSION.startswith("musdb==0.4.0;")
+    assert len(EXPECTED_TRACKS) == 2
+    for track in EXPECTED_TRACKS:
+        assert len(track["source_sha256"]) == 64
+        assert set(track["sha256"]) == {"mixture.wav", "vocals.wav", "drums.wav", "bass.wav", "other.wav"}
