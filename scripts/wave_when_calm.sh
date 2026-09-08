@@ -20,7 +20,7 @@ for i in $(seq 1 "$MAX"); do
   OUT=$(uv run scripts/mem_gate.py check 2>&1 | tail -1) || true
   if uv run scripts/mem_gate.py check >/dev/null 2>&1; then
     echo "[$(date +%H:%M:%S)] poll $i: $OUT -> LAUNCHING"
-    exec uv run --with modal python -m scripts.stem_split_runner --limit 100 --dest bifrost2
+    exec uv run --no-sync --with modal python -m scripts.stem_split_runner --limit 100 --dest bifrost2
   fi
   echo "[$(date +%H:%M:%S)] poll $i: $OUT"
   sleep 60
