@@ -118,6 +118,11 @@
 	// spinning UI to overlap the central wheel". Marks are therefore drawn
 	// in the annulus outside the r=40 wheel face, never into it.
 	const phaseMarks: PhaseBeatMark[] = $derived(phaseBeatMarks(barBeats));
+	// PHASE_MARK_INNER_RADIUS already carries half the thickest rotating
+	// stroke, so a round line cap lands outside the face rather than 1.5
+	// units inside it. The red position tick uses the same inner endpoint:
+	// it is stroke-width 3 and rotates, so it is spinning UI under the same
+	// "no overlap" requirement.
 	const markOuterY = 50 - PHASE_MARK_OUTER_RADIUS;
 	const markInnerY = 50 - PHASE_MARK_INNER_RADIUS;
 
@@ -196,10 +201,11 @@
 				/>
 				<line class="progress-zero" x1="50" y1="3" x2="50" y2="13" stroke="#fff" stroke-opacity="0.3" stroke-width="1" />
 				<line
+					class="position-tick"
 					x1="50"
-					y1="4"
+					y1={markOuterY}
 					x2="50"
-					y2="9"
+					y2={markInnerY}
 					stroke="#d0342c"
 					stroke-width="3"
 					stroke-linecap="round"

@@ -175,10 +175,46 @@ export function pqtzBarPhase(
  * no-overlap requirement is an assertable number rather than a comment. */
 export const JOG_WHEEL_FACE_RADIUS = 40;
 
+/** The face is itself stroked, so the disc RENDERS half a stroke wider than
+ * r=40. Clearance is measured from that edge, not the geometric radius, or
+ * a mark could sit exactly on the face's own border and still satisfy an
+ * arithmetic that only knew about r=40. */
+export const JOG_WHEEL_FACE_STROKE_WIDTH = 1;
+export const JOG_WHEEL_FACE_RENDERED_RADIUS =
+	JOG_WHEEL_FACE_RADIUS + JOG_WHEEL_FACE_STROKE_WIDTH / 2;
+
+/** Stroke widths of the three rotating rim elements, mirrored by JogDial's
+ * own CSS/attributes (jog-phase-visual asserts the two agree). They belong
+ * here because the no-overlap radius cannot be chosen without them. */
+export const PHASE_MARK_STROKE_WIDTH = 1.25;
+export const PHASE_DOWNBEAT_STROKE_WIDTH = 3;
+export const POSITION_TICK_STROKE_WIDTH = 3;
+
+/** Every rotating rim element is drawn with `stroke-linecap: round`, which
+ * caps each endpoint with a semicircle of radius strokeWidth/2. A radial
+ * mark therefore RENDERS strokeWidth/2 further in than its inner endpoint:
+ * the r=41 endpoint the first cut of pin f19a1b2a455a chose reached r=39.5
+ * for the stroke-width-3 downbeat, i.e. 0.5 units INSIDE the r=40 face,
+ * while a centerline-only assertion reported no overlap. */
+export const THICKEST_ROTATING_STROKE_WIDTH = Math.max(
+	PHASE_MARK_STROKE_WIDTH,
+	PHASE_DOWNBEAT_STROKE_WIDTH,
+	POSITION_TICK_STROKE_WIDTH
+);
+
+/** Gap left between the face edge and the nearest RENDERED pixel of any
+ * rotating element, so "outside the face" is visibly true rather than
+ * exactly tangent. */
+export const JOG_FACE_CLEARANCE = 0.5;
+
 /** Radii of a phase mark, measured from the dial center. Both sit in the
- * annulus between the wheel face (r=40) and the outer ring (r=47). */
+ * annulus between the wheel face (r=40) and the outer ring (r=47), and the
+ * inner one is chosen for the THICKEST rotating stroke so every mark's cap,
+ * not just its centerline, clears the face. The red position tick shares
+ * this annulus. */
 export const PHASE_MARK_OUTER_RADIUS = 46;
-export const PHASE_MARK_INNER_RADIUS = 41;
+export const PHASE_MARK_INNER_RADIUS =
+	JOG_WHEEL_FACE_RENDERED_RADIUS + JOG_FACE_CLEARANCE + THICKEST_ROTATING_STROKE_WIDTH / 2;
 
 /** One phase mark on the JogDial rim: its angle in degrees before the
  * group's own phase rotation, and whether it is beat 1 (the downbeat).

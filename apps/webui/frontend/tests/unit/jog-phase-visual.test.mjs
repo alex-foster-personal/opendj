@@ -43,7 +43,18 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   4 marks then broken
  * - if the marks do not number exactly barBeats then broken
  * - if beat 1's mark is not strictly thicker than the others then broken
- * - if any rotating mark reaches inside the r=40 wheel face then broken
+ * - if any rotating mark RENDERS inside the wheel face (its own stroke
+ *   included on both sides) then broken
+ * - if the red position tick stops sharing the marks' annulus then broken
+ *
+ * That last line is deliberately about rendered extent rather than
+ * centerlines. The first cut of this pin asserted only the endpoint radii,
+ * and passed while the stroke-width-3 downbeat, drawn with a round line cap,
+ * put 1.5 units of white 0.5 units inside the face (Sol, thread 3961741980).
+ * A round cap is a semicircle of radius strokeWidth/2 centred on the
+ * endpoint, so a RADIAL mark reaches strokeWidth/2 further in than its inner
+ * endpoint - and the same arithmetic applies to the round-capped red
+ * position tick, which is stroke-width 3 and rotates.
  */
 
 let pqtzBarPhase,
@@ -52,7 +63,10 @@ let pqtzBarPhase,
 	jogPhaseBeats,
 	JOG_WHEEL_FACE_RADIUS,
 	PHASE_MARK_INNER_RADIUS,
-	PHASE_MARK_OUTER_RADIUS;
+	PHASE_MARK_OUTER_RADIUS,
+	PHASE_MARK_STROKE_WIDTH,
+	PHASE_DOWNBEAT_STROKE_WIDTH,
+	POSITION_TICK_STROKE_WIDTH;
 
 const REAL_PQTZ_BEATS = [
 	{ n: 1, bpm: 127, t: 0.135 },
@@ -83,6 +97,40 @@ function strokeWidthOf(selector) {
 	return Number(found[1]);
 }
 
+/** The whole <line> element of the rotating red position tick, found by the
+ * colour it is drawn in so this survives a rename of its class. */
+function positionTickElement() {
+	const found = jogDialSource.match(/<line[^>]*stroke="#d0342c"[^>]*\/>/);
+	assert.ok(found !== null, 'the rotating position tick must still exist');
+	return found[0];
+}
+
+/** stroke-width declared as an attribute on one SVG element. */
+function attrStrokeWidth(element, what) {
+	const found = element.match(/stroke-width="([0-9.]+)"/);
+	assert.ok(found !== null, `${what} must declare a stroke-width`);
+	return Number(found[1]);
+}
+
+/** The inner-endpoint radius of a radial element drawn at x=50 in the
+ * 100x100 viewBox: either a literal y2 or the shared markInnerY binding.
+ * This is the CENTERLINE radius - the rendered edge is half a stroke
+ * further in again, which is the entire point of the test below. */
+function innerEndpointRadius(element, what) {
+	const found = element.match(/y2=(?:"([0-9.]+)"|\{markInnerY\})/);
+	assert.ok(found !== null, `${what} must end at a literal y2 or the exported markInnerY`);
+	return found[1] === undefined ? PHASE_MARK_INNER_RADIUS : 50 - Number(found[1]);
+}
+
+/** Round line caps are what make rendered extent differ from centerline. */
+function assertRoundCapped(source, what) {
+	assert.match(
+		source,
+		/stroke-linecap:\s*round|stroke-linecap="round"/,
+		`${what} is assumed round-capped by the clearance arithmetic; a different cap changes the geometry`
+	);
+}
+
 before(async () => {
 	({
 		pqtzBarPhase,
@@ -91,7 +139,10 @@ before(async () => {
 		jogPhaseBeats,
 		JOG_WHEEL_FACE_RADIUS,
 		PHASE_MARK_INNER_RADIUS,
-		PHASE_MARK_OUTER_RADIUS
+		PHASE_MARK_OUTER_RADIUS,
+		PHASE_MARK_STROKE_WIDTH,
+		PHASE_DOWNBEAT_STROKE_WIDTH,
+		POSITION_TICK_STROKE_WIDTH
 	} = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts'));
 });
 
@@ -167,25 +218,78 @@ test('phaseBeatMarks yields one mark per beat in the phase, only beat 1 flagged 
 	assert.throws(() => phaseBeatMarks(1.5), RangeError);
 });
 
-test('no spinning UI reaches inside the central wheel face', () => {
+test('no spinning UI RENDERS inside the central wheel face, round caps included', () => {
 	assert.equal(JOG_WHEEL_FACE_RADIUS, 40, 'the wheel face is the r=40 disc carrying the BPM text');
-	assert.ok(
-		PHASE_MARK_INNER_RADIUS > JOG_WHEEL_FACE_RADIUS,
-		`a phase mark must stop outside the wheel face - inner radius ${PHASE_MARK_INNER_RADIUS} vs face ${JOG_WHEEL_FACE_RADIUS}`
-	);
 	assert.ok(
 		PHASE_MARK_OUTER_RADIUS > PHASE_MARK_INNER_RADIUS,
 		'a mark must have positive length outward from its inner end'
 	);
 
-	// The rotating red position tick is spinning UI too: it ran to y=12
-	// (radius 38, inside the face) before this pin.
-	const redTick = jogDialSource.match(/y1="(\d+)"\s*x2="50"\s*y2="(\d+)"\s*stroke="#d0342c"/);
-	assert.ok(redTick !== null, 'the rotating position tick must still exist');
-	const deepestRadius = 50 - Number(redTick[2]);
-	assert.ok(
-		deepestRadius >= JOG_WHEEL_FACE_RADIUS,
-		`the rotating position tick reaches radius ${deepestRadius}, inside the r=${JOG_WHEEL_FACE_RADIUS} wheel face`
+	// The face is stroked too, so its own rendered edge - not the geometric
+	// r=40 - is what a mark has to clear. Read that width from the component
+	// as well, so neither side of the comparison is a number nobody draws.
+	const face = jogDialSource.match(/<circle\s+class="wheel-fill"[^>]*\/>/);
+	assert.ok(face !== null, 'the wheel face must still be drawn');
+	assert.match(face[0], /r=\{JOG_WHEEL_FACE_RADIUS\}/, 'the face radius must BE the exported constant');
+	const faceRenderedRadius =
+		JOG_WHEEL_FACE_RADIUS + attrStrokeWidth(face[0], 'the wheel face') / 2;
+
+	const tick = positionTickElement();
+	const markRule = jogDialSource.match(/\.phase-mark\s*\{[^}]*\}/);
+	assert.ok(markRule !== null, 'the phase marks must carry a style rule');
+	assertRoundCapped(markRule[0], 'the phase marks');
+	assertRoundCapped(tick, 'the red position tick');
+
+	// Widths come from where they are actually RENDERED - JogDial's own CSS
+	// and attributes - so this cannot be satisfied by a constant in
+	// wave-math that the component does not use.
+	const rotating = [
+		['thin beat mark', strokeWidthOf('.phase-mark'), PHASE_MARK_INNER_RADIUS],
+		['thick downbeat mark', strokeWidthOf('.phase-mark.downbeat'), PHASE_MARK_INNER_RADIUS],
+		['red position tick', attrStrokeWidth(tick, 'the red position tick'), innerEndpointRadius(tick, 'the red position tick')]
+	];
+
+	// Report EVERY offender rather than stopping at the first: the thick
+	// downbeat and the red position tick are the same defect, and fixing
+	// only whichever assertion fired first would leave the other overlapping.
+	const overlapping = rotating
+		.map(([what, strokeWidth, centerlineRadius]) => ({
+			what,
+			strokeWidth,
+			centerlineRadius,
+			renderedRadius: centerlineRadius - strokeWidth / 2
+		}))
+		.filter((mark) => !(mark.renderedRadius > faceRenderedRadius));
+
+	assert.deepEqual(
+		overlapping.map((mark) => mark.what),
+		[],
+		overlapping
+			.map(
+				(mark) =>
+					`the ${mark.what} is stroke-width ${mark.strokeWidth} with a round line cap, so its inner endpoint ` +
+					`at radius ${mark.centerlineRadius} RENDERS down to radius ${mark.renderedRadius} - inside the ` +
+					`wheel face, which itself renders out to r=${faceRenderedRadius}. Comparing the centerline alone ` +
+					`(${mark.centerlineRadius} > ${JOG_WHEEL_FACE_RADIUS}) hides this.`
+			)
+			.join('\n')
+	);
+});
+
+test('the inner radius is derived from the widths JogDial really draws, not a guess', () => {
+	// The clearance arithmetic in wave-math is only correct while its stroke
+	// constants match the component. Without this, someone thickening the
+	// downbeat in CSS alone would re-open the overlap silently.
+	assert.equal(strokeWidthOf('.phase-mark'), PHASE_MARK_STROKE_WIDTH);
+	assert.equal(strokeWidthOf('.phase-mark.downbeat'), PHASE_DOWNBEAT_STROKE_WIDTH);
+	assert.equal(attrStrokeWidth(positionTickElement(), 'the red position tick'), POSITION_TICK_STROKE_WIDTH);
+
+	// The tick shares the marks' annulus rather than carrying its own
+	// literal endpoint, which is how it came to reach r=38 and then r=39.5.
+	assert.match(
+		positionTickElement(),
+		/y1=\{markOuterY\}[\s\S]*y2=\{markInnerY\}/,
+		'the rotating position tick must take its endpoints from the exported radii'
 	);
 });
 
