@@ -21,11 +21,34 @@
  * burst fires and the gap never shows -- on a loaded CI runner (this repo
  * runs many concurrent e2e-gate jobs on shared self-hosted agentbox
  * runners) the wall-clock race tips the other way often enough to redden
- * trunk. The fix is two-sided: mock every boot-scheduler family explicitly
- * (so the burst is accounted for, not merely raced against) and wait past
- * the scheduler's own release window before the final assertions, so the
- * burst is always inside the observation window instead of sometimes inside
- * it. That turns an intermittent miss into a deterministic pass.
+ * trunk.
+ *
+ * FIX APPLIED, both sides, in #1319 (Sat 5 Sep 2026) -- this is a record of
+ * what IS here, not a prescription for what should be added:
+ *   1. every boot-scheduler family is mocked explicitly below (auth/me,
+ *      build-info, feedback/todos+comments+general, telemetry/heartbeat,
+ *      jobs), so the burst is accounted for rather than merely raced
+ *      against;
+ *   2. `PAST_BOOT_BURST_MS` waits past the scheduler's own release window
+ *      (BOOT_QUIET_MS + BOOT_IDLE_TIMEOUT_MS, imported from the scheduler
+ *      itself rather than re-guessed here) before the final assertions, so
+ *      the burst is always inside the observation window instead of
+ *      sometimes inside it.
+ * Re-audited line-by-line Tue 8 Sep 2026 (packet 9kb-2): both halves confirmed
+ * present and correct against the scheduler's real constants, and the
+ * failure mode was reproduced on a scratch copy of the pre-#1319 spec under
+ * simulated CI load (8 unmocked deferred requests, the same shape as #1319's
+ * own repro) then shown absent on this spec under the same simulated load --
+ * see PR history for the harness. #1385 (Sun 6 Sep 2026) is a separate,
+ * later change to the same file: it widened the `td.c-art` visibility
+ * timeout 15s -> 45s for a distinct cold-vite-pipeline symptom on the FIRST
+ * spec the rekordbox gate runs, not this catch-all/deferred-burst race.
+ * PR #1357's Sun 6 Sep failure (`toBeVisible` 15s timeout) was that separate
+ * cold-vite symptom, already fixed by #1385, not evidence this fix is
+ * incomplete -- no sibling spec shares this catch-all-plus-assert-on-log
+ * pattern either (checked repo-wide Tue 8 Sep 2026: `rekordbox-writeback-
+ * disabled.spec.ts` uses a permissive catch-all with no equivalent
+ * assertion, so it is not a latent flake of this shape).
  */
 import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
