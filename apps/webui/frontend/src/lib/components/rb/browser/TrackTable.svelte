@@ -26,10 +26,9 @@
 	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
-	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
+	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat, genreHoverColor } from './track-table-colors';
 	import { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
-	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
@@ -62,6 +61,7 @@
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
+	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
 	import SpinnerIcon from './SpinnerIcon.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
@@ -95,6 +95,37 @@
 		y: number;
 	} | null>(null);
 	let loadConfirmEveryTime = $state(false);
+	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
+
+	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
+		const selected = selectedIds.includes(row.stable_id) ? selectedIds : [row.stable_id];
+		return [
+			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
+			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
+			{ id: 'bulk-edit', label: `Bulk edit (${selected.length})` }, { id: 'find-replace', label: 'Find/replace' },
+			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
+			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
+			{ id: 'analyze', label: 'Analyze' }, { id: 'stems-generate', label: 'Stems - generate' },
+			{ id: 'stems-open', label: 'Stems - open' }, { id: 'lyrics', label: 'Lyrics' },
+			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
+			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
+			{ id: 'remove-library', label: 'Remove from library' }
+		];
+	}
+
+	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!selectedIds.includes(row.stable_id)) onselectrow(row, event);
+		contextMenu = { x: event.clientX, y: event.clientY, row };
+	}
+
+	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
+		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		event.preventDefault();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
+	}
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -766,6 +797,9 @@
 	data-density={uiPrefs.library_density}
 	data-truncated={provider.truncated ? 'true' : 'false'}
 >
+	{#if contextMenu !== null}
+		<ContextMenu items={trackMenuItems(contextMenu.row)} x={contextMenu.x} y={contextMenu.y} onclose={() => (contextMenu = null)} />
+	{/if}
 	{#if masterFold === 'above'}
 		<button
 			type="button"
@@ -1106,6 +1140,7 @@
 						use:observeRow={row}
 						data-testid="track-row"
 						data-stable-id={row.stable_id}
+						tabindex="0"
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
@@ -1128,6 +1163,8 @@
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
 						ondblclick={(e) => onRowDblClick(e, row)}
+						oncontextmenu={(e) => openTrackMenu(e, row)}
+						onkeydown={(e) => onTrackKeydown(e, row)}
 						ondragstart={(e) => onRowDragStart(e, row)}
 						ondragend={onRowDragEnd}
 						ondragover={onRowDragOver}
