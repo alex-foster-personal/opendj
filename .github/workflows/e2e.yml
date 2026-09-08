@@ -447,10 +447,10 @@ jobs:
         # the analyser all still run for real, which is what the suite measures.
         run: |
           scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
-          pulseaudio --start --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=DummyOutput
-          pactl set-default-sink DummyOutput
-          echo "[OK] default sink: $(pactl get-default-sink)"
+          # Setup and restore both run under the pulse-sink host lock: the server
+          # is shared by every job of this user on the host, and the ownership
+          # check plus the mutation must be one critical section. See the script.
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
       - name: Build the production frontend
         working-directory: apps/webui/frontend
@@ -631,6 +631,14 @@ jobs:
         # keeps its API-backed specs from becoming an unobserved test estate.
         if: ${{ !cancelled() }}
         run: pnpm test:e2e --output test-results/root-playwright
+
+      - name: Restore the PulseAudio server (unload our null sink, previous default back)
+        # Always, even after a red suite: the server may be the host's shared,
+        # long-lived one, and the next job (or anything else on the host) must
+        # not inherit a discarding default sink or one more null-sink module.
+        if: always()
+        run: |
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh restore
 
       - name: Upload failure artifacts
         if: failure()
@@ -884,10 +892,10 @@ jobs:
         # the analyser all still run for real, which is what the suite measures.
         run: |
           scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
-          pulseaudio --start --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=DummyOutput
-          pactl set-default-sink DummyOutput
-          echo "[OK] default sink: $(pactl get-default-sink)"
+          # Setup and restore both run under the pulse-sink host lock: the server
+          # is shared by every job of this user on the host, and the ownership
+          # check plus the mutation must be one critical section. See the script.
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh setup
 
       - name: Build the production frontend
         working-directory: apps/webui/frontend
@@ -992,6 +1000,14 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" hotcue-mapping-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5320 8695 -- \
             pnpm exec playwright test --config tests/e2e/playwright.hotcue-mapping-gate.config.ts --output test-results/hotcue-mapping-gate
+
+      - name: Restore the PulseAudio server (unload our null sink, previous default back)
+        # Always, even after a red suite: the server may be the host's shared,
+        # long-lived one, and the next job (or anything else on the host) must
+        # not inherit a discarding default sink or one more null-sink module.
+        if: always()
+        run: |
+          scripts/ci_host_lock.sh pulse-sink scripts/ci_pulse_sink.sh restore
 
       - name: Upload failure artifacts
         if: failure()
