@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 from apps.analysis import auto_cues, detect_bad_beatgrid, run, write_tags
-from apps.analysis.backends import DEFAULT_BACKEND, get_backend
+from apps.analysis.backends import DEFAULT_BACKEND, NONSHIPPABLE_ENV, get_backend
+from apps.analysis.backends.base import BackendNonshippable
 from apps.analysis.backends.librosa import LibrosaBackend
 from apps.analysis.record import AnalysisRecord
 
@@ -33,10 +34,24 @@ def test_every_production_default_uses_exported_librosa_constant() -> None:
 
 
 @pytest.mark.requirement("META-01")
-def test_registry_exposes_real_librosa_default_and_explicit_combined_backend() -> None:
+def test_registry_exposes_real_librosa_default_and_explicit_combined_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     assert get_backend(DEFAULT_BACKEND) is LibrosaBackend
+    monkeypatch.setenv(NONSHIPPABLE_ENV, "1")
     assert get_backend("librosa+madmom").name == "librosa+madmom"
     assert get_backend("mik").name == "mik"
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_registry_refuses_madmom_without_the_nonshippable_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(NONSHIPPABLE_ENV, raising=False)
+    with pytest.raises(BackendNonshippable, match="CC BY-NC-SA"):
+        get_backend("librosa+madmom")
+    # control: the portable default is never gated by the same flag.
+    assert get_backend(DEFAULT_BACKEND) is LibrosaBackend
 
 
 @pytest.mark.requirement("META-01")

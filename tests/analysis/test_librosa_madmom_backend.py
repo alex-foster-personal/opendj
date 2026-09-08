@@ -16,17 +16,42 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from apps.analysis.backends import get_backend
-from apps.analysis.backends.base import TrackTooLong
+from apps.analysis.backends import NONSHIPPABLE_ENV, get_backend
+from apps.analysis.backends.base import BackendNonshippable, TrackTooLong
 from apps.analysis.backends.librosa import _energy_from_rms_dbfs, _estimate_key
 from apps.analysis.backends.librosa_madmom import LibrosaMadmomBackend
 from apps.analysis.record import AnalysisRecord
 
 
 @pytest.mark.requirement("META-01")
-def test_registry_has_both_backends() -> None:
+def test_registry_has_both_backends(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(NONSHIPPABLE_ENV, "1")
     assert get_backend("librosa+madmom").name == "librosa+madmom"
     assert get_backend("mik").name == "mik"
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_registry_refuses_madmom_without_the_flag_and_names_the_license(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(NONSHIPPABLE_ENV, raising=False)
+    with pytest.raises(BackendNonshippable) as excinfo:
+        get_backend("librosa+madmom")
+    assert "CC BY-NC-SA" in str(excinfo.value)
+    assert "MDT_BENCH_NONSHIPPABLE" in str(excinfo.value)
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_registry_refuses_madmom_on_any_falsy_flag_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] the flag is set to anything other than the literal "1" [then]
+    the registry still refuses, [else stop] -- "0", "false" and "" must not
+    be read as opt-in."""
+    for value in ("0", "false", "", "no"):
+        monkeypatch.setenv(NONSHIPPABLE_ENV, value)
+        with pytest.raises(BackendNonshippable):
+            get_backend("librosa+madmom")
 
 
 @pytest.mark.requirement("META-01")
