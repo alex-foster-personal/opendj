@@ -5,59 +5,54 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
- * Pin 67a4ce88805f (JogDial.svelte) - make a playing deck obviously playing:
+ * Pin 67a4ce88805f (JogDial.svelte) made a playing deck obviously playing: an
+ * off-white wheel face while audible, plus a fast white line completing one
+ * full revolution per "phase" (a PQTZ bar).
  *
- * - a second, fast white line on the wheel that completes one full
- *   revolution per "phase" (a PQTZ bar - 4 beats by default)
- * - the wheel background flips to off-white with black/grey text while
- *   audible, so a playing deck reads unmistakably differently from a
- *   stopped one
- * - a rotating radial grid on that off-white background, divided into as
- *   many sections as the phase tracks (4 by default), completing one
- *   rotation per phase
- * - "phase in config is anchor but set to default 4 if phase not
- *   available/set": the bar length is read from the deck's own
- *   quantize_grid_beats (1/4/8), because that is the one real,
- *   already-plumbed per-deck "beats per phase" setting in this codebase
- *   (deck-state-types.ts QuantizeGrid) - falling back to 4 only when its
- *   value is the unimplemented 'phase' sentinel (never a bare "4" with no
- *   config read at all).
+ * Pin f19a1b2a455a (the maintainer, Tue 8 Sep 2026) rejects what that first cut
+ * actually shipped, verbatim:
  *
- * Recovered from the closed, never-merged PR #1109 (single commit
- * 11de2243c, "show jog phase while audible") after the stacked branch it
- * was based on was rebuilt from scratch under it and PR #1109 died with its
- * dead base branch. Reimplemented against main's current JogDial (which by
- * pin 27f889893790's sibling packet may also carry a jog progress trail -
- * this pin touches only the background/grid/phase-line, not the trail).
+ *   "ok remov spinning black line - looks bad, the white line is plenty -
+ *    but it's regressed, it should spin once per phase (4 beats default) and
+ *    have as many marks are there beats per phase ie 4 if 4. downbeat or
+ *    beat1 should be thicker and others thinner. no spinning UI to overlap
+ *    the central wheel now."
  *
- * SOL REVIEW ROUND (PR #1355, 8bb6d240a): the first cut compared PQTZ's own
- * repeating beat number `n` (1..4, reset every rekordbox bar) directly
- * against barBeats. That made an 8-beat phase snap BACKWARDS every 4 real
- * beats instead of completing one revolution, and made a 1-beat phase null
- * on 3 of every 4 beats. Fixed by deriving phase from the beat's SEQUENTIAL
- * index in the ordered array (`index % barBeats`), which has no reset. The
- * radial grid was also two hardcoded perpendicular lines - always 4
- * sections regardless of barBeats, and the old test only asserted the grid
- * CLASS existed, so a non-4 barBeats could never fail it. Geometry is now
- * `phaseGridSpokes(barBeats)` (wave-math.ts), pure and unit-tested directly
- * for count/endpoints at barBeats 1/4/8, wired into JogDial via {#each}.
+ * Four requirements, and the regression that produced them:
+ *
+ * 1. The rotating radial grid (`.playing-phase-grid`, stroke #1f2329) is the
+ *    "spinning black line". It is gone. Only white marks remain.
+ * 2. One revolution per phase, 4 beats by DEFAULT. The regression: barBeats
+ *    was read straight off `deck.quantize_grid_beats`, whose shipped default
+ *    is 1 (player/state.svelte.ts, landed in bb606116c #1270), so on an
+ *    untouched deck the visual completed a revolution every single BEAT.
+ *    `jogPhaseBeats` resolves 1 and the unimplemented 'phase' sentinel to
+ *    DEFAULT_PQTZ_BAR_BEATS while still honouring a chosen 4 or 8.
+ * 3. As many marks as beats per phase, beat 1 (the downbeat) thicker.
+ *    The first cut drew exactly ONE white marker regardless of barBeats.
+ * 4. No spinning UI over the central wheel. The black spokes ran from the
+ *    dial CENTRE outward; the white marker and the red position tick both
+ *    ran to y=12, i.e. radius 38, inside the r=40 wheel face.
  *
  * Regression lines:
- * - if the phase line/grid render while the deck is not audible then broken
- *   (a stopped deck must not look like it is playing)
+ * - if the phase visual renders while the deck is not audible then broken
  * - if the phase angle advances from a CSS/JS wall clock instead of the real
  *   presented position then broken
- * - if the radial grid always divides into a bare literal 4 with no read of
- *   the deck's own quantize grid then broken
- * - if selecting quantize grid 8 does not change the number of radial
- *   sections then broken
- * - if phase is keyed on PQTZ's repeating beat number instead of a
- *   non-repeating sequential index then broken - it will snap backwards
- *   every 4 beats at barBeats=8, and go null on 3/4 beats at barBeats=1
- * - if the wheel background does not flip off-white while playing then broken
+ * - if any black/dark spinning grid returns to the wheel then broken
+ * - if a default deck (quantize grid 1) does not spin once per 4 beats with
+ *   4 marks then broken
+ * - if the marks do not number exactly barBeats then broken
+ * - if beat 1's mark is not strictly thicker than the others then broken
+ * - if any rotating mark reaches inside the r=40 wheel face then broken
  */
 
-let pqtzBarPhase, DEFAULT_PQTZ_BAR_BEATS, phaseGridSpokes;
+let pqtzBarPhase,
+	DEFAULT_PQTZ_BAR_BEATS,
+	phaseBeatMarks,
+	jogPhaseBeats,
+	JOG_WHEEL_FACE_RADIUS,
+	PHASE_MARK_INNER_RADIUS,
+	PHASE_MARK_OUTER_RADIUS;
 
 const REAL_PQTZ_BEATS = [
 	{ n: 1, bpm: 127, t: 0.135 },
@@ -70,17 +65,34 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 3.442 }
 ];
 
+const jogDialSource = readFileSync(
+	new URL('../../src/lib/components/rb/deck/JogDial.svelte', import.meta.url),
+	'utf8'
+);
+
 function assertClose(actual, expected, msg) {
-	assert.ok(
-		Math.abs(actual - expected) < 1e-9,
-		`${msg}: expected ${expected}, got ${actual}`
-	);
+	assert.ok(Math.abs(actual - expected) < 1e-9, `${msg}: expected ${expected}, got ${actual}`);
+}
+
+/** stroke-width declared for one CSS selector in JogDial's <style> block. */
+function strokeWidthOf(selector) {
+	const escaped = selector.replace(/[.]/g, '\\.');
+	const rule = new RegExp(`${escaped}\\s*\\{[^}]*?stroke-width:\\s*([0-9.]+)`);
+	const found = jogDialSource.match(rule);
+	assert.ok(found !== null, `no stroke-width found for ${selector}`);
+	return Number(found[1]);
 }
 
 before(async () => {
-	({ pqtzBarPhase, DEFAULT_PQTZ_BAR_BEATS, phaseGridSpokes } = await loadTypeScriptModule(
-		'src/lib/components/rb/wave/wave-math.ts'
-	));
+	({
+		pqtzBarPhase,
+		DEFAULT_PQTZ_BAR_BEATS,
+		phaseBeatMarks,
+		jogPhaseBeats,
+		JOG_WHEEL_FACE_RADIUS,
+		PHASE_MARK_INNER_RADIUS,
+		PHASE_MARK_OUTER_RADIUS
+	} = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts'));
 });
 
 test('pqtzBarPhase reads real captured beat numbers/timings, never a wall clock', () => {
@@ -93,24 +105,14 @@ test('pqtzBarPhase reads real captured beat numbers/timings, never a wall clock'
 });
 
 test('pqtzBarPhase at barBeats=8 keeps ramping across a bar reset instead of snapping backwards', () => {
-	// t=1.789 lands in the enclosing beat n=4 (real index 3): phase 0.4375
-	// of the 8-beat window. t=2.4 lands in the NEXT real beat, n=1 (real
-	// index 4) - PQTZ's own numbering resets to 1 here, exactly the point
-	// a naive `beat.n`-keyed implementation snaps backwards. The sequential
-	// index has no such reset, so the correct phase keeps climbing.
 	const before8 = pqtzBarPhase(REAL_PQTZ_BEATS, 1.789, 8);
 	const after8 = pqtzBarPhase(REAL_PQTZ_BEATS, 2.4, 8);
 	assertClose(before8, 3.5 / 8, 'phase just before the PQTZ bar-number reset');
 	assertClose(after8, 4.7944915254237288 / 8, 'phase just after the PQTZ bar-number reset');
-	assert.ok(
-		after8 > before8,
-		`phase must keep climbing across the bar-number reset (n resets to 1 but the sequential index does not) - got ${before8} then ${after8}`
-	);
+	assert.ok(after8 > before8, `phase must keep climbing across the bar-number reset - got ${before8} then ${after8}`);
 });
 
 test('pqtzBarPhase at barBeats=1 is defined on every beat, not just the downbeat', () => {
-	// n=3 here (not the downbeat) - a `beat.n <= barBeats` gate would reject
-	// this and return null on 3 of every 4 beats at barBeats=1.
 	assertClose(pqtzBarPhase(REAL_PQTZ_BEATS, 1.3165, 1), 0.5, 'phase within the single enclosing beat');
 });
 
@@ -119,67 +121,126 @@ test('pqtzBarPhase honours a caller-supplied bar length (the quantize-grid ancho
 	assert.throws(() => pqtzBarPhase(REAL_PQTZ_BEATS, 1.3165, 1.5), RangeError);
 });
 
-test('phaseGridSpokes generates exactly barBeats spokes, evenly spaced, ending on the wheel', () => {
-	assert.equal(typeof phaseGridSpokes, 'function');
-
-	const one = phaseGridSpokes(1);
-	assert.equal(one.length, 1);
-	assertClose(one[0].angleDeg, 0);
-	assertClose(one[0].x2, 50);
-	assertClose(one[0].y2, 12);
-
-	const four = phaseGridSpokes(4);
-	assert.equal(four.length, 4, 'default phase must divide the wheel into 4 sections');
-	assert.deepEqual(
-		four.map((s) => s.angleDeg),
-		[0, 90, 180, 270]
+test('a deck at its SHIPPED default quantize grid spins once per 4 beats, not once per beat', () => {
+	// Read the real seeded default rather than restating "1", so this test
+	// keeps describing the app if that seed ever moves.
+	const stateSource = readFileSync(
+		new URL('../../src/lib/player/state.svelte.ts', import.meta.url),
+		'utf8'
 	);
-	// Must match the OLD hardcoded cross's reach exactly (y=12/88, x=12/88)
-	// so the default-4 case is a pure geometry refactor, not a visual change.
-	assertClose(four[0].x2, 50);
-	assertClose(four[0].y2, 12);
-	assertClose(four[1].x2, 88);
-	assertClose(four[1].y2, 50);
-	assertClose(four[2].x2, 50);
-	assertClose(four[2].y2, 88);
-	assertClose(four[3].x2, 12);
-	assertClose(four[3].y2, 50);
+	const seeded = stateSource.match(/quantize_grid_beats:\s*('phase'|\d+)/);
+	assert.ok(seeded !== null, 'player state must seed a quantize grid for a fresh deck');
+	const seededGrid = seeded[1] === "'phase'" ? 'phase' : Number(seeded[1]);
 
-	const eight = phaseGridSpokes(8);
-	assert.equal(eight.length, 8, 'selecting an 8-beat quantize grid must render 8 sections, not 4');
-	assert.deepEqual(
-		eight.map((s) => s.angleDeg),
-		[0, 45, 90, 135, 180, 225, 270, 315]
+	assert.equal(typeof jogPhaseBeats, 'function');
+	assert.equal(
+		jogPhaseBeats(seededGrid),
+		4,
+		`a fresh deck (quantize grid ${seeded[1]}) must spin once per 4-beat phase, not once per beat`
 	);
-
-	assert.throws(() => phaseGridSpokes(0), RangeError);
-	assert.throws(() => phaseGridSpokes(1.5), RangeError);
+	assert.equal(jogPhaseBeats('phase'), 4, "the unimplemented 'phase' sentinel is not a phase length");
+	assert.equal(jogPhaseBeats(4), 4, 'a deliberately chosen 4-beat grid still anchors the phase');
+	assert.equal(jogPhaseBeats(8), 8, 'a deliberately chosen 8-beat grid still anchors the phase');
+	assert.throws(() => jogPhaseBeats(0), RangeError);
+	assert.throws(() => jogPhaseBeats(1.5), RangeError);
 });
 
-test('JogDial wires the phase visual to quantize_grid_beats, defaulting to 4 only for the unimplemented phase sentinel', () => {
-	const filename = new URL('../../src/lib/components/rb/deck/JogDial.svelte', import.meta.url);
-	const source = readFileSync(filename, 'utf8');
+test('phaseBeatMarks yields one mark per beat in the phase, only beat 1 flagged downbeat', () => {
+	assert.equal(typeof phaseBeatMarks, 'function');
 
-	assert.match(source, /import \{[^}]*pqtzBarPhase[^}]*phaseGridSpokes[^}]*\} from '\$lib\/components\/rb\/wave\/wave-math';/);
-	assert.match(
-		source,
-		/deck\.quantize_grid_beats === 'phase' \? DEFAULT_PQTZ_BAR_BEATS : deck\.quantize_grid_beats/,
-		'the bar length must come from the deck\'s own config, defaulting to 4 only when that config is the unimplemented phase sentinel'
+	const four = phaseBeatMarks(4);
+	assert.equal(four.length, 4, 'a 4-beat phase carries 4 marks');
+	assert.deepEqual(four.map((m) => m.angleDeg), [0, 90, 180, 270]);
+	assert.deepEqual(
+		four.map((m) => m.isDownbeat),
+		[true, false, false, false],
+		'exactly beat 1 is the downbeat'
 	);
-	assert.match(source, /pqtzBarPhase\(deck\.anlz\?\.beatgrid\.beats \?\? \[\], Math\.max\(0, deck\.position_ms \/ 1000\), barBeats\)/);
-	assert.match(source, /const gridSpokes[^=]*=\s*\$derived\(phaseGridSpokes\(barBeats\)\)/);
-	assert.match(
-		source,
-		/\{#each gridSpokes as spoke[^}]*\}[\s\S]{0,200}<line[^>]*x2=\{spoke\.x2\}[^>]*y2=\{spoke\.y2\}/,
-		'the grid must render one line per spoke computed FROM barBeats, not a hardcoded pair'
+
+	const eight = phaseBeatMarks(8);
+	assert.equal(eight.length, 8, 'an 8-beat phase carries 8 marks');
+	assert.deepEqual(eight.map((m) => m.angleDeg), [0, 45, 90, 135, 180, 225, 270, 315]);
+	assert.equal(eight.filter((m) => m.isDownbeat).length, 1);
+
+	assert.equal(phaseBeatMarks(1).length, 1);
+	assert.throws(() => phaseBeatMarks(0), RangeError);
+	assert.throws(() => phaseBeatMarks(1.5), RangeError);
+});
+
+test('no spinning UI reaches inside the central wheel face', () => {
+	assert.equal(JOG_WHEEL_FACE_RADIUS, 40, 'the wheel face is the r=40 disc carrying the BPM text');
+	assert.ok(
+		PHASE_MARK_INNER_RADIUS > JOG_WHEEL_FACE_RADIUS,
+		`a phase mark must stop outside the wheel face - inner radius ${PHASE_MARK_INNER_RADIUS} vs face ${JOG_WHEEL_FACE_RADIUS}`
+	);
+	assert.ok(
+		PHASE_MARK_OUTER_RADIUS > PHASE_MARK_INNER_RADIUS,
+		'a mark must have positive length outward from its inner end'
+	);
+
+	// The rotating red position tick is spinning UI too: it ran to y=12
+	// (radius 38, inside the face) before this pin.
+	const redTick = jogDialSource.match(/y1="(\d+)"\s*x2="50"\s*y2="(\d+)"\s*stroke="#d0342c"/);
+	assert.ok(redTick !== null, 'the rotating position tick must still exist');
+	const deepestRadius = 50 - Number(redTick[2]);
+	assert.ok(
+		deepestRadius >= JOG_WHEEL_FACE_RADIUS,
+		`the rotating position tick reaches radius ${deepestRadius}, inside the r=${JOG_WHEEL_FACE_RADIUS} wheel face`
+	);
+});
+
+test('JogDial renders white per-beat marks and no black spinning grid', () => {
+	assert.doesNotMatch(
+		jogDialSource,
+		/playing-phase-grid|grid-spoke|phaseGridSpokes/,
+		'the spinning black radial grid must be gone entirely - "the white line is plenty"'
 	);
 	assert.doesNotMatch(
-		source,
-		/<line x1="50" y1="12" x2="50" y2="88" \/>\s*<line x1="12" y1="50" x2="88" y2="50" \/>/,
-		'the old hardcoded 4-section cross must be gone - section count has to come from barBeats'
+		jogDialSource,
+		/x1="50"\s*y1="50"/,
+		'nothing rotating may be drawn from the dial centre outward'
 	);
-	assert.match(source, /class:dial-playing=\{deck\.audible\}/);
-	assert.match(source, /\{#if deck\.audible\}[\s\S]*class="playing-phase-grid"/);
-	assert.match(source, /class="phase-marker"/);
-	assert.doesNotMatch(source, /animation:/, 'phase must not advance from a CSS wall clock');
+	assert.match(
+		jogDialSource,
+		/const barBeats: number = \$derived\(jogPhaseBeats\(deck\.quantize_grid_beats\)\)/,
+		'phase length must go through jogPhaseBeats, not straight off the raw quantize grid'
+	);
+	assert.doesNotMatch(
+		jogDialSource,
+		/deck\.quantize_grid_beats === 'phase' \? DEFAULT_PQTZ_BAR_BEATS : deck\.quantize_grid_beats/,
+		'the old raw read defaulted a fresh deck to a 1-beat phase'
+	);
+	assert.match(jogDialSource, /const phaseMarks: PhaseBeatMark\[\] = \$derived\(phaseBeatMarks\(barBeats\)\)/);
+	assert.match(
+		jogDialSource,
+		/\{#each phaseMarks as mark[^}]*\}[\s\S]{0,400}class:downbeat=\{mark\.isDownbeat\}/,
+		'one line per mark, with beat 1 flagged for the thicker style'
+	);
+	assert.match(
+		jogDialSource,
+		/y1=\{markOuterY\}[\s\S]{0,80}y2=\{markInnerY\}/,
+		'mark endpoints must come from the exported radii, not inline literals'
+	);
+	assert.match(jogDialSource, /\{#if deck\.audible\}[\s\S]{0,200}class="phase-marks"/);
+	assert.match(
+		jogDialSource,
+		/class="wheel-fill"[^>]*r=\{JOG_WHEEL_FACE_RADIUS\}/,
+		'the face the marks must stay outside of has to BE the exported radius, or the no-overlap arithmetic is comparing against a literal nobody draws'
+	);
+	assert.match(jogDialSource, /class:dial-playing=\{deck\.audible\}/);
+	assert.doesNotMatch(jogDialSource, /animation:/, 'phase must not advance from a CSS wall clock');
+});
+
+test('beat 1 is drawn strictly thicker than the other beats, and all marks are white', () => {
+	const base = strokeWidthOf('.phase-mark');
+	const downbeat = strokeWidthOf('.phase-mark.downbeat');
+	assert.ok(
+		downbeat > base,
+		`the downbeat mark must be thicker than the rest - got downbeat ${downbeat} vs ${base}`
+	);
+	assert.match(
+		jogDialSource,
+		/\.phase-mark\s*\{[^}]*stroke:\s*#fff/,
+		'the phase marks are the white line the pin kept'
+	);
 });

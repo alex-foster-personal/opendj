@@ -168,34 +168,58 @@ export function pqtzBarPhase(
 	return ((i % barBeats) + phase) / barBeats;
 }
 
-/** One radial-grid spoke for the JogDial phase visual: the angle (degrees,
- * before the group's own phase rotation) and its center-to-edge endpoint on
- * the r=40 wheel. Pure geometry so the section COUNT is unit-testable
- * without rendering Svelte - pin 67a4ce88805f requires the grid to actually
- * divide into `barBeats` sections, not a hardcoded cross. */
-export interface PhaseGridSpoke {
+/** The jog wheel's central face (the off-white disc carrying the BPM/pitch
+ * text) is an r=40 circle centered at 50,50 in the dial's 100x100 viewBox.
+ * Pin f19a1b2a455a: "no spinning UI to overlap the central wheel", so every
+ * rotating mark has to live wholly OUTSIDE this radius. Exported so the
+ * no-overlap requirement is an assertable number rather than a comment. */
+export const JOG_WHEEL_FACE_RADIUS = 40;
+
+/** Radii of a phase mark, measured from the dial center. Both sit in the
+ * annulus between the wheel face (r=40) and the outer ring (r=47). */
+export const PHASE_MARK_OUTER_RADIUS = 46;
+export const PHASE_MARK_INNER_RADIUS = 41;
+
+/** One phase mark on the JogDial rim: its angle in degrees before the
+ * group's own phase rotation, and whether it is beat 1 (the downbeat).
+ *
+ * Pin f19a1b2a455a replaces pin 67a4ce88805f's centre-crossing radial grid
+ * ("remove the spinning black line - looks bad, the white line is plenty"):
+ * the phase now carries one WHITE rim mark per beat in the phase, beat 1
+ * thicker than the rest, and nothing reaching into the wheel face. Pure
+ * geometry so the mark COUNT and the downbeat flag are unit-testable
+ * without rendering Svelte. */
+export interface PhaseBeatMark {
 	angleDeg: number;
-	x2: number;
-	y2: number;
+	isDownbeat: boolean;
 }
 
-/** Matches the old hardcoded cross's reach (lines ran from y=12 to y=88 on
- * a wheel centered at 50,50 - i.e. radius 38 from center). */
-const PHASE_GRID_SPOKE_RADIUS = 38;
-
-export function phaseGridSpokes(barBeats: number): PhaseGridSpoke[] {
+export function phaseBeatMarks(barBeats: number): PhaseBeatMark[] {
 	if (!Number.isInteger(barBeats) || barBeats < 1) {
-		throw new RangeError(`phaseGridSpokes: barBeats must be a positive integer, got ${barBeats}`);
+		throw new RangeError(`phaseBeatMarks: barBeats must be a positive integer, got ${barBeats}`);
 	}
-	return Array.from({ length: barBeats }, (_, i) => {
-		const angleDeg = (360 * i) / barBeats;
-		const angleRad = (angleDeg * Math.PI) / 180;
-		return {
-			angleDeg,
-			x2: 50 + PHASE_GRID_SPOKE_RADIUS * Math.sin(angleRad),
-			y2: 50 - PHASE_GRID_SPOKE_RADIUS * Math.cos(angleRad)
-		};
-	});
+	return Array.from({ length: barBeats }, (_, i) => ({
+		angleDeg: (360 * i) / barBeats,
+		isDownbeat: i === 0
+	}));
+}
+
+/** Beats in one phase for the jog visual, from the deck's own quantize grid.
+ *
+ * Pin f19a1b2a455a: "it should spin once per phase (4 beats default)". A
+ * phase is a BAR, so a 1-beat quantize grid is not a phase length - it is
+ * the snap grid at its shipped default (player/state.svelte.ts seeds every
+ * deck at 1), which is exactly what made the visual spin once per BEAT with
+ * a single mark. Both 1 and the unimplemented 'phase' sentinel therefore
+ * mean "no phase length is set" and resolve to DEFAULT_PQTZ_BAR_BEATS,
+ * while a deliberately chosen bar-scale grid (4 or 8) still anchors the
+ * phase per pin 67a4ce88805f's "phase in config is anchor". */
+export function jogPhaseBeats(quantizeGrid: number | 'phase'): number {
+	if (quantizeGrid === 'phase' || quantizeGrid === 1) return DEFAULT_PQTZ_BAR_BEATS;
+	if (!Number.isInteger(quantizeGrid) || quantizeGrid < 1) {
+		throw new RangeError(`jogPhaseBeats: quantize grid must be a positive integer or 'phase', got ${quantizeGrid}`);
+	}
+	return quantizeGrid;
 }
 
 /** Center-playhead sync tone for a Beat Sync follower vs the master. */
