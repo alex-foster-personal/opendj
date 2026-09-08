@@ -35,7 +35,6 @@ import json
 import os
 import platform
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,7 +53,10 @@ class Candidate:
 
 CANDIDATES: tuple[Candidate, ...] = (
     Candidate("htdemucs_torch", Path("scripts/bench/local/candidate_htdemucs_cpu.py")),
-    Candidate("torchaudio_hybrid_demucs", Path("scripts/bench/local/candidate_torchaudio_hybrid_cpu.py")),
+    Candidate(
+        "torchaudio_hybrid_demucs",
+        Path("scripts/bench/local/candidate_torchaudio_hybrid_cpu.py"),
+    ),
 )
 
 
@@ -94,7 +96,8 @@ def _score_outputs(track_dir: Path, output_dir: Path) -> dict[str, Any]:
         estimate, estimate_rate = _load_mono(output_dir / f"{stem}.wav")
         if truth_rate != estimate_rate:
             raise RuntimeError(
-                f"{stem}: output rate {estimate_rate} differs from truth rate {truth_rate}; refusing resample"
+                f"{stem}: output rate {estimate_rate} differs from truth rate "
+                f"{truth_rate}; refusing resample"
             )
         scores[stem] = si_sdr_db(truth, estimate)
     return {
@@ -105,6 +108,7 @@ def _score_outputs(track_dir: Path, output_dir: Path) -> dict[str, Any]:
 
 def _fixture_content(track_dir: Path) -> dict[str, Any]:
     import soundfile as sf
+
     from scripts.bench.stem_content_gate import measure_window
 
     mixture, rate = sf.read(track_dir / "mixture.wav", always_2d=True)
@@ -137,9 +141,19 @@ def _write_ledger(path: Path, ledger: dict[str, Any]) -> None:
     path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
 
 
-def _candidate_cell(candidate: Candidate, track_dir: Path, out_dir: Path, timeout_s: int) -> dict[str, Any]:
+def _candidate_cell(
+    candidate: Candidate, track_dir: Path, out_dir: Path, timeout_s: int
+) -> dict[str, Any]:
     run = _run(
-        ["uv", "run", str(candidate.script), "--mixture", str(track_dir / "mixture.wav"), "--out", str(out_dir)],
+        [
+            "uv",
+            "run",
+            str(candidate.script),
+            "--mixture",
+            str(track_dir / "mixture.wav"),
+            "--out",
+            str(out_dir),
+        ],
         timeout_s,
     )
     cell: dict[str, Any] = {
@@ -180,18 +194,28 @@ def main() -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if len(manifest.get("tracks", [])) < args.n:
             raise RuntimeError(
-                f"cached fixture manifest has {len(manifest.get('tracks', []))} tracks, need {args.n}; "
+                f"cached fixture manifest has {len(manifest.get('tracks', []))} tracks, "
+                f"need {args.n}; "
                 "delete the cache explicitly before asking this harness to fetch a larger sample"
             )
         manifest["tracks"] = manifest["tracks"][: args.n]
     else:
         fixtures = _run(
-            ["uv", "run", "scripts/bench/local/fixtures.py", "--out", str(fixture_dir), "--n", str(args.n)],
+            [
+                "uv",
+                "run",
+                "scripts/bench/local/fixtures.py",
+                "--out",
+                str(fixture_dir),
+                "--n",
+                str(args.n),
+            ],
             args.timeout_s,
         )
         if fixtures.returncode != 0:
             raise RuntimeError(
-                f"fixture export failed with exit {fixtures.returncode}: {fixtures.stderr.strip() or fixtures.stdout.strip()}"
+                f"fixture export failed with exit {fixtures.returncode}: "
+                f"{fixtures.stderr.strip() or fixtures.stdout.strip()}"
             )
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     ledger: dict[str, Any] = {
@@ -203,7 +227,9 @@ def main() -> None:
             "machine": platform.machine(),
         },
         "fixture_source": manifest["source"],
-        "clip_length_note": "Each fixture is approximately 6.803 seconds; no result extrapolates to a full track.",
+        "clip_length_note": (
+            "Each fixture is approximately 6.803 seconds; no result extrapolates to a full track."
+        ),
         "quality_measure": {
             "metric": "true-stem SI-SDR per stem, mean across four stems",
             "parity_bar_db": AUDIBILITY_DB,
@@ -215,7 +241,8 @@ def main() -> None:
         track_dir = Path(track["dir"])
         fixture = _fixture_content(track_dir)
         for candidate in CANDIDATES:
-            cell = _candidate_cell(candidate, track_dir, args.cache / "output" / candidate.key / track_dir.name, args.timeout_s)
+            output_dir = args.cache / "output" / candidate.key / track_dir.name
+            cell = _candidate_cell(candidate, track_dir, output_dir, args.timeout_s)
             cell["fixture"] = fixture
             ledger["cells"].append(cell)
             _write_ledger(ledger_path, ledger)
