@@ -64,9 +64,11 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import socket
 import subprocess
 import sys
 import uuid
+from typing import ClassVar
 
 try:
     from scripts.review_gh import TriageError, _gh, _paginated_json_list
@@ -99,6 +101,11 @@ class CFG:
     #: SEPARATE subscription seat with a separate quota window. Both are
     #: subscription seats: failing over between them never reaches the API.
     SEATS: tuple[str, ...] = ("local", "nucbox-wsl")
+    #: Hostnames on which a named seat executes directly. This inspectable
+    #: registry avoids treating a remote nucbox seat as local on another host.
+    LOCAL_SEAT_HOSTS: ClassVar[dict[str, frozenset[str]]] = {
+        "nucbox-wsl": frozenset({"NucBoxEVO-X2"}),
+    }
     #: Substrings in codex output that mean THIS seat is spent. Failing over
     #: on these is safe; failing over on any other error would hide a real bug.
     SPENT_MARKERS: tuple[str, ...] = ("hit your usage limit", "usage limit reached")
@@ -146,11 +153,36 @@ def _codex_argv() -> list[str]:
     ]
 
 
-def _run_seat(seat: str, prompt: str) -> subprocess.CompletedProcess[str]:
+def _is_local_seat(seat: str, hostname: str | None = None) -> bool:
+    """Whether `seat` executes directly on the current configured host."""
     if seat == "local":
+        return True
+    elif seat in CFG.LOCAL_SEAT_HOSTS:  # noqa: RET505 - seat kinds stay explicit.
+        return (hostname or socket.gethostname()) in CFG.LOCAL_SEAT_HOSTS[seat]
+    return False
+
+
+def _seat_argv(seat: str, hostname: str | None = None) -> list[str]:
+    """The direct or SSH argv selected by the inspectable seat registry."""
+    if _is_local_seat(seat, hostname):
+        return _codex_argv()
+    elif seat:  # noqa: RET505 - local and remote seat kinds stay explicit.
+        remote_prefix = 'export PATH="$HOME/.local/bin:$PATH"; cd /tmp && env -u OPENAI_API_KEY '
+        return [
+            "ssh",
+            "-o",
+            "ConnectTimeout=15",
+            seat,
+            remote_prefix + " ".join(_codex_argv()),
+        ]
+    raise TriageError("seat must name a configured local alias or an SSH host")
+
+
+def _run_seat(seat: str, prompt: str) -> subprocess.CompletedProcess[str]:
+    if _is_local_seat(seat):
         env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
         return subprocess.run(
-            _codex_argv(),
+            _seat_argv(seat),
             input=prompt,
             capture_output=True,
             text=True,
@@ -159,17 +191,27 @@ def _run_seat(seat: str, prompt: str) -> subprocess.CompletedProcess[str]:
             timeout=CFG.CODEX_TIMEOUT_S,
             check=False,
         )
-    remote = 'export PATH="$HOME/.local/bin:$PATH"; cd /tmp && env -u OPENAI_API_KEY ' + " ".join(
-        _codex_argv()
-    )
-    return subprocess.run(
-        ["ssh", "-o", "ConnectTimeout=15", seat, remote],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=CFG.CODEX_TIMEOUT_S,
-        check=False,
-    )
+    elif seat:  # noqa: RET505 - local and remote seat kinds stay explicit.
+        return subprocess.run(
+            _seat_argv(seat),
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=CFG.CODEX_TIMEOUT_S,
+            check=False,
+        )
+    raise TriageError("seat must name a configured local alias or an SSH host")
+
+
+def _seat_error_location(seat: str, returncode: int) -> str:
+    """Describe an execution failure without misattributing a Codex error to SSH."""
+    if _is_local_seat(seat):
+        return f"local seat {seat}"
+    elif returncode == 255:  # noqa: RET505 - failure kinds stay explicit.
+        return f"remote seat {seat}; configure SSH for host {seat} before retrying"
+    elif seat:
+        return f"remote seat {seat}"
+    raise TriageError("seat must name a configured local alias or an SSH host")
 
 
 def _seat_is_spent(output: str) -> bool:
@@ -227,8 +269,9 @@ def review_with_codex(prompt: str, seat: str) -> tuple[str, str, str]:
             print(f"[sol-review] {spent[-1]}")
             continue
         if proc.returncode != 0:
+            location = _seat_error_location(candidate, proc.returncode)
             raise TriageError(
-                f"codex on seat {candidate} exited {proc.returncode}: {output[-800:]}"
+                f"codex on {location} exited {proc.returncode}: {output[-800:]}"
             )
         return output, candidate, first_group(_MODEL_LINE, output)
     raise TriageError(
