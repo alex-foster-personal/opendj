@@ -6,6 +6,7 @@ import pytest
 
 from scripts.bench.local.run_local_stems_benchmark import (
     AUDIBILITY_DB,
+    _fixture_provenance,
     _parse_candidate_json,
     output_parity,
 )
@@ -25,3 +26,13 @@ def test_parse_candidate_json_refuses_a_candidate_without_machine_output():
 def test_output_parity_uses_the_existing_calibrated_stem_tier_bar():
     assert output_parity(10.0, 10.0 + AUDIBILITY_DB - 0.001) == "within-audibility-bar"
     assert output_parity(10.0, 10.0 + AUDIBILITY_DB + 0.001) == "material-difference"
+
+
+def test_fixture_provenance_preserves_source_version_and_selected_checksums():
+    manifest = {
+        "source": "musdb18-7s-sample",
+        "source_version": "musdb package public test fixture",
+        "tracks": [{"name": "track-a", "sha256": {"mixture.wav": "abc"}}],
+    }
+
+    assert _fixture_provenance(manifest) == manifest

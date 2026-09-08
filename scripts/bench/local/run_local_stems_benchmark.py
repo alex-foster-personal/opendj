@@ -173,6 +173,14 @@ def _valid_fixture_checksums(manifest: dict[str, Any]) -> bool:
     return True
 
 
+def _fixture_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": manifest["source"],
+        "source_version": manifest["source_version"],
+        "tracks": manifest["tracks"],
+    }
+
+
 def _candidate_cell(
     candidate: Candidate, track_dir: Path, out_dir: Path, timeout_s: int
 ) -> dict[str, Any]:
@@ -266,6 +274,7 @@ def main() -> None:
             "machine": platform.machine(),
         },
         "fixture_source": manifest["source"],
+        "fixture_provenance": _fixture_provenance(manifest),
         "clip_length_note": (
             "Each fixture is approximately 6.803 seconds; no result extrapolates to a full track."
         ),
