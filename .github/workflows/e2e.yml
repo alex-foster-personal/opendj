@@ -642,6 +642,8 @@ jobs:
 
       - name: Upload failure artifacts
         if: failure()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-gate-failures
@@ -654,7 +656,7 @@ jobs:
             apps/webui/frontend/playwright-report/**
             apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/logs/**
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -1011,6 +1013,8 @@ jobs:
 
       - name: Upload failure artifacts
         if: failure()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-extended-failures
@@ -1018,4 +1022,4 @@ jobs:
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
