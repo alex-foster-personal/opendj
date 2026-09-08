@@ -348,6 +348,19 @@ let _commandHistory: Array<{ id: string; type: PerformanceCommand['type'] }> = [
 let _deckCommandIds: Record<DeckId, string | null> = { 1: null, 2: null, 3: null, 4: null };
 let _pairingSnapshot: PairingSnapshot | null = $state(null);
 
+/** Narrow test seam for exercising queryPerformanceState()'s pairing_snapshot
+ * clone directly, without driving the full pairing_snapshot_open/save command
+ * sequence. Production always reaches _pairingSnapshot through those
+ * commands, which is where the Svelte $state reactive proxy wrapping this
+ * module's test bundler cannot reproduce (see performance-ipc.test.mjs). */
+export function installPairingSnapshotForTest(snapshot: PairingSnapshot | null): () => void {
+	const previous = _pairingSnapshot;
+	_pairingSnapshot = snapshot;
+	return () => {
+		_pairingSnapshot = previous;
+	};
+}
+
 export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAdapter): () => void {
 	if (_browserAdapter !== null) throw new Error('performance browser adapter is already registered');
 	_browserAdapter = adapter;
@@ -1225,7 +1238,16 @@ export function queryPerformanceState(): PerformanceState {
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error,
-		pairing_snapshot: _pairingSnapshot === null ? null : structuredClone(_pairingSnapshot),
+		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
+		// Proxy wrapping the assigned object - and a Proxy, regardless of what
+		// it wraps, is never structured-cloneable (DataCloneError). Every other
+		// field here is rebuilt fresh with a spread/map, which is naturally
+		// plain; this one instead fed the live proxy straight into
+		// structuredClone(). $state.snapshot() deep-unwraps it back to plain
+		// data first, matching the Svelte 5 idiom for "give me a cloneable copy
+		// of reactive state" - see performance-ipc.test.mjs.
+		pairing_snapshot:
+			_pairingSnapshot === null ? null : structuredClone($state.snapshot(_pairingSnapshot)),
 		technically_working: {
 			active: isTechModeActive(),
 			peeking: isPeeking(),
