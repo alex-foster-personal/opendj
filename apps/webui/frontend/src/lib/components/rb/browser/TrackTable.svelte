@@ -2208,16 +2208,50 @@
 		border-radius: 3px;
 		background: var(--rb-panel-raised, #0a0c0f);
 		opacity: 0;
+		/* The box hangs over the PREVIOUS row (bottom: 100%), so the box
+		 * ITSELF must never take a pointer: its padding, border and
+		 * background would swallow that row's hover and double-click exactly
+		 * the way the on-the-line version swallowed its own row's (Sol P1 on
+		 * pin fce26c7493b0). Only the buttons are hittable, and only while
+		 * revealed - so the pointer travelling up from .c-title to a deck
+		 * button passes THROUGH the box's dead area onto the row above
+		 * instead of latching onto it. Interactivity therefore lives on
+		 * .deck-btns button below, corridor grace and all. */
 		pointer-events: none;
 		z-index: 5;
-		transition:
-			opacity 120ms ease,
-			pointer-events 0s 100ms;
+		transition: opacity 120ms ease;
+	}
+	/* The buttons carry BOTH the interactivity and the footprint, because over
+	 * the row above those are the same thing.
+	 * Hitbox: hiding pointer-events lags 100ms behind losing hover (pin
+	 * 27f889893790's corridor); showing has no such delay.
+	 * Size: the global `button` rule (padding 0.4rem 0.9rem) made a
+	 * single-digit target 37px wide - measured, the whole box came to 220px,
+	 * the ENTIRE width of the title column, and 32px tall against a 22px row,
+	 * so a selected row blanked its neighbour's whole title cell. Sized to the
+	 * row instead, the cluster keeps to that cell's right-hand side, clear of
+	 * its midpoint (the point a click on that row uses), and the box is
+	 * shorter than one row so it cannot reach past its immediate neighbour
+	 * into the header. */
+	.deck-btns button {
+		pointer-events: none;
+		transition: pointer-events 0s 100ms;
+		padding: 0 4px;
+		min-width: 16px;
+		height: 16px;
+		line-height: 1;
+		font-size: 10px;
+		border-radius: 2px;
 	}
 	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns,
 	.deck-btns:hover,
 	.deck-btns:focus-within {
 		opacity: 1;
+		transition-delay: 0s;
+	}
+	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns button,
+	.deck-btns:hover button,
+	.deck-btns:focus-within button {
 		pointer-events: auto;
 		transition-delay: 0s;
 	}
@@ -2228,9 +2262,10 @@
 		 * without the box going inert underfoot. Only the opacity fade is a
 		 * pure animation; disable that alone, never the whole transition. */
 		.deck-btns {
-			transition:
-				opacity 0s,
-				pointer-events 0s 100ms;
+			transition: opacity 0s;
+		}
+		.deck-btns button {
+			transition: pointer-events 0s 100ms;
 		}
 	}
 	.deck-btns-title {

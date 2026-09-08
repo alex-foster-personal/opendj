@@ -95,13 +95,44 @@ test('a 100ms corridor grace delays the hide, distinct from the (near-instant) s
 	const text = source(TABLE_PATH);
 	assert.match(
 		text,
-		/\.deck-btns\s*\{[^}]*transition:[^}]*pointer-events 0s 100ms/s,
+		/\.deck-btns button\s*\{[^}]*transition: pointer-events 0s 100ms/s,
 		'hiding pointer-events must lag 100ms behind losing hover, so the pointer can travel the gap'
 	);
 	assert.match(
 		text,
-		/\.deck-btns:hover,\s*\n?\s*\.deck-btns:focus-within\s*\{[^}]*transition-delay: 0s/s,
+		/\.deck-btns:hover button,\s*\n?\s*\.deck-btns:focus-within button\s*\{[^}]*transition-delay: 0s/s,
 		'once the pointer is over the box itself (or it is focused) the delay must not apply'
+	);
+});
+
+/**
+ * Sol P1 on PR #1533 (review thread 3961773278). Pin fce26c7493b0 moved the box
+ * ABOVE its row, which puts it on top of the PREVIOUS row's title cell - and
+ * while revealed the whole painted box was `pointer-events: auto`, so it
+ * swallowed that row's hover and double-click exactly the way the
+ * on-the-line version swallowed its own row's. Interactivity therefore belongs
+ * on the buttons alone; the box's padding, border, background and its
+ * non-interactive "load to deck:" label must stay transparent so a pointer
+ * travelling upward passes through onto the row above instead of latching onto
+ * `.deck-btns:hover`. The rendered proof is
+ * `tests/e2e/deck-loader-placement.spec.ts`; this pins the mechanism in source.
+ */
+test('the box itself never takes the pointer - only its buttons do', () => {
+	const text = source(TABLE_PATH);
+	assert.match(
+		text,
+		/\.deck-btns\s*\{[^}]*pointer-events: none;[^}]*\}/s,
+		'the box hangs over the row above, so the box itself must never be hittable'
+	);
+	assert.doesNotMatch(
+		text,
+		/\.deck-btns:hover,\s*\n?\s*\.deck-btns:focus-within\s*\{[^}]*pointer-events: auto/s,
+		'revealing must not make the whole box hittable - that is what blocked the row above'
+	);
+	assert.match(
+		text,
+		/\.deck-btns:focus-within button\s*\{[^}]*pointer-events: auto;/s,
+		'the buttons alone become hittable when the box is revealed'
 	);
 });
 
@@ -145,9 +176,9 @@ test('the box stays anchored inside c-title, clear of the preview column, and fl
 test('reduced motion disables the opacity fade only - the 100ms corridor grace must survive it', () => {
 	const text = source(TABLE_PATH);
 	const reducedMotionMatch = text.match(
-		/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.deck-btns\s*\{([^}]*)\}/
+		/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.deck-btns button\s*\{([^}]*)\}/
 	);
-	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion override for .deck-btns');
+	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion override for .deck-btns button');
 	const body = reducedMotionMatch[1];
 	assert.doesNotMatch(
 		body,
