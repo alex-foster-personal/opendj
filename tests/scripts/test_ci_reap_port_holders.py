@@ -66,10 +66,14 @@ def _serve(port: int, cwd: Path, *, ignore_term: bool = False) -> subprocess.Pop
     raise AssertionError(f"server never bound {port}")
 
 
-def _run(*args: str, live_re: str) -> subprocess.CompletedProcess:
+def _run(*args: str, live_re: str, release_wait_s: str = "30") -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(SCRIPT), *args],
-        env={**os.environ, "MDT_CI_LIVE_ANCESTOR_RE": live_re},
+        env={
+            **os.environ,
+            "MDT_CI_LIVE_ANCESTOR_RE": live_re,
+            "MDT_CI_REAP_RELEASE_WAIT_S": release_wait_s,
+        },
         capture_output=True,
         text=True,
         timeout=60,
@@ -117,11 +121,37 @@ def test_a_holder_under_a_live_job_is_left_alone(work_cwd: Path) -> None:
     proc = _serve(port, work_cwd)
     try:
         # This test process stands in for the worker: it is in the holder's ancestry.
-        result = _run(str(port), live_re=f"pytest|{os.path.basename(sys.executable)}")
+        result = _run(
+            str(port), live_re=f"pytest|{os.path.basename(sys.executable)}", release_wait_s="2"
+        )
         assert result.returncode == 0, result.stderr
-        assert "left alone" in result.stdout
+        assert "waiting up to 2s" in result.stdout and "left alone" in result.stdout
         time.sleep(1)
         assert proc.poll() is None, "live holder was killed"
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_live_holder_mid_teardown_is_waited_for_not_reported(work_cwd: Path) -> None:
+    """if the previous job's server releasing the port a few seconds late trips the reaper
+    then broken"""
+    port = _free_port()
+    proc = _serve(port, work_cwd)
+    try:
+        # Release the port 2 s after the reaper starts looking, as an engine
+        # teardown does; the reaper must wait, see it freed, and run the command.
+        import threading
+
+        threading.Timer(2.0, proc.kill).start()
+        result = _run(
+            str(port), "--", "echo", "suite-ran",
+            live_re=f"pytest|{os.path.basename(sys.executable)}", release_wait_s="15",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "released after" in result.stdout, result.stdout
+        assert result.stdout.rstrip().endswith("suite-ran")
+        assert "[ERROR]" not in result.stderr
     finally:
         proc.kill()
         proc.wait(timeout=10)
@@ -175,3 +205,40 @@ def test_no_ports_is_a_usage_error() -> None:
         [str(SCRIPT), "--", "echo", "x"], capture_output=True, text=True, timeout=30, check=False
     )
     assert result.returncode == 2 and "usage" in result.stderr
+
+
+def test_a_port_still_held_by_a_stranger_after_the_wait_fails_before_the_command(
+    tmp_path: Path,
+) -> None:
+    """[if] the release wait expires on a foreign holder and the command still runs [then] fail,
+    [else stop]."""
+    port = _free_port()
+    proc = _serve(port, tmp_path)  # no CI provenance, and no live-job ancestor
+    try:
+        result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN, release_wait_s="1")
+        assert result.returncode == 1 and "suite-ran" not in result.stdout
+        assert "no CI provenance" in result.stderr
+        assert proc.poll() is None
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_holder_that_vanishes_before_its_identity_is_read_does_not_abort(
+    work_cwd: Path,
+) -> None:
+    """[if] a pid gone before its /proc entry is read aborts the reaper [then] fail, [else stop]."""
+    port = _free_port()
+    proc = _serve(port, work_cwd)
+    try:
+        # Kill it the instant the reaper starts: the listing may still name the
+        # pid while /proc has already lost it.
+        import threading
+
+        threading.Timer(0.05, proc.kill).start()
+        result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN, release_wait_s="10")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)

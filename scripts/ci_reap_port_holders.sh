@@ -24,6 +24,12 @@
 # never signalled. Every signal re-checks the pid's identity (its start time
 # from /proc/<pid>/stat) so a recycled pid is never hit.
 #
+# A holder under a live job, or one that exits during the check, is the previous
+# lock holder's teardown: the script waits up to MDT_CI_REAP_RELEASE_WAIT_S (30)
+# for the port to free before it says anything else (Tue 8 Sep 2026: an engine
+# on 8690 outlived its step by seconds and the next job reported a false "no CI
+# provenance" on a pid that had just exited).
+#
 # Run this INSIDE the host lock, immediately before the servers bind: a live
 # holder found before the lock can be cancelled and orphaned while this job
 # waits for that lock, so the check has to sit between acquiring it and
@@ -84,8 +90,11 @@ _listener_count() {
 # Process identity: start time in clock ticks, field 22 of /proc/<pid>/stat
 # (field 20 once "pid (comm) " is stripped, comm may contain spaces). Empty
 # when the pid is gone.
+# Empty (and exit 0) when the pid is gone: under `set -eo pipefail` a failing
+# sed in a command substitution would abort the script on exactly the vanished
+# pid this script exists to tolerate.
 _identity() {
-    sed 's/^[0-9]* (.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'
+    { sed 's/^[0-9]* (.*) //' "/proc/$1/stat" 2>/dev/null || true; } | awk '{print $20}'
 }
 
 # Alive AND the same process as when we looked: exists, not a zombie (a
@@ -100,8 +109,23 @@ _has_ci_provenance() {
     local cwd exe
     cwd=$(readlink "/proc/$1/cwd" 2>/dev/null || true)
     exe=$(readlink "/proc/$1/exe" 2>/dev/null || true)
+    PROVENANCE_SEEN="cwd=${cwd:-<unreadable>} exe=${exe:-<unreadable>}"
     case "$cwd/" in */_work/*) return 0 ;; esac
     case "$exe" in */_work/*) return 0 ;; esac
+    return 1
+}
+
+# The previous lock holder's servers can outlive its step by a few seconds
+# (engine teardown), so a port found held by a LIVE job right after taking the
+# lock is usually mid-release. Wait for it, bounded, before deciding anything.
+readonly RELEASE_WAIT_S="${MDT_CI_REAP_RELEASE_WAIT_S:-30}"
+_wait_for_release() { # $1 = port -> 0 once free, 1 if still held after the wait
+    local waited=0
+    while [ "$waited" -lt "$RELEASE_WAIT_S" ]; do
+        [ -z "$(_holder_pids "$1")" ] && [ "$(_listener_count "$1")" -eq 0 ] && { echo "[reap] port $1 released after ${waited}s"; return 0; }
+        sleep 1
+        waited=$((waited + 1))
+    done
     return 1
 }
 
@@ -155,18 +179,56 @@ for port in "${ports[@]}"; do
         identity=$(_identity "$pid")
         echo "[reap] port $port is held:"
         _describe "$pid"
+        if [ -z "$identity" ] || ! _same_and_alive "$pid" "$identity"; then
+            # It exited between the listing and here (the previous job's teardown).
+            echo "[reap] holder pid $pid exited during the check"
+            _wait_for_release "$port" || echo "[reap] port $port still held after ${RELEASE_WAIT_S}s; re-listing"
+            continue
+        fi
         if _has_live_ancestor "$pid"; then
-            echo "[reap] holder is under a live job (ancestor matches /$LIVE_ANCESTOR_RE/); left alone, the host lock serializes live suites"
+            echo "[reap] holder is under a live job (ancestor matches /$LIVE_ANCESTOR_RE/); waiting up to ${RELEASE_WAIT_S}s for it to release"
+            _wait_for_release "$port" || echo "[reap] port $port still held by a live job; left alone, the host lock serializes live suites"
             continue
         fi
         if ! _has_ci_provenance "$pid"; then
-            echo "[ERROR] port $port holder pid $pid has no CI provenance (neither cwd nor executable under a runner _work tree); not a job leftover, not signalled. Free the port by hand." >&2
+            if ! _same_and_alive "$pid" "$identity"; then
+                echo "[reap] holder pid $pid exited while its provenance was being read"
+                _wait_for_release "$port" || true
+                continue
+            fi
+            echo "[ERROR] port $port holder pid $pid has no CI provenance (neither cwd nor executable under a runner _work tree; $PROVENANCE_SEEN); not a job leftover, not signalled. Free the port by hand." >&2
             status=1
             continue
         fi
         echo "[reap] orphan of a finished or cancelled CI job (no live ancestor, cwd/exe under _work); terminating"
         if ! _terminate "$pid" "$identity"; then
             echo "[ERROR] pid $pid survived SIGKILL" >&2
+            status=1
+        fi
+    done
+done
+# Final pass: a port still listening after the waits is classified once more,
+# so a holder that appeared or survived the wait is either an orphan we reap
+# now, a live job's (the lock's business), or an error, never a silent
+# hand-off of an occupied port to the command below.
+for port in "${ports[@]}"; do
+    pids=$(_holder_pids "$port")
+    if [ -z "$pids" ] && [ "$(_listener_count "$port")" -gt 0 ]; then
+        echo "[ERROR] port $port is still held by a process this user cannot see" >&2
+        status=1
+    fi
+    for pid in $pids; do
+        identity=$(_identity "$pid")
+        [ -n "$identity" ] || continue
+        if _has_live_ancestor "$pid"; then
+            echo "[reap] port $port remains held by a live job after the wait; left to the host lock"
+        elif _has_ci_provenance "$pid"; then
+            echo "[reap] port $port orphan appeared during the wait; terminating pid $pid"
+            _terminate "$pid" "$identity" || { echo "[ERROR] pid $pid survived SIGKILL" >&2; status=1; }
+        elif ! _same_and_alive "$pid" "$identity"; then
+            echo "[reap] port $port holder pid $pid exited during the final pass"
+        else
+            echo "[ERROR] port $port still held after the wait by pid $pid with no CI provenance ($PROVENANCE_SEEN)" >&2
             status=1
         fi
     done
