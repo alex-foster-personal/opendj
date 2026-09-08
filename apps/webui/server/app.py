@@ -634,10 +634,27 @@ def _build_default_app() -> FastAPI:
     # swallow into an empty in-memory library.
     from .sqlite_backend import make_backend
     backend: StateBackend = make_backend()
+    # Late import, same reason as make_backend()'s: apply_library_env() above
+    # must run first so STATE_DB (re-exported from platform_paths.DATA_DIR)
+    # reflects this process's MDT_DATA_DIR rather than whatever value it
+    # froze to at whatever module happened to import it first.
+    #
+    # Without this, create_app()'s own default for state_db_path is the
+    # literal "data/state/state.db", resolved relative to CWD rather than
+    # MDT_DATA_DIR. That mismatch was silent until debc73644 started binding
+    # app.state.analysis_db_path to state_db_path unconditionally: before
+    # that commit, the analysis routes' _analysis_db_path() saw no override
+    # (getattr returned None) and fell back to STATE_DB directly, so they
+    # happened to be correct by omission. After it, the real daemon's
+    # analysis/beatgrid-fallback routes read the wrong file whenever
+    # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
+    # this entrypoint against a fixture data dir with an unmapped track (#949).
+    from apps.shared.paths import STATE_DB
     return create_app(
         backend=backend, bind_host=bind_host, hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
         stem_roots=stems.roots,
+        state_db_path=str(STATE_DB),
         auto_analyze=analysis_autostart.arm_from_environ(os.environ),
         lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
     )
