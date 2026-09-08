@@ -105,12 +105,40 @@ test('a 100ms corridor grace delays the hide, distinct from the (near-instant) s
 	);
 });
 
-test('the box stays anchored inside c-title, clear of the preview column and following row', () => {
+// Superseded by pin fce26c7493b0 (Tue 8 Sep 2026): the box used to be pinned to
+// the row's own line (`top: 0; height: 100%`), which is exactly what the maintainer
+// reported as blocking the row's double-click. It now floats ABOVE the row, so
+// this test pins the anchor (still .c-title, still clear of .c-preview) and the
+// new placement instead of the old one. Escaping upwards is only possible
+// because .c-title stops clipping and the title text took the ellipsis with it
+// onto .title-text - a `td` is `overflow: hidden`, which would erase the box.
+test('the box stays anchored inside c-title, clear of the preview column, and floats above the row', () => {
 	const text = source(TABLE_PATH);
 	assert.match(text, /\.c-title\s*\{\s*position: relative;/);
 	assert.match(
 		text,
-		/\.deck-btns\s*\{[^}]*position: absolute;[^}]*top: 0;[^}]*right: 0;[^}]*height: 100%;[^}]*max-width: 100%;/s
+		/\.deck-btns\s*\{[^}]*position: absolute;[^}]*bottom: 100%;[^}]*right: 0;[^}]*max-width: 100%;/s,
+		'the box must be anchored to the TOP edge of its row (bottom: 100%), never over the row own line'
+	);
+	assert.doesNotMatch(
+		text,
+		/\.deck-btns\s*\{[^}]*height: 100%;/s,
+		'a full-row-height box covers the track line and swallows its double-click (pin fce26c7493b0)'
+	);
+	assert.match(
+		text,
+		/\.c-title\s*\{[^}]*overflow: visible;/s,
+		'the title cell must stop clipping or the above-the-row box is erased by the td overflow'
+	);
+	assert.match(
+		text,
+		/\.c-title \.title-text\s*\{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/s,
+		'the title text keeps its own truncation once the cell stops clipping'
+	);
+	assert.match(
+		text,
+		/<span class="title-text"/,
+		'the title text must be wrapped so it, not the cell, owns the ellipsis'
 	);
 });
 

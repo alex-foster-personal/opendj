@@ -1286,7 +1286,12 @@
 							     strip (.preview-hit) - hovering it must never block the
 							     journey from artwork/title to the mini preview. Revealed by
 							     hovering .c-art or .c-title specifically (CSS below), never
-							     the bare row or the preview cell. -->
+							     the bare row or the preview cell.
+							     Pin fce26c7493b0: it floats ABOVE this row rather than on the
+							     row's own line, so it can never swallow the row's own
+							     double-click. The title text moved into .title-text because
+							     THAT span now owns the ellipsis clip - the cell itself has to
+							     stop clipping for the box to escape upwards. -->
 							<span class="deck-btns">
 								<span class="deck-btns-title">load to deck:</span>
 								{#each DECKS as d (d)}
@@ -1326,9 +1331,11 @@
 									</button>
 								{/if}
 							</span>
-							{#each hl(row.title) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-							{/each}
+							<span class="title-text"
+								>{#each hl(row.title) as part, i (i)}{#if part.hit}<mark
+											class="find-hit">{part.text}</mark
+										>{:else}{part.text}{/if}{/each}</span
+							>
 						</td>
 						<td class="c-artist" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.artist ?? ''}>
 							{#each hl(row.artist) as part, i (i)}
@@ -2150,10 +2157,17 @@
 		position: relative;
 	}
 	/* The loader opens only from artwork or title (pin 27f889893790), and is
-	 * anchored inside .c-title so it renders clear of the preview column while
-	 * remaining bounded by that cell. It must never extend below the row: that
-	 * would either be clipped by the cell's title-truncation overflow or cover
-	 * the following row's normal targets. Visible
+	 * anchored inside .c-title so it renders clear of the preview column.
+	 * Pin fce26c7493b0: it sits ABOVE the row (bottom: 100%), never on the
+	 * row's own line - inline it covered the title's right-hand side and its
+	 * buttons stopPropagation on dblclick, so a double-click aimed at the row
+	 * hit a button and the row's own load-and-play never fired. It must never
+	 * extend below the row either: that would cover the following row's normal
+	 * targets. Because a `td` clips (`overflow: hidden`, for title
+	 * truncation), an absolutely positioned box can only escape upwards if the
+	 * cell stops clipping - so .c-title is `overflow: visible` and the
+	 * ellipsis moved onto the inner .title-text span, which clips the text and
+	 * nothing else. Visible
 	 * on hover+selected (mouse), per pin 616aaf77b792: hover-only used to
 	 * block visibility outright. display stays inline-flex always (never
 	 * `none`) so the buttons remain Tab-reachable regardless of
@@ -2168,17 +2182,31 @@
 	 * group goes fully inert. Showing has no such delay. */
 	.c-title {
 		position: relative;
+		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the
+		 * cell cannot clip. The text keeps its own clip on .title-text. */
+		overflow: visible;
+	}
+	.c-title .title-text {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.deck-btns {
 		display: inline-flex;
 		position: absolute;
-		top: 0;
+		bottom: 100%;
+		top: auto;
 		right: 0;
-		height: 100%;
+		height: auto;
 		max-width: 100%;
 		box-sizing: border-box;
 		gap: 2px;
 		align-items: center;
+		padding: 1px 4px;
+		border: 1px solid var(--rb-line, #2a3140);
+		border-radius: 3px;
+		background: var(--rb-panel-raised, #0a0c0f);
 		opacity: 0;
 		pointer-events: none;
 		z-index: 5;
