@@ -38,6 +38,18 @@ name: Periodic checks
 # A missing marker, a base no longer in history, or a base that is not an
 # ancestor of the head being measured reports `bootstrap` and RUNS rather than
 # computing a small wrong number and disabling this workflow forever.
+#
+# THE WEEKLY FLOOR (policy PR #1494). The merge count alone can starve a quiet
+# window forever: a slow week with fewer than 50 merges never runs the full
+# suite, the bundle trend, or the perf bench, and a regression sits unmeasured
+# until merge volume happens to pick back up. `elapsed_days` -- wall-clock days
+# since the SAME state-marker comment's own `createdAt`, not a stored counter
+# -- is a second, independent OR arm: the window also runs once 7 days have
+# passed since the last one, regardless of how few merges landed. Recorded
+# alongside the SHA is `threshold=<N>`, the merge threshold that was ACTUALLY
+# in force for that window (default or a workflow_dispatch override), so a
+# later read of the ledger comment never has to assume which value produced
+# a given run.
 
 on:
   schedule:
@@ -91,6 +103,7 @@ jobs:
       base: ${{ steps.compute.outputs.base }}
       head: ${{ steps.compute.outputs.head }}
       threshold: ${{ steps.compute.outputs.threshold }}
+      elapsed_days: ${{ steps.compute.outputs.elapsed_days }}
       reason: ${{ steps.compute.outputs.reason }}
     steps:
       # Real history: the merge count below is a first-parent walk, and
@@ -130,11 +143,45 @@ jobs:
 
           # The state marker lives in the newest ledger comment that carries
           # one. Comments are read newest-last, so tail -1 after the grep.
-          base="$(gh api --paginate "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
-                    --jq '.[].body' \
-                  | grep -oE '<!-- periodic-checks state sha=[0-9a-f]{40} -->' \
-                  | tail -1 \
-                  | grep -oE '[0-9a-f]{40}' || true)"
+          # `.createdAt + " " + .body` keeps createdAt and body as ONE scalar
+          # string per comment (gh's default --jq output prints a string on
+          # one physical line, real newlines escaped, same as the old
+          # body-only query), so the two stay paired through one grep + tail
+          # instead of two separate paginated calls that could observe the
+          # issue's comment list at two different moments and misalign.
+          # createdAt is a fixed-width ISO-8601 timestamp with no space in
+          # it, so splitting on the FIRST space is unambiguous regardless of
+          # what the body contains.
+          combined="$(gh api --paginate "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
+                        --jq '.[] | .createdAt + " " + .body' \
+                      | grep -F '<!-- periodic-checks state sha=' \
+                      | tail -1 || true)"
+
+          base=""
+          base_at=""
+          if [ -n "$combined" ]; then
+            decoded="$(printf '%s' "$combined" | jq -r '.')"
+            base_at="${decoded%% *}"
+            base_body="${decoded#* }"
+            # NOT anchored on the trailing ` -->`: the marker now also
+            # carries `threshold=<N>` before the comment closes, and an
+            # anchor requiring "-->" right after the 40 hex chars would stop
+            # matching the instant that field was added.
+            base="$(printf '%s' "$base_body" \
+                      | grep -oE '<!-- periodic-checks state sha=[0-9a-f]{40}' \
+                      | grep -oE '[0-9a-f]{40}' || true)"
+          fi
+
+          # Wall-clock days since that SAME comment was posted, independent of
+          # merge count. base_at is only ever empty together with base
+          # (bootstrap), so elapsed_days=-1 there means "not applicable", the
+          # same convention `count=-1` already uses.
+          elapsed_days="-1"
+          if [ -n "$base_at" ]; then
+            base_epoch="$(date -u -d "$base_at" +%s)"
+            now_epoch="$(date -u +%s)"
+            elapsed_days=$(( (now_epoch - base_epoch) / 86400 ))
+          fi
 
           if [ -z "$base" ]; then
             reason="bootstrap: no state marker on issue #${LEDGER_ISSUE}"
@@ -160,13 +207,16 @@ jobs:
               count="-1"
               run="true"
             elif [ "$FORCE" = "true" ]; then
-              reason="forced by workflow_dispatch (${count} merges since ${base:0:9})"
+              reason="forced by workflow_dispatch (${count} merges since ${base:0:9}, ${elapsed_days}d elapsed)"
               run="true"
             elif [ "$count" -ge "$threshold" ]; then
-              reason="${count} merges since ${base:0:9}, threshold ${threshold}"
+              reason="${count} merges since ${base:0:9} (>= threshold ${threshold})"
+              run="true"
+            elif [ "$elapsed_days" -ge 7 ]; then
+              reason="${elapsed_days}d elapsed since ${base:0:9} (>= 7d weekly floor); only ${count} merges (threshold ${threshold})"
               run="true"
             else
-              reason="only ${count} merges since ${base:0:9}, threshold ${threshold}"
+              reason="only ${count} merges since ${base:0:9} (threshold ${threshold}), ${elapsed_days}d elapsed (< 7d weekly floor)"
               run="false"
             fi
           fi
@@ -177,6 +227,7 @@ jobs:
             echo "base=${base}"
             echo "head=${head}"
             echo "threshold=${threshold}"
+            echo "elapsed_days=${elapsed_days}"
             echo "reason=${reason}"
           } >> "$GITHUB_OUTPUT"
 
@@ -333,6 +384,13 @@ jobs:
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       NUMBA_NUM_THREADS: "1"
+      # 0 (the fixture default) measures raw loopback: the two-track burst
+      # comes back ~86ms, about 40x too small to resolve the production
+      # regression this bench exists to catch (per the Boot request window
+      # row in docs/perf/performance-register.md). 120 matches the declared
+      # per-request regime the 472->383ms #645 result was measured under, so
+      # a periodic PASS here is a real measurement, not noise dressed as one.
+      BOOT_BURST_LATENCY_MS: "120"
     steps:
       - name: Reclaim workspace ownership before checkout
         run: |
@@ -529,6 +587,7 @@ jobs:
           BASE: ${{ needs.window.outputs.base }}
           HEAD: ${{ needs.window.outputs.head }}
           COUNT: ${{ needs.window.outputs.count }}
+          THRESHOLD: ${{ needs.window.outputs.threshold }}
           REASON: ${{ needs.window.outputs.reason }}
           R_FULL: ${{ needs.full-suite.result }}
           R_BUNDLE: ${{ needs.bundle-trend.result }}
@@ -565,12 +624,22 @@ jobs:
           # the two outcomes are now distinct and stderr is shown.
           # `.[]`, not `.[0]`: on an empty array `.[0]` yields null and jq
           # renders "in progress (null) null", a non-empty line for zero runs.
+          #
+          # `--created` is REQUIRED, not cosmetic: e2e.yml's own nightly clock
+          # is what this row reports on, and without a recency floor
+          # `--limit 1` returns the newest run EVER, scheduled or not skipped
+          # for days. That reads as a fresh PASS indefinitely once the
+          # schedule itself stops firing, which is exactly the silent-failure
+          # shape row 2 exists to catch. e2e.yml runs nightly at 04:17 UTC;
+          # a 2-day floor tolerates one missed night without ever accepting a
+          # genuinely stale result as current.
           if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
                            --event schedule --limit 1 \
+                           --created ">=$(date -u -d '2 days ago' +%F)" \
                            --json conclusion,createdAt,url \
                            --jq '.[] | "\(.conclusion // "in progress") (\(.createdAt)) \(.url)"' \
                          2>e2e.err)"; then
-            [ -n "$e2e_line" ] || e2e_line="NO SCHEDULED RUNS FOUND"
+            [ -n "$e2e_line" ] || e2e_line="NO SCHEDULED RUNS FOUND (or none within the last 2 days)"
           else
             cat e2e.err >&2
             e2e_line="QUERY FAILED - this row was NOT measured (see run log)"
@@ -600,7 +669,7 @@ jobs:
           \`docs/ops/periodic-checks.md\`. A row absent from this table did not
           run and must not be read as passing.
 
-          <!-- periodic-checks state sha=${HEAD} -->
+          <!-- periodic-checks state sha=${HEAD} threshold=${THRESHOLD} -->
           EOF
 
           gh issue comment "$LEDGER_ISSUE" --repo "$REPO" --body-file comment.md
