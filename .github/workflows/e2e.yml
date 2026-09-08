@@ -952,6 +952,47 @@ jobs:
         # own design, not something this workflow introduces.
         run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts
 
+      - name: Extended - hot-cue mapping gate, real backend + fixture library
+        working-directory: apps/webui/frontend
+        # Guards the user-facing safety property from #736/#804 that an empty
+        # hot-cue pad on an unmapped or never-loaded deck must not fire a
+        # rekordbox write. Never wired into any workflow before #949 --
+        # confirmed by grepping every playwright.*.config.ts against
+        # .github/workflows/*.yml, the same way the comment-hotkey gate in
+        # the `gate` job was found unwired.
+        #
+        # NOT placed in the blocking `gate` job despite passing locally
+        # (~10s, 2 specs): #949's own issue body flagged this exact risk
+        # unconfirmed -- "I did not check whether it is stable under CI's
+        # parallelism ... that last one is the assumption most likely to be
+        # wrong, and it should be confirmed before the step is added." PR
+        # #1446 confirmed it wrong on the first CI run: the unmapped-deck
+        # spec timed out in `page.waitForFunction` waiting on
+        # `decks[1].stable_id`, immediately after an `xrun` (audio underrun)
+        # warning, on run 34208199917 job 102002652185 -- the identical
+        # failure shape already quarantined here for `webkit-deckload`
+        # (#680/#637): correct app state observed within ~3s by direct
+        # instrumentation, but never observed by Playwright's rAF-driven
+        # poll. Quarantined into nightly per that precedent rather than
+        # forced green; promote back to `gate` if a future investigation
+        # roots out the flake source.
+        #
+        # Placed LAST and guarded `!cancelled()` (Codex, PR #1446 review
+        # r3956492935): every other step above uses the default `success()`
+        # condition, so a failure anywhere upstream would otherwise SKIP this
+        # step, and a failure IN this known-flaky suite would otherwise skip
+        # every step below it -- exactly the independent-evidence loss the
+        # `gate` job's own `!cancelled()` steps already guard against.
+        # Running it last means its expected flake cannot suppress
+        # desktop-setup/play-analytics/stretch-artifact/stems, and running it
+        # unconditionally means an upstream failure cannot suppress its own
+        # independent answer either.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" hotcue-mapping-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5320 8695 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.hotcue-mapping-gate.config.ts --output test-results/hotcue-mapping-gate
+
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

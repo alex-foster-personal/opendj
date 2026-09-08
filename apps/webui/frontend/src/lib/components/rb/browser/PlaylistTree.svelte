@@ -21,6 +21,7 @@
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
 	import { TreeSmartlists } from './tree-smartlists.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
+	import TreeContextMenu from './TreeContextMenu.svelte';
 
 	let {
 		nodes,
@@ -91,6 +92,7 @@
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
+	let treeContextMenu = $state<TreeContextMenu | null>(null);
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
@@ -198,6 +200,7 @@
 </script>
 
 <div class="tree-root">
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} {onselect} />
 	<div class="view-tabs">
 		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
 			Tree View
@@ -239,12 +242,15 @@
 		</div>
 		<div
 			class="row folder"
+			data-testid="playlist-folder"
 			role="button"
 			tabindex="0"
 			onclick={() => (playlistsOpen = !playlistsOpen)}
 			onkeydown={(e) => {
 				if (e.key === 'Enter') playlistsOpen = !playlistsOpen;
+				treeContextMenu?.openFromKeyboard(e, 'folder');
 			}}
+			oncontextmenu={(e) => treeContextMenu?.open(e, 'folder')}
 		>
 			<span class="disclosure" class:open={playlistsOpen}>&#9656;</span>
 			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -274,6 +280,7 @@
 			{#each nodes as node (node.playlist_id)}
 				<div
 					class="row child"
+					data-testid="playlist-row"
 					class:selected={selectedId === node.playlist_id}
 					class:broken={node.mostly_broken}
 					class:drop-target={dropTargetId === node.playlist_id}
@@ -284,7 +291,8 @@
 					draggable="true"
 					use:foldTracker.bindSelectedRow={selectedId === node.playlist_id}
 					onclick={() => onselect(node)}
-					onkeydown={(e) => _rowKeydown(e, node)}
+					onkeydown={(e) => { _rowKeydown(e, node); treeContextMenu?.openFromKeyboard(e, 'playlist', node); }}
+					oncontextmenu={(e) => treeContextMenu?.open(e, 'playlist', node)}
 					ondragstart={(e) => _onPlaylistDragStart(e, node)}
 					ondragover={(e) => _onTrackDragOver(e, node)}
 					ondragleave={() => _onTrackDragLeave(node)}
