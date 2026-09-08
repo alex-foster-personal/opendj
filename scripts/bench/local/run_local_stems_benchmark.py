@@ -35,6 +35,7 @@ import hashlib
 import json
 import os
 import platform
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -42,6 +43,9 @@ from pathlib import Path
 from typing import Any
 
 from scripts.bench.four_stem_common import AUDIBILITY_DB, STEMS
+from scripts.bench.local.fixtures import EXPECTED_TRACKS, SOURCE_VERSION
+
+_CANONICAL_TRACKS_BY_NAME = {track["name"]: track for track in EXPECTED_TRACKS}
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CACHE = REPO_ROOT / ".tmp" / "local-stems-bench"
@@ -128,23 +132,24 @@ def _run(command: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]
     # each PEP 723 child resolve its own pinned environment instead of inheriting
     # that virtualenv marker and waiting on an incompatible environment lock.
     environment.pop("VIRTUAL_ENV", None)
+    # `uv run <script>` forks a child process (the resolved interpreter) below the
+    # `uv` wrapper. A plain `subprocess.run(..., timeout=...)` only kills the `uv`
+    # process on TimeoutExpired, so that grandchild survives, gets reparented to
+    # PID 1, and keeps consuming CPU/GPU and writing outputs while the harness
+    # moves on to the next candidate -- breaking the promised bounded, foreground
+    # comparison. Start the whole tree in its own process group so the timeout
+    # path can kill it as one unit.
+    process = subprocess.Popen(
+        command, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=environment, start_new_session=True,
+    )
     try:
-        return subprocess.run(
-            command, cwd=REPO_ROOT, capture_output=True, text=True, check=False,
-            env=environment, timeout=timeout_s,
-        )
-    except subprocess.TimeoutExpired as error:
-        return subprocess.CompletedProcess(
-            command, 124, _decoded_output(error.stdout), _decoded_output(error.stderr),
-        )
-
-
-def _decoded_output(output: bytes | str | None) -> str:
-    if output is None:
-        return ""
-    if isinstance(output, bytes):
-        return output.decode(errors="replace")
-    return output
+        stdout, stderr = process.communicate(timeout=timeout_s)
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        stdout, stderr = process.communicate()
+        return subprocess.CompletedProcess(command, 124, stdout, stderr)
 
 
 def _write_ledger(path: Path, ledger: dict[str, Any]) -> None:
@@ -161,14 +166,27 @@ def _sha256(path: Path) -> str:
 
 
 def _valid_fixture_checksums(manifest: dict[str, Any]) -> bool:
-    if "source_version" not in manifest:
+    # Compare against the CANONICAL pins in fixtures.py, not just the manifest's
+    # own self-declared values: checking a cached manifest against itself lets a
+    # stale manifest (pre-pin harness) or a manifest+WAVs replaced together pass
+    # as long as they agree with each other, never with the pinned truth.
+    if manifest.get("source_version") != SOURCE_VERSION:
         return False
-    for track in manifest.get("tracks", []):
+    tracks = manifest.get("tracks", [])
+    if not tracks:
+        return False
+    for track in tracks:
+        canonical = _CANONICAL_TRACKS_BY_NAME.get(track.get("name"))
+        if canonical is None:
+            return False
+        canonical_sha256 = canonical["sha256"]
+        if track.get("sha256", {}) != canonical_sha256:
+            return False
         track_dir = Path(track["dir"])
-        for filename, expected in track.get("sha256", {}).items():
+        for filename, expected in canonical_sha256.items():
             if _sha256(track_dir / filename) != expected:
                 return False
-        if set(track.get("sha256", {})) != {"mixture.wav", *(f"{stem}.wav" for stem in STEMS)}:
+        if set(canonical_sha256) != {"mixture.wav", *(f"{stem}.wav" for stem in STEMS)}:
             return False
     return True
 

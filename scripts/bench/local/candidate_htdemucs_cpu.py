@@ -56,6 +56,14 @@ def _peak_rss_mb() -> float:
     return raw / 1024 / 1024 if sys.platform == "darwin" else raw / 1024
 
 
+def _sync_device(device: str) -> None:
+    """Block until queued accelerator work completes. CUDA kernels launch
+    asynchronously, so a perf_counter stopped right after enqueueing (rather
+    than after the device finishes) undercounts load_s/separate_s for CUDA."""
+    if device == "cuda":
+        torch.cuda.synchronize()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mixture", required=True, type=Path)
@@ -73,6 +81,7 @@ def main() -> None:
     model = get_model(MODEL_NAME)
     model.to(device)
     model.eval()
+    _sync_device(device)
     load_s = time.perf_counter() - load_started
 
     audio, sr = sf.read(str(args.mixture), dtype="float32", always_2d=True)  # (frames, ch)
@@ -84,7 +93,13 @@ def main() -> None:
 
     separate_started = time.perf_counter()
     with torch.no_grad():
-        sources = apply_model(model, wav_normalized, device=device, progress=False)[0]
+        # shifts=0 disables demucs' unseeded random time-shift averaging
+        # (demucs.apply.apply_model draws from the global `random` module):
+        # the smallest reported per-stem advantage in this spike is 0.290 dB
+        # against a 0.2 dB decision bar, so a random draw must not be able to
+        # flip the recommendation between reproductions.
+        sources = apply_model(model, wav_normalized, device=device, shifts=0, progress=False)[0]
+    _sync_device(device)
     separate_s = time.perf_counter() - separate_started
     sources = sources * reference.std() + reference.mean()
 
