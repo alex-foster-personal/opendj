@@ -101,6 +101,27 @@ class TrackListItemOut(TrackOut):
     energy_reason: str
 
 
+class LyricLineOut(BaseModel):
+    """One cache-backed line timestamp in integer track milliseconds."""
+
+    start_ms: int = Field(ge=0)
+    text: str = Field(min_length=1)
+
+
+class TrackLyricsOut(BaseModel):
+    """Agent-native read model for cached line-synced lyrics only."""
+
+    stable_id: str
+    source: str
+    lines: list[LyricLineOut] = Field(min_length=1)
+
+
+class LyricsUnavailableOut(BaseModel):
+    """The explicit cache-miss response for one track's lyrics timeline."""
+
+    detail: str
+
+
 class TracksPage(BaseModel):
     items: list[TrackListItemOut]
     next_cursor: str | None = None
@@ -340,6 +361,7 @@ __all__ = [
     "HealthStateDb",
     "HealthSyncthing",
     "HealthWaveformMaterialization",
+    "LyricLineOut",
     "PairingCreate",
     "PairingOut",
     "PlaylistDetail",
@@ -351,6 +373,7 @@ __all__ = [
     "QueueItemOut",
     "QueueOut",
     "TrackListItemOut",
+    "TrackLyricsOut",
     "TrackOut",
     "TrackPatch",
     "TrackRowOut",

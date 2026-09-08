@@ -15,7 +15,7 @@ export default defineConfig({
 	webServer: [
 		{
 			command:
-				'uv run --python 3.11 python -m tests.play_analytics.e2e_server --db .tmp/play-analytics-e2e.db --port 9414',
+				'uv run --no-sync --python 3.11 python -m tests.play_analytics.e2e_server --db .tmp/play-analytics-e2e.db --port 9414',
 			cwd: REPOSITORY_ROOT,
 			url: 'http://127.0.0.1:9414/health',
 			reuseExistingServer: false,

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 
+from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
 from apps.shared.events import publish
 
@@ -15,9 +17,11 @@ from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
+    LyricsUnavailableOut,
     ProvenanceOut,
     QualityRungOut,
     TrackListItemOut,
+    TrackLyricsOut,
     TrackOut,
     TrackPatch,
     TracksPage,
@@ -140,6 +144,33 @@ def list_tracks(
 def get_quality_ladder() -> list[QualityRungOut]:
     """The six venue rungs, so the UI legend is not a second copy of them."""
     return [QualityRungOut(**rung) for rung in audio_quality.ladder()]
+
+
+@router.get(
+    "/{stable_id}/lyrics",
+    response_model=TrackLyricsOut,
+    responses={
+        404: {
+            "model": LyricsUnavailableOut,
+            "description": "No cached line-synced lyrics exist for this track.",
+        }
+    },
+)
+def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
+    """Read the real cached line timeline without fetching or inventing lyrics."""
+    state_db_path = Path(request.app.state.state_db_path)
+    lyrics = lyrics_cache.load(lyrics_cache.cache_path(state_db_path.parent.parent, stable_id))
+    if lyrics is None:
+        raise HTTPException(status_code=404, detail=f"no cached lyrics for {stable_id!r}")
+    if lyrics.stable_id != stable_id:
+        raise ValueError(f"lyrics-cache identity mismatch for {stable_id!r}")
+    if not lyrics.lines:
+        raise ValueError(f"lyrics-cache contains no line-level lyrics for {stable_id!r}")
+    return TrackLyricsOut(
+        stable_id=lyrics.stable_id,
+        source=lyrics.source,
+        lines=[{"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines],
+    )
 
 
 @router.get("/{stable_id}", response_model=TrackOut)

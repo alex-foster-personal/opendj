@@ -48,7 +48,7 @@ echo "[$(date '+%H:%M:%S')] FIRING roformer H100 farm over $N tracks (max_contai
 ( while :; do flat_vocals; sleep 10; done ) & CPWATCH=$!
 
 # filenames are NNN_<id>.<ext> with no spaces -> safe to word-split
-MDT_ROFORMER_MAX_CONTAINERS=60 uv run --with modal python scripts/modal_roformer_spike.py \
+MDT_ROFORMER_MAX_CONTAINERS=60 uv run --no-sync --with modal python scripts/modal_roformer_spike.py \
   separate --input $FILES --out-dir "$BASE/stems" --run-id clubsauna-acapella-100
 RC=$?
 

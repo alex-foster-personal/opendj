@@ -436,6 +436,7 @@ def _worker_command(audio_path: Path) -> list[str]:
     return [
         "uv",
         "run",
+        "--no-sync",
         "--script",
         str(WORKER_SCRIPT),
         "--device",

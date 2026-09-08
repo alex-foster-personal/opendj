@@ -95,31 +95,90 @@ test('a 100ms corridor grace delays the hide, distinct from the (near-instant) s
 	const text = source(TABLE_PATH);
 	assert.match(
 		text,
-		/\.deck-btns\s*\{[^}]*transition:[^}]*pointer-events 0s 100ms/s,
+		/\.deck-btns button\s*\{[^}]*transition: pointer-events 0s 100ms/s,
 		'hiding pointer-events must lag 100ms behind losing hover, so the pointer can travel the gap'
 	);
 	assert.match(
 		text,
-		/\.deck-btns:hover,\s*\n?\s*\.deck-btns:focus-within\s*\{[^}]*transition-delay: 0s/s,
+		/\.deck-btns:hover button,\s*\n?\s*\.deck-btns:focus-within button\s*\{[^}]*transition-delay: 0s/s,
 		'once the pointer is over the box itself (or it is focused) the delay must not apply'
 	);
 });
 
-test('the box stays anchored inside c-title, clear of the preview column and following row', () => {
+/**
+ * Sol P1 on PR #1533 (review thread 3961773278). Pin fce26c7493b0 moved the box
+ * ABOVE its row, which puts it on top of the PREVIOUS row's title cell - and
+ * while revealed the whole painted box was `pointer-events: auto`, so it
+ * swallowed that row's hover and double-click exactly the way the
+ * on-the-line version swallowed its own row's. Interactivity therefore belongs
+ * on the buttons alone; the box's padding, border, background and its
+ * non-interactive "load to deck:" label must stay transparent so a pointer
+ * travelling upward passes through onto the row above instead of latching onto
+ * `.deck-btns:hover`. The rendered proof is
+ * `tests/e2e/deck-loader-placement.spec.ts`; this pins the mechanism in source.
+ */
+test('the box itself never takes the pointer - only its buttons do', () => {
+	const text = source(TABLE_PATH);
+	assert.match(
+		text,
+		/\.deck-btns\s*\{[^}]*pointer-events: none;[^}]*\}/s,
+		'the box hangs over the row above, so the box itself must never be hittable'
+	);
+	assert.doesNotMatch(
+		text,
+		/\.deck-btns:hover,\s*\n?\s*\.deck-btns:focus-within\s*\{[^}]*pointer-events: auto/s,
+		'revealing must not make the whole box hittable - that is what blocked the row above'
+	);
+	assert.match(
+		text,
+		/\.deck-btns:focus-within button\s*\{[^}]*pointer-events: auto;/s,
+		'the buttons alone become hittable when the box is revealed'
+	);
+});
+
+// Superseded by pin fce26c7493b0 (Tue 8 Sep 2026): the box used to be pinned to
+// the row's own line (`top: 0; height: 100%`), which is exactly what the maintainer
+// reported as blocking the row's double-click. It now floats ABOVE the row, so
+// this test pins the anchor (still .c-title, still clear of .c-preview) and the
+// new placement instead of the old one. Escaping upwards is only possible
+// because .c-title stops clipping and the title text took the ellipsis with it
+// onto .title-text - a `td` is `overflow: hidden`, which would erase the box.
+test('the box stays anchored inside c-title, clear of the preview column, and floats above the row', () => {
 	const text = source(TABLE_PATH);
 	assert.match(text, /\.c-title\s*\{\s*position: relative;/);
 	assert.match(
 		text,
-		/\.deck-btns\s*\{[^}]*position: absolute;[^}]*top: 0;[^}]*right: 0;[^}]*height: 100%;[^}]*max-width: 100%;/s
+		/\.deck-btns\s*\{[^}]*position: absolute;[^}]*bottom: 100%;[^}]*right: 0;[^}]*max-width: 100%;/s,
+		'the box must be anchored to the TOP edge of its row (bottom: 100%), never over the row own line'
+	);
+	assert.doesNotMatch(
+		text,
+		/\.deck-btns\s*\{[^}]*height: 100%;/s,
+		'a full-row-height box covers the track line and swallows its double-click (pin fce26c7493b0)'
+	);
+	assert.match(
+		text,
+		/\.c-title\s*\{[^}]*overflow: visible;/s,
+		'the title cell must stop clipping or the above-the-row box is erased by the td overflow'
+	);
+	assert.match(
+		text,
+		/\.c-title \.title-text\s*\{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/s,
+		'the title text keeps its own truncation once the cell stops clipping'
+	);
+	assert.match(
+		text,
+		/<span class="title-text"/,
+		'the title text must be wrapped so it, not the cell, owns the ellipsis'
 	);
 });
 
 test('reduced motion disables the opacity fade only - the 100ms corridor grace must survive it', () => {
 	const text = source(TABLE_PATH);
 	const reducedMotionMatch = text.match(
-		/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.deck-btns\s*\{([^}]*)\}/
+		/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.deck-btns button\s*\{([^}]*)\}/
 	);
-	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion override for .deck-btns');
+	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion override for .deck-btns button');
 	const body = reducedMotionMatch[1];
 	assert.doesNotMatch(
 		body,

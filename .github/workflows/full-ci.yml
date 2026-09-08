@@ -257,27 +257,33 @@ jobs:
       - name: Upload coverage-matrix.md artifact
         if: always()
         # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-matrix
           path: coverage-matrix.md
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
       - name: Upload htmlcov/ artifact
         if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: htmlcov
           path: htmlcov/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
       - name: Upload coverage.xml
         if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3

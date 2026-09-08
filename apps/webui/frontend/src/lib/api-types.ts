@@ -2768,6 +2768,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/lyrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Lyrics
+         * @description Read the real cached line timeline without fetching or inventing lyrics.
+         */
+        get: operations["get_track_lyrics_api_v1_tracks__stable_id__lyrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -4693,6 +4713,24 @@ export interface components {
             in_ms: number;
             /** Out Ms */
             out_ms: number;
+        };
+        /**
+         * LyricLineOut
+         * @description One cache-backed line timestamp in integer track milliseconds.
+         */
+        LyricLineOut: {
+            /** Start Ms */
+            start_ms: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * LyricsUnavailableOut
+         * @description The explicit cache-miss response for one track's lyrics timeline.
+         */
+        LyricsUnavailableOut: {
+            /** Detail */
+            detail: string;
         };
         /**
          * MachineModel
@@ -6784,6 +6822,18 @@ export interface components {
             vocals: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * TrackLyricsOut
+         * @description Agent-native read model for cached line-synced lyrics only.
+         */
+        TrackLyricsOut: {
+            /** Lines */
+            lines: components["schemas"]["LyricLineOut"][];
+            /** Source */
+            source: string;
+            /** Stable Id */
+            stable_id: string;
         };
         /** TrackOut */
         TrackOut: {
@@ -12440,6 +12490,46 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_track_lyrics_api_v1_tracks__stable_id__lyrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLyricsOut"];
+                };
+            };
+            /** @description No cached line-synced lyrics exist for this track. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LyricsUnavailableOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

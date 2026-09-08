@@ -101,7 +101,7 @@ def _steps() -> list[Step]:
         Step(
             "pytest-full",
             [
-                "uv", "run", "--with", "modal", "pytest", "-q",
+                "uv", "run", "--no-sync", "--with", "modal", "pytest", "-q",
                 "-n", PYTEST_WORKERS,
                 "--dist", PYTEST_DIST,
                 "--collect-floor", PYTEST_COLLECT_FLOOR,

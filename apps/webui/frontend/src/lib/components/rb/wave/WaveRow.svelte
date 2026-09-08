@@ -4,7 +4,7 @@
 	// deck identity, artwork, and a readable track title. Empty deck is named,
 	// so its reserved artwork slot cannot read as a missing image.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
-	import { vocalsOf } from '$lib/rb/api-rb';
+	import { fetchTrackLyrics, vocalsOf } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -60,6 +60,8 @@
 		waveSnapModeFromModifiers
 	} from './wave-scrub';
 	import WaveGutter from './WaveGutter.svelte';
+	import LyricsLane from './LyricsLane.svelte';
+	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -90,6 +92,8 @@
 		const token = registerAnlzConsumer(sid);
 		return () => unregisterAnlzConsumer(sid, token);
 	});
+	const lyricsState = createLyricsFetchState(() => deck.stable_id, fetchTrackLyrics);
+
 	const anlzData = $derived.by(() => resolveDisplayedAnlz(deck.anlz, deck.stable_id));
 	const anlzErrorCode = $derived.by(() => {
 		if (deck.anlz_error !== null) return deck.anlz_error;
@@ -509,6 +513,7 @@ estimated from the render clock and may run ahead of what you hear."
 			onpointercancel={onPointerCancel}
 			onlostpointercapture={onLostPointerCapture}
 		></canvas>
+		<LyricsLane lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
 		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
