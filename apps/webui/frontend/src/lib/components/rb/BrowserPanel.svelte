@@ -1330,8 +1330,9 @@
 					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
-			p.failLoad(seq, String(exc));
-			pushToast(`playlist load failed: ${String(exc)}`, 'error');
+			if (p.failLoad(seq, String(exc))) {
+				pushToast(`playlist load failed: ${String(exc)}`, 'error');
+			}
 		}
 	}
 
