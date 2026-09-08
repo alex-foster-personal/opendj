@@ -189,6 +189,7 @@ def _candidate_cell(
         [
             "uv",
             "run",
+            "--no-sync",
             str(candidate.script),
             "--mixture",
             str(track_dir / "mixture.wav"),

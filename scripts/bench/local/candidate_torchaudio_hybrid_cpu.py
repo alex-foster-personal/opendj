@@ -58,6 +58,16 @@ def _peak_rss_mb() -> float:
     return raw / 1024 / 1024 if sys.platform == "darwin" else raw / 1024
 
 
+def _sync_device(device: str) -> None:
+    """Block until queued accelerator work completes. CUDA and MPS kernels launch
+    asynchronously, so a perf_counter stopped right after enqueueing (rather than
+    after the device finishes) undercounts load_s/separate_s for those devices."""
+    if device == "cuda":
+        torch.cuda.synchronize()
+    elif device == "mps":
+        torch.mps.synchronize()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mixture", required=True, type=Path)
@@ -81,6 +91,7 @@ def main() -> None:
     )
     model.to(device)
     model.eval()
+    _sync_device(device)
     model_sr = bundle.sample_rate
     load_s = time.perf_counter() - load_started
 
@@ -103,6 +114,7 @@ def main() -> None:
         # for multi-minute tracks is not exercised here -- flagged in the
         # research doc rather than silently assumed equivalent.
         sources = model(wav_norm)[0]  # (stems, ch, frames)
+    _sync_device(device)
     separate_s = time.perf_counter() - separate_started
 
     sources = sources * ref.std() + ref.mean()
