@@ -79,7 +79,9 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 	assert.equal(
 		Number(constMatch[1]),
 		EXPECTED_TRIM_SIZE,
-		'TRIM diameter must be halfway between its old 21px size and the 30px EQ dial'
+		'TRIM diameter must be halfway between its old 21px size and the 30px EQ dial - pin 246b0f5 ' +
+			'LESS mode uses a separate, smaller LESS_TRIM_SIZE (asserted below), so this MORE-mode ' +
+			'constant and value must stay exactly as MIXUX-03 shipped it'
 	);
 
 	// Each knob's own attribute span: content up to '/>' must never cross a
@@ -88,19 +90,52 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 	// which is why this can't just be [^>]*.
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 
+	// Pin 246b0f5: LESS mode has to shrink TRIM/EQ to fit the shrunk deck-area
+	// row (see +page.svelte and CHANNEL_STRIP-LESS-FLOOR.test.mjs), so both
+	// now pass a `less`-derived variable instead of the bare MORE constant.
+	// The MORE-mode guarantee above (TRIM stays exactly halfway between 21
+	// and the 30px EQ dial, EQ dials stay the fixed default) is preserved
+	// BEHAVIORALLY, not textually: both derived variables fall back to the
+	// unchanged MORE constants (TRIM_SIZE, Knob's own 30px default) whenever
+	// `less` is false - asserted below by reading the `$derived(...)`
+	// definitions themselves, not just their names.
 	const trimKnobLine = src.match(knobTag('TRIM'));
 	assert.ok(trimKnobLine, 'TRIM Knob element not found');
-	assert.match(trimKnobLine[0], /size=\{TRIM_SIZE\}/, 'TRIM Knob must pass size={TRIM_SIZE}');
+	assert.match(trimKnobLine[0], /size=\{trimSize\}/, 'TRIM Knob must pass size={trimSize}');
+
+	const trimSizeDerived = src.match(/const trimSize = \$derived\(less \? LESS_TRIM_SIZE : TRIM_SIZE\);/);
+	assert.ok(
+		trimSizeDerived,
+		'trimSize must fall back to the unchanged MORE-mode TRIM_SIZE whenever less is false'
+	);
+	const lessTrimSizeMatch = src.match(/const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessTrimSizeMatch, 'expected a named LESS_TRIM_SIZE constant for pin 246b0f5 LESS mode');
+	assert.ok(
+		Number(lessTrimSizeMatch[1]) < EXPECTED_TRIM_SIZE,
+		'LESS_TRIM_SIZE must actually be smaller than MORE mode TRIM_SIZE, or LESS saves no height'
+	);
 
 	for (const label of ['HI', 'MID', 'LOW']) {
 		const knobLine = src.match(knobTag(label));
 		assert.ok(knobLine, `${label} Knob element not found`);
-		assert.doesNotMatch(
+		assert.match(
 			knobLine[0],
-			/size=\{/,
-			`${label} must stay at the Knob default size - it is the fixed reference EQ dial`
+			/size=\{eqSize\}/,
+			`${label} must pass size={eqSize} (pin 246b0f5) so LESS mode can shrink it`
 		);
 	}
+	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : undefined\);/);
+	assert.ok(
+		eqSizeDerived,
+		'eqSize must be undefined whenever less is false, so HI/MID/LOW fall back to the unchanged ' +
+			"Knob default (30px) - the fixed reference EQ dial MIXUX-03's MORE-mode behavior depends on"
+	);
+	const lessEqSizeMatch = src.match(/const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessEqSizeMatch, 'expected a named LESS_EQ_SIZE constant for pin 246b0f5 LESS mode');
+	assert.ok(
+		Number(lessEqSizeMatch[1]) < 30,
+		'LESS_EQ_SIZE must actually be smaller than the 30px EQ default, or LESS saves no height'
+	);
 });
 
 // Pin 8cabf5b1df1e:

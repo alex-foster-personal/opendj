@@ -18,6 +18,16 @@
 	interface Props {
 		/** The deck this strip controls (screen order is 3 1 2 4). */
 		deckId: DeckId;
+		/** Pin 246b0f5: true while the MORE/LESS toggle (deck-layout-prefs.ts)
+		 * is in LESS mode. LESS gives decks 1/2's strip far less height than
+		 * MORE (the mixer shares `.deck-area`'s single grid row with the
+		 * decks, and that row's floor shrinks in LESS - see +page.svelte's
+		 * `.perf-root.deck-layout-less` comment), so the strip compacts:
+		 * smaller TRIM/EQ knobs, tighter margins, and the inert FILTER stub
+		 * (not a "required dial" - it is not wired to anything yet, see the
+		 * FILTER_SLOT_SIZE comment below) drops out entirely. TRIM/EQ/CUE/
+		 * the fader+level-meter/STEM stay - those are the real controls. */
+		less: boolean;
 		/** TRIM knob 0..1; 0.5 = unity. */
 		trim: number;
 		/** HIGH knob 0..1; 0.5 = flat. */
@@ -40,6 +50,7 @@
 
 	let {
 		deckId,
+		less,
 		trim,
 		eqHigh,
 		eqMid,
@@ -62,15 +73,27 @@
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverUi.deckId === deckId);
 
-	/** Halfway between TRIM's former 21px and the 30px EQ dials. */
+	/** Halfway between TRIM's former 21px and the 30px EQ dials. MORE only -
+	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
 	const TRIM_SIZE = 25.5;
 	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
 	const FILTER_SLOT_SIZE = 35.1;
+	/** Pin 246b0f5 LESS mode: decks 1/2's strip has to fit inside the
+	 * shrunk LESS deck-area row (see +page.svelte), so TRIM/EQ shrink and
+	 * FILTER (inert stub, `{#if !less}` below) drops out -
+	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
+	 * from these exact numbers, so a change here must stay in step with
+	 * that test. */
+	const LESS_TRIM_SIZE = 18;
+	const LESS_EQ_SIZE = 18;
+	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
+	const eqSize = $derived(less ? LESS_EQ_SIZE : undefined);
 </script>
 
 <div
 	class="strip"
 	class:secondary
+	class:less
 	class:deck-focus={focused}
 	data-mixer-channel={deckId}
 	role="group"
@@ -88,26 +111,28 @@
 			accessibleLabel={`trim deck ${deckId}`}
 			value={trim}
 			tone="white"
-			size={TRIM_SIZE}
+			size={trimSize}
 			onchange={ontrim}
 		/>
 	</div>
 	<div class="eq-stack">
-		<Knob knobId={knobId(deckId, 'high')} label="HI" accessibleLabel={`high EQ deck ${deckId}`} value={eqHigh} onchange={(v) => oneq('high', v)} />
-		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} onchange={(v) => oneq('mid', v)} />
-		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} onchange={(v) => oneq('low', v)} />
+		<Knob knobId={knobId(deckId, 'high')} label="HI" accessibleLabel={`high EQ deck ${deckId}`} value={eqHigh} size={eqSize} onchange={(v) => oneq('high', v)} />
+		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} size={eqSize} onchange={(v) => oneq('mid', v)} />
+		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} size={eqSize} onchange={(v) => oneq('low', v)} />
 	</div>
-	<div class="filter-slot">
-		<Knob
-			knobId={knobId(deckId, 'filter')}
-			label="FILTER"
-			accessibleLabel={`filter deck ${deckId}`}
-			value={0.5}
-			tone="rainbow"
-			size={FILTER_SLOT_SIZE}
-			inert
-		/>
-	</div>
+	{#if !less}
+		<div class="filter-slot">
+			<Knob
+				knobId={knobId(deckId, 'filter')}
+				label="FILTER"
+				accessibleLabel={`filter deck ${deckId}`}
+				value={0.5}
+				tone="rainbow"
+				size={FILTER_SLOT_SIZE}
+				inert
+			/>
+		</div>
+	{/if}
 	<button
 		class:enabled={cueEnabled}
 		class="cue-btn"
@@ -157,6 +182,18 @@
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.1) 40%, var(--rb-panel-raised, #1a1e25));
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 	}
+	/* Every direct child except `.fader-slot` (which owns `flex: 1 1 auto`
+	 * on purpose - it is the one element meant to absorb extra height) is
+	 * fixed-size: explicit `flex-shrink: 0` so a too-short `.strip` overflows
+	 * visibly (caught by `.rb-mixer`'s `overflow: hidden` and this file's
+	 * e2e spec) instead of silently squeezing knobs/captions into an
+	 * overlapping, sub-pixel mess that ships nothing to bite - the whole
+	 * reason pin 246b0f5's fix sizes the deck-area LESS floor to real
+	 * content instead of shrinking to fit whatever height happened to be
+	 * left over. */
+	.strip > :not(.fader-slot) {
+		flex-shrink: 0;
+	}
 	.ch-num {
 		font-size: 10px;
 		color: var(--rb-text);
@@ -164,6 +201,14 @@
 	}
 	.trim-slot {
 		margin-bottom: 7px;
+	}
+	/* Pin 246b0f5 LESS mode: FILTER (the inert stub below) drops out of the
+	 * layout entirely, so the remaining vertical margins tighten too -
+	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
+	 * from these exact numbers, so a change here must stay in step with
+	 * that test. */
+	.strip.less .trim-slot {
+		margin-bottom: 3px;
 	}
 	.eq-stack {
 		display: flex;
@@ -190,6 +235,9 @@
 		flex: none;
 		cursor: pointer;
 	}
+	.strip.less .cue-btn {
+		margin-bottom: 4px;
+	}
 	.cue-btn.enabled {
 		color: var(--rb-accent);
 		border-color: var(--rb-accent);
@@ -204,6 +252,9 @@
 		margin-top: 0;
 		margin-bottom: 8px;
 	}
+	.strip.less .fader-slot {
+		margin-bottom: 4px;
+	}
 	.stem-label {
 		font-size: 8px;
 		letter-spacing: 0.06em;
@@ -212,6 +263,9 @@
 		flex: none;
 		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
 		margin-top: 5px;
+	}
+	.strip.less .stem-label {
+		margin-top: 2px;
 	}
 	.stem-slot :global(.stems) {
 		flex-direction: column;

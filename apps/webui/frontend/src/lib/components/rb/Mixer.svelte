@@ -125,6 +125,7 @@
 			<div class="strip-slot" class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}>
 				<ChannelStrip
 					deckId={deck}
+					less={deckLayoutLess}
 					trim={mixerState.channels[deck].trim}
 					eqHigh={mixerState.channels[deck].eq_high}
 					eqMid={mixerState.channels[deck].eq_mid}
@@ -170,18 +171,24 @@
 		padding: 6px 6px 4px;
 		overflow: hidden;
 	}
+	/* Pin 246b0f5: "MORE/LESS toggle is too big ... pushing EQs down" -
+	 * shrunk from padding-bottom 4px + 10px/2px-10px buttons (~22px tall)
+	 * to ~14px, unconditionally (both modes - it is the same control in
+	 * both, and MORE mode has no reason to keep the extra height either).
+	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
+	 * from this height too. */
 	.deck-layout-toggle {
 		flex: 0 0 auto;
 		display: flex;
 		justify-content: center;
 		gap: 2px;
-		padding-bottom: 4px;
+		padding-bottom: 2px;
 	}
 	.deck-layout-btn {
-		font-size: 10px;
+		font-size: 9px;
 		font-weight: 600;
 		letter-spacing: 0.04em;
-		padding: 2px 10px;
+		padding: 1px 8px;
 		border: 1px solid var(--rb-border);
 		background: transparent;
 		color: var(--rb-text-dim, #9aa4b2);

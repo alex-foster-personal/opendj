@@ -384,31 +384,43 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	);
 
 	// LESS only ever shows one deck per column (3/4 collapsed), so it needs
-	// only 2 wavestack rows and one deck's content-tight floor - not the
-	// two-deck column.
+	// only 2 wavestack rows.
 	assert.equal(lessWavestackRows, 2, 'LESS mode must reserve only 2 wavestack rows (decks 1/2)');
-	assert.equal(
-		lessDeckFloor,
-		perDeckPx,
-		`LESS deck-area floor (${lessDeckFloor}) must equal the one-deck height (${perDeckPx}), ` +
-			'not the two-deck column, since decks 3/4 are collapsed'
+	// Pin 246b0f5 (follow-on to 862cd3): the LESS deck-area floor used to
+	// equal perDeckPx exactly, because the deck column was the only thing
+	// sharing this grid row with a real height requirement. It no longer is
+	// - `<Mixer />` shares the SAME row (`.deck-area`'s grid-template-areas
+	// is 'decks-left mixer decks-right', one row), and pin 246b0f5 found the
+	// mixer's own LESS-mode content (decks 1/2's compacted channel strip,
+	// still un-collapsed - only strips 3/4's WIDTH goes to 0) needs MORE
+	// height than one deck panel alone, to avoid `.rb-mixer`'s
+	// `overflow: hidden` clipping the fader/level-meter/EQ/STEM controls off
+	// the bottom - exactly the maintainer's "you ddin't move the 1/2 levels" report.
+	// So the floor is now >= perDeckPx (the deck's own requirement is still
+	// respected) rather than exactly perDeckPx; the precise mixer-driven
+	// number (388) is pinned and derived from the real component CSS in
+	// channel-strip-less-floor.test.mjs, not duplicated here.
+	assert.ok(
+		lessDeckFloor >= perDeckPx,
+		`LESS deck-area floor (${lessDeckFloor}) must be at least the one-deck height (${perDeckPx}) ` +
+			'so decks 1/2 are never squeezed below their own content-tight floor'
 	);
 
 	// The library row is `minmax(0, 1fr)` in both modes (unchanged), so it
 	// picks up whatever the topbar/wavestack/deckarea rows above it do not
-	// reserve. Compare that reservation directly: LESS must reserve
-	// strictly less than MORE, by at least the height of the deck rows that
-	// collapsed (one deck column's worth) - the wavestack shrinking too only
-	// ever adds to that margin, never subtracts from it.
+	// reserve. Compare that reservation directly: LESS must still reserve
+	// strictly less than MORE (some real gain to the library), though pin
+	// 246b0f5 no longer guarantees a full collapsed-deck-column's worth -
+	// see the lessDeckFloor comment above. the maintainer's own words authorizing
+	// this trade: "probably a little bit more height taken from library ...
+	// but optimize it visually" (pin 246b0f5).
 	const moreReservedRows = moreWavestackRows * waverowPx + moreDeckFloor;
 	const lessReservedRows = lessWavestackRows * waverowPx + lessDeckFloor;
-	const collapsedDeckRowsPx = columnPx - perDeckPx;
 
 	assert.ok(
-		moreReservedRows - lessReservedRows >= collapsedDeckRowsPx,
-		`LESS must free up >= ${collapsedDeckRowsPx}px (one collapsed deck column) to the library ` +
-			`row versus MORE, but MORE reserves ${moreReservedRows}px and LESS reserves ` +
-			`${lessReservedRows}px (a difference of only ${moreReservedRows - lessReservedRows}px)`
+		lessReservedRows < moreReservedRows,
+		`LESS must still free SOME room to the library versus MORE, but MORE reserves ` +
+			`${moreReservedRows}px and LESS reserves ${lessReservedRows}px`
 	);
 
 	// (a) Freeing space to the library is pointless if LESS's own ceiling
