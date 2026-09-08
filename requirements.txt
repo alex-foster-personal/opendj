@@ -51,9 +51,8 @@ Pillow>=10.0
 
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
 # numpy floor matches pyproject's core `numpy>=1.26` (PyO3 waveform runtime,
-# PR #493); the <2 ceiling is madmom compat only.  librosa (ISC) + madmom
-# (MIT) + scipy for the default backend; PyYAML drives
-# ``apps/analysis/config.yaml``.
+# PR #493); the <2 ceiling is madmom compat only.  librosa (ISC) + scipy for
+# the shippable default backend; PyYAML drives ``apps/analysis/config.yaml``.
 numpy>=1.26,<2
 scipy>=1.13
 librosa==0.10.*
@@ -61,6 +60,15 @@ librosa==0.10.*
 # Python 3.10+).  The maintained git HEAD has 3.12+ fixes.  Install with
 # ``pip install --no-build-isolation -r requirements.txt`` because madmom
 # needs cython+numpy at setup() time but declares no build-requires.
+#
+# NON-SHIPPABLE (NATIVE-08). madmom's own code is BSD-3-Clause, but the
+# pretrained beat/downbeat models it loads are CC BY-NC-SA 4.0
+# (non-commercial, share-alike) -- not MIT, whatever an older comment here
+# said. This line exists only so the dev/bench venv can run the gated
+# `librosa+madmom` backend and `scripts/beatbench/run_madmom_reference_only.py`;
+# `apps/analysis/backends/__init__.py`'s registry refuses to resolve
+# `librosa+madmom` unless `MDT_BENCH_NONSHIPPABLE=1` is set, and no pyproject
+# extra or shipped payload declares madmom at all (NOTICE, docs/operator-setup.md).
 madmom @ git+https://github.com/CPJKU/madmom@main
 # madmom uses pkg_resources which was removed from setuptools>=81.
 setuptools<81
