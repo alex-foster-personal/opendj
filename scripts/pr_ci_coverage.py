@@ -11,6 +11,16 @@ MINI-PRD
             [then] exit 1 and name the PR and head SHA [else stop]
        [if] an open PR changes only excluded documentation paths
             [then] omit it from the required-CI denominator [else stop]
+       [if] every Actions run at a head was skipped, cancelled, ended without
+                 any job starting (action_required, stale, startup_failure, or a
+                 zero-step runner refusal, issue #1166), or is still running
+            [then] treat the head as uncovered and name it [else stop]
+       [if] a completed run carries a conclusion outside GitHub's closed
+                 workflow-run vocabulary
+            [then] raise a precondition error instead of guessing whether it
+                 tested the head [else stop]
+       [if] an executed run is recorded beyond the newest 100 runs at a head
+            [then] paginate the full listing and still find it [else stop]
        [if] GitHub returns an incomplete or malformed API response
             [then] exit 10 with an explicit precondition error [else stop]
 
@@ -45,6 +55,27 @@ EXCLUDED_DOCS_PREFIXES = ("docs/", "handoffs/", ".planning/", "specs/", "blog/")
 REQUIRED_RUN_EVENTS = frozenset(
     {"pull_request", "push", "workflow_dispatch", "repository_dispatch"}
 )
+# A workflow GitHub declines to execute still yields a run object carrying the triggering
+# event, so the event alone proves only that a delivery arrived. These five conclusions
+# mean no job was ever created, which is precisely the state this gate exists to catch:
+# skipped (path-filtered out), cancelled before a runner picked a job up, action_required
+# (fork PR or protected environment waiting on approval), stale (queued past expiry, never
+# dispatched) and startup_failure (workflow file rejected before a job started). A head
+# whose only runs end in one of these was never tested, however the delivery reached us.
+NON_COVERING_CONCLUSIONS = frozenset(
+    {"skipped", "cancelled", "action_required", "stale", "startup_failure"}
+)
+# A zero-step runner refusal (issue #1166) also completes as conclusion "failure": the
+# job was never picked up by a runner, so it records zero executed steps and fails in a
+# few seconds. Same top line as a genuine red run, no execution behind it. Failure alone
+# is therefore not proof of execution; the run's jobs must show an executed step first.
+CONCLUSION_FAILURE = "failure"
+# The run conclusions that, on their own, prove jobs ran to an outcome. GitHub's
+# workflow-run conclusion vocabulary is closed - the five above, these three, and
+# failure - so a completed run whose conclusion is none of them is a payload this gate
+# cannot reason about. _is_executed_run raises on it rather than guess whether the head
+# was tested, closing the issue #1431 failure mode against conclusions we have not seen.
+EXECUTED_CONCLUSIONS = frozenset({"success", "timed_out", "neutral"})
 STATUS_CONTEXT = "PR head CI coverage"
 
 
@@ -99,17 +130,133 @@ def _changed_files(pr_number: int) -> list[str]:
     return files
 
 
-def _has_actions_run_at_head(head_sha: str) -> bool:
-    """Return whether a non-create Actions workflow ran against this exact head."""
-    payload = _gh_api_json(f"repos/{REPO}/actions/runs?head_sha={head_sha}&per_page={PAGE_SIZE}")
-    if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
-        raise PreconditionError(f"Actions runs response for {head_sha} has no workflow_runs list")
-    for run in payload["workflow_runs"]:
-        if not isinstance(run, dict):
-            raise PreconditionError(f"Actions runs response for {head_sha} contained a non-object")
-        if run.get("head_sha") == head_sha and run.get("event") in REQUIRED_RUN_EVENTS:
+def _validated_jobs(payload: object, run_id: int) -> list[dict[str, object]]:
+    """Return one actions/runs/{id}/jobs page's jobs, refusing a malformed body."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+        raise PreconditionError(f"actions/runs/{run_id}/jobs response has no jobs list")
+    jobs = payload["jobs"]
+    for index, job in enumerate(jobs, start=1):
+        if not isinstance(job, dict):
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} was not an object"
+            )
+    return jobs
+
+
+def _jobs_prove_execution(jobs: list[dict[str, object]], run_id: int) -> bool:
+    """Return whether any job recorded an executed step, refusing a mangled one.
+
+    The step list is the record of whether a runner picked the job up: a job a runner
+    executed always lists the steps it ran, while the zero-step refusal (issue #1166)
+    reports none on every job. A malformed steps field is never read as "no execution",
+    so a missing or non-list one raises exactly as the sibling ci_zero_step_triage does;
+    a job that never ran reports an empty list, never an absent one.
+    """
+    for index, job in enumerate(jobs, start=1):
+        steps = job.get("steps")
+        if steps is None:
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} omits its steps "
+                f"field; cannot read whether it executed"
+            )
+        if not isinstance(steps, list):
+            raise PreconditionError(
+                f"actions/runs/{run_id}/jobs response job {index} has a non-list "
+                f"steps field: {steps!r}"
+            )
+        if steps:
             return True
     return False
+
+
+def _jobs_payload_proves_execution(payload: object, run_id: int) -> bool:
+    """One jobs page body, validated and asked whether any job actually executed."""
+    return _jobs_prove_execution(_validated_jobs(payload, run_id), run_id)
+
+
+def _run_executed_any_job(run_id: int) -> bool:
+    """Return whether one run's jobs show an executed step, paging like ``_pages``.
+
+    Called only for a run whose failure conclusion is also the zero-step runner-refusal
+    signature. Early-returns on the first executed step; when every job so far has none,
+    pages on until a short page so a truncated read is never mistaken for "nothing ran".
+    """
+    path = f"repos/{REPO}/actions/runs/{run_id}/jobs"
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        payload = _gh_api_json(f"{path}{separator}per_page={PAGE_SIZE}&page={page}")
+        jobs = _validated_jobs(payload, run_id)
+        if _jobs_prove_execution(jobs, run_id):
+            return True
+        if len(jobs) < PAGE_SIZE:
+            return False
+        page += 1
+
+
+def _is_executed_run(run: dict[str, object], head_sha: str) -> bool:
+    """Return whether one run object is evidence that a workflow actually executed here.
+
+    A completed conclusion other than ``failure`` is execution proof on the run object
+    alone. ``failure`` is ambiguous: it is also the conclusion of a zero-step runner
+    refusal whose jobs never ran (issue #1166), indistinguishable from a genuine red
+    run by conclusion alone. A failing run is therefore accepted only once its jobs
+    record an executed step, preserving the intended acceptance of real failed CI.
+    """
+    if run.get("head_sha") != head_sha or run.get("event") not in REQUIRED_RUN_EVENTS:
+        return False
+    conclusion = run.get("conclusion")
+    if conclusion is None and run.get("status") != "completed":
+        # Queued or running. An outcome may arrive later; there is none to trust now.
+        return False
+    if not isinstance(conclusion, str) or not conclusion:
+        raise PreconditionError(
+            f"Actions run {run.get('id')!r} at {head_sha} reports status "
+            f"{run.get('status')!r} with conclusion {conclusion!r}"
+        )
+    if conclusion in NON_COVERING_CONCLUSIONS:
+        return False
+    if conclusion == CONCLUSION_FAILURE:
+        run_id = run.get("id")
+        if type(run_id) is not int:
+            raise PreconditionError(f"Actions run at {head_sha} has an invalid id: {run_id!r}")
+        return _run_executed_any_job(run_id)
+    if conclusion not in EXECUTED_CONCLUSIONS:
+        raise PreconditionError(
+            f"Actions run {run.get('id')!r} at {head_sha} has an unrecognized "
+            f"conclusion {conclusion!r}; cannot say whether it tested the head"
+        )
+    return True
+
+
+def _has_actions_run_at_head(head_sha: str) -> bool:
+    """Return whether a non-create Actions workflow executed against this exact head.
+
+    Reads every page of the head's actions/runs listing: only the newest 100 runs would
+    let an executed run recorded earlier slip past when newer runs are non-covering.
+    Follows ``_pages``' short-page stop and validates every page fail-closed, accepting
+    the first run that proves execution.
+    """
+    path = f"repos/{REPO}/actions/runs?head_sha={head_sha}"
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        payload = _gh_api_json(f"{path}{separator}per_page={PAGE_SIZE}&page={page}")
+        if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
+            raise PreconditionError(
+                f"Actions runs response for {head_sha} page {page} has no workflow_runs list"
+            )
+        runs = payload["workflow_runs"]
+        for run in runs:
+            if not isinstance(run, dict):
+                raise PreconditionError(
+                    f"Actions runs response for {head_sha} page {page} contained a non-object"
+                )
+            if _is_executed_run(run, head_sha):
+                return True
+        if len(runs) < PAGE_SIZE:
+            return False
+        page += 1
 
 
 # ----- verdict ---------------------------------------------------------------------
