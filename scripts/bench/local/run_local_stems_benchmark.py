@@ -135,8 +135,16 @@ def _run(command: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]
         )
     except subprocess.TimeoutExpired as error:
         return subprocess.CompletedProcess(
-            command, 124, error.stdout or "", error.stderr or "",
+            command, 124, _decoded_output(error.stdout), _decoded_output(error.stderr),
         )
+
+
+def _decoded_output(output: bytes | str | None) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return output
 
 
 def _write_ledger(path: Path, ledger: dict[str, Any]) -> None:
