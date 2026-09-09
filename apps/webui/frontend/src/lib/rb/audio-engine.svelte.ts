@@ -400,11 +400,8 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
-	filterLp: BiquadFilterNode;
-	filterHp: BiquadFilterNode;
-	filterDry: GainNode;
-	filterLpWet: GainNode;
-	filterHpWet: GainNode;
+	filterLp: BiquadFilterNode; filterHp: BiquadFilterNode;
+	filterDry: GainNode; filterLpWet: GainNode; filterHpWet: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -747,20 +744,13 @@ function _ensureGraph(): AudioContext {
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
 		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
 		const filterLp = _ctx.createBiquadFilter();
-		filterLp.type = 'lowpass';
-		filterLp.Q.value = FILTER_Q;
-		filterLp.frequency.value = lpHz;
+		filterLp.type = 'lowpass'; filterLp.Q.value = FILTER_Q; filterLp.frequency.value = lpHz;
 		const filterHp = _ctx.createBiquadFilter();
-		filterHp.type = 'highpass';
-		filterHp.Q.value = FILTER_Q;
-		filterHp.frequency.value = hpHz;
-		const filterDry = _ctx.createGain();
-		filterDry.gain.value = dryGain;
-		// Separate wet gains so the inactive side is silenced (0 gain), not left in series (#990).
-		const filterLpWet = _ctx.createGain();
-		filterLpWet.gain.value = lpWetGain;
-		const filterHpWet = _ctx.createGain();
-		filterHpWet.gain.value = hpWetGain;
+		filterHp.type = 'highpass'; filterHp.Q.value = FILTER_Q; filterHp.frequency.value = hpHz;
+		// Separate wet gains (#990): the inactive side is silenced, not left in series.
+		const filterDry = _ctx.createGain(); filterDry.gain.value = dryGain;
+		const filterLpWet = _ctx.createGain(); filterLpWet.gain.value = lpWetGain;
+		const filterHpWet = _ctx.createGain(); filterHpWet.gain.value = hpWetGain;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -772,8 +762,7 @@ function _ensureGraph(): AudioContext {
 		low.connect(mid);
 		mid.connect(high);
 		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
-		filterLp.connect(filterLpWet);
-		filterHp.connect(filterHpWet);
+		filterLp.connect(filterLpWet); filterHp.connect(filterHpWet);
 		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
 		cue.connect(headphones.cueSum);
 		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
@@ -788,29 +777,8 @@ function _ensureGraph(): AudioContext {
 			fader.connect(xf);
 			xf.connect(_masterGain);
 		}
-		_rt[deck].nodes = {
-			analyser,
-			trim,
-			low,
-			mid,
-			high,
-			filterLp,
-			filterHp,
-			filterDry,
-			filterLpWet,
-			filterHpWet,
-			cue,
-			fader,
-			xf,
-			extsplit
-		};
-		// `high` is post-trim and post-EQ but pre-fader: the DJM convention, and
-		// the reason the meter can be trusted for gain staging. See meter-tap.ts.
-		// The FILTER stage (issue #990) sits AFTER this tap, so the meter reads
-		// gain staging into the filter, not out of it. Left where main put it
-		// rather than moved on merge: the dry and wet legs are two nodes, so a
-		// post-filter tap needs a summing node and that is a deliberate choice,
-		// not a merge resolution.
+		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, filterDry, filterLpWet, filterHpWet, cue, fader, xf, extsplit };
+		// `high` is post-trim/EQ, pre-filter, pre-fader: the meter reads gain staging INTO the filter (#990).
 		const tap = createMeterTap();
 		_meterTaps[deck] = tap;
 		meterSources.push({ tap, source: high });
@@ -4009,10 +3977,8 @@ class RbAudioEngine implements AudioEngine {
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) {
 			const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(value);
-			_setParam(nodes.filterLp.frequency, lpHz);
-			_setParam(nodes.filterHp.frequency, hpHz);
-			_setParam(nodes.filterDry.gain, dryGain);
-			_setParam(nodes.filterLpWet.gain, lpWetGain);
+			_setParam(nodes.filterLp.frequency, lpHz); _setParam(nodes.filterHp.frequency, hpHz);
+			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
 			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
 	}
