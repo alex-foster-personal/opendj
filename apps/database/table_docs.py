@@ -226,6 +226,96 @@ TABLE_DOCS: dict[str, str] = {
         "softly rather than at the schema level "
         "(apps/launcher/scripts/bootstrap_db.py)."
     ),
+    # ----- apps/shared/pairings/schema_sql.py, its SECOND ladder ---------
+    # apply_pairing_capture_migrations, applied lazily by the webui capture
+    # routes on the daemon's writable state.db. Column docs live in
+    # apps/database/column_docs_pairing_capture.py.
+    "pairing_capture_schema_meta": (
+        "Version counter for the pairing-capture ladder in "
+        "apps/shared/pairings/schema_sql.py, SEPARATE from the shared-state "
+        "ladder's own schema_meta because a webui route applies it rather "
+        "than apply_migrations. One row per applied version; v1 is the only "
+        "one so far."
+    ),
+    "pairing_sync_snapshots": (
+        "One captured sync relationship between two decks: which side was "
+        "tempo master, at what tempo ratios, and where each playhead was, "
+        "so a pairing can be reproduced later. Written by "
+        "apps.shared.pairings.capture_repo.PairingCaptureRepo through the "
+        "POST routes in apps/webui/server/routes/pairing_capture.py. Both "
+        "track references are soft: neither stable_a nor stable_b is "
+        "FK-declared, so a capture outlives its tracks."
+    ),
+    "pairing_alignments": (
+        "A named alignment mark between two tracks: the anchor point on "
+        "each side (a hot cue or a raw millisecond offset) that should line "
+        "up when they are played together. Sibling of "
+        "pairing_sync_snapshots -- that one records a sync that HAPPENED, "
+        "this one records an alignment a human ASSERTS -- written by the "
+        "same repo and routes, and equally FK-free."
+    ),
+    # ----- sibling apps on the shared connection ------------------------
+    # apps/analysis/store.py and apps/spotify/state_aux.py run additive DDL
+    # on the same connection after the ladder finishes. Column docs live in
+    # apps/database/column_docs_sibling_apps.py.
+    "analysis": (
+        "One backend's analysis result for one track: bpm, key, energy, and "
+        "provenance, one row per (stable_id, backend, backend_version) so "
+        "results from different analysis backends, or different versions of "
+        "one backend, coexist instead of overwriting each other. Owned by "
+        "apps.analysis.store, which runs its own additive DDL on the shared "
+        "state.db connection after apps.shared.state's migrations. The flat "
+        "columns are a queryable projection of what record_json carries in "
+        "full, including fields with no column of their own (onsets_s, "
+        "downbeats_s, rms_peaks_s, features_blob) -- see "
+        "apps.analysis.record.AnalysisRecord."
+    ),
+    "analysis_events": (
+        "Append-only event log for the analysis domain, written by "
+        "apps.analysis.store.publish() alongside every analysis upsert. "
+        "Every accepted event is ALSO mirrored into the shared events table "
+        "(kind=event_type, actor='apps.analysis') and fanned out on the "
+        "in-process apps.shared.state.events.EventBus, so this table is a "
+        "domain-scoped duplicate of a subset of events, not the only copy. "
+        "It is kept because tests and downstream tooling read it by name "
+        "(apps/analysis/store.py module docstring)."
+    ),
+    "pending_tracks": (
+        "Spotify acquisition queue: one row per Spotify playlist track that "
+        "apps.spotify.state_writer.write_playlist_and_pending could not "
+        "match to a local library track at import time. Alongside the "
+        "pending row the importer also inserts a synthetic tracks row "
+        "(file_path = the Spotify URI) and gives it a membership on both "
+        "the Spotify vendor playlist and its linked ODJ twin, so the "
+        "browser renders the unmatched track inline rather than leaving a "
+        "gap. apps.spotify.rematch.rematch_playlist re-tries matching these "
+        "rows against the local library and promotes hits to "
+        "status='resolved', swapping the synthetic placeholder for the real "
+        "track in place."
+    ),
+    "spotify_playlist_meta": (
+        "Per-Spotify-playlist import bookkeeping: one row per imported "
+        "Spotify playlist, keyed on the state-layer playlist_id. Exists so "
+        "write_playlist_and_pending can short-circuit a re-import of an "
+        "unchanged playlist by comparing Spotify's own snapshot_id, and so "
+        "the webui can show import stats without re-deriving them. The "
+        "match and pending counts are a snapshot of the import moment, NOT "
+        "a live view: apps.spotify.rematch never writes here, so "
+        "matched_count and pending_count do not reflect pending_tracks rows "
+        "that later resolve or get abandoned. Query pending_tracks directly "
+        "for a current count."
+    ),
+    "spotify_playlist_links": (
+        "Durable link between a Spotify vendor playlist and the ODJ (webui) "
+        "playlist that mirrors it: one row per vendor playlist, keyed on "
+        "Spotify's own id. Importing an unlinked Spotify playlist creates a "
+        "same-name ODJ twin and registers the pair here, so a later "
+        "re-import writes into the SAME twin instead of spawning a second "
+        "one. apps.spotify.state_aux.link_odj_playlist is the only writer, "
+        "and it refreshes updated_at in place when the twin is unchanged. "
+        "Machine-local bookkeeping: it carries no origin_device_id and is "
+        "not in SYNC_TABLES, so it does not ride hub sync."
+    ),
 }
 
 __all__ = ["TABLE_DOCS"]
