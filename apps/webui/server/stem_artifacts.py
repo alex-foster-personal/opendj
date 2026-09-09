@@ -703,6 +703,16 @@ def summarize_stem_bundle(
     return deepcopy(summary)
 
 
+def _summary_files(raw: Any) -> dict[str, Any]:
+    """Extract summary file declarations with the same object contract as the reader."""
+    if not isinstance(raw, dict):
+        raise TypeError("manifest.json must be an object")
+    files = raw.get("files")
+    if not isinstance(files, dict):
+        raise TypeError("files must be an object")
+    return files
+
+
 def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
     """Read one bundle off disk: ``{"status": "none"}`` or ready.
 
@@ -722,16 +732,12 @@ def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
             continue
         try:
             raw = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            files = _summary_files(raw)
+        except (OSError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             # "invalid" is NOT "none": a bundle whose manifest is corrupt is a
             # thing to go and fix, and the column says so rather than showing
             # the same blank as a track that was simply never separated.
             return {"status": "invalid", "error": f"{type(exc).__name__}: {exc}"}
-        if not isinstance(raw, dict):
-            return {"status": "invalid", "error": "manifest.json must be an object"}
-        files = raw.get("files")
-        if not isinstance(files, dict):
-            return {"status": "invalid", "error": "files must be an object"}
 
         groups: dict[str, dict[str, Any]] = {}
         total = 0
