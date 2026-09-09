@@ -21,6 +21,7 @@
  */
 import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
+import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import type { RuleAst } from './smartlists/rule-form';
 
 export { API_BASE } from './api/client';
@@ -416,8 +417,34 @@ export async function updateSmartlist(
 	return { smartlist: data, etag: nextEtag };
 }
 
-export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
-	const { data, response } = requireBody(await api.GET('/api/v1/health'));
+/** The coalescer key for the health body read. One string, one endpoint. */
+const HEALTH_KEY = 'GET /api/v1/health';
+
+/**
+ * The daemon's health body, shared with any other caller asking inside the
+ * boot window (see `src/lib/api/request-coalescer.ts` for the measurement
+ * that motivated this and the TTL derivation).
+ *
+ * Pass `fresh: true` when the caller is reacting to a CHANGE and needs the
+ * value it is refreshing to, rather than the value the page already has.
+ * `_refreshLibraryRowsOnce` in BrowserPanel is the case: it runs off library
+ * invalidation events, so serving it a body from before the change it is
+ * reacting to would paint a stale track count and leave it there until the
+ * next event. Correctness beats one request.
+ */
+export async function getHealth(
+	options: { fresh?: boolean } = {}
+): Promise<{ health: HealthOut; bindWarning: string | null }> {
+	const call =
+		options.fresh === true
+			? api.GET('/api/v1/health')
+			: requestCoalescer.share(HEALTH_KEY, BOOT_COALESCE_TTL_MS, () =>
+					api.GET('/api/v1/health')
+				);
+	// A joined caller reads HEADERS off a shared Response whose body stream
+	// the client has already parsed into `data`. Headers are re-readable;
+	// the stream is not, and nothing here touches it.
+	const { data, response } = requireBody(await call);
 	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
 }
 

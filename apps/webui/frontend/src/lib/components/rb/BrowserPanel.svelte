@@ -1202,7 +1202,11 @@
 	async function _refreshLibraryRowsOnce(): Promise<void> {
 		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
-			const healthRes = await getHealth();
+			// `fresh` because this runs OFF a library-change event: a body
+			// shared from before that change would paint a stale count and
+			// leave it there until the next event. The mount-time read in
+			// `_init` above has no such constraint and shares one.
+			const healthRes = await getHealth({ fresh: true });
 			allTracksCount = healthRes.health.state_db.tracks;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);

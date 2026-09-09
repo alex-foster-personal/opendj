@@ -12,6 +12,7 @@
  */
 
 import { api, unwrap } from '../api/client';
+import { BOOT_COALESCE_TTL_MS, requestCoalescer } from '../api/request-coalescer';
 import {
 	validateDeckLayoutFields,
 	makeDeckLayoutSetters,
@@ -383,11 +384,21 @@ type DiskPrefsPatch = {
 	level_calibration?: LevelCalibrationPrefs;
 };
 
+/** The coalescer key for the on-disk prefs read. One string, one endpoint. */
+const UI_PREFS_KEY = 'GET /api/v1/ui-prefs';
+
 async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 	try {
 		await api.PUT('/api/v1/ui-prefs', { body: patch });
 	} catch {
 		/* localStorage remains authoritative if daemon is down */
+	} finally {
+		// Whatever the write did, the shared read is now describing a
+		// document that no longer exists. Dropped in `finally` because a
+		// FAILED PUT is exactly the case where the daemon's copy is least
+		// knowable, so keeping a pre-write body joinable there would be the
+		// worse half of the bargain.
+		requestCoalescer.invalidate(UI_PREFS_KEY);
 	}
 }
 
@@ -558,7 +569,14 @@ export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 	try {
 		// Same optional field set the setters below PUT, so it doubles as the GET
 		// response shape rather than duplicating a second inline type for it.
-		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
+		// Shared with the other mount-time caller: the root layout and the
+		// browser panel both hydrate from this endpoint, ~110ms apart, and
+		// both were measured issuing their own request on Wed 9 Sep 2026.
+		// Writes invalidate the key (see `_putDiskPrefs`), so a joined read
+		// can never predate a pref this page has already changed.
+		const body = (await requestCoalescer.share(UI_PREFS_KEY, BOOT_COALESCE_TTL_MS, () =>
+			unwrap(api.GET('/api/v1/ui-prefs'))
+		)) as DiskPrefsPatch;
 		if (body.confirm !== undefined) {
 			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
 		}

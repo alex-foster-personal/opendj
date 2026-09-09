@@ -91,6 +91,31 @@ const BOOT_FAMILIES: readonly string[] = [
 	'/api/v1/telemetry/heartbeat'
 ];
 
+/**
+ * How long the app's startup request wave lasts, measured FROM ITS OWN
+ * FIRST REQUEST rather than from navigation start.
+ *
+ * The anchor matters and was got wrong once: under the production bundle
+ * plus emulated latency, hydration does not begin until ~1450ms into the
+ * page, so a window anchored at navigation start closed before the app had
+ * booted and reported zero duplicates in BOTH arms -- a clean binary answer
+ * to a question that should have been messy, which is the instrument
+ * failing rather than a result. Anchored to the wave itself, the count is
+ * immune to how long the bundle and the emulated latency take to get there.
+ *
+ * The two mount waves (+layout, then BrowserPanel) run 77-230ms apart, so
+ * 1000ms contains both with room to spare while staying well under the
+ * 2500ms library liveness cadence. That cadence shares the
+ * `/api/v1/health` URL and is deliberately NOT coalesced (see
+ * `src/lib/api/request-coalescer.ts`), so the health count is always
+ * "body reads + 1" in BOTH arms: the bench cannot tell a ping from a body
+ * read, they are the same URL, and it does not need to.
+ */
+const BOOT_WINDOW_MS = 1000;
+
+/** The endpoints whose boot-time duplicates the coalescer exists to remove. */
+const DEDUPED_AT_BOOT: readonly string[] = ['/api/v1/health', '/api/v1/ui-prefs'];
+
 interface ApiTiming {
 	name: string;
 	start: number;
@@ -110,6 +135,11 @@ interface Sample {
 	burstSpanMs: number;
 	/** When the deck load's fetch block finished, on the page clock. */
 	deckFetchEndMs: number;
+	/** `/api/v1/health` requests inside BOOT_WINDOW_MS. Body reads plus the
+	 * one liveness ping that always falls in the window. */
+	healthCallsAtBoot: number;
+	/** `/api/v1/ui-prefs` requests inside BOOT_WINDOW_MS. */
+	uiPrefsCallsAtBoot: number;
 }
 
 function _median(values: readonly number[]): number {
@@ -188,7 +218,12 @@ async function _measureOneBoot(page: Page, stableId: string): Promise<Sample> {
 		{ timeout: 180_000 }
 	);
 
-	return page.evaluate((families: readonly string[]) => {
+	interface EvalArgs {
+		families: readonly string[];
+		bootWindowMs: number;
+		deduped: readonly string[];
+	}
+	return page.evaluate(({ families, bootWindowMs, deduped }: EvalArgs) => {
 		const ring = (window as PerfRingWindow).__mdtLastLoads?.(8) ?? [];
 		const load = ring.find((event) => typeof event.stages?.fetchWall === 'number');
 		if (load?.stages === undefined) throw new Error('no deck-load event carrying fetchWall');
@@ -218,8 +253,35 @@ async function _measureOneBoot(page: Page, stableId: string): Promise<Sample> {
 			(entry) => entry.start < deckFetchEndMs && entry.end > deckStartMs
 		).length;
 
-		return { fetchWall, deckLoadMs, contendingCalls, burstSpanMs, deckFetchEndMs };
-	}, BOOT_FAMILIES);
+		// Counted over the app's own startup wave, NOT relative to the deck
+		// load: these are duplicates the boot issues whether or not a deck is
+		// loading. The wave starts at the first request to any of these
+		// endpoints; if the app never made one the window is empty and the
+		// counts are -1, never a zero that would read as "deduplicated".
+		const dedupedStarts = api
+			.filter((entry) => deduped.some((path) => entry.name.includes(path)))
+			.map((entry) => entry.start);
+		const waveStart = dedupedStarts.length === 0 ? null : Math.min(...dedupedStarts);
+		const inBootWindow = (path: string): number =>
+			waveStart === null
+				? -1
+				: api.filter(
+						(entry) =>
+							entry.name.includes(path) &&
+							entry.start >= waveStart &&
+							entry.start < waveStart + bootWindowMs
+					).length;
+
+		return {
+			fetchWall,
+			deckLoadMs,
+			contendingCalls,
+			burstSpanMs,
+			deckFetchEndMs,
+			healthCallsAtBoot: inBootWindow('/api/v1/health'),
+			uiPrefsCallsAtBoot: inBootWindow('/api/v1/ui-prefs')
+		};
+	}, { families: BOOT_FAMILIES, bootWindowMs: BOOT_WINDOW_MS, deduped: DEDUPED_AT_BOOT });
 }
 
 test('a deck load fired at boot, measured over repeated cold page loads', async ({ browser }) => {
@@ -241,7 +303,9 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 					`fetchWall=${Math.round(sample.fetchWall)}ms ` +
 					`deckLoad=${Math.round(sample.deckLoadMs)}ms ` +
 					`contending=${sample.contendingCalls} ` +
-					`burstSpan=${Math.round(sample.burstSpanMs)}ms`
+					`burstSpan=${Math.round(sample.burstSpanMs)}ms ` +
+					`health@boot=${sample.healthCallsAtBoot} ` +
+					`uiPrefs@boot=${sample.uiPrefsCallsAtBoot}`
 			);
 		} finally {
 			await context.close();
@@ -258,7 +322,9 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 			fetchWall: _median(samples.map((s) => s.fetchWall)),
 			deckLoadMs: _median(samples.map((s) => s.deckLoadMs)),
 			contendingCalls: _median(samples.map((s) => s.contendingCalls)),
-			burstSpanMs: _median(samples.map((s) => s.burstSpanMs))
+			burstSpanMs: _median(samples.map((s) => s.burstSpanMs)),
+			healthCallsAtBoot: _median(samples.map((s) => s.healthCallsAtBoot)),
+			uiPrefsCallsAtBoot: _median(samples.map((s) => s.uiPrefsCallsAtBoot))
 		}
 	};
 	mkdirSync(dirname(OUT_PATH), { recursive: true });

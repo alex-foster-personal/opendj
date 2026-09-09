@@ -43,7 +43,7 @@
  *     [if] progressLedger reads true while flavor is 'unknown' [then ⛔️] broken
  */
 
-import { api, unwrap } from './client';
+import { getHealth } from '../api';
 
 export type DaemonFlavor = 'engine' | 'legacy' | 'unknown';
 
@@ -130,7 +130,11 @@ class CapabilityStore {
 
 	async #run(): Promise<DaemonFlavor> {
 		try {
-			this.flavor = readDaemonFlavor(await unwrap(api.GET('/api/v1/health')));
+			// Through `getHealth` rather than its own client call, so this probe
+			// JOINS the health read the layout is making in the same frame
+			// instead of racing it. Measured Wed 9 Sep 2026: these two fired in
+			// the same millisecond on every load of /performance.
+			this.flavor = readDaemonFlavor((await getHealth()).health);
 			this.error = null;
 		} catch (exc) {
 			// Not memoized: a daemon that was down at page load may be up by
