@@ -210,7 +210,7 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * due for refetch, so a consumer returning later (`ensureAnlz` via
  * `_dueForEnsureRefetch`) revives it with no special-casing on either
  * side. */
-function _publishAnlzResult(stable_id: string, data: AnlzData): void | Promise<void> {
+function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = false): void | Promise<void> {
 	const existingTimer = _retryTimers.get(stable_id);
 	if (existingTimer !== undefined) {
 		clearTimeout(existingTimer);
@@ -230,7 +230,7 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void | Promise<v
 	// Passed through, never awaited: only refreshAnalysisSourceDecks awaits
 	// this (discussion_r3970967293); _fetchAndPublish stays fire-and-forget.
 	const sinkSettlement =
-		_authoritativeGridSink !== null && hasAnlzBeatgrid(data) ? _authoritativeGridSink(stable_id, data) : undefined;
+		_authoritativeGridSink !== null && hasAnlzBeatgrid(data) ? _authoritativeGridSink(stable_id, data, true, alreadyScoped) : undefined;
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
 		return sinkSettlement;
@@ -261,9 +261,10 @@ export type AuthoritativeAnlzGridSink = (
 	 * in `refreshAnalysisSourceDecks` passes false when the newly selected
 	 * source has no grid for this track, so the deck settles gridless instead
 	 * of silently dropping Beat Sync. */
-	landed?: boolean
-	/** May return a settlement promise; only refreshAnalysisSourceDecks
-	 * awaits it, so a performance-command claim can't release early (discussion_r3970967293). */
+	landed?: boolean,
+	/** True only from inside refreshAnalysisSourceDecks's own claim: reconcile
+	 * INLINE, a fresh nested claim there deadlocks against it (r3972154599). */
+	alreadyScoped?: boolean
 ) => void | Promise<void>;
 let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
 
@@ -407,8 +408,12 @@ export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
  * failure shape as issue #877's reported bug, just triggered by a reload
  * instead of the original paint defect. Returns the sink's settlement;
  * only `refreshAnalysisSourceDecks` below awaits it. */
-export function refreshAnlzCacheEntry(stable_id: string, data: AnlzData): void | Promise<void> {
-	return _publishAnlzResult(stable_id, data);
+export function refreshAnlzCacheEntry(
+	stable_id: string,
+	data: AnlzData,
+	alreadyScoped = false
+): void | Promise<void> {
+	return _publishAnlzResult(stable_id, data, alreadyScoped);
 }
 
 /** Evicts a cache entry outright, so it reads back as never-requested
@@ -450,67 +455,44 @@ export interface AnalysisSourceRefreshDeck {
 }
 
 /** Replaces loaded decks without allowing an in-flight stale response to win.
- * Lives here, not as its own module, so it can write straight through this
- * cache's own primitives (kept next to `invalidateAllAnlzCacheEntries` above,
- * which it always pairs with) instead of adding a fan-out edge onto a module
- * audio-engine.svelte.ts already imports from for every other cache concern.
+ * Lives here so it can write straight through this cache's own primitives
+ * (paired with `invalidateAllAnlzCacheEntries` above) instead of adding a
+ * fan-out edge onto audio-engine.svelte.ts.
  *
- * FETCH EVERY DECK FIRST, PUBLISH NOTHING UNTIL ALL OF THEM LAND. An earlier
- * shape wrote each deck inside its own `Promise.all` callback, so one loaded
- * track whose new-source payload rejects (an invalid own analysis record, a
- * transient 500) left the decks that had already resolved swapped to the new
- * source while the rest stayed on the old one - and nothing rolled them back,
- * because `Promise.all` only rejects, it does not undo. `_adopt`
- * (analysis-source.svelte.ts) deliberately leaves `analysisSourceState` on the
- * OLD value when this rejects so the next poll retries, which for a
- * permanently failing track meant retrying forever against a split fleet of
- * decks (discussion_r3968214019 P1 BLOCKING). Staging the fetches makes the
- * publish phase below synchronous and total: either every loaded deck moves to
- * the new source or none does.
+ * FETCH EVERY DECK FIRST, PUBLISH NOTHING UNTIL ALL LAND: staging the fetches
+ * makes the publish phase below synchronous and total. An earlier shape wrote
+ * each deck inside its own `Promise.all` callback, so one rejected track
+ * (invalid own record, transient 500) left already-resolved decks swapped to
+ * the new source while the rest stayed on the old one, with nothing to roll
+ * them back - `_adopt` (analysis-source.svelte.ts) leaves `analysisSourceState`
+ * on the OLD value on rejection, so the next poll retried forever against a
+ * split fleet (discussion_r3968214019 P1 BLOCKING).
  *
- * CACHE FIRST, DECK SECOND, and the two phases are separated for a reason.
- * `refreshAnlzCacheEntry` notifies the authoritative-grid sink, which is what
- * routes a grid change through `afterBeatgridUpgrade` ->
- * `reconcileAfterBeatgridSettled` - the ONLY path that reschedules a playing,
- * Beat-Synced master/follower pair onto a new grid. That sink compares the new
- * grid against the deck's CURRENT one (`sameBeatgrid`, beatgrid-resync-
- * guards.ts), so writing `decks[deck].anlz` first made every switch look like
- * a no-op: the waveform and the beat numbers moved to the new grid while the
- * audible transport stayed scheduled against the old one
- * (discussion_r3968213995 P1 BLOCKING). Publishing every cache entry while
- * every deck still holds its pre-switch payload also means two decks loaded
- * with the SAME track are both reconciled by a single sink notification,
- * rather than the second one scheduling a duplicate settlement.
+ * CACHE FIRST, DECK SECOND: `refreshAnlzCacheEntry`'s sink routes a grid
+ * change through `afterBeatgridUpgrade` -> `reconcileAfterBeatgridSettled`,
+ * comparing the new grid against the deck's CURRENT one (`sameBeatgrid`,
+ * beatgrid-resync-guards.ts). Writing `decks[deck].anlz` first made every
+ * switch look like a no-op: waveform and beat numbers moved to the new grid
+ * while the audible transport stayed scheduled against the old one
+ * (discussion_r3968213995 P1 BLOCKING).
  *
- * THE TRACK ROW IS SOURCE-DEPENDENT TOO, not just `/anlz`. `bpm` is a
- * lane-owned projection field on the very lane this control switches
- * (`PROJECTION_FIELDS` in apps/analysis/canonical.py, applied to every track
- * read by `lane_owned_fields` in apps/webui/server/analysis_overlay.py), so
- * `GET /tracks/{id}` answers with the own BPM once beatgrid is on own. A
- * deck reads that row exactly once, at `load()`. Refreshing only the grid
- * therefore left `st.bpm` - and with it `DeckHeader` and
- * `PerformanceState.bpm` - reporting the pre-switch tempo while the grid and
- * `effective_bpm` reported the new one, which is an internally inconsistent
- * read model in the one tool whose entire purpose is comparing the two
- * (discussion_r3969020988 P2 BLOCKING). `key` rides along because it is the
- * other lane-owned field a deck holds; when its lane is on rbx the read model
- * returns the same rekordbox value it already had, so writing it is a no-op
- * rather than a second special case. Staged in the SAME `Promise.all` as the
- * grid so the all-or-nothing guarantee above covers both.
+ * THE TRACK ROW IS SOURCE-DEPENDENT TOO. `bpm`/`key` are lane-owned
+ * projection fields (`PROJECTION_FIELDS` in apps/analysis/canonical.py), read
+ * once at `load()`. Refreshing only the grid left `st.bpm` reporting the
+ * pre-switch tempo while the grid and `effective_bpm` reported the new one -
+ * an internally inconsistent read model in the one tool whose purpose is
+ * comparing the two (discussion_r3969020988 P2 BLOCKING). Staged in the same
+ * `Promise.all` as the grid so the all-or-nothing guarantee above covers both.
  *
- * RETURNS THE SOURCE THE SERVER ACTUALLY SERVED, or null when no deck had a
- * track loaded and nothing was fetched. `/anlz` resolves rbx-vs-own
- * SERVER-side at fetch time (rb_assets.py `_resolve_beatgrid_source`) and
- * stamps it on the payload, so this is the one non-guessed answer to "which
- * source are the decks on now": the caller cannot infer it from the selection
- * it started with, because the awaits here are unbounded and the daemon can
- * move under them (discussion_r3970117741 P1 BLOCKING). Staged payloads that
- * DISAGREE mean the selection changed mid-batch and the fleet would end up
- * split across two sources, so that throws before anything is published and
- * the all-or-nothing guarantee covers it too.
+ * RETURNS THE SOURCE THE SERVER ACTUALLY SERVED, or null when nothing was
+ * fetched. `/anlz` resolves rbx-vs-own SERVER-side at fetch time and stamps
+ * it on the payload - the caller cannot infer it from its own selection since
+ * the daemon can move under the unbounded awaits here
+ * (discussion_r3970117741 P1 BLOCKING). Disagreeing staged payloads mean the
+ * selection changed mid-batch, so this throws before publishing anything.
  *
- * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED,
- * so a caller holding the scheduler's claim can't release it early
+ * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED, so
+ * a caller holding the scheduler's claim can't release it early
  * (discussion_r3970967293 P1 BLOCKING). */
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
@@ -546,9 +528,11 @@ export async function refreshAnalysisSourceDecks(
 	}
 	// Collected, not awaited per-iteration (would serialize what the cache
 	// write below deliberately doesn't); only this function's RETURN waits.
+	// `alreadyScoped: true` below: this function already holds the claim,
+	// so the sink reconciles inline, not via a deadlocking nested one (r3972154599).
 	const sinkSettlements: Array<void | Promise<void>> = [];
 	for (const { stableId, fresh } of staged) {
-		sinkSettlements.push(refreshAnlzCacheEntry(stableId, fresh));
+		sinkSettlements.push(refreshAnlzCacheEntry(stableId, fresh, true));
 		// `refreshAnlzCacheEntry` notifies the sink only for a payload that
 		// HAS a grid, because the ambient prefetch it was built for can only
 		// ever discover one. A deliberate switch can also REMOVE one: OWN with
@@ -560,7 +544,7 @@ export async function refreshAnalysisSourceDecks(
 		// the settled-gridless case reconcileAfterBeatgridSettled already
 		// handles.
 		if (!hasAnlzBeatgrid(fresh) && _authoritativeGridSink !== null) {
-			sinkSettlements.push(_authoritativeGridSink(stableId, fresh, false));
+			sinkSettlements.push(_authoritativeGridSink(stableId, fresh, false, true));
 		}
 	}
 	for (const { stableId, holders, fresh, track } of staged) {

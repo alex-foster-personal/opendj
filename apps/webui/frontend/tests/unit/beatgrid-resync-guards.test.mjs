@@ -25,13 +25,14 @@ const DECKS = [1, 2, 3, 4];
 let createBeatgridResyncGuards;
 let sameBeatgrid;
 let ScopedCommandInvalidatedError;
+let ScopedCommandScheduler;
 
 before(async () => {
 	({ createBeatgridResyncGuards } = await loadTypeScriptModule(
 		'src/lib/player/beatgrid-resync-guards.ts'
 	));
 	({ sameBeatgrid } = await loadTypeScriptModule('src/lib/rb/beatgrid-fallback.ts'));
-	({ ScopedCommandInvalidatedError } = await loadTypeScriptModule(
+	({ ScopedCommandInvalidatedError, ScopedCommandScheduler } = await loadTypeScriptModule(
 		'src/lib/rb/performance-command-scheduler.ts'
 	));
 });
@@ -279,6 +280,49 @@ test('adoptAuthoritativeGrid does not resolve until every triggered reconciliati
 	await adoption;
 	assert.equal(settled, true, 'adoptAuthoritativeGrid must resolve once the reconciliation actually settles');
 	assert.equal(h.anlz[1].beatgrid.beats.length, 16, 'the adoption itself still lands');
+});
+
+/** Runs adoptAuthoritativeGrid from inside a wide claim on the REAL
+ * ScopedCommandScheduler (not the stubbed installScopedSyncRunner the other
+ * tests use, which never holds a scope open across the call and so cannot
+ * observe a scheduler-level circular wait). Mirrors performance-ipc.svelte.ts's
+ * actual wiring: the scoped-sync runner claims [deck] on the SAME scheduler
+ * instance as the wide caller. A fresh scheduler per call keeps a deadlocked
+ * (never-settling) run from one case leaking a permanently-busy scope into
+ * the next. */
+async function _wideClaimSettlement(alreadyScoped) {
+	const scheduler = new ScopedCommandScheduler();
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	h.guards.installScopedSyncRunner((deck, task) => scheduler.run([deck], () => task((work) => work())));
+	const claim = scheduler.run([1, 2, 3, 4, 'sync'], () =>
+		h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124)), true, alreadyScoped)
+	);
+	const timedOut = Symbol('timed-out');
+	const timeout = new Promise((resolve) => setTimeout(() => resolve(timedOut), 200));
+	return (await Promise.race([claim, timeout])) === timedOut ? 'TIMED_OUT' : 'RESOLVED';
+}
+
+test('adoptAuthoritativeGrid called from inside its own wide claim does not deadlock (discussion_r3972154599)', async () => {
+	// Control: without alreadyScoped, adoptAuthoritativeGrid's nested
+	// runScoped(deck, ...) claim's only predecessor is this same still-open
+	// wide claim - a direct circular wait. Confirms this test can actually
+	// detect the hang (a broken control here would let the real assertion
+	// below pass for the wrong reason).
+	assert.equal(
+		await _wideClaimSettlement(false),
+		'TIMED_OUT',
+		'a nested claim requested from inside an already-open wide claim on the same scheduler must deadlock - ' +
+			'if this resolves, the control itself is broken and the assertion below proves nothing'
+	);
+	// Fix: alreadyScoped skips the nested runScoped claim and reconciles
+	// inline, since the wide claim already covers this deck.
+	assert.equal(
+		await _wideClaimSettlement(true),
+		'RESOLVED',
+		'alreadyScoped: true must let the wide claim resolve instead of deadlocking against its own nested reclaim'
+	);
 });
 
 test('adoptAuthoritativeGrid does not republish a grid the deck already holds', async () => {

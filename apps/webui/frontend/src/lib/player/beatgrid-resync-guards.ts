@@ -112,7 +112,16 @@ export interface BeatgridResyncGuards {
 		deck: DeckId,
 		landed: boolean,
 		publish: () => void,
-		isStale: () => boolean
+		isStale: () => boolean,
+		/** True only when the caller already holds a scheduler claim covering
+		 * `deck` plus the wide barrier (the rbx-vs-own switch's
+		 * `[...DECK_IDS, 'sync']` claim is the one caller). Skips `runScoped`
+		 * entirely and reconciles inline: re-claiming here would await a nested
+		 * `[deck]` claim whose only predecessor is the caller's own still-open
+		 * claim, a direct self-deadlock (discussion_r3972154599 P1 BLOCKING),
+		 * and the reclaim is redundant anyway since the wide scope this
+		 * settlement could ever need is already held. */
+		alreadyScoped?: boolean
 	): Promise<void>;
 	/** Fired from `_clearLoadedTrackState`/`unload()` right after `stranded` (the
 	 * followers `deck` left pending) is captured, but the actual reconciliation
@@ -172,7 +181,14 @@ export interface BeatgridResyncGuards {
 	 * through `_consumeInvalidation`/`reportError` exactly as before, so
 	 * awaiting this only postpones "done", it does not turn a swallowed error
 	 * into an unhandled rejection. */
-	adoptAuthoritativeGrid(stableId: string, data: AnlzData, landed?: boolean): Promise<void>;
+	adoptAuthoritativeGrid(
+		stableId: string,
+		data: AnlzData,
+		landed?: boolean,
+		/** Forwarded to `afterBeatgridUpgrade` for every matching deck; see its
+		 * doc for why this must be true from inside an already-held wide claim. */
+		alreadyScoped?: boolean
+	): Promise<void>;
 	/** Install the concrete scoped runner both wrappers claim through. The
 	 * runner itself lives here because these two wrappers are its only
 	 * consumers; audio-engine.svelte.ts re-exports this for the route to call.
@@ -190,7 +206,8 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 		deck,
 		landed,
 		publish,
-		isStale
+		isStale,
+		alreadyScoped = false
 	) =>
 		_loadResyncModule().then(({ reconcileAfterBeatgridSettled, resyncSettlementNeedsFullBarrier }) => {
 			const guardedPorts: BeatgridResyncPorts = {
@@ -210,12 +227,18 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 					if (!isStale()) ports.markSettledGridless(d);
 				}
 			};
+			const run = () => {
+				if (isStale()) return Promise.resolve();
+				return (publish(), reconcileAfterBeatgridSettled(guardedPorts, deck, landed));
+			};
+			// Caller already holds [deck] and the wide barrier (both are inside
+			// its own [...DECK_IDS, 'sync'] claim), so run inline: a fresh
+			// runScoped(deck, ...) here would await a nested claim whose only
+			// predecessor is that same still-open outer claim, a direct
+			// self-deadlock (discussion_r3972154599 P1 BLOCKING).
+			if (alreadyScoped) return run();
 			return runScoped(deck, (widen) => {
 				if (isStale()) return Promise.resolve();
-				const run = () => {
-					if (isStale()) return Promise.resolve();
-					return (publish(), reconcileAfterBeatgridSettled(guardedPorts, deck, landed));
-				};
 				if (!resyncSettlementNeedsFullBarrier(guardedPorts, deck, landed)) return run();
 				return (
 					widen(run).catch((error: unknown) =>
@@ -286,7 +309,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				)
 			).catch(onFailure);
 		},
-		adoptAuthoritativeGrid(stableId, data, landed = true) {
+		adoptAuthoritativeGrid(stableId, data, landed = true, alreadyScoped = false) {
 			const settlements: Promise<void>[] = [];
 			for (const deck of ports.deckIds) {
 				if (deckStableId(deck) !== stableId) continue;
@@ -313,7 +336,8 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 							const latest = deckAnlz(deck);
 							publishDeckAnlz(deck, latest === null ? next : { ...latest, beatgrid: data.beatgrid });
 						},
-						isStale
+						isStale,
+						alreadyScoped
 					).catch(
 						_consumeInvalidation(
 							reportError,

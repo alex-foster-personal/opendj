@@ -743,19 +743,30 @@ test('the deferred resync reclaims scope through the scheduler before publishing
 			'an all-scope preset phase - see AGENTS.md on the scoped command ' +
 			'scheduler'
 	);
-	const runnerStart = body.indexOf('runScoped(');
-	const runnerBody = body.slice(runnerStart);
+	// publish()/reconcileAfterBeatgridSettled now live in a `run` helper shared
+	// by both the runScoped path and the alreadyScoped inline bypass
+	// (discussion_r3972154599 P1 BLOCKING: a fresh runScoped(deck, ...) here
+	// when the caller already holds [deck] plus the wide barrier deadlocks
+	// against that still-open outer claim), so their ordering is asserted
+	// against the whole function body rather than the runScoped(...) slice
+	// alone.
 	assert.ok(
-		runnerBody.indexOf('publish()') < runnerBody.indexOf('reconcileAfterBeatgridSettled('),
+		body.indexOf('publish()') < body.indexOf('reconcileAfterBeatgridSettled('),
 		'publish() must run BEFORE reconcileAfterBeatgridSettled, inside the ' +
 			'reclaimed scope - publishing before the scope claim lets other code ' +
 			'observe the grid as landed before reconciliation has run (PR #765 ' +
 			'follow-up P1)'
 	);
 	assert.ok(
-		runnerBody.includes('reconcileAfterBeatgridSettled(guardedPorts, deck, landed)'),
+		body.includes('reconcileAfterBeatgridSettled(guardedPorts, deck, landed)'),
 		'the resync hook never delegates to the pure, independently tested ' +
 			'reconcileAfterBeatgridSettled - see beatgrid-resync.ts'
+	);
+	assert.ok(
+		body.includes('if (alreadyScoped) return run();'),
+		'a caller that already holds [deck] plus the wide barrier must reconcile ' +
+			'inline, not through a fresh runScoped(deck, ...) claim that deadlocks ' +
+			'against its own still-open outer claim (discussion_r3972154599 P1 BLOCKING)'
 	);
 	assert.ok(
 		body.includes('guardedPorts: BeatgridResyncPorts = {') && body.includes('...ports'),
@@ -783,7 +794,7 @@ test('the deferred resync reclaims scope through the scheduler before publishing
 		);
 	}
 	assert.ok(
-		runnerBody.includes('isStale()') && runnerBody.indexOf('isStale()') < runnerBody.indexOf('publish()'),
+		body.includes('isStale()') && body.indexOf('isStale()') < body.indexOf('publish()'),
 		"the reclaimed scope must revalidate isStale() and skip BEFORE publish() runs - only the assignment was " +
 			'guarded by the earlier publish-token fix, so a stale landed/deck pair could still reach ' +
 			'reconcileAfterBeatgridSettled and phase-lock or permanently gridless-mark a replacement track ' +
