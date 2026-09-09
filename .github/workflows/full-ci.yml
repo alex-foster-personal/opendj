@@ -168,7 +168,7 @@ jobs:
         # See ci.yml: libsqlcipher-dev ships the runtime shared library on
         # Ubuntu noble.
         run: |
-          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just'
+          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
 
       - name: Runner preflight - host binaries the suite shells out to
         # Name the missing binary at second five rather than minute four:
@@ -178,7 +178,7 @@ jobs:
         # that shard had landed on the other host. The list is pinned by
         # tests/scripts/test_ci_shard_binary_preflight.py; provisioning lives in
         # docs/ci-actions-cost-review-2026-08-16.md item 7.
-        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
 
       - name: Keep the numba JIT cache across jobs on this runner
         # librosa's numba artifacts live beside its source by default, and this

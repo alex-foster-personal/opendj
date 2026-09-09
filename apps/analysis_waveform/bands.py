@@ -1,12 +1,20 @@
-"""Waveform band decode: raw ANLZ tag entries -> the ``waveform`` payload bands.
+"""Waveform band arithmetic: band dicts (and raw ANLZ tag entries) -> payload bands.
 
-Split out of ``anlz.py`` for the same reason ``waveform_native.py`` was (see its
+Split out of ``anlz.py`` for the same reason ``native.py`` was (see its
 docstring): this is band arithmetic, not ANLZ container decode, and ``anlz.py``
 had reached the 600-line gate. Nothing here touches the filesystem, pyrekordbox,
 or a PMAI container -- it takes an already-parsed tag (or a band dict) and does
 numpy work, which is also what makes the native/Python equivalence tests cheap.
 
-Consumers reach every name here through the ``rb_vendor`` facade.
+Homed in ``apps.analysis_waveform`` rather than ``apps.webui`` since the own
+tri-band lane landed (NATIVE-06, specs/native-analysis-v1.md D5). Both the
+rekordbox ANLZ path and this repo's own ffmpeg decoder shape their bands with
+these functions, and a domain package importing the delivery layer to reach
+them would have closed an ``apps.analysis_waveform <-> apps.webui`` package
+cycle (the inversion .importlinter's DEBT block prescribes, applied before the
+cycle existed rather than after).
+
+webui consumers still reach every name here through the ``rb_vendor`` facade.
 """
 
 from __future__ import annotations
@@ -15,8 +23,12 @@ from typing import Any
 
 import numpy as np
 
-from apps.webui.server.rb_vendor_pkg.waveform_native import _WAVEFORM_NATIVE
+from apps.analysis_waveform.native import _WAVEFORM_NATIVE
 
+# The ONE browser-strip width (SPIKE-A1 section 2): uint8[120][3] interleaved
+# [low, mid, hi]. Homed here rather than restated per source, so the rekordbox
+# ANLZ strip and this repo's own decoded strip cannot drift to two widths.
+STRIP_COLUMNS: int = 120
 # PWV6/PWV7 raw byte columns -> band names (SPIKE-A1 section 3 proof).
 _BAND_COLUMNS: tuple[tuple[str, int], ...] = (("low", 0), ("mid", 1), ("high", 2))
 _TRI_SCALE: float = 127.0

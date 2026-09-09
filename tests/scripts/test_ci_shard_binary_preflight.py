@@ -25,8 +25,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 #: Binaries the suite or the contracts job shells out to on a Linux runner.
-#: Each entry is a red that already happened, with its provisioning fix.
-REQUIRED = ("file", "bwrap", "just", "pkg-config", "cargo", "uv")
+#: Each entry is a red that already happened, with its provisioning fix, except
+#: `ffmpeg`, which is the opposite failure and worse: `tests/conftest.py` turns
+#: `requires_ffmpeg` into a SKIP, so the NATIVE-06 decoder acceptance tests did
+#: not go red without it - they silently did not run, and a swapped `amerge`
+#: channel or a broken filter graph could merge green (Codex review, PR #1536;
+#: AGENTS.md "Never silently skip acceptance because ... a platform is
+#: missing"). Naming it here means a host without it fails loudly at second
+#: five instead of reporting a smaller suite as a pass.
+REQUIRED = ("file", "bwrap", "just", "pkg-config", "cargo", "uv", "ffmpeg")
 
 PYTEST_JOBS = (("ci.yml", "test"), ("ci.yml", "contracts"), ("full-ci.yml", "test"))
 

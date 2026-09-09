@@ -1,4 +1,4 @@
-"""Waveform peaks decoded by US, for tracks rekordbox never analyzed.
+"""Tri-band waveform peaks decoded by US, for tracks rekordbox never analyzed.
 
 A track imported straight into OpenDJ has a ``tracks`` row and playable audio
 but no ``track_vendor_ids`` mapping, so there is no ANLZ file to read: the
@@ -6,18 +6,17 @@ deck lane and the browser preview strip both went blank (PARITY-TODO, "Local
 import - what breaks"). This module fills that gap from the only source that
 actually exists for such a track - its own audio bytes.
 
-Decoder: ffmpeg, the same external tool the USB transcode preflight already
-requires (``apps/sync/usb/preflight.py``). It is decoding to a mono 8 kHz
-s16le stream purely to build a peak envelope, so no resampling quality
-argument applies, and it reaches every container in AUDIO_MEDIA_TYPES without
-adding librosa/soundfile (the opt-in ``analysis`` extra) to the web server's
-runtime deps.
+The decode itself lives in :mod:`apps.analysis_waveform.decode` (ffmpeg, the
+three band chains, the streaming peak reduction, and why 200 Hz / 4 kHz /
+44.1 kHz). This module is the on-disk cache, the payload shapes and the
+admission gate that keeps a decode off the API's worker threads.
 
 Three hard rules, all tested:
 
 * Nothing here EVER synthesises a shape. When the decode has not run and
   cannot run, callers get empty bands plus an explicit ``not_decoded`` status
-  naming the reason - never a plausible-looking envelope.
+  naming the reason - never a plausible-looking envelope. The three bands are
+  three MEASURED envelopes (NATIVE-06), never one envelope copied three times.
 * The peaks describe the bytes the deck actually streams. The audio path comes
   from :func:`resolve_playable_audio` under the SAME ``share`` audience
   ``GET /audio`` resolved for this request, so the lane and the sound cannot
@@ -28,10 +27,7 @@ Three hard rules, all tested:
   for every track. That is deliberate: a host that cannot resolve audio cannot
   honestly draw its waveform either, and a quietly empty lane would hide the
   real fault.
-* PCM is never buffered whole. An hour of 8 kHz mono s16le is ~58 MB, and two
-  of those in flight could take the web server down, so the peak reduction
-  consumes ffmpeg's stdout in fixed chunks and keeps only the uint8 peak
-  columns (~151 bytes per second of audio).
+* PCM is never buffered whole. See :mod:`apps.analysis_waveform.decode`.
 
 Where the decode runs: ``GET /anlz`` (one track, on demand, cached after).
 Library row hydration is cache-READ-only - a listing of 200 rows must never
@@ -47,33 +43,36 @@ run and stall the whole API, so admission is capped at MAX_DECODE_WAITERS and
 the wait for a decode slot is capped at DECODE_QUEUE_WAIT_S. Past either cap
 the answer is an immediate, honest ``not_decoded`` - never a stalled request.
 
-One cache slot per track, keyed by the resolved file's path/mtime/size. An
-audience switch resolves a different file, so the key stops matching and the
-peaks are re-decoded rather than a stale shape being served.
+One cache slot per track, keyed by the resolved file's path/mtime/size AND by
+:func:`peaks_version`. An audience switch resolves a different file, so the key
+stops matching and the peaks are re-decoded rather than a stale shape being
+served; a band, rate or crossover change moves the version, so the mono entries
+this cache held before NATIVE-06 are rebuilt rather than reshaped into garbage.
 """
 
 from __future__ import annotations
 
 import base64
-import io
 import json
 import logging
 import os
-import shutil
-import subprocess
 import tempfile
 import threading
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 import numpy as np
 from fastapi import HTTPException
 
 from apps.adapters.rekordbox import config
-from apps.webui.server.rb_vendor_pkg.anlz import PREVIEW_COLUMNS as STRIP_COLUMNS
-from apps.webui.server.rb_vendor_pkg.waveform_bands import (
-    _bands_payload,
-    _downsample_max,
+from apps.analysis_waveform import decode
+from apps.analysis_waveform.bands import STRIP_COLUMNS, _bands_payload, _downsample_max
+from apps.analysis_waveform.decode import (
+    BAND_COUNT,
+    BAND_NAMES,
+    OVERVIEW_COLUMNS,
+    LocalDecodeUnavailable,
+    decode_peaks,
 )
 
 # STRIP_COLUMNS is imported, not restated: the browser strip is ONE contract
@@ -82,24 +81,7 @@ from apps.webui.server.rb_vendor_pkg.waveform_bands import (
 
 log = logging.getLogger(__name__)
 
-FFMPEG_BINARY: str = "ffmpeg"
-# A peak envelope, not a listenable signal: 8 kHz is 53x the ~150 columns/s the
-# detail lane draws, so every column still sees 53 samples to take a max over.
-DECODE_SAMPLE_RATE_HZ: int = 8_000
-# Matches the rekordbox PWV3/PWV7 detail density, so a locally decoded lane and
-# an ANLZ lane draw at the same scale.
-DETAIL_COLUMNS_PER_S: int = 150
-# The reduction works in WHOLE columns so it can run on a stream: 8000/150 is
-# not an integer, so a column is 53 samples and the real density is 150.94
-# columns/s. That 0.6% is invisible - the client maps a column to a position by
-# fraction-of-length, never by assuming a columns-per-second constant.
-SAMPLES_PER_COLUMN: int = DECODE_SAMPLE_RATE_HZ // DETAIL_COLUMNS_PER_S
-# Matches the rekordbox PWAV/PWV6 preview length, which is what the deck's
-# strip overview draws. Deliberately NOT called PREVIEW_COLUMNS: that name is
-# already the 120-wide BROWSER strip in anlz.py, and the two are different
-# widths for different surfaces.
-OVERVIEW_COLUMNS: int = 400
-DECODE_TIMEOUT_S: float = 180.0
+_PEAK_SCALE: int = 255  # int16 |amplitude| >> 7, so a full-scale sine hits 255
 # ffmpeg is CPU-bound. Two decoders keep a deck load quick without turning a
 # burst of selects into a fork bomb.
 MAX_CONCURRENT_DECODES: int = 2
@@ -111,180 +93,29 @@ MAX_DECODE_WAITERS: int = 8
 # giving up. Well under any sane client timeout, so a queued request answers
 # honestly instead of hanging.
 DECODE_QUEUE_WAIT_S: float = 30.0
-# stdout is consumed in chunks; only the uint8 peak columns are retained.
-READ_CHUNK_BYTES: int = 1 << 20
 
-_PEAK_SCALE: int = 255  # int16 |amplitude| >> 7, so a full-scale sine hits 255
-_INT16_MAX: int = 32_767
-_COLUMN_BYTES: int = SAMPLES_PER_COLUMN * 2
+# Generation prefix for changes with no decode constant behind them. The
+# mono -> tri column shape was one: nothing in the numbers below moved, but a
+# cached entry written before it means something different.
+PEAKS_GENERATION: str = "tri-1"
+
+
+def peaks_version(profile: decode.DecodeProfile = decode.PROFILE) -> str:
+    """What peaks decoded under ``profile`` MEAN, derived from the profile.
+
+    Derived, not hand-maintained: a version anyone has to remember to bump is a
+    value that rots silently between maintenances, and this one cannot, because
+    changing any field of the profile IS the bump. Taking the profile as an
+    ARGUMENT is what lets a caller ask about a different real producer
+    configuration without patching a module attribute (AGENTS.md forbids
+    monkeypatching; Codex review, PR #1536).
+    """
+    return f"{PEAKS_GENERATION}:{profile.identity()}"
 
 _DECODE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_DECODES)
 _DECODE_ADMISSION = threading.BoundedSemaphore(MAX_DECODE_WAITERS)
 _TRACK_LOCKS_GUARD = threading.Lock()
 _TRACK_LOCKS: dict[str, threading.Lock] = {}
-
-
-class LocalDecodeUnavailable(Exception):
-    """The decode did not run, and why. Surfaced in the payload, never hidden.
-
-    ``retryable`` marks a TRANSIENT condition (decoder momentarily saturated)
-    as opposed to a fact about the track itself (no ffmpeg, corrupt audio,
-    missing file). The distinction matters downstream: a retryable failure
-    must never be cached as if it were permanent - see its use in
-    :func:`local_anlz_payload` and the route's Cache-Control choice.
-    """
-
-    def __init__(self, reason: str, *, retryable: bool = False) -> None:
-        super().__init__(reason)
-        self.reason: str = reason
-        self.retryable: bool = retryable
-
-
-# ----- streaming peak reduction -----------------------------------------------
-
-
-def _column_peaks(block: bytes) -> np.ndarray:
-    """Peak byte per whole column in ``block`` (a multiple of _COLUMN_BYTES)."""
-    samples = np.frombuffer(block, dtype="<i2").reshape(-1, SAMPLES_PER_COLUMN)
-    # -32768 has no positive int16 twin; clamp before the shift so one sample
-    # cannot wrap a column to 0.
-    amplitude = np.minimum(np.abs(samples.astype(np.int32)), _INT16_MAX)
-    return (amplitude.max(axis=1) >> 7).astype(np.uint8)
-
-
-def _tail_peak(block: bytes) -> np.ndarray:
-    """One final column for a short tail. Real samples, never padded to width."""
-    usable = len(block) - len(block) % 2
-    samples = np.frombuffer(block[:usable], dtype="<i2")
-    amplitude = np.minimum(np.abs(samples.astype(np.int32)), _INT16_MAX)
-    return (amplitude.max(keepdims=True) >> 7).astype(np.uint8)
-
-
-def _reduce_stream(stream: IO[bytes], *, chunk_bytes: int = READ_CHUNK_BYTES) -> np.ndarray:
-    """Peak columns for a PCM stream, holding at most one chunk in memory.
-
-    A read boundary lands anywhere, so bytes past the last whole column carry
-    over into the next chunk. Reducing as we go is what keeps an hour-long
-    track at ~540 KB of peaks instead of ~58 MB of PCM.
-    """
-    columns: list[np.ndarray] = []
-    remainder = b""
-    while True:
-        chunk = stream.read(chunk_bytes)
-        if not chunk:
-            break
-        buffer = remainder + chunk if remainder else chunk
-        whole = len(buffer) - len(buffer) % _COLUMN_BYTES
-        if whole:
-            columns.append(_column_peaks(buffer[:whole]))
-        remainder = buffer[whole:]
-    if len(remainder) >= 2:
-        columns.append(_tail_peak(remainder))
-    if not columns:
-        return np.empty(0, dtype=np.uint8)
-    return np.concatenate(columns)
-
-
-def _peak_columns(pcm: bytes, *, chunk_bytes: int = READ_CHUNK_BYTES) -> np.ndarray:
-    """Whole-buffer form of :func:`_reduce_stream`, for callers holding bytes."""
-    return _reduce_stream(io.BytesIO(pcm), chunk_bytes=chunk_bytes)
-
-
-# ----- ffmpeg decode ----------------------------------------------------------
-
-
-def _resolve_ffmpeg() -> str:
-    """ffmpeg executable path: MDT_FFMPEG override first, else PATH lookup.
-
-    A packaged/GUI-launched app does not inherit Homebrew's PATH the way a
-    shell does, so a bare PATH lookup can find nothing even with ffmpeg
-    installed (discussion_r3908337225, issue #735 follow-up). MDT_FFMPEG is
-    the same escape hatch scripts/vocal_region_worker.py and
-    scripts/stem_bundle_worker.py already use for this. Unlike
-    vocal_region_worker.py this does not mutate os.environ["PATH"]: this
-    module runs inside a long-lived, multi-threaded server process, and a
-    process-wide PATH mutation on a request path would race every
-    concurrently-decoding request.
-
-    A set-but-broken MDT_FFMPEG raises rather than falling back to PATH -
-    silently ignoring an explicit override would mask the misconfiguration
-    (fail-fast, no hidden defaults).
-    """
-    override = os.environ.get("MDT_FFMPEG")
-    if override:
-        if Path(override).is_file() and os.access(override, os.X_OK):
-            return override
-        raise LocalDecodeUnavailable(f"MDT_FFMPEG={override!r} is not an executable file")
-    exe = shutil.which(FFMPEG_BINARY)
-    if exe is None:
-        raise LocalDecodeUnavailable(
-            "ffmpeg is not on PATH, so no local waveform can be decoded "
-            "(set MDT_FFMPEG to an ffmpeg executable path to override - a "
-            "packaged app launch does not inherit Homebrew's PATH)"
-        )
-    return exe
-
-
-def _decode_peaks(path: Path) -> np.ndarray:
-    """Peak columns for ``path`` via ffmpeg, or raise with a stated reason."""
-    exe = _resolve_ffmpeg()
-    command = [
-        exe, "-nostdin", "-v", "error",
-        "-i", str(path),
-        "-map", "0:a:0",
-        "-f", "s16le", "-acodec", "pcm_s16le",
-        "-ac", "1", "-ar", str(DECODE_SAMPLE_RATE_HZ),
-        "-",
-    ]
-    timed_out = threading.Event()
-    # stderr goes to a temp FILE, not a pipe: nothing drains a second pipe
-    # while stdout is being consumed, and a chatty decoder filling the stderr
-    # buffer would deadlock the process forever.
-    with tempfile.TemporaryFile() as errors:
-        try:
-            process = subprocess.Popen(  # fixed argv, never a shell
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=errors,
-            )
-        except OSError as exc:
-            # The kernel, not ffmpeg, rejected the launch - a wrong-architecture
-            # binary, a script with a missing interpreter, or the resolved path
-            # vanishing between _resolve_ffmpeg's check and this spawn. Left
-            # uncaught this propagates past LocalDecodeUnavailable's one catch
-            # in local_anlz_payload, turning a should-be not_decoded response
-            # into a 500 (discussion_r3909904294, issue #735 follow-up).
-            raise LocalDecodeUnavailable(f"ffmpeg could not be launched: {exc}") from None
-        stdout = process.stdout
-        if stdout is None:  # pragma: no cover - Popen(stdout=PIPE) always sets it
-            raise LocalDecodeUnavailable("ffmpeg stdout could not be opened")
-
-        def _kill_on_deadline() -> None:
-            timed_out.set()
-            process.kill()
-
-        watchdog = threading.Timer(DECODE_TIMEOUT_S, _kill_on_deadline)
-        watchdog.start()
-        try:
-            peaks = _reduce_stream(stdout)
-        finally:
-            watchdog.cancel()
-            stdout.close()
-            returncode = process.wait()
-        if timed_out.is_set():
-            raise LocalDecodeUnavailable(
-                f"ffmpeg did not finish decoding within {DECODE_TIMEOUT_S:.0f}s"
-            )
-        if returncode != 0:
-            errors.seek(0)
-            tail = errors.read().decode("utf-8", "replace").strip().splitlines()
-            raise LocalDecodeUnavailable(
-                f"ffmpeg exited {returncode}: {tail[-1] if tail else 'no stderr'}"
-            )
-    if peaks.size == 0:
-        raise LocalDecodeUnavailable("ffmpeg decoded zero audio samples")
-    return peaks
 
 
 # ----- on-disk cache ----------------------------------------------------------
@@ -339,9 +170,17 @@ def _source_key(path: Path) -> dict[str, Any]:
 
 
 def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
+    """Whether ``entry`` was written by THIS decoder from THESE bytes.
+
+    ``peaks_version`` is absent from every entry written before NATIVE-06, so a
+    mono cache misses here and is re-decoded. It must never be reshaped as if it
+    were tri-band: a 1-D mono array reinterpreted as ``(n, 3)`` would render as
+    a plausible waveform made of the wrong numbers, which is the exact failure
+    an explicit version key exists to prevent.
+    """
     return (
         entry.get("schema") == config.LOCAL_WAVEFORM_CACHE_SCHEMA
-        and entry.get("samples_per_column") == SAMPLES_PER_COLUMN
+        and entry.get("peaks_version") == peaks_version()
         and all(entry.get(name) == value for name, value in key.items())
     )
 
@@ -385,7 +224,13 @@ def _cached_peaks(stable_id: str, key: dict[str, Any]) -> np.ndarray | None:
     entry = _read_json(_entry_path(stable_id))
     if entry is None or not _entry_is_current(entry, key):
         return None
-    return np.frombuffer(base64.b64decode(entry["peaks_b64"]), dtype=np.uint8)
+    raw = np.frombuffer(base64.b64decode(entry["peaks_b64"]), dtype=np.uint8)
+    if raw.size % BAND_COUNT:
+        # A current-version entry whose payload is not a whole number of
+        # 3-band columns is corrupt, not a shape to guess at.
+        log.warning("local waveform cache entry has a ragged band payload: %s", stable_id)
+        return None
+    return raw.reshape(-1, BAND_COUNT)
 
 
 def _store_peaks(stable_id: str, key: dict[str, Any], peaks: np.ndarray) -> None:
@@ -403,7 +248,7 @@ def _store_peaks(stable_id: str, key: dict[str, Any], peaks: np.ndarray) -> None
         _strip_path(stable_id),
         {
             "schema": config.LOCAL_WAVEFORM_CACHE_SCHEMA,
-            "samples_per_column": SAMPLES_PER_COLUMN,
+            "peaks_version": peaks_version(),
             "preview_b64": preview_b64,
             "preview_max": preview_max,
             **key,
@@ -413,8 +258,8 @@ def _store_peaks(stable_id: str, key: dict[str, Any], peaks: np.ndarray) -> None
         _entry_path(stable_id),
         {
             "schema": config.LOCAL_WAVEFORM_CACHE_SCHEMA,
-            "samples_per_column": SAMPLES_PER_COLUMN,
-            "peaks_b64": base64.b64encode(peaks.tobytes()).decode("ascii"),
+            "peaks_version": peaks_version(),
+            "peaks_b64": base64.b64encode(np.ascontiguousarray(peaks).tobytes()).decode("ascii"),
             **key,
         },
     )
@@ -426,33 +271,32 @@ def _store_peaks(stable_id: str, key: dict[str, Any], peaks: np.ndarray) -> None
 def _strip_from_peaks(peaks: np.ndarray) -> tuple[str | None, int | None]:
     """The 120x3 browser strip, or ``(None, None)`` for too few columns.
 
-    Under 120 columns (below ~0.8 s of audio) there is nothing to downsample to
+    Under 120 columns (below 0.8 s of audio) there is nothing to downsample to
     the contract width, and padding it would be invented data.
     """
-    if peaks.size < STRIP_COLUMNS:
+    if peaks.shape[0] < STRIP_COLUMNS:
         return None, None
-    columns = np.repeat(peaks[:, np.newaxis], 3, axis=1)
-    strip = _downsample_max(columns, STRIP_COLUMNS)
+    strip = _downsample_max(peaks, STRIP_COLUMNS)
     return base64.b64encode(strip.tobytes()).decode("ascii"), int(strip.max())
 
 
-def _mono_bands_from_peaks(peaks: np.ndarray) -> dict[str, np.ndarray]:
-    """One decoded envelope 0..1 under all three band keys.
+def _bands_from_peaks(peaks: np.ndarray) -> dict[str, np.ndarray]:
+    """The three MEASURED envelopes, 0..1, under their band keys.
 
-    Identical convention to ``waveform_bands._mono_bands`` for a rekordbox PWAV
-    lane: ``kind="mono"`` tells the client these are single-band heights, so
-    duplicating them is a declared shape, not three invented frequency bands.
+    ``kind="tri"`` tells the client these are real per-band heights, the same
+    claim a rekordbox PWV6/PWV7 lane makes - so unlike the mono fallback this
+    one has to be earned by the decoder, not by duplicating one array.
     """
     scaled = np.clip(peaks.astype(np.float64) / _PEAK_SCALE, 0.0, 1.0)
-    return {"low": scaled, "mid": scaled, "high": scaled}
+    return {name: scaled[:, index] for index, name in enumerate(BAND_NAMES)}
 
 
 def _waveform_payload(peaks: np.ndarray, points: int) -> dict[str, Any]:
     overview = _downsample_max(peaks, OVERVIEW_COLUMNS)
     return {
-        "kind": "mono",
-        "preview": _bands_payload(_mono_bands_from_peaks(overview), points),
-        "detail": _bands_payload(_mono_bands_from_peaks(peaks), points),
+        "kind": "tri",
+        "preview": _bands_payload(_bands_from_peaks(overview), points),
+        "detail": _bands_payload(_bands_from_peaks(peaks), points),
     }
 
 
@@ -460,7 +304,7 @@ def _waveform_payload(peaks: np.ndarray, points: int) -> dict[str, Any]:
 
 
 def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
-    """Decoded peaks for ``stable_id``, from cache or a fresh ffmpeg decode.
+    """Decoded ``(n, 3)`` peaks for ``stable_id``, from cache or a fresh decode.
 
     ``share`` is the request's audio audience, forwarded to the same resolver
     ``GET /audio`` uses so the peaks describe the file this listener actually
@@ -507,7 +351,7 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
                     retryable=True,
                 )
             try:
-                peaks = _decode_peaks(path)
+                peaks = decode_peaks(path)
             finally:
                 _DECODE_SLOTS.release()
             _store_peaks(stable_id, key, peaks)
@@ -582,14 +426,13 @@ def local_preview_strip(stable_id: str) -> tuple[str | None, int | None]:
 
 __all__ = [
     "DECODE_QUEUE_WAIT_S",
-    "DECODE_SAMPLE_RATE_HZ",
-    "DETAIL_COLUMNS_PER_S",
+    "MAX_CONCURRENT_DECODES",
     "MAX_DECODE_WAITERS",
-    "OVERVIEW_COLUMNS",
-    "SAMPLES_PER_COLUMN",
+    "PEAKS_GENERATION",
     "STRIP_COLUMNS",
     "LocalDecodeUnavailable",
     "ensure_local_peaks",
     "local_anlz_payload",
     "local_preview_strip",
+    "peaks_version",
 ]
