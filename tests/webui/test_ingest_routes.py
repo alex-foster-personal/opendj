@@ -179,22 +179,26 @@ def test_coverage_excludes_broken_links(client, app, tmp_path):
     assert out["corrupt"] == {"analysis": 0, "stems": 0, "vocals": 0, "lyrics": 0}
 
 
-def test_coverage_counts_a_valid_secondary_roformer_bundle(client, app, tmp_path, monkeypatch):
-    """A RoFormer-only track is covered and never enters the stems refresh queue."""
+def test_coverage_counts_a_valid_secondary_roformer_bundle(client, app, tmp_path):
+    """A RoFormer-only track is covered and never enters the stems refresh queue.
+
+    Configures the roots the same way ``create_app`` does for remote library
+    mode (``app.state.stem_roots``), not by monkeypatching the ``stem_roots``
+    helper - the route and the worker must read the SAME configured roots a
+    real deployment would set, or this test can pass while the endpoint still
+    ignores them.
+    """
     audio = tmp_path / "real.mp3"
     audio.write_bytes(b"x" * 4096)
     _seed_track(app, "roformer-only", audio)
     roformer_root = tmp_path / "stems-roformer-spike"
     _write_roformer_bundle(roformer_root, "roformer-only")
-    monkeypatch.setattr(
-        ingest_mod,
-        "stem_roots",
-        lambda _primary: (ingest_mod.DEFAULT_STEMS_DIR, roformer_root),
-        raising=False,
-    )
+    app.state.stem_roots = (ingest_mod.DEFAULT_STEMS_DIR, roformer_root)
 
     coverage = client.get("/api/v1/ingest/coverage").json()
-    targets = ingest_mod._library_targets(ingest_mod._RefreshJob(0.0, []))
+    targets = ingest_mod._library_targets(
+        ingest_mod._RefreshJob(0.0, []), ingest_mod._stem_roots(app)
+    )
 
     assert coverage["missing"]["stems"] == 0
     assert targets["stems"] == []
