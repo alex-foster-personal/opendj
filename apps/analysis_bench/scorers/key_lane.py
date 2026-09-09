@@ -293,6 +293,34 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
 
 
 #-----------------------------------------------------------------------------
+def _attempt_stats(
+    stable_ids: list[str], results: dict[str, Any], answers: _ReferenceMap
+) -> dict[str, Any]:
+    """Split one arm's fixtures into omitted / failed / successful.
+
+    ATTEMPTED but not SUCCESSFUL: a result entry exists (the candidate tried)
+    but it carried an explicit error or no scorable key came out of it --
+    distinct from omitted (no entry at all). `successful_ids` feeds the
+    successful-only score spec section 5's baseline paragraph asks for
+    beside the all-attempted one (Codex P1 BLOCKING, PR #1620: the first cut
+    computed only the all-attempted score and dropped the candidate's own
+    self-reported `n_failed`).
+    """
+    n_omitted = sum(1 for sid in stable_ids if sid not in results)
+    n_attempted = len(stable_ids) - n_omitted
+    n_failed = sum(1 for sid in stable_ids if sid in results and answers[sid] is None)
+    successful_ids = [sid for sid in stable_ids if sid in results and answers[sid] is not None]
+    return {
+        "n_omitted": n_omitted,
+        "n_failed": n_failed,
+        # Named denominator, not a bare percentage (house honest-
+        # denominators rule): a rate with no stated "of what" is the exact
+        # defect that rule exists to catch.
+        "failure_rate": f"{n_failed}/{n_attempted}" if n_attempted else "0/0",
+        "successful_ids": successful_ids,
+    }
+
+
 def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Score every arm of a round against one bundle's rekordbox+MIK truth."""
     manifest, rekordbox, mik = load_bundle(Path(bundle))
@@ -307,32 +335,14 @@ def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any
                 f"first {unknown[0]!r}. It was run against a different fixture set; "
                 "scoring it here would attribute one bundle's numbers to another."
             )
-        n_omitted = sum(1 for sid in stable_ids if sid not in results)
         answers = {sid: _parse_candidate(results.get(sid)) for sid in stable_ids}
-        # ATTEMPTED but not SUCCESSFUL: a result entry exists (the candidate
-        # tried) but it carried an explicit error or no scorable key came out
-        # of it -- distinct from n_omitted (no entry at all). successful_ids
-        # feeds the successful-only score spec section 5's baseline
-        # paragraph asks for beside the all-attempted one (Codex P1 BLOCKING,
-        # PR #1620: the first cut computed only the all-attempted score and
-        # dropped the candidate's own self-reported `payload["n_failed"]`).
-        n_attempted = len(stable_ids) - n_omitted
-        n_failed = sum(
-            1 for sid in stable_ids if sid in results and answers[sid] is None
-        )
-        successful_ids = [
-            sid for sid in stable_ids if sid in results and answers[sid] is not None
-        ]
+        attempt = _attempt_stats(stable_ids, results, answers)
+        successful_ids = attempt.pop("successful_ids")
         scored[name] = {
             "role": arm["role"],
             "note": arm.get("note", ""),
-            "n_omitted": n_omitted,
-            "n_failed": n_failed,
             "n_failed_reported": arm["payload"].get("n_failed"),
-            # Named denominator, not a bare percentage (house honest-
-            # denominators rule): a rate with no stated "of what" is the
-            # exact defect that rule exists to catch.
-            "failure_rate": f"{n_failed}/{n_attempted}" if n_attempted else "0/0",
+            **attempt,
             "vs_rekordbox": _score_against(stable_ids, rekordbox, answers),
             "vs_rekordbox_successful_only": _score_against(successful_ids, rekordbox, answers),
             "vs_mik": _score_against(stable_ids, mik, answers),
