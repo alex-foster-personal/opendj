@@ -159,6 +159,7 @@ export type PerformanceCommand =
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
+	| { type: 'filter'; deck: DeckId; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
 	| { type: 'assign'; deck: DeckId; assign: CrossfaderAssign }
 	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
@@ -996,7 +997,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`mode must be "beat" or "bar"; got ${String(record.mode)}`);
 		}
 		return { type, deck, mode: record.mode };
-	} else if (type === 'trim' || type === 'fader') {
+	} else if (type === 'trim' || type === 'fader' || type === 'filter') {
 		_exactKeys(record, ['type', 'deck', 'value']);
 		return { type, deck, value: _unit('value', record.value) };
 	} else if (type === 'eq') {
@@ -1363,6 +1364,7 @@ export function performanceCommandQueueScopes(
 	if (
 		command.type === 'trim' ||
 		command.type === 'eq' ||
+		command.type === 'filter' ||
 		command.type === 'fader' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
@@ -1539,6 +1541,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
 		engine.setEq(command.deck, command.band, command.value);
+	} else if (command.type === 'filter') {
+		engine.setFilter(command.deck, command.value);
 	} else if (command.type === 'fader') {
 		engine.setFader(command.deck, command.value);
 		} else if (command.type === 'assign') {

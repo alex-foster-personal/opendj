@@ -1,6 +1,12 @@
 import {
-	METER_FLOOR_DBFS,
 	createMeterTap,
+	SILENT_METER_READING,
+	createMasterMeterSource,
+	masterMeterReading,
+	metersUnavailable,
+	onMetersUnavailableChange,
+	meterClockMs,
+	releaseMasterMeterTap,
 	readMeterTap,
 	type MeterReading,
 	type MeterTap,
@@ -182,6 +188,7 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
+	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -400,6 +407,8 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
+	filterLp: BiquadFilterNode; filterHp: BiquadFilterNode;
+	filterDry: GainNode; filterLpWet: GainNode; filterHpWet: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -573,26 +582,21 @@ const _meterTaps: Record<DeckId, MeterTap | null> = { 1: null, 2: null, 3: null,
 
 export function peekDeckMeterReading(deck: DeckId): MeterReading {
 	const tap = _meterTaps[deck];
-	if (_rt[deck].nodes === null || tap === null) {
-		return {
-			db: METER_FLOOR_DBFS,
-			peakDb: METER_FLOOR_DBFS,
-			segments: 0,
-			normalized: 0,
-			clipped: false
-		};
-	}
-	return readMeterTap(tap, _meterClockMs());
+	if (_rt[deck].nodes === null || tap === null) return SILENT_METER_READING;
+	return readMeterTap(tap, meterClockMs());
 }
 
-/** Wall clock for meter ballistics. Falls back to Date.now() only where
- * performance.now() is genuinely absent, and both are monotonic enough for a
- * decay measured in hundreds of milliseconds. */
-function _meterClockMs(): number {
-	return typeof performance === 'object' && typeof performance.now === 'function'
-		? performance.now()
-		: Date.now();
+/** Master output level. The tap, the silent fallback and the "what does red
+ * mean here" contract all live in meter-tap.ts; the engine supplies only the
+ * clock, so the barrel stays the one import edge a meter component needs. */
+export function peekMasterMeterReading(): MeterReading {
+	return masterMeterReading(meterClockMs());
 }
+
+/** Re-exported so a meter component can tell a genuinely broken meter
+ * (worklet failed to arm) apart from a genuinely silent bus. See
+ * meter-tap.ts's metersUnavailable/UNAVAILABLE_METER_READING. */
+export { metersUnavailable, onMetersUnavailableChange };
 
 export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	const presentation = _rt[deck].presentation;
@@ -715,9 +719,13 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect(_masterMuteGain);
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	// Post-EQ, pre-fader tap points, one per deck. Collected here and armed
-	// after the loop because addModule is async and the graph build is not.
+	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
+	// from `_masterGain` itself (post master gain, so the master volume
+	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
+	// Collected here and armed after the loop because addModule is async and
+	// the graph build is not.
 	const meterSources: MeterTapSource[] = [];
+	meterSources.push(createMasterMeterSource(_masterGain));
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -740,6 +748,15 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
+		const filterLp = _ctx.createBiquadFilter();
+		filterLp.type = 'lowpass'; filterLp.Q.value = FILTER_Q; filterLp.frequency.value = lpHz;
+		const filterHp = _ctx.createBiquadFilter();
+		filterHp.type = 'highpass'; filterHp.Q.value = FILTER_Q; filterHp.frequency.value = hpHz;
+		// Separate wet gains (#990): the inactive side is silenced, not left in series.
+		const filterDry = _ctx.createGain(); filterDry.gain.value = dryGain;
+		const filterLpWet = _ctx.createGain(); filterLpWet.gain.value = lpWetGain;
+		const filterHpWet = _ctx.createGain(); filterHpWet.gain.value = hpWetGain;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -750,9 +767,11 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
-		high.connect(cue);
+		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
+		filterLp.connect(filterLpWet); filterHp.connect(filterHpWet);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
 		cue.connect(headphones.cueSum);
-		high.connect(fader);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
@@ -764,9 +783,8 @@ function _ensureGraph(): AudioContext {
 			fader.connect(xf);
 			xf.connect(_masterGain);
 		}
-		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
-		// `high` is post-trim and post-EQ but pre-fader: the DJM convention, and
-		// the reason the meter can be trusted for gain staging. See meter-tap.ts.
+		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, filterDry, filterLpWet, filterHpWet, cue, fader, xf, extsplit };
+		// `high` is post-trim/EQ, pre-filter, pre-fader: the meter reads gain staging INTO the filter (#990).
 		const tap = createMeterTap();
 		_meterTaps[deck] = tap;
 		meterSources.push({ tap, source: high });
@@ -944,6 +962,7 @@ import {
 	assertDeckReplacementAllowed,
 	assertDeckLoadConsistency,
 	loadCandidateCanPublish,
+	filterParamsFromKnob,
 	nextPlayingMaster,
 	pausedMasterSelectionBlockers,
 	assertPausedMasterSelectionAllowed,
@@ -2783,6 +2802,7 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		releaseMasterMeterTap();
 		// The mute VALUE survives teardown on purpose: a route remount must not
 		// hand a headless agent its audio back. Only the node is released.
 		attachMasterMuteNode(null);
@@ -3966,6 +3986,18 @@ class RbAudioEngine implements AudioEngine {
 		} else {
 			const _exhaustive: never = band;
 			throw new Error(`Unhandled EQ band: ${_exhaustive}`);
+		}
+	}
+
+	setFilter(deck: DeckId, value: number): void {
+		_assertUnit('setFilter value', value);
+		mixerState.channels[deck].filter = value;
+		const nodes = _rt[deck].nodes;
+		if (nodes !== null) {
+			const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(value);
+			_setParam(nodes.filterLp.frequency, lpHz); _setParam(nodes.filterHp.frequency, hpHz);
+			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
+			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
 	}
 
