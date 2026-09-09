@@ -44,8 +44,14 @@ from .lane_enums import (
     LaneStatus,
     Producer,
 )
+from .lane_payloads import (
+    beats_within_duration,
+    key_segments_within_duration,
+    tempo_changes_within_duration,
+)
 from .lane_payloads import check_lane_confidence as _check_lane_confidence
 from .lane_payloads import validate_lane_payload as _payload_validate
+from .lane_payloads_shared import is_finite_number
 
 #-----------------------------------------------------------------------------
 # lane result
@@ -100,7 +106,46 @@ def validate_lane_payload(lane: str, payload: Mapping[str, Any]) -> None:
     _payload_validate(lane, payload)
 
 
-def validate_lane_result(lane: str, result: LaneResult) -> None:
+def _validate_failed_lane(lane: str, result: LaneResult) -> None:
+    if not result.reason:
+        raise LaneContractError(
+            f"{lane}.status is failed without a reason; a failed lane names "
+            "why (no_trackable_pulse, not_decoded, no_tonal_center, ...)"
+        )
+    if result.payload:
+        raise LaneContractError(
+            f"{lane}.status is failed but carries a payload; a failed lane "
+            "has no measurement to serve"
+        )
+
+
+def _validate_ok_lane(lane: str, result: LaneResult, duration_s: float | None) -> None:
+    """The shape check plus every write-boundary rule that needs the record.
+
+    Every write-boundary rule below threads `duration_s` in from the record
+    the same way: there is nothing to compare a beat's, a marker's or a
+    segment's position against without it, so `validate_lane_payload` alone
+    cannot make any of these checks. `beats_within_duration` runs before
+    `tempo_changes_within_duration` because it is the more fundamental of
+    the two: a grid that already outlives the record makes every marker
+    inside it suspect, not just the ones past `duration_s`. `duration_s`
+    itself is already known finite and nonnegative by the time it reaches
+    here -- `validate_lane_result` checks it before dispatching on status,
+    independently of whether THIS lane is ok.
+    """
+    validate_lane_payload(lane, result.payload)
+    if duration_s is None:
+        return
+    if lane == "beatgrid":
+        beats_within_duration(result.payload, duration_s)
+        tempo_changes_within_duration(result.payload, duration_s)
+    elif lane == "key":
+        key_segments_within_duration(result.payload, duration_s)
+
+
+def validate_lane_result(
+    lane: str, result: LaneResult, *, duration_s: float | None = None
+) -> None:
     """Check one lane block: status, reason discipline, and payload shape."""
     if lane not in LANES:
         raise LaneContractError(f"unknown lane {lane!r}; lanes are {LANES}")
@@ -108,25 +153,42 @@ def validate_lane_result(lane: str, result: LaneResult) -> None:
         raise LaneContractError(
             f"{lane}.status must be one of {LANE_STATUSES}, got {result.status!r}"
         )
+    if duration_s is not None and (
+        isinstance(duration_s, bool)
+        or not isinstance(duration_s, (int, float))
+        or not is_finite_number(duration_s)
+        or duration_s < 0
+    ):
+        # Checked here, before the status dispatch below, not inside
+        # `_validate_ok_lane`: a record whose every lane is `missing` or
+        # `failed` never reaches that function, so a check nested inside it
+        # would let `duration_s=inf` (serialized as non-standard `Infinity`)
+        # or a negative duration reach the store untouched (Codex P2,
+        # PR #1562). The `bool` check is explicit and first because `bool`
+        # is an `int` subclass: `math.isfinite(True)` is `True` and
+        # `True < 0` is `False`, so a JSON `duration_s: true` sailed through
+        # both range checks and stored `1.0` in the scalar column while
+        # `record_json` kept the original `true` (Codex P2, PR #1562, round
+        # three). The `isinstance` check precedes `math.isfinite` because
+        # `AnalysisRecord.from_json` does not enforce dataclass annotations:
+        # `duration_s: "300"` reached `math.isfinite` and raised a raw
+        # `TypeError` instead of this contract error (Codex P2, round four).
+        # `is_finite_number` rather than `math.isfinite` because an int too
+        # large for a C double makes the latter raise `OverflowError`
+        # (Codex P2, round five).
+        raise LaneContractError(
+            f"duration_s is {duration_s!r}, not a finite nonnegative record length"
+        )
     _check_lane_confidence(lane, result.confidence)
     if result.status == "failed":
-        if not result.reason:
-            raise LaneContractError(
-                f"{lane}.status is failed without a reason; a failed lane names "
-                "why (no_trackable_pulse, not_decoded, no_tonal_center, ...)"
-            )
-        if result.payload:
-            raise LaneContractError(
-                f"{lane}.status is failed but carries a payload; a failed lane "
-                "has no measurement to serve"
-            )
+        _validate_failed_lane(lane, result)
     elif result.status == "missing":
         if result.payload:
             raise LaneContractError(
                 f"{lane}.status is missing but carries a payload"
             )
     elif result.status == "ok":
-        validate_lane_payload(lane, result.payload)
+        _validate_ok_lane(lane, result, duration_s)
 
 
 #-----------------------------------------------------------------------------
