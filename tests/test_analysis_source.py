@@ -16,12 +16,27 @@ real rekordbox data (data/master.plain.db / data/state/state.db, both
 gitignored and absent in CI) while still exercising production code, not a
 fabricated request (AGENTS.md:L55-L63).
 
+FIXTURE PROVENANCE (changed Wed 9 Sep 2026, discussion_r3969942709). These
+tracks used to be seeded with a LEGACY ``librosa+madmom`` record, which the
+old own branch picked up through ``_load_latest_record(.., None)``. That query
+excludes every ``own_*`` backend by design, so the fixture could never have
+exercised a native own record and the test passed on a legacy grid the read
+model does not use. They now seed a real ``own_beatgrid.inapp`` record through
+``apps.analysis.store.upsert_record``, which builds the same
+``analysis_canonical`` pointer production builds, PLUS a newer legacy row that
+must lose. Acceptance impact: the own-grid assertions got strictly stronger --
+the old fixture could not distinguish the two records at all.
+
 Regression one-liners:
   - if a rekordbox-selected /anlz doesn't leave the served beatgrid alone then broken
-  - if an own-selected /anlz with a real analysis record doesn't swap in the
-    apps.analysis grid, exact ANLZ {n,bpm,t} shape then broken
+  - if an own-selected /anlz doesn't serve the CANONICAL own_beatgrid record's
+    own beats, exact ANLZ {n,bpm,t} shape then broken
+  - if a newer legacy (non-own) analysis row outranks the canonical own record
+    for an own-selected /anlz then broken
   - if an own-selected /anlz with no analysis record silently keeps serving the
     rekordbox grid instead of an explicit empty grid + reason then broken
+  - if an own beatgrid lane that FAILED is served as an empty grid without the
+    lane's own named reason then broken
 """
 from __future__ import annotations
 
@@ -36,29 +51,42 @@ from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import selection as sel
+from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis import router as analysis_router
 from apps.webui.server.routes.rb_assets import router as rb_assets_router
+from tests.analysis_contract.conftest import beatgrid_payload, own_record
 
 DURATION_S = 60.0
 BPM = 120.0
 BAR_S = 240.0 / BPM
 
 SID_WITH_OWN = "sid-own-grid"
-SID_NO_DOWNBEATS = "sid-no-downbeats"
+SID_OWN_LANE_FAILED = "sid-own-lane-failed"
 SID_UNANALYZED = "sid-never-analyzed"
 
+#: The own beatgrid fixture's tempo, and the number of beats it lays down.
+#: Both are read back off the served payload, so a producer change that moved
+#: the grid would fail here rather than silently redefine the expectation.
+OWN_BPM = 128.0
 
-def _record(sid: str, *, downbeats: list[float] | None = None) -> AnalysisRecord:
+
+def _record(
+    sid: str,
+    *,
+    downbeats: list[float] | None = None,
+    analyzed_at: datetime = datetime(2026, 9, 1, tzinfo=UTC),
+) -> AnalysisRecord:
+    """A LEGACY (non-own) analysis row -- the kind the canonical pointer skips."""
     if downbeats is None:
         downbeats = [i * BAR_S for i in range(int(DURATION_S / BAR_S))]
     return AnalysisRecord(
         stable_id=sid,
         backend="librosa+madmom",
         backend_version="test-1.0",
-        analyzed_at=datetime(2026, 9, 1, tzinfo=UTC),
+        analyzed_at=analyzed_at,
         duration_s=DURATION_S,
         sample_rate=44100,
         bpm=BPM, bpm_confidence=0.9,
@@ -124,15 +152,33 @@ def _add_unmapped_track(db: Path, sid: str) -> None:
 
 @pytest.fixture(scope="module")
 def analysis_db(tmp_path_factory: pytest.TempPathFactory):
+    """A real state.db carrying BOTH record kinds for the own-grid track.
+
+    The legacy row is analyzed LATER than the own one on purpose: it is what
+    ``_load_latest_record(.., None)`` would return, so any regression back to
+    "newest non-own row wins" serves a 120 BPM legacy grid here instead of the
+    canonical 128 BPM own grid and the shape assertion fails.
+    """
     db = tmp_path_factory.mktemp("analysis_source") / "state.db"
-    upsert_record(_record(SID_WITH_OWN), db_path=db)
-    upsert_record(_record(SID_NO_DOWNBEATS, downbeats=[]), db_path=db)
+    upsert_record(
+        own_record(stable_id=SID_WITH_OWN, result=LaneResult(
+            status="ok", payload=beatgrid_payload(bpm=OWN_BPM),
+        )),
+        db_path=db,
+    )
+    upsert_record(_record(SID_WITH_OWN, analyzed_at=datetime(2026, 9, 8, tzinfo=UTC)), db_path=db)
+    upsert_record(
+        own_record(stable_id=SID_OWN_LANE_FAILED, result=LaneResult(
+            status="failed", reason="no_trackable_pulse",
+        )),
+        db_path=db,
+    )
     return db
 
 
 @pytest.fixture(scope="module")
 def anlz_state_db(analysis_db: Path) -> Path:
-    for sid in (SID_WITH_OWN, SID_NO_DOWNBEATS, SID_UNANALYZED):
+    for sid in (SID_WITH_OWN, SID_OWN_LANE_FAILED, SID_UNANALYZED):
         _add_unmapped_track(analysis_db, sid)
     return analysis_db
 
@@ -188,7 +234,35 @@ def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
     assert grid["beat_count"] == len(grid["beats"]) > 0
     for beat in grid["beats"]:
         assert set(beat) == {"n", "bpm", "t"}
-        assert beat["bpm"] == pytest.approx(BPM, abs=0.01)
+    # OWN_BPM, not BPM. The legacy librosa row seeded for this same track is
+    # NEWER and carries 120, so reading the newest row instead of the
+    # analysis_canonical pointer serves 120 here (discussion_r3969942709).
+    assert sorted({beat["bpm"] for beat in grid["beats"]}) == [pytest.approx(OWN_BPM, abs=0.01)]
+    assert grid["beats"] == sorted(grid["beats"], key=lambda beat: beat["t"])
+    assert [beat["n"] for beat in grid["beats"][:5]] == [1, 2, 3, 4, 1]
+
+
+@pytest.mark.requirement("PARITY-02")
+def test_own_source_serves_the_same_record_the_projection_derives_bpm_from(
+    anlz_state_db: Path, anlz_client: TestClient,
+) -> None:
+    """[if] /anlz's own grid and analysis_projection's bpm come from different records [then] fail, [else stop]."""
+    _set_source(anlz_client, "own")
+    grid = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz").json()["beatgrid"]
+    conn = sqlite3.connect(anlz_state_db)
+    try:
+        projected = conn.execute(
+            "SELECT value FROM analysis_projection WHERE stable_id = ? AND field = 'bpm'",
+            (SID_WITH_OWN,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert projected is not None, "the own record must project a bpm to compare against"
+    # GET /tracks/{id} answers with this projected value once the beatgrid
+    # lane is on own (analysis_overlay.lane_owned_fields). A grid whose beats
+    # disagree with it is a read model reporting a tempo and a grid that were
+    # never measured together.
+    assert sorted({beat["bpm"] for beat in grid["beats"]}) == [pytest.approx(projected[0], abs=0.01)]
 
 
 @pytest.mark.requirement("PARITY-02")
@@ -206,16 +280,20 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
 
 
 @pytest.mark.requirement("PARITY-02")
-def test_own_source_with_downbeat_less_record_names_that_reason(
+def test_own_source_with_a_failed_beatgrid_lane_names_that_lanes_reason(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and the record has no usable downbeats [then] the beatgrid goes empty and names that specific reason, [else stop]."""
+    """[if] the own lane is selected and its beatgrid lane failed [then] the beatgrid goes empty carrying that lane's own reason, [else stop]."""
     _set_source(anlz_client, "own")
-    r = anlz_client.get(f"/api/v1/tracks/{SID_NO_DOWNBEATS}/anlz")
+    r = anlz_client.get(f"/api/v1/tracks/{SID_OWN_LANE_FAILED}/anlz")
     assert r.status_code == 200, r.text
     body = r.json()
+    assert body["beatgrid_source"] == "own"
     assert body["beatgrid"] == {"beat_count": 0, "beats": []}
-    assert body["beatgrid_own_unavailable_reason"] == "own analysis has no usable downbeats"
+    # The LANE's own reason travels through verbatim, not a reason this route
+    # invents: the same string analysis_projection carries for the failed
+    # field, so the grid and the read model explain the gap identically.
+    assert body["beatgrid_own_unavailable_reason"] == "no_trackable_pulse"
 
 
 def test_analysis_router_still_wires_up_alongside_the_new_router(analysis_db) -> None:

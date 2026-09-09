@@ -23,6 +23,7 @@ single `READY <port>` stdout line.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import socket
 import sqlite3
@@ -33,6 +34,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
 from apps.webui.server.backend import BackendError, ConflictError, InMemoryBackend, NotFoundError
@@ -69,11 +71,51 @@ SID_SLOW_ABSENT = "slow-absent-track"
 
 _DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
 
+#: Beats per bar, so ``bar_count`` still reads as bars at the call sites.
+BEATS_PER_BAR = 4
+BEAT_S = 60.0 / BPM
+
+
+def _beatgrid_payload(bar_count: int) -> dict:
+    """A real ``own_beatgrid`` lane payload: the exact shape the deck consumes.
+
+    ``beats`` is already ``{t, n, bpm}`` here -- the wire shape ``/anlz``
+    serves and `beat-sync-math.ts` `validateBeatGrid` accepts -- and
+    `apps.analysis.lane_payloads._validate_beats` enforces that at the write
+    boundary, so an invalid grid fails this server's startup rather than
+    reaching a JS test as a fabricated payload.
+    """
+    beats = [
+        {"t": round(i * BEAT_S, 3), "n": (i % BEATS_PER_BAR) + 1, "bpm": BPM}
+        for i in range(bar_count * BEATS_PER_BAR)
+    ]
+    return {
+        "beats": beats,
+        "bpm": BPM,
+        "bpm_confidence": 0.93,
+        "octave_reason": "measured",
+        "first_downbeat_s": beats[0]["t"],
+        "tempo_changes": [],
+        "static_grid_untrusted": False,
+    }
+
+
 def _record(sid: str, bar_count: int) -> AnalysisRecord:
+    """A NATIVE own beatgrid record, the one analysis_canonical points at.
+
+    Was ``backend="librosa+madmom"`` until Wed 9 Sep 2026
+    (discussion_r3969942709). That is a LEGACY row, and the production
+    ``/anlz`` own branch now resolves the beatgrid lane through the
+    ``analysis_canonical`` pointer -- the same pointer ``analysis_projection``
+    derives ``bpm`` from -- which is only ever an ``own_*`` backend. Seeding a
+    legacy row here made the fixture unable to exercise the native producer at
+    all. Acceptance impact: strictly stronger, the served grid is now the
+    canonical record's own measured beats.
+    """
     return AnalysisRecord(
         stable_id=sid,
-        backend="librosa+madmom",
-        backend_version="test-1.0",
+        backend="own_beatgrid.inapp",
+        backend_version="1.0.0",
         analyzed_at=datetime(2026, 9, 1, tzinfo=UTC),
         duration_s=bar_count * BAR_S + 5.0,
         sample_rate=44100,
@@ -83,6 +125,14 @@ def _record(sid: str, bar_count: int) -> AnalysisRecord:
         onsets_s=[],
         downbeats_s=[i * BAR_S for i in range(bar_count)],
         features_blob={"rms": [], "rms_hop": 512},
+        producer="inapp",
+        producer_version="1.0.0",
+        # A REAL sha256 of the fixture's own identity, not a label: the record
+        # contract rejects an unverifiable hash outright.
+        decode_fingerprint=f"sha256:{hashlib.sha256(sid.encode()).hexdigest()}",
+        lanes={"beatgrid": LaneResult(
+            status="ok", confidence=0.93, payload=_beatgrid_payload(bar_count),
+        )},
     )
 
 

@@ -10,6 +10,8 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 from __future__ import annotations
 
 import hashlib
+import sqlite3
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -17,7 +19,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from apps.adapters.rekordbox.paths import empty_anlz_payload
-from apps.analysis import selection
+from apps.analysis import canonical, selection
+from apps.analysis.record import AnalysisRecord
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -178,15 +181,99 @@ def _current_beatgrid_source(request: Request) -> str:
     return _BEATGRID_SOURCE_LABELS[source]
 
 
+def _canonical_beatgrid_record(db_path: Path, stable_id: str) -> AnalysisRecord | None:
+    """The analysis row ``analysis_canonical`` names for this track's beatgrid.
+
+    THE POINTER, NOT THE NEWEST ROW. ``_load_latest_record(.., None)``
+    cannot answer this: its default query excludes every ``own_*`` backend
+    on purpose (``analysis.py``), so it returns a legacy librosa row and the
+    OWN grid would be paired with the canonical record's BPM -- because
+    ``GET /tracks/{id}`` reads ``bpm`` from ``analysis_projection``, which
+    :func:`apps.analysis.canonical.rebuild_projection` derives from THIS
+    pointer. Two readers of one lane must resolve the same record or the
+    read model reports a grid and a tempo that were never measured together
+    (discussion_r3969942709 P1 BLOCKING).
+
+    Returns None when the track has no canonical own beatgrid (no pointer,
+    or the analysis tables have never been created). A pointer that names a
+    row which is not there is corruption, not an absence, and raises.
+    """
+    conn = analysis_routes._open_analysis_ro(db_path)
+    try:
+        try:
+            pointer = canonical.canonical_pointer(conn, stable_id, "beatgrid")
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise
+        if pointer is None:
+            return None
+        backend, backend_version = pointer
+        row = conn.execute(
+            "SELECT record_json FROM analysis "
+            "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+            (stable_id, backend, backend_version),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "ANALYSIS_CANONICAL_DANGLING",
+                "message": (
+                    f"canonical beatgrid pointer for {stable_id!r} names "
+                    f"{backend!r}@{backend_version!r} but no such analysis row exists"
+                ),
+            },
+        )
+    return AnalysisRecord.from_json(row[0])
+
+
+def _own_beatgrid_beats(db_path: Path, stable_id: str) -> tuple[list[dict] | None, str | None]:
+    """This track's own beatgrid beats in ``/anlz`` shape, or a stated reason.
+
+    The canonical lane payload's ``beats`` are ALREADY the deck's wire shape
+    (``{t, n, bpm}``), validated at the write boundary against the deck's own
+    consumer (``apps/analysis/lane_payloads.py`` ``_validate_beats``,
+    transcribed from ``beat-sync-math.ts`` ``validateBeatGrid``). They are
+    projected key-for-key here, never re-derived: re-synthesising a grid from
+    ``downbeats_s`` would interpolate beats the producer did not measure and
+    could disagree with the ``bpm`` the same record projects.
+    """
+    record = _canonical_beatgrid_record(db_path, stable_id)
+    if record is None:
+        return None, "no own analysis for this track"
+    result = record.lanes.get("beatgrid")
+    if result is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "ANALYSIS_CANONICAL_LANELESS",
+                "message": (
+                    f"canonical record {record.backend!r} for {stable_id!r} "
+                    "carries no beatgrid lane"
+                ),
+            },
+        )
+    if result.status != "ok":
+        return None, result.reason or f"own beatgrid lane {result.status}"
+    beats = [
+        {"n": beat["n"], "bpm": beat["bpm"], "t": beat["t"]}
+        for beat in result.payload["beats"]
+    ]
+    return beats, None
+
+
 def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) -> None:
     """Mutate ``payload`` per the PARITY-02 rbx-vs-own selection (in place).
 
     A value-only swap, never a schema branch: ``"own"`` replaces
-    ``payload["beatgrid"]`` with the apps.analysis-derived grid in the
-    identical ``/anlz`` shape (:func:`analysis_routes.synthesize_fallback_beats`,
-    the same function ``/beatgrid-fallback`` already serves from). When no
-    own analysis exists for this track, the grid goes explicitly empty with
-    a stated reason -- it is never silently served the rekordbox grid while
+    ``payload["beatgrid"]`` with the canonical own beatgrid lane's own beats
+    in the identical ``/anlz`` shape (:func:`_own_beatgrid_beats`). When no
+    own analysis exists for this track, or its beatgrid lane did not succeed,
+    the grid goes explicitly empty carrying that lane's stated reason -- it is
+    never silently served the rekordbox grid, nor a legacy non-own grid, while
     still claiming ``"own"``.
     """
     source = _current_beatgrid_source(request)
@@ -194,21 +281,12 @@ def _resolve_beatgrid_source(request: Request, stable_id: str, payload: dict) ->
     if source == "rekordbox":
         payload["beatgrid_own_unavailable_reason"] = None
         return
-    db_path = analysis_routes._analysis_db_path(request)
-    record = analysis_routes._load_latest_record(db_path, stable_id, None)
-    beats = analysis_routes.synthesize_fallback_beats(record) if record is not None else None
-    if record is None or beats is None:
+    beats, reason = _own_beatgrid_beats(analysis_routes._analysis_db_path(request), stable_id)
+    if beats is None:
         payload["beatgrid"] = {"beat_count": 0, "beats": []}
-        payload["beatgrid_own_unavailable_reason"] = (
-            "no own analysis for this track"
-            if record is None
-            else "own analysis has no usable downbeats"
-        )
+        payload["beatgrid_own_unavailable_reason"] = reason
         return
-    payload["beatgrid"] = {
-        "beat_count": len(beats),
-        "beats": [beat.model_dump() for beat in beats],
-    }
+    payload["beatgrid"] = {"beat_count": len(beats), "beats": beats}
     payload["beatgrid_own_unavailable_reason"] = None
 
 
