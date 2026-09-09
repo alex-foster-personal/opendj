@@ -391,9 +391,19 @@ export function ensureAnlz(stable_id: string): void {
  * answer arrives, and `_publishAnlzResult` then fires the authoritative grid
  * sink, so a loaded deck adopts a grid that actually changed.
  *
- * A failed revalidation leaves the good entry in place. It is the same
- * failure as never having revalidated, which is the state this call is trying
- * to improve on, so it must not be worse than the status quo. */
+ * A revalidation that fails to even REACH the server (a network/shape
+ * failure) leaves the good entry in place: that is the same failure as never
+ * having revalidated, which is the state this call is trying to improve on,
+ * so it must not be worse than the status quo. An explicit `RbApiError`
+ * response is different in kind, not degree: revalidation was triggered
+ * specifically because the SELECTED source may have changed, so a backend
+ * answer naming a real failure of that source (e.g. a corrupt canonical
+ * record) is evidence the cached payload's source can no longer be trusted,
+ * not an absence of new information. Silently keeping the stale entry there
+ * would convert an explicit source failure into exactly the forbidden silent
+ * fallback (Codex P1 BLOCKING, PR #1587) - the entry is marked `error`
+ * instead, matching how `_fetchAndPublish` already treats the same
+ * `RbApiError` class on an ordinary fetch. */
 export function revalidateAnlz(stable_id: string): void {
 	const startedAt = performance.now();
 	void fetchAnlz(stable_id).then(
@@ -403,7 +413,13 @@ export function revalidateAnlz(stable_id: string): void {
 		},
 		(err: unknown) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
-			if (err instanceof RbApiError) return; // keep the entry we have
+			if (err instanceof RbApiError) {
+				// The selected source explicitly failed to revalidate: the cached
+				// entry's freshness can no longer be established, so it must not
+				// keep being served as if it were still good.
+				_cache[stable_id] = { status: 'error', code: err.code };
+				return;
+			}
 			throw err; // loud: network/shape failures must not vanish
 		}
 	);

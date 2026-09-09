@@ -717,28 +717,32 @@ test('revalidateAnlz replaces a stale entry without blanking it first', async ()
 	}
 });
 
-test('a failed revalidation leaves the good entry in place', async () => {
-	// Never worse than not revalidating at all: this call exists to improve on
-	// a stale-but-working entry, so a network failure must not turn it into an
-	// error entry and cost the deck a grid it already had.
+test('a revalidation the server explicitly refuses marks the entry unusable, not stale-but-fine', async () => {
+	// Distinct from the network-failure case above: revalidation exists
+	// because the SELECTED source may have changed, so an explicit backend
+	// answer naming a real failure of that source (e.g. a corrupt canonical
+	// record, here stood in for by ANALYSIS_NOT_FOUND) is new evidence the
+	// cached payload can no longer be trusted, not an absence of information.
+	// Silently keeping the stale entry would be exactly the forbidden silent
+	// fallback (Codex P1 BLOCKING, PR #1587).
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = async () =>
 		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
 	try {
-		cache.ensureAnlz('flaky-track');
+		cache.ensureAnlz('corrupt-source-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		globalThis.fetch = async () =>
-			new Response(JSON.stringify({ code: 'ANALYSIS_NOT_FOUND', message: 'gone' }), {
+			new Response(JSON.stringify({ detail: { code: 'ANALYSIS_NOT_FOUND', message: 'gone' } }), {
 				status: 404,
 				headers: { 'content-type': 'application/json' }
 			});
-		cache.revalidateAnlz('flaky-track');
+		cache.revalidateAnlz('corrupt-source-track');
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		const entry = cache.getAnlzEntry('flaky-track');
-		assert.equal(entry.status, 'ready');
-		assert.equal(entry.data.local_waveform.preview_b64, 'AAAA');
+		const entry = cache.getAnlzEntry('corrupt-source-track');
+		assert.equal(entry.status, 'error');
+		assert.equal(entry.code, 'ANALYSIS_NOT_FOUND');
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
