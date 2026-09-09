@@ -415,6 +415,60 @@ _NATIVE_ANALYSIS_V1: tuple[str, ...] = (
         updated_at  TEXT NOT NULL
     )
     """,
+    # The backfill queue (spec section 3 "Queue"). Persisted, not derived:
+    # apps/analysis/backlog.py answers "what has no analysis row" as a
+    # projection, which needs no state, while THIS queue has to survive a
+    # cancel, a resume and a process kill and say which items were already
+    # complete before the kill. Owned by apps/analysis/queue_store.py.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_queue_batch (
+        batch_id         TEXT PRIMARY KEY,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        state            TEXT NOT NULL,
+        workers          INTEGER NOT NULL,
+        band             TEXT NOT NULL,
+        memory_model     TEXT NOT NULL,
+        note             TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS analysis_queue_item (
+        batch_id          TEXT NOT NULL,
+        stable_id         TEXT NOT NULL,
+        lane              TEXT NOT NULL,
+        backend           TEXT NOT NULL,
+        file_path         TEXT NOT NULL,
+        duration_s        REAL,
+        predicted_peak_mb REAL,
+        state             TEXT NOT NULL,
+        reason            TEXT,
+        attempts          INTEGER NOT NULL DEFAULT 0,
+        enqueued_at       TEXT NOT NULL,
+        started_at        TEXT,
+        finished_at       TEXT,
+        runner_id         TEXT,
+        PRIMARY KEY (batch_id, stable_id, lane)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_analysis_queue_item_state "
+    "ON analysis_queue_item(state)",
+    "CREATE INDEX IF NOT EXISTS idx_analysis_queue_item_track "
+    "ON analysis_queue_item(stable_id, lane)",
+    # Records whose DEPENDENCY moved underneath them. Read by
+    # apps/analysis/canonical.py: a stale row keeps its record but stops
+    # being eligible for the canonical pointer until it is recomputed.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_stale (
+        stable_id        TEXT NOT NULL,
+        lane             TEXT NOT NULL,
+        backend          TEXT NOT NULL,
+        backend_version  TEXT NOT NULL,
+        reason           TEXT NOT NULL,
+        detected_at      TEXT NOT NULL,
+        PRIMARY KEY (stable_id, lane, backend, backend_version)
+    )
+    """,
 )
 
 
@@ -933,6 +987,9 @@ TABLES: dict[str, tuple[str, ...]] = {
         "analysis_canonical",
         "analysis_projection",
         "analysis_source_default",
+        "analysis_queue_batch",
+        "analysis_queue_item",
+        "analysis_stale",
     ),
     "analysis_retention": (
         "track_availability",
