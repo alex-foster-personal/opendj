@@ -1170,7 +1170,7 @@
 						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
-				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
+				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1180,6 +1180,7 @@
 						data-stable-id={row.stable_id}
 						tabindex="0"
 						draggable="true"
+						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
@@ -2262,6 +2263,18 @@
 		pointer-events: none;
 		z-index: 5;
 		transition: opacity 120ms ease;
+	}
+	/* Row 0 has no previous row to hang over (issue #1602): bottom: 100% put
+	 * the box in the sticky thead's own band, which wins the hit-test and
+	 * left the row-0 quick-load buttons dead or intermittently dead. Flip to
+	 * hang over the NEXT row instead, only for the genuine first row - gated
+	 * on windowInfo.topPad === 0 (no spacer above) so virtualization keeps
+	 * this correct while scrolled. Every invariant above (pointer-events:
+	 * none on the box itself, buttons carrying the real hitbox) still holds,
+	 * just mirrored. */
+	tbody tr.rb-row-first .deck-btns {
+		bottom: auto;
+		top: 100%;
 	}
 	/* The buttons carry BOTH the interactivity and the footprint, because over
 	 * the row above those are the same thing.
