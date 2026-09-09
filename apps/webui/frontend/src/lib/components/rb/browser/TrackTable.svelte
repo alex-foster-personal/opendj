@@ -1169,27 +1169,8 @@
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
 						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
 					</tr>
-				{:else if rows.length > 0}
-					<!-- Issue #1602: row 0 has no row above it for its revealed
-					     .deck-btns (bottom: 100%) to hang over, so the box landed in
-					     the sticky thead's own hit-test band instead. This runway row
-					     gives the overhang somewhere real to land - one row's worth of
-					     genuine scrollable space between thead and row 0, below the
-					     sticky band, so the box's existing "hang above own row"
-					     behavior (unchanged, same as every other row) no longer
-					     collides with anything. Only rendered when row 0 is genuinely
-					     the first logical row (topPad === 0) and the table is
-					     non-empty, so virtualization at any other scroll position, or
-					     an empty/filtered-to-nothing table, renders no runway. -->
-					<tr
-						class="tt-spacer tt-deck-picker-runway"
-						style={`height:${rowHeight}px`}
-						aria-hidden="true"
-					>
-						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
-					</tr>
 				{/if}
-				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
+				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1200,6 +1181,7 @@
 						tabindex="0"
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
+						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
@@ -2309,6 +2291,36 @@
 	.deck-btns:focus-within {
 		opacity: 1;
 		transition-delay: 0s;
+	}
+	/* Issue #1602 round 2 (Sol P1 on pin 8f064eafc, review thread
+	 * PRRT_kwDOSEvNd86gwaHm): a runway spacer row gave row 0's box somewhere
+	 * to hang, but its added layout height was invisible to
+	 * computeVirtualWindow's scrollTop math (virtual-window.ts) - the
+	 * runway vanished the instant startIndex left 0, a real DOM height
+	 * discontinuity the JS offset math never accounted for.
+	 * Raising .deck-btns's OWN z-index cannot fix the header collision
+	 * either - `tbody tr` is `position: relative` with z-index: auto
+	 * (needed to contain every row's absolutely-positioned children, e.g.
+	 * .audio-cache-chevron), which makes EACH row its own stacking context,
+	 * the identical mechanism `.col-resize` documents for sticky `th`
+	 * above. .deck-btns's z-index: 5 is trapped inside its OWN row's
+	 * auto-level context and can never escape to outrank a sibling
+	 * context's explicit z-index (thead th, z-index: 1) - only the ROW's
+	 * own z-index decides that contest. Every row already beats the row
+	 * above it in paint order for free (a later DOM sibling outranks an
+	 * earlier one among z-index: auto contexts), which is why only row 0 -
+	 * the one row with the thead, not another row, ahead of it in DOM order
+	 * - ever needed anything raised. So: bump row 0's own z-index above
+	 * thead's, and ONLY while its box is genuinely revealed (identical
+	 * predicate to the opacity reveal directly above), so row 0 still
+	 * renders behind the sticky header the rest of the time, exactly like
+	 * every other row. Zero added layout height, so
+	 * computeVirtualWindow needs no change and no coupling to the runway's
+	 * failure mode is possible. */
+	tr.rb-row-first.rb-row-selected:has(.c-art:hover, .c-title:hover),
+	tr.rb-row-first:has(.deck-btns:hover),
+	tr.rb-row-first:has(.deck-btns:focus-within) {
+		z-index: 2;
 	}
 	/* Issue #1558: selecting a row makes this :has() match true at the exact
 	 * instant of the FIRST click of a double-click, with the pointer already
