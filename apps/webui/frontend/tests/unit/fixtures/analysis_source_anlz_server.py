@@ -35,12 +35,21 @@ from fastapi import FastAPI, Request
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
-from apps.webui.server.backend import InMemoryBackend
+from apps.webui.server.backend import BackendError, ConflictError, InMemoryBackend, NotFoundError
+from apps.webui.server.errors import handle_backend_error, handle_conflict, handle_not_found
 from apps.webui.server.routes.analysis_source import router as analysis_source_router
 from apps.webui.server.routes.rb_assets import router as rb_assets_router
+from apps.webui.server.routes.tracks import router as tracks_router
+from apps.webui.server.sqlite_backend import SqliteBackend
 
 BPM = 120.0
 BAR_S = 240.0 / BPM
+#: The rekordbox tag BPM each seeded track carries in ``track_fields``, one
+#: distinct value per track. ``bpm`` is a LANE-OWNED projection field on the
+#: beatgrid lane (apps/analysis/canonical.py PROJECTION_FIELDS), which is what
+#: makes ``GET /tracks/{id}`` part of an analysis-source switch rather than a
+#: one-shot read at load(): the JS test asserts a deck re-reads this row.
+ROW_BPM: dict[str, float] = {}
 
 #: stable_ids the JS test loads onto decks. Deliberately different downbeat
 #: counts so "own" swaps in a REAL, DISTINGUISHABLE beat_count per track
@@ -83,12 +92,19 @@ def _seed_db(db_path: Path) -> None:
     upsert_record(_record(SID_TRACK_A, bar_count=10), db_path=db_path)
     upsert_record(_record(SID_TRACK_B, bar_count=20), db_path=db_path)
     upsert_record(_record(SID_SLOW, bar_count=3), db_path=db_path)
-    for stable_id in (SID_TRACK_A, SID_TRACK_B, SID_SLOW, SID_NO_OWN_ANALYSIS):
-        _add_unmapped_track(db_path, stable_id)
+    for offset, stable_id in enumerate((SID_TRACK_A, SID_TRACK_B, SID_SLOW, SID_NO_OWN_ANALYSIS)):
+        _add_unmapped_track(db_path, stable_id, row_bpm=90.0 + offset)
     # SID_NO_OWN_ANALYSIS is intentionally never written: real "no record" case.
 
 
-def _add_unmapped_track(db_path: Path, stable_id: str) -> None:
+def _add_unmapped_track(db_path: Path, stable_id: str, row_bpm: float) -> None:
+    """Seed the track row AND its rekordbox tag BPM in ``track_fields``.
+
+    The BPM is what ``GET /tracks/{stable_id}`` answers with, through the real
+    ``SqliteBackend`` read model, so a JS test can prove a deck re-read the row
+    on a source switch rather than kept the value it captured at load().
+    """
+    ROW_BPM[stable_id] = row_bpm
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(
@@ -105,6 +121,12 @@ def _add_unmapped_track(db_path: Path, stable_id: str) -> None:
                 None,
             ),
         )
+        for field_name, value_json in (("bpm", str(row_bpm)), ("key", '"8A"')):
+            conn.execute(
+                "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
+                "confidence, modified_at) VALUES (?,?,?,?,?,?)",
+                (stable_id, field_name, value_json, "rekordbox", None, "2026-09-01T00:00:00Z"),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -113,12 +135,28 @@ def _add_unmapped_track(db_path: Path, stable_id: str) -> None:
 def create_app() -> FastAPI:
     app = FastAPI()
     rb_config.STATE_DB = _DB_PATH
-    app.state.backend = InMemoryBackend()
+    # The REAL sqlite read model, not InMemoryBackend: `bpm` reaches
+    # `GET /tracks/{id}` through `_row_to_track` -> `lane_owned_fields`, which
+    # is the production path that makes the field source-dependent at all.
+    app.state.backend = SqliteBackend(_DB_PATH, fallback=InMemoryBackend())
+    app.state.state_db_path = str(_DB_PATH)
     app.state.analysis_db_path = _DB_PATH
     app.state.requests = []
     app.state.delay_next_analysis_source_get = False
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
+    app.include_router(tracks_router, prefix="/api/v1")
+    # The same handlers app.py registers, so a stable_id the library does not
+    # have answers 404 here exactly as it does in production rather than
+    # leaking a 500 from an unhandled NotFoundError.
+    app.add_exception_handler(NotFoundError, handle_not_found)
+    app.add_exception_handler(ConflictError, handle_conflict)
+    app.add_exception_handler(BackendError, handle_backend_error)
+
+    @app.get("/test/row-bpm")
+    def _row_bpm() -> dict[str, float]:
+        """What the JS test expects each deck to end up holding."""
+        return ROW_BPM
 
     @app.middleware("http")
     async def _record_request(request: Request, call_next):

@@ -11,6 +11,7 @@
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
 import { fetchAnlz, fetchAnlzBypassingHttpCache, RbApiError } from '$lib/rb/api-rb';
+import { getTrack } from '$lib/api';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import { bumpAnlzFetchGeneration, currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
@@ -432,6 +433,13 @@ type DeckId = 1 | 2 | 3 | 4;
 export interface AnalysisSourceRefreshDeck {
 	stable_id: string | null;
 	anlz: AnlzData | null;
+	/** The two LANE-OWNED track fields a deck holds. Both are projected per
+	 * lane by the read model (`apps/analysis/canonical.py` PROJECTION_FIELDS
+	 * maps `bpm` to the beatgrid lane and `key` to the key lane), so
+	 * `GET /tracks/{id}` answers with a different value once a lane is on own
+	 * - which makes them as source-dependent as the beatgrid itself. */
+	bpm: number | null;
+	key: string | null;
 }
 
 /** Replaces loaded decks without allowing an in-flight stale response to win.
@@ -465,7 +473,23 @@ export interface AnalysisSourceRefreshDeck {
  * (discussion_r3968213995 P1 BLOCKING). Publishing every cache entry while
  * every deck still holds its pre-switch payload also means two decks loaded
  * with the SAME track are both reconciled by a single sink notification,
- * rather than the second one scheduling a duplicate settlement. */
+ * rather than the second one scheduling a duplicate settlement.
+ *
+ * THE TRACK ROW IS SOURCE-DEPENDENT TOO, not just `/anlz`. `bpm` is a
+ * lane-owned projection field on the very lane this control switches
+ * (`PROJECTION_FIELDS` in apps/analysis/canonical.py, applied to every track
+ * read by `lane_owned_fields` in apps/webui/server/analysis_overlay.py), so
+ * `GET /tracks/{id}` answers with the own BPM once beatgrid is on own. A
+ * deck reads that row exactly once, at `load()`. Refreshing only the grid
+ * therefore left `st.bpm` - and with it `DeckHeader` and
+ * `PerformanceState.bpm` - reporting the pre-switch tempo while the grid and
+ * `effective_bpm` reported the new one, which is an internally inconsistent
+ * read model in the one tool whose entire purpose is comparing the two
+ * (discussion_r3969020988 P2 BLOCKING). `key` rides along because it is the
+ * other lane-owned field a deck holds; when its lane is on rbx the read model
+ * returns the same rekordbox value it already had, so writing it is a no-op
+ * rather than a second special case. Staged in the SAME `Promise.all` as the
+ * grid so the all-or-nothing guarantee above covers both. */
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
 	decks: Record<DeckId, AnalysisSourceRefreshDeck>
@@ -483,11 +507,13 @@ export async function refreshAnalysisSourceDecks(
 		else holders.push(deck);
 	}
 	const staged = await Promise.all(
-		[...wanted].map(async ([stableId, holders]) => ({
-			stableId,
-			holders,
-			fresh: await fetchAnlzBypassingHttpCache(stableId)
-		}))
+		[...wanted].map(async ([stableId, holders]) => {
+			const [fresh, row] = await Promise.all([
+				fetchAnlzBypassingHttpCache(stableId),
+				getTrack(stableId)
+			]);
+			return { stableId, holders, fresh, track: row.track };
+		})
 	);
 	for (const { stableId, fresh } of staged) {
 		refreshAnlzCacheEntry(stableId, fresh);
@@ -505,12 +531,17 @@ export async function refreshAnalysisSourceDecks(
 			_authoritativeGridSink(stableId, fresh, false);
 		}
 	}
-	for (const { stableId, holders, fresh } of staged) {
+	for (const { stableId, holders, fresh, track } of staged) {
 		for (const deck of holders) {
 			// A load() that landed mid-request owns this deck now; its own
 			// fetch already ran under the post-switch generation.
 			if (decks[deck].stable_id !== stableId) continue;
 			decks[deck].anlz = fresh;
+			// `?? null` for the same reason load() uses it: TrackOut spells
+			// every nullable field optional, so absent and null both mean
+			// "unknown" to a deck.
+			decks[deck].bpm = track.bpm ?? null;
+			decks[deck].key = track.key ?? null;
 		}
 	}
 }

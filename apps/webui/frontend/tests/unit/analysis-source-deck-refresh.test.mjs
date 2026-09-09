@@ -32,6 +32,10 @@
  *   source then broken (discussion_r3968214019)
  * - if two decks holding the SAME track pull the multi-MB payload twice then
  *   broken
+ * - if a deck keeps the BPM it read at load() then broken
+ *   (discussion_r3969020988): `bpm` is a lane-owned projection field on the
+ *   very lane this control switches, so the track row is as source-dependent
+ *   as the grid is
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -132,7 +136,7 @@ let sinkCalls = [];
 
 function resetCacheDecks() {
 	DECKS.length = 0;
-	for (const _ of DECK_KEYS) DECKS.push({ stable_id: null, anlz: null });
+	for (const _ of DECK_KEYS) DECKS.push({ stable_id: null, anlz: null, bpm: null, key: null });
 	sinkCalls = [];
 	return Object.fromEntries(DECK_KEYS.map((key, index) => [key, DECKS[index]]));
 }
@@ -252,9 +256,15 @@ test('two decks on the SAME track fetch once and reconcile through one sink call
 
 	const before_ = await requestLog();
 	await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
-	const after_ = (await requestLog()).slice(before_.length);
+	const all_ = (await requestLog()).slice(before_.length);
+	const after_ = all_.filter((url) => url.includes('/anlz?'));
 
 	assert.equal(after_.length, 1, 'one track means one multi-MB payload, however many decks hold it');
+	assert.equal(
+		all_.filter((url) => /\/tracks\/[^/]+$/.test(url)).length,
+		1,
+		'the lane-owned row is one fetch per track too'
+	);
 	assert.equal(sinkCalls.length, 1, 'a second sink call would schedule a duplicate settlement');
 	assert.equal(decks[1].anlz, decks[3].anlz, 'both decks take the same fresh payload');
 });
@@ -306,4 +316,86 @@ test('one track failing leaves EVERY deck on the old source, not a split fleet',
 		undefined,
 		'the shared cache must read as never-requested too, so the retry refetches under the new source'
 	);
+});
+
+// -------------------------------------------- lane-owned track row on a switch
+
+/** Flip the DAEMON's selection through the real endpoint, without the module
+ * under test. */
+async function daemonSelect(toggle) {
+	const res = await fetch(`${apiBase}/api/v1/analysis/source`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ lane: 'beatgrid', toggle })
+	});
+	assert.equal(res.status, 200, 'fixture server rejected the direct daemon switch');
+}
+
+async function rowBpm(stableId) {
+	const res = await fetch(`${apiBase}/api/v1/tracks/${stableId}`);
+	assert.equal(res.status, 200, `the real tracks route did not serve ${stableId}`);
+	return (await res.json()).bpm ?? null;
+}
+
+test('a switch re-reads the lane-owned track row, so the displayed BPM cannot lag the grid', async () => {
+	const decks = resetCacheDecks();
+	decks[1].stable_id = SID_TRACK_A;
+	decks[1].anlz = { beatgrid: { beat_count: 4, beats: [] } };
+	// What load() captured. 174 is not what either lane serves, so it can only
+	// survive by never being re-read.
+	decks[1].bpm = 174;
+	decks[1].key = 'stale';
+
+	// The daemon has been on OWN since before() (a real PUT through the real
+	// endpoint), and this track has no own projection row, so the read model
+	// answers with own's honest absence rather than silently serving the
+	// rekordbox tag. That IS the post-switch truth the deck has to show.
+	const before_ = await requestLog();
+	await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
+	const rowFetches = (await requestLog())
+		.slice(before_.length)
+		.filter((url) => /\/tracks\/[^/]+$/.test(url));
+	const ownBpm = await rowBpm(SID_TRACK_A);
+
+	assert.equal(rowFetches.length, 1, 'the deck must actually re-read GET /tracks/{id}');
+	assert.match(rowFetches[0], new RegExp(`/tracks/${SID_TRACK_A}$`));
+	assert.equal(decks[1].bpm, ownBpm, 'the deck must mirror the row the route serves right now');
+	assert.notEqual(
+		decks[1].bpm,
+		174,
+		'DeckHeader and PerformanceState.bpm kept the tempo captured at load() while effective_bpm moved'
+	);
+
+	// Control, in the other direction, and the proof the field really is
+	// source-dependent rather than constant: flip the daemon back to rbx and
+	// refresh again.
+	await daemonSelect('rbx');
+	await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
+	const rbxBpm = await rowBpm(SID_TRACK_A);
+	assert.notEqual(
+		rbxBpm,
+		ownBpm,
+		'if both lanes served the same BPM for this track then this test proves nothing'
+	);
+	assert.equal(decks[1].bpm, rbxBpm, 'switching back must bring the rekordbox tag BPM with it');
+	// `key` is the OTHER lane-owned field a deck holds. Its lane is not
+	// switchable from this control, so the two directions agree on it by
+	// construction - what matters is that a stale one is replaced at all.
+	const rbxRow = await (await fetch(`${apiBase}/api/v1/tracks/${SID_TRACK_A}`)).json();
+	assert.equal(rbxRow.key, '8A', 'the fixture must serve a real key, or the next assertion is vacuous');
+	assert.equal(decks[1].key, rbxRow.key, 'a stale lane-owned key must be replaced from the fresh row');
+
+	await daemonSelect('own');
+});
+
+test('a failed track-row read is as total as a failed grid read', async () => {
+	const decks = resetCacheDecks();
+	decks[1].stable_id = SID_TRACK_A;
+	decks[1].bpm = 174;
+	decks[2].stable_id = SID_ABSENT;
+
+	await assert.rejects(() => cache.refreshAnalysisSourceDecks(DECK_KEYS, decks));
+
+	assert.equal(decks[1].bpm, 174, 'the succeeding deck must not have moved its BPM either');
+	assert.equal(decks[1].anlz, null);
 });
