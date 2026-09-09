@@ -82,6 +82,15 @@ env:
   # for this name, so the pre-checkout hygiene step below is the repair path
   # for a root-run interpreter.
   PYTHONDONTWRITEBYTECODE: "1"
+  # Every Python this workflow starts, including the engine the Playwright
+  # webServer boots and the `apps.analysis.run` it shells out to during the
+  # ingest-refresh spec, dumps the Python stack of a fatal signal to stderr.
+  # Since Tue 8 Sep 2026 19:53 UTC agentbox's kernel log shows
+  # `python3: segfault at 0 ip 0` about once a minute under this workflow's
+  # jobs, attributed to that subprocess, and the daemon reports only
+  # "apps.analysis.run exited -11" (trunk red 8a17e7ade, run 34335714597).
+  # The kernel names the binary; faulthandler names the frame.
+  PYTHONFAULTHANDLER: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
