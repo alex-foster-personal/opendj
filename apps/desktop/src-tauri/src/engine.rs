@@ -296,11 +296,19 @@ const SANDBOX_HOME_MARKER: &str = "/Library/Containers/";
 ///
 /// Pure in its inputs so it is testable without mutating process environment,
 /// which is global and would race the other tests in this binary.
+///
+/// `host_is_macos` is passed explicitly rather than read from `cfg!` inside
+/// this function, mirroring `apps/shared/sandbox.py`'s `platform` parameter:
+/// the App Sandbox is macOS-only, so a hardcoded `cfg!(target_os = "macos")`
+/// check here would make every call short-circuit to `None` on the Linux CI
+/// runner that actually runs this test suite, leaving the signal logic
+/// untested where it runs.
 pub fn build_profile_for(
     container_id: Option<&str>,
     home: Option<&str>,
+    host_is_macos: bool,
 ) -> Option<&'static str> {
-    if !cfg!(target_os = "macos") {
+    if !host_is_macos {
         return None;
     }
     let container_set = container_id.is_some_and(|value| !value.trim().is_empty());
@@ -317,7 +325,7 @@ pub fn build_profile_for(
 fn build_profile() -> Option<&'static str> {
     let container = std::env::var(SANDBOX_CONTAINER_ENV).ok();
     let home = std::env::var("HOME").ok();
-    build_profile_for(container.as_deref(), home.as_deref())
+    build_profile_for(container.as_deref(), home.as_deref(), cfg!(target_os = "macos"))
 }
 
 // ----- spawn --------------------------------------------------------------
@@ -611,7 +619,7 @@ mod tests {
     #[test]
     fn a_container_env_var_selects_the_appstore_profile() {
         assert_eq!(
-            build_profile_for(Some("com.opendj.desktop"), Some("/Users/dj")),
+            build_profile_for(Some("com.opendj.desktop"), Some("/Users/dj"), true),
             Some(APPSTORE_PROFILE)
         );
     }
@@ -623,7 +631,8 @@ mod tests {
         assert_eq!(
             build_profile_for(
                 None,
-                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data")
+                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data"),
+                true
             ),
             Some(APPSTORE_PROFILE)
         );
@@ -633,16 +642,16 @@ mod tests {
     fn an_unsandboxed_shell_passes_no_profile() {
         // The over-detection control. A dmg build must keep USB export, so
         // this asserts the ORIGINAL behavior still holds where it should.
-        assert_eq!(build_profile_for(None, Some("/Users/dj")), None);
-        assert_eq!(build_profile_for(None, None), None);
+        assert_eq!(build_profile_for(None, Some("/Users/dj"), true), None);
+        assert_eq!(build_profile_for(None, None, true), None);
     }
 
     #[test]
     fn a_blank_container_id_is_not_a_container() {
         // An exported-but-empty variable is the shell's version of a zero
         // that is both a value and an error signature. Empty means absent.
-        assert_eq!(build_profile_for(Some(""), Some("/Users/dj")), None);
-        assert_eq!(build_profile_for(Some("   "), Some("/Users/dj")), None);
+        assert_eq!(build_profile_for(Some(""), Some("/Users/dj"), true), None);
+        assert_eq!(build_profile_for(Some("   "), Some("/Users/dj"), true), None);
     }
 
     #[test]
@@ -650,7 +659,24 @@ mod tests {
         // Substring matching is the trap here: ~/Library alone is every Mac.
         // Only the Containers segment means a sandbox.
         assert_eq!(
-            build_profile_for(None, Some("/Users/dj/Library/Application Support")),
+            build_profile_for(None, Some("/Users/dj/Library/Application Support"), true),
+            None
+        );
+    }
+
+    #[test]
+    fn the_sandbox_is_macos_only() {
+        // Mirrors apps/shared/sandbox.py's test_the_sandbox_is_macos_only: a
+        // Linux or Windows host is never sandboxed, whatever the process
+        // signals say. This is the case that a bare `cfg!(target_os =
+        // "macos")` inside the helper made untestable on Linux CI, where it
+        // always returned None before looking at either signal.
+        assert_eq!(
+            build_profile_for(
+                Some("com.opendj.desktop"),
+                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data"),
+                false
+            ),
             None
         );
     }
