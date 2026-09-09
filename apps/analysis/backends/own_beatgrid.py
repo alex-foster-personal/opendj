@@ -381,6 +381,19 @@ def record_from_payload(
 # backend
 #-----------------------------------------------------------------------------
 
+
+def _fingerprint_or_unreadable(audio_path: Path) -> str:
+    """Canonical decode fingerprint, or a per-FILE failure by name."""
+    try:
+        return canonical_decode_fingerprint(audio_path)
+    except FingerprintUnavailable as exc:
+        # A resampler this host cannot run was refused in `analyze` before any
+        # track was touched, so reaching here means THIS file did not decode.
+        raise TrackUnreadable(
+            f"the canonical decode fingerprint could not be taken for {audio_path}: {exc}"
+        ) from None
+
+
 class OwnBeatgridBackfillBackend:
     """`apps.analysis.backends.base.AnalyzerBackend` for the own beatgrid lane."""
 
@@ -410,6 +423,15 @@ class OwnBeatgridBackfillBackend:
                 f"the canonical decode fingerprint cannot be taken on this host: {exc}"
             ) from exc
         device = os.environ.get(DEVICE_ENV, "").strip() or DEFAULT_DEVICE
+        # Fingerprint BEFORE the runner, because the record must name the
+        # bytes the beats were derived FROM. Taken afterwards it names
+        # whatever is on disk when the runner happens to finish, which for a
+        # file replaced mid-run is a record claiming provenance for audio that
+        # did not produce its grid - and it would claim it CONVINCINGLY, since
+        # a later cross-host comparison against the new bytes would agree
+        # while the beats it vouches for came from the old ones (Codex P2
+        # BLOCKING, PR #1587).
+        decode_fingerprint = _fingerprint_or_unreadable(audio_path)
         payload = run_runner(audio_path, checkpoint, device=device)
         # NO conversion guard here on purpose. An earlier version caught
         # KeyError and ValueError and re-raised them as TrackUnreadable, which
@@ -423,16 +445,17 @@ class OwnBeatgridBackfillBackend:
         # cases are raised deliberately and by name: TrackVanished above,
         # TrackUnreadable inside record_from_payload for a runner-reported
         # error. Everything else propagates as the systemic fault it is.
-        try:
-            decode_fingerprint = canonical_decode_fingerprint(audio_path)
-        except FingerprintUnavailable as exc:
-            # Per-FILE, like the runner-error path: a resampler this host
-            # cannot run was already refused above, so reaching here means
-            # THIS file did not decode.
-            raise TrackUnreadable(
-                f"the canonical decode fingerprint could not be taken for "
-                f"{audio_path}: {exc}"
-            ) from None
+        # ...and again afterwards, because "the file did not change while a
+        # multi-second model ran over it" is exactly the kind of assumption
+        # that holds until a sync tool, a re-tag or a re-encode lands in the
+        # middle of a library-wide backfill. Cheap ways to ask (size, mtime)
+        # answer a different question: a rewrite that preserves them is the
+        # case worth catching, not the one worth excusing.
+        if _fingerprint_or_unreadable(audio_path) != decode_fingerprint:
+            raise TrackVanished(
+                f"{audio_path} changed while the runner was analyzing it, so "
+                "its beats came from bytes this record cannot vouch for"
+            )
         return record_from_payload(
             payload,
             stable_id=stable_id,

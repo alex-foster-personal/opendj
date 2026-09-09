@@ -191,3 +191,67 @@ def test_the_probe_fails_loud_on_a_build_without_the_resampler(
     with pytest.raises(FingerprintUnavailable) as raised:
         require_resampler()
     assert "soxr" in str(raised.value)
+
+
+#-----------------------------------------------------------------------------
+# provenance across the runner
+#-----------------------------------------------------------------------------
+
+@pytest.mark.requires_soxr
+def test_a_file_replaced_while_the_runner_ran_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record must not vouch for bytes that did not produce its grid.
+
+    The runner takes seconds to minutes per track, and a library-wide backfill
+    is exactly when a sync tool, a re-tag or a re-encode lands underneath it.
+    Fingerprinting only afterwards would stamp whatever is on disk when the
+    model happens to finish, and the resulting record is convincing in the
+    worst way: a later cross-host comparison against the NEW bytes agrees,
+    while the beats it vouches for came from the old ones (Codex P2 BLOCKING,
+    PR #1587).
+    """
+    from apps.analysis.backends import own_beatgrid
+    from apps.analysis.backends.base import TrackVanished
+
+    track = _synthesize(tmp_path / "track.wav", hz=440, rate=44100)
+    monkeypatch.setattr(
+        own_beatgrid.weights, "resolve_checkpoint", lambda: ("/checkpoint", "0" * 64)
+    )
+
+    def _replace_the_file_mid_run(*args: object, **kwargs: object) -> dict[str, object]:
+        _synthesize(track, hz=880, rate=44100)  # different audio, same path
+        return {"results": {}}
+
+    monkeypatch.setattr(own_beatgrid, "run_runner", _replace_the_file_mid_run)
+    with pytest.raises(TrackVanished) as raised:
+        own_beatgrid.OwnBeatgridBackfillBackend.analyze(track, "sid-replaced")
+    assert "changed while the runner" in str(raised.value)
+
+
+@pytest.mark.requires_soxr
+def test_an_untouched_file_gets_past_the_provenance_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: the guard must not be failing for everyone.
+
+    A guard that rejected every track would satisfy the test above perfectly.
+    Here the runner leaves the file alone and returns a payload that is
+    malformed for a DIFFERENT reason, so reaching that second failure proves
+    the fingerprint comparison passed rather than never having run.
+    """
+    from apps.analysis.backends import own_beatgrid
+    from apps.analysis.backends.base import TrackVanished
+
+    track = _synthesize(tmp_path / "track.wav", hz=440, rate=44100)
+    monkeypatch.setattr(
+        own_beatgrid.weights, "resolve_checkpoint", lambda: ("/checkpoint", "0" * 64)
+    )
+    monkeypatch.setattr(
+        own_beatgrid, "run_runner", lambda *a, **k: {"results": {}}
+    )
+    with pytest.raises(Exception) as raised:
+        own_beatgrid.OwnBeatgridBackfillBackend.analyze(track, "sid-untouched")
+    assert not isinstance(raised.value, TrackVanished), (
+        "the file was never touched, so the provenance guard must not be what fires"
+    )
