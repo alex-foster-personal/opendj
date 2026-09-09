@@ -6,6 +6,7 @@
     "src/service-worker.{js,ts}",
     "tests/unit/**/*.test.mjs",
     "tests/unit/fixtures/**/*.ts",
+    "tests/e2e/fixtures/**/*.ts",
     "tests/manual/wkwebview-spike/inject.mjs",
     "tests/e2e/**/*.spec.ts",
     "tests/e2e/**/*.config.ts",

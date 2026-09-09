@@ -16,6 +16,8 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
+		pingHealth,
+		timeoutSignal,
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
@@ -27,6 +29,10 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import {
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -189,7 +195,7 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
-	let allTracksPlayableCount = $state<number | null>(null);
+	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
@@ -204,16 +210,44 @@
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
-	type LibraryHealthDot = {
-		label: 'Library health' | 'Vocals completion' | 'Stems completion' | 'Lyrics completion';
-		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
-		detail: string;
-	};
-	let libraryHealth = $state<LibraryHealthDot>({
-		label: 'Library health',
+	// Restored by pin a66ee132a14e. #1339/#1352 replaced the old three-dot
+	// `conn-dots` strip (fe / be / lib) with this coverage row and carried
+	// only the `lib` signal across as `libraryHealth`, so the two liveness
+	// dots vanished with no replacement anywhere in the UI. They are the
+	// only thing that distinguishes "the library really is empty" from "the
+	// engine is not answering", which is exactly the confusion that made
+	// this pin worth filing.
+	let frontendOnline = $state<LibraryHealthDot>({
+		label: 'Frontend',
 		state: 'loading',
-		detail: 'checking library health'
+		detail: 'checking frontend'
 	});
+	let backendOnline = $state<LibraryHealthDot>({
+		label: 'Backend',
+		state: 'loading',
+		detail: 'checking backend'
+	});
+	let libraryHealthError = $state<string | null>(null);
+	/**
+	 * Derived, not assigned. pin a66ee132a14e: this dot used to quote
+	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
+	 * available" on a library where most of those rows are broken links to
+	 * files that are permanently gone. The playable total is
+	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
+	 * AFTER init - assigning the dot at init time is precisely how it came to
+	 * quote the wrong number, so the dot is computed from whatever has landed
+	 * instead of frozen at the first thing that did.
+	 */
+	const libraryHealth = $derived<LibraryHealthDot>(
+		_computeLibraryHealthDot(
+			libraryHealthError,
+			allTracksCount,
+			playlists.length,
+			allTracksNonBrokenCount,
+			allTracksBrokenCount,
+			allTracksReconcileError
+		)
+	);
 	let vocalsCompletion = $state<LibraryHealthDot>({
 		label: 'Vocals completion',
 		state: 'loading',
@@ -657,6 +691,19 @@
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
 		);
+		// Liveness ping restored with pin a66ee132a14e's dots. Kept at the
+		// original 2.5s cadence and 2s timeout: this is the only signal that
+		// goes red while the rest of the pane simply shows stale data, so a
+		// slower poll would make it lie for longer than it is useful.
+		let connAlive = true;
+		const pingConn = async (): Promise<void> => {
+			const [be, fe] = await Promise.all([_pingBackend(), _pingFrontend()]);
+			if (!connAlive) return;
+			backendOnline = be;
+			frontendOnline = fe;
+		};
+		void pingConn();
+		const connTimer = setInterval(() => void pingConn(), CONN_PING_MS);
 
 		// ---- library listing freshness -------------------------------------
 		// FAST PATH: the engine tells us the moment a track changes, from any
@@ -667,6 +714,12 @@
 		// refetch is allowed to run, and its coalescer guarantees it is only
 		// ever one refetch.
 		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
+		// Another tab or API client creating/deleting a playlist must not leave
+		// the "N playlists found" health-dot total stale until this tab does a
+		// local playlist op or a reload.
+		const unsubscribePlaylists = subscribeKind('playlists', () =>
+			_libraryRefreshGate.request()
+		);
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
@@ -685,15 +738,62 @@
 		return () => {
 			uninstallBrowserSortIpc();
 			unregisterPerformanceBrowser();
+			connAlive = false;
+			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
+			unsubscribePlaylists();
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 		};
 	});
+	/**
+	 * The Library health dot policy now lives in `$lib/rb/library-health-dots`
+	 * (pure, unit tested with no component or network mock), the same split
+	 * as `meter-math.ts`. `libraryHealth` above calls it directly.
+	 */
 
+	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
+	const CONN_PING_MS = 2500;
+	const CONN_PING_TIMEOUT_MS = 2000;
+
+	async function _pingBackend(): Promise<LibraryHealthDot> {
+		try {
+			await pingHealth(CONN_PING_TIMEOUT_MS);
+			return { label: 'Backend', state: 'complete', detail: 'engine online' };
+		} catch (error: unknown) {
+			// The reason is kept rather than flattened to "offline": a timeout
+			// and a 500 want different things from the reader.
+			const why = error instanceof Error ? error.message : String(error);
+			return { label: 'Backend', state: 'error', detail: `engine not answering - ${why}` };
+		}
+	}
+
+	async function _pingFrontend(): Promise<LibraryHealthDot> {
+		const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
+		try {
+			const response = await fetch(`${window.location.origin}/`, {
+				method: 'GET',
+				cache: 'no-store',
+				signal
+			});
+			if (!response.ok) {
+				return {
+					label: 'Frontend',
+					state: 'error',
+					detail: `dev server returned HTTP ${response.status}`
+				};
+			}
+			return { label: 'Frontend', state: 'complete', detail: 'dev server online' };
+		} catch (error: unknown) {
+			const why = error instanceof Error ? error.message : String(error);
+			return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
+		} finally {
+			clear();
+		}
+	}
 
 	function _coverageDot(
 		label: LibraryHealthDot['label'],
@@ -702,10 +802,14 @@
 	): LibraryHealthDot {
 		const missing = coverage.missing[step];
 		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
-			return { label, state: 'unavailable', detail: `${step} coverage is unavailable` };
+			return { label, state: 'unavailable', detail: `${step} coverage could not be measured` };
 		}
 		if (coverage.on_disk <= 0) {
-			return { label, state: 'unavailable', detail: `no reachable tracks to measure, ${coverage.unreachable} unreachable` };
+			return {
+				label,
+				state: 'unavailable',
+				detail: `no playable tracks to measure, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
+			};
 		}
 		const completed = coverage.on_disk - missing;
 		if (completed < 0) {
@@ -725,13 +829,13 @@
 			return {
 				label,
 				state: 'error',
-				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
 			};
 		}
 		return {
 			label,
 			state: missing === 0 ? 'complete' : 'incomplete',
-			detail: `${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+			detail: `${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
 		};
 	}
 
@@ -752,7 +856,7 @@
 	async function _loadReconcileSummary(): Promise<void> {
 		try {
 			const summary = await getReconcileSummary();
-			allTracksPlayableCount = summary.total_tracks - summary.total_broken;
+			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
@@ -766,11 +870,7 @@
 		try {
 			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
 			allTracksCount = healthRes.health.state_db.tracks;
-			libraryHealth = {
-				label: 'Library health',
-				state: allTracksCount > 0 ? 'complete' : 'unavailable',
-				detail: allTracksCount > 0 ? `${allTracksCount} tracks available` : 'no tracks available'
-			};
+			libraryHealthError = null;
 			playlists = lists;
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
@@ -789,11 +889,7 @@
 				await _restoreBootPane();
 			}
 		} catch (exc) {
-			libraryHealth = {
-				label: 'Library health',
-				state: 'error',
-				detail: exc instanceof Error ? exc.message : String(exc)
-			};
+			libraryHealthError = exc instanceof Error ? exc.message : String(exc);
 			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
 			throw exc;
@@ -1104,7 +1200,7 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
-		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary()]);
+		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
 			const healthRes = await getHealth();
 			allTracksCount = healthRes.health.state_db.tracks;
@@ -1148,11 +1244,11 @@
 	 * The only entry point for a background library refresh: WHEN it may run,
 	 * and how many times.
 	 *
-	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
-	 * the 60s degraded-path poll) and a single gap-revealing `library.changed`
-	 * frame fires the first two for ONE event. Unguarded that is two concurrent
-	 * full library reads racing to write the same panes; the gate's coalescer
-	 * makes it one run plus one trailing run (`$lib/rb/coalesce`).
+	 * Four triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
+	 * `subscribeResync` and the 60s degraded-path poll) and a single gap-revealing
+	 * `library.changed` frame fires two of them for ONE event. Unguarded that is
+	 * concurrent full library reads racing to write the same panes; the gate's
+	 * coalescer makes it one run plus one trailing run (`$lib/rb/coalesce`).
 	 *
 	 * PERFMODE-04 on top of that: no background refetch AT ALL while a deck is
 	 * playing. A refresh is a full library read per open pane followed by a
@@ -1325,7 +1421,7 @@
 			const result =
 				node.kind === 'all_tracks'
 					? await _fetchAllRows((info) =>
-							p.updateLoadProgress(seq, info.loaded, allTracksPlayableCount)
+							p.updateLoadProgress(seq, info.loaded, allTracksNonBrokenCount)
 						)
 					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
@@ -2308,7 +2404,7 @@
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
-				allTracksCount={allTracksPlayableCount}
+				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
@@ -2576,7 +2672,7 @@
 		</div>
 	</div>
 	<div class="library-health" aria-label="library processing health">
-		{#each [libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+		{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
 			<button
 				type="button"
 				class:complete={dot.state === 'complete'}
@@ -2990,6 +3086,7 @@
 		right: 0;
 		bottom: 16px;
 		min-width: 180px;
+		max-width: 320px;
 		padding: 6px 8px;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
@@ -2997,7 +3094,7 @@
 		font: inherit;
 		font-size: var(--rb-fs-label);
 		text-align: left;
-		white-space: nowrap;
+		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
 	.health-dot:hover .health-popover,

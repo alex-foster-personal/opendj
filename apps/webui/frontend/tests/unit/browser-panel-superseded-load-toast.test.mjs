@@ -61,7 +61,7 @@ function makeLoadPane({ fetchPlaylistRows, pushToast }) {
 		'panes',
 		'setLastPlaylist',
 		'_fetchAllRows',
-		'allTracksPlayableCount',
+		'allTracksNonBrokenCount',
 		'_fetchPlaylistRows',
 		'pushToast',
 		`${functionSource}\nreturn _loadPane;`

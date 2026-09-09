@@ -26,7 +26,12 @@ import {
 	installXrunSentinel,
 	installXrunSessionGlobal
 } from '$lib/rb/xrun-sentinel';
-import { attachMeterTaps, teardownMeterTaps, type MeterTapSource } from '$lib/rb/meter-tap';
+import {
+	attachMeterTaps,
+	markMetersUnavailable,
+	teardownMeterTaps,
+	type MeterTapSource
+} from '$lib/rb/meter-tap';
 
 /**
  * The context whose authoritative (running) device-floor row has been emitted.
@@ -92,9 +97,23 @@ export function armDeckMeters(
 	sources: ReadonlyArray<MeterTapSource>
 ): void {
 	void attachMeterTaps(ctx, sources).catch((error: unknown) => {
+		// Recorded AND surfaced: a perf-event row alone is a terminal error
+		// masked as a silent reading (AGENTS.md L244-L246) - nobody watches the
+		// ring live, so the meter itself has to say it is broken.
+		//
+		// Scoped to THIS context, though. Route cleanup calls `dispose()`
+		// without awaiting it, so a rejection from a context torn down mid-arm
+		// can land after a remount has armed a healthy new one; marking then
+		// would leave a working meter reading "unavailable" for the rest of the
+		// session. `markMetersUnavailable` drops a verdict from a context that
+		// is no longer armed, and the row says which of the two happened so a
+		// dropped verdict is still visible in the ring.
+		const marked = markMetersUnavailable(ctx);
 		recordPerfEvent(
 			'deck-meters-failed',
-			`channel level meters did not start, so every meter reads silence: ${String(error)}`
+			marked
+				? `level meters did not start, so every meter is unavailable rather than reading silence: ${String(error)}`
+				: `level meters failed for a context that is no longer armed, so the current graph's meters are left alone: ${String(error)}`
 		);
 	});
 }
@@ -197,7 +216,12 @@ export function armAudioContextWatchdog(
 		ctx,
 		{
 			pushToast,
-			recordPerfEvent: (kind, message) => recordPerfEvent(kind, message, null, 'info'),
+			// Severity comes FROM the rebind, it is not pinned here: a failed
+			// re-bind records at `error` so `recordPerfEvent` escalates it to the
+			// engine's client-error log. Pinning every row at `info` is why the
+			// Wed 9 Sep 2026 17:44Z cutout left no server-side trace.
+			recordPerfEvent: (kind, message, severity = 'info') =>
+				recordPerfEvent(kind, message, null, severity),
 			now: () => performance.now(),
 			setTimeout: (fn, ms) => setTimeout(fn, ms),
 			clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)

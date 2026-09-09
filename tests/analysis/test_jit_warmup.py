@@ -138,6 +138,23 @@ def test_purge_removes_artifacts_and_the_stamp(
     assert keep.exists(), "purge must not touch anything but .nbi/.nbc"
 
 
+@pytest.mark.requirement("JIT-05")
+def test_purge_of_empty_roots_is_a_pure_no_op() -> None:
+    """[if] purge_cache(()) touches the filesystem at all [then] fail, [else stop].
+
+    Unit-level half of the empty-roots guard: no artifacts, no stamp lookup,
+    nothing removed. The claim that an empty-roots purge must not delete a
+    REAL cache's SHARED stamp (issue #1572 review: the lock, fingerprint and
+    stamp are keyed on the environment, not a backend's roots) needs two real
+    backends sharing one environment to actually prove the sharing happens;
+    see test_a_no_cache_backends_purge_does_not_touch_a_real_shared_stamp in
+    test_jit_warmup_cold_cache.py for that end-to-end proof.
+
+    if purge_cache(()) removed anything then it read a stamp path this test
+    never gave it a reason to touch"""
+    assert purge_cache(()) == 0
+
+
 # ---------------------------------------------------------------------------
 # Mutual exclusion, with its negative control
 # ---------------------------------------------------------------------------

@@ -92,6 +92,9 @@ export interface AudioEngine {
 	setTrim(deck: DeckId, value: number): void;
 	/** One EQ band knob 0..1 (0.5 = flat) -> Biquad gain in dB. */
 	setEq(deck: DeckId, band: EqBand, value: number): void;
+	/** FILTER knob 0..1 (0.5 = bypass) -> paired lowpass/highpass Biquad
+	 * corner frequencies. See player/constants.ts FILTER_*. */
+	setFilter(deck: DeckId, value: number): void;
 	/** Channel fader 0..1 -> fader GainNode. */
 	setFader(deck: DeckId, value: number): void;
 	/** Crossfader 0..1 (0 = full A, 1 = full B); applies the gain pair to
