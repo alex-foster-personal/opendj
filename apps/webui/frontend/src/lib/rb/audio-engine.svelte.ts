@@ -517,6 +517,22 @@ let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
+/**
+ * #1475 M enforcement: a static gain ceiling, not a limiter. `_ceilingDbfs` is
+ * the level captured by the M control at some tap; enabling it attenuates
+ * `_masterGain` by a fixed amount so 0 dBFS (full scale) lands at that
+ * captured level instead. It never boosts, and it never reads the current
+ * signal, so there is no attack/release and nothing here colors the sound -
+ * disabling removes the attenuation exactly. See audio-engine-types.ts for
+ * the rationale against a look-ahead limiter.
+ */
+let _ceilingDbfs: number | null = null;
+let _ceilingEnabled = false;
+
+function _ceilingGainMultiplier(): number {
+	if (!_ceilingEnabled || _ceilingDbfs === null) return 1;
+	return Math.min(1, 10 ** (_ceilingDbfs / 20));
+}
 /** Monotonic engine-session id, bumped by dispose(). Deck loadTokens cannot
  * carry a guard across a route remount: dispose() installs a fresh
  * `_emptyRuntime()` per deck whose loadToken restarts at 0, so a token
@@ -659,7 +675,7 @@ function _ensureGraph(): AudioContext {
 	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
 	armAudioContextWatchdog(_ctx, () => DECK_IDS.some((deck) => deckStates[deck].playing));
 	_masterGain = _ctx.createGain();
-	_masterGain.gain.value = mixerState.master;
+	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
 	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
 	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
 	_masterAnalyser = _ctx.createAnalyser();
@@ -4000,7 +4016,20 @@ class RbAudioEngine implements AudioEngine {
 	setMaster(value: number): void {
 		_assertUnit('setMaster value', value);
 		mixerState.master = value;
-		if (_masterGain !== null) _setParam(_masterGain.gain, value);
+		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
+	}
+
+	/** #1475 M enforcement: primitives only, no prefs import here on purpose -
+	 * audio-engine.svelte.ts is a hotspot file already at its fan-out ceiling,
+	 * so the caller (Mixer.svelte, which already imports both this module and
+	 * prefs.svelte) pushes the calibrated value in rather than this module
+	 * pulling it. */
+	setLevelCeiling(dbfs: number | null, enabled: boolean): void {
+		_ceilingDbfs = dbfs;
+		_ceilingEnabled = enabled;
+		if (_masterGain !== null) {
+			_setParam(_masterGain.gain, mixerState.master * _ceilingGainMultiplier());
+		}
 	}
 }
 

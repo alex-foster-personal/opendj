@@ -174,3 +174,60 @@ test('the worklet processor holds no policy numbers', () => {
 	}
 	assert.ok(!code.includes('log10'), 'processor is converting to dB, which is policy');
 });
+
+// --- calibration -----------------------------------------------------------
+//
+// Regression lines:
+// - if an uncalibrated install stops using the default scale then every
+//   existing user's meter silently changes under them
+// - if calibration does not SHIFT the whole scale then the PPM spacing is
+//   replaced by an invented curve and the segments stop meaning dB steps
+// - if the calibrated red point does not become the first red segment then
+//   the number the user chose by ear is not the number the meter uses
+
+test('null calibration keeps the default scale exactly', () => {
+	assert.deepEqual(
+		[...meter.segmentThresholdsForRed(null)],
+		[...meter.SEGMENT_THRESHOLDS_DBFS]
+	);
+});
+
+test('the calibrated level becomes the first RED segment', () => {
+	for (const red of [-12, -6, -3, 0, 3]) {
+		const t = meter.segmentThresholdsForRed(red);
+		// Segment 8 is the first red one; thresholds are 0-indexed.
+		assert.ok(
+			Math.abs(t[7] - red) < 1e-9,
+			`red anchor ${red} landed at ${t[7]}`
+		);
+		assert.equal(meter.segmentBand(8), 'red');
+	}
+});
+
+test('calibration shifts the whole scale, preserving PPM spacing', () => {
+	const base = meter.SEGMENT_THRESHOLDS_DBFS;
+	const shifted = meter.segmentThresholdsForRed(meter.DEFAULT_RED_DBFS + 6);
+	for (let i = 0; i < base.length; i += 1) {
+		assert.ok(Math.abs(shifted[i] - base[i] - 6) < 1e-9, `segment ${i} spacing changed`);
+	}
+});
+
+test('a hot library reads mid-scale once calibrated, instead of pinning', () => {
+	// Measured: the maintainer's tracks median +1.0 dBTP. On the default scale that is
+	// 10/10 lit. Calibrating red to 0 dBFS must stop it pinning every track.
+	const hot = 1.0;
+	assert.equal(meter.segmentsLitFromDbfs(hot), 10, 'default scale should pin, that is the bug');
+	const calibrated = meter.segmentThresholdsForRed(3);
+	const lit = meter.segmentsLitFromDbfs(hot, calibrated);
+	assert.ok(lit < 10, `calibrated scale still pinned at ${lit}/10`);
+	assert.ok(lit >= 5, `calibrated scale collapsed to ${lit}/10, should stay readable`);
+});
+
+test('a wrong-length threshold set is a hard error, not a silent miscount', () => {
+	assert.throws(() => meter.segmentsLitFromDbfs(-10, [-20, -10]), RangeError);
+});
+
+test('a non-finite calibration is rejected rather than shifting by NaN', () => {
+	assert.throws(() => meter.segmentThresholdsForRed(NaN), RangeError);
+	assert.throws(() => meter.segmentThresholdsForRed(Infinity), RangeError);
+});

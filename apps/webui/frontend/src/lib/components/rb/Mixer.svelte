@@ -11,7 +11,7 @@
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */
-	import { getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -36,6 +36,18 @@
 	 * persisted preference (also driven by Cmd/Ctrl+2/+4 via
 	 * deck-layout-hotkeys.ts - same setter, single source of truth). */
 	const deckLayoutLess = $derived(uiPrefs.deck_layout === 'less');
+
+	// #1475 M enforcement: audio-engine.svelte.ts is a hotspot file already at
+	// its frontend.max_fan_out ceiling, so it exposes setLevelCeiling(dbfs,
+	// enabled) over primitives only and this component (already importing
+	// both modules for deck layout) pushes the persisted calibration in,
+	// rather than the engine importing prefs.svelte itself.
+	$effect(() => {
+		engine.setLevelCeiling(
+			uiPrefs.level_calibration.ceiling_dbfs,
+			uiPrefs.level_calibration.ceiling_enabled
+		);
+	});
 
 	const assigns: Record<DeckId, CrossfaderAssign> = $derived({
 		1: mixerState.channels[1].assign,
