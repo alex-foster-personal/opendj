@@ -57,6 +57,13 @@ classified once, per arm:
   - DISAGREE-UNRELATED: the references disagree and the candidate's answer
     matches neither. Enumerated by stable_id (spec: "enumerate, listen, prime
     key-change candidates") rather than just counted.
+A disagreement fixture the candidate never answered (omitted, failed, or
+filtered out by `_parse_candidate`) sides with NEITHER reference by taking no
+side at all, so it is counted separately as `disagree_no_answer` rather than
+folded into DISAGREE-UNRELATED's enumerated listening list (Codex P1 BLOCKING,
+PR #1620: a `None` answer previously fell through to DISAGREE-UNRELATED,
+which read as "the candidate actively disagreed with both" when it had
+actually said nothing).
 A fixture missing either reference cannot be classified into any of the three
 buckets (there is no "which reference" to side with); it is counted and named
 separately (`n_no_reference_pair`) rather than silently folded into the
@@ -111,6 +118,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis_key import canon
+from apps.equivalence.normalisers import NormaliseError
 
 __all__ = ["SCORER_VERSION", "render_table", "score_bundle"]
 
@@ -194,23 +202,48 @@ def _parse_reference(value: str | None, source: str) -> canon.Key | None:
 def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
     """A candidate's answer for one fixture, accepting either notation it may
     emit (Camelot or Open Key -- both are real MIK/rekordbox output shapes),
-    or None for an explicit error or an omitted answer.
+    or None for an explicit error, a fabricated fallback, a malformed value,
+    an inconsistent dual-notation answer, or an omitted answer. In that order:
 
-    `key_openkey` (no underscore) is the field name used throughout the repo
-    already -- `AnalysisRecord.key_openkey`, `apps/analysis/store.py`,
-    `apps/analysis/backends/mik.py` -- so a candidate emitting the standard
-    producer shape is accepted here rather than silently scored as a miss
-    (Codex P1 BLOCKING, PR #1620).
+    1. `error` truthy -> None (the candidate itself said it failed).
+    2. `key_confidence == 0.0` -> None. `apps/analysis/backends/librosa.py`
+       emits a FULLY SUCCESSFUL `AnalysisRecord` (no `error` field) on an
+       internal `chroma_cqt`/key-estimation exception, with a fixed fallback
+       key pair and `key_confidence=0.0` marking it as a non-estimate --
+       spec section 5's baseline paragraph names this exact shape ("each
+       fabricated fallback key (1A/1m, confidence 0.0) scored as zero") and
+       it was previously unhandled here, so a fallback that happened to
+       collide with the reference scored as a real answer (Codex P1
+       BLOCKING, PR #1620).
+    3. Parse whichever of `key_camelot` / `key_openkey` are present.
+       `key_openkey` (no underscore) is the field name used throughout the
+       repo already -- `AnalysisRecord.key_openkey`, `apps/analysis/store.py`,
+       `apps/analysis/backends/mik.py`. A value that fails to normalise
+       (`NormaliseError`, e.g. a malformed Camelot/Open Key string) counts
+       as a failed answer rather than crashing the whole round (Codex P1
+       BLOCKING, PR #1620: an uncaught `NormaliseError` here would abort
+       `score_bundle` for every arm over one bad fixture).
+    4. `AnalysisRecord.key_camelot`/`key_openkey` are BOTH mandatory fields
+       (`apps/analysis/record.py`), so a real candidate answer always
+       carries both. If both are present and parse to DIFFERENT keys, the
+       answer is internally inconsistent -- exactly the class of
+       Camelot<->Open Key conversion bug this lane exists to catch -- and is
+       scored as a failure rather than trusting Camelot alone and never
+       looking at Open Key (Codex P1 BLOCKING, PR #1620).
     """
     if not result or result.get("error"):
         return None
-    camelot = result.get("key_camelot")
-    if camelot:
-        return canon.from_mik_camelot(camelot)
-    open_key = result.get("key_openkey")
-    if open_key:
-        return canon.from_mik_open_key(open_key)
-    return None
+    if result.get("key_confidence") == 0.0:
+        return None
+    camelot, open_key = result.get("key_camelot"), result.get("key_openkey")
+    try:
+        parsed_camelot = canon.from_mik_camelot(camelot) if camelot else None
+        parsed_open_key = canon.from_mik_open_key(open_key) if open_key else None
+    except NormaliseError:
+        return None
+    if parsed_camelot and parsed_open_key and parsed_camelot != parsed_open_key:
+        return None
+    return parsed_camelot or parsed_open_key
 
 
 _ReferenceMap = dict[str, canon.Key | None]
@@ -259,7 +292,8 @@ def _score_against(stable_ids: list[str], reference: _ReferenceMap,
 
 def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
              mik: _ReferenceMap, answers: _ReferenceMap) -> dict[str, Any]:
-    agree_ids, related_rb, related_mik, unrelated_ids, no_reference_pair = [], [], [], [], []
+    agree_ids, related_rb, related_mik = [], [], []
+    unrelated_ids, no_answer_ids, no_reference_pair = [], [], []
     agree_scores: list[float] = []
     for sid in stable_ids:
         rb_key, mik_key = rekordbox[sid], mik[sid]
@@ -270,6 +304,14 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
         if rb_key == mik_key:
             agree_ids.append(sid)
             agree_scores.append(weighted_score(rb_key, answer))
+        elif answer is None:
+            # A disagreement fixture the candidate never answered (omitted
+            # or failed): it did not "side with" neither reference, it never
+            # took a side at all. Counting it as DISAGREE-UNRELATED would
+            # misclassify an unanalyzed track into the enumerated "listen to
+            # these, prime key-change candidates" list (Codex P1 BLOCKING,
+            # PR #1620).
+            no_answer_ids.append(sid)
         elif answer == rb_key:
             related_rb.append(sid)
         elif answer == mik_key:
@@ -288,6 +330,7 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
             "sides_with_mik": len(related_mik),
         },
         "disagree_unrelated": {"n": len(unrelated_ids), "stable_ids": sorted(unrelated_ids)},
+        "disagree_no_answer": {"n": len(no_answer_ids), "stable_ids": sorted(no_answer_ids)},
         "n_no_reference_pair": len(no_reference_pair),
     }
 
