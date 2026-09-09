@@ -34,6 +34,7 @@ import os
 import sqlite3
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 
 from . import queue_store
@@ -43,7 +44,7 @@ from .pool import analyze_one
 from .queue import CascadeOutcome, QueueError, cascade_dependents, enqueue
 from .record import AnalysisRecord
 from .store import upsert_record
-from .worker_diagnostics import init_worker
+from .worker_diagnostics import init_worker, pool_death_message, worker_exit_signals
 
 log = logging.getLogger("apps.analysis.queue_runner")
 
@@ -238,6 +239,34 @@ def _settle_one(
         ctx.on_item(item, queue_store.ITEM_DONE)
 
 
+def _snapshot_workers(
+    pool: ProcessPoolExecutor, seen: dict[int, object]
+) -> None:
+    """Record the pool's worker processes while they are still reachable."""
+    seen.update(
+        {p.pid: p for p in (getattr(pool, "_processes", None) or {}).values()}
+    )
+
+
+def _pump_pool(
+    ctx: _RunContext, pool: ProcessPoolExecutor, seen: dict[int, object]
+) -> None:
+    """Claim, submit and settle until the batch is empty or cancelled."""
+    inflight: dict[Future, queue_store.QueueItem] = {}
+    while True:
+        if _batch_is_cancelled(ctx.conn, ctx.batch_id):
+            ctx.summary.cancelled_midway = True
+            return
+        _fill_pool(ctx, pool, inflight)
+        _snapshot_workers(pool, seen)
+        if not inflight:
+            return
+        done, _ = wait(set(inflight), return_when=FIRST_COMPLETED)
+        for fut in done:
+            _settle_one(ctx, fut, inflight.pop(fut))
+        _snapshot_workers(pool, seen)
+
+
 def run_batch(
     conn: sqlite3.Connection,
     batch_id: str,
@@ -290,20 +319,32 @@ def run_batch(
         summary=summary,
         on_item=on_item,
     )
-    inflight: dict[Future, queue_store.QueueItem] = {}
+    # ``seen_workers`` is why this is not one call: the stdlib exposes no
+    # public handle on the worker processes and ``shutdown`` drops the private
+    # one, so they are snapshotted while still reachable. Same reason as
+    # apps/analysis/pool.py -- a native crash (issue #1316's NULL instruction
+    # pointer, issue #1572's librosa SIGSEGV) produces no Python traceback at
+    # all, and the worker's exit SIGNAL is the only evidence of what happened.
+    # Without it a drain that hits one reports "A process in the process pool
+    # was terminated abruptly", which names neither the signal nor the cause.
+    seen_workers: dict[int, object] = {}
     try:
-        while True:
-            if _batch_is_cancelled(conn, batch_id):
-                summary.cancelled_midway = True
-                break
-            _fill_pool(ctx, pool, inflight)
-            if not inflight:
-                break
-            done, _ = wait(set(inflight), return_when=FIRST_COMPLETED)
-            for fut in done:
-                _settle_one(ctx, fut, inflight.pop(fut))
-    finally:
-        pool.shutdown(wait=True, cancel_futures=True)
+        try:
+            _pump_pool(ctx, pool, seen_workers)
+        finally:
+            # Snapshot BEFORE the shutdown, read exit codes AFTER: while the
+            # executor is tearing workers down every ``Process.exitcode`` is
+            # still None, and a real crash would report only the generic
+            # fallback.
+            _snapshot_workers(pool, seen_workers)
+            pool.shutdown(wait=True, cancel_futures=True)
+    except BrokenProcessPool as exc:
+        # The claimed items stay ``running``: they were never committed, so a
+        # resume returns them to pending and re-runs them exactly once. That
+        # is the same path a SIGKILL of the whole runner takes.
+        raise RuntimeError(
+            pool_death_message(worker_exit_signals(seen_workers.values()))
+        ) from exc
 
     if summary.cancelled_midway:
         return summary

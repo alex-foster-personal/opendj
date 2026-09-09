@@ -110,10 +110,33 @@ DEFAULT_MEMORY_MODEL: MemoryModel = MemoryModel(
     source="specs/native-analysis-v1.md section 4 (round 1)",
 )
 
-#: Registry keyed on backend name (``own_<lane>.<producer>``). A producer
-#: lane registers its own re-measured model at import time.
+#: The pre-v1 librosa backfill producer, re-measured by the same two-arm
+#: method on Wed 9 Sep 2026. It is here because it is the ONE registered
+#: backend a real backfill can run today, and because its numbers are
+#: NOTHING like beat-this's: a floor more than twice as high and a slope
+#: half as steep. That is the whole reason this registry exists rather than
+#: two module constants -- one producer's measurement does not describe
+#: another's, and a queue that budgeted every producer at 330 + 68 would be
+#: quoting a figure it never measured for the thing it is running.
+LIBROSA_MEMORY_MODEL: MemoryModel = MemoryModel(
+    backend="librosa",
+    producer_version="librosa-0.10",
+    floor_mb=765.5,
+    slope_mb_per_min=33.2,
+    measured_on=(
+        "the maintainer's Mac (load average 161), CPU, one synthetic 128 BPM click "
+        "track per arm, peak RSS of the analyzing child process sampled at "
+        "20 Hz, Wed 9 Sep 2026: 831.9 MB at 2 min, 1428.7 MB at 20 min"
+    ),
+    source="specs/native-analysis-v1.md, nav1-queue round A",
+)
+
+#: Registry keyed on backend name (``own_<lane>.<producer>``, or a pre-v1
+#: backend name). A producer lane registers its own re-measured model at
+#: import time.
 MEMORY_MODELS: dict[str, MemoryModel] = {
     DEFAULT_MEMORY_MODEL.backend: DEFAULT_MEMORY_MODEL,
+    LIBROSA_MEMORY_MODEL.backend: LIBROSA_MEMORY_MODEL,
 }
 
 
@@ -323,6 +346,7 @@ __all__ = [
     "BAND_OVER_45_MIN",
     "BAND_UNDER_20_MIN",
     "DEFAULT_MEMORY_MODEL",
+    "LIBROSA_MEMORY_MODEL",
     "MAX_ADMITTED_MINUTES",
     "MEMORY_MODELS",
     "PER_WORKER_CAP_MB",

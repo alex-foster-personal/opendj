@@ -193,7 +193,39 @@ def _spawn_runner(db: Path, batch_id: str, probe_dir: Path, sleep_s: float):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # Its own process group, so the kill below can take the runner AND
+        # the ProcessPoolExecutor children it spawned. Killing the runner
+        # pid alone reparents those children to init and leaves them
+        # resident: measured on this Mac, one run of this test left a
+        # `multiprocessing.spawn` worker and its `resource_tracker` alive
+        # after the test passed. A suite that leaks two processes per run is
+        # a suite that eventually takes the host down, and the docstring
+        # below already claimed a process-group kill it was not performing.
+        start_new_session=True,
     )
+
+
+def _kill_group(proc: subprocess.Popen[str]) -> None:
+    """SIGKILL the runner's whole process group, then prove it is gone.
+
+    The assertion is the point: ``killpg`` returning cleanly says the signal
+    was delivered, not that the group is empty, and an orphaned pool worker
+    is exactly the thing that survives a signal aimed at one pid.
+    """
+    # Read the group id BEFORE the kill. After ``wait`` reaps the runner,
+    # ``getpgid(proc.pid)`` raises whether or not the group still holds a
+    # leaked worker, so a probe built on it could never report one.
+    pgid = os.getpgid(proc.pid)
+    os.killpg(pgid, signal.SIGKILL)
+    proc.wait(timeout=30)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"process group {pgid} still has members after SIGKILL")
 
 
 def test_killed_runner_resumes_in_a_fresh_process_exactly_once(
@@ -233,8 +265,7 @@ def test_killed_runner_resumes_in_a_fresh_process_exactly_once(
     # Let the second track's record commit, then kill hard while a third is
     # in flight.
     time.sleep(1.2)
-    os.kill(proc.pid, signal.SIGKILL)
-    proc.wait(timeout=30)
+    _kill_group(proc)
     assert proc.returncode in (-signal.SIGKILL, 137), proc.returncode
 
     conn = open_conn(db)
