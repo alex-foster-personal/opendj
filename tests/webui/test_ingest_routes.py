@@ -204,6 +204,37 @@ def test_coverage_counts_a_valid_secondary_roformer_bundle(client, app, tmp_path
     assert targets["stems"] == []
 
 
+def test_refresh_resolves_configured_stem_roots_through_the_background_worker(
+    client, app, tmp_path
+):
+    """POST /ingest/refresh must resolve ``app.state.stem_roots`` too, not just
+    GET /ingest/coverage - the route hands the roots to a background thread
+    (``_refresh_worker``), which has no ``Request`` to read them from itself.
+
+    A mutation that made ``start_refresh`` ignore the configured roots and
+    fall back to ``stem_roots(DEFAULT_STEMS_DIR)`` passed the whole suite
+    silently before this test existed: the coverage test above never drives
+    the refresh route, so nothing exercised this half of the fix.
+    """
+    audio = tmp_path / "real.mp3"
+    audio.write_bytes(b"x" * 4096)
+    _seed_track(app, "roformer-only", audio)
+    roformer_root = tmp_path / "stems-roformer-spike"
+    _write_roformer_bundle(roformer_root, "roformer-only")
+    app.state.stem_roots = (ingest_mod.DEFAULT_STEMS_DIR, roformer_root)
+
+    client.put(
+        "/api/v1/ingest/config",
+        json={"enabled": {"analysis": False, "stems": True, "vocals": False}},
+    )
+    resp = client.post("/api/v1/ingest/refresh", json={"scope": "library"})
+    assert resp.status_code == 202
+    status = _wait_refresh(client)
+
+    assert status["phase"] == "done"
+    assert any("stems: 0 missing" in line for line in status["log_tail"])
+
+
 def _vocal_worker_result(**overrides):
     base = {
         "schema": vocals_cache.VOCAL_CACHE_SCHEMA,
