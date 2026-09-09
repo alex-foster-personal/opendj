@@ -388,7 +388,15 @@ def _fingerprint_or_unreadable(audio_path: Path) -> str:
         return canonical_decode_fingerprint(audio_path)
     except FingerprintUnavailable as exc:
         # A resampler this host cannot run was refused in `analyze` before any
-        # track was touched, so reaching here means THIS file did not decode.
+        # track was touched, so reaching here means THIS file failed to
+        # decode -- unless a sync, relink or deletion raced the decode and
+        # removed it in between, in which case it was never really attempted
+        # and must be retried rather than recorded as bad audio (Codex P2
+        # BLOCKING, PR #1587).
+        if not audio_path.exists():
+            raise TrackVanished(
+                f"{audio_path} vanished while its fingerprint was being taken"
+            ) from None
         raise TrackUnreadable(
             f"the canonical decode fingerprint could not be taken for {audio_path}: {exc}"
         ) from None
