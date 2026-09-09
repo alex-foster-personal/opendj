@@ -37,6 +37,7 @@ import {
 	getAutoPlayPlaylist,
 	getAutoPlayPlaylistRevision,
 	registerAutoPlayRankProvider,
+	remainingAutoPlayCandidates,
 	pickFollowerDeck,
 	pickNextStableId,
 	pickSourceDeck,
@@ -64,12 +65,7 @@ import {
 	clearAutoPlayQueue,
 	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
-import { describeAutoPlayStall, type AutoPlayStallReason } from '$lib/rb/autoplay-stall';
-import {
-	clearAutoPlayStall,
-	raiseAutoPlayStall,
-	readAutoPlayStall
-} from '$lib/rb/autoplay-stall.svelte';
+import { clearAutoPlayStall, noteAutoPlayExhaustion, noteAutoPlayHandoffStall, retireAutoPlayStallIfAudible } from '$lib/rb/autoplay-stall.svelte';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
@@ -377,28 +373,7 @@ async function _tick(): Promise<void> {
 	}
 
 	_syncPlayedSet();
-	// PLAY-08: sound is back. A source that is AUDIBLE on a track that is NOT
-	// the one AutoPlay gave up on means playback was restored - by the operator
-	// loading something, or by a later handoff committing - so the recorded
-	// stall is history rather than the state the room is in. Nothing else
-	// retires it: the stalled track ENDING is the moment the room goes quiet,
-	// which is exactly when the explanation has to still be on screen.
-	//
-	// `audible`, NOT `playing` (Codex r3973806301). `playing` is written
-	// optimistically the moment a play is REQUESTED, while `audible` is
-	// published from the presented-transport observation, i.e. from output that
-	// actually happened. Gating on `playing` meant that starting another track
-	// while the output device was dead deleted the explanation on the next poll
-	// with the room still silent - which is the whole failure class this banner
-	// exists for, reintroduced by its own clear rule.
-	const stall = readAutoPlayStall();
-	if (
-		stall !== null &&
-		source.stable_id !== stall.source_stable_id &&
-		deckStates[source.id].audible
-	) {
-		clearAutoPlayStall();
-	}
+	retireAutoPlayStallIfAudible(source.stable_id, deckStates[source.id].audible);
 	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
 
@@ -455,12 +430,10 @@ async function _tick(): Promise<void> {
 	});
 	if (nextId === null) {
 		const feed = getAutoPlayPlaylist();
-		const remaining = feed.filter(
-			(r) =>
-				r.stable_id !== source.stable_id &&
-				!excludeIds.has(r.stable_id) &&
-				!_playedIds.has(r.stable_id)
-		);
+		const remaining = remainingAutoPlayCandidates({
+			playlist: feed, current_stable_id: source.stable_id,
+			exclude_ids: excludeIds, played_ids: _playedIds
+		});
 		const allMissing = remaining.length > 0 && remaining.every((r) => !r.file_exists);
 		// An empty feed is its own diagnosis and must not be reported as a
 		// key/BPM dead end: on Tue 1 Sep 2026 that message sent the maintainer reading
@@ -478,11 +451,6 @@ async function _tick(): Promise<void> {
 			return;
 		}
 		_waitingEmptyFeedEpoch = null;
-		const reason: AutoPlayStallReason = allMissing
-			? 'missing-audio'
-			: uiPrefs.auto_play_enforce_order
-				? 'no-next-in-order'
-				: 'no-compatible-track';
 		pushToast(
 			allMissing
 					? 'auto-play: remaining playlist tracks are missing/stub audio'
@@ -491,12 +459,11 @@ async function _tick(): Promise<void> {
 						: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
 			'error'
 		);
-		// PLAY-08: the toast above is the whole reason issue #1640 exists - it
-		// clears itself after TOAST_DEFAULT_MS and the set then stops with
-		// nothing on screen saying why. The stall outlives it.
-		raiseAutoPlayStall(
-			describeAutoPlayStall({ reason, source_stable_id: source.stable_id, blocked: remaining })
-		);
+		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
+		noteAutoPlayExhaustion({
+			source_stable_id: source.stable_id, remaining, all_missing: allMissing,
+			enforce_order: uiPrefs.auto_play_enforce_order
+		});
 		_triggeredFor = source.stable_id;
 		_exhaustedFeedEpoch = _playedFeedEpoch;
 		return;
@@ -530,17 +497,7 @@ async function _tick(): Promise<void> {
 					`did not finish: ${message}`,
 				'error'
 			);
-			// PLAY-08: _triggeredFor stays pinned to this source for the rest of
-			// its playout, so nothing else will ever start. Same terminal class
-			// as exhaustion, same durable state.
-			raiseAutoPlayStall(
-				describeAutoPlayStall({
-					reason: 'handoff-incomplete',
-					source_stable_id: source.stable_id,
-					blocked: [],
-					detail: message
-				})
-			);
+			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message);
 			return;
 		}
 		// Row 16: nothing landed on the deck; quarantine and try another pick.
@@ -557,14 +514,7 @@ async function _tick(): Promise<void> {
 				`auto-play stopped after ${MAX_HANDOFF_ATTEMPTS} failed handoffs: ${message}`,
 				'error'
 			);
-			raiseAutoPlayStall(
-				describeAutoPlayStall({
-					reason: 'handoff-attempts-exhausted',
-					source_stable_id: source.stable_id,
-					blocked: [],
-					detail: message
-				})
-			);
+			noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message);
 		}
 	} finally {
 		_inFlight = false;
@@ -621,9 +571,6 @@ export function installAutoPlay(): () => void {
 				_chartedOrderKey = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();
-				// A disarmed AutoPlay is not stalled, it is off. Leaving the
-				// banner up would tell the operator a switched-off feature
-				// stopped their music.
 				clearAutoPlayStall();
 			}
 		});
