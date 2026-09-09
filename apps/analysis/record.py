@@ -231,8 +231,17 @@ def _check_provenance_and_lanes(record: AnalysisRecord, parsed: OwnBackend) -> N
             f"own record on backend {record.backend!r} carries lanes "
             f"{sorted(record.lanes)} but not its own lane {parsed.lane!r}"
         )
+    if record.duration_s is None:
+        # `None` is the lane gate's "no duration supplied" sentinel, so a
+        # record deserialized with `duration_s: null` would sail through
+        # every lane check and fail later as a raw `TypeError` at
+        # `float(record.duration_s)` in the store (Codex P2, PR #1562).
+        raise RecordContractError(
+            f"own record for {record.stable_id!r} has no duration_s; a record "
+            "without a decoded length cannot bound its beats or key segments"
+        )
     for lane, result in record.lanes.items():
-        validate_lane_result(lane, result)
+        validate_lane_result(lane, result, duration_s=record.duration_s)
 
 
 def _dt_to_iso(dt: datetime) -> str:

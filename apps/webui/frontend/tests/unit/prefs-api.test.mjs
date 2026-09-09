@@ -466,75 +466,7 @@ test('hydrateConfirmPrefsFromDisk applies level_calibration from disk', async ()
 	});
 });
 
-// Codex P2 then P1 BLOCKING on #1503: each R/M action PUTs a full snapshot of
-// BOTH halves, so two quick clicks could land out of order and an older
-// snapshot could overwrite a newer one. The tab looked right; the lost toggle
-// came back after a reload.
-//
-// This runs against a REAL http server and the real `api.PUT` client rather
-// than a replaced `globalThis.fetch`, because a fabricated transport success
-// cannot evidence request ordering (AGENTS.md, "No mocks and locked real
-// fixtures"). The server is a recorder, not a stand-in for anything under
-// test: the behaviour being pinned is entirely client-side write ordering.
-//
-// Regression line: if calibration writes stop being chained then the LAST
-// click is not the last write, and a capture silently reverts on reload.
-test('calibration writes are serialized over a real http transport', async () => {
-	const { createServer } = await import('node:http');
-	const bodies = [];
-	const releases = [];
-	let inFlight = 0;
-	let maxInFlight = 0;
-
-	const server = createServer((req, res) => {
-		let raw = '';
-		req.on('data', (c) => (raw += c));
-		req.on('end', () => {
-			inFlight += 1;
-			maxInFlight = Math.max(maxInFlight, inFlight);
-			bodies.push(JSON.parse(raw));
-			// Hold the response open so a parallel implementation would overlap.
-			releases.push(() => {
-				inFlight -= 1;
-				res.writeHead(200, { 'content-type': 'application/json' });
-				res.end(JSON.stringify({ theme: 'dark' }));
-			});
-		});
-	});
-	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-	const base = `http://127.0.0.1:${server.address().port}`;
-
-	// Earlier tests in this file replace globalThis.fetch and do not all restore
-	// it. This test needs the REAL fetch or it silently talks to a leftover
-	// stub instead of the server above, which is how it first failed.
-	globalThis.fetch = originalFetch;
-	const storage = installPrefsStorage();
-	try {
-		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
-			viteApiBase: base
-		});
-
-		isolated.setLevelCalibrationCapture('red', -12);
-		isolated.setLevelCalibrationCapture('ceiling', -3);
-		isolated.setLevelCalibrationDisabled('red');
-
-		for (let i = 0; i < 3; i += 1) {
-			const deadline = Date.now() + 10_000;
-			while (releases.length === 0) {
-				if (Date.now() > deadline) throw new Error(`write ${i + 1} never reached the server`);
-				await new Promise((r) => setTimeout(r, 5));
-			}
-			releases.shift()();
-			await new Promise((r) => setTimeout(r, 20));
-		}
-
-		assert.equal(maxInFlight, 1, `writes overlapped (${maxInFlight} in flight at once)`);
-		assert.equal(bodies.length, 3, 'every action must still reach the daemon');
-		const last = bodies[bodies.length - 1].level_calibration;
-		assert.equal(last.red_enabled, false, 'last write lost the disable');
-		assert.equal(last.ceiling_dbfs, -3, 'last write lost the ceiling capture');
-	} finally {
-		storage.restore();
-		await new Promise((resolve) => server.close(resolve));
-	}
-});
+// Real-http-transport write-ordering tests (Codex P2/P1 on #1503, and the
+// cross-setter follow-on from issue #1578) live in
+// prefs-write-ordering.test.mjs - split out once a second such test pushed
+// this file over the 600-line quality gate ceiling.

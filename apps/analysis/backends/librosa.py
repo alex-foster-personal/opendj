@@ -50,8 +50,14 @@ _KS_MINOR = np.array(
 # Pitch class (C=0 .. B=11) -> Camelot / open-key labels.
 _CAMELOT_MAJOR = ["8B", "3B", "10B", "5B", "12B", "7B", "2B", "9B", "4B", "11B", "6B", "1B"]
 _CAMELOT_MINOR = ["5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A"]
-_OPENKEY_MAJOR = [f"{n}d" for n in [8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1]]
-_OPENKEY_MINOR = [f"{n}m" for n in [5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10]]
+# Open Key number = Camelot number + 5 (mod 12, 1-indexed), NOT the Camelot
+# number reused directly. The previous tables here reused the Camelot number
+# (a one-position rotation of the correct table, wrong for all 12 pitch
+# classes, not just the A-minor case that surfaced it: A minor is pitch class
+# 9, Camelot 8A, so it must canonicalize to Open Key 1m, not 8m). Source of
+# truth and regression tests: apps/analysis_key/canon.py.
+_OPENKEY_MAJOR = [f"{n}d" for n in [1, 8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6]]
+_OPENKEY_MINOR = [f"{n}m" for n in [10, 5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3]]
 
 
 def _energy_from_rms_dbfs(rms_dbfs: float, bins: list[list[float]]) -> int:
@@ -226,7 +232,13 @@ class LibrosaBackend:
             key_cam, key_ok, key_conf = _estimate_key(chroma)
         except Exception as exc:  # pragma: no cover
             log.warning("chroma_cqt/key failed: %s", exc)
-            key_cam, key_ok, key_conf = "1A", "1m", 0.0
+            # A fixed, internally-consistent fallback pair (key_confidence=0.0
+            # marks it as a non-estimate either way): _CAMELOT_MINOR[8] and
+            # _OPENKEY_MINOR[8] both describe pitch class 8, unlike the old
+            # literal "1A"/"1m" pair, which stopped agreeing once the Open Key
+            # table above was corrected ("1A" is pitch class 8, but "1m" is
+            # pitch class 9 under the corrected table).
+            key_cam, key_ok, key_conf = _CAMELOT_MINOR[8], _OPENKEY_MINOR[8], 0.0
 
         features_blob = cls._build_features_blob(rms=rms, beats=beats_s, bpm=bpm)
 

@@ -34,33 +34,18 @@ export interface LevelCalibrationSetters {
 export function makeLevelCalibrationSetters(
 	state: LevelCalibrationPrefsState,
 	persist: () => void,
-	// Returns the in-flight write so the chain below can actually serialize.
-	// Typed `=> void` until Tue 9 Sep 2026, which silently defeated the chain:
-	// `.then()` on undefined resolves immediately and every write raced.
-	syncDiskPrefs: (patch: { level_calibration: LevelCalibrationPrefs }) => Promise<void>
+	// The caller (prefs.svelte.ts) is responsible for serializing this against
+	// every OTHER disk pref write, not just this feature's own: issue #1578
+	// found a per-feature queue here left every other setter in prefs.svelte.ts
+	// racing this one, because only calibration writes were chained. Fire-and-
+	// forget here, same shape as makeDeckLayoutSetters's hook.
+	syncDiskPrefs: (patch: { level_calibration: LevelCalibrationPrefs }) => void
 ): LevelCalibrationSetters {
 	/** Off -> click (re)captures the level at the tap right now and arms it.
 	 * Always (re)captures: there is no separate "re-enable the old number"
 	 * gesture, so recalibrating to a new loud track is just another click. */
-	/**
-	 * Disk writes are chained, never fired in parallel.
-	 *
-	 * Each R/M action PUTs a full snapshot of BOTH halves. Two clicks in quick
-	 * succession raced: the requests could land out of order and an older
-	 * snapshot could overwrite a newer one, so the live tab looked right and
-	 * the lost toggle reappeared after a reload. Chaining makes the last call
-	 * the last write. A rejected PUT does not break the chain: the local state
-	 * stays authoritative (same contract as the fire-and-forget it replaces),
-	 * and the NEXT write still goes out.
-	 */
-	let writeChain: Promise<void> = Promise.resolve();
-
 	function queueDiskWrite(): void {
-		const snapshot = { ...state.level_calibration };
-		writeChain = writeChain.then(
-			() => syncDiskPrefs({ level_calibration: snapshot }),
-			() => syncDiskPrefs({ level_calibration: snapshot })
-		);
+		syncDiskPrefs({ level_calibration: { ...state.level_calibration } });
 	}
 
 	function setLevelCalibrationCapture(kind: LevelCalibrationKind, dbfs: number): void {

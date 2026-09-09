@@ -59,8 +59,8 @@ from typing import Any
 # Re-exported so `scorer` stays the one import every consumer needs and
 # SCORER_VERSION keeps stamping a single ruler. The continuity family lives in
 # its own module because it carries its own reference-implementation control;
-# see scripts/beatbench/continuity.py.
-from scripts.beatbench.continuity import (  # noqa: F401
+# see apps/analysis_bench/scorers/continuity.py.
+from apps.analysis_bench.scorers.continuity import (  # noqa: F401
     CONTINUITY_PERIOD_TOLERANCE,
     CONTINUITY_PHASE_TOLERANCE,
     MIN_BEATS_FOR_CONTINUITY,

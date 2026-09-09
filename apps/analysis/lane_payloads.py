@@ -15,81 +15,29 @@ or the JSON encoder. Nothing here is defensive-by-habit.
 """
 from __future__ import annotations
 
-import math
+import bisect
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .lane_enums import LANE_STATUSES, LANES, LaneContractError
+from .lane_payloads_shared import (
+    _require_bool,
+    _require_confidence,
+    _require_keys,
+    _require_list,
+    _require_number,
+    _require_positive,
+    _require_str,
+    is_finite_number,
+)
 
+# 1ms: past the producer's round(beats[split], 4) and beats' own rounding.
+TEMPO_CHANGE_BEAT_TOLERANCE_S = 0.001
 
-def _require_keys(lane: str, payload: Mapping[str, Any], keys: tuple[str, ...]) -> None:
-    missing = [k for k in keys if k not in payload]
-    if missing:
-        raise LaneContractError(
-            f"{lane} payload is missing required keys {missing}; got {sorted(payload)}"
-        )
-
-
-def _require_confidence(where: str, payload: Mapping[str, Any], key: str) -> None:
-    """A finite number in [0, 1].
-
-    `track_fields` provenance already constrains confidence to that interval
-    and own values reach the SAME `ProvenanceOut.confidence`, so a producer
-    emitting -0.2 or 1.2 would give own analysis different public semantics
-    from every other source (Codex P2, PR #1549).
-    """
-    _require_number(where, payload, key)
-    if not 0.0 <= payload[key] <= 1.0:
-        raise LaneContractError(
-            f"{where}.{key} is {payload[key]!r}; a confidence is a probability "
-            "in [0, 1]"
-        )
-
-
-def _require_positive(where: str, payload: Mapping[str, Any], key: str) -> None:
-    _require_number(where, payload, key)
-    if payload[key] <= 0:
-        raise LaneContractError(f"{where}.{key} must be > 0, got {payload[key]!r}")
-
-
-def _require_number(lane: str, payload: Mapping[str, Any], key: str) -> None:
-    """A number, and a FINITE one.
-
-    NaN and the infinities are `float` instances, so an isinstance check
-    alone accepts them and the lane stores `status: ok`. SQLite then binds
-    NaN as NULL, which produces an `ok` projection row with no value -- the
-    exact shape this contract exists to make impossible -- and an infinity
-    breaks JSON serialization on the way out of the API instead. A DSP
-    producer that divided by zero has FAILED; it says so with
-    `status: failed` and a reason, not with a number that is not one.
-    """
-    value = payload[key]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise LaneContractError(f"{lane}.{key} must be a number, got {value!r}")
-    if not math.isfinite(value):
-        raise LaneContractError(
-            f"{lane}.{key} is {value!r}, which is not a finite measurement; a "
-            "producer that could not measure records status failed with a reason"
-        )
-
-
-def _require_bool(lane: str, payload: Mapping[str, Any], key: str) -> None:
-    if not isinstance(payload[key], bool):
-        raise LaneContractError(f"{lane}.{key} must be a bool, got {payload[key]!r}")
-
-
-def _require_str(lane: str, payload: Mapping[str, Any], key: str) -> None:
-    value = payload[key]
-    if not isinstance(value, str) or not value:
-        raise LaneContractError(f"{lane}.{key} must be a non-empty string, got {value!r}")
-
-
-def _require_list(lane: str, payload: Mapping[str, Any], key: str) -> list[Any]:
-    value = payload[key]
-    if not isinstance(value, list):
-        raise LaneContractError(f"{lane}.{key} must be a list, got {value!r}")
-    return value
+# 1ms: the same serialization/rounding slack as TEMPO_CHANGE_BEAT_TOLERANCE_S,
+# for the boundary two adjacent key segments are meant to share exactly.
+KEY_SEGMENT_MEET_TOLERANCE_S = 0.001
 
 
 def _validate_beats(beats: list[Any]) -> None:
@@ -156,6 +104,88 @@ def _validate_beat_follows(
         )
 
 
+def _nearest_beat(beat_times: Sequence[float], at_s: float) -> tuple[int, float]:
+    """The index of the closest beat to ``at_s``, and ``|at_s - t|`` to it.
+
+    ``beat_times`` is sorted (non-empty); returns the SAME index for a tie,
+    so two markers within tolerance of one beat resolve to one index and
+    the caller can refuse them as duplicates of that beat.
+    """
+    idx = bisect.bisect_left(beat_times, at_s)
+    candidates = []
+    if idx < len(beat_times):
+        candidates.append((idx, abs(beat_times[idx] - at_s)))
+    if idx > 0:
+        candidates.append((idx - 1, abs(beat_times[idx - 1] - at_s)))
+    return min(candidates, key=lambda pair: pair[1])
+
+
+def _validate_tempo_change_marker(
+    where: str,
+    change: Mapping[str, Any],
+    previous_at_s: float | None,
+    previous_beat_index: int | None,
+    first_beat_t: float,
+    last_beat_t: float,
+    beat_times: Sequence[float],
+) -> tuple[float, int]:
+    """One tempo-change marker: keys, magnitudes, and its place on the timeline.
+
+    Returns its own ``at_s`` and matched beat index so the caller can thread
+    both in as the next marker's ``previous_at_s``/``previous_beat_index``.
+    """
+    _require_keys(where, change, ("at_s", "bpm_before", "bpm_after", "confidence"))
+    for key in ("bpm_before", "bpm_after"):
+        _require_positive(where, change, key)
+    _require_number(where, change, "at_s")
+    at_s = float(change["at_s"])
+    if at_s < 0:
+        raise LaneContractError(f"{where}.at_s must be >= 0, got {at_s!r}")
+    if at_s < first_beat_t:
+        # Leading silence: the grid's first beat can start after t=0, and a
+        # marker before it has no beat under it either -- the same reason a
+        # marker past the last beat is refused, at the other end.
+        raise LaneContractError(
+            f"{where}.at_s is {at_s!r}, before beatgrid.beats' first beat at "
+            f"{first_beat_t!r}; a tempo change needs a beat to place it on"
+        )
+    if at_s > last_beat_t:
+        # A marker past the grid's own last beat has no beat left to place
+        # it on -- the deck locates a tempo change AT a beat, not in a gap
+        # past where the grid stops.
+        raise LaneContractError(
+            f"{where}.at_s is {at_s!r}, beyond beatgrid.beats' last beat at "
+            f"{last_beat_t!r}; a tempo change needs a beat to place it on"
+        )
+    if previous_at_s is not None and at_s <= previous_at_s:
+        # One timeline, one direction: a marker at or before its predecessor
+        # cannot describe a tempo change the deck can place.
+        raise LaneContractError(
+            f"{where}.at_s must strictly increase from the previous marker: "
+            f"got {at_s!r} after {previous_at_s!r}"
+        )
+    beat_index, gap = _nearest_beat(beat_times, at_s)
+    if gap > TEMPO_CHANGE_BEAT_TOLERANCE_S:
+        # In-bounds isn't enough: tempo_change.py's detect_tempo_changes only
+        # ever emits a marker AT beats[split] (Codex P2, PR #1562).
+        raise LaneContractError(
+            f"{where}.at_s is {at_s!r}, {gap:.4f}s from the nearest beat in "
+            "beatgrid.beats; a tempo change must coincide with an actual beat"
+        )
+    if previous_beat_index is not None and beat_index <= previous_beat_index:
+        # Two markers within tolerance of the SAME beat both pass the checks
+        # above (each is close to some beat, and their raw at_s can still
+        # strictly increase) but detect_tempo_changes emits one changepoint
+        # per split, never two for the same beat (Codex P2, PR #1562).
+        raise LaneContractError(
+            f"{where} resolves to beat index {beat_index}, the same beat (or "
+            f"an earlier one) as the previous marker's index {previous_beat_index}; "
+            "each tempo change must land on a different beat"
+        )
+    _require_confidence(where, change, "confidence")
+    return at_s, beat_index
+
+
 def _validate_beatgrid(payload: Mapping[str, Any]) -> None:
     _require_keys("beatgrid", payload, (
         "beats", "bpm", "bpm_confidence", "octave_reason", "first_downbeat_s",
@@ -179,17 +209,59 @@ def _validate_beatgrid(payload: Mapping[str, Any]) -> None:
     _require_str("beatgrid", payload, "octave_reason")
     _require_number("beatgrid", payload, "first_downbeat_s")
     _require_bool("beatgrid", payload, "static_grid_untrusted")
+    first_beat_t = float(beats[0]["t"])
+    last_beat_t = float(beats[-1]["t"])
+    beat_times = [float(beat["t"]) for beat in beats]  # sorted; _validate_beats enforces it
+    previous_at_s: float | None = None
+    previous_beat_index: int | None = None
     for i, change in enumerate(_require_list("beatgrid", payload, "tempo_changes")):
         if not isinstance(change, Mapping):
             raise LaneContractError(
                 f"beatgrid.tempo_changes[{i}] must be a mapping, got {change!r}"
             )
         where = f"beatgrid.tempo_changes[{i}]"
-        _require_keys(where, change, ("at_s", "bpm_before", "bpm_after", "confidence"))
-        for key in ("bpm_before", "bpm_after"):
-            _require_positive(where, change, key)
-        _require_number(where, change, "at_s")
-        _require_confidence(where, change, "confidence")
+        previous_at_s, previous_beat_index = _validate_tempo_change_marker(
+            where, change, previous_at_s, previous_beat_index,
+            first_beat_t, last_beat_t, beat_times,
+        )
+
+
+def beats_within_duration(payload: Mapping[str, Any], duration_s: float) -> None:
+    """Write-boundary check: the grid itself may not outlive the record.
+
+    Checking only the LAST beat is sufficient, not a shortcut: `_validate_beats`
+    already established the timestamps are strictly increasing, so if the last
+    one is within `duration_s` every earlier one is too.
+    """
+    beats = payload.get("beats", ())
+    if not beats:
+        return
+    last_t = float(beats[-1]["t"])
+    if last_t > duration_s:
+        raise LaneContractError(
+            f"beatgrid.beats[{len(beats) - 1}].t is {last_t!r}, beyond the "
+            f"record's duration_s {duration_s!r}"
+        )
+
+
+def tempo_changes_within_duration(payload: Mapping[str, Any], duration_s: float) -> None:
+    """Write-boundary check: no marker may lie past the record's own duration.
+
+    In a grid `beats_within_duration` has already accepted, this branch is
+    unreachable -- a marker beyond `duration_s` is then also beyond the
+    grid's own last beat, which `_validate_beatgrid` refuses on its own. It
+    stays as the write-boundary counterpart to that payload-level check
+    (`tests/analysis_contract/test_review_regressions_r10.py` exercises it
+    directly for that reason) rather than something a valid payload can
+    still trigger.
+    """
+    for i, change in enumerate(payload.get("tempo_changes", ())):
+        at_s = float(change["at_s"])
+        if at_s > duration_s:
+            raise LaneContractError(
+                f"beatgrid.tempo_changes[{i}].at_s is {at_s!r}, beyond the "
+                f"record's duration_s {duration_s!r}"
+            )
 
 
 # 1..12 followed by A (minor) or B (major). The deck's own parser is
@@ -235,6 +307,34 @@ def _require_camelot(lane: str, payload: Mapping[str, Any], key: str) -> None:
         )
 
 
+def _validate_key_segment_order(
+    where: str, seg: Mapping[str, Any], previous: Mapping[str, Any]
+) -> None:
+    """One key segment relative to the one before it: bar and time order.
+
+    Segments are bar-synchronous timeline RANGES, not point events, so
+    adjacent segments must MEET: the next `start_s` equal to the previous
+    `end_s`, within `KEY_SEGMENT_MEET_TOLERANCE_S`, not merely avoid
+    overlapping. `start_s=15` after `previous.end_s=10` passes a bare `<`
+    check but leaves the 10-15s interval belonging to no segment, exactly
+    like the bar check already requires an equal boundary rather than a
+    non-decreasing one (Codex P2, PR #1562, round three).
+    """
+    if seg["start_bar"] != previous["end_bar"]:
+        raise LaneContractError(
+            f"{where}.start_bar is {seg['start_bar']!r} but the previous "
+            f"segment ends at bar {previous['end_bar']!r}; segments must be "
+            "contiguous in bar order, with no overlap and no gap"
+        )
+    gap = float(seg["start_s"]) - float(previous["end_s"])
+    if abs(gap) > KEY_SEGMENT_MEET_TOLERANCE_S:
+        raise LaneContractError(
+            f"{where}.start_s is {seg['start_s']!r} but the previous segment's "
+            f"end_s is {previous['end_s']!r}; adjacent segments must MEET in "
+            "time (equal start_s/end_s within 1ms), not merely avoid overlapping"
+        )
+
+
 def _validate_key_segments(segments_block: Any) -> None:
     if not isinstance(segments_block, Mapping):
         raise LaneContractError(f"key.segments must be a mapping, got {segments_block!r}")
@@ -263,8 +363,42 @@ def _validate_key_segments(segments_block: Any) -> None:
         raise LaneContractError(
             f"key.segments.status is {status!r} but carries {len(segments)} segments"
         )
+    previous: Mapping[str, Any] | None = None
     for i, seg in enumerate(segments):
-        _validate_one_key_segment(f"key.segments.segments[{i}]", seg)
+        where = f"key.segments.segments[{i}]"
+        _validate_one_key_segment(where, seg)
+        if previous is not None:
+            _validate_key_segment_order(where, seg, previous)
+        previous = seg
+
+
+def _validate_key_segment_bounds(where: str, seg: Mapping[str, Any]) -> None:
+    """Bar and time bounds for one key segment: sane types, sane ranges.
+
+    ``start_s`` >= 0 for the same reason a bar index >= 0: a segment cannot
+    start before the track does. ``end_s`` against the record's own
+    ``duration_s`` is a separate, write-boundary check in
+    :func:`key_segments_within_duration` -- there is nothing to compare
+    against without the record.
+    """
+    for key in ("start_bar", "end_bar"):
+        value = seg[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise LaneContractError(f"{where}.{key} must be an integer bar index, got {value!r}")
+    if seg["start_bar"] < 0:
+        raise LaneContractError(f"{where}.start_bar must be >= 0, got {seg['start_bar']!r}")
+    if not seg["start_bar"] < seg["end_bar"]:
+        raise LaneContractError(
+            f"{where}.start_bar must be < end_bar, got {seg['start_bar']!r} and {seg['end_bar']!r}"
+        )
+    for key in ("start_s", "end_s"):
+        _require_number(where, seg, key)
+    if float(seg["start_s"]) < 0:
+        raise LaneContractError(f"{where}.start_s must be >= 0, got {seg['start_s']!r}")
+    if not float(seg["start_s"]) < float(seg["end_s"]):
+        raise LaneContractError(
+            f"{where}.start_s must be < end_s, got {seg['start_s']!r} and {seg['end_s']!r}"
+        )
 
 
 def _validate_one_key_segment(where: str, seg: Any) -> None:
@@ -275,8 +409,7 @@ def _validate_one_key_segment(where: str, seg: Any) -> None:
         "start_bar", "end_bar", "start_s", "end_s",
         "key_camelot", "key_openkey", "confidence",
     ))
-    for key in ("start_bar", "end_bar", "start_s", "end_s"):
-        _require_number(where, seg, key)
+    _validate_key_segment_bounds(where, seg)
     _require_confidence(where, seg, "confidence")
     _require_str(where, seg, "key_camelot")
     if not _CAMELOT_RE.match(seg["key_camelot"]):
@@ -285,6 +418,27 @@ def _validate_one_key_segment(where: str, seg: Any) -> None:
             "Camelot key"
         )
     _require_str(where, seg, "key_openkey")
+
+
+def key_segments_within_duration(payload: Mapping[str, Any], duration_s: float) -> None:
+    """Write-boundary check: no segment's end may lie past the record's own duration.
+
+    Threaded in the same way :func:`tempo_changes_within_duration` is: bar
+    and start_s bounds are checked at the shape level in
+    :func:`_validate_key_segment_bounds`, but `duration_s` lives on the
+    record, not the lane payload, so there is nothing to compare `end_s`
+    against without it.
+    """
+    segments_block = payload.get("segments")
+    if not isinstance(segments_block, Mapping):
+        return
+    for i, seg in enumerate(segments_block.get("segments", ())):
+        end_s = float(seg["end_s"])
+        if end_s > duration_s:
+            raise LaneContractError(
+                f"key.segments.segments[{i}].end_s is {end_s!r}, beyond the "
+                f"record's duration_s {duration_s!r}"
+            )
 
 
 def _validate_key(payload: Mapping[str, Any]) -> None:
@@ -342,7 +496,7 @@ def _validate_band_block(where: str, block: Any) -> None:
                 raise LaneContractError(
                     f"{where}.{band}[{i}] must be a number, got {sample!r}"
                 )
-            if not math.isfinite(sample):
+            if not is_finite_number(sample):
                 raise LaneContractError(
                     f"{where}.{band}[{i}] is {sample!r}, which is not a finite "
                     "measurement"
@@ -428,7 +582,7 @@ def check_lane_confidence(lane: str, confidence: float | None) -> None:
         raise LaneContractError(
             f"{lane}.confidence must be a number or None, got {confidence!r}"
         )
-    if not math.isfinite(confidence):
+    if not is_finite_number(confidence):
         raise LaneContractError(
             f"{lane}.confidence is {confidence!r}, which is not a finite measurement"
         )

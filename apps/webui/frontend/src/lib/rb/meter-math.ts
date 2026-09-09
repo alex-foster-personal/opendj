@@ -155,6 +155,15 @@ export function stepPeakHold(
  *
  * Passing null keeps the default scale, so an uncalibrated install behaves
  * exactly as before rather than silently changing.
+ *
+ * A low calibration (a quiet red anchor) shifts the bottom thresholds below
+ * METER_FLOOR_DBFS. Clamped here so no threshold sits below what the meter
+ * can ever display - unclamped, a threshold at e.g. -81 dBFS is still "at or
+ * below" true silence, and segmentsLitFromDbfs would light segments for a
+ * track that produced no sound. segmentsLitFromDbfs also floors independently
+ * (see below): clamping several thresholds to the same floor value would
+ * otherwise make silence and near-silence both read as "several segments
+ * lit, at the floor" rather than "nothing lit".
  */
 export function segmentThresholdsForRed(redDbfs: number | null): readonly number[] {
 	if (redDbfs === null) return SEGMENT_THRESHOLDS_DBFS;
@@ -162,10 +171,19 @@ export function segmentThresholdsForRed(redDbfs: number | null): readonly number
 		throw new RangeError(`segmentThresholdsForRed: redDbfs must be finite or null, got ${redDbfs}`);
 	}
 	const shift = redDbfs - DEFAULT_RED_DBFS;
-	return SEGMENT_THRESHOLDS_DBFS.map((t) => t + shift);
+	return SEGMENT_THRESHOLDS_DBFS.map((t) => Math.max(t + shift, METER_FLOOR_DBFS));
 }
 
-/** How many of the ten segments are lit at this level. 0 means below the first. */
+/**
+ * How many of the ten segments are lit at this level. 0 means below the
+ * first.
+ *
+ * Floors explicitly at METER_FLOOR_DBFS rather than relying on the `>=`
+ * comparison alone: a calibration can clamp several thresholds down to
+ * exactly the floor value (see segmentThresholdsForRed), and a threshold
+ * equal to the floor would otherwise satisfy `db >= threshold` at true
+ * silence.
+ */
 export function segmentsLitFromDbfs(
 	db: number,
 	thresholds: readonly number[] = SEGMENT_THRESHOLDS_DBFS
@@ -178,6 +196,7 @@ export function segmentsLitFromDbfs(
 			`segmentsLitFromDbfs: expected ${SEGMENT_THRESHOLDS_DBFS.length} thresholds, got ${thresholds.length}`
 		);
 	}
+	if (db <= METER_FLOOR_DBFS) return 0;
 	let lit = 0;
 	for (const threshold of thresholds) {
 		if (db >= threshold) lit += 1;
