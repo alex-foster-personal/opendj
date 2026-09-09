@@ -455,9 +455,8 @@ export interface AnalysisSourceRefreshDeck {
 }
 
 /** Replaces loaded decks without allowing an in-flight stale response to win.
- * Lives here so it can write straight through this cache's own primitives
- * (paired with `invalidateAllAnlzCacheEntries` above) instead of adding a
- * fan-out edge onto audio-engine.svelte.ts.
+ * Lives here so it can write straight through this cache's own primitives,
+ * paired with `invalidateAllAnlzCacheEntries` above.
  *
  * FETCH EVERY DECK FIRST, PUBLISH NOTHING UNTIL ALL LAND: staging the fetches
  * makes the publish phase below synchronous and total. An earlier shape wrote
@@ -485,11 +484,10 @@ export interface AnalysisSourceRefreshDeck {
  * `Promise.all` as the grid so the all-or-nothing guarantee above covers both.
  *
  * RETURNS THE SOURCE THE SERVER ACTUALLY SERVED, or null when nothing was
- * fetched. `/anlz` resolves rbx-vs-own SERVER-side at fetch time and stamps
- * it on the payload - the caller cannot infer it from its own selection since
- * the daemon can move under the unbounded awaits here
- * (discussion_r3970117741 P1 BLOCKING). Disagreeing staged payloads mean the
- * selection changed mid-batch, so this throws before publishing anything.
+ * fetched: `/anlz` resolves rbx-vs-own SERVER-side at fetch time and stamps
+ * it on the payload since the daemon can move under the unbounded awaits
+ * here (discussion_r3970117741 P1 BLOCKING); a disagreeing staged payload
+ * throws before publishing anything.
  *
  * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED, so
  * a caller holding the scheduler's claim can't release it early
@@ -525,6 +523,25 @@ export async function refreshAnalysisSourceDecks(
 			`analysis source changed mid-refresh: /anlz served ${[...served].sort().join(' and ')} ` +
 				'within one batch, so publishing would split the decks across both'
 		);
+	}
+	// Two independent round trips: an external PUT to /api/v1/analysis/source
+	// landing between them can serve each side of a switch even though
+	// `served` agrees across tracks. `bpm` is beatgrid-lane-owned, so its
+	// provenance source is the same selection `/anlz` stamped as
+	// `beatgrid_source` - refuse to pair a grid and tempo that were never
+	// measured together (discussion_r3972264411 P1 BLOCKING).
+	for (const { stableId, fresh, track } of staged) {
+		const bpmProvenance = track.provenance?.bpm;
+		if (bpmProvenance === undefined || bpmProvenance.status !== 'ok') continue;
+		const bpmOnOwn = bpmProvenance.source !== 'rekordbox';
+		const gridOnOwn = fresh.beatgrid_source !== 'rekordbox';
+		if (bpmOnOwn !== gridOnOwn) {
+			throw new Error(
+				`analysis source changed mid-refresh for ${stableId}: /anlz served beatgrid_source ` +
+					`'${fresh.beatgrid_source}' but /tracks/{id} served bpm from '${bpmProvenance.source}' - ` +
+					'the two parallel fetches landed on different sides of a source switch'
+			);
+		}
 	}
 	// Collected, not awaited per-iteration (would serialize what the cache
 	// write below deliberately doesn't); only this function's RETURN waits.
