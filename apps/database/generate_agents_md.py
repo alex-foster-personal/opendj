@@ -35,9 +35,20 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
 from apps.database.column_docs import COLUMN_DOCS, TABLE_DOCS
+
+# PyYAML is imported inside :func:`_table_block`, the one function that
+# needs it, rather than here. Everything above the rendering layer --
+# :func:`introspect`, :class:`TableInfo`, the fts5 shadow detection -- is
+# stdlib sqlite3 only, and scripts/quality_gate.py's sync-drift evaluator
+# imports exactly that half from a throwaway environment holding the pinned
+# measurement tools and NOTHING of the project's own dependencies
+# (ops/quality/requirements.txt says why). A module-level `import yaml` made
+# that evaluator die with ModuleNotFoundError in CI while passing in every
+# local venv. tests/quality/test_sync_drift_imports.py pins the invariant --
+# the drift gate's import graph reaches no third-party package -- so a future
+# import that reintroduces the dependency fails there, by name, instead of
+# reappearing as a red CI job that names PyYAML rather than drift.
 
 _FTS5_SHADOW_SUFFIXES: tuple[str, ...] = (
     "_data",
@@ -214,6 +225,10 @@ def _column_schema_repr(column: ColumnInfo) -> str:
 
 
 def _table_block(table: TableInfo) -> str:
+    # Local, so the introspection half of this module imports no third party;
+    # see the note beside the imports at the top of the file.
+    import yaml
+
     payload = {
         table.name: {
             "description": TABLE_DOCS[table.name],
