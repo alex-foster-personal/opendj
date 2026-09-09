@@ -620,13 +620,16 @@ export async function fetchAnlz(
 
 /** Like {@link fetchAnlz}, but for the one caller (`refreshHotCues`,
  * audio-engine) that cannot accept a browser-HTTP-cache hit: the backend
- * marks a decoded /anlz response `Cache-Control: public, max-age=3600`
- * (`rb_assets.py` `_CACHE_ANLZ`), so a plain `fetch` of the same URL within
- * that hour can be satisfied straight out of the HTTP cache with no network
- * round trip - "fresh" in name only, right after the mutation it's meant to
- * observe. `cache: 'reload'` forces the round trip and re-primes the HTTP
- * cache with the new response, so ordinary reads right after this one still
- * benefit from it. Deliberately bypasses the in-flight dedupe map above: an
+ * marks a decoded /anlz response `private, no-cache` with an ETag over the
+ * body (`rb_assets.py` `_CACHE_ANLZ`). That was `public, max-age=3600` when
+ * this helper was written, and a plain `fetch` of the same URL inside the
+ * hour could be satisfied from the HTTP cache with no round trip - "fresh" in
+ * name only, right after the mutation it is meant to observe. `no-cache` now
+ * forces a revalidation on every read, so the unconditional replay is gone;
+ * `cache: 'reload'` additionally skips the conditional request, which keeps
+ * this caller's guarantee independent of the server's cache-control policy
+ * rather than resting on it. It re-primes the HTTP cache with the new
+ * response, so ordinary reads right after this one still benefit from it. Deliberately bypasses the in-flight dedupe map above: an
  * ordinary in-flight `fetchAnlz` for the same key must not be handed this
  * stale-cache-tolerant promise, and vice versa.
  *

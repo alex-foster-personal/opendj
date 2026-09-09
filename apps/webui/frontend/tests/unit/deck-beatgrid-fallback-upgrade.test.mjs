@@ -838,8 +838,10 @@ test('the injected resync ports wire the real engine sync primitives, not stand-
 });
 
 test('the mid-flight anlz_available refetch bypasses the HTTP cache instead of possibly replaying the empty response it may have cached', async () => {
-	// PR #765 send-back, r3912339484: the backend serves /anlz with
-	// Cache-Control: public, max-age=3600. The initial load already fetched
+	// PR #765 send-back, r3912339484: the backend served /anlz with
+	// Cache-Control: public, max-age=3600 (now `private, no-cache` plus an
+	// ETag, which is why this guard no longer rests on the header at all, only
+	// on the explicit bypass). The initial load already fetched
 	// this exact URL (with the empty local payload) minutes earlier; without
 	// forcing a network read here, a browser that happens to have that
 	// response cached would replay it, settling gridless despite the real

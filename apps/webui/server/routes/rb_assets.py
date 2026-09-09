@@ -10,6 +10,7 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 from typing import Literal
@@ -33,7 +34,18 @@ router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
 _CACHE_AUDIO = "no-store"  # files can move (apps/reconcile repairs)
 _CACHE_ARTWORK = "public, max-age=86400"
-_CACHE_ANLZ = "public, max-age=3600"
+# `private, no-cache`, NOT `public, max-age=3600`, since PARITY-02: the body
+# depends on the process-local rbx-vs-own beatgrid toggle
+# (`_resolve_beatgrid_source` below), which an agent can flip over HTTP at any
+# moment with no change to this URL. A shared cache could then serve one
+# audience's OWN grid to another, and a plain browser navigation could keep
+# serving a pre-switch RBX grid for an hour (discussion_r3970967302). The app
+# is insulated by `gen` (anlz-fetch-generation.ts) but a direct HTTP consumer
+# is not, and this endpoint is agent-facing. `no-cache` means "store it, but
+# revalidate every time", so the ETag below still keeps the multi-MB body off
+# the wire when nothing changed - the freshness rule tightens, the bytes do
+# not move.
+_CACHE_ANLZ = "private, no-cache"
 _CACHE_ANLZ_RETRYABLE = "no-store"  # transient decoder saturation, not a fact about the track
 _CACHE_RB_META = "no-store"  # file_exists must reflect disk truth
 
@@ -311,7 +323,7 @@ def get_track_anlz(
         description="Max length of each waveform band array after downsampling",
     ),
     _backend: StateBackend = Depends(get_read_state),
-) -> JSONResponse:
+) -> Response:
     """Waveform (preview + detail) / beatgrid / cues / phrases JSON.
 
     The ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),
@@ -353,8 +365,19 @@ def get_track_anlz(
     _resolve_beatgrid_source(request, stable_id, payload)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
-    cache_control = _CACHE_ANLZ_RETRYABLE if retryable else _CACHE_ANLZ
-    return JSONResponse(payload, headers={"Cache-Control": cache_control})
+    if retryable:
+        return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ_RETRYABLE})
+    # Hashed over the SERIALIZED body, so every input that can change the answer
+    # is covered without enumerating them: the beatgrid source and the grid it
+    # selects, the vendor ANLZ bytes, the local-waveform decode and `points`.
+    # An enumerated key would have to be revisited every time this payload gains
+    # a field, and a missed field is a silently stale grid.
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    etag = f'"{hashlib.sha256(body).hexdigest()}"'
+    headers = {"Cache-Control": _CACHE_ANLZ, "ETag": etag}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 def _local_rb_meta(stable_id: str) -> RbMetaOut:

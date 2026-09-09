@@ -296,6 +296,36 @@ def test_own_source_with_a_failed_beatgrid_lane_names_that_lanes_reason(
     assert body["beatgrid_own_unavailable_reason"] == "no_trackable_pulse"
 
 
+def test_a_source_switch_invalidates_the_anlz_validator_so_no_cache_can_hold_it(
+    anlz_client: TestClient,
+) -> None:
+    """The /anlz URL carries no source, and the toggle is process-local, so the
+    ONLY thing that can stop a cache serving a pre-switch grid is a validator
+    that moves with the source (discussion_r3970967302)."""
+    _set_source(anlz_client, "rbx")
+    rbx = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
+    assert rbx.status_code == 200
+    assert rbx.headers["cache-control"] == "private, no-cache"
+    rbx_etag = rbx.headers["etag"]
+
+    # Unchanged source, unchanged answer: the bytes stay off the wire.
+    assert (
+        anlz_client.get(
+            f"/api/v1/tracks/{SID_WITH_OWN}/anlz", headers={"If-None-Match": rbx_etag}
+        ).status_code
+        == 304
+    )
+
+    _set_source(anlz_client, "own")
+    after = anlz_client.get(
+        f"/api/v1/tracks/{SID_WITH_OWN}/anlz", headers={"If-None-Match": rbx_etag}
+    )
+    assert after.status_code == 200, "a stale rbx validator must NOT satisfy an own request"
+    assert after.headers["etag"] != rbx_etag
+    assert after.json()["beatgrid_source"] == "own"
+    assert after.json()["beatgrid"]["beats"][0]["bpm"] == pytest.approx(OWN_BPM, abs=0.01)
+
+
 def test_analysis_router_still_wires_up_alongside_the_new_router(analysis_db) -> None:
     """Control: the pre-existing analysis router (auto-cues/beatgrid-fallback)
     imports and mounts fine next to the new module -- guards against an

@@ -4,8 +4,11 @@
  * source switch (anlz-cache.svelte.ts refreshAnalysisSourceDecks).
  *
  * PARITY-02's switch changes what the SAME /anlz URL returns
- * (beatgrid_source), but the backend marks a decoded response
- * `Cache-Control: public, max-age=3600` (rb_assets.py _CACHE_ANLZ).
+ * (beatgrid_source). The backend marked a decoded response
+ * `Cache-Control: public, max-age=3600` when this was written; it is now
+ * `private, no-cache` with an ETag over the body (rb_assets.py _CACHE_ANLZ,
+ * discussion_r3970967302), which closes the same gap SERVER-side for callers
+ * that never see this counter at all.
  * refreshAnalysisSourceDecks re-fetches only the decks that are
  * CURRENTLY loaded; a track merely prefetched into the browser's own HTTP
  * cache (library row hover, BrowserPanel selection, an unloaded deck slot)

@@ -118,10 +118,12 @@ export async function upgradeDeckBeatgrid(
 	// reload the track. Shared by both the 200 response's own anlz_available
 	// field and the 404 detail's field of the same name (a mapping can land
 	// with no usable apps.analysis record too - see the catch block below).
-	// bypassCache=true: the backend serves /anlz Cache-Control: public,
-	// max-age=3600, and this deck's own load already fetched this exact URL
-	// with the empty payload minutes earlier - a cached replay would settle
-	// gridless despite the grid now existing.
+	// bypassCache=true: this deck's own load already fetched this exact URL
+	// with the empty payload minutes earlier, and a cached replay would settle
+	// gridless despite the grid now existing. /anlz is `private, no-cache` with
+	// an ETag today, so a replay would have to survive a revalidation; it was
+	// `public, max-age=3600` when this was written, and forcing the read keeps
+	// the guarantee here rather than in the header.
 	const settleFromAnlzRefetch = async (): Promise<void> => {
 		const refreshed = await time('fetchAnlzRefetch', fetchAnlz(stableId, undefined, true));
 		if (isStale()) return;
