@@ -94,7 +94,10 @@ function _resume(reason: AutoPlayStallReason): string {
 		case 'no-next-in-order':
 			return 'Open a playlist with unplayed tracks, or turn off Enforce play order, then press play on a deck.';
 		case 'no-compatible-track':
-			return 'Widen the pitch range, turn off Enforce play order, or open a different playlist, then press play on a deck.';
+			// NOT "turn off Enforce play order": the controller only reaches this
+			// branch while that setting is already OFF, so naming it would send
+			// the operator to a switch that is not the one holding them up.
+			return 'Widen the follower deck pitch range, or open a playlist with tracks in a nearby key and tempo, then press play on a deck.';
 		case 'handoff-attempts-exhausted':
 			return 'Load the next track by hand and press play; the failures are in the toast log.';
 		case 'handoff-incomplete':

@@ -20,6 +20,9 @@
  * [if] the master is playing far outside the trigger window [then] no stall is
  *   recorded [⛔️ if a healthy set shows a stop banner - the control that a
  *   raise-everything fix would fail].
+ * [if] the stall is raised [then] the condition reaches `/api/v1/client-errors`
+ *   through the REAL reporter, not a stubbed one [⛔️ if the only server-side
+ *   trace of a stopped set is a POST nobody checked was sent].
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -62,21 +65,68 @@ function armSourceDeck(deckStates, { positionMs }) {
 	one.bpm = 124;
 }
 
+/**
+ * The browser globals `reportClientError` reads before it will POST at all.
+ *
+ * Without them it returns on `typeof window === 'undefined'` and the escalation
+ * test would pass against a path that never ran, which is the failure Sol's
+ * round-1 P1 named.
+ */
+function installBrowserShim() {
+	const saved = new Map();
+	const set = (key, value) => {
+		saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+		Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+	};
+	set('window', globalThis);
+	set('location', { href: 'http://127.0.0.1:0/performance' });
+	set('navigator', { userAgent: 'autoplay-stall-persistence-test' });
+	set('isSecureContext', true);
+	return () => {
+		for (const [key, descriptor] of saved) {
+			if (descriptor === undefined) delete globalThis[key];
+			else Object.defineProperty(globalThis, key, descriptor);
+		}
+	};
+}
+
 async function withController(run) {
 	const probe = installTimerProbe();
+	const restoreGlobals = installBrowserShim();
 	const realFetch = globalThis.fetch;
-	// Toast escalation POSTs to /api/v1/client-errors. Nothing here asserts on
-	// it, and an unstubbed fetch turns every error toast into an unhandled
-	// rejection that fails an unrelated assertion.
-	globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+	/**
+	 * Every request the client made, so a test can assert on the real one.
+	 *
+	 * openapi-fetch hands `fetch` a Request OBJECT, so the method and body live
+	 * on it rather than in `init`. Reading only `init` recorded the client-error
+	 * POST as a GET with a null body, which is the shape of a recorder that
+	 * quietly answers a different question than the one asked.
+	 */
+	const posts = [];
+	globalThis.fetch = async (input, init = {}) => {
+		const request = typeof input === 'string' || input instanceof URL ? null : input;
+		const rawBody =
+			typeof init.body === 'string'
+				? init.body
+				: request === null
+					? null
+					: await request.clone().text();
+		posts.push({
+			url: String(request === null ? input : request.url),
+			method: init.method ?? request?.method ?? 'GET',
+			body: rawBody === null || rawBody === '' ? null : JSON.parse(rawBody)
+		});
+		return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+	};
 	let uninstall = null;
 	try {
 		const mod = await loadRuneModule(ENTRY);
 		uninstall = mod.installAutoPlay();
-		await run(mod);
+		await run(mod, posts);
 	} finally {
 		if (uninstall !== null) uninstall();
 		globalThis.fetch = realFetch;
+		restoreGlobals();
 		probe.restore();
 	}
 }
@@ -155,6 +205,45 @@ test('CONTROL: a healthy master far outside the trigger window records no stall'
 			mod.readAutoPlayStall(),
 			null,
 			'a fix that raises on every tick would pass the exhaustion test and fail here'
+		);
+	});
+});
+
+test('the stall condition reaches /api/v1/client-errors through the real reporter', async () => {
+	await withController(async (mod, posts) => {
+		mod.setAutoPlayTrackFeed('playlist-a', spentFeed());
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		await settle();
+		assert.notEqual(mod.readAutoPlayStall(), null, 'precondition: the stall was raised');
+
+		const reports = posts.filter(
+			(post) => post.method === 'POST' && post.url.endsWith('/api/v1/client-errors')
+		);
+		assert.equal(
+			reports.length,
+			1,
+			`expected exactly one client-error POST, saw ${posts.map((p) => `${p.method} ${p.url}`).join(', ') || 'no requests at all'}`
+		);
+		const payload = reports[0].body;
+		assert.equal(payload.kind, 'ui-error');
+		assert.equal(payload.context.source, 'toast');
+		assert.match(
+			payload.message,
+			/remaining playlist tracks are missing\/stub audio/,
+			'the row in webui-client-errors-*.log must name the cause, not just that something failed'
+		);
+	});
+});
+
+test('CONTROL: a healthy set posts no client error', async () => {
+	await withController(async (mod, posts) => {
+		mod.setAutoPlayTrackFeed('playlist-a', spentFeed());
+		armSourceDeck(mod.deckStates, { positionMs: 1_000 });
+		await settle();
+		assert.deepEqual(
+			posts.filter((post) => post.url.endsWith('/api/v1/client-errors')),
+			[],
+			'a recorder that fires on every run cannot prove the one above'
 		);
 	});
 });
