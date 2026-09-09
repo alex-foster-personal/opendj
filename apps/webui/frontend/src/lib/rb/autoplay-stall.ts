@@ -71,7 +71,9 @@ export const STALL_TRACK_LIMIT = 12;
 function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 	switch (reason) {
 		case 'missing-audio':
-			return `AutoPlay stopped: all ${blockedTotal} remaining playlist tracks have missing or stub audio`;
+			return blockedTotal === 1
+				? 'AutoPlay stopped: the last remaining playlist track has missing or stub audio'
+				: `AutoPlay stopped: all ${blockedTotal} remaining playlist tracks have missing or stub audio`;
 		case 'no-next-in-order':
 			return 'AutoPlay stopped: no next unplayed track in playlist order';
 		case 'no-compatible-track':

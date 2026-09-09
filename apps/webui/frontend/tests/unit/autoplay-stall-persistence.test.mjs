@@ -15,8 +15,12 @@
  * [if] the stalled source track then ENDS and every deck goes idle [then] the
  *   stall is still there [⛔️ if the explanation vanishes at the exact moment
  *   the room goes quiet - this is the overshoot control for the clear rule].
- * [if] a different track is playing as master [then] the stall is retired
+ * [if] a different track is AUDIBLE as master [then] the stall is retired
  *   [⛔️ if a stale banner outlives the silence it described].
+ * [if] a different track is `playing` but not `audible` - a play was requested
+ *   into a dead output device [then] the stall STAYS [⛔️ if the clear rule
+ *   deletes the explanation while the room is still silent, which is the very
+ *   class the banner exists for].
  * [if] the master is playing far outside the trigger window [then] no stall is
  *   recorded [⛔️ if a healthy set shows a stop banner - the control that a
  *   raise-everything fix would fail].
@@ -181,10 +185,12 @@ test('sound coming back on a different track retires the stall', async () => {
 		await settle();
 		assert.notEqual(mod.readAutoPlayStall(), null, 'precondition: the stall was raised');
 
-		// The operator loads and plays something else on the master deck.
+		// The operator loads and plays something else on the master deck, and the
+		// presented-transport observation confirms it is actually coming out.
 		mod.deckStates[1].stable_id = 'rescue-1';
 		mod.deckStates[1].position_ms = 1_000;
 		mod.deckStates[1].playing = true;
+		mod.deckStates[1].audible = true;
 		await settle();
 
 		assert.equal(
@@ -244,6 +250,30 @@ test('CONTROL: a healthy set posts no client error', async () => {
 			posts.filter((post) => post.url.endsWith('/api/v1/client-errors')),
 			[],
 			'a recorder that fires on every run cannot prove the one above'
+		);
+	});
+});
+
+test('OVERSHOOT CONTROL: a play requested into a dead output does not retire the stall', async () => {
+	await withController(async (mod) => {
+		mod.setAutoPlayTrackFeed('playlist-a', spentFeed());
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		await settle();
+		assert.notEqual(mod.readAutoPlayStall(), null, 'precondition: the stall was raised');
+
+		// `playing` is written the moment a play is REQUESTED. With the output
+		// device dead, `audible` never follows and the room hears nothing.
+		mod.deckStates[1].stable_id = 'rescue-1';
+		mod.deckStates[1].position_ms = 1_000;
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].audible = false;
+		await settle();
+
+		assert.notEqual(
+			mod.readAutoPlayStall(),
+			null,
+			'an optimistic play flag is not sound: gating on it would delete the ' +
+				'explanation with the room still silent (Codex r3973806301)'
 		);
 	});
 });

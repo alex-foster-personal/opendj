@@ -377,14 +377,28 @@ async function _tick(): Promise<void> {
 	}
 
 	_syncPlayedSet();
-	// PLAY-08: sound is back. A playing source that is NOT the track AutoPlay
-	// gave up on means playback was restored - by the operator loading
-	// something, or by a later handoff committing - so the recorded stall is
-	// history rather than the state the room is in. Nothing else retires it:
-	// the stalled track ENDING is the moment the room goes quiet, which is
-	// exactly when the explanation has to still be on screen.
+	// PLAY-08: sound is back. A source that is AUDIBLE on a track that is NOT
+	// the one AutoPlay gave up on means playback was restored - by the operator
+	// loading something, or by a later handoff committing - so the recorded
+	// stall is history rather than the state the room is in. Nothing else
+	// retires it: the stalled track ENDING is the moment the room goes quiet,
+	// which is exactly when the explanation has to still be on screen.
+	//
+	// `audible`, NOT `playing` (Codex r3973806301). `playing` is written
+	// optimistically the moment a play is REQUESTED, while `audible` is
+	// published from the presented-transport observation, i.e. from output that
+	// actually happened. Gating on `playing` meant that starting another track
+	// while the output device was dead deleted the explanation on the next poll
+	// with the room still silent - which is the whole failure class this banner
+	// exists for, reintroduced by its own clear rule.
 	const stall = readAutoPlayStall();
-	if (stall !== null && source.stable_id !== stall.source_stable_id) clearAutoPlayStall();
+	if (
+		stall !== null &&
+		source.stable_id !== stall.source_stable_id &&
+		deckStates[source.id].audible
+	) {
+		clearAutoPlayStall();
+	}
 	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
 
