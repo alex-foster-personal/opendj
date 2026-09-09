@@ -2867,6 +2867,15 @@
 		flex-direction: column;
 		align-items: stretch;
 		justify-content: flex-start;
+		/* Constant in BOTH directions across the toggle. Height is the pin
+		 * itself; width is the same trap one axis over -- a rail sized to its
+		 * content is 12px holding a chevron and ~27px holding the word
+		 * "RECC", so an auto width would buy the vertical reclaim by taking
+		 * 15px of library WIDTH on every collapse. This fix did exactly that
+		 * before the e2e assertion below caught it. Declared once, wide
+		 * enough for the longest label at the size set below (measured:
+		 * scrollWidth == clientWidth == 25px in both states). */
+		width: 26px;
 		border-left: 1px solid var(--rb-border);
 	}
 	.suggestion-collapse,
@@ -2891,8 +2900,8 @@
 		font-size: 11px;
 	}
 	.suggestion-rail-label {
-		font-size: 8px;
-		letter-spacing: 0.04em;
+		font-size: 7px;
+		letter-spacing: 0.02em;
 	}
 	.bottom-bar {
 		grid-area: bottom;
