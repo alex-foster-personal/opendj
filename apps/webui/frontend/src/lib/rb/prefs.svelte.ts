@@ -19,6 +19,7 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import { makeDiskWriteChain } from './disk-write-chain';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
@@ -382,13 +383,16 @@ type DiskPrefsPatch = {
 	level_calibration?: LevelCalibrationPrefs;
 };
 
-async function _syncDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
+async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 	try {
 		await api.PUT('/api/v1/ui-prefs', { body: patch });
 	} catch {
 		/* localStorage remains authoritative if daemon is down */
 	}
 }
+
+/** One shared write queue (issue #1578) - see disk-write-chain.ts. */
+const _syncDiskPrefs = makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
 
 // -------------------------------------------------------- public API
 
@@ -529,7 +533,11 @@ export function setAutoSync(next: AutoSyncPrefs): void {
 	void _syncDiskPrefs({ auto_sync: { ...uiPrefs.auto_sync } });
 }
 
-export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeLevelCalibrationSetters(uiPrefs, _persist, (patch) => _syncDiskPrefs(patch));
+export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeLevelCalibrationSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
 
 /** Persist a confirm skip / remembered choice. Pass `undefined` to clear. */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
@@ -548,18 +556,9 @@ export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
 export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 	try {
-		const body = await unwrap(api.GET('/api/v1/ui-prefs')) as {
-			confirm?: RbUiPrefs['confirm'];
-			theme?: UiTheme;
-			hide_todo_settings?: boolean;
-			auto_sync?: AutoSyncPrefs;
-			technically_working_animate?: boolean;
-			show_agent_pins?: boolean;
-			deck_layout?: DeckLayoutMode;
-			deck_layout_animate?: boolean;
-			deck_layout_duration_ms?: DeckLayoutDurationMs;
-			level_calibration?: LevelCalibrationPrefs;
-		};
+		// Same optional field set the setters below PUT, so it doubles as the GET
+		// response shape rather than duplicating a second inline type for it.
+		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
 		if (body.confirm !== undefined) {
 			uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
 		}

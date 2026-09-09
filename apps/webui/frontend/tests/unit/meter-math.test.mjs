@@ -20,9 +20,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   at full scale reads as merely loud
 
 let meter;
+let calFields;
 
 before(async () => {
 	meter = await loadTypeScriptModule('src/lib/rb/meter-math.ts');
+	calFields = await loadTypeScriptModule('src/lib/rb/prefs-fields.ts');
 });
 
 test('digital silence floors instead of diverging to -Infinity', () => {
@@ -230,4 +232,51 @@ test('a wrong-length threshold set is a hard error, not a silent miscount', () =
 test('a non-finite calibration is rejected rather than shifting by NaN', () => {
 	assert.throws(() => meter.segmentThresholdsForRed(NaN), RangeError);
 	assert.throws(() => meter.segmentThresholdsForRed(Infinity), RangeError);
+});
+
+test('a low calibration never lights a segment at true silence', () => {
+	// Issue #1578: an unclamped shift moves thresholds below METER_FLOOR_DBFS,
+	// so a low red anchor (e.g. a quiet room during calibration) lit segments
+	// with no signal at all. Sweep the FULL range the UI permits for
+	// red_dbfs (prefs-fields.ts CAL_MIN_DBFS..CAL_MAX_DBFS), not samples: the
+	// value comes off a live meter read, so it can land anywhere in the range
+	// including a fractional boundary.
+	const { CAL_MIN_DBFS, CAL_MAX_DBFS } = calFields;
+	const STEP = 0.1;
+	const values = [];
+	for (let x = CAL_MIN_DBFS; x <= CAL_MAX_DBFS; x += STEP) values.push(x);
+	values.push(CAL_MIN_DBFS, CAL_MAX_DBFS, -29.05);
+	for (const red of values) {
+		const thresholds = meter.segmentThresholdsForRed(red);
+		const lit = meter.segmentsLitFromDbfs(meter.METER_FLOOR_DBFS, thresholds);
+		assert.equal(
+			lit,
+			0,
+			`red=${red} lit ${lit}/10 segments at the floor (${meter.METER_FLOOR_DBFS} dBFS)`
+		);
+	}
+});
+
+test('a low enough calibration clamps multiple thresholds to the same floor value', () => {
+	// Codex P1 on #1578: the floor clamp above makes segmentThresholdsForRed
+	// produce DUPLICATE values by design once redDbfs is low enough that more
+	// than one shifted threshold lands at or below METER_FLOOR_DBFS - they all
+	// clamp to the same number. ChannelLevelMeter.svelte's {#each} keys on
+	// segment INDEX, not threshold, specifically because of this. This test
+	// pins that the duplicate-value case is real (not hypothetical) and stays
+	// reachable within the UI-permitted range, so a future change that
+	// "simplifies" the template back to keying on threshold has something to
+	// fail against.
+	const { CAL_MIN_DBFS } = calFields;
+	const thresholds = meter.segmentThresholdsForRed(CAL_MIN_DBFS);
+	const atFloor = thresholds.filter((t) => t === meter.METER_FLOOR_DBFS);
+	assert.ok(
+		atFloor.length >= 2,
+		`expected >= 2 thresholds clamped to the floor at CAL_MIN_DBFS=${CAL_MIN_DBFS}, got ${atFloor.length} of [${thresholds.join(', ')}]`
+	);
+	assert.notEqual(
+		new Set(thresholds).size,
+		thresholds.length,
+		'thresholds should contain duplicates at this calibration, proving segment.threshold is unsafe as an each-block key'
+	);
 });
