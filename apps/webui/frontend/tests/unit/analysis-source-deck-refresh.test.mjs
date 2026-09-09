@@ -51,7 +51,10 @@ async function requestLog() {
 before(async () => {
 	serverProcess = spawn('uv', ['run', '--no-sync', 'python', SERVER_SCRIPT], {
 		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local' },
+		// PYTHONPATH, not an editable install: CI's frontend job provisions only
+		// requirements.txt (no setuptools-rust build) for this one fixture, so
+		// `apps` must resolve from the tree rather than from site-packages.
+		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const port = await new Promise((resolve, reject) => {

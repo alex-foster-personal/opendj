@@ -151,6 +151,11 @@ def main() -> int:
     app = create_app()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
+    # listen() BEFORE the READY line: uvicorn only puts the fd into LISTEN
+    # state inside server.run()'s own startup, so a reader that connects the
+    # instant it sees READY can race that and get ECONNREFUSED. Calling
+    # listen() here queues any early connection in the backlog instead.
+    sock.listen()
     port = sock.getsockname()[1]
     print(f"READY {port}", flush=True)
     config = uvicorn.Config(app, fd=sock.fileno(), log_level="warning")

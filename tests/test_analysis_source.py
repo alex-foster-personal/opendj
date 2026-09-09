@@ -161,6 +161,7 @@ def _set_source(client: TestClient, source: str) -> None:
 
 @pytest.mark.requirement("PARITY-02")
 def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestClient) -> None:
+    """[if] the rekordbox lane is selected [then] the served beatgrid is left untouched, [else stop]."""
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -176,6 +177,7 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
 def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
     anlz_client: TestClient,
 ) -> None:
+    """[if] the own lane is selected and a real analysis record exists [then] the beatgrid swaps to that record's grid in exact ANLZ shape, [else stop]."""
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
@@ -193,6 +195,7 @@ def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
 def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbox(
     anlz_client: TestClient,
 ) -> None:
+    """[if] the own lane is selected and no analysis record exists [then] the beatgrid goes explicitly empty with a named reason, [else stop]."""
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_UNANALYZED}/anlz")
     assert r.status_code == 200, r.text
@@ -206,6 +209,7 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
 def test_own_source_with_downbeat_less_record_names_that_reason(
     anlz_client: TestClient,
 ) -> None:
+    """[if] the own lane is selected and the record has no usable downbeats [then] the beatgrid goes empty and names that specific reason, [else stop]."""
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_NO_DOWNBEATS}/anlz")
     assert r.status_code == 200, r.text
