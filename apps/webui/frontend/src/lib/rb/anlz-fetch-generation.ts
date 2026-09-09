@@ -1,12 +1,12 @@
 /**
  * Monotonic counter embedded in every /anlz request's query string and
  * in-flight dedupe key (api-rb.ts), bumped once per rbx-vs-own analysis
- * source switch (audio-engine.svelte.ts refreshDecksForAnalysisSourceChange).
+ * source switch (anlz-cache.svelte.ts refreshAnalysisSourceDecks).
  *
  * PARITY-02's switch changes what the SAME /anlz URL returns
  * (beatgrid_source), but the backend marks a decoded response
  * `Cache-Control: public, max-age=3600` (rb_assets.py _CACHE_ANLZ).
- * refreshDecksForAnalysisSourceChange re-fetches only the decks that are
+ * refreshAnalysisSourceDecks re-fetches only the decks that are
  * CURRENTLY loaded; a track merely prefetched into the browser's own HTTP
  * cache (library row hover, BrowserPanel selection, an unloaded deck slot)
  * is untouched by that loop, so a later `load()` of it via the plain

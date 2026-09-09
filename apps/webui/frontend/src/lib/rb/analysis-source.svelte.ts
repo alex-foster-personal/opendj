@@ -22,7 +22,8 @@
  */
 import { api, unwrap } from '../api';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
-import { engine } from './audio-engine.svelte';
+import { refreshAnalysisSourceDecks } from '$lib/components/rb/wave/anlz-cache.svelte';
+import { DECK_IDS, deckStates } from './audio-engine.svelte';
 
 export type AnalysisSource = 'rekordbox' | 'own';
 
@@ -141,7 +142,7 @@ function _recordDeckSources(
 /** Adopts a confirmed selection from the daemon (a GET mirror or a PUT
  * response) and, only when a feature actually changed value, forces the
  * loaded decks and shared ANLZ cache off the pre-switch payload -- see
- * engine.refreshDecksForAnalysisSourceChange (audio-engine.svelte.ts) for why
+ * `refreshAnalysisSourceDecks` (anlz-cache.svelte.ts) for why
  * that is not automatic: the same /anlz URL now returns different bytes, and
  * neither the deck's terminal state nor the one-fetch-per-session cache nor
  * the response's own 1h HTTP cache header would otherwise notice
@@ -330,7 +331,7 @@ async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null>
 		if (_refreshRunner === null) {
 			throw new Error('no analysis source refresh runner is installed');
 		}
-		served = await _refreshRunner(() => engine.refreshDecksForAnalysisSourceChange());
+		served = await _refreshRunner(() => refreshAnalysisSourceDecks(DECK_IDS, deckStates));
 		if (served === undefined) {
 			// A runner that awaits the work but drops its result would silently
 			// write `undefined` into the deck watermark, and every later
@@ -340,7 +341,7 @@ async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null>
 			throw new Error('the analysis source refresh runner dropped its work result');
 		}
 	} else {
-		served = await engine.refreshDecksForAnalysisSourceChange();
+		served = await refreshAnalysisSourceDecks(DECK_IDS, deckStates);
 	}
 	// Any successful refresh refetches EVERY loaded deck, so it satisfies a
 	// pending record-change retry whatever triggered it.

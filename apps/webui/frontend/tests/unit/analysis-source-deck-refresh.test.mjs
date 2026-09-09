@@ -1,5 +1,5 @@
 /**
- * PARITY-02 rbx-vs-own analysis source toggle: engine.refreshDecksForAnalysisSourceChange
+ * PARITY-02 rbx-vs-own analysis source toggle: refreshAnalysisSourceDecks
  * (audio-engine.svelte.ts), the fix for discussion_r3921666943 - BLOCKING "Refresh
  * decks and caches when switching source".
  *
@@ -162,7 +162,7 @@ test('refreshes a loaded deck onto a fresh, real own-source anlz payload', async
 	audio.deckStates[1].anlz = { beatgrid: { beat_count: 4, beats: [] } };
 
 	const before_ = await requestLog();
-	await audio.engine.refreshDecksForAnalysisSourceChange();
+	await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);
 	const after_ = (await requestLog()).slice(before_.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(after_.length, 1, 'only the one loaded deck should fetch');
@@ -180,7 +180,7 @@ test('refreshes a loaded deck onto a fresh, real own-source anlz payload', async
 
 test('an unloaded deck (no stable_id) triggers no fetch and is left untouched', async () => {
 	const before_ = await requestLog();
-	await audio.engine.refreshDecksForAnalysisSourceChange();
+	await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);
 	const after_ = (await requestLog()).slice(before_.length);
 
 	assert.equal(after_.length, 0, 'no deck has a stable_id, so the real server must see no request');
@@ -195,7 +195,7 @@ test('refreshes every loaded deck independently with its own real beatgrid', asy
 	audio.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
 	audio.deckStates[2].anlz = { beatgrid: { beat_count: 1, beats: [] } };
 
-	await audio.engine.refreshDecksForAnalysisSourceChange();
+	await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);
 
 	// SID_TRACK_A and SID_TRACK_B are seeded (fixtures/analysis_source_anlz_server.py)
 	// with 10 and 20 real downbeats respectively - a genuinely different own grid
@@ -213,7 +213,7 @@ test('a deck swapped to a different track mid-request keeps the new track, not t
 	audio.deckStates[1].stable_id = SID_SLOW; // server-side real 150ms delay
 	audio.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
 
-	const refreshPromise = audio.engine.refreshDecksForAnalysisSourceChange();
+	const refreshPromise = cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);
 	// Simulate a real deck load landing before the analysis-source refetch settles -
 	// the slow request above is still in flight against the real server.
 	await new Promise((resolve) => setTimeout(resolve, 0));

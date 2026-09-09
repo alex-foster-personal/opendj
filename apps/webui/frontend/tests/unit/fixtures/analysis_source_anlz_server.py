@@ -1,6 +1,6 @@
 """Real HTTP fixture server for analysis-source-deck-refresh.test.mjs.
 
-The regression it backs (PARITY-02's refreshDecksForAnalysisSourceChange) was
+The regression it backs (PARITY-02's refreshAnalysisSourceDecks) was
 flagged BLOCKING (discussion_r3921839834) for exercising a hand-fabricated
 `globalThis.fetch` response instead of the real backend: the swap the test
 claims to verify - `_resolve_beatgrid_source`, the exact function the

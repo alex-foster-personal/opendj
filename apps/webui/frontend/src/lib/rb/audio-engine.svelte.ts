@@ -124,7 +124,6 @@ import {
 	installAuthoritativeAnlzGridSink,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
-	refreshAnalysisSourceDecks,
 	refreshAnlzCacheEntry,
 	upgradeDeckBeatgrid,
 	createBeatgridResyncGuards,
@@ -3069,17 +3068,6 @@ class RbAudioEngine implements AudioEngine {
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 		st.loop = _displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
-	}
-
-	/** PARITY-02: forces every loaded deck and the shared ANLZ cache off
-	 * whatever they read before an rbx-vs-own analysis source switch, and
-	 * reports the source the server ACTUALLY served. The whole behavior, and
-	 * the review history behind each of its ordering rules, lives on
-	 * `refreshAnalysisSourceDecks` (anlz-cache.svelte.ts) beside the cache
-	 * primitives it writes through; this is the engine-side entry point only,
-	 * kept here because `deckStates` is this module's. */
-	async refreshDecksForAnalysisSourceChange(): Promise<'rekordbox' | 'own' | null> {
-		return refreshAnalysisSourceDecks(DECK_IDS, deckStates);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
