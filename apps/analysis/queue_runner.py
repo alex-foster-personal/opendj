@@ -72,14 +72,27 @@ def _batch_is_cancelled(conn: sqlite3.Connection, batch_id: str) -> bool:
 
 
 def _already_current(
-    conn: sqlite3.Connection, stable_id: str, backend: str, version: str
+    conn: sqlite3.Connection, item: queue_store.QueueItem, backend: str, version: str
 ) -> bool:
+    """Is there a usable record for this exact producer version already?
+
+    Two conditions, and the second is the one that is easy to forget: the row
+    must exist, AND the queue must not have marked it STALE. A record the
+    dependency cascade invalidated exists at the current version and is
+    precisely the thing that needs recomputing, so a skip check that only
+    asked "does a row exist" would make every cascade re-queue a no-op and
+    the dependent lane would never recover.
+    """
     row = conn.execute(
         "SELECT 1 FROM analysis WHERE stable_id = ? AND backend = ? "
         "AND backend_version = ?",
-        (stable_id, backend, version),
+        (item.stable_id, backend, version),
     ).fetchone()
-    return row is not None
+    if row is None:
+        return False
+    return (backend, version) not in queue_store.stale_rows(
+        conn, item.stable_id, item.lane
+    )
 
 
 def _commit_record(
@@ -97,6 +110,19 @@ def _commit_record(
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # BEFORE the write, not after: upsert_record recomputes the canonical
+        # pointer, and it reads analysis_stale while doing so. Clearing the
+        # marker afterwards would leave the freshly recomputed record excluded
+        # from its own pointer until some later write happened to recompute it
+        # again -- the lane would look permanently unanalyzed while carrying a
+        # perfectly good record.
+        queue_store.clear_stale(
+            conn,
+            stable_id=item.stable_id,
+            lane=item.lane,
+            backend=record.backend,
+            backend_version=record.backend_version,
+        )
         upsert_record(record, conn=conn)
         outcomes: list[CascadeOutcome] = []
         if canonical_pointer(conn, item.stable_id, item.lane) == (
@@ -109,13 +135,6 @@ def _commit_record(
                 lane=item.lane,
                 dependency_record=record,
             )
-        queue_store.clear_stale(
-            conn,
-            stable_id=item.stable_id,
-            lane=item.lane,
-            backend=record.backend,
-            backend_version=record.backend_version,
-        )
         queue_store.finish_item(
             conn,
             batch_id=batch_id,
@@ -168,9 +187,7 @@ def _fill_pool(
         )
         if item is None:
             return
-        if _already_current(
-            ctx.conn, item.stable_id, ctx.backend_name, ctx.version
-        ):
+        if _already_current(ctx.conn, item, ctx.backend_name, ctx.version):
             queue_store.finish_item(
                 ctx.conn,
                 batch_id=ctx.batch_id,

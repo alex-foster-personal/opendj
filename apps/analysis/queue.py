@@ -385,7 +385,9 @@ def cascade_dependents(
     Returns one outcome per dependent lane so the caller can report what it
     did rather than an unattributable count.
     """
-    from .canonical import canonical_pointer  # local: canonical imports us back
+    # Local import: canonical imports queue_store, so importing it at module
+    # scope here would close the cycle.
+    from .canonical import canonical_pointer, refresh_lanes
 
     queue_store.ensure_queue_tables(conn)
     actual = dependency_identity(dependency_record, lane)
@@ -437,6 +439,13 @@ def cascade_dependents(
             backend_version=dep_version,
             reason=queue_store.STALE_DEPENDENCY_MOVED,
         )
+        # Marking a row stale is only half the job: the pointer that already
+        # names it has to be recomputed, or the deck goes on reading a key
+        # computed against a beatgrid it is no longer showing. Recomputing
+        # here rather than leaving it to the next write of that lane is the
+        # difference between "drops out of the canonical pointer" and "will
+        # drop out eventually".
+        refresh_lanes(conn, stable_id, [dependent])
         outcomes.append(
             CascadeOutcome(
                 stable_id=stable_id,
