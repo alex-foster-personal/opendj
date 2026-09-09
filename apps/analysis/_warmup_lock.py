@@ -97,6 +97,20 @@ def warmup_dir() -> Path:
     return Path(tempfile.gettempdir()) / f"mdt-numba-warmup-{_env_key()}"
 
 
+def _is_owned_dir(path: Path) -> bool:
+    """True when ``path`` is a real directory (no symlink hop) owned by us.
+
+    ``lstat``, not ``stat``: a symlink must fail this check on its own link
+    rather than resolving to whatever it points at, or a planted symlink into
+    someone else's directory would read as ours.
+    """
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+
+
 def _ensure_lock_dir(path: Path, *, shared: bool) -> bool:
     """Make ``path`` safe to lock inside; False means the caller fails closed.
 
@@ -114,11 +128,86 @@ def _ensure_lock_dir(path: Path, *, shared: bool) -> bool:
         return stat.S_ISDIR(st.st_mode)
     with suppress(FileExistsError):
         os.mkdir(path, 0o700)
-    try:
-        st = os.lstat(path)
-    except OSError:
+    return _is_owned_dir(path)
+
+
+#: Sentinel file proving a directory is dedicated to this cache, planted the
+#: first time this module claims an empty one. No ``.nbi``/``.nbc`` suffix,
+#: so ``purge_cache`` never removes it - dedication is a property of the
+#: directory's identity, not of what currently happens to be in it.
+_CACHE_DEDICATION_MARKER = ".mdt-numba-cache-owned"
+
+
+def _is_dedicated_cache_dir(path: Path) -> bool:
+    """True when ``path`` is confirmed dedicated to this cache, not shared.
+
+    Ownership alone does not make a directory safe to ``purge_stale`` into:
+    ``purge_cache`` deletes every ``*.nbi``/``*.nbc`` anywhere under its root,
+    so an operator's general-purpose ``NUMBA_CACHE_DIR`` - shared with other
+    numba-using tools - would lose their artifacts too (issue #1572 review).
+    An empty directory is claimed by planting the marker. A non-empty one is
+    trusted when the marker is already there, OR when ``warmup_stamp_path()``
+    already exists for this exact ``NUMBA_CACHE_DIR`` - proof this module's
+    own warm-up machinery already vouched for it, even through an entrypoint
+    that never calls this function: CI pre-warms a persistent per-runner
+    cache with the standalone ``jit_warmup`` CLI directly (issue #1437),
+    which writes real artifacts and a stamp without ever planting our
+    marker. Anything else - real content, no marker, no stamp for this
+    exact configuration - is an operator's general-purpose numba cache we
+    have never touched, and is refused.
+    """
+    marker = path / _CACHE_DEDICATION_MARKER
+    if marker.exists():
+        return True
+    if warmup_stamp_path().exists():
+        marker.touch()
+        return True
+    if any(path.iterdir()):
         return False
-    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+    marker.touch()
+    return True
+
+
+def ensure_owned_numba_cache_dir() -> Path | None:
+    """Make ``NUMBA_CACHE_DIR`` name a directory this process may purge.
+
+    Unset: create a private 0700 ``mdt-numba-cache-<uid>-<key>`` directory
+    under the temp root (the same key ``warmup_dir()`` uses, computed before
+    this call can change what it hashes) and publish it into ``os.environ``
+    so both this module's own cache lookups and numba's own internal caching
+    agree on it - every deployment gets purge protection, not only the ones
+    that happen to set the variable themselves. The UID is part of the name:
+    without it, a second user sharing this venv (agentbox has run it as both
+    root and ghrunner) finds the first user's directory, fails the ownership
+    check below, and silently loses purge protection instead of getting a
+    directory of their own (issue #1572 review).
+
+    Set by the operator: verified the same way ``_ensure_lock_dir`` verifies
+    the private warm-up directory - a real directory (no symlink hop), owned
+    by this user - rather than trusted for merely being present. A missing
+    operator directory is refused, not created: it is theirs to make, exactly
+    like ``MDT_NUMBA_WARMUP_DIR``.
+
+    Either way, also checked against ``_is_dedicated_cache_dir``: an owned
+    directory that already holds something else's files is refused too,
+    because ownership says nothing about whether it is safe to delete
+    numba's own artifacts from that root without touching anyone else's.
+
+    Returns ``None`` (fail closed, caller must not purge) when either check
+    fails.
+    """
+    configured = os.environ.get("NUMBA_CACHE_DIR")
+    if configured:
+        path = Path(configured)
+    else:
+        path = Path(tempfile.gettempdir()) / f"mdt-numba-cache-{os.getuid()}-{_env_key()}"
+        with suppress(FileExistsError):
+            os.mkdir(path, 0o700)
+    if not _is_owned_dir(path) or not _is_dedicated_cache_dir(path):
+        return None
+    if not configured:
+        os.environ["NUMBA_CACHE_DIR"] = str(path)
+    return path
 
 
 def warmup_stamp_path() -> Path:
