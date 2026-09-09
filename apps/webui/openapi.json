@@ -5122,6 +5122,10 @@
             "title": "Fader",
             "type": "number"
           },
+          "filter": {
+            "title": "Filter",
+            "type": "number"
+          },
           "trim": {
             "title": "Trim",
             "type": "number"
@@ -5133,6 +5137,7 @@
           "eq_low",
           "eq_mid",
           "eq_high",
+          "filter",
           "fader",
           "assign"
         ],

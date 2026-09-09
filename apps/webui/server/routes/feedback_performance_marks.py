@@ -48,6 +48,7 @@ class MixerChannelMarkOut(BaseModel):
     eq_low: float
     eq_mid: float
     eq_high: float
+    filter: float
     fader: float
     assign: str
 

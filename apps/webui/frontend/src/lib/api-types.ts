@@ -4919,6 +4919,8 @@ export interface components {
             eq_mid: number;
             /** Fader */
             fader: number;
+            /** Filter */
+            filter: number;
             /** Trim */
             trim: number;
         };
