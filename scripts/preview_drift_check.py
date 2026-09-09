@@ -168,6 +168,19 @@ def _trees_identical(cwd: Path, left: str, right: str) -> bool:
     )
 
 
+def _worktree_dirty(cwd: Path) -> list[str]:
+    """Tracked/unstaged/untracked paths that differ from HEAD on disk.
+
+    ``HEAD`` is a commit object; it says nothing about a staged, unstaged, or
+    untracked edit sitting on top of it. Vite and the Python engine both
+    serve files straight off disk in ``cwd``, not from a commit, so this is
+    the only thing that answers what a browser hitting the preview actually
+    gets.
+    """
+    out = _git(cwd, "status", "--porcelain", "--untracked-files=all")
+    return [line[3:] for line in out.splitlines() if line.strip()]
+
+
 def _merge_commits(cwd: Path, main_ref: str, preview_ref: str) -> list[str]:
     """Merge commits reachable from the preview and not from main.
 
@@ -176,8 +189,9 @@ def _merge_commits(cwd: Path, main_ref: str, preview_ref: str) -> list[str]:
     return _git(cwd, "rev-list", "--merges", f"{main_ref}..{preview_ref}").split()
 
 
-def _resolution_carrying_merges(cwd: Path, shas: list[str]) -> list[str]:
-    """Merges whose recorded tree is NOT what merging their parents produces.
+def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> list[str]:
+    """Merges whose recorded tree is NOT what merging their parents produces,
+    AND whose recorded tree main has not since gained some other way.
 
     A conflict resolution (or a hand edit made during a merge) is content that
     exists on no ordinary commit, so patch-id comparison cannot see it at all:
@@ -186,38 +200,54 @@ def _resolution_carrying_merges(cwd: Path, shas: list[str]) -> list[str]:
     it is a NEGATIVE control by construction -- a merge that resolves trivially
     reproduces its own tree, so the ordinary "merge main into preview" commit
     is not flagged and this cannot degenerate into flagging every merge.
+
+    That first test alone still over-reports once main independently catches
+    up: if main later gains a commit whose tree equals the resolution's, main
+    already HAS that content and the merge is no longer preview-only, even
+    though replaying its two parents still fails to reproduce it (parents are
+    fixed history; whether main separately caught up is not visible from
+    them). ``main_trees`` is computed at most once, lazily, since most calls
+    flag nothing and a full-history walk is not free.
     """
+    main_trees: set[str] | None = None
     carrying: list[str] = []
     for sha in shas:
+        merge_tree = _git(cwd, "rev-parse", f"{sha}^{{tree}}").strip()
         parents = _git(cwd, "rev-parse", f"{sha}^@").split()
         if len(parents) != 2:
             # An octopus merge cannot be replayed pairwise. That is a failed
-            # measurement of that commit, not a clean bill of health, so it is
-            # reported rather than assumed innocent.
-            carrying.append(sha)
-            continue
-        proc = subprocess.run(
-            ["git", "merge-tree", "--write-tree", parents[0], parents[1]],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode == 1:
-            # The parents conflict, so whatever tree was recorded is a human
-            # resolution and exists nowhere else.
-            carrying.append(sha)
-            continue
-        if proc.returncode != 0:
-            raise MeasurementError(
-                f"git merge-tree failed for {sha} in {cwd} "
-                f"(exit {proc.returncode}): {proc.stderr.strip()}"
+            # measurement of that commit, not a clean bill of health, so it
+            # is a carrying candidate rather than assumed innocent.
+            is_carrying = True
+        else:
+            proc = subprocess.run(
+                ["git", "merge-tree", "--write-tree", parents[0], parents[1]],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False,
             )
-        replayed = proc.stdout.split("\n", 1)[0].strip()
-        if not replayed:
-            raise MeasurementError(f"git merge-tree printed no tree for {sha}")
-        if replayed != _git(cwd, "rev-parse", f"{sha}^{{tree}}").strip():
-            carrying.append(sha)
+            if proc.returncode == 1:
+                # The parents conflict, so whatever tree was recorded is a
+                # human resolution and exists nowhere else -- yet.
+                is_carrying = True
+            elif proc.returncode != 0:
+                raise MeasurementError(
+                    f"git merge-tree failed for {sha} in {cwd} "
+                    f"(exit {proc.returncode}): {proc.stderr.strip()}"
+                )
+            else:
+                replayed = proc.stdout.split("\n", 1)[0].strip()
+                if not replayed:
+                    raise MeasurementError(f"git merge-tree printed no tree for {sha}")
+                is_carrying = replayed != merge_tree
+        if not is_carrying:
+            continue
+        if main_trees is None:
+            main_trees = set(_git(cwd, "log", main_ref, "--format=%T").split())
+        if merge_tree in main_trees:
+            continue
+        carrying.append(sha)
     return carrying
 
 
@@ -299,6 +329,7 @@ class Report:
     max_age_hours: int = DEFAULT_MAX_AGE_HOURS
     preview_only: list[PreviewOnlyCommit] = field(default_factory=list)
     serves_main_tree: bool = False
+    dirty_paths: list[str] = field(default_factory=list)
     verdict: str = "OK"
     reasons: list[str] = field(default_factory=list)
 
@@ -329,6 +360,7 @@ class Report:
             "max_behind": self.max_behind,
             "max_age_hours": self.max_age_hours,
             "serves_main_tree": self.serves_main_tree,
+            "dirty_paths": self.dirty_paths,
             "preview_only_count": len(self.preview_only),
             "preview_only_stale": [c.as_dict() for c in self.stale],
             "reasons": self.reasons,
@@ -386,6 +418,28 @@ def evaluate(
     # blind spots below are blind spots of per-commit patch-id comparison, and
     # neither can be closed by looking at commits harder.
     report.serves_main_tree = _trees_identical(cwd, main_ref, preview_ref)
+
+    # A third blind spot neither commit nor tree comparison can see: in
+    # --worktree mode, `cwd` IS the served directory, and a staged, unstaged,
+    # or untracked edit on top of HEAD can be live in the browser while HEAD
+    # equals main and every check above reports clean. Set before the
+    # FOSSIL/DRIFT branches below so a later FOSSIL verdict (which returns
+    # early) still keeps this reason on the record even though FOSSIL takes
+    # priority over the DRIFT verdict set here.
+    if mode == "worktree":
+        report.dirty_paths = _worktree_dirty(cwd)
+        if report.dirty_paths:
+            report.verdict = "DRIFT"
+            shown = ", ".join(report.dirty_paths[:5])
+            if len(report.dirty_paths) > 5:
+                shown += f", +{len(report.dirty_paths) - 5} more"
+            report.reasons.append(
+                f"{len(report.dirty_paths)} path(s) differ from {preview_ref} "
+                f"on disk in {cwd} ({shown}); Vite and the Python engine serve "
+                f"files from disk, not from a commit object, so this can be "
+                f"live with no PR gate having seen it"
+            )
+
     if report.serves_main_tree:
         if report.preview_only:
             report.reasons.append(
@@ -408,7 +462,7 @@ def evaluate(
                 f"preview work: re-point or delete the ref."
             )
             return report
-        carrying = _resolution_carrying_merges(cwd, merges)
+        carrying = _resolution_carrying_merges(cwd, main_ref, merges)
         if carrying:
             described_merges = _describe(cwd, carrying)
             report.preview_only.extend(

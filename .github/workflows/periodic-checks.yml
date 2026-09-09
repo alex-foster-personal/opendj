@@ -142,27 +142,33 @@ jobs:
           }
 
           # The state marker lives in the newest ledger comment that carries
-          # one. Comments are read newest-last, so tail -1 after the grep.
-          # `.createdAt + " " + .body` keeps createdAt and body as ONE scalar
-          # string per comment (gh's default --jq output prints a string on
-          # one physical line, real newlines escaped, same as the old
-          # body-only query), so the two stay paired through one grep + tail
-          # instead of two separate paginated calls that could observe the
-          # issue's comment list at two different moments and misalign.
-          # createdAt is a fixed-width ISO-8601 timestamp with no space in
-          # it, so splitting on the FIRST space is unambiguous regardless of
-          # what the body contains.
+          # one. `gh api --jq` renders a string result as line-based plain
+          # text (`gh help formatting`), so a multiline .body prints across
+          # several physical lines rather than one line with escaped
+          # newlines -- a shell-side `grep -F ... | tail -1` on that output
+          # keeps only the physical line the marker sits on, silently
+          # dropping the createdAt prefix concatenated onto the FIRST line
+          # of the body, then hands `jq -r '.'` a bare, non-JSON
+          # HTML-comment line, which exits under `set -e` on every run after
+          # the bootstrap comment exists. Do the marker match AND the
+          # newest-wins selection inside jq instead (select() finds every
+          # comment carrying the marker, `.[-1]` takes the newest -- issue
+          # comments come back oldest-first and --paginate preserves that
+          # order), and carry the body out through the pipe as base64 so the
+          # combined createdAt+body line can never contain a real newline.
           combined="$(gh api --paginate "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
-                        --jq '.[] | .createdAt + " " + .body' \
-                      | grep -F '<!-- periodic-checks state sha=' \
-                      | tail -1 || true)"
+                        --jq '[.[] | select(.body | contains("<!-- periodic-checks state sha="))]
+                              | if length > 0 then (.[-1].createdAt + " " + (.[-1].body | @base64)) else empty end' \
+                      || true)"
 
           base=""
           base_at=""
           if [ -n "$combined" ]; then
-            decoded="$(printf '%s' "$combined" | jq -r '.')"
-            base_at="${decoded%% *}"
-            base_body="${decoded#* }"
+            # createdAt is a fixed-width ISO-8601 timestamp with no space in
+            # it, so splitting on the FIRST space is unambiguous regardless
+            # of what the (base64-encoded) body contains.
+            base_at="${combined%% *}"
+            base_body="$(printf '%s' "${combined#* }" | base64 -d)"
             # NOT anchored on the trailing ` -->`: the marker now also
             # carries `threshold=<N>` before the comment closes, and an
             # anchor requiring "-->" right after the 40 hex chars would stop
@@ -631,11 +637,17 @@ jobs:
           # for days. That reads as a fresh PASS indefinitely once the
           # schedule itself stops firing, which is exactly the silent-failure
           # shape row 2 exists to catch. e2e.yml runs nightly at 04:17 UTC;
-          # a 2-day floor tolerates one missed night without ever accepting a
+          # a 48h floor tolerates one missed night without ever accepting a
           # genuinely stale result as current.
+          #
+          # The cutoff is a full timestamp, not `+%F` (date-only): a
+          # date-only floor is midnight of that calendar date, not "48h ago",
+          # so at this workflow's 05:40 UTC start `+%F` on "2 days ago" is
+          # ~53h40m back and lets a third-night-old run still match. `+%FT%TZ`
+          # pins the floor to exactly 48h before this run started.
           if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
                            --event schedule --limit 1 \
-                           --created ">=$(date -u -d '2 days ago' +%F)" \
+                           --created ">=$(date -u -d '2 days ago' +%FT%TZ)" \
                            --json conclusion,createdAt,url \
                            --jq '.[] | "\(.conclusion // "in progress") (\(.createdAt)) \(.url)"' \
                          2>e2e.err)"; then
