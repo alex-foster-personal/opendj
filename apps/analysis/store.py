@@ -40,7 +40,8 @@ from apps.shared.state import db as state_db
 from apps.shared.state.events import EventBus
 from apps.shared.state.types import Event
 
-from .record import AnalysisRecord
+from .canonical import refresh_for_record
+from .record import AnalysisRecord, validate_record_contract
 
 # --- additive schema ----------------------------------------------------
 
@@ -77,6 +78,50 @@ _ANALYSIS_TABLES_SQL: list[str] = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_type   ON analysis_events(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_stable ON analysis_events(stable_id)",
+    # --- native-analysis v1 (spec section 3, "Record") -------------------
+    # The deterministic canonical pointer. Rows in `analysis` never
+    # overwrite across producers, so which row a reader gets cannot be a
+    # last-writer-wins column; it is recomputed from ALL rows on every
+    # upsert by one rule (highest semver, tie -> inapp over backfill, cand
+    # never eligible). That is what makes the pointer a function of what
+    # was produced rather than of the order it was produced in.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_canonical (
+        stable_id        TEXT NOT NULL,
+        lane             TEXT NOT NULL,
+        backend          TEXT NOT NULL,
+        backend_version  TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        PRIMARY KEY (stable_id, lane)
+    )
+    """,
+    # The read-time projection of own scalars. Every scalar reader goes
+    # through effective_fields() (apps/analysis/selection.py), which reads
+    # THIS table for a lane on own and track_fields for a lane on rbx.
+    # Nothing here is ever written into track_fields, so no own value can
+    # enter track_field_history or the sync path.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_projection (
+        stable_id        TEXT NOT NULL,
+        field            TEXT NOT NULL,
+        -- Deliberately typeless: SQLite gives an untyped column BLOB (none)
+        -- affinity, so a REAL bpm stays a REAL and a TEXT camelot stays TEXT.
+        -- Declaring it TEXT would coerce 128.0 to '128.0' and make every
+        -- smartlist numeric operator a lexical comparison, which is the same
+        -- class of silent wrongness as sorting 0.10.0 below 0.9.0.
+        value,
+        status           TEXT NOT NULL,
+        reason           TEXT,
+        confidence       REAL,
+        backend          TEXT NOT NULL,
+        backend_version  TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        PRIMARY KEY (stable_id, field)
+    )
+    """,
+    # Spec section 3: the filters on these fields must not scan records.
+    "CREATE INDEX IF NOT EXISTS idx_analysis_projection_field_value "
+    "ON analysis_projection(field, value)",
 ]
 
 
@@ -183,6 +228,13 @@ def upsert(
     call; this preserves the original single-shot API for ad-hoc CLI
     use.
     """
+    # The v1 record contract is enforced HERE, at the write boundary, not in
+    # the dataclass: a producer must be free to build a record incrementally,
+    # but a record that reaches storage without a producer version, without a
+    # decode fingerprint, or with a fabricated model hash is not writable
+    # (NATIVE-09). Pre-v1 backends are exempt by name; see
+    # validate_record_contract.
+    validate_record_contract(record)
     owned = conn is None
     if conn is None:
         conn = open_conn(db_path)
@@ -196,6 +248,10 @@ def upsert(
         ).fetchone()
         new_json = _record_to_json(record)
         if row is not None and _semantic_equal(row[0], new_json):
+            # Still refresh: an unchanged row can become canonical when a
+            # HIGHER-versioned sibling is deleted, and a pointer that only
+            # moves on a content change would go stale in silence.
+            refresh_for_record(conn, record)
             return UpsertResult(inserted=False, unchanged=True)
 
         conn.execute(
@@ -227,6 +283,7 @@ def upsert(
         # open_rw returns an autocommit connection (isolation_level=None,
         # the Phase 5 shared-connection contract), so the INSERT above
         # has already been persisted. No explicit commit needed.
+        refresh_for_record(conn, record)
         return UpsertResult(inserted=row is None, unchanged=False)
     finally:
         if owned:
