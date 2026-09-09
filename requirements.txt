@@ -157,6 +157,11 @@ cryptography>=42,<47
 mypy==2.3.1
 coverage[toml]>=7.4
 soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
+# Profiling the Python the perf harness LAUNCHES (never a running task; macOS
+# forbids attaching an allocator tracer to one). Mirrors the pyproject ``dev``
+# extra, which tests/test_dependency_contract.py requires this file to cover.
+memray>=1.14; sys_platform != "win32"
+pyinstrument>=5
 
 # --- Phase 11 -- web UI daemon (CAT-05) + cloud sync (CAT-04) ---
 # FastAPI 0.115 / Starlette 0.38 minimums need standard ``httpx``. The

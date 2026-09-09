@@ -40,6 +40,7 @@ export interface PerformanceMixerChannelPreset {
 	high: number;
 	mid: number;
 	low: number;
+	filter: number;
 	fader: number;
 	assign: CrossfaderAssign;
 }
@@ -156,6 +157,7 @@ function _validateMixerChannel(deck: DeckId, channel: PerformanceMixerChannelPre
 	_assertUnit(`mixer deck ${deck} high`, channel.high);
 	_assertUnit(`mixer deck ${deck} mid`, channel.mid);
 	_assertUnit(`mixer deck ${deck} low`, channel.low);
+	_assertUnit(`mixer deck ${deck} filter`, channel.filter);
 	_assertUnit(`mixer deck ${deck} fader`, channel.fader);
 	if (channel.assign !== 'A' && channel.assign !== 'B' && channel.assign !== 'THRU') {
 		throw new TypeError(`mixer deck ${deck} assign must be A, B, or THRU`);
@@ -328,6 +330,7 @@ function _mixerChannelCommands(
 		{ type: 'eq', deck, band: 'high', value: channel.high },
 		{ type: 'eq', deck, band: 'mid', value: channel.mid },
 		{ type: 'eq', deck, band: 'low', value: channel.low },
+		{ type: 'filter', deck, value: channel.filter },
 		{ type: 'fader', deck, value: channel.fader },
 		{ type: 'assign', deck, assign: channel.assign }
 	];
@@ -443,6 +446,7 @@ function _assertPresetMixer(
 			!_sameNumber(actual.eq_high, expected.high) ||
 			!_sameNumber(actual.eq_mid, expected.mid) ||
 			!_sameNumber(actual.eq_low, expected.low) ||
+			!_sameNumber(actual.filter, expected.filter) ||
 			!_sameNumber(actual.fader, expected.fader) ||
 			actual.assign !== expected.assign
 		) {

@@ -1,0 +1,15 @@
+[
+  {
+    "t": "2026-08-19T13:40:29.000Z",
+    "kind": "deck-stems sid=d804890178cb",
+    "deck": 3,
+    "message": "probeStem=30 fetchStems=4000 ...",
+    "stages": {
+      "probeStem": 30,
+      "fetchStems": 4000,
+      "decodeStems": 5000,
+      "stemProcessorCreate": 1350,
+      "total": 10400
+    }
+  }
+]

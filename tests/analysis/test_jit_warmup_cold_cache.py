@@ -33,8 +33,41 @@ from pathlib import Path
 import pytest
 
 from apps.analysis.jit_warmup import cache_fingerprint
+from tests.platform_capabilities import posix_permission_denial_supported
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+_CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(
+    os.name, getattr(os, "geteuid", None)
+)
+
+
+def _stamp_vouches_via_subprocess(roots: tuple[Path, ...], env: dict[str, str]) -> bool:
+    """Run ``stamp_vouches_for`` in a fresh process against an explicit env.
+
+    Keeps ``MDT_NUMBA_WARMUP_DIR`` out of THIS process's environment (issue
+    #1572 review: monkeypatching the process env is prohibited by AGENTS.md),
+    so every bit of evidence for the vouch check comes from the real
+    production path, exactly like the warm-up subprocess beside it.
+    """
+    driver = textwrap.dedent(
+        f"""
+        import sys
+        sys.path.insert(0, {str(REPO_ROOT)!r})
+        from pathlib import Path
+        from apps.analysis.jit_warmup import stamp_vouches_for
+        roots = tuple(Path(p) for p in {[str(r) for r in roots]!r})
+        print(stamp_vouches_for(roots))
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", driver],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout
+    return proc.stdout.strip().splitlines()[-1] == "True"
 
 # ---------------------------------------------------------------------------
 # The real subject: librosa, a real purge, real concurrent CLI invocations
@@ -213,4 +246,339 @@ def test_the_warmup_cli_fails_loudly_when_it_warms_nothing(tmp_path: Path) -> No
         f"a warm-up that wrote nothing exited {proc.returncode}:\n{proc.stdout}"
     )
     assert "warmed zero artifacts" in proc.stdout, proc.stdout
+
+
+@pytest.mark.slow
+@pytest.mark.requires_audio_stack
+@pytest.mark.requirement("JIT-02")
+def test_a_real_artifact_torn_in_place_no_longer_vouches(
+    purged_librosa_cache: Path,
+) -> None:
+    """[if] a torn real artifact still vouches [then] fail, [else stop].
+
+    issue #1572: reproduces the corruption a racing or killed writer leaves -
+    a real numba-compiled ``.nbc``, one byte flipped IN PLACE, its original
+    size and mtime restored - against the real librosa backend's own cache,
+    not a fabricated stand-in. A stale-but-untouched fingerprint would keep
+    vouching for this cache, the warm-up would skip it, and the next loader
+    would dereference the corrupt object code: the #1316 crash this module
+    exists to prevent.
+
+    if the fingerprint still vouched for a torn real artifact then a
+    corrupted persistent cache would be trusted and loaded
+
+    Warmed via the CLI in a subprocess, like the two tests above: numba reads
+    ``NUMBA_CACHE_DIR`` once at import, so a second in-process real compile
+    against a different cache dir would silently keep writing whatever the
+    first one in this process used. The corruption itself needs no numba
+    import and runs here, in the parent, against the artifacts the subprocess
+    left on disk - but the vouch check ALSO runs in a subprocess (issue #1572
+    review: no monkeypatching the process env), against the SAME explicit
+    ``MDT_NUMBA_WARMUP_DIR`` the warm-up used, so its evidence comes entirely
+    through the real production path too.
+    """
+    lock_dir = purged_librosa_cache.parent / "lock"
+    lock_dir.mkdir(mode=0o700)
+    roots = (purged_librosa_cache,)
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache),
+           "MDT_NUMBA_WARMUP_DIR": str(lock_dir)}
+
+    warmup = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup",
+         "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert warmup.returncode == 0, warmup.stdout
+    assert "skipped" not in warmup.stdout, (
+        f"a cold cache must compile, not skip: {warmup.stdout}"
+    )
+    assert _stamp_vouches_via_subprocess(roots, env), (
+        "the serial warm-up's own cache must be vouched for"
+    )
+
+    artifacts = [p for root in roots for p in root.rglob("*.nbc") if p.is_file()]
+    assert artifacts, "the real backend must have compiled at least one .nbc"
+    target = artifacts[0]
+    before_stat = target.stat()
+
+    torn = bytearray(target.read_bytes())
+    torn[len(torn) // 2] ^= 0xFF
+    target.write_bytes(bytes(torn))
+    os.utime(target, ns=(before_stat.st_mtime_ns, before_stat.st_mtime_ns))
+    after_stat = target.stat()
+    assert after_stat.st_size == before_stat.st_size
+    assert after_stat.st_mtime_ns == before_stat.st_mtime_ns
+
+    assert not _stamp_vouches_via_subprocess(roots, env), (
+        f"{target} was torn at its original size and mtime, but the real "
+        "cache still vouches for itself"
+    )
+
+
+@pytest.mark.skipif(
+    not _CAN_TEST_PERMISSION_DENIAL,
+    reason="root bypasses file permissions; chmod(0o000) would still read, "
+    "so this fixture cannot produce a real unreadable artifact here",
+)
+@pytest.mark.slow
+@pytest.mark.requires_audio_stack
+@pytest.mark.requirement("JIT-02")
+def test_a_real_artifact_that_cannot_be_read_self_heals_through_purge_if_stale(
+    purged_librosa_cache: Path,
+) -> None:
+    """[if] an unreadable real artifact crashes or is trusted [then] fail, [else stop].
+
+    issue #1572 review: an EIO-damaged file, or a cross-user cache artifact
+    with restrictive permissions, is listable (stat succeeds) but not
+    readable. Replaces an earlier version of this test that fabricated the
+    artifact's bytes: this one chmods a REAL numba-compiled ``.nbc`` the
+    production CLI just wrote, then re-runs the production
+    ``--purge-if-stale`` path end to end and requires it to notice, purge,
+    and recompile rather than crash or silently keep trusting the cache.
+    Skipped, not xfailed, under a privileged test runner: root ignores the
+    permission bits ``chmod(0o000)`` relies on (same reasoning as the
+    sibling lock-file test in test_jit_warmup_hygiene.py), so nothing this
+    test could assert there would say anything about the real defect.
+
+    if the OSError from an unreadable artifact escaped cache_fingerprint()
+    then the production purge-if-stale path would die before it could purge
+    and self-heal the damaged cache - the opposite of what its docstring
+    promises for anything it cannot measure
+    """
+    roots = (purged_librosa_cache,)
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
+
+    warmup = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup",
+         "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert warmup.returncode == 0, warmup.stdout
+    assert "skipped" not in warmup.stdout, (
+        f"a cold cache must compile, not skip: {warmup.stdout}"
+    )
+
+    artifacts = [p for root in roots for p in root.rglob("*.nbc") if p.is_file()]
+    assert artifacts, "the real backend must have compiled at least one .nbc"
+    target = artifacts[0]
+    target.chmod(0o000)
+    try:
+        assert cache_fingerprint(roots) == "", (
+            "a real but unreadable artifact must read as unmeasurable, not raise"
+        )
+        repaired = subprocess.run(
+            [sys.executable, "-m", "apps.analysis.jit_warmup",
+             "--backend", "librosa", "--purge-if-stale"],
+            cwd=str(REPO_ROOT), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+            check=False,
+        )
+    finally:
+        target.chmod(0o644)
+
+    assert repaired.returncode == 0, (
+        f"{target} was made unreadable but the warm-up crashed instead of "
+        f"purging and recompiling:\n{repaired.stdout}"
+    )
+    assert "skipped" not in repaired.stdout, (
+        f"an unreadable artifact must force a purge and recompile, not a "
+        f"skip: {repaired.stdout}"
+    )
+    assert _stamp_vouches_via_subprocess(roots, env), (
+        "the purge-and-recompile must leave a vouched-for cache behind"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.requires_audio_stack
+@pytest.mark.requirement("JIT-02")
+def test_a_real_analysis_run_purges_a_torn_cache_instead_of_loading_it(
+    purged_librosa_cache: Path,
+) -> None:
+    """[if] apps.analysis.run loads a torn artifact instead of purging it [then] fail, [else stop].
+
+    issue #1572 review: apps/analysis/run.py's own call to warm_backend_jit -
+    the ACTUAL production entrypoint this whole module exists to protect,
+    called in the same process about to analyze real audio - did not set
+    purge_stale, so a detected content mismatch only skipped the "skip"
+    branch and fell through to backend.warm_jit_cache(), which can still
+    load the very artifact whose content just failed to vouch. Exercises
+    apps.analysis.run itself, not the jit_warmup CLI, end to end against a
+    real torn artifact.
+
+    if the production analysis entrypoint detected a torn cache but did not
+    purge it then the segfault this module exists to prevent could still
+    happen through the exact call site the original #1572 bug hit
+    """
+    roots = (purged_librosa_cache,)
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
+
+    warmup = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup",
+         "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert warmup.returncode == 0, warmup.stdout
+
+    artifacts = [p for root in roots for p in root.rglob("*.nbc") if p.is_file()]
+    assert artifacts, "the real backend must have compiled at least one .nbc"
+    target = artifacts[0]
+    before_stat = target.stat()
+    torn = bytearray(target.read_bytes())
+    torn[len(torn) // 2] ^= 0xFF
+    target.write_bytes(bytes(torn))
+    os.utime(target, ns=(before_stat.st_mtime_ns, before_stat.st_mtime_ns))
+
+    fixtures = REPO_ROOT / "tests" / "fixtures" / "phase7-dedup"
+    audio = fixtures / "src-320.mp3"
+    assert audio.is_file(), f"fixture precondition: {audio} must exist"
+
+    run = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.run",
+         "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert run.returncode == 0, (
+        f"apps.analysis.run exited {run.returncode} "
+        f"({'SEGFAULT' if run.returncode in (-11, 139) else 'error'}) against a "
+        f"torn cache instead of purging it:\n{run.stdout}"
+    )
+    assert _stamp_vouches_via_subprocess(roots, env), (
+        "apps.analysis.run must leave a vouched-for cache behind, proving it "
+        "purged and recompiled the torn artifact rather than silently loading it"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.requires_audio_stack
+@pytest.mark.requirement("META-01")
+def test_a_real_analysis_run_self_provisions_a_cache_dir_and_purges_it_when_torn(
+    tmp_path: Path,
+) -> None:
+    """[if] apps.analysis.run with NUMBA_CACHE_DIR unset never gets purge protection [then] fail, [else stop].
+
+    issue #1572 review round 7: run() delegates the purge_stale decision to
+    ensure_owned_numba_cache_dir(), which self-provisions a private directory
+    when NUMBA_CACHE_DIR is unset - the DEFAULT/product deployment path,
+    since only CI sets that variable. A test that mocks the backend and spies
+    on the keyword passed to warm_backend_jit proves only that a keyword
+    moved, not that a real numba cache gets written, fingerprinted, torn and
+    purged through that self-provisioned directory. Exercises
+    apps.analysis.run end to end, with the real librosa backend and
+    NUMBA_CACHE_DIR unset, exactly like
+    test_a_real_analysis_run_purges_a_torn_cache_instead_of_loading_it above
+    but for the path that never sets the variable at all.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "NUMBA_CACHE_DIR"}
+    env["TMPDIR"] = str(tmp_path)
+
+    fixtures = REPO_ROOT / "tests" / "fixtures" / "phase7-dedup"
+    audio = fixtures / "src-320.mp3"
+    assert audio.is_file(), f"fixture precondition: {audio} must exist"
+
+    first_run = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.run",
+         "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert first_run.returncode == 0, first_run.stdout
+
+    provisioned = [
+        p for p in tmp_path.iterdir() if p.is_dir() and p.name.startswith("mdt-numba-cache-")
+    ]
+    assert len(provisioned) == 1, (
+        "expected exactly one self-provisioned cache directory under TMPDIR, "
+        f"found {provisioned}"
+    )
+    cache_dir = provisioned[0]
+    roots = (cache_dir,)
+
+    artifacts = [p for p in cache_dir.rglob("*.nbc") if p.is_file()]
+    assert artifacts, (
+        "the real backend must have compiled at least one .nbc into the "
+        "self-provisioned directory"
+    )
+    target = artifacts[0]
+    before_stat = target.stat()
+    torn = bytearray(target.read_bytes())
+    torn[len(torn) // 2] ^= 0xFF
+    target.write_bytes(bytes(torn))
+    os.utime(target, ns=(before_stat.st_mtime_ns, before_stat.st_mtime_ns))
+
+    second_run = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.run",
+         "--files", str(audio), "--workers", "1", "--all", "--dry-run"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert second_run.returncode == 0, (
+        f"apps.analysis.run exited {second_run.returncode} "
+        f"({'SEGFAULT' if second_run.returncode in (-11, 139) else 'error'}) against a "
+        f"torn self-provisioned cache instead of purging it:\n{second_run.stdout}"
+    )
+    stamp_env = {**env, "NUMBA_CACHE_DIR": str(cache_dir)}
+    assert _stamp_vouches_via_subprocess(roots, stamp_env), (
+        "apps.analysis.run must leave a vouched-for cache behind, proving it "
+        "purged and recompiled the torn artifact rather than silently loading it"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.requires_audio_stack
+@pytest.mark.requirement("JIT-05")
+def test_a_no_cache_backends_purge_does_not_touch_a_real_shared_stamp(
+    purged_librosa_cache: Path,
+) -> None:
+    """[if] a no-cache backend's purge deletes a real cache's shared stamp [then] fail, [else stop].
+
+    issue #1572 review: the lock, fingerprint and stamp are keyed on the
+    ENVIRONMENT (interpreter prefix + NUMBA_CACHE_DIR), not on a specific
+    backend's roots, so a backend with no JIT cache of its own (mik) shares
+    that key with librosa's real cache under the same NUMBA_CACHE_DIR. Two
+    real subprocess warm-ups sharing one env, not an injected stamp path,
+    because a unit test that hand-picks a stamp path cannot prove two
+    backends actually SHARE one - only the real environment-keyed lookup can.
+
+    if a no-cache backend's purge deleted the real cache's stamp then every
+    mik (or other no-cache backend) call would force a spurious full
+    recompile of librosa's cache for a reason unrelated to it
+    """
+    roots = (purged_librosa_cache,)
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(purged_librosa_cache)}
+
+    warmup = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup",
+         "--backend", "librosa", "--purge-if-stale"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=900,
+        check=False,
+    )
+    assert warmup.returncode == 0, warmup.stdout
+    assert _stamp_vouches_via_subprocess(roots, env), (
+        "fixture precondition: the real librosa warm-up must leave a vouched stamp"
+    )
+
+    no_cache = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup",
+         "--backend", "mik", "--purge-if-stale"],
+        cwd=str(REPO_ROOT), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60,
+        check=False,
+    )
+    assert no_cache.returncode == 0, no_cache.stdout
+
+    assert _stamp_vouches_via_subprocess(roots, env), (
+        "a no-cache backend's purge must not delete librosa's real, shared stamp"
+    )
 

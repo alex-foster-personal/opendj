@@ -188,6 +188,7 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
+	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -406,6 +407,8 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
+	filterLp: BiquadFilterNode; filterHp: BiquadFilterNode;
+	filterDry: GainNode; filterLpWet: GainNode; filterHpWet: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -745,6 +748,15 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
+		const filterLp = _ctx.createBiquadFilter();
+		filterLp.type = 'lowpass'; filterLp.Q.value = FILTER_Q; filterLp.frequency.value = lpHz;
+		const filterHp = _ctx.createBiquadFilter();
+		filterHp.type = 'highpass'; filterHp.Q.value = FILTER_Q; filterHp.frequency.value = hpHz;
+		// Separate wet gains (#990): the inactive side is silenced, not left in series.
+		const filterDry = _ctx.createGain(); filterDry.gain.value = dryGain;
+		const filterLpWet = _ctx.createGain(); filterLpWet.gain.value = lpWetGain;
+		const filterHpWet = _ctx.createGain(); filterHpWet.gain.value = hpWetGain;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -755,9 +767,11 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
-		high.connect(cue);
+		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
+		filterLp.connect(filterLpWet); filterHp.connect(filterHpWet);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
 		cue.connect(headphones.cueSum);
-		high.connect(fader);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
@@ -769,9 +783,8 @@ function _ensureGraph(): AudioContext {
 			fader.connect(xf);
 			xf.connect(_masterGain);
 		}
-		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
-		// `high` is post-trim and post-EQ but pre-fader: the DJM convention, and
-		// the reason the meter can be trusted for gain staging. See meter-tap.ts.
+		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, filterDry, filterLpWet, filterHpWet, cue, fader, xf, extsplit };
+		// `high` is post-trim/EQ, pre-filter, pre-fader: the meter reads gain staging INTO the filter (#990).
 		const tap = createMeterTap();
 		_meterTaps[deck] = tap;
 		meterSources.push({ tap, source: high });
@@ -949,6 +962,7 @@ import {
 	assertDeckReplacementAllowed,
 	assertDeckLoadConsistency,
 	loadCandidateCanPublish,
+	filterParamsFromKnob,
 	nextPlayingMaster,
 	pausedMasterSelectionBlockers,
 	assertPausedMasterSelectionAllowed,
@@ -3971,6 +3985,18 @@ class RbAudioEngine implements AudioEngine {
 		} else {
 			const _exhaustive: never = band;
 			throw new Error(`Unhandled EQ band: ${_exhaustive}`);
+		}
+	}
+
+	setFilter(deck: DeckId, value: number): void {
+		_assertUnit('setFilter value', value);
+		mixerState.channels[deck].filter = value;
+		const nodes = _rt[deck].nodes;
+		if (nodes !== null) {
+			const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(value);
+			_setParam(nodes.filterLp.frequency, lpHz); _setParam(nodes.filterHp.frequency, hpHz);
+			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
+			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
 	}
 

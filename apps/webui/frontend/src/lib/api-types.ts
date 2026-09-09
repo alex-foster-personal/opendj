@@ -4956,6 +4956,11 @@ export interface components {
             eq_mid: number;
             /** Fader */
             fader: number;
+            /**
+             * Filter
+             * @default 0.5
+             */
+            filter: number;
             /** Trim */
             trim: number;
         };
