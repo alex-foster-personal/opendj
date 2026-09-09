@@ -238,7 +238,7 @@ def _effective_updated_at(
 
 def _row_to_track(
     row: sqlite3.Row,
-    fields: dict[str, tuple[Any, str, Optional[float], str]],
+    fields: dict[str, EffectiveField],
 ) -> Track:
     """Project a ``tracks`` row + its ``track_fields`` entries into ``Track``.
 

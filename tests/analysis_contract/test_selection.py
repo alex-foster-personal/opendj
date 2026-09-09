@@ -1,5 +1,7 @@
 """Per-lane source selection: persisted default, in-memory tri-state toggle.
 
+[if] a relaunch loses a promoted default or the toggle is not unset [then] fail, [else stop].
+
 Spec: `specs/native-analysis-v1.md` section 3 ("Effective source") and D1.
 Requirement: PARITY-02.
 

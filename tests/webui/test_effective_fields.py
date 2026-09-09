@@ -1,5 +1,7 @@
 """effective_fields: the one scalar read, wired into the track read model.
 
+[if] an own lane serves rekordbox data or writes track_fields [then] fail, [else stop].
+
 Spec: `specs/native-analysis-v1.md` section 3 ("Consumer, key and loudness
 lanes"). Requirements: NATIVE-04, NATIVE-07.
 

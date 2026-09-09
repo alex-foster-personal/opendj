@@ -14,6 +14,7 @@ they live where they actually run.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -99,7 +100,7 @@ def own_record(
 ) -> AnalysisRecord:
     """A minimal, contract-valid own record. Every field is stated, not defaulted."""
     if result is None:
-        payloads = {
+        payloads: dict[str, Callable[[], dict[str, Any]]] = {
             "beatgrid": beatgrid_payload,
             "key": key_payload,
             "loudness": loudness_payload,
@@ -133,7 +134,7 @@ def own_record(
 
 
 @pytest.fixture()
-def db(tmp_path) -> sqlite3.Connection:
+def db(tmp_path) -> Iterator[sqlite3.Connection]:
     """A real state.db with the Phase 5 + analysis schemas applied."""
     conn = store_mod.open_conn(tmp_path / "state.db")
     yield conn

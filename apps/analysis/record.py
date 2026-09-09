@@ -57,6 +57,7 @@ from typing import Any, Literal
 
 from .lanes import (
     LaneResult,
+    OwnBackend,
     Producer,
     SemverError,
     parse_own_backend,
@@ -147,7 +148,12 @@ def validate_record_contract(record: AnalysisRecord) -> None:
     parsed = parse_own_backend(record.backend)
     if parsed is None:
         return
+    _check_identity_and_version(record, parsed)
+    _check_provenance_and_lanes(record, parsed)
 
+
+def _check_identity_and_version(record: AnalysisRecord, parsed: OwnBackend) -> None:
+    """Who made it, at which version, and does the body agree with the key."""
     if record.producer != parsed.producer:
         raise RecordContractError(
             f"backend {record.backend!r} names producer {parsed.producer!r} but the "
@@ -170,6 +176,10 @@ def validate_record_contract(record: AnalysisRecord) -> None:
             f"backend_version {record.backend_version!r}; the canonical pointer ranks "
             "on backend_version, so a body that says something else is a trap"
         )
+
+
+def _check_provenance_and_lanes(record: AnalysisRecord, parsed: OwnBackend) -> None:
+    """Model hash, decode fingerprint, and the lane blocks themselves."""
     if record.uses_model and not record.model_sha256:
         raise RecordContractError(
             f"own record for {record.stable_id!r} declares uses_model but carries no "

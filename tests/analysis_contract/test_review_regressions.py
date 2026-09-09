@@ -1,5 +1,7 @@
 """Regressions for the five review findings on PR #1549, each reproduced first.
 
+[if] any of the five review findings on PR #1549 recurs [then] fail, [else stop].
+
 Every test below was written against a REPRODUCTION, not against the review
 text: the claim was run, the wrong behavior observed, and only then fixed.
 Each therefore goes red against the pre-fix source.
@@ -213,7 +215,8 @@ def test_a_later_own_row_does_not_shadow_the_legacy_beatgrid_row(tmp_path) -> No
     conn = analysis_store.open_conn(path)
     t0 = datetime(2026, 9, 1, tzinfo=UTC)
     analysis_store.upsert_record(_legacy_with_downbeats("t1", t0), conn=conn)
-    assert _load_latest_record(path, "t1", None).downbeats_s == [0.0, 1.875, 3.75, 5.625]
+    first = _load_latest_record(path, "t1", None)
+    assert first is not None and first.downbeats_s == [0.0, 1.875, 3.75, 5.625]
 
     later = own_record(lane="key", result=LaneResult(
         status="failed", reason="no_tonal_center"))
@@ -223,6 +226,7 @@ def test_a_later_own_row_does_not_shadow_the_legacy_beatgrid_row(tmp_path) -> No
         dataclasses.replace(later, analyzed_at=t0 + timedelta(hours=1)), conn=conn
     )
     latest = _load_latest_record(path, "t1", None)
+    assert latest is not None
     assert latest.backend == "librosa-only"
     assert latest.downbeats_s == [0.0, 1.875, 3.75, 5.625]
     conn.close()

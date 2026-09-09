@@ -1,5 +1,7 @@
 """The canonical pointer and the projection table, against a real state.db.
 
+[if] write order changes the canonical pointer or the projection [then] fail, [else stop].
+
 Spec: `specs/native-analysis-v1.md` section 3 ("Record"). Requirements:
 NATIVE-09 (order independence), NATIVE-04 and NATIVE-07 (the read model).
 
@@ -45,7 +47,7 @@ def _projection(conn: sqlite3.Connection, stable_id: str) -> dict[str, tuple]:
 
 def test_pointer_and_projection_do_not_depend_on_write_order(tmp_path) -> None:
     """Write backfill then inapp, and inapp then backfill. Compare both ends."""
-    def build(order: list[str], path: str) -> tuple[tuple, dict]:
+    def build(order: list[str], path: str) -> tuple[tuple[str, str] | None, dict[str, tuple]]:
         conn = store_mod.open_conn(tmp_path / path)
         try:
             for producer in order:

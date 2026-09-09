@@ -1,5 +1,7 @@
 """AnalysisRecord v2: producer identity, versioning, lane results, back-compat.
 
+[if] an own record lands without its version, fingerprint or model hash [then] fail, [else stop].
+
 Spec: `specs/native-analysis-v1.md` section 3 ("Record") and section 8's
 regression lines. Requirement: NATIVE-09.
 
@@ -220,8 +222,10 @@ def test_every_lane_payload_helper_validates() -> None:
 def test_own_backend_names_round_trip() -> None:
     assert own_backend("beatgrid", "inapp") == "own_beatgrid.inapp"
     assert own_backend("key", "cand", "skey") == "own_key.cand.skey"
-    assert parse_own_backend("own_beatgrid.inapp").producer == "inapp"
-    assert parse_own_backend("own_key.cand.skey").candidate == "skey"
+    inapp = parse_own_backend("own_beatgrid.inapp")
+    cand = parse_own_backend("own_key.cand.skey")
+    assert inapp is not None and inapp.producer == "inapp"
+    assert cand is not None and cand.candidate == "skey"
 
 
 def test_pre_v1_backend_names_parse_as_not_own() -> None:

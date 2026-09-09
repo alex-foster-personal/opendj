@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import subprocess
 import urllib.error
 import urllib.request
-
-from apps.webui.port_config import PortConfigError, resolve_ports
+from pathlib import Path
 
 from .lanes import LANES
 from .selection import SOURCES, TOGGLE_STATES
@@ -33,10 +35,61 @@ EXIT_UNREACHABLE = 3
 _TIMEOUT_S = 10.0
 
 
+class PortResolutionError(RuntimeError):
+    """This worktree's backend port could not be determined."""
+
+
 def base_url() -> str:
-    """This worktree's backend base URL, from the same source `just webui-ports` reads."""
-    ports = resolve_ports()
-    return f"http://127.0.0.1:{ports.backend}/api/v1"
+    """This worktree's backend base URL, via `just webui-ports`.
+
+    Deliberately NOT `from apps.webui.port_config import resolve_ports`.
+    `apps.analysis` is a domain package and `.importlinter`'s
+    `webui-is-the-top-layer` contract forbids a domain package importing the
+    delivery layer -- it is one of the few checks in this repo that fails
+    hard at zero rather than ratcheting, and its own comment says "Never add
+    a line here: add the inversion instead". A CLI shelling out to the
+    documented command is the inversion: same source of truth, no edge.
+
+    `MUSIC_DJ_BACKEND_PORT` short-circuits it, which is what the daemon and
+    every recipe already export, so the subprocess is the fallback rather
+    than the common path.
+    """
+    from_env = os.environ.get("MUSIC_DJ_BACKEND_PORT", "").strip()
+    if from_env:
+        return f"http://127.0.0.1:{_port(from_env)}/api/v1"
+
+    just = shutil.which("just")
+    if just is None:
+        raise PortResolutionError(
+            "MUSIC_DJ_BACKEND_PORT is unset and `just` is not on PATH, so this "
+            "worktree's backend port cannot be resolved. Export the port, or "
+            "run `just webui-ports-claim` from the worktree first."
+        )
+    root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [just, "--justfile", str(root / "justfile"), "webui-ports"],
+        capture_output=True, text=True, cwd=root, timeout=60, check=False,
+    )
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "backend":
+            return parts[1].rstrip("/") + "/api/v1"
+    raise PortResolutionError(
+        f"`just webui-ports` printed no `backend <url>` line (exit {proc.returncode}). "
+        f"stdout: {proc.stdout.strip()[:400]!r} stderr: {proc.stderr.strip()[:400]!r}"
+    )
+
+
+def _port(raw: str) -> int:
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise PortResolutionError(
+            f"MUSIC_DJ_BACKEND_PORT is {raw!r}, which is not a port number"
+        ) from exc
+    if not 1 <= port <= 65535:
+        raise PortResolutionError(f"MUSIC_DJ_BACKEND_PORT {port} is out of range")
+    return port
 
 
 def _request(url: str, *, method: str, body: dict | None = None) -> dict:
@@ -82,7 +135,7 @@ def main(argv: list[str]) -> int:
 
     try:
         url = f"{base_url()}/analysis/source"
-    except PortConfigError as exc:
+    except (PortResolutionError, subprocess.SubprocessError, OSError) as exc:
         print(f"[ERROR] cannot resolve this worktree's backend port: {exc}")
         return EXIT_UNREACHABLE
 
@@ -118,4 +171,11 @@ def main(argv: list[str]) -> int:
     return EXIT_OK
 
 
-__all__ = ["EXIT_OK", "EXIT_UNREACHABLE", "EXIT_USAGE", "base_url", "main"]
+__all__ = [
+    "EXIT_OK",
+    "EXIT_UNREACHABLE",
+    "EXIT_USAGE",
+    "PortResolutionError",
+    "base_url",
+    "main",
+]
