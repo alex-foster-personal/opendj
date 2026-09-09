@@ -22,7 +22,7 @@ def _rec(sid: str) -> AnalysisRecord:
         analyzed_at=datetime(2026, 4, 17, tzinfo=timezone.utc),
         duration_s=10.0, sample_rate=44100,
         bpm=128.12, bpm_confidence=0.9,
-        key_camelot="8A", key_openkey="8m", key_confidence=0.9,
+        key_camelot="8A", key_openkey="1m", key_confidence=0.9,
         energy=7,
     )
 

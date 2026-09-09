@@ -18,8 +18,10 @@ import pytest
 
 from apps.analysis import auto_cues, detect_bad_beatgrid, run, write_tags
 from apps.analysis.backends import DEFAULT_BACKEND, NONSHIPPABLE_ENV, get_backend
+from apps.analysis.backends import librosa as librosa_backend_module
 from apps.analysis.backends.librosa import LibrosaBackend
 from apps.analysis.record import AnalysisRecord
+from apps.analysis_key.canon import from_camelot, from_open_key
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -109,3 +111,21 @@ def test_downstream_consumers_do_not_claim_absent_downbeat_capability(
     assert all(cue.time_s in record.onsets_s for cue in proposal.cues)
     flag = detect_bad_beatgrid.detect_one(record)
     assert detect_bad_beatgrid.REASON_DOWNBEAT not in flag.reasons
+
+
+@pytest.mark.requirement("META-01")
+@pytest.mark.parametrize("pitch_class", range(12))
+def test_camelot_and_open_key_tables_agree_with_canon_for_every_pitch_class(
+    pitch_class: int,
+) -> None:
+    """Regression for a real bug: the two tables here are hand-maintained
+    separately from apps/analysis_key/canon.py's, so a fix to one (like the
+    Open Key table correction above) can silently leave the other stale for
+    every pitch class, not just whichever one a caller happens to notice."""
+    for camelot_table, openkey_table in (
+        (librosa_backend_module._CAMELOT_MAJOR, librosa_backend_module._OPENKEY_MAJOR),
+        (librosa_backend_module._CAMELOT_MINOR, librosa_backend_module._OPENKEY_MINOR),
+    ):
+        camelot = camelot_table[pitch_class]
+        open_key = openkey_table[pitch_class]
+        assert from_camelot(camelot) == from_open_key(open_key)
