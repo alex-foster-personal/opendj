@@ -145,7 +145,7 @@ def test_d09_tolerates_exactly_the_fts5_shadows_and_nothing_else(
     assert shadows, "the shadow set is derived, so an empty one means the derivation broke"
 
 
-def test_d09_survives_a_second_full_text_index(scan: lint.Scan) -> None:
+def test_d09_and_d08_survive_a_second_full_text_index(scan: lint.Scan) -> None:
     """Adding another fts5 table must not abort all eight checks.
 
     The floor used to derive its shadow set from a ``tracks_fts_`` name
@@ -156,6 +156,22 @@ def test_d09_survives_a_second_full_text_index(scan: lint.Scan) -> None:
     ordinary change on this repo -- put five shadow tables in `unseen` and
     aborted the run with a message accusing the SCAN of being broken, when
     the scan was right and the floor was stale.
+
+    Asserted on the PRESENCE of the good thing rather than the absence of the
+    abort: the whole run is driven and ``checks_run`` is read back, because
+    ``assert_measurable`` returning quietly is also what a floor that stopped
+    measuring returns. The new index is then reported BY NAME as undeclared,
+    which is the actionable half -- declare it and its shadows in
+    ALL_KNOWN_TABLES, exactly as tracks_fts already is -- where the stale
+    floor SystemExited before check one and blamed the scan.
+
+    NAMED FOR BOTH RULES because it can fail for both.
+    scripts/sync_drift_mutation_control.py blinds one check at a time and
+    asserts the failures land in that check's own tests, keyed on the rule
+    token in the test NAME; under the d09-only name it had, blinding D-08
+    made this go red and the harness aborted with "measuring the wrong
+    subject" instead of proving the eight mutations. Caught Wed 9 Sep 2026 by
+    running the harness, which no pytest run does.
     """
     lyrics = {
         "lyrics_fts": _facts("lyrics_fts", ("line",)),
@@ -172,7 +188,17 @@ def test_d09_survives_a_second_full_text_index(scan: lint.Scan) -> None:
         scan, virtual_tables=scan.virtual_tables | {"lyrics_fts"}
     )
 
-    lint.assert_measurable(widened)
+    result = lint.run(widened)
+
+    assert result.checks_run == len(lint.CHECKS) == 8, (
+        "all eight checks must have RUN. A floor that aborts raises SystemExit "
+        "before the first one, and no Result is produced at all."
+    )
+    undeclared = {v.subject for v in result.violations if v.rule == "undeclared_state_table"}
+    assert "lyrics_fts" in undeclared, (
+        "the run reached D-08 and named the new index, which is the report a "
+        "developer can act on."
+    )
 
 
 def test_d09_still_aborts_on_a_shadow_shaped_name_with_no_virtual_table(

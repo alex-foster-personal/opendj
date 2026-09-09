@@ -50,7 +50,9 @@ PYCACHE: Path = LINT.parent / "__pycache__"
 TESTS: tuple[str, ...] = (
     "tests/quality/test_sync_drift_lint.py",
     "tests/quality/test_sync_drift_declarations.py",
+    "tests/quality/test_sync_drift_authorities.py",
     "tests/quality/test_sync_drift_floors.py",
+    "tests/quality/test_sync_drift_sources.py",
 )
 
 EXPECTED: dict[str, str] = {
@@ -98,7 +100,7 @@ def _blind(source: str, name: str) -> str:
     """``source`` with ``name`` returning [] as its first statement.
 
     Asserts the edit added exactly one line and landed in that function, so a
-    regex that silently matched a neighbour cannot masquerade as a mutation.
+    regex that silently matched a neighbor cannot masquerade as a mutation.
     """
     blinded = re.sub(
         rf"^(def {name}\([^)]*\) -> list\[Violation\]:\n)",

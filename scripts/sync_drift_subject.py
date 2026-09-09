@@ -27,10 +27,13 @@ their tables the moment each authority was added.
 The lens is now a declaration rather than a method: ``DDL_SOURCE_FILES`` in
 scripts/sync_drift_rules.py names every file in the tree that declares a
 ``CREATE TABLE`` in ANY language, with one line saying whether it writes
-state.db, and tests/quality/test_sync_drift_declarations.py compares that
-declaration against a fresh scan of the tracked tree. A new DDL writer fails
-by NAME there, in the direction that can actually catch an omission, rather
-than waiting for someone to re-derive the list a third time.
+state.db, and tests/quality/test_sync_drift_authorities.py compares that
+declaration against a fresh scan of the tracked tree -- the WHOLE tree, in
+every language AND every directory, because a lens scoped to apps/ and
+scripts/ would hide the next authority exactly the way ``*.py`` hid the last.
+A new DDL writer fails by NAME there, in the direction that can actually
+catch an omission, rather than waiting for someone to re-derive the list a
+third time.
 
 The inventory a state table must appear in is SPLIT across two modules:
 ``apps/shared/state/schema.py`` names what the ladder and the authorities it
@@ -313,12 +316,17 @@ declaration against a fresh scan, so a new DDL writer of any kind fails by
 name rather than waiting to be noticed. The prose that used to live here
 listed the exclusions instead, and it went wrong in both available
 directions: it omitted a whole language, and it recorded a re-check for
-``SetStore(`` -- a symbol that exists nowhere in the repository, the class
-being ``SetsState`` -- so the zero it read as evidence could never have been
-anything else (.claude/rules/verification.md). Re-derived with the real name:
-every apps/ call site constructs ``SetsState()`` against
-apps.sets.paths.SETS_DB, so apps/sets/state.py is genuinely not a state.db
-authority today. The conclusion survived; the evidence for it did not."""
+``SetStore(`` -- a name that appears nowhere in this repository except in the
+sentence you are reading, the class being ``SetsState`` -- so the zero it read
+as evidence could never have been anything else
+(.claude/rules/verification.md). Re-derived with the real name, and recorded
+as the COMMAND rather than as its answer, so the next reader re-measures
+instead of inheriting a number: ``git grep -n 'SetsState(' -- apps`` names
+every construction site, and each takes either no argument or an explicit
+``db_path``, both of which resolve to apps.sets.paths.SETS_DB. Only
+tests/sets/test_state.py hands it a state.db backend, so apps/sets/state.py is
+genuinely not a state.db authority today. The conclusion survived; the
+evidence for it did not."""
 
 
 def build_state_db(path: Path) -> sqlite3.Connection:
