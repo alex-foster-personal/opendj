@@ -179,18 +179,12 @@ const OTHER_BUDGET = 8;
 /**
  * Q1: press rows, kept out of the pitch fader's way.
  *
- * `transport-schedule-press` is the same schedule row with an operator press
- * behind it, and it needs a budget of its own for the reason property 1 in
- * this file's header already documents one level up. `transport-schedule` is
- * the noisy bucket BECAUSE PitchFader drives `_scheduleDeck` from an
- * unthrottled pointermove: one drag is roughly 40 rows against 16. A DJ starts
- * a track and then reaches for the pitch fader to beatmatch it - the standard
- * gesture, not an edge case - so the press row carrying `input_to_audible_ms`,
- * the one number the whole latency program turns on, was evicted by the
- * operator's very next move, about a second after it was written.
- *
- * 8 rows is two full four-deck press flurries, which is all a press comparison
- * needs: a press is a discrete gesture, never a per-frame stream.
+ * PitchFader drives `_scheduleDeck` from an unthrottled pointermove, so one
+ * drag is ~40 rows against 16. A DJ starts a track and then reaches for the
+ * fader to beatmatch it - the standard gesture, not an edge case - so the
+ * press row carrying `input_to_audible_ms` was evicted by the operator's very
+ * next move. 8 is two full four-deck press flurries, which is all a press
+ * comparison needs: a press is a discrete gesture, never a per-frame stream.
  */
 const TRANSPORT_PRESS_BUDGET = 8;
 
@@ -216,11 +210,9 @@ const BUDGETS: Record<PerfBucket, number> = {
  * `deck-unload` is matched exactly: it shares the deck-state bucket with the
  * `deck-state-*` kinds but predates the `deck-state-` prefix on its own kind.
  *
- * ORDER IS LOAD-BEARING between the two transport lines: press kinds are a
- * SUFFIX of the plain one, so testing `transport-schedule` first would swallow
- * every press row back into the fader's bucket and silently undo the split.
- * The suffix shape is deliberate - it keeps every consumer that matches these
- * rows by the `transport-schedule` prefix working unchanged. */
+ * ORDER IS LOAD-BEARING below: press kinds are a SUFFIX of the plain one, so
+ * testing `transport-schedule` first would swallow every press row back into
+ * the fader's bucket. The suffix shape keeps existing prefix consumers whole. */
 function _bucketOf(kind: string): PerfBucket {
 	if (kind.startsWith('deck-load')) return 'deck-load';
 	if (kind.startsWith('transport-schedule-press')) return 'transport-schedule-press';

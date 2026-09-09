@@ -255,12 +255,13 @@ test('the log write stays off the click-to-audio path it measures', () => {
 	// schedule now files under `transport-schedule-press` so a pitch-fader drag
 	// cannot evict it. The write itself is what this test guards, so it matches
 	// the call and asserts the kind is the press-aware one separately.
-	const recordAt = body.indexOf('recordPerfTiming(scheduleKind,');
+	const recordAt = body.indexOf('recordPerfTiming(row.kind,');
 	assert.ok(recordAt !== -1, 'if the row is never recorded then nothing is measured at all');
 	assert.ok(
-		body.includes('const scheduleKind = scheduleRowKind(pressToScheduleMs);'),
-		'the kind must be derived from the press stamp; hardcoding it back to one literal ' +
-			'returns press rows to the fader-flooded bucket that used to evict them'
+		body.includes('const row = scheduleRowFacts(scheduleStages, _ctx.state);'),
+		'the kind must be derived from the row being filed (scheduleRowFacts reads the ' +
+			'press stamp out of the stages); hardcoding it back to one literal returns ' +
+			'press rows to the fader-flooded bucket that used to evict them'
 	);
 	assert.ok(
 		scheduleAt < recordAt,

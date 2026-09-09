@@ -63,17 +63,17 @@ test('the unavailable terms are NAMED, so a row says which number it lost', () =
 	// The observed WKWebView pre-render state: base is real, output is a zero.
 	assert.deepEqual(
 		floor.unavailableLatencyTerms({
-			baseLatencySec: 0.0029024943310657597,
-			outputLatencySec: 0
+			base: 0.0029024943310657597,
+			output: 0
 		}),
 		['output_latency_ms']
 	);
 	assert.deepEqual(
-		floor.unavailableLatencyTerms({ baseLatencySec: 0.0029, outputLatencySec: 0.01596 }),
+		floor.unavailableLatencyTerms({ base: 0.0029, output: 0.01596 }),
 		[]
 	);
 	assert.deepEqual(
-		floor.unavailableLatencyTerms({ baseLatencySec: undefined, outputLatencySec: undefined }),
+		floor.unavailableLatencyTerms({ base: undefined, output: undefined }),
 		['base_latency_ms', 'output_latency_ms']
 	);
 });
@@ -309,17 +309,24 @@ test('the engine labels the row from the SAME context it read the clock from', (
 	keyShiftSemitones: number | undefined,
 	pressT0Ms: number | undefined
 ): Promise<number> {`);
+	// The facts are DERIVED FROM scheduleStages, so the floor terms the labels
+	// call absent are the same ones the row itself omits. A second read of the
+	// context could disagree with the row printed beside it.
 	assert.ok(
-		body.includes('const scheduleLabels = latencyFloorLabels({'),
-		'without the labels the row cannot say which floor term it lost'
+		body.includes('const row = scheduleRowFacts(scheduleStages, _ctx.state);'),
+		'the labels must come from the row being filed, and carry the context state ' +
+			'read at that same point; without it a reader cannot tell a pre-render ' +
+			'zero from a dead output device'
+	);
+	// Ordering is the property, not just presence: the read has to happen
+	// BEFORE the worklet acknowledgement, because the context can move from
+	// suspended to running while that await is in flight.
+	assert.ok(
+		body.indexOf('const row = scheduleRowFacts(') < body.indexOf('await processor.schedule'),
+		'a floor read after the ack describes a later context than the row it labels'
 	);
 	assert.ok(
-		body.includes('contextState: _ctx.state'),
-		'the context state is the REASON a floor term is missing; a row without it cannot ' +
-			'tell a pre-render zero from a dead output device'
-	);
-	assert.ok(
-		body.includes('recordPerfTiming(scheduleKind, scheduleStages, deck, scheduleLabels)'),
+		body.includes('recordPerfTiming(row.kind, scheduleStages, deck, row.labels)'),
 		'the labels must actually reach the ring, not merely be computed'
 	);
 });
@@ -378,4 +385,38 @@ test('NEGATIVE CONTROL: a press on an empty deck dispatches nothing at all', () 
 		'and must return BEFORE the play command, or an empty deck reaches the engine and ' +
 			'the row it produces is a latency figure for silence'
 	);
+});
+
+test('scheduleRowFacts reads the row it labels, not a second opinion of the context', async () => {
+	const press = await loadTypeScriptModule('src/lib/rb/press-stamp.ts');
+
+	// A complete floor: both terms present in the stages, and a press behind it.
+	const complete = press.scheduleRowFacts(
+		{ press_to_schedule_ms: 12.5, base_latency_ms: 2.902, output_latency_ms: 15.964 },
+		'running'
+	);
+	assert.equal(complete.kind, 'transport-schedule-press');
+	assert.equal(complete.labels.latency_floor, 'complete');
+	assert.equal(complete.labels.audio_context_state, 'running');
+	assert.equal(complete.labels.latency_unavailable, undefined);
+
+	// The pre-render case: scheduleOffsetStages OMITS output_latency_ms, so the
+	// absence read here is the same absence the row reports.
+	const partial = press.scheduleRowFacts(
+		{ press_to_schedule_ms: 12.5, base_latency_ms: 2.902 },
+		'suspended'
+	);
+	assert.equal(partial.labels.latency_floor, 'partial');
+	assert.equal(partial.labels.latency_unavailable, 'output_latency_ms');
+
+	// No press behind the schedule keeps the row on the plain kind, so a pitch
+	// fader drag cannot masquerade as a press measurement.
+	const nopress = press.scheduleRowFacts({ base_latency_ms: 2.902, output_latency_ms: 15.964 }, 'running');
+	assert.equal(nopress.kind, 'transport-schedule');
+
+	// SABOTAGE: a Chromium-shaped row -- context says running, floor is not
+	// filled in. The state must NOT be allowed to vouch for the floor.
+	const chromiumFresh = press.scheduleRowFacts({ press_to_schedule_ms: 12.5, base_latency_ms: 5.805 }, 'running');
+	assert.equal(chromiumFresh.labels.latency_floor, 'partial');
+	assert.equal(chromiumFresh.labels.audio_context_state, 'running');
 });

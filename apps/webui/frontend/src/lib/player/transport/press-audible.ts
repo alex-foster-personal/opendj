@@ -94,14 +94,21 @@ export function isMeasuredLatencyFloor(seconds: number | undefined): boolean {
  * The device-floor terms this row cannot state, in stage-key order.
  *
  * Empty means the floor is fully known and `input_to_output_ms` is earned.
+ *
+ * DELIBERATELY UNIT-NEUTRAL. Only presence and sign are read, never
+ * magnitude, so a caller may pass the seconds it got from the AudioContext or
+ * the milliseconds already rounded into the row's stages and get the same
+ * answer. `press-stamp.ts` passes the stages, precisely so the absences
+ * reported here are the SAME absences the row reports rather than a second
+ * opinion about them.
  */
 export function unavailableLatencyTerms(input: {
-	baseLatencySec: number | undefined;
-	outputLatencySec: number | undefined;
+	base: number | undefined;
+	output: number | undefined;
 }): readonly LatencyFloorTerm[] {
 	const missing: LatencyFloorTerm[] = [];
-	if (!isMeasuredLatencyFloor(input.baseLatencySec)) missing.push('base_latency_ms');
-	if (!isMeasuredLatencyFloor(input.outputLatencySec)) missing.push('output_latency_ms');
+	if (!isMeasuredLatencyFloor(input.base)) missing.push('base_latency_ms');
+	if (!isMeasuredLatencyFloor(input.output)) missing.push('output_latency_ms');
 	return missing;
 }
 
