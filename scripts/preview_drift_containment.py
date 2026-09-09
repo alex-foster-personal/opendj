@@ -16,8 +16,10 @@ from pathlib import Path
 from scripts.preview_drift_git import (
     MeasurementError,
     PreviewOnlyCommit,
+    _describe,
     _diff_paths,
     _git,
+    _now,
     _trees_identical,
 )
 
@@ -188,10 +190,36 @@ def _mark_landed_commits(
         paths = _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
         if paths and _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
             commit.landed = True
+    _revoke_landed_if_combined_state_never_coexisted(cwd, main_ref, preview_ref, commits)
+
+
+def _revoke_landed_if_combined_state_never_coexisted(
+    cwd: Path, main_ref: str, preview_ref: str, commits: list[PreviewOnlyCommit]
+) -> None:
+    """Per-commit containment above is necessary but not sufficient: each
+    commit's own touched paths can independently match SOME ``main_ref``
+    commit at a DIFFERENT point in main's history, while their served state
+    never coexisted TOGETHER on any one main commit -- main set path a,
+    later dropped it, then separately set path b. Union every currently
+    ``landed`` (and not ``superseded``) commit's touched paths and require
+    them to coexist on one main commit; if they do not, none of them
+    actually landed as a GROUP, so revoke the flag and let the ordinary
+    age-based staleness filter (``Report.stale``) age them out on its own
+    schedule -- the same grace period every other preview-only commit gets.
+    """
+    landed = [c for c in commits if c.landed and not c.superseded]
+    if not landed:
+        return
+    paths: set[str] = set()
+    for commit in landed:
+        paths |= _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
+    if paths and not _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
+        for commit in landed:
+            commit.landed = False
 
 
 def _patch_equivalent_never_coexisted(
-    cwd: Path, main_ref: str, preview_ref: str, landed_shas: list[str]
+    cwd: Path, main_ref: str, preview_ref: str, landed_shas: list[str], max_age_hours: int
 ) -> str | None:
     """``git cherry``'s ``-`` rows match ONE commit's patch id at a time and
     are trusted as landed forever, with no later re-check: a commit that
@@ -203,16 +231,25 @@ def _patch_equivalent_never_coexisted(
     that serves two patch-equivalent commits whose combined state no main
     commit ever held (main dropped the first before landing the second) is
     still caught.
+
+    Gated on age like every other preview-only finding: two commits freshly
+    cherry-picked moments ago are the NORMAL state between sync ticks, not a
+    fault, so this must not fire before at least one of them has overstayed
+    the same ``max_age_hours`` grace period ``Report.stale`` grants.
     """
     paths: set[str] = set()
     for sha in landed_shas:
         paths |= _diff_paths(cwd, f"{sha}~1", sha)
-    if paths and not _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
-        return (
-            f"{len(landed_shas)} patch-equivalent commit(s) each matched "
-            f"{main_ref} individually via git cherry, but their combined "
-            f"touched paths never coexisted on a single {main_ref} commit "
-            f"(e.g. one landed and was later reverted): the preview is "
-            f"serving content no main commit ever held together"
-        )
-    return None
+    if not paths or _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
+        return None
+    described = _describe(cwd, landed_shas)
+    ages = [(_now() - described[sha][0]).total_seconds() / 3600.0 for sha in landed_shas]
+    if max(ages) <= max_age_hours:
+        return None
+    return (
+        f"{len(landed_shas)} patch-equivalent commit(s) each matched "
+        f"{main_ref} individually via git cherry, but their combined "
+        f"touched paths never coexisted on a single {main_ref} commit "
+        f"(e.g. one landed and was later reverted): the preview is "
+        f"serving content no main commit ever held together"
+    )

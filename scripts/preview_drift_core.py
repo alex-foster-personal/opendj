@@ -56,7 +56,9 @@ def _apply_never_coexisted_check(
     """
     if report.serves_main_tree or not landed_shas:
         return
-    reason = _patch_equivalent_never_coexisted(cwd, main_ref, preview_ref, landed_shas)
+    reason = _patch_equivalent_never_coexisted(
+        cwd, main_ref, preview_ref, landed_shas, report.max_age_hours
+    )
     if reason:
         report.verdict = "DRIFT"
         report.reasons.append(reason)

@@ -168,8 +168,18 @@ jobs:
           # own `--json` flag: the response mirrors GitHub's REST schema
           # verbatim, which is snake_case (`created_at`), not the camelCase
           # `createdAt` GraphQL and gh's `--json` output use.
+          # Restricted to the workflow's own bot identity: the `contains()`
+          # check alone accepts the marker from ANY account able to comment
+          # on this public issue, and `.[-1]` takes the newest match
+          # regardless of author. Without the author select, a comment
+          # posted by anyone else carrying this HTML marker is picked over
+          # the real state, letting them repeatedly reset both the merge
+          # base and created_at and suppress every periodic window
+          # indefinitely. `report` below always posts via `GH_TOKEN:
+          # secrets.GITHUB_TOKEN`, which authors as exactly this login, so
+          # this never excludes the workflow's own state.
           combined="$(gh api --paginate --slurp "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
-                        --jq '[.[][] | select(.body | contains("<!-- periodic-checks state sha="))]
+                        --jq '[.[][] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- periodic-checks state sha="))]
                               | if length > 0 then (.[-1].created_at + " " + (.[-1].body | @base64)) else empty end' \
                       || true)"
 
@@ -185,9 +195,20 @@ jobs:
             # carries `threshold=<N>` before the comment closes, and an
             # anchor requiring "-->" right after the 40 hex chars would stop
             # matching the instant that field was added.
-            base="$(printf '%s' "$base_body" \
+            base_hits="$(printf '%s' "$base_body" \
                       | grep -oE '<!-- periodic-checks state sha=[0-9a-f]{40}' \
                       | grep -oE '[0-9a-f]{40}' || true)"
+            # Exactly one hit, not zero and not more than one: a reply
+            # quoting the bot's own comment (or any other accidental repeat)
+            # makes the body contain the marker twice, and a multi-line
+            # `base` would corrupt every git command below that treats it as
+            # a single ref, rather than failing loudly into bootstrap the
+            # way a genuinely absent marker already does. `base` stays ""
+            # (set above) for anything but a single hit.
+            base_hit_count="$(printf '%s' "$base_hits" | grep -c . || true)"
+            if [ "$base_hit_count" = "1" ]; then
+              base="$base_hits"
+            fi
           fi
 
           # Wall-clock days since that SAME comment was posted, independent of
