@@ -121,7 +121,8 @@ LANES: dict[str, Lane] = {
         truth="rekordbox djmdKey plus Mixed In Key, canonicalized to (pitch class, mode)",
         candidates=(
             _control("key", "negative", "constant_key", "always answers A minor"),
-            _control("key", "positive", "truth_echo", "answers the reference key"),
+            _control("key", "positive", "truth_echo", "answers the rekordbox reference key"),
+            _control("key", "positive_mik", "truth_echo_mik", "answers the MIK reference key"),
         ),
     ),
     "waveform": Lane(

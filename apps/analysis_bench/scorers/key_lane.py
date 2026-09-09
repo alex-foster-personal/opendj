@@ -99,7 +99,7 @@ KSEA_DEFINITION = (
 
 # Controls first, same convention as beatgrid_lane.py: a reader should meet
 # the floor and the ceiling before the candidate row whose numbers they read.
-_ROLE_ORDER = {"negative_control": 0, "positive_control": 1}
+_ROLE_ORDER = {"negative_control": 0, "positive_control": 1, "positive_mik_control": 2}
 
 _REFERENCES = ("rekordbox", "mik")
 
@@ -160,13 +160,19 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
     """A candidate's answer for one fixture, accepting either notation it may
     emit (Camelot or Open Key -- both are real MIK/rekordbox output shapes),
     or None for an explicit error or an omitted answer.
+
+    `key_openkey` (no underscore) is the field name used throughout the repo
+    already -- `AnalysisRecord.key_openkey`, `apps/analysis/store.py`,
+    `apps/analysis/backends/mik.py` -- so a candidate emitting the standard
+    producer shape is accepted here rather than silently scored as a miss
+    (Codex P1 BLOCKING, PR #1620).
     """
     if not result or result.get("error"):
         return None
     camelot = result.get("key_camelot")
     if camelot:
         return canon.from_mik_camelot(camelot)
-    open_key = result.get("key_open_key")
+    open_key = result.get("key_openkey")
     if open_key:
         return canon.from_mik_open_key(open_key)
     return None
@@ -299,7 +305,7 @@ def render_table(report: dict[str, Any]) -> str:
         "",
         "| arm | role | n_omitted | vs rekordbox (n) | MIREX% | KSEA% | mode% | "
         "vs MIK (n) | MIREX% | KSEA% | mode% | AGREE (n, MIREX%) | "
-        "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n) |",
+        "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, arm in order:
@@ -307,6 +313,12 @@ def render_table(report: dict[str, Any]) -> str:
         agree, related, unrelated = (
             buckets["agree"], buckets["disagree_related"], buckets["disagree_unrelated"]
         )
+        # The enumerated ids, not just the count, because rounds.append_round
+        # persists only this rendered table -- the raw JSON's stable_ids list
+        # is never written to the spec log (Codex P2 BLOCKING, PR #1620), and
+        # spec section 5 asks to "enumerate, listen, prime key-change
+        # candidates" for exactly this bucket.
+        unrelated_ids = ", ".join(unrelated["stable_ids"]) or "-"
         lines.append(
             f"| {name} | {arm['role']} | {arm['n_omitted']} | "
             f"{rb['n']} | {rb['mirex_mean_pct']} | {rb['ksea_pct']} | {rb['mode_accuracy_pct']} | "
@@ -314,6 +326,6 @@ def render_table(report: dict[str, Any]) -> str:
             f"{mikr['mode_accuracy_pct']} | "
             f"{agree['n']}, {agree['mirex_mean_pct']} | "
             f"{related['sides_with_rekordbox']}/{related['sides_with_mik']} | "
-            f"{unrelated['n']} |"
+            f"{unrelated['n']}: {unrelated_ids} |"
         )
     return "\n".join(lines)

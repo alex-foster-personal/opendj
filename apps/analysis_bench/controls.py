@@ -102,9 +102,33 @@ def _key_positive(fixtures_path: Path) -> dict[str, Any]:
     }
 
 
+def _key_positive_mik(fixtures_path: Path) -> dict[str, Any]:
+    """The MIK-side ceiling. `truth_echo` echoes rekordbox, so on any fixture
+    where the two references disagree it is NOT a ceiling for `vs_mik` --
+    that column would then carry no control that can score perfectly, which
+    is a real gap (Codex P2 BLOCKING, PR #1620), not a documented property of
+    "neither reference is truth": a table needs a floor and a ceiling for
+    EVERY column it reports, not just the rekordbox ones.
+    """
+    from apps.analysis_bench.scorers import key_lane
+
+    _, _rekordbox, mik = key_lane.load_bundle(fixtures_path.parent)
+    results = {
+        stable_id: {"key_camelot": key_lane.canon.to_camelot(key)}
+        for stable_id, key in mik.items()
+        if key is not None
+    }
+    return {
+        "candidate": "truth_echo_mik",
+        "candidate_version": "control, echoes the MIK reference key",
+        "results": results,
+    }
+
+
 _BUILDERS = {
     ("beatgrid", "positive"): _beatgrid_positive,
     ("key", "positive"): _key_positive,
+    ("key", "positive_mik"): _key_positive_mik,
     ("key", "negative"): _key_negative,
 }
 
@@ -112,7 +136,10 @@ _BUILDERS = {
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", required=True)
-    parser.add_argument("--kind", required=True, choices=("positive", "negative"))
+    # "positive_mik" is the key lane's second, MIK-side ceiling: still a
+    # positive control, just answering the OTHER reference, so it gets its
+    # own kind rather than overloading "positive" (which stays rekordbox's).
+    parser.add_argument("--kind", required=True, choices=("positive", "positive_mik", "negative"))
     parser.add_argument("--fixtures", required=True, help="bundle manifest.json")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
