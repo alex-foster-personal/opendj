@@ -405,6 +405,21 @@ def test_claim_replaces_its_stale_reserved_pair_when_a_listener_owns_it(
     The registry is only a coordination hint. A successful claim must still
     bind-test both sockets before returning, or Playwright accepts the claimed
     pair and fails later when its webServer sees the leaked engine.
+
+    This must not assert a fixed slot distance (``replacement.backend ==
+    first.backend + 1``): on a self-hosted runner shared by up to fifteen
+    concurrent jobs, another job can free slot 0 between this test's two
+    claims, so the second claim can land back on the pair the first claim
+    skipped. That flaked two PRs within five minutes (runs 34344314949 and
+    34344726991, shard 5) with ``assert 8680 == (8681 + 1)``, which is a test
+    defect, not a product defect: the ``+ 1`` assertion silently encoded
+    "nothing else on the host changes between two claims", which is false on
+    a shared host. The invariant that survives a shared host, and the one
+    the docstring above actually states, is: the replacement differs from
+    the stale pair and stays inside this lane's pool window. Nothing is
+    re-probed after the claim: ``_allocate_pair`` closes its bind probes
+    before it returns, so a post-claim availability check would recreate
+    the same host-timing assumption under a different name.
     """
     repo_root = tmp_path / "repo-a"
     common_dir = tmp_path / "common"
@@ -418,9 +433,12 @@ def test_claim_replaces_its_stale_reserved_pair_when_a_listener_owns_it(
 
         replacement = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
 
-    assert replacement != first
-    assert replacement.backend == first.backend + 1
-    assert replacement.frontend == first.frontend + 1
+        assert replacement != first
+        assert replacement.backend != first.backend
+        assert replacement.frontend != first.frontend
+        backend_start, frontend_start = _lane_pool_starts(0)
+        assert backend_start <= replacement.backend < backend_start + POOL_SIZE
+        assert frontend_start <= replacement.frontend < frontend_start + POOL_SIZE
 
 
 def test_claim_keeps_its_pair_while_its_matching_engine_is_running(
