@@ -3016,7 +3016,23 @@ class RbAudioEngine implements AudioEngine {
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
-			st.anlz = candidateAnlz;
+			// The fire-and-forget `revalidateAnlz` above can settle WHILE this
+			// deck is still fetching/decoding, before `st.stable_id` names this
+			// track: `adoptAuthoritativeGrid` finds no deck to update and drops
+			// it, and publishing the pre-revalidation `candidateAnlz` here would
+			// then re-plant the exact stale grid the revalidation just corrected
+			// (Codex P1 BLOCKING, PR #1587). `_publishAnlzResult` always leaves
+			// the shared cache at the newest terminal answer it has seen for
+			// this stable_id regardless of whether a deck adopted it, so a
+			// ready, non-retryable entry read HERE is at least as fresh as
+			// `candidateAnlz` - identical to it on the ordinary cache-miss path
+			// (the fetch that produced `candidateAnlz` is the same call that
+			// just published this entry), newer on the raced path above.
+			const latestAnlzEntry = getAnlzEntry(stable_id);
+			const publishedAnlz = isAnlzEntryUsable(latestAnlzEntry)
+				? (latestAnlzEntry.data as AnlzWithVocals)
+				: candidateAnlz;
+			st.anlz = publishedAnlz;
 			st.anlz_error = null;
 			st.processor_error = null;
 			st.sync_error = null;
@@ -3024,7 +3040,7 @@ class RbAudioEngine implements AudioEngine {
 			st.hot_cues = _hotCuesFromSlots(hotCueSlots);
 			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
 			st.has_rb_mapping = candidateTrack.has_rb_mapping;
-			st.loop = _displayLoopFrom(candidateAnlz.cues, candidateAnlz.beatgrid.beats);
+			st.loop = _displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			if (incumbentProcessor !== null) {
