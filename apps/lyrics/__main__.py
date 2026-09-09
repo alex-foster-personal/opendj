@@ -338,26 +338,13 @@ def _cmd_crosscheck(
         if not pred_path.is_file() or not asr_path.is_file():
             continue
         scored += 1
-        pred_starts = [w["start_s"] for w in _pred_words(pred_path)]
-        words = [w.word for w in song.words]
-        report = crosscheck(words, pred_starts, _pred_words(asr_path))
-        flags = flagged_indices(report, delta_s, min_unmatched_run=min_unmatched_run)
-        errors = {
-            i
-            for i, (p, g) in enumerate(zip(pred_starts, song.word_starts_s, strict=True))
-            if abs(p - g) > error_tol_s
-        }
-        s_tp = len(flags & errors)
-        tp += s_tp
-        fp += len(flags - errors)
-        total_words += len(words)
-        total_errors += len(errors)
-        prec = s_tp / len(flags) if flags else float("nan")
-        rec = s_tp / len(errors) if errors else float("nan")
-        print(
-            f"{song.name[:44]:<44s} {report.version_similarity:>7.2f} "
-            f"{report.match_ratio:>6.1%} {len(flags):>6d} {prec:>6.1%} {rec:>6.1%}"
+        s_tp, s_fp, n_words, n_errors = _print_crosscheck_song_row(
+            song, pred_path, asr_path, delta_s, error_tol_s, min_unmatched_run
         )
+        tp += s_tp
+        fp += s_fp
+        total_words += n_words
+        total_errors += n_errors
     if not scored:
         print(
             f"[ERROR] no songs have both predictions ({pred_dir}) and ASR ({asr_dir})",
@@ -365,13 +352,58 @@ def _cmd_crosscheck(
         )
         return 1
     print("-" * len(header))
+    _print_crosscheck_pooled(
+        scored, len(songs), tp, fp, total_words, total_errors, delta_s, error_tol_s
+    )
+    return 0
+
+
+def _print_crosscheck_song_row(
+    song: JamendoSong,
+    pred_path: Path,
+    asr_path: Path,
+    delta_s: float,
+    error_tol_s: float,
+    min_unmatched_run: int,
+) -> tuple[int, int, int, int]:
+    """Score and print one song; return (true pos, false pos, words, errors)."""
+    pred_starts = [w["start_s"] for w in _pred_words(pred_path)]
+    words = [w.word for w in song.words]
+    report = crosscheck(words, pred_starts, _pred_words(asr_path))
+    flags = flagged_indices(report, delta_s, min_unmatched_run=min_unmatched_run)
+    errors = {
+        i
+        for i, (p, g) in enumerate(zip(pred_starts, song.word_starts_s, strict=True))
+        if abs(p - g) > error_tol_s
+    }
+    s_tp = len(flags & errors)
+    prec = s_tp / len(flags) if flags else float("nan")
+    rec = s_tp / len(errors) if errors else float("nan")
+    print(
+        f"{song.name[:44]:<44s} {report.version_similarity:>7.2f} "
+        f"{report.match_ratio:>6.1%} {len(flags):>6d} {prec:>6.1%} {rec:>6.1%}"
+    )
+    return s_tp, len(flags - errors), len(words), len(errors)
+
+
+def _print_crosscheck_pooled(
+    scored: int,
+    n_songs: int,
+    tp: int,
+    fp: int,
+    total_words: int,
+    total_errors: int,
+    delta_s: float,
+    error_tol_s: float,
+) -> None:
+    """Pooled precision/recall/lift over the songs that actually scored."""
     n_flagged = tp + fp
     base_rate = total_errors / total_words
     precision = tp / n_flagged if n_flagged else float("nan")
     recall = tp / total_errors if total_errors else float("nan")
     lift = precision / base_rate if n_flagged and base_rate else float("nan")
     print(
-        f"POOLED ({scored}/{len(songs)} songs, {total_words} words, "
+        f"POOLED ({scored}/{n_songs} songs, {total_words} words, "
         f"error=|pred-gt|>{error_tol_s:.1f}s, flag delta>{delta_s:.1f}s)"
     )
     print(
@@ -379,12 +411,11 @@ def _cmd_crosscheck(
         f"({n_flagged / total_words:.1%})  precision {precision:.1%}  "
         f"recall {recall:.1%}  lift {lift:.1f}x"
     )
-    if scored < len(songs):
+    if scored < n_songs:
         print(
-            f"[WARN] {len(songs) - scored} songs missing pred or asr "
+            f"[WARN] {n_songs - scored} songs missing pred or asr "
             f"(denominator: {scored} scored)"
         )
-    return 0
 
 
 def _cmd_witness_eval(

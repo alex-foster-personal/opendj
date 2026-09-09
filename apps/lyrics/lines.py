@@ -99,21 +99,36 @@ def derive_lines(words: Sequence[WordRow]) -> list[LyricLine]:
     return _stamp_paragraphs(lines)
 
 
-def _close(bucket: Sequence[WordRow]) -> LyricLine:
-    timed = [w for w in bucket if w.start_s is not None]
+def _line_quality(bucket: Sequence[WordRow]) -> tuple[int, int, float | None]:
+    """(red words, judged words, quality). Unjudged words are NOT in the
+    denominator -- honest denominators: unjudged is not the same as good."""
     judged = [w for w in bucket if w.witness is not None]
     n_red = sum(1 for w in judged if w.witness in WITNESS_RED_CLASSES)
-    quality = (1.0 - n_red / len(judged)) if judged else None
+    return n_red, len(judged), (1.0 - n_red / len(judged)) if judged else None
+
+
+def _line_bounds(bucket: Sequence[WordRow]) -> tuple[float | None, float | None]:
+    """(first sung onset, last sung offset). None when nothing in the line is timed."""
+    timed = [w for w in bucket if w.start_s is not None]
     ends = [w.end_s for w in bucket if w.end_s is not None]
+    return (
+        min(w.start_s for w in timed) if timed else None,
+        max(ends) if ends else None,
+    )
+
+
+def _close(bucket: Sequence[WordRow]) -> LyricLine:
+    n_red, n_judged, quality = _line_quality(bucket)
+    start_s, end_s = _line_bounds(bucket)
     return LyricLine(
         first_idx=bucket[0].idx,
         last_idx=bucket[-1].idx,
         text=" ".join(w.word for w in bucket),
-        start_s=min(w.start_s for w in timed) if timed else None,
-        end_s=max(ends) if ends else None,
+        start_s=start_s,
+        end_s=end_s,
         n_words=len(bucket),
         n_red=n_red,
-        n_judged=len(judged),
+        n_judged=n_judged,
         quality=quality,
         band=_band(quality),
         para_final=False,  # stamped in a second pass, needs the NEXT line

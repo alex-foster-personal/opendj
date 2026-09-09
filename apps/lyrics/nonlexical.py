@@ -103,14 +103,38 @@ def replace_run_tokens_with_stars(
     postprocess_results then skips these entries, so replaced words produce no
     stamps -- interpolate_run_words fills them back in.
     """
+    expected_len, positions = _starred_layout(star_frequency, n_words, runs)
+    _validate_starred_lists(
+        tokens_starred, text_starred, expected_len, n_words, star_frequency, runs
+    )
+    tokens_out, text_out = list(tokens_starred), list(text_starred)
+    for pos in positions:
+        tokens_out[pos] = STAR_TOKEN
+        text_out[pos] = STAR_TOKEN
+    return tokens_out, text_out
+
+
+def _starred_layout(
+    star_frequency: str, n_words: int, runs: list[range]
+) -> tuple[int, list[int]]:
+    """(expected starred-list length, starred-list positions the runs occupy)."""
     if star_frequency == "segment":  # ['<star>', w0, '<star>', w1, ...]
-        expected_len = 2 * n_words
-        positions = [2 * i + 1 for run in runs for i in run]
-    elif star_frequency == "edges":  # ['<star>', w0, ..., wN, '<star>']
-        expected_len = n_words + 2
-        positions = [i + 1 for run in runs for i in run]
+        return 2 * n_words, [2 * i + 1 for run in runs for i in run]
+    elif star_frequency == "edges":  # noqa: RET505 - explicit elif is the house style
+        # ['<star>', w0, ..., wN, '<star>']
+        return n_words + 2, [i + 1 for run in runs for i in run]
     else:
         raise ValueError(f"unknown star_frequency {star_frequency!r}")
+
+
+def _validate_starred_lists(
+    tokens_starred: list[str],
+    text_starred: list[str],
+    expected_len: int,
+    n_words: int,
+    star_frequency: str,
+    runs: list[range],
+) -> None:
     if len(tokens_starred) != expected_len or len(text_starred) != expected_len:
         raise ValueError(
             f"starred lists have {len(tokens_starred)}/{len(text_starred)} entries, "
@@ -118,11 +142,6 @@ def replace_run_tokens_with_stars(
         )
     if runs and not (runs[0].start >= 0 and runs[-1][-1] < n_words):
         raise ValueError(f"run indices out of range for {n_words} words: {runs}")
-    tokens_out, text_out = list(tokens_starred), list(text_starred)
-    for pos in positions:
-        tokens_out[pos] = STAR_TOKEN
-        text_out[pos] = STAR_TOKEN
-    return tokens_out, text_out
 
 
 def interpolate_run_words(
@@ -148,6 +167,37 @@ def interpolate_run_words(
     {'interpolated': True, 'score': None}; kept entries keep aligner values.
     """
     replaced = {i for run in runs for i in run}
+    words_out = _anchored_word_slots(words, kept_stamps, replaced)
+
+    notes: list[str] = []
+    for run in runs:
+        t0, t1 = _run_bounds(
+            run, words, words_out, kept_stamps, replaced, audio_duration_s, notes
+        )
+        slot = (t1 - t0) / len(run)
+        for k, i in enumerate(run):
+            words_out[i] = {
+                "word": words[i],
+                "start_s": t0 + k * slot,
+                "end_s": t0 + (k + 1) * slot,
+                "score": None,
+                "interpolated": True,
+            }
+    assert all(w is not None for w in words_out)
+    return words_out, notes  # type: ignore[return-value]
+
+
+#-----------------------------------------------------------------------------
+
+
+def _anchored_word_slots(
+    words: list[str], kept_stamps: list[dict], replaced: set[int]
+) -> list[dict | None]:
+    """Full-length output list with the non-run words filled from the aligner.
+
+    Run positions stay None until interpolation writes them; the stamps are
+    consumed in word order, so a count mismatch is caught up front.
+    """
     if len(kept_stamps) != len(words) - len(replaced):
         raise ValueError(
             f"{len(kept_stamps)} kept stamps for {len(words)} words "
@@ -162,48 +212,73 @@ def interpolate_run_words(
                 "word": word, "start_s": stamp["start"],
                 "end_s": stamp["end"], "score": stamp["score"],
             }
+    return words_out
 
-    notes: list[str] = []
-    for run in runs:
-        span = f"words {run.start}-{run[-1]}"
-        if run.start - 1 in replaced or run.stop in replaced:
-            raise ValueError(f"{span}: adjacent to another run -- runs must be maximal")
-        has_left = run.start > 0
-        has_right = run.stop < len(words)
-        if not has_left and not has_right:
-            raise RuntimeError(
-                f"{span}: the whole song is one non-lexical run -- no anchor on either side"
-            )
-        elif has_left and has_right:  # noqa: RET506 - explicit elif is the house style
-            t0 = words_out[run.start - 1]["end_s"]  # type: ignore[index]
-            t1 = words_out[run.stop]["start_s"]  # type: ignore[index]
-            if t1 < t0:
-                raise RuntimeError(f"{span}: anchors reversed ({t0:.3f}s > {t1:.3f}s)")
-        else:  # song-edge run: pack against the single anchor, explicitly
-            med_dur = statistics.median(s["end"] - s["start"] for s in kept_stamps)
-            window = len(run) * med_dur
-            if has_left:  # run ends the song
-                t0 = words_out[run.start - 1]["end_s"]  # type: ignore[index]
-                t1 = min(t0 + window, audio_duration_s)
-                notes.append(
-                    f"{span}: run touches song END -- packed after the left anchor, "
-                    f"{t0:.2f}-{t1:.2f}s ({med_dur:.2f}s median word duration)"
-                )
-            else:  # run opens the song
-                t1 = words_out[run.stop]["start_s"]  # type: ignore[index]
-                t0 = max(t1 - window, 0.0)
-                notes.append(
-                    f"{span}: run touches song START -- packed before the right anchor, "
-                    f"{t0:.2f}-{t1:.2f}s ({med_dur:.2f}s median word duration)"
-                )
-        slot = (t1 - t0) / len(run)
-        for k, i in enumerate(run):
-            words_out[i] = {
-                "word": words[i],
-                "start_s": t0 + k * slot,
-                "end_s": t0 + (k + 1) * slot,
-                "score": None,
-                "interpolated": True,
-            }
-    assert all(w is not None for w in words_out)
-    return words_out, notes  # type: ignore[return-value]
+
+def _run_bounds(
+    run: range,
+    words: list[str],
+    words_out: list[dict | None],
+    kept_stamps: list[dict],
+    replaced: set[int],
+    audio_duration_s: float,
+    notes: list[str],
+) -> tuple[float, float]:
+    """[t0, t1] the run is spread across, from its anchored neighbours.
+
+    `notes` is appended to in place so an edge-packed fallback is named in the
+    caller's list in run order, never silently.
+    """
+    span = f"words {run.start}-{run[-1]}"
+    if run.start - 1 in replaced or run.stop in replaced:
+        raise ValueError(f"{span}: adjacent to another run -- runs must be maximal")
+    has_left = run.start > 0
+    has_right = run.stop < len(words)
+    if not has_left and not has_right:
+        raise RuntimeError(
+            f"{span}: the whole song is one non-lexical run -- no anchor on either side"
+        )
+    elif has_left and has_right:  # noqa: RET506 - explicit elif is the house style
+        t0 = words_out[run.start - 1]["end_s"]  # type: ignore[index]
+        t1 = words_out[run.stop]["start_s"]  # type: ignore[index]
+        if t1 < t0:
+            raise RuntimeError(f"{span}: anchors reversed ({t0:.3f}s > {t1:.3f}s)")
+        return t0, t1
+    else:  # song-edge run: pack against the single anchor, explicitly
+        return _edge_packed_bounds(
+            span, run, words_out, kept_stamps, has_left, audio_duration_s, notes
+        )
+
+
+def _edge_packed_bounds(
+    span: str,
+    run: range,
+    words_out: list[dict | None],
+    kept_stamps: list[dict],
+    has_left: bool,
+    audio_duration_s: float,
+    notes: list[str],
+) -> tuple[float, float]:
+    """Single-anchor run: pack it against that anchor, NOT out to the file edge.
+
+    Stretching to the edge smears a trailing oh/ah block across an instrumental
+    outro (the round-2 pathology), so the window is n * the song's median
+    aligned word duration, clamped to the audio bounds.
+    """
+    med_dur = statistics.median(s["end"] - s["start"] for s in kept_stamps)
+    window = len(run) * med_dur
+    if has_left:  # run ends the song
+        t0 = words_out[run.start - 1]["end_s"]  # type: ignore[index]
+        t1 = min(t0 + window, audio_duration_s)
+        notes.append(
+            f"{span}: run touches song END -- packed after the left anchor, "
+            f"{t0:.2f}-{t1:.2f}s ({med_dur:.2f}s median word duration)"
+        )
+    else:  # run opens the song
+        t1 = words_out[run.stop]["start_s"]  # type: ignore[index]
+        t0 = max(t1 - window, 0.0)
+        notes.append(
+            f"{span}: run touches song START -- packed before the right anchor, "
+            f"{t0:.2f}-{t1:.2f}s ({med_dur:.2f}s median word duration)"
+        )
+    return t0, t1

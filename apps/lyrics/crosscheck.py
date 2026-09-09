@@ -95,39 +95,17 @@ def crosscheck(
     asr_words follow scripts/modal_asr_spike.py's contract:
     [{word, start_s, end_s, prob}].
     """
-    if len(lyric_words) != len(aligner_starts_s):
-        raise ValueError(
-            f"lyric_words ({len(lyric_words)}) and aligner_starts_s "
-            f"({len(aligner_starts_s)}) must be 1:1"
-        )
-    if not lyric_words:
-        raise ValueError("no lyric words to cross-check")
+    _validate_crosscheck_inputs(lyric_words, aligner_starts_s)
 
-    lyric_norm_all = [normalize_token(w) for w in lyric_words]
-    lyric_idx = [i for i, n in enumerate(lyric_norm_all) if n]
-    lyric_norm = [lyric_norm_all[i] for i in lyric_idx]
-    asr_norm_all = [normalize_token(w["word"]) for w in asr_words]
-    asr_idx = [i for i, n in enumerate(asr_norm_all) if n]
-    asr_norm = [asr_norm_all[i] for i in asr_idx]
+    lyric_norm_all, lyric_idx, lyric_norm = _normalized_stream(lyric_words)
+    _, asr_idx, asr_norm = _normalized_stream([w["word"] for w in asr_words])
 
     matcher = SequenceMatcher(a=lyric_norm, b=asr_norm, autojunk=False)
-    matched_asr_for_lyric: dict[int, int] = {}
-    for block in matcher.get_matching_blocks():
-        for k in range(block.size):
-            matched_asr_for_lyric[lyric_idx[block.a + k]] = asr_idx[block.b + k]
+    matched_asr_for_lyric = _matched_asr_for_lyric(matcher, lyric_idx, asr_idx)
 
-    verdicts: list[WordVerdict] = []
-    deltas: list[float] = []
-    for i, word in enumerate(lyric_words):
-        if not lyric_norm_all[i]:
-            verdicts.append(WordVerdict(i, word, "unmatchable", aligner_starts_s[i], None, None))
-        elif i in matched_asr_for_lyric:
-            asr_start = float(asr_words[matched_asr_for_lyric[i]]["start_s"])
-            delta = aligner_starts_s[i] - asr_start
-            deltas.append(abs(delta))
-            verdicts.append(WordVerdict(i, word, "matched", aligner_starts_s[i], asr_start, delta))
-        else:
-            verdicts.append(WordVerdict(i, word, "unmatched", aligner_starts_s[i], None, None))
+    verdicts, deltas = _word_verdicts(
+        lyric_words, lyric_norm_all, aligner_starts_s, asr_words, matched_asr_for_lyric
+    )
 
     n_matchable = len(lyric_idx)
     n_matched = len(matched_asr_for_lyric)
@@ -140,6 +118,64 @@ def crosscheck(
         version_similarity=matcher.ratio(),
         median_abs_delta_s=median(deltas) if deltas else None,
     )
+
+
+#-----------------------------------------------------------------------------
+
+
+def _validate_crosscheck_inputs(lyric_words: list[str], aligner_starts_s: list[float]) -> None:
+    if len(lyric_words) != len(aligner_starts_s):
+        raise ValueError(
+            f"lyric_words ({len(lyric_words)}) and aligner_starts_s "
+            f"({len(aligner_starts_s)}) must be 1:1"
+        )
+    if not lyric_words:
+        raise ValueError("no lyric words to cross-check")
+
+
+def _normalized_stream(tokens: list[str]) -> tuple[list[str], list[int], list[str]]:
+    """(normalized per input token, indices that normalize to something, those tokens).
+
+    The middle list is the honest-denominator bridge: diff positions index the
+    THIRD list, and lyric_idx/asr_idx map them back to original word positions.
+    """
+    norm_all = [normalize_token(t) for t in tokens]
+    idx = [i for i, n in enumerate(norm_all) if n]
+    return norm_all, idx, [norm_all[i] for i in idx]
+
+
+def _matched_asr_for_lyric(
+    matcher: SequenceMatcher, lyric_idx: list[int], asr_idx: list[int]
+) -> dict[int, int]:
+    """Diff blocks expanded to a lyric-word-index -> ASR-word-index mapping."""
+    matched: dict[int, int] = {}
+    for block in matcher.get_matching_blocks():
+        for k in range(block.size):
+            matched[lyric_idx[block.a + k]] = asr_idx[block.b + k]
+    return matched
+
+
+def _word_verdicts(
+    lyric_words: list[str],
+    lyric_norm_all: list[str],
+    aligner_starts_s: list[float],
+    asr_words: list[dict[str, Any]],
+    matched_asr_for_lyric: dict[int, int],
+) -> tuple[list[WordVerdict], list[float]]:
+    """Per-lyric-word verdicts plus the |delta| list the median is taken over."""
+    verdicts: list[WordVerdict] = []
+    deltas: list[float] = []
+    for i, word in enumerate(lyric_words):
+        if not lyric_norm_all[i]:
+            verdicts.append(WordVerdict(i, word, "unmatchable", aligner_starts_s[i], None, None))
+        elif i in matched_asr_for_lyric:
+            asr_start = float(asr_words[matched_asr_for_lyric[i]]["start_s"])
+            delta = aligner_starts_s[i] - asr_start
+            deltas.append(abs(delta))
+            verdicts.append(WordVerdict(i, word, "matched", aligner_starts_s[i], asr_start, delta))
+        else:
+            verdicts.append(WordVerdict(i, word, "unmatched", aligner_starts_s[i], None, None))
+    return verdicts, deltas
 
 
 WitnessClass = Literal["agree", "drift", "contradict", "lost", "unheard", "unmatchable"]

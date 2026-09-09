@@ -45,34 +45,48 @@ def load_annotations(path: Path = DEFAULT_ANNOTATIONS_PATH) -> dict[str, list[Sp
         raise TypeError(f"{path}: top level must be a mapping of song name -> tag list")
     annotations: dict[str, list[SpanTag]] = {}
     for song_name, entries in raw.items():
-        if not isinstance(entries, list) or not entries:
-            raise ValueError(f"{path}: {song_name}: expected a non-empty list of tags")
-        tags: list[SpanTag] = []
-        for entry in entries:
-            unknown_keys = set(entry) - {"tag", "words", "note"}
-            if unknown_keys:
-                raise ValueError(f"{path}: {song_name}: unknown keys {sorted(unknown_keys)}")
-            if "tag" not in entry or "note" not in entry:
-                raise ValueError(f"{path}: {song_name}: every entry needs 'tag' and 'note'")
-            if "words" in entry:
-                words = entry["words"]
-                if (
-                    not isinstance(words, list)
-                    or len(words) != 2
-                    or not all(isinstance(w, int) for w in words)
-                    or words[0] < 0
-                    or words[1] < words[0]
-                ):
-                    raise ValueError(
-                        f"{path}: {song_name}: 'words' must be [start, end], "
-                        f"0 <= start <= end (got {words!r})"
-                    )
-                start_idx, end_idx = words
-            else:
-                start_idx = end_idx = None
-            tags.append(SpanTag(entry["tag"], entry["note"], start_idx, end_idx))
-        annotations[song_name] = tags
+        annotations[song_name] = _song_tags(path, song_name, entries)
     return annotations
+
+
+#-----------------------------------------------------------------------------
+
+
+def _song_tags(path: Path, song_name: str, entries: object) -> list[SpanTag]:
+    """Validate and parse one song's tag list. A malformed entry raises."""
+    if not isinstance(entries, list) or not entries:
+        raise ValueError(f"{path}: {song_name}: expected a non-empty list of tags")
+    tags: list[SpanTag] = []
+    for entry in entries:
+        unknown_keys = set(entry) - {"tag", "words", "note"}
+        if unknown_keys:
+            raise ValueError(f"{path}: {song_name}: unknown keys {sorted(unknown_keys)}")
+        if "tag" not in entry or "note" not in entry:
+            raise ValueError(f"{path}: {song_name}: every entry needs 'tag' and 'note'")
+        start_idx, end_idx = _span_word_indices(path, song_name, entry)
+        tags.append(SpanTag(entry["tag"], entry["note"], start_idx, end_idx))
+    return tags
+
+
+def _span_word_indices(
+    path: Path, song_name: str, entry: dict
+) -> tuple[int | None, int | None]:
+    """(start, end) 0-based inclusive word indices, or (None, None) for whole-song."""
+    if "words" not in entry:
+        return None, None
+    words = entry["words"]
+    if (
+        not isinstance(words, list)
+        or len(words) != 2
+        or not all(isinstance(w, int) for w in words)
+        or words[0] < 0
+        or words[1] < words[0]
+    ):
+        raise ValueError(
+            f"{path}: {song_name}: 'words' must be [start, end], "
+            f"0 <= start <= end (got {words!r})"
+        )
+    return words[0], words[1]
 
 
 def validate_against_songs(

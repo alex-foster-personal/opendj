@@ -68,45 +68,84 @@ class Verdict:
 def classify(
     sheet_words: list[str], asr_words: list[str], asr_probs: list[float] | None = None,
 ) -> Verdict:
-    if not sheet_words:
-        raise ValueError("no sheet words")
-    if not asr_words:
-        raise ValueError("no ASR words")
-    if asr_probs is not None and len(asr_probs) != len(asr_words):
-        raise ValueError("asr_probs must align 1:1 with asr_words")
+    _validate_classify_inputs(sheet_words, asr_words, asr_probs)
     sheet_norm = [normalize_word(w) for w in sheet_words]
     asr_norm = [normalize_word(w) for w in asr_words]
     matcher = SequenceMatcher(a=sheet_norm, b=asr_norm, autojunk=False)
-    blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
-    n_matched = sum(b.size for b in blocks)
-    ref_rate = n_matched / len(sheet_norm)
-    asr_rate = n_matched / len(asr_norm)
-    longest_anchor = max((b.size for b in blocks), default=0)
+    ref_rate, asr_rate, longest_anchor = _match_stats(matcher, sheet_norm, asr_norm)
 
     missing, extra = _block_findings(matcher, sheet_norm, asr_norm, asr_probs)
 
     # Pairing BEFORE the garbled-rescue: a moved verse also "occurs fuzzily in
     # ASR" (at its new position) -- rescuing first would eat every move signature.
     paired = _pair_moves(missing, extra)
-    findings = tuple(
-        _directional_repeat(f, sheet_norm) for f in paired
-        if not (f.kind == "missing_in_audio" and _occurs_fuzzily(f.text, asr_norm))
-        # heard-but-garbled rescue: a truly dropped verse cannot appear in ASR at all
+    findings = _surviving_findings(paired, sheet_norm, asr_norm)
+
+    verdict = _overall_verdict(findings, sheet_norm, asr_norm, ref_rate, asr_rate, longest_anchor)
+    return Verdict(verdict, ref_rate, asr_rate, longest_anchor, tuple(findings))
+
+
+#-----------------------------------------------------------------------------
+
+
+def _validate_classify_inputs(
+    sheet_words: list[str], asr_words: list[str], asr_probs: list[float] | None
+) -> None:
+    if not sheet_words:
+        raise ValueError("no sheet words")
+    if not asr_words:
+        raise ValueError("no ASR words")
+    if asr_probs is not None and len(asr_probs) != len(asr_words):
+        raise ValueError("asr_probs must align 1:1 with asr_words")
+
+
+def _match_stats(
+    matcher: SequenceMatcher, sheet_norm: list[str], asr_norm: list[str]
+) -> tuple[float, float, int]:
+    """(sheet-side match rate, ASR-side match rate, longest exactly-matched run)."""
+    blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
+    n_matched = sum(b.size for b in blocks)
+    return (
+        n_matched / len(sheet_norm),
+        n_matched / len(asr_norm),
+        max((b.size for b in blocks), default=0),
     )
 
+
+def _surviving_findings(
+    paired: tuple[Finding, ...], sheet_norm: list[str], asr_norm: list[str]
+) -> tuple[Finding, ...]:
+    """Heard-but-garbled rescue, then repeat direction, in that order.
+
+    The rescue is a FILTER evaluated before the mapping (a truly dropped verse
+    cannot appear in ASR at all) -- the same order the one comprehension had.
+    """
+    return tuple(
+        _directional_repeat(f, sheet_norm) for f in paired
+        if not (f.kind == "missing_in_audio" and _occurs_fuzzily(f.text, asr_norm))
+    )
+
+
+def _overall_verdict(
+    findings: tuple[Finding, ...],
+    sheet_norm: list[str],
+    asr_norm: list[str],
+    ref_rate: float,
+    asr_rate: float,
+    longest_anchor: int,
+) -> str:
     decisive = [f for f in findings if f.kind != "sheet_repeat_unsupported"]
     if len(asr_norm) < UNVERIFIABLE_ASR_FRACTION * len(sheet_norm):
-        verdict = "unverifiable"
+        return "unverifiable"
     elif ref_rate < WRONG_SONG_MATCH_CEIL and asr_rate < WRONG_SONG_MATCH_CEIL \
-            and longest_anchor < MIN_ANCHOR_WORDS:
-        verdict = "wrong_song"
+            and longest_anchor < MIN_ANCHOR_WORDS:  # noqa: RET505 - explicit elif is house style
+        return "wrong_song"
     elif decisive:
-        verdict = "structure_mismatch"
+        return "structure_mismatch"
     elif findings:  # repeat-count disputes only: text cannot adjudicate, stage 2 must
-        verdict = "needs_acoustic_check"
+        return "needs_acoustic_check"
     else:
-        verdict = "matched"
-    return Verdict(verdict, ref_rate, asr_rate, longest_anchor, tuple(findings))
+        return "matched"
 
 
 #-----------------------------------------------------------------------------
