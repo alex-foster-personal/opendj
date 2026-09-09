@@ -421,6 +421,27 @@ export async function getHealth(): Promise<{ health: HealthOut; bindWarning: str
 	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
 }
 
+/**
+ * Liveness-only health read for the Backend status dot (pin a66ee132a14e).
+ *
+ * Separate from `getHealth` on purpose: this one must not hang, so it carries
+ * its own abort timeout and bypasses any cache, and it wants nothing from the
+ * body. It lives here rather than in the component for the same fan-in reason
+ * documented below - `src/lib/api/client.ts` sits at its recorded floor, so
+ * new direct importers of it are not free.
+ *
+ * Throws on any non-2xx or on timeout; the caller turns that into a red dot
+ * carrying the reason.
+ */
+export async function pingHealth(timeoutMs: number): Promise<void> {
+	requireBody(
+		await api.GET('/api/v1/health', {
+			cache: 'no-store',
+			signal: AbortSignal.timeout(timeoutMs)
+		})
+	);
+}
+
 /** PREFLIGHT-01's boot gate (issue #771) reads `GET /api/v1/preflight`.
  *
  * It lives HERE, beside `getHealth`, rather than in its own

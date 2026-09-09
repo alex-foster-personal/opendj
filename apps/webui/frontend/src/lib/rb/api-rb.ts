@@ -29,7 +29,8 @@ export {
 	getTrack,
 	listPlaylists,
 	listTracks,
-	patchTrack
+	patchTrack,
+	pingHealth
 } from '$lib/api';
 export type {
 	HealthOut,
