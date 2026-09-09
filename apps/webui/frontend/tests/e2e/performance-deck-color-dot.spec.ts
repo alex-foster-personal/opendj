@@ -36,7 +36,11 @@ const UI_BASE = process.env.PERFORMANCE_E2E_BASE_URL ?? 'http://127.0.0.1:5273';
 /** The dot's diameter before this pin: 9px. 20% smaller is 7.2px. */
 const DOT_DIAMETER_BEFORE_PX = 9;
 const DOT_DIAMETER_PX = DOT_DIAMETER_BEFORE_PX * 0.8;
-/** Device-pixel rounding on a 1x screen costs up to a whole CSS pixel edge. */
+/**
+ * Layout units, not device pixels: the dot is measured with boundingBox(),
+ * which reports fractional CSS pixels (7.1875 for a 7.2px box on this
+ * machine), so this only has to absorb sub-pixel layout rounding.
+ */
 const DOT_DIAMETER_TOLERANCE_PX = 0.25;
 const INK_CENTRE_TOLERANCE_PX = 0.35;
 
@@ -156,36 +160,6 @@ function inkCentroidY(bitmap: Bitmap, x0: number, x1: number, background: number
 	return weighted / total;
 }
 
-/**
- * The row's pixels, once it has actually painted something.
- *
- * `toBeHidden` on the launch overlay is necessary but not sufficient: the
- * element can be gone while the compositor has not yet drawn the app beneath
- * it, and a screenshot taken in that window is uniformly background. That is
- * the silent failure mode this whole file is exposed to -- an all-background
- * bitmap does not throw, it just measures nothing -- so wait on the real paint
- * rather than on a proxy for it.
- */
-async function _paintedBitmap(row: Locator): Promise<Bitmap> {
-	let bitmap: Bitmap | null = null;
-	await expect
-		.poll(
-			async () => {
-				const shot = decodePng(await row.screenshot());
-				const background = backgroundOf(shot);
-				let total = 0;
-				for (let y = 0; y < shot.height; y += 1) {
-					for (let x = 0; x < shot.width; x += 1) total += inkAt(shot, x, y, background);
-				}
-				bitmap = shot;
-				return total;
-			},
-			{ timeout: 20_000, message: 'the rating row never painted any ink' }
-		)
-		.toBeGreaterThan(0);
-	return bitmap!;
-}
-
 async function _anyOnDiskTrack(request: APIRequestContext): Promise<string> {
 	const response = await request.get(`${API_BASE}/api/v1/tracks?limit=50&available=true`);
 	expect(response.ok(), 'track listing must succeed').toBeTruthy();
@@ -234,12 +208,11 @@ test('the deck colour dot is 20% smaller than the 9px it shipped at', async ({ p
 	expect(dot!.width, 'the dot must stay circular').toBeCloseTo(dot!.height, 1);
 });
 
-test('the deck colour dot paints vertically centred on the star icons', async ({
-	page,
-	request
-}) => {
-	const row = await _deckOneLoaded(page, request);
-
+/**
+ * The vertical gap between the dot's ink centre and the stars' ink centre, in
+ * pixels, read off the composited row.
+ */
+async function _inkCentreDelta(row: Locator): Promise<number> {
 	// The two slices are taken from the elements' OWN boxes rather than from
 	// runs of inked columns. An earlier revision split the row by ink groups
 	// and asserted it found exactly six (five stars, then the dot), which
@@ -251,21 +224,103 @@ test('the deck colour dot paints vertically centred on the star icons', async ({
 	const rowBox = (await row.boundingBox())!;
 	const starsBox = (await row.locator('.rb-stars').boundingBox())!;
 	const dotBox = (await row.locator('.color-dot').boundingBox())!;
+	// `toBeHidden` on the launch overlay is necessary but not sufficient: the
+	// element can be gone while the compositor has not yet drawn the app
+	// beneath it, and a screenshot taken in that window is uniformly
+	// background. That is this file's one silent failure mode -- an
+	// all-background bitmap does not throw, it measures nothing -- so wait on
+	// the real paint. The metric is the LESSER of the two slices' ink, not the
+	// row's total, because the row can carry the stars' ink in a frame where
+	// the dot has not painted yet; waiting on the total would resolve there
+	// and leave the dot's centroid undefined.
+	let painted: Bitmap | null = null;
+	await expect
+		.poll(
+			async () => {
+				const shot = decodePng(await row.screenshot());
+				const bg = backgroundOf(shot);
+				const sum = (x0: number, x1: number): number => {
+					let total = 0;
+					for (let y = 0; y < shot.height; y += 1) {
+						for (let x = Math.max(0, x0); x < Math.min(x1, shot.width); x += 1) {
+							total += inkAt(shot, x, y, bg);
+						}
+					}
+					return total;
+				};
+				painted = shot;
+				return Math.min(
+					sum(Math.floor(starsBox.x - rowBox.x), Math.ceil(starsBox.x - rowBox.x + starsBox.width)),
+					sum(Math.floor(dotBox.x - rowBox.x), Math.ceil(dotBox.x - rowBox.x + dotBox.width))
+				);
+			},
+			{ timeout: 20_000, message: 'the stars and the dot never both painted' }
+		)
+		.toBeGreaterThan(0);
+	const bitmap: Bitmap = painted!;
+	// Box coordinates are CSS pixels and the buffer is device pixels, so every
+	// index below is only meaningful at a device scale factor of 1. That holds
+	// under this config's `devices['Desktop Chrome']`, but nothing in the spec
+	// forces it to keep holding: assert it, or a retina config would silently
+	// read the wrong half of the row and report an unexplained NaN. The bound
+	// is 2 rather than 0 because the capture rounds outward at BOTH edges (a
+	// 94.6875px box lands in a 96px buffer); a scale factor of 2 would land
+	// near 190 and is nowhere near that slack.
+	const SCALE_SLACK_PX = 2;
+	expect(
+		Math.abs(bitmap.width - rowBox.width),
+		`screenshot is ${bitmap.width}x${bitmap.height} for a ${rowBox.width}x${rowBox.height} box -- deviceScaleFactor must be 1`
+	).toBeLessThanOrEqual(SCALE_SLACK_PX);
+	expect(Math.abs(bitmap.height - rowBox.height)).toBeLessThanOrEqual(SCALE_SLACK_PX);
+
 	const slice = (left: number, width: number): [number, number] => [
 		Math.max(0, Math.floor(left - rowBox.x)),
-		Math.min(Math.ceil(left - rowBox.x + width), Math.round(rowBox.width))
+		Math.min(Math.ceil(left - rowBox.x + width), bitmap.width)
 	];
-
-	const bitmap = await _paintedBitmap(row);
 	const background = backgroundOf(bitmap);
 	const [starsFrom, starsTo] = slice(starsBox.x, starsBox.width);
 	const [dotFrom, dotTo] = slice(dotBox.x, dotBox.width);
 	expect(starsTo, 'the star run must end before the dot begins').toBeLessThanOrEqual(dotFrom);
 
 	const stars = inkCentroidY(bitmap, starsFrom, starsTo, background);
-	const dotCentre = inkCentroidY(bitmap, dotFrom, dotTo, background);
-	expect(
-		Math.abs(dotCentre - stars),
-		`dot ink centre ${dotCentre.toFixed(2)}px vs star ink centre ${stars.toFixed(2)}px`
-	).toBeLessThanOrEqual(INK_CENTRE_TOLERANCE_PX);
+	const dot = inkCentroidY(bitmap, dotFrom, dotTo, background);
+	return dot - stars;
+}
+
+test('the deck colour dot paints vertically centred on the star icons', async ({
+	page,
+	request
+}) => {
+	const row = await _deckOneLoaded(page, request);
+	const delta = await _inkCentreDelta(row);
+	expect(Math.abs(delta), `ink centre delta ${delta.toFixed(3)}px`).toBeLessThanOrEqual(
+		INK_CENTRE_TOLERANCE_PX
+	);
+});
+
+/**
+ * The correction is calibrated against the OUTLINE glyph, because that is what
+ * an unrated deck shows. A filled star is a different ink distribution in the
+ * same box, so the tolerance has to be shown to survive it rather than assumed
+ * to (#1550 review round 3). It does, and not marginally: measured here across
+ * all six states the delta moves only from -0.171px (unrated) to -0.208px (3
+ * stars), against a 0.35px budget. This test exists so that stays true.
+ */
+test('the centring holds at every rating, not just the outline glyph', async ({
+	page,
+	request
+}) => {
+	const row = await _deckOneLoaded(page, request);
+	for (const rating of [1, 2, 3, 4, 5]) {
+		await row.getByRole('radio', { name: `Set rating ${rating}` }).click();
+		// Hover previews the star count, so the pointer has to leave the row
+		// before what is painted is the STORED rating rather than the preview.
+		await page.mouse.move(0, 0);
+		await expect(row.locator('.rb-stars')).not.toHaveClass(/unrated/);
+		const delta = await _inkCentreDelta(row);
+		expect(
+			Math.abs(delta),
+			`ink centre delta ${delta.toFixed(3)}px at rating ${rating}`
+		).toBeLessThanOrEqual(INK_CENTRE_TOLERANCE_PX);
+	}
 });
