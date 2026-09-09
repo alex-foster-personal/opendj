@@ -4640,6 +4640,45 @@
         "title": "LastResultOut",
         "type": "object"
       },
+      "LevelCalibrationOut": {
+        "description": "By-ear level calibration, captured from live playback.\n\n`red_dbfs` anchors the meter's first RED segment; `ceiling_dbfs` is the\nmaster output ceiling. They are independent: either can be set and toggled\nwithout the other.",
+        "properties": {
+          "ceiling_dbfs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceiling Dbfs"
+          },
+          "ceiling_enabled": {
+            "default": false,
+            "title": "Ceiling Enabled",
+            "type": "boolean"
+          },
+          "red_dbfs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Red Dbfs"
+          },
+          "red_enabled": {
+            "default": false,
+            "title": "Red Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "LevelCalibrationOut",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -11000,6 +11039,9 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "level_calibration": {
+            "$ref": "#/components/schemas/LevelCalibrationOut"
+          },
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
@@ -11057,6 +11099,16 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "level_calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LevelCalibrationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "show_agent_pins": {
             "anyOf": [

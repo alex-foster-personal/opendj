@@ -47,6 +47,14 @@ const AMBER_FROM_SEGMENT = 5;
 const RED_FROM_SEGMENT = 8;
 
 /**
+ * The dBFS the default scale puts the first RED segment at.
+ *
+ * Calibration shifts the WHOLE scale so the user's chosen level lands here,
+ * which preserves the PPM spacing rather than inventing a new curve.
+ */
+export const DEFAULT_RED_DBFS = SEGMENT_THRESHOLDS_DBFS[RED_FROM_SEGMENT - 1];
+
+/**
  * Latched-clip threshold. Not 0.0: a sample peak of exactly full scale is
  * already suspicious, and true peak between samples is higher than anything
  * this meter can see, so the warning is raised just below.
@@ -136,13 +144,61 @@ export function stepPeakHold(
 // segments
 // --------------------------------------------------------------------------
 
-/** How many of the ten segments are lit at this level. 0 means below the first. */
-export function segmentsLitFromDbfs(db: number): number {
+/**
+ * Segment thresholds shifted so the first red segment sits at `redDbfs`.
+ *
+ * WHY THIS EXISTS. The fixed scale was calibrated for a mixing desk, where the
+ * operator rides trim until peaks land in amber. Measured against the maintainer's real
+ * library at unity gain, 11 of 12 tracks lit all ten segments (median true peak
+ * +1.0 dBTP against a red band starting at -3.0 dBFS), so the meter reported
+ * one fact about 91% of the library and carried no information.
+ *
+ * Passing null keeps the default scale, so an uncalibrated install behaves
+ * exactly as before rather than silently changing.
+ *
+ * A low calibration (a quiet red anchor) shifts the bottom thresholds below
+ * METER_FLOOR_DBFS. Clamped here so no threshold sits below what the meter
+ * can ever display - unclamped, a threshold at e.g. -81 dBFS is still "at or
+ * below" true silence, and segmentsLitFromDbfs would light segments for a
+ * track that produced no sound. segmentsLitFromDbfs also floors independently
+ * (see below): clamping several thresholds to the same floor value would
+ * otherwise make silence and near-silence both read as "several segments
+ * lit, at the floor" rather than "nothing lit".
+ */
+export function segmentThresholdsForRed(redDbfs: number | null): readonly number[] {
+	if (redDbfs === null) return SEGMENT_THRESHOLDS_DBFS;
+	if (!Number.isFinite(redDbfs)) {
+		throw new RangeError(`segmentThresholdsForRed: redDbfs must be finite or null, got ${redDbfs}`);
+	}
+	const shift = redDbfs - DEFAULT_RED_DBFS;
+	return SEGMENT_THRESHOLDS_DBFS.map((t) => Math.max(t + shift, METER_FLOOR_DBFS));
+}
+
+/**
+ * How many of the ten segments are lit at this level. 0 means below the
+ * first.
+ *
+ * Floors explicitly at METER_FLOOR_DBFS rather than relying on the `>=`
+ * comparison alone: a calibration can clamp several thresholds down to
+ * exactly the floor value (see segmentThresholdsForRed), and a threshold
+ * equal to the floor would otherwise satisfy `db >= threshold` at true
+ * silence.
+ */
+export function segmentsLitFromDbfs(
+	db: number,
+	thresholds: readonly number[] = SEGMENT_THRESHOLDS_DBFS
+): number {
 	if (!Number.isFinite(db)) {
 		throw new RangeError(`segmentsLitFromDbfs: db must be finite, got ${db}`);
 	}
+	if (thresholds.length !== SEGMENT_THRESHOLDS_DBFS.length) {
+		throw new RangeError(
+			`segmentsLitFromDbfs: expected ${SEGMENT_THRESHOLDS_DBFS.length} thresholds, got ${thresholds.length}`
+		);
+	}
+	if (db <= METER_FLOOR_DBFS) return 0;
 	let lit = 0;
-	for (const threshold of SEGMENT_THRESHOLDS_DBFS) {
+	for (const threshold of thresholds) {
 		if (db >= threshold) lit += 1;
 	}
 	return lit;

@@ -4747,6 +4747,30 @@ export interface components {
             status: "ok" | "error";
         };
         /**
+         * LevelCalibrationOut
+         * @description By-ear level calibration, captured from live playback.
+         *
+         *     `red_dbfs` anchors the meter's first RED segment; `ceiling_dbfs` is the
+         *     master output ceiling. They are independent: either can be set and toggled
+         *     without the other.
+         */
+        LevelCalibrationOut: {
+            /** Ceiling Dbfs */
+            ceiling_dbfs?: number | null;
+            /**
+             * Ceiling Enabled
+             * @default false
+             */
+            ceiling_enabled: boolean;
+            /** Red Dbfs */
+            red_dbfs?: number | null;
+            /**
+             * Red Enabled
+             * @default false
+             */
+            red_enabled: boolean;
+        };
+        /**
          * LocalDataOut
          * @description One store on this machine that holds something about the account.
          */
@@ -7089,6 +7113,7 @@ export interface components {
              * @default false
              */
             hide_todo_settings: boolean;
+            level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
              * Show Agent Pins
              * @default true
@@ -7115,6 +7140,7 @@ export interface components {
             } | null;
             /** Hide Todo Settings */
             hide_todo_settings?: boolean | null;
+            level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
             /** Technically Working Animate */

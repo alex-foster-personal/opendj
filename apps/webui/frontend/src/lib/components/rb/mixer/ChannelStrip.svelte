@@ -5,11 +5,17 @@
 	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
-	import { getDeckState } from '$lib/rb/audio-engine.svelte';
+	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
+	import { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
 	import { knobId } from '$lib/rb/knob-control.svelte';
+	import {
+		setLevelCalibrationCapture,
+		setLevelCalibrationDisabled,
+		uiPrefs
+	} from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import StemRow from '../deck/StemRow.svelte';
 	import Knob from './Knob.svelte';
@@ -86,6 +92,63 @@
 	 * layout contract. The exact number is main's, not this branch's 39:
 	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
 	const FILTER_SLOT_SIZE = 35.1;
+
+	// ------------------------------------------------------- level calibration (#1475)
+
+	/** Off -> click (re)captures this channel's current tap level and arms it.
+	 * On -> click disarms, keeping the captured number per prefs.svelte's
+	 * `setLevelCalibrationDisabled` contract. */
+	function handleCalibrationClick(kind: 'red' | 'ceiling'): void {
+		const enabled =
+			kind === 'red'
+				? uiPrefs.level_calibration.red_enabled
+				: uiPrefs.level_calibration.ceiling_enabled;
+		if (enabled) {
+			setLevelCalibrationDisabled(kind);
+			return;
+		}
+		// A stopped deck is refused on TRANSPORT STATE, not just on level. The
+		// numeric floor alone was not enough: the meter's PPM ballistics decay
+		// at ~11.8 dB/s, so for several seconds after a pause the tap still
+		// reads a real-looking value on its way down. Capturing mid-decay arms a
+		// ceiling from a number that describes nothing, and a quiet tail arms a
+		// severe master attenuation. `playing` is the only signal that says the
+		// level means something right now.
+		if (!playing) return;
+		const db = peekDeckMeterReading(deckId).db;
+		// Belt and braces: a playing deck can still sit at the floor (silence in
+		// the track, or a graph not yet producing), and a -60 dBFS ceiling is a
+		// 0.001 master multiplier, i.e. one click silences the output.
+		if (db <= METER_FLOOR_DBFS) return;
+		setLevelCalibrationCapture(kind, db);
+	}
+
+	/** Every numeric readout carries a title explaining the number (house rule). */
+	function calibrationTitle(label: string, dbfs: number | null, enabled: boolean): string {
+		if (dbfs === null) {
+			return (
+				`${label}: not captured. Click while a loud passage plays on this channel. ` +
+				`A stopped or silent channel captures nothing: there is no level to calibrate against.`
+			);
+		}
+		const action = enabled ? 'Click to disable (keeps the captured level).' : 'Click to re-capture and enable.';
+		return `${label}: ${dbfs.toFixed(1)} dBFS, captured at this channel's tap, currently ${enabled ? 'ON' : 'OFF'}. ${action}`;
+	}
+
+	const redTitle = $derived(
+		calibrationTitle(
+			'Meter red anchor',
+			uiPrefs.level_calibration.red_dbfs,
+			uiPrefs.level_calibration.red_enabled
+		)
+	);
+	const ceilingTitle = $derived(
+		calibrationTitle(
+			'Master output ceiling',
+			uiPrefs.level_calibration.ceiling_dbfs,
+			uiPrefs.level_calibration.ceiling_enabled
+		)
+	);
 	/** Pin 246b0f5 LESS mode: decks 1/2's strip has to fit inside the
 	 * shrunk LESS deck-area row (see +page.svelte), so TRIM/EQ shrink and
 	 * FILTER (inert stub, `{#if !less}` below) drops out -
@@ -116,7 +179,29 @@
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
 	}}
 >
-	<span class="ch-num">{deckId}</span>
+	<div class="strip-head">
+		<span class="ch-num">{deckId}</span>
+		<div class="cal-controls" role="group" aria-label={`level calibration channel ${deckId}`}>
+			<button
+				type="button"
+				class="cal-btn"
+				class:active={uiPrefs.level_calibration.red_enabled}
+				aria-pressed={uiPrefs.level_calibration.red_enabled}
+				aria-label={`meter red anchor channel ${deckId}`}
+				title={redTitle}
+				onclick={() => handleCalibrationClick('red')}>R</button
+			>
+			<button
+				type="button"
+				class="cal-btn"
+				class:active={uiPrefs.level_calibration.ceiling_enabled}
+				aria-pressed={uiPrefs.level_calibration.ceiling_enabled}
+				aria-label={`master ceiling channel ${deckId}`}
+				title={ceilingTitle}
+				onclick={() => handleCalibrationClick('ceiling')}>M</button
+			>
+		</div>
+	</div>
 	<div class="trim-slot">
 		<Knob
 			knobId={knobId(deckId, 'trim')}
@@ -194,6 +279,13 @@
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.1) 40%, var(--rb-panel-raised, #1a1e25));
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 	}
+	.strip-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		gap: 2px;
+	}
 	/* Every direct child except `.fader-slot` (which owns `flex: 1 1 auto`
 	 * on purpose - it is the one element meant to absorb extra height) is
 	 * fixed-size: explicit `flex-shrink: 0` so a too-short `.strip` overflows
@@ -210,6 +302,26 @@
 		font-size: 10px;
 		color: var(--rb-text);
 		line-height: 1;
+	}
+	/* #1475: R/M by-ear calibration - OTT, takes no space. */
+	.cal-controls {
+		display: flex;
+		gap: 1px;
+	}
+	.cal-btn {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: 7px;
+		line-height: 1;
+		padding: 1px 3px;
+		cursor: pointer;
+	}
+	.cal-btn.active {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
 	}
 	/* Pin 246b0f5 FIX ROUND 3 (Sol P1/P2 BLOCKING, both on +page.svelte:281):
 	 * this margin (and filter-slot's/cue-btn's/fader-slot's/stem-label's

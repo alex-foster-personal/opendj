@@ -5,7 +5,7 @@
 # ///
 """Control: cross-check this repo's CMLt/AMLt against mir_eval on REAL beat times.
 
-WHY THIS EXISTS. `scripts/beatbench/scorer.py` reimplements the continuity
+WHY THIS EXISTS. `apps/analysis_bench/scorers/beatgrid.py` reimplements the continuity
 metrics in pure stdlib, because the scorer is imported by pytest in the repo
 venv while every analyzer lives in a throwaway PEP 723 environment, and a
 scorer that dragged in a scientific stack would be a scorer that could differ
@@ -89,7 +89,7 @@ def main() -> int:
     # environment, and the repo root is only importable because uv runs it from
     # there. Keeping it beside its use makes the coupling visible.
     sys.path.insert(0, ".")
-    from scripts.beatbench.scorer import score_continuity
+    from apps.analysis_bench.scorers.beatgrid import score_continuity
 
     with open(args.fixtures, encoding="utf-8") as fh:
         fixtures = {f["stable_id"]: f for f in json.load(fh)["fixtures"]}

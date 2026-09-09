@@ -22,3 +22,17 @@ export interface LastPlaylistPref {
 	name: string;
 	kind: 'all_tracks' | 'playlist';
 }
+
+/**
+ * By-ear level calibration (#1475), mirrors `LevelCalibrationOut` in
+ * `apps/webui/server/routes/ui_prefs.py`. `red_dbfs` anchors the channel
+ * meter's first red segment; `ceiling_dbfs` is the master output ceiling.
+ * Independent: either can be captured and toggled without the other, and a
+ * captured number survives its own `*_enabled` going false.
+ */
+export interface LevelCalibrationPrefs {
+	red_dbfs: number | null;
+	red_enabled: boolean;
+	ceiling_dbfs: number | null;
+	ceiling_enabled: boolean;
+}

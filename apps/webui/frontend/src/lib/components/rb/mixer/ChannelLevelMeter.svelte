@@ -28,9 +28,11 @@
 	import { peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import {
 		METER_FLOOR_DBFS,
-		SEGMENT_THRESHOLDS_DBFS,
-		segmentBand
+		segmentBand,
+		segmentsLitFromDbfs,
+		segmentThresholdsForRed
 	} from '$lib/rb/meter-math';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 
 	interface Props {
 		// Derived rather than imported from deck-slots on purpose: this keeps one
@@ -41,11 +43,23 @@
 
 	let { deckId, playing = false }: Props = $props();
 
+	// #1475: the whole scale shifts so the by-ear captured level becomes the
+	// first red segment. `red_enabled` false (the default, uncalibrated case)
+	// passes null through, which is the documented no-op input that keeps this
+	// identical to the fixed scale. Computed here, not in meter-tap, so the tap
+	// stays deck-agnostic and this component owns the only policy choice.
+	const thresholds = $derived(
+		segmentThresholdsForRed(
+			uiPrefs.level_calibration.red_enabled ? uiPrefs.level_calibration.red_dbfs : null
+		)
+	);
 	/** One entry per segment, colored by the shared band policy. */
-	const SEGMENTS = SEGMENT_THRESHOLDS_DBFS.map((threshold, index) => ({
-		threshold,
-		band: segmentBand(index + 1)
-	}));
+	const SEGMENTS = $derived(
+		thresholds.map((threshold, index) => ({
+			threshold,
+			band: segmentBand(index + 1)
+		}))
+	);
 
 	let lit = $state(0);
 	let db = $state(METER_FLOOR_DBFS);
@@ -63,7 +77,7 @@
 		}
 		const tick = (): void => {
 			const reading = peekDeckMeterReading(deckId);
-			lit = reading.segments;
+			lit = segmentsLitFromDbfs(reading.db, thresholds);
 			db = reading.db;
 			clipped = reading.clipped;
 			raf = requestAnimationFrame(tick);
@@ -93,9 +107,17 @@
 	aria-valuetext={readout}
 	title={`Post-EQ, pre-fader channel level: ${readout}. Responds to trim and EQ. Red means digital clipping here, not speaker risk.`}
 >
-	{#each SEGMENTS as segment, index (segment.threshold)}
+	<!--
+		Keyed by index, not segment.threshold: a low red-calibration anchor clamps
+		several thresholds to the same METER_FLOOR_DBFS value (see
+		segmentThresholdsForRed), so threshold is not a unique key. SEGMENTS is a
+		fixed-length array in a fixed order (one entry per index, always the same
+		count), so index is always unique and stable across recalibration.
+	-->
+	{#each SEGMENTS as segment, index (index)}
 		<div
 			class:lit={index < lit}
+			class:clip-latch={clipped && index === SEGMENTS.length - 1}
 			class:green={segment.band === 'green'}
 			class:amber={segment.band === 'amber'}
 			class:red={segment.band === 'red'}
@@ -148,8 +170,24 @@
 		color: #e23a32;
 	}
 	/* The clip latch outlives the sample that caused it, so a single overshoot
-	   is readable rather than a one-frame flash nobody sees. */
-	.rb-channel-level-meter.clipped .rb-channel-level-meter-segment.red {
+	   is readable rather than a one-frame flash nobody sees. Scoped to `.lit`:
+	   without it, a latched clip painted every red segment regardless of the
+	   current level, so continuous clipping read as permanently red even as
+	   the level moved (#1475). */
+	/* The clip latch gets its OWN segment rather than repainting the red band.
+	   Scoping the old rule to `.lit` (which stopped a latch painting segments
+	   that were not lit) also made the latch invisible the moment the level
+	   fell back below red -- exactly the brief overshoot the latch exists to
+	   show. The top segment is the designated clip marker: it lights on a
+	   latch regardless of level, so a transient is readable without the bar
+	   claiming a level it does not have. */
+	.rb-channel-level-meter-segment.clip-latch {
+		opacity: 1;
+		background: #e23a32;
+		color: #e23a32;
+		box-shadow: 0 0 5px #e23a32;
+	}
+	.rb-channel-level-meter.clipped .rb-channel-level-meter-segment.red.lit {
 		opacity: 1;
 		color: #e23a32;
 		box-shadow: 0 0 5px #e23a32;

@@ -53,6 +53,17 @@ test.describe('refresh analysis button', () => {
 		// Empty seeded library: analysis has no targets, so the job reaches a
 		// terminal phase fast.
 		await expect(pop).toContainText(/done|error/, { timeout: 25_000 });
+		if (/error/.test(await pop.innerText())) {
+			// The popover shows a window of the job log; the status endpoint
+			// carries the last LOG_TAIL_LINES. When a pipeline CLI dies with a
+			// signal, its faulthandler dump is in there and this is the only
+			// place it reaches the CI log (apps.analysis.run exited -11, #1574).
+			const status = await page.request.get('/api/v1/ingest/refresh/status');
+			const body = (await status.json()) as { log_tail?: string[] };
+			console.log(
+				['[ingest-refresh] job log at failure:', ...(body.log_tail ?? [])].join('\n')
+			);
+		}
 		await expect(pop).not.toContainText('error', { timeout: 1_000 });
 	});
 });

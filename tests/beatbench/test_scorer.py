@@ -20,7 +20,7 @@ import math
 
 import pytest
 
-from scripts.beatbench.scorer import (
+from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
     SCORER_VERSION,
     classify_tempo_relation,

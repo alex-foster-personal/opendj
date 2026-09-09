@@ -35,14 +35,42 @@ Requirements (mini-PRD):
   ✔︎ ✅ the work set is (bifrost2 objects) - (R2 objects with matching size).
     [if] the job is re-run after a full success [then] it uploads nothing, exits 0
     [if] the job is killed mid-run [then] the next run resumes with no repeats
-  ✔︎ ✅ keys match the farm's scheme, stems/<preset>/<stable_id>/<filename>.
-    [if] a key would differ from scripts/modal_vocal_farm.py's [then ⛔️] raise
+  ✔︎ ✅ keys are content-addressed, assets/<sha256[:2]>/<sha256>.
+    [if] a key differs from the source body's SHA-256 address [then ⛔️] raise
   ✔︎ ✅ every uploaded object is verified by size against bifrost2.
     [if] any size differs after upload [then ⛔️] report it and exit non-zero
   ✔︎ ✅ R2 credentials never reach bifrost2.
     [if] a remote command would carry R2_SECRET_ACCESS_KEY [then ⛔️] raise
   ✔︎ ✅ incomplete bundles are excluded and named.
     [if] a bundle lacks a manifest or 4 stems [then] skip it and report it
+  ✔︎ ✅ remote hashing is batched under bifrost2's Windows argv limit.
+    [if] the default all-preset run hashes ~895 paths [then] no single
+    sha256sum command line can exceed SSH_ARGV_BUDGET_BYTES
+    [if] a path is hashed by a non-first batch [then ⛔️]
+    test_merged_digests_covers_every_path_across_batches proves the merge
+    still finds it, and test_merged_digests_raises_when_a_path_is_missing_from_every_batch
+    proves a path bifrost2 silently failed to hash still raises
+  ✔︎ ✅ every confirmed object's mapping is journaled, not only this run's jobs.
+    [if] a sibling PUT fails or an object was already present [then] its
+    mapping is still recorded, not dropped with the run
+  ✔︎ ✅ a same-size swap during transfer is detected, not silently accepted.
+    [if] the source changes between the pre-upload hash and curl's read
+    [then ⛔️] a post-upload re-hash catches it and the run fails loudly
+  ✔︎ ✅ a torn final journal line does not block the next run.
+    [if] killed mid-append [then] the next run tolerates the truncated last
+    line and still raises on any earlier corruption
+    [if] a later run appends on top of that same torn tail [then] the
+    journal WRITER (scripts/b2_journal.py's append_journal) truncates it
+    first, instead of concatenating valid JSON onto invalid bytes and losing
+    every mapping appended after it
+    [if] a kill lands right after the final closing brace but before its
+    newline is flushed [then] the WRITER inserts the missing separator
+    before appending, instead of silently losing both mappings on the next
+    read
+    [if] the journal repair write itself is interrupted [then] it writes to
+    a sibling temp file and renames it over the original, instead of
+    truncating the journal in place, so a kill mid-repair cannot lose every
+    prior mapping
 
 Run (R2_* come from Doppler; boto3 is inline, so no repo venv needed):
   doppler run --project general --config dev_personal -- \
@@ -59,6 +87,7 @@ from __future__ import annotations
 import argparse
 import collections
 import os
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -66,7 +95,15 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from apps.cloud.r2_keys import R2_KEY_TEMPLATE, asset_object_key
+from scripts.b2_journal import (
+    journal_new_mappings,
+    journaled_mappings,
+    legacy_key,
+    swapped_during_upload,
+)
 from scripts.b2store import SSH_HOST, SSH_OPTS, STORE_ROOT
+from scripts.stem_inventory import REPO_ROOT
 
 R2_ENV_KEYS: tuple[str, str, str] = (
     "R2_ACCOUNT_ID",
@@ -74,7 +111,7 @@ R2_ENV_KEYS: tuple[str, str, str] = (
     "R2_SECRET_ACCESS_KEY",
 )
 DEFAULT_BUCKET: str = "music-dj-audio"
-R2_STEM_PREFIX: str = "stems"          # matches modal_vocal_farm.R2_STEM_PREFIX
+R2_CONTENT_ADDRESSED_LAYOUT: str = R2_KEY_TEMPLATE
 STEMS_REMOTE_ROOT: str = f"{STORE_ROOT}/stems"
 STEM_PARTS: frozenset[str] = frozenset({"bass", "drums", "other", "vocals"})
 MANIFEST: str = "manifest.json"
@@ -82,6 +119,12 @@ MANIFEST: str = "manifest.json"
 # enough that a leaked URL is near-worthless.
 URL_TTL_SECONDS: int = 3600
 UPLOAD_PARALLELISM: int = 8
+JOURNAL: Path = REPO_ROOT / "data/state/stem-r2-migration.jsonl"
+# Windows CreateProcess (bifrost2's OpenSSH/MSYS2 shell, see scripts/b2store.py)
+# has a practical argv limit around 8191 chars; the default all-preset run
+# feeds ~895 paths into one sha256sum command, which can exceed it before
+# hashing even begins. Kept well under that ceiling, not tuned to it.
+SSH_ARGV_BUDGET_BYTES: int = 6000
 
 
 @dataclass
@@ -105,8 +148,10 @@ class Bundle:
         stems = {name.rsplit(".", 1)[0] for name in self.files if name != MANIFEST}
         return STEM_PARTS.issubset(stems)
 
-    def key_for(self, filename: str) -> str:
-        return f"{R2_STEM_PREFIX}/{self.preset}/{self.stable_id}/{filename}"
+
+def key_for_digest(content_sha256: str) -> str:
+    """Return the one canonical R2 key for a bifrost2 object body."""
+    return asset_object_key(content_sha256)
 
 
 #----- bifrost2 side ----------------------------------------------------------
@@ -156,6 +201,79 @@ def list_bifrost2_bundles(preset: str | None = None) -> list[Bundle]:
     return [grouped[k] for k in sorted(grouped)]
 
 
+def parse_remote_digests(output: str) -> dict[str, str]:
+    """Parse ``sha256sum`` output, refusing malformed source signatures."""
+    digests: dict[str, str] = {}
+    for line in output.splitlines():
+        digest, separator, path = line.partition("  ")
+        if not separator or not path:
+            raise RuntimeError(f"invalid sha256sum output from {SSH_HOST}: {line!r}")
+        key_for_digest(digest)
+        digests[path] = digest
+    return digests
+
+
+def _batch_paths(paths: list[str], budget_bytes: int) -> list[list[str]]:
+    """Group shell-quoted paths so no single command line approaches
+    bifrost2's Windows argv limit.
+
+    Batches by cumulative quoted length rather than a fixed count: path
+    lengths vary with preset and stable_id, so a count-based batch could
+    still overflow the budget on a run of long paths.
+    """
+    batches: list[list[str]] = []
+    current: list[str] = []
+    current_len = 0
+    for path in paths:
+        quoted_len = len(shlex.quote(path)) + 1  # +1 for the joining space
+        if current and current_len + quoted_len > budget_bytes:
+            batches.append(current)
+            current = []
+            current_len = 0
+        current.append(path)
+        current_len += quoted_len
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _merged_digests(
+    paths: list[str], per_batch: list[dict[str, str]]
+) -> dict[str, str]:
+    """Merge already-parsed per-batch digest dicts, confirming every
+    requested path was hashed by some batch.
+
+    Split out of ``remote_digests`` so this cross-batch merge-and-validate
+    decision is testable with literal dicts: no ssh call, real or fabricated,
+    is needed to pin "a path missing from every batch must still raise."
+    """
+    digests: dict[str, str] = {}
+    for batch_digests in per_batch:
+        digests.update(batch_digests)
+    missing = sorted(set(paths) - set(digests))
+    if missing:
+        raise RuntimeError(f"bifrost2 did not hash every planned object: {missing}")
+    return digests
+
+
+def remote_digests(paths: list[str]) -> dict[str, str]:
+    """Read bifrost2 bytes' signatures before deriving their R2 addresses.
+
+    Batched: the default all-preset run feeds every source path into this
+    function (roughly 895 for the ~179-bundle inventory), and one unbounded
+    `sha256sum` command can exceed the Windows OpenSSH/MSYS2 host's argv
+    limit before hashing even begins. Splitting into bounded batches and
+    merging their digests keeps every single ssh invocation well under it.
+    """
+    if not paths:
+        return {}
+    per_batch = []
+    for batch in _batch_paths(paths, SSH_ARGV_BUDGET_BYTES):
+        command = "sha256sum " + " ".join(shlex.quote(path) for path in batch)
+        per_batch.append(parse_remote_digests(_ssh(command, timeout=3600)))
+    return _merged_digests(paths, per_batch)
+
+
 #----- R2 side ----------------------------------------------------------------
 
 def r2_client() -> Any:
@@ -193,11 +311,12 @@ def r2_client() -> Any:
     )
 
 
-def list_r2_sizes(client: Any, bucket: str, preset: str | None) -> dict[str, int]:
+def list_r2_sizes(client: Any, bucket: str, preset: str | None = None) -> dict[str, int]:
     """{key: size} already in R2. Paginated: 179 bundles x 5 objects is past
     the 1000-key cap, and silently taking page one would make the job re-upload
     what is already there."""
-    prefix = f"{R2_STEM_PREFIX}/{preset}/" if preset else f"{R2_STEM_PREFIX}/"
+    _ = preset
+    prefix = "assets/"
     sizes: dict[str, int] = {}
     for page in client.get_paginator("list_objects_v2").paginate(
         Bucket=bucket, Prefix=prefix
@@ -248,18 +367,21 @@ def upload_batch(
             Params={"Bucket": bucket, "Key": key},
             ExpiresIn=URL_TTL_SECONDS,
         )
-        lines.append(f"{remote_path} {url}")
+        lines.append(f"{remote_path} {key.rsplit('/', maxsplit=1)[-1]} {url}")
     payload = "\n".join(lines) + "\n"
     _assert_no_secrets(payload)
 
     # -d '\n' makes each LINE one argument, which also switches off xargs's
     # default quote/backslash processing -- that would otherwise chew on a
-    # presigned URL. bash then splits the line at its single space.
+    # presigned URL. bash splits path, expected digest and URL at their two
+    # spaces, and refuses a source changed after the pre-upload hash pass.
     # -H 'Expect:' suppresses curl's 100-continue, which some S3 endpoints
     # answer in a way that breaks a streamed upload.
     remote_cmd = (
         f"xargs -d '\\n' -P {parallelism} -n 1 bash -c "
-        "'p=\"${0% *}\"; u=\"${0#* }\"; "
+        "'p=\"${0%% *}\"; r=\"${0#* }\"; d=\"${r%% *}\"; u=\"${r#* }\"; "
+        "[ \"$(sha256sum \"$p\" | cut -d \" \" -f1)\" = \"$d\" ] || "
+        "{ echo \"409 $p\"; exit 0; }; "
         "code=$(curl -sS -o /dev/null -w \"%{http_code}\" -X PUT "
         "-T \"$p\" -H \"Expect:\" \"$u\"); echo \"$code $p\"'"
     )
@@ -340,49 +462,95 @@ def main(argv: list[str] | None = None) -> int:
     client = r2_client()
     present = list_r2_sizes(client, args.bucket, args.preset)
 
+    sources = [
+        f"{STEMS_REMOTE_ROOT}/{bundle.preset}/{bundle.stable_id}/{filename}"
+        for bundle in bundles for filename in sorted(bundle.files)
+    ]
+    digests = remote_digests(sources)
+    source_sizes = {
+        f"{STEMS_REMOTE_ROOT}/{bundle.preset}/{bundle.stable_id}/{name}": size
+        for bundle in bundles
+        for name, size in bundle.files.items()
+    }
+    # Every planned source independent of whether THIS run uploads it: an
+    # already-present object still needs its mapping journaled exactly once.
+    planned_mappings = [
+        (legacy_key(path), key_for_digest(digests[path]), size)
+        for path, size in source_sizes.items()
+    ]
+    already_journaled = journaled_mappings(JOURNAL)
+
     jobs: list[tuple[str, str]] = []
     for bundle in bundles:
         for filename, size in sorted(bundle.files.items()):
-            key = bundle.key_for(filename)
-            if present.get(key) == size:
-                continue  # already there, byte-for-byte
             remote_path = (
                 f"{STEMS_REMOTE_ROOT}/{bundle.preset}/{bundle.stable_id}/{filename}"
             )
+            key = key_for_digest(digests[remote_path])
+            if present.get(key) == size:
+                continue  # already there, byte-for-byte
             jobs.append((remote_path, key))
 
     already = sum(len(b.files) for b in bundles) - len(jobs)
     print(f"\nr2 already holds {already} matching objects; "
           f"{len(jobs)} to upload")
     if not jobs:
+        journal_new_mappings(JOURNAL, planned_mappings, present, already_journaled, args.bucket)
         print("nothing to do: R2 is caught up")
         return 0
 
     if args.limit > 0:
         wanted = {b.stable_id for b in bundles[: args.limit]}
-        jobs = [j for j in jobs if j[1].split("/")[2] in wanted]
+        jobs = [j for j in jobs if j[0].split("/")[-2] in wanted]
         print(f"--limit {args.limit}: {len(jobs)} objects this run")
 
     statuses = upload_batch(client, args.bucket, jobs, args.parallelism)
+    return _finish_upload(
+        args, client, jobs, digests, source_sizes, planned_mappings,
+        already_journaled, statuses,
+    )
 
+
+def _finish_upload(
+    args: argparse.Namespace,
+    client: Any,
+    jobs: list[tuple[str, str]],
+    digests: dict[str, str],
+    source_sizes: dict[str, int],
+    planned_mappings: list[tuple[str, str, int]],
+    already_journaled: set[tuple[str, str]],
+    statuses: dict[str, int],
+) -> int:
+    """Verify this run's uploads, journal what R2 now confirms, and report.
+
+    Split out of ``main`` so this multi-check tail does not push ``main``
+    itself over the project's cyclomatic complexity ceiling.
+    """
     failed = {k: c for k, c in statuses.items() if not 200 <= c < 300}
     missing = [k for _, k in jobs if k not in statuses]
     print(f"uploaded {len(statuses) - len(failed)}/{len(jobs)} objects")
 
+    # Re-hash now and compare to the pre-upload digest: a same-size swap in
+    # that window ships wrong bytes under the OLD key, invisible to size.
+    post_digests = remote_digests([path for path, _ in jobs])
+    swapped = swapped_during_upload(jobs, digests, post_digests)
+    swapped_legacy_keys = frozenset(legacy_key(path) for path in swapped)
+
     # Verify against R2 itself rather than trusting the HTTP codes: a
     # truncated PUT can still answer 200.
     after = list_r2_sizes(client, args.bucket, args.preset)
-    expected = {
-        bundle.key_for(name): size
-        for bundle in bundles for name, size in bundle.files.items()
-    }
+    expected = {key: source_sizes[path] for path, key in jobs}
     mismatched = {
         key: (size, after.get(key))
         for key, size in expected.items()
         if after.get(key) != size
     }
 
-    if failed or missing or mismatched:
+    journal_new_mappings(
+        JOURNAL, planned_mappings, after, already_journaled, args.bucket, swapped_legacy_keys
+    )
+
+    if failed or missing or mismatched or swapped:
         for key, code in sorted(failed.items()):
             print(f"  HTTP {code} {key}", file=sys.stderr)
         for key in missing:
@@ -390,6 +558,8 @@ def main(argv: list[str] | None = None) -> int:
         for key, (want, got) in sorted(mismatched.items()):
             print(f"  size mismatch {key}: bifrost2 {want}, r2 {got}",
                   file=sys.stderr)
+        for remote_path in swapped:
+            print(f"  source changed during upload: {remote_path}", file=sys.stderr)
         print("\nre-run to retry: the outstanding set is recomputed from the "
               "two listings, so only the failures remain.", file=sys.stderr)
         return 1

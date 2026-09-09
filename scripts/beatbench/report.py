@@ -44,7 +44,7 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
-from scripts.beatbench.scorer import (
+from apps.analysis_bench.scorers.beatgrid import (
     BEAT_TOLERANCE_S,
     SCORER_VERSION,
     least_squares_bpm,
