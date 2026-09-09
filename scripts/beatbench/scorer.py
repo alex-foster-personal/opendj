@@ -30,9 +30,12 @@ the wrong metrical level" is a different and far more recoverable failure than
 
 Beat position is reported in two variants because a single number cannot
 separate the two ways a grid can be wrong. RAW nearest-beat error carries phase
-offset and jitter together. Removing the best global shift (the median signed
-error, which is robust to the aliasing that a half-tempo candidate produces)
-leaves only jitter. A candidate with a large raw p50 and a tiny shifted p50 has
+offset and jitter together. Removing the median signed error, which is robust
+to the aliasing that a half-tempo candidate produces, leaves only jitter. That
+median is a LOWER BOUND on the best achievable shift rather than the
+F-maximizing one; see `f_measure_shifted` below.
+
+A candidate with a large raw p50 and a tiny shifted p50 has
 a correct grid in the wrong place, which a single constant can fix. A candidate
 with both large has an unstable grid, which cannot be fixed by shifting.
 Alongside those, an F-measure at +/-70 ms is the standard beat-tracking
@@ -53,10 +56,40 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+# Re-exported so `scorer` stays the one import every consumer needs and
+# SCORER_VERSION keeps stamping a single ruler. The continuity family lives in
+# its own module because it carries its own reference-implementation control;
+# see scripts/beatbench/continuity.py.
+from scripts.beatbench.continuity import (  # noqa: F401
+    CONTINUITY_PERIOD_TOLERANCE,
+    CONTINUITY_PHASE_TOLERANCE,
+    MIN_BEATS_FOR_CONTINUITY,
+    ContinuityScore,
+    reference_variations,
+    score_continuity,
+)
+
 # ----- Version and named constants ---------------------------------------
 
 # Bump on any change to what a metric MEANS, never on a refactor.
-SCORER_VERSION = "1.0.0"
+#
+# 1.1.0 (round 1, Tue 8 Sep 2026) changes three things, all of which change
+# what a number MEANS, so round-0 artifacts must be rescored before any
+# cross-round comparison:
+#   - Candidate tempo is a LEAST-SQUARES fit of beat time against beat index,
+#     replacing the median inter-beat interval. v1.0.0's estimator inherited
+#     the analyzer's frame quantization and understated EVERY candidate;
+#     measured on identical committed beat times, beat_this moved from 47.0%
+#     to 82.5% within 1.0 BPM on fixed grids. See specs/beat-mapping-bench.md
+#     round 0, "The BPM columns above are an ESTIMATOR ARTIFACT".
+#   - CMLt and AMLt join F-measure. F at a fixed +/-70 ms says how many beats
+#     landed; the continuity metrics say whether they landed CONSECUTIVELY at
+#     a tempo that tracks the reference, which is the thing a DJ grid has to
+#     do and the thing round 0 could not measure.
+#   - F is now reported shift-corrected as well as raw, closing the known gap
+#     recorded in specs/beat-mapping-bench.md section 4.2: a correct grid at
+#     the wrong phase scored badly on raw F alone.
+SCORER_VERSION = "1.1.0"
 
 # The MIR-standard beat-tracking tolerance. Used for both the F-measure and
 # downbeat agreement so the two figures are on the same footing.
@@ -69,6 +102,9 @@ BPM_LOOSE_TOL = 1.0
 
 # Float slack so a value sitting exactly on a boundary does not fail by 1 ulp.
 _EPS = 1e-9
+
+# A straight-line tempo fit needs at least this many beats to mean anything.
+MIN_BEATS_FOR_FIT = 4
 
 # Metrical relations worth naming, checked in this order. "same" must come
 # first so a correct answer is never relabelled as an octave error.
@@ -142,6 +178,48 @@ def downbeat_times(beats: Sequence[dict[str, Any]]) -> list[float]:
     return [float(b["t"]) for b in beats if int(b.get("n", 0)) == 1]
 
 
+# ----- Tempo estimation ---------------------------------------------------
+
+
+def least_squares_bpm(times: Sequence[float]) -> float | None:
+    """Tempo from a straight-line fit of beat TIME against beat INDEX.
+
+    THE ONE ESTIMATOR, APPLIED IDENTICALLY TO EVERY CANDIDATE, and the single
+    largest correction between scorer v1.0.0 and v1.1.0.
+
+    v1.0.0 used `60 / median(inter-beat interval)`. A frame-based model emits
+    beat times quantized to its frame rate (20 ms at 50 fps), so the median of
+    its intervals is itself one of those quantized values: the estimate snaps
+    to `60 / (k * 0.02)` and lands a clean fraction of a BPM from the truth.
+    The errors pile up on exact integers, which is the tell that found it.
+    A least-squares fit uses every beat in the window, so the quantization
+    averages out instead of being inherited from one interval. Measured on
+    identical committed beat times in round 0: 47.0 percent of fixed grids
+    within 1.0 BPM by median interval, 82.5 percent by this fit.
+
+    It is deliberately NOT robust to outliers. Robustness here would hide a
+    candidate that drops or doubles beats, and `beat_count_ratio` plus the
+    octave classification are the honest place for that failure to show.
+
+    Returns None rather than a guess when there are too few beats or the fitted
+    period is not positive.
+    """
+    beats = [float(t) for t in times]
+    n = len(beats)
+    if n < MIN_BEATS_FOR_FIT:
+        return None
+    mean_i = (n - 1) / 2.0
+    mean_t = sum(beats) / n
+    numerator = sum((i - mean_i) * (t - mean_t) for i, t in enumerate(beats))
+    denominator = sum((i - mean_i) ** 2 for i in range(n))
+    if denominator <= 0:
+        return None
+    period_s = numerator / denominator
+    if period_s <= 0:
+        return None
+    return 60.0 / period_s
+
+
 # ----- BPM scoring --------------------------------------------------------
 
 
@@ -201,6 +279,19 @@ class PositionScore:
     precision: float
     recall: float
     f_measure: float
+    # F after the MEDIAN SIGNED OFFSET is removed. NOT the F-maximizing shift:
+    # when a candidate drops or invents beats, the median of per-reference
+    # nearest-neighbour errors is not generally the translation that maximizes
+    # one-to-one F, so this is a lower bound on the best achievable shifted F
+    # rather than that maximum (Codex P1 BLOCKING on PR #1514, correct). The
+    # column is named and documented for what it computes; finding the true
+    # optimum means searching the candidate/reference offset breakpoints, which
+    # would move this figure in every committed round and is logged as debt.
+    # Read alongside f_measure it
+    # separates "wrong grid" from "right grid, wrong phase": a candidate whose
+    # grid is correct but sits 80 ms early scores near zero on the raw F and
+    # near one here, and round 0 could not tell those two apart at all.
+    f_measure_shifted: float
     raw_p50_ms: float | None
     raw_p95_ms: float | None
     global_shift_ms: float | None
@@ -252,6 +343,22 @@ def _one_to_one_matches(
     return matched
 
 
+def _f_measure(
+    reference: Sequence[float], candidate: Sequence[float], tolerance_s: float
+) -> tuple[int, float, float, float]:
+    """`(matched, precision, recall, f)` for one candidate against one reference.
+
+    Extracted because it is computed TWICE, once on raw positions and once after
+    the global shift is removed, and two copies of a metric are two chances for
+    them to drift apart.
+    """
+    matched = _one_to_one_matches(reference, candidate, tolerance_s)
+    precision = matched / len(candidate) if candidate else 0.0
+    recall = matched / len(reference) if reference else 0.0
+    f = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    return matched, precision, recall, f
+
+
 def score_positions(
     reference: Sequence[float],
     candidate: Sequence[float],
@@ -276,6 +383,7 @@ def score_positions(
             precision=0.0,
             recall=0.0,
             f_measure=0.0,
+            f_measure_shifted=0.0,
             raw_p50_ms=None,
             raw_p95_ms=None,
             global_shift_ms=None,
@@ -287,10 +395,10 @@ def score_positions(
     shift = _median(signed) or 0.0
     shifted = [e - shift for e in signed]
 
-    matched = _one_to_one_matches(ref, cand, tolerance_s)
-    precision = matched / len(cand)
-    recall = matched / len(ref)
-    f_measure = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    matched, precision, recall, f_measure = _f_measure(ref, cand, tolerance_s)
+    _, _, _, f_measure_shifted = _f_measure(
+        ref, [t - shift / 1000.0 for t in cand], tolerance_s
+    )
 
     return PositionScore(
         n_reference=len(ref),
@@ -300,6 +408,7 @@ def score_positions(
         precision=precision,
         recall=recall,
         f_measure=f_measure,
+        f_measure_shifted=f_measure_shifted,
         raw_p50_ms=percentile([abs(e) for e in signed], 50),
         raw_p95_ms=percentile([abs(e) for e in signed], 95),
         global_shift_ms=shift,
