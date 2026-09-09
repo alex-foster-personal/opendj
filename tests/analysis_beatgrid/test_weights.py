@@ -92,6 +92,34 @@ def test_a_wrong_checkpoint_is_refused_rather_than_loaded(
         weights.resolve_checkpoint(expected_sha256="0" * 64)
 
 
+def test_an_unusable_override_never_falls_back_to_the_app_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug this guard exists for (Sol P1, PR #1587): an explicit,
+    unusable `MDT_BEATGRID_WEIGHTS` must not resolve to whatever the app
+    weights directory happens to hold. That would run a DIFFERENT checkpoint
+    than the one asked for, silently."""
+    app_dir = tmp_path / "app"
+    real = _fixture_checkpoint(app_dir)
+    monkeypatch.setenv(weights.WEIGHTS_PATH_ENV, str(tmp_path / "does-not-exist.ckpt"))
+    with pytest.raises(weights.WeightsUnavailable, match="does not name a file"):
+        weights.resolve_checkpoint(expected_sha256=weights.sha256_of(real), app_dir=app_dir)
+
+
+def test_an_unset_override_still_resolves_from_the_app_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both-directions control: the ordinary case (no override at all) must
+    still resolve location 2, unaffected by the override-specific guard."""
+    app_dir = tmp_path / "app"
+    real = _fixture_checkpoint(app_dir)
+    monkeypatch.delenv(weights.WEIGHTS_PATH_ENV, raising=False)
+    resolved, reported = weights.resolve_checkpoint(
+        expected_sha256=weights.sha256_of(real), app_dir=app_dir
+    )
+    assert resolved == real
+
+
 def test_no_torch_hub_fallback_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

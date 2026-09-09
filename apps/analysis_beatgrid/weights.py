@@ -137,8 +137,25 @@ def resolve_checkpoint(
 
     The digest is returned rather than assumed by the caller, so the value a
     record stamps is the one this function actually measured on this machine.
+
+    An explicit ``MDT_BEATGRID_WEIGHTS`` that does not name a file raises
+    immediately rather than falling through to location 2 (Sol P1, PR #1587):
+    a caller who set it named the exact checkpoint they mean to run on, and a
+    silent fall-back to whatever happens to be in the app's own weights
+    directory would run a DIFFERENT checkpoint than the one asked for, with no
+    error to say so. That is the same silent-substitution failure this module
+    exists to prevent, one location earlier.
     """
     searched = search_paths(app_dir=app_dir)
+    override = searched[0] if os.environ.get(WEIGHTS_PATH_ENV, "").strip() else None
+    if override is not None and not override.is_file():
+        raise WeightsUnavailable(
+            f"MDT_BEATGRID_WEIGHTS={override} does not name a file; this "
+            "producer never falls back to the app weights directory (or the "
+            "Torch Hub name) when an explicit override is set and unusable, "
+            "because either would run a different checkpoint than the one "
+            f"named. Searched {[str(p) for p in searched]}"
+        )
     found = next((p for p in searched if p.is_file()), None)
     if found is None:
         raise WeightsUnavailable(

@@ -56,7 +56,11 @@ def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]
         "beat_count": len(beats),
         "beats": [
             {"n": int(n), "bpm": round(float(bpm), 2), "t": round(t, 3)}
-            for n, bpm, t in zip(beats, bpms, times, strict=False)  # one pqtz source: equal-length
+            for n, bpm, t in zip(beats, bpms, times, strict=True)
+            # A PQTZ tag with mismatched array lengths is a malformed rekordbox
+            # export, not a source this producer half-trusts (Sol P1, PR
+            # #1587): silently truncating to the shortest array would drop
+            # real beats off a real deck's grid without saying so.
         ],
     }
     return grid, times
@@ -106,7 +110,21 @@ def _own_beatgrid_lane_result(conn: Any, stable_id: str) -> Any:
 
     None means no own record: the queue is the fix, not a tooltip, and the
     caller renders `status: missing`. A pointer that names a row which is not
-    there is corruption and raises rather than degrading to `missing`.
+    there, or a row that does not carry the lane the pointer named it for, is
+    corruption and raises rather than degrading to `missing`.
+
+    `analysis_canonical` absent entirely is NOT that case (Sol P1, PR #1587):
+    it is created by the same idempotent `_ensure_analysis_tables` call as
+    `analysis_source_default` (apps/analysis/store.py), so the two tables are
+    always present or always absent together, never one without the other.
+    `apps.analysis.selection.get_default` already rules on that shared state
+    ("an absent table means no lane was ever promoted, which is a state with
+    a correct answer, not a failure to paper over"); the sibling table
+    disagreeing would make two reads of one atomic schema answer differently
+    for the identical database. A state DB with no analysis schema at all
+    reaches here only through the in-memory toggle (`set_toggle`, a dev/test
+    affordance), since promotion itself writes through `open_conn` and would
+    have created both tables already.
     """
     if conn is None or not _table_present(conn, "analysis_canonical"):
         return None
@@ -126,7 +144,18 @@ def _own_beatgrid_lane_result(conn: Any, stable_id: str) -> Any:
             f"canonical beatgrid pointer for {stable_id} names {pointer[0]}@"
             f"{pointer[1]} but no such analysis row exists"
         )
-    return AnalysisRecord.from_json(row[0]).lanes.get(OWN_BEATGRID_LANE)
+    result = AnalysisRecord.from_json(row[0]).lanes.get(OWN_BEATGRID_LANE)
+    if result is None:
+        # Mirrors apps.analysis.canonical.rebuild_projection's identical guard:
+        # `_eligible_rows` only ever points a lane's canonical pointer at a row
+        # whose backend was parsed as THAT lane, so a pointed-to record missing
+        # its own named lane is the schema disagreeing with itself, not an
+        # ordinary "not analyzed yet" state.
+        raise RuntimeError(
+            f"canonical beatgrid record {pointer[0]}@{pointer[1]} for "
+            f"{stable_id} carries no {OWN_BEATGRID_LANE!r} lane"
+        )
+    return result
 
 
 def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], list[Any]]:
