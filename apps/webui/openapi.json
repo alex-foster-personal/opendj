@@ -5162,6 +5162,7 @@
             "type": "number"
           },
           "filter": {
+            "default": 0.5,
             "title": "Filter",
             "type": "number"
           },
@@ -5176,7 +5177,6 @@
           "eq_low",
           "eq_mid",
           "eq_high",
-          "filter",
           "fader",
           "assign"
         ],
