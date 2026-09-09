@@ -3045,6 +3045,13 @@
             "title": "Overall",
             "type": "string"
           },
+          "quarantined": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Quarantined",
+            "type": "object"
+          },
           "seq": {
             "title": "Seq",
             "type": "integer"
@@ -4627,7 +4634,8 @@
           "status": {
             "enum": [
               "ok",
-              "error"
+              "error",
+              "inconclusive"
             ],
             "title": "Status",
             "type": "string"
@@ -6945,6 +6953,11 @@
             "title": "Machines",
             "type": "array"
           },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/RowModel"
@@ -7008,6 +7021,11 @@
         "properties": {
           "accepted": {
             "title": "Accepted",
+            "type": "integer"
+          },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
             "type": "integer"
           },
           "rejected": {
@@ -7672,7 +7690,8 @@
           "status": {
             "enum": [
               "ok",
-              "error"
+              "error",
+              "inconclusive"
             ],
             "title": "Status",
             "type": "string"
@@ -18379,7 +18398,7 @@
     },
     "/api/v1/sync/digest": {
       "get": {
-        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.",
+        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.\n\nA hub holding one row with an unorderable stored stamp no longer answers\n422 (round 5). That row is excluded from the hash and counted in\n``quarantined``: a legacy row is a fact to report, not a reason to make\nthe endpoint every sync depends on unavailable.",
         "operationId": "digest_api_v1_sync_digest_get",
         "parameters": [
           {

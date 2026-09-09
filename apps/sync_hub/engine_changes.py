@@ -19,11 +19,12 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
+from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
-from apps.sync_hub import protocol
+from apps.sync_hub import protocol, sync_set
 from apps.sync_hub.engine_common import (
     _APPLY_ORDER,
     HUB_CHANGELOG_TABLE,
@@ -32,6 +33,7 @@ from apps.sync_hub.engine_common import (
 )
 from apps.sync_hub.engine_watermark import Watermark, local_seq
 from apps.sync_hub.protocol import (
+    MEMBERSHIP_SPEC,
     MEMBERSHIP_TABLE,
     SPEC_BY_TABLE,
     SYNC_TABLES,
@@ -45,18 +47,95 @@ log = logging.getLogger("apps.sync_hub.engine")
 # ----- push --------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class HeldRow:
+    """One row a selection could NOT put on the wire, and where it came from.
+
+    ``seq`` is the ``local_changelog`` entry that selected it, which only a
+    FENCED walk has: a full offer walks the tables rather than the changelog,
+    so there is no entry to hold a fence at and ``seq`` is None. That
+    distinction is the whole of B1's second half -- see
+    :func:`apps.sync_hub.engine_watermark.settled_push_seq` for the fenced
+    answer and :func:`relog_held` for the full-offer one.
+    """
+
+    table: str
+    pk: tuple[str, ...]
+    seq: int | None = None
+
+
+@dataclass(frozen=True)
+class Offer:
+    """The rows a spoke puts on the wire, and the rows it could not.
+
+    ``held`` names every row excluded because a STORED stamp on this machine
+    cannot be ordered, or because a row it references is itself held (round
+    5). Identities rather than a bare count (round 5 gate B1): the count told
+    an operator a row was held back but gave the fence nothing to hold ON, so
+    the fence advanced past it and no later selection could name it again.
+
+    ``quarantined`` is derived from ``held`` rather than tallied beside it,
+    so the number an operator reads and the rows the fence protects cannot
+    drift apart -- they are one list asked two questions.
+    """
+
+    rows: list[RowChange]
+    held: tuple[HeldRow, ...] = ()
+
+    @property
+    def quarantined(self) -> int:
+        """How many rows this machine held back."""
+        return len(self.held)
+
+    @property
+    def held_seq(self) -> int | None:
+        """Lowest changelog seq among the held rows; None when none has one.
+
+        None means either nothing was held or a FULL offer held it, and the
+        two are not the same state -- ``held`` distinguishes them, which is
+        why the fence rule takes both.
+        """
+        seqs = [row.seq for row in self.held if row.seq is not None]
+        return min(seqs) if seqs else None
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+
+def _quarantine(table: str, pk: object, reason: str) -> None:
+    """Log one row's exclusion, naming the cause. Never silent."""
+    log.error(
+        "%s row %s is NOT in the sync set: %s. It will not reach any peer "
+        "until it is repaired with `python -m apps.shared.state."
+        "normalize_stamps --live`; every other row still syncs.",
+        table,
+        pk,
+        reason,
+    )
+
+
 def _members_for_playlist(
-    conn: sqlite3.Connection, playlist_id: str
-) -> tuple[dict[str, Any], ...]:
+    conn: sqlite3.Connection, playlist_id: str, held: sync_set.HeldKeys
+) -> tuple[dict[str, Any], ...] | None:
+    """The whole membership bundle for ``playlist_id``, or None to hold the
+    playlist back. See :func:`apps.sync_hub.sync_set.membership_reason`.
+    """
     columns = protocol.table_columns(conn, MEMBERSHIP_TABLE)
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} "
         f"WHERE playlist_id = ? ORDER BY position",
         (playlist_id,),
     )
-    return tuple(
-        protocol.canonical_row(MEMBERSHIP_TABLE, columns, row) for row in cursor
-    )
+    members: list[dict[str, Any]] = []
+    for row in cursor:
+        reason = sync_set.row_reason(
+            MEMBERSHIP_TABLE, columns, row, MEMBERSHIP_SPEC, held
+        )
+        if reason is not None:
+            _quarantine(MEMBERSHIP_TABLE, playlist_id, reason)
+            return None
+        members.append(protocol.canonical_row(MEMBERSHIP_TABLE, columns, row))
+    return tuple(members)
 
 
 def _row_change(
@@ -65,20 +144,50 @@ def _row_change(
     columns: Sequence[str],
     spec: TableSpec,
     row: Sequence[Any],
-) -> RowChange:
+    held: sync_set.HeldKeys,
+) -> RowChange | HeldRow:
+    """One offered row, or the :class:`HeldRow` this machine must hold back.
+
+    Returns the held row's IDENTITY rather than None (round 5 gate B1): the
+    caller has to be able to protect its fence against it, and a None cannot
+    name what it stood for.
+    """
+    pk_index = {column: index for index, column in enumerate(columns)}
+    raw_pk = tuple(str(row[pk_index[column]]) for column in spec.pk)
+    reason = sync_set.row_reason(table, columns, row, spec, held)
+    if reason is not None:
+        _quarantine(
+            table, [row[pk_index[column]] for column in spec.pk], reason
+        )
+        return HeldRow(table=table, pk=raw_pk)
     values = protocol.canonical_row(table, columns, row)
     pk = tuple(str(values[column]) for column in spec.pk)
-    members = _members_for_playlist(conn, pk[0]) if table == "playlists" else None
+    members = (
+        _members_for_playlist(conn, pk[0], held) if table == "playlists" else None
+    )
+    if table == "playlists" and members is None:
+        held.hold(table, pk)
+        return HeldRow(table=table, pk=pk)
     return RowChange(table=table, pk=pk, values=values, members=members)
 
 
-def _rows_for_table(conn: sqlite3.Connection, spec: TableSpec) -> list[RowChange]:
+def _rows_for_table(
+    conn: sqlite3.Connection, spec: TableSpec, held: sync_set.HeldKeys
+) -> Offer:
     columns = protocol.table_columns(conn, spec.name)
     order_by = ", ".join(spec.pk)
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {spec.name} ORDER BY {order_by}"
     )
-    return [_row_change(conn, spec.name, columns, spec, row) for row in cursor]
+    rows: list[RowChange] = []
+    held_rows: list[HeldRow] = []
+    for row in cursor:
+        change = _row_change(conn, spec.name, columns, spec, row, held)
+        if isinstance(change, HeldRow):
+            held_rows.append(change)
+            continue
+        rows.append(change)
+    return Offer(rows=rows, held=tuple(held_rows))
 
 
 def _changelog_rows(
@@ -86,7 +195,7 @@ def _changelog_rows(
     entries: Sequence[tuple[Any, Any, Any]],
     *,
     changelog: str,
-) -> tuple[list[RowChange], int]:
+) -> tuple[Offer, int]:
     """Read the current state of every row named by ``entries``.
 
     A changelog records THAT a row changed, not what it looked like, so each
@@ -106,8 +215,11 @@ def _changelog_rows(
     the batching in :mod:`apps.sync_hub.client` depends on: a chunk boundary
     must never put a child row in an earlier request than its parent.
 
-    Returns the rows and the number of entries SKIPPED because the row they
-    name no longer exists (round 2 finding 4a; see the comment at the skip).
+    Returns the offer (rows plus the count QUARANTINED for an unorderable
+    stored stamp, round 5) and the number of entries SKIPPED because the row
+    they name no longer exists (round 2 finding 4a; see the comment at the
+    skip). The two counts are deliberately separate: "the row is gone" and
+    "the row cannot be ordered" have different causes and different repairs.
     """
     latest: dict[tuple[str, str], int] = {}
     for seq, table_name, row_pk in entries:
@@ -127,7 +239,14 @@ def _changelog_rows(
 
     changes: list[RowChange] = []
     skipped = 0
-    for table_name, row_pk in latest:
+    held_rows: list[HeldRow] = []
+    held = sync_set.HeldKeys(conn)
+    # Parents before children, so a held-back parent is already recorded when
+    # its dependants are decided. The sort at the end orders what SURVIVES;
+    # this one orders what is DECIDED, and the two are not the same pass.
+    for table_name, row_pk in sorted(
+        latest, key=lambda entry: (_APPLY_ORDER[entry[0]], entry[1])
+    ):
         spec = SPEC_BY_TABLE.get(table_name)
         if spec is None:
             raise SyncApplyError(
@@ -160,9 +279,17 @@ def _changelog_rows(
                 row_pk,
             )
             continue
-        changes.append(_row_change(conn, table_name, columns, spec, row))
+        change = _row_change(conn, table_name, columns, spec, row, held)
+        if isinstance(change, HeldRow):
+            # The seq that SELECTED it, so the fence can stop below it. A
+            # membership entry was resolved to its playlists row above, and
+            # ``latest`` is keyed by the resolved pair, so this reads the
+            # entry that actually put the row in this window.
+            held_rows.append(replace(change, seq=latest[(table_name, row_pk)]))
+            continue
+        changes.append(change)
     changes.sort(key=lambda change: (_APPLY_ORDER[change.table], change.pk))
-    return changes, skipped
+    return Offer(rows=changes, held=tuple(held_rows)), skipped
 
 
 def spoke_push(
@@ -170,8 +297,8 @@ def spoke_push(
     *,
     watermark: Watermark | None = None,
     ceiling: int | None = None,
-) -> list[RowChange]:
-    """The rows this machine offers its peer.
+) -> Offer:
+    """The rows this machine offers its peer, and the rows it cannot.
 
     Two selections, and which one runs is the whole of ADR 08 point 3:
 
@@ -186,22 +313,65 @@ def spoke_push(
     ``playlist_memberships`` never appears as a top-level change -- each
     ``playlists`` row carries its complete membership bundle instead
     (ADR 04 c5).
+
+    A row whose stored stamp cannot be ordered is QUARANTINED: left out of
+    the offer, counted on :attr:`Offer.quarantined` and logged with its
+    offending value. Round 4 raised instead, so one such row aborted the
+    push before a single other row was offered, on every sync, forever.
+    Quarantine is transitive over the FK graph (see :data:`_PARENT_KEYS`).
     """
     if watermark is None or watermark.needs_full_offer:
         changes: list[RowChange] = []
+        held_rows: list[HeldRow] = []
+        held = sync_set.HeldKeys(conn)
         for spec in SYNC_TABLES:
-            changes.extend(_rows_for_table(conn, spec))
-        return changes
+            offer = _rows_for_table(conn, spec, held)
+            changes.extend(offer.rows)
+            held_rows.extend(offer.held)
+        return Offer(rows=changes, held=tuple(held_rows))
     top = local_seq(conn) if ceiling is None else int(ceiling)
     entries = conn.execute(
         f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
         f"WHERE seq > ? AND seq <= ? ORDER BY seq",
         (watermark.last_push_seq, top),
     ).fetchall()
-    changes, _skipped = _changelog_rows(
-        conn, entries, changelog=LOCAL_CHANGELOG_TABLE
-    )
-    return changes
+    offer, _skipped = _changelog_rows(conn, entries, changelog=LOCAL_CHANGELOG_TABLE)
+    return offer
+
+
+def relog_held(
+    conn: sqlite3.Connection, held: Sequence[HeldRow], machine_id: str
+) -> int:
+    """Give every row a FULL offer held back a ``local_changelog`` entry.
+
+    Returns how many entries were written. Runs in the caller's transaction.
+
+    A fenced offer needs nothing like this: the window that selected a held
+    row IS a changelog entry, so the fence stops one below it
+    (:func:`apps.sync_hub.engine_watermark.settled_push_seq`) and the same
+    entry re-selects the row on every later sync until it can travel. A FULL
+    offer has no such entry -- it walks the tables, and on a library migrated
+    from v5 the rows predate ``local_changelog`` entirely -- so after it the
+    held rows are invisible to every fenced selection that follows. That is
+    how a quarantined track's 62 cascade dependants get dropped one UI rename
+    later: the rename frees the parent and logs the PARENT, while the
+    dependants were HELD, not CHANGED, and no entry anywhere names them.
+
+    Writing the entries here rather than re-logging on every sync is what
+    keeps the changelog from growing without bound: once a held row has an
+    entry above the fence, the fence rule alone keeps it selected, so this
+    fires once per full offer rather than once per sync.
+
+    ``stamp_and_log`` is the same choke point every writer uses, and the
+    entry says exactly what is true -- this machine must offer this row
+    again. Nothing orders ``local_changelog.updated_at`` (the fence reads
+    ``seq, table_name, row_pk``), so a fresh canonical stamp here cannot
+    reorder anything; the ROW keeps its unorderable stamp, because this is a
+    re-queue and not a repair.
+    """
+    for row in held:
+        sync_stamp.stamp_and_log(conn, row.table, row.pk, machine_id)
+    return len(held)
 
 
 # ----- pull ----------------------------------------------------------------
@@ -213,14 +383,17 @@ class ChangeBatch:
     the hub still holds entries above that seq.
 
     ``skipped`` counts entries whose row is gone from the hub (round 2
-    finding 4a). Reported rather than inferred so an operator sees the number
-    without reading the hub's log.
+    finding 4a). ``quarantined`` counts rows the hub holds but cannot order
+    (round 5). Both are reported rather than inferred so an operator sees
+    the numbers without reading the hub's log, and they are separate because
+    they have different repairs.
     """
 
     rows: list[RowChange]
     seq: int
     has_more: bool = False
     skipped: int = 0
+    quarantined: int = 0
 
 
 def hub_changes_since(
@@ -249,17 +422,21 @@ def hub_changes_since(
     remaining = conn.execute(
         f"SELECT 1 FROM {HUB_CHANGELOG_TABLE} WHERE seq > ? LIMIT 1", (max_seq,)
     ).fetchone()
-    rows, skipped = _changelog_rows(conn, entries, changelog=HUB_CHANGELOG_TABLE)
+    offer, skipped = _changelog_rows(conn, entries, changelog=HUB_CHANGELOG_TABLE)
     return ChangeBatch(
-        rows=rows,
+        rows=offer.rows,
         seq=max_seq,
         has_more=remaining is not None,
         skipped=skipped,
+        quarantined=offer.quarantined,
     )
 
 
 __all__ = [
     "ChangeBatch",
+    "HeldRow",
+    "Offer",
     "hub_changes_since",
+    "relog_held",
     "spoke_push",
 ]

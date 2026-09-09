@@ -112,6 +112,12 @@ class PushResponse(BaseModel):
     accepted: int
     rejected: int
     seq: int
+    #: Offered rows the hub REFUSED because its own local copy carries a
+    #: stamp it cannot order (round 5). Distinct from ``rejected``, which
+    #: means the row lost a comparison that actually happened: a quarantined
+    #: row was never compared and the hub's copy is untouched.
+    #: ``accepted + rejected + quarantined`` equals the rows offered.
+    quarantined: int = 0
 
 
 class PullResponse(BaseModel):
@@ -126,6 +132,11 @@ class PullResponse(BaseModel):
     #: (round 2 finding 4a). Non-zero means something hard-deleted a synced
     #: row on the hub; the pull still serves everything else.
     skipped: int = 0
+    #: Rows in this chunk the hub HOLDS but could not offer, because a stored
+    #: stamp on them cannot be ordered (round 5). Non-zero means the hub
+    #: needs ``python -m apps.shared.state.normalize_stamps --live``; the
+    #: pull still serves everything else.
+    quarantined: int = 0
 
 
 class StatusResponse(BaseModel):
@@ -145,6 +156,12 @@ class DigestResponse(BaseModel):
     #: stopped below this seq knows a third machine pushed in the gap, and
     #: that a difference here is not divergence.
     seq: int
+    #: Rows per table the hub EXCLUDED from the hash because a stored stamp
+    #: cannot be ordered (round 5). Absent tables quarantined nothing. Not
+    #: folded into ``overall``: two peers with identical eligible content
+    #: have converged, and folding it in would fire the ADR 04 c6 corruption
+    #: alarm on ordinary legacy data.
+    quarantined: dict[str, int] = Field(default_factory=dict)
 
 
 # ----- wiring helpers ------------------------------------------------------
@@ -389,7 +406,10 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         # ever reported, and it must never sit above what the DB holds.
         _generation(request, conn)
         return PushResponse(
-            accepted=result.accepted, rejected=result.rejected, seq=result.seq
+            accepted=result.accepted,
+            rejected=result.rejected,
+            seq=result.seq,
+            quarantined=result.quarantined,
         )
 
 
@@ -425,6 +445,7 @@ def pull(
             machines=_machine_models(conn),
             has_more=batch.has_more,
             skipped=batch.skipped,
+            quarantined=batch.quarantined,
         )
 
 
@@ -488,6 +509,11 @@ def digest(
     ``/pull``, this answer carries no per-row data, but it does carry the
     hub's live changelog position, which an unregistered caller had no
     business reading either.
+
+    A hub holding one row with an unorderable stored stamp no longer answers
+    422 (round 5). That row is excluded from the hash and counted in
+    ``quarantined``: a legacy row is a fact to report, not a reason to make
+    the endpoint every sync depends on unavailable.
     """
     with _hub_conn(request) as conn:
         _require_registered(conn, machine_id)
@@ -497,7 +523,10 @@ def digest(
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return DigestResponse(
-            tables=computed.tables, overall=computed.overall, seq=computed.seq
+            tables=computed.tables,
+            overall=computed.overall,
+            seq=computed.seq,
+            quarantined=dict(computed.quarantined or {}),
         )
 
 
