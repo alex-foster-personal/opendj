@@ -91,14 +91,24 @@ def next_playlist_revision(
     Wall-clock timestamps normally differ at microsecond precision.  A fixed
     clock used by a deterministic caller must still rotate an ETag, so advance
     an equal ISO timestamp by one microsecond instead of silently reusing it.
+
+    A STORED value this repo cannot order (a legacy naive stamp, SQLite's own
+    ``CURRENT_TIMESTAMP`` spelling, a NULL) returns ``candidate`` unchanged.
+    The bare ``datetime.fromisoformat`` this replaced raised ``TypeError``
+    -- "can't compare offset-naive and offset-aware datetimes" -- from every
+    playlist write touching such a row, which is an undeclared failure in
+    five call sites that all wanted one thing: an ETag distinct from the
+    stored one. ``candidate`` is offset-bearing and the stored value is not,
+    so they cannot collide, which is exactly the property this function
+    exists to guarantee.
     """
     row = conn.execute(
         "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
     ).fetchone()
-    if row is None:
+    if row is None or not _sync_stamp.is_orderable(row[0]):
         return candidate
-    previous = datetime.fromisoformat(row[0])
-    requested = datetime.fromisoformat(candidate)
+    previous = _sync_stamp.parse_canonical(str(row[0]))
+    requested = _sync_stamp.parse_canonical(candidate)
     if requested > previous:
         return candidate
     return _iso(previous + timedelta(microseconds=1))

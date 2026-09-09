@@ -108,7 +108,7 @@ class _InterceptingTransport:
         inner: _TestClientTransport,
         *,
         before: str,
-        during: Callable[[], None],
+        during: Callable[[], object],
     ) -> None:
         self._inner = inner
         self._before = before
