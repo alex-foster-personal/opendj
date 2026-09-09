@@ -32,6 +32,8 @@ from apps.analysis import selection as sel
 from apps.analysis import store as analysis_store
 from apps.shared.paths import STATE_DB
 
+from ..backend import InMemoryBackend
+
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
@@ -81,6 +83,31 @@ def _open(request: Request) -> sqlite3.Connection:
     return analysis_store.open_conn(_db_path(request))
 
 
+def _require_persistent_backend(request: Request) -> None:
+    """Refuse to persist a default the serving backend will not read.
+
+    The in-memory backend has no `track_fields` and no projection to read, so
+    a persisted `own` would be invisible to it. The DEV TOGGLE is exempt: it
+    is process-local and explicitly a testing affordance, so setting it on a
+    backend that cannot honour it costs nothing and resets on relaunch.
+    """
+    backend = getattr(request.app.state, "backend", None)
+    if isinstance(backend, InMemoryBackend):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "no_persistent_library",
+                "message": (
+                    "this daemon is running on the in-memory backend, which has "
+                    "no state.db to read an own analysis from, so persisting a "
+                    "lane default here would report `own` while /tracks kept "
+                    "serving rekordbox values. Start the daemon against a real "
+                    "data dir first."
+                ),
+            },
+        )
+
+
 @router.get("/source", response_model=AnalysisSourceOut)
 def get_analysis_source(request: Request) -> AnalysisSourceOut:
     conn = _open(request)
@@ -114,6 +141,16 @@ def put_analysis_source(request: Request, body: AnalysisSourcePut) -> AnalysisSo
             status_code=422,
             detail={"code": "invalid_selection", "message": str(exc)},
         ) from exc
+
+    # A promotion the RUNNING backend cannot serve is a lie, not a setting.
+    # The daemon falls back to InMemoryBackend when `state.db` does not exist
+    # (app.py: make_backend()), and this endpoint would then create a fresh
+    # database, persist `own` into it, and report `effective: own` while
+    # /tracks kept serving the in-memory library until restart (Codex P1).
+    # Refused rather than silently migrated: swapping app.state.backend under
+    # a live request would change what every in-flight reader is talking to.
+    if body.default is not None:
+        _require_persistent_backend(request)
 
     conn = _open(request)
     try:

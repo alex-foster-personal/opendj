@@ -116,15 +116,47 @@ def test_get_default_works_on_a_connection_that_cannot_write(tmp_path) -> None:
 
 @pytest.fixture()
 def client(tmp_path):
+    """A client whose SERVING backend is the database the endpoint writes.
+
+    `create_app()` defaults to InMemoryBackend and the endpoint now refuses
+    to persist a lane default on one, because a promotion the running
+    backend cannot read would report `own` while /tracks kept serving
+    rekordbox values (Codex P1).
+    """
+    from fastapi.testclient import TestClient
+
+    from apps.analysis import store as analysis_store
+    from apps.webui.server.app import create_app
+    from apps.webui.server.sqlite_backend import SqliteBackend
+
+    db_path = tmp_path / "state.db"
+    analysis_store.open_conn(db_path).close()
+    app = create_app()
+    app.state.analysis_db_path = db_path
+    app.state.backend = SqliteBackend(db_path)
+    with TestClient(app) as c:
+        yield c
+
+
+def test_persisting_a_default_on_an_in_memory_backend_is_refused(tmp_path) -> None:
+    """A promotion the running backend cannot serve is a lie, not a setting."""
     from fastapi.testclient import TestClient
 
     from apps.webui.server.app import create_app
 
     app = create_app()
     app.state.analysis_db_path = tmp_path / "state.db"
-    sqlite3.connect(tmp_path / "state.db").close()
-    with TestClient(app) as c:
-        yield c
+    with TestClient(app) as client:
+        resp = client.put(
+            "/api/v1/analysis/source", json={"lane": "key", "default": "own"}
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "no_persistent_library"
+        # The DEV TOGGLE stays available: it is process-local and resets on
+        # relaunch, so it cannot mislead anyone past this session.
+        assert client.put(
+            "/api/v1/analysis/source", json={"lane": "key", "toggle": "own"}
+        ).status_code == 200
 
 
 def test_get_source_reports_every_lane(client) -> None:

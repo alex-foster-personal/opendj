@@ -92,6 +92,11 @@ class Track:
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
     provenance: dict[str, Provenance] = field(default_factory=dict)
+    # Which SOURCE each own lane-owned field came from, "" while every lane is
+    # on rbx. Part of the etag: switching a lane changes bpm, key and the whole
+    # provenance block without necessarily moving any timestamp, so timestamps
+    # alone cannot separate the two representations.
+    selection_tag: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -396,7 +401,7 @@ class InMemoryBackend:
                 if track is None:
                     raise NotFoundError(f"track not found: {update.stable_id}")
                 current_rows.append(track)
-                current_etag = compute_etag(track.stable_id, track.updated_at)
+                current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
                 if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                     conflicts.append({"stable_id": update.stable_id, "current_etag": current_etag})
             if conflicts:
@@ -490,7 +495,7 @@ class InMemoryBackend:
                     {"tags_remove": [old_name]} if new_name is None else {
                         "tags_add": [new_name], "tags_remove": [old_name],
                     },
-                    compute_etag(track.stable_id, track.updated_at),
+                    compute_etag(track.stable_id, track.updated_at, track.selection_tag),
                 )
                 for track in members
             ]

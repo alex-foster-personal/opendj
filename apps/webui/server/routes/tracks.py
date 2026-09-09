@@ -183,7 +183,7 @@ def get_track(
 ) -> TrackOut:
     # NotFoundError -> handle_not_found (errors.py).
     track = backend.get_track(stable_id)
-    response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at)
+    response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
     return _track_to_out(track, has_rb_mapping=_has_rb_mapping(stable_id))
 
 
@@ -220,6 +220,8 @@ def patch_track(
         # since only the route layer has _has_rb_mapping.
         exc.current["has_rb_mapping"] = _has_rb_mapping(stable_id)
         raise
-    response.headers["ETag"] = compute_etag(updated.stable_id, updated.updated_at)
+    response.headers["ETag"] = compute_etag(
+        updated.stable_id, updated.updated_at, updated.selection_tag
+    )
     publish("library.changed", {"kind": "tracks", "ids": [updated.stable_id]})
     return _track_to_out(updated, has_rb_mapping=_has_rb_mapping(stable_id))

@@ -225,11 +225,17 @@ def _validate_key(payload: Mapping[str, Any]) -> None:
     ))
     _require_str("key", payload, "camelot")
     _require_str("key", payload, "openkey")
-    _require_number("key", payload, "pitch_class")
-    if not 0 <= int(payload["pitch_class"]) <= 11:
+    # An INTEGER, not a number that rounds into range. Pitch class is the
+    # discrete identity the key and mode bit are read against, so `-0.5` and
+    # `11.9` are malformed input, not edge values: int() would have turned
+    # them into 0 and 11 and stored a valid-looking record.
+    pitch_class = payload["pitch_class"]
+    if isinstance(pitch_class, bool) or not isinstance(pitch_class, int):
         raise LaneContractError(
-            f"key.pitch_class must be 0..11, got {payload['pitch_class']!r}"
+            f"key.pitch_class must be an integer 0..11, got {pitch_class!r}"
         )
+    if not 0 <= pitch_class <= 11:
+        raise LaneContractError(f"key.pitch_class must be 0..11, got {pitch_class!r}")
     _require_bool("key", payload, "is_minor")
     _require_number("key", payload, "confidence")
     _validate_key_segments(payload["segments"])

@@ -46,13 +46,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence
 
-from apps.analysis import selection as analysis_selection
 from apps.analysis.selection import EffectiveField
 from apps.shared.state import db as _state_db
 from apps.shared.state import queries as _state_queries
 from apps.shared.state import schema as _state_schema
 from apps.shared.state.writer import StateWriter
 
+from .analysis_overlay import lane_owned_fields as _lane_owned_fields
+from .analysis_overlay import selection_tag as _selection_tag
 from .backend import (
     MAX_LIMIT,
     BackendError,
@@ -310,6 +311,7 @@ def _row_to_track(
         file_path=row["file_path"],
         created_at=row["created_at"],
         updated_at=_effective_updated_at(row["updated_at"], fields),
+        selection_tag=_selection_tag(fields),
         provenance=provenance,
     )
 
@@ -366,32 +368,6 @@ def _fetch_fields(
     for sid, lane_fields in _lane_owned_fields(conn, stable_ids).items():
         out[sid].update(lane_fields)
     return out
-
-
-def _lane_owned_fields(
-    conn: sqlite3.Connection, stable_ids: list[str],
-) -> dict[str, dict[str, EffectiveField]]:
-    """The lane-owned half, skipped only when every lane is on rbx.
-
-    The skip is gated on the SELECTION, never on whether
-    ``analysis_projection`` exists. An earlier draft gated on the table and
-    was wrong in a way a live run caught and the unit tests did not: the
-    promoted default lives in a DIFFERENT table
-    (``analysis_source_default``), so a lane could be on own while the
-    projection table was still absent, and the EAV pass then served the
-    rekordbox value under an `own` selection. That is the exact silent
-    substitution this milestone removes.
-
-    Under all-rbx, :func:`effective_fields` returns the same ``track_fields``
-    rows the EAV pass above already produced for ``bpm`` and ``key`` and
-    nothing else, so skipping it is an optimization on the library-listing
-    hot path rather than a behavior change. It is asserted as such in
-    tests/webui/test_effective_fields.py.
-    """
-    selection = analysis_selection.Selection.resolve(conn)
-    if not selection.any_own:
-        return {}
-    return analysis_selection.effective_fields(conn, stable_ids, selection)
 
 
 def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:
@@ -799,7 +775,7 @@ class SqliteBackend:
                     fields = _fetch_fields(conn, [update.stable_id])
                     current = _row_to_track(row, fields.get(update.stable_id, {}))
                     current_rows.append(current)
-                    current_etag = compute_etag(current.stable_id, current.updated_at)
+                    current_etag = compute_etag(current.stable_id, current.updated_at, current.selection_tag)
                     if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                         conflicts.append({
                             "stable_id": update.stable_id,
@@ -913,14 +889,14 @@ class SqliteBackend:
                         {"tags_remove": [old_name]} if new_name is None else {
                             "tags_add": [new_name], "tags_remove": [old_name],
                         },
-                        compute_etag(track.stable_id, track.updated_at),
+                        compute_etag(track.stable_id, track.updated_at, track.selection_tag),
                     )
                     for track in members
                 ]
 
                 conflicts: list[dict[str, str]] = []
                 for track, update in zip(members, updates):
-                    current_etag = compute_etag(track.stable_id, track.updated_at)
+                    current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
                     if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
                         conflicts.append({"stable_id": track.stable_id, "current_etag": current_etag})
                 if conflicts:

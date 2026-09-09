@@ -365,3 +365,60 @@ def test_all_rbx_skip_returns_exactly_what_effective_fields_would(state) -> None
         if name in computed["t1"]
     }
     assert eav == computed["t1"]
+
+
+#-----------------------------------------------------------------------------
+# P2 round 5: the etag must separate two representations of one track
+#-----------------------------------------------------------------------------
+
+def test_switching_a_lane_to_own_changes_the_track_etag(state) -> None:
+    """Reproduced: the projection row can be OLDER than the base updated_at.
+
+    The etag is the maximum of the base stamp and every field stamp, so an
+    own record written with an earlier stamp moves nothing, and the same
+    strong validator would then cover a track serving `5A` and the same
+    track serving `8A` -- letting a stale If-Match through.
+    """
+    from apps.webui.server.etag import compute_etag
+
+    path, conn = state
+    backend = sb.SqliteBackend(path)
+    before = backend.get_track("t1")
+    etag_before = compute_etag(before.stable_id, before.updated_at, before.selection_tag)
+    assert before.key == "5A"
+
+    analysis_store.upsert_record(
+        _own_key_record("t1", LaneResult(status="ok", payload=_key_payload("8A"))),
+        conn=conn,
+    )
+    # Force the exact collision the finding describes: an own projection row
+    # stamped BEFORE the track's base updated_at.
+    conn.execute(
+        "UPDATE analysis_projection SET updated_at = '2020-01-01T00:00:00Z'"
+    )
+    conn.commit()
+    selection.set_toggle("key", "own")
+
+    after = sb.SqliteBackend(path).get_track("t1")
+    assert after.key == "8A"
+    assert after.updated_at == before.updated_at, (
+        "precondition: the timestamps must be identical, or this proves nothing"
+    )
+    etag_after = compute_etag(after.stable_id, after.updated_at, after.selection_tag)
+    assert etag_after != etag_before
+
+
+def test_an_all_rbx_track_keeps_a_byte_identical_etag(state) -> None:
+    """The control: the variant must be EMPTY while nothing is promoted.
+
+    Every etag in the wild today is `sha1(stable_id:updated_at)`, so an
+    unconditional variant would invalidate every client cache on deploy.
+    """
+    from apps.webui.server.etag import compute_etag
+
+    path, _ = state
+    track = sb.SqliteBackend(path).get_track("t1")
+    assert track.selection_tag == ""
+    assert compute_etag(
+        track.stable_id, track.updated_at, track.selection_tag
+    ) == compute_etag(track.stable_id, track.updated_at)

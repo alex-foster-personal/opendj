@@ -57,6 +57,10 @@ DEFAULT_SOURCE: Source = "rbx"
 # as "measured and empty", which is not.
 _RBX_FIELDS: frozenset[str] = frozenset({"bpm", "key"})
 
+# The `source` reported for an own lane that has no record yet. A real
+# own value reports its canonical backend name instead.
+OWN_ANALYSIS_SOURCE = "own-analysis"
+
 
 
 class SelectionError(ValueError):
@@ -380,7 +384,7 @@ def effective_fields(
         for field_name in own_fields:
             found = projected[sid].get(field_name)
             out[sid][field_name] = found if found is not None else EffectiveField(
-                value=None, source="own-analysis", confidence=None,
+                value=None, source=OWN_ANALYSIS_SOURCE, confidence=None,
                 modified_at="", status="missing",
                 reason="no own analysis record for this lane yet",
             )
@@ -446,6 +450,7 @@ def lane_for_field(field_name: str) -> Lane:
 __all__ = [
     "DEFAULT_SOURCE",
     "LANES",
+    "OWN_ANALYSIS_SOURCE",
     "PROJECTION_FIELDS",
     "SOURCES",
     "TOGGLE_STATES",
