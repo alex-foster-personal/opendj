@@ -8,20 +8,33 @@ import { useFrecency } from "../hooks/useFrecency";
 import { useSearch } from "../hooks/useSearch";
 import type { TrackHit } from "../types";
 
-// Hardcoded sample data for Plan 17-02. Plan 17-03 wires this to FTS5 via
-// useSearch/useFrecency. Samples stay as a fallback when the DB is missing.
-const SAMPLE: TrackHit[] = [
-  { stable_id: "s1", path: "/Users/dev3/Music/sample-dua.mp3",      title: "Levitating",           artist: "Dua Lipa",       album: null, genre: null, bpm: 103, key: "11A" },
-  { stable_id: "s2", path: "/Users/dev3/Music/sample-weekend.mp3",  title: "Blinding Lights",      artist: "The Weeknd",     album: null, genre: null, bpm: 171, key: "11B" },
-  { stable_id: "s3", path: "/Users/dev3/Music/sample-omulu.mp3",    title: "Dancing In Your Head", artist: "Omulu",          album: null, genre: null, bpm: 124, key: "8A"  },
-];
+const NO_TRACKS: TrackHit[] = [];
+
+/** What to tell the user when the list is empty, and why it is empty.
+ *
+ * There used to be three hard-coded sample tracks here, rendered whenever the
+ * real list came back empty (issue #1542). That is mocked data on the render
+ * path, which the house rule forbids outright, and it made a fresh install
+ * indistinguishable from a launcher whose store failed to open. Every empty
+ * state now says which one it is in words the user can read.
+ */
+function emptyMessage(
+  status: "loading" | "ready" | "failed",
+  error: string | null,
+  query: string,
+): string {
+  if (status === "loading") return "Loading your recent tracks...";
+  if (status === "failed") return `Could not read your track history: ${error}`;
+  if (query.trim().length > 0) return `No tracks match "${query.trim()}".`;
+  return "No tracks played yet. Play something in Open DJ and your recents appear here.";
+}
 
 export default function Palette() {
   const [query, setQuery] = useState("");
   const paletteVisible = true;
-  const frecent = useFrecency(paletteVisible);
-  const frecentOrSample = frecent.length > 0 ? frecent : SAMPLE;
-  const results = useSearch(query, frecentOrSample);
+  const frecency = useFrecency(paletteVisible);
+  const frecent = frecency.status === "ready" ? frecency.top : NO_TRACKS;
+  const results = useSearch(query, frecent);
   // Subscribe to drag-lifecycle events from commands/drag.rs so the React
   // layer can surface start / success / fallback / failure feedback instead
   // of leaving the user guessing (UI-REVIEW-2026-04-17 launcher gap).
@@ -39,7 +52,17 @@ export default function Palette() {
         />
         <Command.List className="palette-list">
           {results.length === 0 && (
-            <Command.Empty className="palette-empty">No tracks.</Command.Empty>
+            <Command.Empty
+              className={
+                frecency.status === "failed" ? "palette-empty palette-empty-failed" : "palette-empty"
+              }
+            >
+              {emptyMessage(
+                frecency.status,
+                frecency.status === "failed" ? frecency.error : null,
+                query,
+              )}
+            </Command.Empty>
           )}
           {results.map((t) => (
             <TrackRow key={t.stable_id} track={t} />

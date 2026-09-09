@@ -82,3 +82,9 @@ html, body, #root {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+/* A failed read is not an empty library, so it does not get the muted
+   empty-state treatment that says "nothing here yet" (issue #1542). */
+.palette-empty-failed {
+  opacity: 1;
+  color: #ff8080;
+}
