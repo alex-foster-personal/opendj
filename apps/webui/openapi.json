@@ -3133,6 +3133,95 @@
         "title": "EngineHealthOut",
         "type": "object"
       },
+      "EnrollCredentialModel": {
+        "description": "The credential the joining machine presents. Rides the BODY, not a header.\n\n:class:`apps.sync_hub.transport.HubTransport` is a two-method protocol\nwith no header support, and a grant is not a bearer for ``push`` or\n``pull``. Widening the transport for it would create a credential slot\nthose endpoints would then be expected to fill.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "grant",
+              "google_id_token"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "EnrollCredentialModel",
+        "type": "object"
+      },
+      "EnrollRequest": {
+        "description": "No owner field, by construction: a request cannot name whose machine\nit is becoming. The owner is read from the credential's own record.",
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/EnrollCredentialModel"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineModel"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine",
+          "schema_version",
+          "credential"
+        ],
+        "title": "EnrollRequest",
+        "type": "object"
+      },
+      "EnrollResponse": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "enrolled_at": {
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "enrolled_via": {
+            "title": "Enrolled Via",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_google_sub": {
+            "title": "Owner Google Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "owner_google_sub",
+          "owner_email",
+          "hub_machine_id",
+          "enrolled_at",
+          "enrolled_via",
+          "created"
+        ],
+        "title": "EnrollResponse",
+        "type": "object"
+      },
       "EntitlementsOut": {
         "properties": {
           "features": {
@@ -4142,6 +4231,16 @@
             },
             "title": "Machines",
             "type": "array"
+          },
+          "ownership": {
+            "default": "unowned",
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign"
+            ],
+            "title": "Ownership",
+            "type": "string"
           },
           "schema_version": {
             "title": "Schema Version",
@@ -18445,7 +18544,6 @@
             "name": "capabilities",
             "required": false,
             "schema": {
-              "default": [],
               "description": "protocol features the caller understands",
               "items": {
                 "type": "string"
@@ -18478,6 +18576,48 @@
           }
         },
         "summary": "Digest",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/enroll": {
+      "post": {
+        "description": "Join this hub's fleet under a proved owner. The ONE enrollment door.\n\nBoth ADR 12 paths come through here and neither can reach\n:func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev\nCLI is a thin argparse shell over this exact call, and the user path will\nbe the same call carrying a different credential kind.\n\nDeliberately NOT behind a router-level dependency. It authenticates by\nthe credential in its BODY, which is what lets a headless machine with no\nbrowser and no local Google session enroll at all. One transaction, so a\nrefusal registers nothing. Idempotent: a re-run answers ``created: false``.",
+        "operationId": "enroll_api_v1_sync_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll",
         "tags": [
           "sync"
         ]
@@ -18575,7 +18715,6 @@
             "name": "capabilities",
             "required": false,
             "schema": {
-              "default": [],
               "description": "protocol features the caller understands",
               "items": {
                 "type": "string"

@@ -2441,6 +2441,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll
+         * @description Join this hub's fleet under a proved owner. The ONE enrollment door.
+         *
+         *     Both ADR 12 paths come through here and neither can reach
+         *     :func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev
+         *     CLI is a thin argparse shell over this exact call, and the user path will
+         *     be the same call carrying a different credential kind.
+         *
+         *     Deliberately NOT behind a router-level dependency. It authenticates by
+         *     the credential in its BODY, which is what lets a headless machine with no
+         *     browser and no local Google session enroll at all. One transaction, so a
+         *     refusal registers nothing. Idempotent: a re-run answers ``created: false``.
+         */
+        post: operations["enroll_api_v1_sync_enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/hello": {
         parameters: {
             query?: never;
@@ -4186,6 +4216,52 @@ export interface components {
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
         };
+        /**
+         * EnrollCredentialModel
+         * @description The credential the joining machine presents. Rides the BODY, not a header.
+         *
+         *     :class:`apps.sync_hub.transport.HubTransport` is a two-method protocol
+         *     with no header support, and a grant is not a bearer for ``push`` or
+         *     ``pull``. Widening the transport for it would create a credential slot
+         *     those endpoints would then be expected to fill.
+         */
+        EnrollCredentialModel: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grant" | "google_id_token";
+            /** Value */
+            value: string;
+        };
+        /**
+         * EnrollRequest
+         * @description No owner field, by construction: a request cannot name whose machine
+         *     it is becoming. The owner is read from the credential's own record.
+         */
+        EnrollRequest: {
+            credential: components["schemas"]["EnrollCredentialModel"];
+            machine: components["schemas"]["MachineModel"];
+            /** Schema Version */
+            schema_version: number;
+        };
+        /** EnrollResponse */
+        EnrollResponse: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Google Sub */
+            owner_google_sub: string;
+        };
         /** EntitlementsOut */
         EntitlementsOut: {
             /** Features */
@@ -4589,6 +4665,12 @@ export interface components {
             hub_machine_id: string;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Ownership
+             * @default unowned
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign";
             /** Schema Version */
             schema_version: number;
             /** Seq */
@@ -12033,6 +12115,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DigestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enroll_api_v1_sync_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollResponse"];
                 };
             };
             /** @description Validation Error */

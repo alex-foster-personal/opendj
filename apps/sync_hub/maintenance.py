@@ -5,8 +5,14 @@
     uv run python -m apps.sync_hub rotate       --data-dir DIR
     uv run python -m apps.sync_hub prune        --data-dir DIR [--changelog T]
                                                 [--keep-days N] [--keep-rows N]
+    uv run python -m apps.sync_hub grant        --data-dir DIR --owner EMAIL
+                                                [--ttl-seconds N]
+    uv run python -m apps.sync_hub enroll       --data-dir DIR --hub URL
+                                                (--grant TOKEN | --grant-file F)
+                                                [--name N]
+    uv run python -m apps.sync_hub fleet        --data-dir DIR [--json]
 
-Four operations:
+Seven operations:
 
 * **sync** runs one spoke round trip against ``--hub`` (round 3 finding R7).
   Nothing outside pytest called ``run_sync`` before -- the whole spoke
@@ -22,6 +28,17 @@ Four operations:
   data dir back too, so the anchor agrees with the DB and nothing looks
   wrong. Every spoke then re-offers its library once.
 * **generation** prints the current token.
+* **grant** mints one single-use enrollment credential on this hub, for a
+  user who has signed in through the webui. Hub-local, because minting a
+  credential is an act of hub authority.
+* **enroll** is the DEV half of ``specs/design_decision_12.md``: the
+  formalized single method for adding a machine to cloudsync. It is a thin
+  shell over ``POST /api/v1/sync/enroll`` -- it opens no database and holds
+  no enrollment logic of its own, so it cannot drift from the endpoint the
+  in-app path will use. Idempotent: a re-run says "already enrolled".
+* **fleet** prints who owns which machine on this hub, and how many
+  machines are unowned. That count is what an operator closes before
+  enrollment is ever enforced.
 
 Every UI/daemon action in this repo has a CLI twin (the agent-native parity
 rule); these are the twin the sync surface will match.
@@ -31,11 +48,18 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
-from apps.sync_hub import client, engine, generation
+from apps.sync_hub import (
+    client,
+    engine,
+    enrollment_credentials,
+    generation,
+    maintenance_enroll,
+)
 from apps.sync_hub import status as sync_status
 
 #: Exit code for a sync that COMPLETED without verifying agreement (round 5
@@ -214,6 +238,69 @@ def _parser() -> argparse.ArgumentParser:
         "--keep-days", type=float, default=engine.DEFAULT_KEEP_DAYS
     )
     prune_command.add_argument("--keep-rows", type=int, default=engine.DEFAULT_KEEP_ROWS)
+
+    grant_command = subcommands.add_parser(
+        "grant",
+        parents=[common],
+        help="mint one single-use enrollment grant on this hub",
+    )
+    grant_command.add_argument(
+        "--owner",
+        required=True,
+        help="email of a user who has signed in on this hub; never created here",
+    )
+    grant_command.add_argument(
+        "--ttl-seconds",
+        type=int,
+        default=enrollment_credentials.GRANT_TTL_S,
+        help="how long the grant stays redeemable; default %(default)s",
+    )
+
+    enroll_command = subcommands.add_parser(
+        "enroll",
+        parents=[common],
+        help="add THIS machine to a hub's fleet under a proved owner",
+    )
+    enroll_command.add_argument(
+        "--hub", required=True, help="the hub base URL, e.g. http://hub.tailnet:8686"
+    )
+    # Exactly one grant source, enforced by argparse rather than by a runtime
+    # check that could be reached with neither set.
+    grant_source = enroll_command.add_mutually_exclusive_group(required=True)
+    grant_source.add_argument(
+        "--grant",
+        default=None,
+        help=(
+            "a token from `python -m apps.sync_hub grant` on the hub. The "
+            "other credential kind, google_id_token, is the in-app path and "
+            "is not yet resolvable by the hub. Prefer --grant-file: an "
+            "argument is readable in /proc and lands in shell history."
+        ),
+    )
+    grant_source.add_argument(
+        "--grant-file",
+        type=Path,
+        default=None,
+        help="read the grant from this file, or from stdin when it is '-'",
+    )
+    enroll_command.add_argument(
+        "--name",
+        default=None,
+        help=(
+            "this machine's display name; defaults to the hostname. Pass it "
+            "explicitly on WSL: machines.name is UNIQUE and a WSL hostname is "
+            "often the Windows host's."
+        ),
+    )
+
+    fleet_command = subcommands.add_parser(
+        "fleet", parents=[common], help="print who owns which machine on this hub"
+    )
+    fleet_command.add_argument(
+        "--json",
+        action="store_true",
+        help="print the same readout as JSON (agent parity with the UI)",
+    )
     return parser
 
 
@@ -265,6 +352,82 @@ def _report_status(current: sync_status.CloudSyncStatus) -> int:
     return 0
 
 
+def _print_generation(args: argparse.Namespace) -> None:
+    print(show_generation(args.data_dir))
+
+
+def _print_rotate(args: argparse.Namespace) -> None:
+    print(rotate(args.data_dir))
+
+
+def _print_prune(args: argparse.Namespace) -> None:
+    deleted = prune(
+        args.data_dir,
+        changelog=args.changelog,
+        keep_days=args.keep_days,
+        keep_rows=args.keep_rows,
+    )
+    print(f"pruned {deleted} superseded {args.changelog} entries")
+
+
+def _print_grant(args: argparse.Namespace) -> None:
+    minted = maintenance_enroll.grant(
+        args.data_dir, owner_email=args.owner, ttl_s=args.ttl_seconds
+    )
+    for line in maintenance_enroll.grant_lines(minted):
+        print(line)
+
+
+def _print_enroll(args: argparse.Namespace) -> None:
+    outcome = maintenance_enroll.enroll(
+        args.data_dir,
+        args.hub,
+        credential_kind=enrollment_credentials.GRANT_KIND,
+        credential_value=maintenance_enroll.read_grant_token(
+            token=args.grant, token_file=args.grant_file
+        ),
+        name=args.name,
+    )
+    for line in maintenance_enroll.enroll_lines(outcome):
+        print(line)
+
+
+def _print_fleet(args: argparse.Namespace) -> None:
+    payload = maintenance_enroll.fleet(args.data_dir)
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    for line in maintenance_enroll.fleet_lines(payload):
+        print(line)
+
+
+#: Subcommand name -> handler, for the commands that PRINT and exit 0.
+#: ``sync`` and ``status`` are not here: they own their own exit codes and
+#: returning one is the whole point of them.
+#:
+#: A table rather than a longer if/elif chain. Enrollment adds three more
+#: commands, and a chain grows one branch of complexity per command without
+#: doing anything more interesting. A table also makes "every registered
+#: subcommand is dispatched" a property a test can check against the parser,
+#: rather than a missing branch nobody notices until an operator gets an
+#: AssertionError.
+#: The subcommands that return a MEANINGFUL exit code rather than printing
+#: and exiting 0. Named here, not in the test, so "every registered
+#: subcommand is dispatched" can be re-derived from the module instead of
+#: from a list a test author kept up to date by hand.
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status"})
+
+
+PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
+    "generation": _print_generation,
+    "rotate": _print_rotate,
+    "prune": _print_prune,
+    "grant": _print_grant,
+    "enroll": _print_enroll,
+    "fleet": _print_fleet,
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one subcommand. Returns a process exit code."""
     args = _parser().parse_args(argv)
@@ -273,25 +436,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
     # Everything below prints and exits 0; the two above own their own codes.
-    if args.command == "generation":
-        print(show_generation(args.data_dir))
-    elif args.command == "rotate":
-        print(rotate(args.data_dir))
-    elif args.command == "prune":
-        deleted = prune(
-            args.data_dir,
-            changelog=args.changelog,
-            keep_days=args.keep_days,
-            keep_rows=args.keep_rows,
+    handler = PRINTING_COMMANDS.get(args.command)
+    if handler is None:
+        raise AssertionError(
+            f"subcommand {args.command!r} is registered on the parser but has "
+            f"no handler in PRINTING_COMMANDS; the two must be kept in step."
         )
-        print(f"pruned {deleted} superseded {args.changelog} entries")
-    else:
-        raise AssertionError(f"unhandled command {args.command!r}")
+    handler(args)
     return 0
 
 
 __all__ = [
+    "EXIT_CODE_COMMANDS",
     "EXIT_INCONCLUSIVE",
+    "PRINTING_COMMANDS",
     "main",
     "prune",
     "rotate",

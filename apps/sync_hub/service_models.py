@@ -17,6 +17,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from apps.sync_hub import enrollment, service_enroll
+
 
 class MachineModel(BaseModel):
     """One ``machines`` row on the wire."""
@@ -68,6 +70,30 @@ class HelloResponse(BaseModel):
     #: whether its hub is upgraded; absent means a hub on ``origin/main`` or
     #: earlier, which is not the same as an upgraded hub advertising nothing.
     capabilities: list[str] = Field(default_factory=list)
+    #: How this hub reads the CALLER's ownership: ``owned``, ``unowned`` or
+    #: ``foreign`` (ADR 12). OBSERVE only -- nothing is refused on it. An
+    #: unowned machine is told so on every handshake rather than finding out
+    #: on the day enforcement is switched on.
+    #:
+    #: The owner's EMAIL is deliberately NOT here, though the first
+    #: implementation pass returned it. ``hello`` is unauthenticated, it
+    #: reports on the machine_id in the CALLER's own payload, and the same
+    #: response hands back every machine_id this hub knows -- so returning the
+    #: email made "which Google account owns machine X" readable by anything
+    #: that can open a socket, for every machine in the fleet. That is a NEW
+    #: PII disclosure rather than a continuation of the existing tailnet
+    #: exposure. ``python -m apps.sync_hub fleet`` answers it where the answer
+    #: belongs, behind hub-local access.
+    ownership: enrollment.OwnershipState = "unowned"
+
+
+class EnrollRequest(BaseModel):
+    """No owner field, by construction: a request cannot name whose machine
+    it is becoming. The owner is read from the credential's own record."""
+
+    machine: MachineModel
+    schema_version: int
+    credential: service_enroll.EnrollCredentialModel
 
 
 class PushRequest(BaseModel):
@@ -147,6 +173,7 @@ class DigestResponse(BaseModel):
 
 __all__ = [
     "DigestResponse",
+    "EnrollRequest",
     "HelloRequest",
     "HelloResponse",
     "MachineModel",

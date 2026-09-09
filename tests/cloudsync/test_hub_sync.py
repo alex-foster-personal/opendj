@@ -31,7 +31,7 @@ would test a spoke whose edits are invisible to its own push.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,7 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, protocol, service
+from tests.cloudsync.enrollment_transport import TestClientTransport
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
@@ -61,30 +62,12 @@ _DEV_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 # ----- transport -----------------------------------------------------------
 
 
-class _TestClientTransport:
-    """A :class:`apps.sync_hub.client.HubTransport` backed by ``TestClient``.
-
-    Not a mock of the hub: it drives the real router through the real ASGI
-    stack. It exists only because ``TestClient`` is not a URL.
-    """
-
-    def __init__(self, http: TestClient) -> None:
-        self._http = http
-
-    def _decoded(self, response: Any, label: str) -> dict[str, Any]:
-        if response.status_code >= 400:
-            raise client.SyncTransportError(
-                f"{label} -> HTTP {response.status_code}: {response.text}"
-            )
-        return dict(response.json())
-
-    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        return self._decoded(self._http.post(path, json=dict(payload)), f"POST {path}")
-
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
-        return self._decoded(
-            self._http.get(path, params=dict(params)), f"GET {path}"
-        )
+# The class lives in tests/cloudsync/enrollment_transport.py so `conftest`
+# can build a hub fixture without importing this test module. Re-exported
+# under its original private name: every existing importer keeps working,
+# and there is still exactly ONE implementation of it rather than two that
+# agree today.
+_TestClientTransport = TestClientTransport
 
 
 # ----- fixtures ------------------------------------------------------------

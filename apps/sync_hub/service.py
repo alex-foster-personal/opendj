@@ -3,6 +3,7 @@
 Mounted by the webui at ``/api/v1/sync/*``:
 
     POST /api/v1/sync/hello    register a spoke, learn the hub id and seq
+    POST /api/v1/sync/enroll   join the fleet under a proved owner (ADR 12)
     POST /api/v1/sync/push     offer rows; the hub merges them under LWW
     GET  /api/v1/sync/pull     one chunk of the rows accepted after ``since_seq``
     GET  /api/v1/sync/status   hub identity, seq, fleet, row counts
@@ -11,6 +12,13 @@ Mounted by the webui at ``/api/v1/sync/*``:
 Trust in v1 is tailnet membership (ADR 04 c7): any process that can reach the
 daemon can push. That is deliberate for a personal fleet and must be revisited
 before any multi-user deployment.
+
+``/enroll`` (ADR 12) is the first step off that position, and it is an OBSERVE
+step only: it records WHO owns each machine and ``hello`` reports the answer,
+but nothing is refused on it yet. Switching ``hello`` to refuse an unowned
+caller is a separate, separately gated decision, and reading this file as
+"the hub is authenticated now" would be exactly the error
+``.claude/rules/verification.md`` is about.
 
 ``push``, ``pull`` and ``status`` all take a ``machine_id`` and all refuse a
 machine that never said hello (ADR 08 point 6, round 1 finding 7b). That is a
@@ -50,10 +58,19 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import capabilities, engine, generation, protocol
+from apps.sync_hub import (
+    capabilities,
+    engine,
+    enrollment,
+    generation,
+    protocol,
+    service_enroll,
+    service_shortfall,
+)
 from apps.sync_hub.service_models import (
     DigestResponse,
     HelloRequest,
+    EnrollRequest,
     HelloResponse,
     MachineModel,
     PullResponse,
@@ -290,42 +307,6 @@ def _refuse_unless_capable(
     )
 
 
-def _push_shortfall(result: engine.ApplyResult, offered: int) -> str | None:
-    """What ``push`` held back, or None when it decided every offered row."""
-    if not result.quarantined:
-        return None
-    return (
-        f"{result.quarantined} of the {offered} offered row(s) met a local "
-        f"row this hub cannot order "
-        f"({protocol.describe_faults(result.faults)})."
-    )
-
-
-def _pull_shortfall(batch: engine.ChangeBatch) -> str | None:
-    """What ``pull`` could not serve, or None when the chunk is complete."""
-    if not batch.quarantined:
-        return None
-    return (
-        f"{batch.quarantined} row(s) this hub_changelog names up to seq "
-        f"{batch.seq} carry a stored stamp this hub cannot order, so this "
-        f"chunk is SHORT of what that seq covers."
-    )
-
-
-def _digest_shortfall(computed: protocol.SyncDigest) -> str | None:
-    """What the digest excluded, or None when it hashed everything held."""
-    excluded = computed.quarantined or {}
-    total = sum(excluded.values())
-    if not total:
-        return None
-    named = ", ".join(f"{table}={count}" for table, count in sorted(excluded.items()))
-    return (
-        f"this digest EXCLUDED {total} row(s) this hub holds ({named}) "
-        f"because their stored stamps cannot be ordered, so it does not "
-        f"describe the whole table set."
-    )
-
-
 # ----- endpoints -----------------------------------------------------------
 
 
@@ -362,7 +343,41 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
             machines=_machine_models(conn),
             hub_generation=_generation(request, conn),
             capabilities=list(capabilities.THIS_BUILD),
+            ownership=enrollment.ownership_state(
+                conn, payload.machine.machine_id, hub_machine_id=hub_machine_id
+            ),
         )
+
+
+@router.post("/enroll", response_model=service_enroll.EnrollResponse)
+def enroll(
+    request: Request, payload: EnrollRequest
+) -> service_enroll.EnrollResponse:
+    """Join this hub's fleet under a proved owner. The ONE enrollment door.
+
+    Both ADR 12 paths come through here and neither can reach
+    :func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev
+    CLI is a thin argparse shell over this exact call, and the user path will
+    be the same call carrying a different credential kind.
+
+    Deliberately NOT behind a router-level dependency. It authenticates by
+    the credential in its BODY, which is what lets a headless machine with no
+    browser and no local Google session enroll at all. One transaction, so a
+    refusal registers nothing. Idempotent: a re-run answers ``created: false``.
+    """
+    _require_schema_version(payload.schema_version)
+    machine = _to_machines([payload.machine])[0]
+    with _hub_conn(request) as conn:
+        try:
+            with _transaction(conn):
+                return service_enroll.perform_enroll(
+                    conn,
+                    machine=machine,
+                    credential=payload.credential,
+                    hub_machine_id=_hub_identity(request, conn),
+                )
+        except engine.SyncApplyError as exc:
+            raise _apply_error(exc) from exc
 
 
 @router.post("/push", response_model=PushResponse)
@@ -395,7 +410,7 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                 _refuse_unless_capable(
                     payload.capabilities,
                     "push",
-                    _push_shortfall(result, len(changes)),
+                    service_shortfall.push_shortfall(result, len(changes)),
                 )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
@@ -440,7 +455,7 @@ def pull(
         _require_registered(conn, machine_id)
         try:
             batch = engine.hub_changes_since(conn, since_seq, limit=limit)
-            _refuse_unless_capable(capabilities_, "pull", _pull_shortfall(batch))
+            _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
@@ -534,7 +549,7 @@ def digest(
             with _transaction(conn):
                 computed = protocol.sync_digest(conn, seq=engine.current_seq(conn))
             _refuse_unless_capable(
-                capabilities_, "digest", _digest_shortfall(computed)
+                capabilities_, "digest", service_shortfall.digest_shortfall(computed)
             )
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
@@ -548,6 +563,7 @@ def digest(
 
 __all__ = [
     "DigestResponse",
+    "EnrollRequest",
     "HelloRequest",
     "HelloResponse",
     "MachineModel",

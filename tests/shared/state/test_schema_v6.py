@@ -120,13 +120,22 @@ def _seed_v5_db(path: Path, *, locations: int) -> list[str]:
 # ----- (1) fresh DB --------------------------------------------------------
 
 
-def test_fresh_db_reaches_v8_with_foreign_keys_on(state_db_path: Path) -> None:
+def test_fresh_db_reaches_the_top_of_the_ladder_with_foreign_keys_on(
+    state_db_path: Path,
+) -> None:
+    """Pins the INVARIANT (a fresh DB lands on SCHEMA_VERSION), not the value.
+
+    This read ``== 7`` in three places until v8 landed, then ``== 8`` until
+    v9 landed -- each routine migration turning into three failures that told
+    a reader nothing about what had actually broken. A rule that pins a
+    MOVING VALUE has to be maintained forever and rots silently between
+    maintenances; "the ladder reaches its own top" cannot go stale.
+    """
     conn = state_db.open_rw(state_db_path)
     try:
-        assert state_schema.SCHEMA_VERSION == 8
         assert len(state_schema.MIGRATIONS) == state_schema.SCHEMA_VERSION
         version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-        assert version == 8
+        assert version == state_schema.SCHEMA_VERSION
         assert int(conn.execute("PRAGMA foreign_keys").fetchone()[0]) == 1
         tables = _user_tables(conn)
         for expected in state_schema.TABLES:
@@ -186,11 +195,14 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
 
     conn = state_db.open_rw(db_path)
     try:
-        # v8, not v7: this fixture seeds a v5 DB and opens it through
-        # open_rw, which migrates all the way to the CURRENT SCHEMA_VERSION
-        # (8 after the af--analysis-retention migration landed as v8), not
-        # to a version number frozen when this test was written.
-        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 8
+        # The CURRENT SCHEMA_VERSION, read rather than written down: this
+        # fixture seeds a v5 DB and opens it through open_rw, which migrates
+        # all the way to the top of the ladder. The literal here was 7, then
+        # 8, and each bump made a routine migration look like a regression.
+        assert (
+            conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+            == state_schema.SCHEMA_VERSION
+        )
 
         rows = conn.execute(
             "SELECT location_id, stable_id, file_path, kind, role, available, "
@@ -402,15 +414,18 @@ def test_insert_without_location_id_mints_one(state_conn: sqlite3.Connection) ->
     assert isinstance(key, str) and len(key) == 32
 
 
-def test_v5_to_v8_is_idempotent(tmp_path: Path) -> None:
+def test_v5_to_the_top_of_the_ladder_is_idempotent(tmp_path: Path) -> None:
     db_path = tmp_path / "twice.db"
     _seed_v5_db(db_path, locations=3)
     state_db.open_rw(db_path).close()
     conn = state_db.open_rw(db_path)
     try:
-        assert state_schema.apply_migrations(conn) == 8
+        assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
         assert conn.execute("SELECT COUNT(*) FROM track_locations").fetchone()[0] == 3
-        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == 8
+        assert (
+            conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
+            == state_schema.SCHEMA_VERSION
+        )
     finally:
         conn.close()
 
