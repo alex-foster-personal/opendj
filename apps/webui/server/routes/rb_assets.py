@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -172,6 +173,21 @@ def _etag_matches(if_none_match: str | None, etag: str) -> bool:
     )
 
 
+def _state_db_override(request: Request) -> Path | None:
+    """The app-configured analysis DB path, or None to take the callee's own default.
+
+    Unlike `apps.webui.server.routes.analysis._analysis_db_path`, this never
+    substitutes `apps.shared.paths.STATE_DB` for an absent override: the
+    own-beatgrid overlay's default is the DISTINCT
+    `apps.adapters.rekordbox.config.STATE_DB` constant (the two normally point
+    at the same file, but tests monkeypatch them independently), so forcing
+    the wrong one here would fix the app-configured-DB case while breaking the
+    ordinary default case (Codex P2 BLOCKING, PR #1587).
+    """
+    override = getattr(request.app.state, "analysis_db_path", None)
+    return Path(override) if override is not None else None
+
+
 @router.get("/{stable_id}/anlz")
 def get_track_anlz(
     request: Request,
@@ -191,9 +207,10 @@ def get_track_anlz(
     from data/state/vocal-cache, merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
+    state_db_path = _state_db_override(request)
     try:
         content = rb_vendor.resolve_content(stable_id)
-        payload = rb_vendor.build_anlz_payload(content, points)
+        payload = rb_vendor.build_anlz_payload(content, points, state_db_path)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
@@ -217,7 +234,7 @@ def get_track_anlz(
         # PR #1587). Applied here rather than inside `local_anlz_payload`, which
         # belongs to the waveform lane; this route already owns choosing between
         # the two branches.
-        payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id)
+        payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # An own-sourced beatgrid is NOT publicly cacheable for an hour. This

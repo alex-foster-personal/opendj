@@ -21,6 +21,7 @@ module; the logic is unchanged.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 SOURCE_OWN = "own"
@@ -66,20 +67,30 @@ def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]
     return grid, times
 
 
-def _state_conn_ro() -> Any:
+def _state_conn_ro(state_db_path: Path | None = None) -> Any:
     """A read-only state connection, or None when there is no state DB at all.
 
     No state DB means no own record can exist, which has a correct answer
     (`status: missing`) rather than being a failure to paper over. Mirrors the
     guard `track_rows.py` already uses on the same file.
+
+    `state_db_path` defaults to the process-global `config.STATE_DB` so
+    existing callers and tests (which monkeypatch that constant) are
+    unaffected; a caller with access to `request.app.state.analysis_db_path`
+    passes it through explicitly instead (Codex P2 BLOCKING, PR #1587): the
+    `/analysis/source` route already honors that override when reading and
+    writing the toggle, so this overlay reading the process-global default
+    instead could report `effective: own` from one database while serving the
+    beatgrid from another.
     """
     from apps.adapters.rekordbox import config
 
-    if not config.STATE_DB.exists():
+    db_path = state_db_path if state_db_path is not None else config.STATE_DB
+    if not db_path.exists():
         return None
     from apps.adapters.rekordbox.errors import _open_ro
 
-    return _open_ro(config.STATE_DB, "STATE_DB")
+    return _open_ro(db_path, "STATE_DB")
 
 
 def _table_present(conn: Any, name: str) -> bool:
@@ -201,14 +212,18 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
     }, list(payload["tempo_changes"])
 
 
-def apply_own_beatgrid(payload: dict[str, Any], stable_id: str) -> dict[str, Any]:
+def apply_own_beatgrid(
+    payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
+) -> dict[str, Any]:
     """Replace the beatgrid block with the own record when own is selected.
 
     A no-op that returns the payload unchanged when the effective source is
     rekordbox, which is the launch state for every lane until a promotion
     (D1). Mutates and returns ``payload``.
+
+    ``state_db_path`` is forwarded to `_state_conn_ro`; see its docstring.
     """
-    conn = _state_conn_ro()
+    conn = _state_conn_ro(state_db_path)
     try:
         if _effective_beatgrid_source(conn) != SOURCE_OWN:
             return payload
