@@ -2873,9 +2873,15 @@
 		 * "RECC", so an auto width would buy the vertical reclaim by taking
 		 * 15px of library WIDTH on every collapse. This fix did exactly that
 		 * before the e2e assertion below caught it. Declared once, wide
-		 * enough for the longest label at the size set below (measured:
-		 * scrollWidth == clientWidth == 25px in both states). */
-		width: 26px;
+		 * enough for the longest label at the size set below WITH margin:
+		 * "RECC" at 7px needs 20px of content box, and a 26px rail left only
+		 * 19px, so the label was clipped by 1px in every state that showed
+		 * one. That was invisible until `overflow: hidden` below made the
+		 * real content width observable as scrollWidth -- an earlier reading
+		 * of "25 == 25" was taken while the overflow was still painting
+		 * outside the box. 32px leaves 25px of content for a 20px label, so
+		 * the wider metrics of Segoe UI or Roboto have somewhere to go. */
+		width: 32px;
 		border-left: 1px solid var(--rb-border);
 	}
 	.suggestion-collapse,
@@ -2890,6 +2896,13 @@
 		font-family: var(--rb-font);
 		line-height: 12px;
 		text-align: center;
+		/* Defensive floor, not tuning. The 26px above was measured once, on
+		 * macOS Chromium, and the system-UI stack resolves to different
+		 * metrics on Windows (Segoe UI) and Linux (Roboto). The e2e
+		 * assertion fails loudly if a label ever outgrows its box, but in
+		 * PRODUCTION an unclipped overflow would paint the label over the
+		 * panel border beside it, so clip rather than bleed. */
+		overflow: hidden;
 		cursor: pointer;
 	}
 	.suggestion-collapse:hover,
