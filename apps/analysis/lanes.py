@@ -29,6 +29,7 @@ anything it cannot order instead of sorting it lexically.
 """
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -101,9 +102,24 @@ def _require_keys(lane: str, payload: Mapping[str, Any], keys: tuple[str, ...]) 
 
 
 def _require_number(lane: str, payload: Mapping[str, Any], key: str) -> None:
+    """A number, and a FINITE one.
+
+    NaN and the infinities are `float` instances, so an isinstance check
+    alone accepts them and the lane stores `status: ok`. SQLite then binds
+    NaN as NULL, which produces an `ok` projection row with no value -- the
+    exact shape this contract exists to make impossible -- and an infinity
+    breaks JSON serialization on the way out of the API instead. A DSP
+    producer that divided by zero has FAILED; it says so with
+    `status: failed` and a reason, not with a number that is not one.
+    """
     value = payload[key]
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise LaneContractError(f"{lane}.{key} must be a number, got {value!r}")
+    if not math.isfinite(value):
+        raise LaneContractError(
+            f"{lane}.{key} is {value!r}, which is not a finite measurement; a "
+            "producer that could not measure records status failed with a reason"
+        )
 
 
 def _require_bool(lane: str, payload: Mapping[str, Any], key: str) -> None:

@@ -16,6 +16,7 @@ Acceptance lines exercised here:
 """
 from __future__ import annotations
 
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -182,15 +183,50 @@ def test_the_endpoint_is_in_the_committed_openapi() -> None:
 # CLI: a client, never a second writer
 #-----------------------------------------------------------------------------
 
+def _a_port_nothing_is_listening_on() -> int:
+    """Bind an ephemeral port, learn its number, release it.
+
+    A real closed port on this host, so the CLI's connection genuinely
+    fails rather than being told it did.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
 def test_cli_fails_loudly_and_names_the_url_when_the_service_is_down(
     monkeypatch, capsys,
 ) -> None:
+    """The PRODUCTION resolver runs; only the environment it reads is set.
+
+    `base_url` itself is not replaced. `MUSIC_DJ_BACKEND_PORT` is the first
+    thing the real resolver consults and is what every recipe and the daemon
+    already export, so setting it exercises the shipped path end to end:
+    resolve, build the URL, attempt the connection, fail, report. Replacing
+    `base_url` would have skipped the half of the CLI contract that says it
+    must NAME the endpoint it tried.
+    """
     from apps.analysis import selection_cli
 
-    monkeypatch.setattr(selection_cli, "base_url", lambda: "http://127.0.0.1:1/api/v1")
+    port = _a_port_nothing_is_listening_on()
+    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", str(port))
+
+    # Control: the resolver really produced this URL, so the assertion below
+    # is about the CLI's behavior and not about a string it was handed.
+    assert selection_cli.base_url() == f"http://127.0.0.1:{port}/api/v1"
+
     code = selection_cli.main(["set-toggle", "key", "own"])
     out = capsys.readouterr().out
     assert code == selection_cli.EXIT_UNREACHABLE
-    assert "http://127.0.0.1:1/api/v1/analysis/source" in out
+    assert f"http://127.0.0.1:{port}/api/v1/analysis/source" in out
     # And it must NOT have mutated its own process state instead.
     assert selection.get_toggle("key") == "unset"
+
+
+def test_cli_refuses_a_port_it_cannot_parse(monkeypatch, capsys) -> None:
+    """Control: the resolver has to be able to FAIL, not just to return."""
+    from apps.analysis import selection_cli
+
+    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "not-a-port")
+    assert selection_cli.main(["show"]) == selection_cli.EXIT_UNREACHABLE
+    assert "not-a-port" in capsys.readouterr().out

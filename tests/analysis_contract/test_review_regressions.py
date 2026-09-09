@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from apps.analysis import selection
 from apps.analysis import store as analysis_store
 from apps.analysis.canonical import canonical_pointer
-from apps.analysis.lanes import LaneResult
+from apps.analysis.lanes import LaneContractError, LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.shared.state import db as state_db
 from apps.smartlists.evaluator import evaluate
@@ -279,3 +279,86 @@ def test_a_put_with_both_halves_valid_still_applies_both(tmp_path) -> None:
         }
     finally:
         selection.reset_toggles()
+
+
+#-----------------------------------------------------------------------------
+# P1 round 2: the record, the pointer and the projection are one unit
+#-----------------------------------------------------------------------------
+
+def test_a_failing_refresh_leaves_no_half_written_state(db, monkeypatch) -> None:
+    """Reproduced: the connection is autocommit, so each statement was durable.
+
+    The seam is a REAL failure inside the rebuild, injected at the SQL layer
+    (a dropped table), not a patched function: the point is that whatever
+    goes wrong mid-refresh, nothing durable survives it.
+    """
+    analysis_store.upsert_record(own_record(version="1.0.0"), conn=db)
+    before_rows = db.execute("SELECT count(*) FROM analysis").fetchone()[0]
+    before_proj = db.execute(
+        "SELECT field, value, backend_version FROM analysis_projection ORDER BY field"
+    ).fetchall()
+    assert before_rows == 1 and before_proj, "precondition: there is state to protect"
+
+    db.execute("ALTER TABLE analysis_projection RENAME TO analysis_projection_hidden")
+    with pytest.raises(sqlite3.OperationalError):
+        analysis_store.upsert_record(own_record(version="2.0.0"), conn=db)
+    db.execute("ALTER TABLE analysis_projection_hidden RENAME TO analysis_projection")
+
+    # The 2.0.0 record must NOT be durable, and neither must a pointer to it.
+    assert db.execute("SELECT count(*) FROM analysis").fetchone()[0] == before_rows
+    assert canonical_pointer(db, "t1", "beatgrid") == ("own_beatgrid.inapp", "1.0.0")
+    assert db.execute(
+        "SELECT field, value, backend_version FROM analysis_projection ORDER BY field"
+    ).fetchall() == before_proj
+
+
+def test_a_successful_upsert_still_commits(db) -> None:
+    """The control: the transaction must commit, not merely not-rollback."""
+    analysis_store.upsert_record(own_record(version="1.0.0"), conn=db)
+    fresh = sqlite3.connect(db.execute("PRAGMA database_list").fetchone()[2])
+    try:
+        assert fresh.execute("SELECT count(*) FROM analysis").fetchone()[0] == 1
+        assert fresh.execute(
+            "SELECT count(*) FROM analysis_projection"
+        ).fetchone()[0] == 2
+    finally:
+        fresh.close()
+
+
+#-----------------------------------------------------------------------------
+# P1 round 2: a measurement that is not a number is not a measurement
+#-----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_lane_number_is_refused(db, bad: float) -> None:
+    """Reproduced: NaN stored as `status: ok` with a NULL value."""
+    from tests.analysis_contract.conftest import beatgrid_payload
+
+    payload = beatgrid_payload()
+    payload["bpm"] = bad
+    with pytest.raises(LaneContractError, match="finite"):
+        analysis_store.upsert_record(
+            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
+        )
+    assert db.execute("SELECT count(*) FROM analysis_projection").fetchone()[0] == 0
+
+
+def test_a_non_finite_number_inside_a_beat_is_refused_too(db) -> None:
+    """The class, not the instance: every numeric field goes through one check."""
+    from tests.analysis_contract.conftest import beatgrid_payload
+
+    payload = beatgrid_payload()
+    payload["beats"][2]["t"] = float("nan")
+    with pytest.raises(LaneContractError, match="finite"):
+        analysis_store.upsert_record(
+            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
+        )
+
+
+def test_finite_measurements_are_still_accepted(db) -> None:
+    """The control: the guard must reject non-numbers, not numbers."""
+    result = analysis_store.upsert_record(own_record(), conn=db)
+    assert result.inserted is True
+    assert db.execute(
+        "SELECT value FROM analysis_projection WHERE field='bpm'"
+    ).fetchone()[0] == 128.0

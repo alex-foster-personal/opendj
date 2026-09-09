@@ -28,10 +28,12 @@ CLIs that used the old shim directly) are unchanged.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import sqlite3
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -215,6 +217,28 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+_SAVEPOINT_SEQ = itertools.count()
+
+
+@contextmanager
+def _atomic(conn: sqlite3.Connection) -> Iterator[None]:
+    """Run a block as one all-or-nothing unit, nestable inside a caller's txn.
+
+    Named uniquely per entry so a nested use cannot release an outer
+    savepoint of the same name, which SQLite would accept and which would
+    silently widen the unit being committed.
+    """
+    name = f"analysis_upsert_{next(_SAVEPOINT_SEQ)}"
+    conn.execute(f"SAVEPOINT {name}")
+    try:
+        yield
+    except BaseException:
+        conn.execute(f"ROLLBACK TO {name}")
+        conn.execute(f"RELEASE {name}")
+        raise
+    conn.execute(f"RELEASE {name}")
+
+
 def upsert(
     record: AnalysisRecord,
     db_path: Path | None = None,
@@ -248,43 +272,53 @@ def upsert(
             (record.stable_id, record.backend, record.backend_version),
         ).fetchone()
         new_json = _record_to_json(record)
-        if row is not None and _semantic_equal(row[0], new_json):
-            # Still refresh: an unchanged row can become canonical when a
-            # HIGHER-versioned sibling is deleted, and a pointer that only
-            # moves on a content change would go stale in silence.
-            refresh_for_record(conn, record)
-            return UpsertResult(inserted=False, unchanged=True)
+        unchanged = row is not None and _semantic_equal(row[0], new_json)
 
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO analysis (
-                stable_id, backend, backend_version, analyzed_at,
-                duration_s, sample_rate, bpm, bpm_confidence,
-                key_camelot, key_openkey, key_confidence,
-                energy, energy_source, record_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record.stable_id,
-                record.backend,
-                record.backend_version,
-                _dt_iso(record.analyzed_at),
-                float(record.duration_s),
-                int(record.sample_rate),
-                float(record.bpm),
-                float(record.bpm_confidence),
-                record.key_camelot,
-                record.key_openkey,
-                float(record.key_confidence),
-                int(record.energy),
-                record.energy_source,
-                new_json,
-            ),
-        )
-        # open_rw returns an autocommit connection (isolation_level=None,
-        # the Phase 5 shared-connection contract), so the INSERT above
-        # has already been persisted. No explicit commit needed.
-        refresh_for_record(conn, record)
+        # ONE atomic unit: the record row, the canonical pointer, and the
+        # whole projection rebuild. open_rw hands back an AUTOCOMMIT
+        # connection (isolation_level=None, the Phase 5 shared-connection
+        # contract), so without this each statement lands durably on its
+        # own and a failure part-way through refresh_for_record would leave
+        # a pointer naming a record whose projected fields are missing or
+        # stale -- durable, and invisible to the caller that saw the raise.
+        # A SAVEPOINT rather than BEGIN because a batch driver may pass a
+        # `conn` that is already inside a transaction; savepoints nest.
+        with _atomic(conn):
+            if not unchanged:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO analysis (
+                        stable_id, backend, backend_version, analyzed_at,
+                        duration_s, sample_rate, bpm, bpm_confidence,
+                        key_camelot, key_openkey, key_confidence,
+                        energy, energy_source, record_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.stable_id,
+                        record.backend,
+                        record.backend_version,
+                        _dt_iso(record.analyzed_at),
+                        float(record.duration_s),
+                        int(record.sample_rate),
+                        float(record.bpm),
+                        float(record.bpm_confidence),
+                        record.key_camelot,
+                        record.key_openkey,
+                        float(record.key_confidence),
+                        int(record.energy),
+                        record.energy_source,
+                        new_json,
+                    ),
+                )
+            # Refresh even when unchanged: an unchanged row can become
+            # canonical once a HIGHER-versioned sibling is deleted, and a
+            # pointer that only moved on a content change would go stale in
+            # silence.
+            refresh_for_record(conn, record)
+
+        if unchanged:
+            return UpsertResult(inserted=False, unchanged=True)
         return UpsertResult(inserted=row is None, unchanged=False)
     finally:
         if owned:
