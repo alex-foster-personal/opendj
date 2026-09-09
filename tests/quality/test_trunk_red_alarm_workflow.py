@@ -50,22 +50,23 @@ def test_a_planted_failed_trunk_workflow_push_can_reach_the_trunk_red_alarm() ->
 
     job = workflow["jobs"]["trunk_red"]
     condition = " ".join(job["if"].split())
+    # `schedule` joined `push` for issue #1504: the nightly extended tier had
+    # been red for eight nights with no alarm because only pushes were admitted.
     expected = (
-        "github.event.workflow_run.event == 'push' "
+        "(github.event.workflow_run.event == 'push' "
+        "|| github.event.workflow_run.event == 'schedule') "
         "&& github.event.workflow_run.head_branch "
         "== github.event.repository.default_branch "
         "&& github.event.workflow_run.conclusion == 'failure'"
     )
     assert condition == expected, (
-        "the alarm must admit exactly a failed watched-workflow push to the default branch; "
-        f"got {condition!r}"
+        "the alarm must admit exactly a failed watched-workflow push or scheduled run "
+        f"on the default branch; got {condition!r}"
     )
 
     steps = job["steps"]
     alarm = next(
-        step
-        for step in steps
-        if step["name"] == "Open or update trunk-red issue and fail visibly"
+        step for step in steps if step["name"] == "Open or update trunk-red issue and fail visibly"
     )
     command = alarm["run"]
     assert "gh issue create" in command and "gh issue comment" in command, (
