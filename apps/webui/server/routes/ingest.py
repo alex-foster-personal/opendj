@@ -93,6 +93,13 @@ def _stem_roots(app: FastAPI) -> tuple[Path, ...]:
     return stem_roots(DEFAULT_STEMS_DIR)
 
 
+#: Lines of the job log the status response carries. 60 lost the head of a
+#: faulthandler dump (about 40 lines: the fatal-signal line, one stack per
+#: thread, the extension-module list) behind the two lines the drain appends
+#: after a crashed chunk, so the CI log showed the crash's outermost frames and
+#: not the one that faulted (e2e run 34339762348, Wed 9 Sep 2026).
+LOG_TAIL_LINES: int = 200
+
 # ----- CFG -------------------------------------------------------------------
 CONFIG_PATH: Path = STATE_DB.parent / "ingest-config.json"
 INGEST_INBOX: Path = HOME / "Music" / "Manual Library" / "_ingest"
@@ -562,6 +569,6 @@ def _status_of(job: _RefreshJob | None) -> RefreshStatusOut:
         current_step=job.current_step, step_done=job.step_done,
         step_total=job.step_total, steps_completed=job.steps_completed,
         started_at=job.started_at, finished_at=job.finished_at, error=job.error,
-        log_tail=list(job.log)[-60:],
+        log_tail=list(job.log)[-LOG_TAIL_LINES:],
         recently_done_ids=list(job.recently_done_ids),
     )
