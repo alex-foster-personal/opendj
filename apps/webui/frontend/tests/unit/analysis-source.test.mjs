@@ -467,3 +467,33 @@ test('a switch whose deck refresh fails puts the DAEMON back where it found it',
 		analysisSource.deckStates[1].anlz = null;
 	}
 });
+
+test('a RETRY after a failed switch rolls back to the original source, not the failed one', async () => {
+	await daemonSelect('rbx');
+	await analysisSource.loadAnalysisSource();
+
+	// No poll in between: the operator clicks again straight away, so the only
+	// record of where the daemon was is the one `setAnalysisSource` keeps. The
+	// first switch's own PUT already moved that record to 'own', so a rollback
+	// that ignores its compensating PUT's answer leaves it there, and THIS
+	// second failure restores the daemon to 'own' - the source the decks never
+	// reached (discussion_r3970967286).
+	analysisSource.deckStates[1].stable_id = 'slow-absent-track';
+	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+	try {
+		await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
+		await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
+
+		const daemon = await (await fetch(`${apiBase}/api/v1/analysis/source`)).json();
+		assert.equal(
+			daemon.lanes.beatgrid.toggle,
+			'rbx',
+			'the second rollback must displace the SECOND attempt, and land on the ' +
+				'source the decks are actually on'
+		);
+		assert.deepEqual(analysisSource.analysisSourceState.deckFeatures, { beatgrid: 'rekordbox' });
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+	}
+});

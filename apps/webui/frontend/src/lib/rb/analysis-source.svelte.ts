@@ -292,7 +292,17 @@ async function _rollBackFailedSwitch(
 	}
 	_latestMutation++;
 	try {
-		await unwrap(api.PUT('/api/v1/analysis/source', { body: { lane, toggle: displacedToggle } }));
+		// The compensating PUT's own answer is ADOPTED, not discarded. The failed
+		// switch's PUT already moved `_lastToggles[lane]` to the toggle it was
+		// attempting, so leaving that in place would make a retry before the next
+		// 5s poll capture the FAILED toggle as the thing to displace - and a
+		// second failure would then "restore" the daemon to the source the decks
+		// never reached, which is the exact split this function exists to undo
+		// (discussion_r3970967286 P1 BLOCKING). Running the response through
+		// `_featuresOf` is what keeps the capture in step with the daemon.
+		_featuresOf(
+			await unwrap(api.PUT('/api/v1/analysis/source', { body: { lane, toggle: displacedToggle } }))
+		);
 	} catch (exc) {
 		// Reported, never swallowed: the daemon is now genuinely split from the
 		// decks and the operator has to know that reloading is the way back.
