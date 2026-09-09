@@ -21,7 +21,7 @@ from apps.analysis import selection
 from apps.analysis import store as analysis_store
 from apps.analysis.canonical import canonical_pointer
 from apps.analysis.lanes import LaneContractError, LaneResult
-from apps.analysis.record import AnalysisRecord
+from apps.analysis.record import AnalysisRecord, RecordContractError
 from apps.shared.state import db as state_db
 from apps.smartlists.evaluator import evaluate
 from apps.webui.server.app import create_app
@@ -58,13 +58,31 @@ def _bare_db(tmp_path):
 def test_smartlist_on_a_promoted_lane_matches_nothing_rather_than_raising(
     tmp_path,
 ) -> None:
-    """Reproduced: EvaluatorError 'no such table: analysis_projection'."""
+    """Reproduced: EvaluatorError 'no such table: analysis_projection'.
+
+    The promotion is written with raw SQL rather than through
+    `selection.set_default`, because that function now provisions the whole
+    analysis schema (the writer half of this same finding) and so can no
+    longer reach the state. The state is still reachable in the wild: a
+    database promoted by an older build, or edited directly. The READER
+    hardening is what this pins, and it has to be pinned separately from the
+    writer or fixing one would silently retire the test for the other.
+    """
     _, conn = _bare_db(tmp_path)
-    selection.set_default(conn, "key", "own")
+    conn.execute(
+        "CREATE TABLE analysis_source_default (lane TEXT PRIMARY KEY, "
+        "source TEXT NOT NULL, updated_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO analysis_source_default VALUES ('key', 'own', ?)", (STAMP,)
+    )
     conn.commit()
     assert conn.execute(
         "SELECT count(*) FROM sqlite_master WHERE name='analysis_projection'"
     ).fetchone()[0] == 0, "precondition: the projection store must be absent"
+    assert selection.effective_source(conn, "key") == "own", (
+        "precondition: the lane really is promoted"
+    )
 
     # Matches NOTHING: there are no own rows. Not the rekordbox 5A, and not
     # an exception that takes the whole smartlist down.
@@ -362,3 +380,89 @@ def test_finite_measurements_are_still_accepted(db) -> None:
     assert db.execute(
         "SELECT value FROM analysis_projection WHERE field='bpm'"
     ).fetchone()[0] == 128.0
+
+
+#-----------------------------------------------------------------------------
+# P1 round 3: an EXISTING database must gain the new tables
+#-----------------------------------------------------------------------------
+
+def test_an_already_stamped_database_gains_the_new_tables(tmp_path) -> None:
+    """Reproduced: apply_migrations returns at `current >= SCHEMA_VERSION`.
+
+    Adding DDL to the v1 rung alone was invisible to every fresh-database
+    test AND to every existing install, which is the worst combination: the
+    tests stay green and no user ever gets the table.
+    """
+    from apps.engine_core.store import schema as consolidated
+
+    path = tmp_path / "engine.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    try:
+        assert consolidated.apply_migrations(conn) == consolidated.SCHEMA_VERSION
+        names = ("analysis_canonical", "analysis_projection", "analysis_source_default")
+        present = lambda: {  # noqa: E731
+            n: conn.execute(
+                "SELECT count(*) FROM sqlite_master WHERE name=?", (n,)
+            ).fetchone()[0]
+            for n in names
+        }
+        assert all(present().values()), "fresh database must create all three"
+
+        # Wind the file back to what a pre-v2 install looks like.
+        for n in names:
+            conn.execute(f"DROP TABLE {n}")
+        conn.execute("DELETE FROM schema_meta")
+        conn.execute(
+            "INSERT INTO schema_meta (version, applied_at) VALUES (?, ?)",
+            (consolidated.VERSION_OFFSET + 1, "2026-01-01T00:00:00Z"),
+        )
+        assert not any(present().values()), "precondition: the tables are gone"
+
+        consolidated.apply_migrations(conn)
+        assert all(present().values()), (
+            "an existing install must gain the tables on upgrade"
+        )
+    finally:
+        conn.close()
+
+
+#-----------------------------------------------------------------------------
+# P2 round 3: a digest field must contain a digest
+#-----------------------------------------------------------------------------
+
+def test_a_placeholder_decode_fingerprint_is_refused(db) -> None:
+    """`sha256:decode-fixture` was accepted and means nothing."""
+    import dataclasses
+
+    bad = dataclasses.replace(own_record(), decode_fingerprint="sha256:decode-fixture")
+    with pytest.raises(RecordContractError, match="not a sha256 digest"):
+        analysis_store.upsert_record(bad, conn=db)
+    assert db.execute("SELECT count(*) FROM analysis").fetchone()[0] == 0
+
+
+def test_a_real_digest_is_still_accepted(db) -> None:
+    """The control: the guard must reject malformed digests, not all of them."""
+    assert analysis_store.upsert_record(own_record(), conn=db).inserted is True
+
+
+#-----------------------------------------------------------------------------
+# P2 round 3: every waveform band sample, not just the count
+#-----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), "loud"])
+def test_a_bad_waveform_band_sample_is_refused(db, bad: object) -> None:
+    from tests.analysis_contract.conftest import waveform_payload
+
+    payload = waveform_payload()
+    payload["preview"]["mid"][1] = bad
+    with pytest.raises(LaneContractError):
+        analysis_store.upsert_record(
+            own_record(lane="waveform", result=LaneResult(status="ok", payload=payload)),
+            conn=db,
+        )
+
+
+def test_a_well_formed_waveform_is_still_accepted(db) -> None:
+    assert analysis_store.upsert_record(
+        own_record(lane="waveform"), conn=db
+    ).inserted is True

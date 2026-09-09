@@ -238,6 +238,20 @@ def _validate_band_block(where: str, block: Any) -> None:
                 f"{where}.{band} has {len(values)} samples but length says "
                 f"{block['length']}"
             )
+        # Every SAMPLE, not just the count. A band is a measurement like any
+        # other number on any other lane: a string, a NaN or an infinity in
+        # here reaches the renderer and the API's JSON encoder, and the count
+        # check alone would have waved all three through.
+        for i, sample in enumerate(values):
+            if isinstance(sample, bool) or not isinstance(sample, (int, float)):
+                raise LaneContractError(
+                    f"{where}.{band}[{i}] must be a number, got {sample!r}"
+                )
+            if not math.isfinite(sample):
+                raise LaneContractError(
+                    f"{where}.{band}[{i}] is {sample!r}, which is not a finite "
+                    "measurement"
+                )
 
 
 def _validate_waveform(payload: Mapping[str, Any]) -> None:

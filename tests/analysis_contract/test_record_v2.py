@@ -39,6 +39,7 @@ from apps.analysis.record import (
     validate_record_contract,
 )
 from tests.analysis_contract.conftest import (
+    MODEL_SHA256,
     beatgrid_payload,
     key_payload,
     loudness_payload,
@@ -112,15 +113,38 @@ def test_model_lane_without_model_sha256_is_refused() -> None:
 
 
 def test_model_free_lane_that_invents_a_model_sha256_is_refused() -> None:
-    """The opposite direction: a fabricated hash is worse than an absent one."""
-    bad = dataclasses.replace(own_record(), uses_model=False, model_sha256="deadbeef")
+    """The opposite direction: a fabricated hash is worse than an absent one.
+
+    A WELL-FORMED digest on purpose, so this fails on the pairing rather than
+    on the shape check that landed beside it.
+    """
+    bad = dataclasses.replace(own_record(), uses_model=False, model_sha256=MODEL_SHA256)
     with pytest.raises(RecordContractError, match="model-free"):
         validate_record_contract(bad)
 
 
+def test_a_model_sha256_that_is_not_a_digest_is_refused() -> None:
+    bad = dataclasses.replace(own_record(), uses_model=True, model_sha256="deadbeef")
+    with pytest.raises(RecordContractError, match="not a sha256 digest"):
+        validate_record_contract(bad)
+
+
+def test_a_decode_fingerprint_that_is_not_a_digest_is_refused() -> None:
+    """`sha256:decode-fixture` used to be accepted; it means nothing."""
+    for bogus in ("x", "sha256:decode-fixture", "a" * 64, "sha256:" + "A" * 64):
+        bad = dataclasses.replace(own_record(), decode_fingerprint=bogus)
+        with pytest.raises(RecordContractError, match="not a sha256 digest"):
+            validate_record_contract(bad)
+
+
+def test_a_real_digest_is_accepted() -> None:
+    """The control: the check must reject malformed digests, not all of them."""
+    validate_record_contract(own_record(uses_model=True, model_sha256=MODEL_SHA256))
+
+
 def test_model_lane_with_its_sha256_is_accepted() -> None:
     """Positive control: the check above must be about the pairing, not the flag."""
-    good = own_record(uses_model=True, model_sha256="sha256:" + "a" * 64)
+    good = own_record(uses_model=True, model_sha256=MODEL_SHA256)
     validate_record_contract(good)
 
 

@@ -58,6 +58,26 @@ TABLE_DOCS: dict[str, str] = {
         "time-series-vs-scalar convention. track_fields is one row per "
         "(stable_id, field_name) and cannot hold a series."
     ),
+    # ----- native-analysis v1 (specs/native-analysis-v1.md section 3) ----
+    "analysis_canonical": (
+        "Which analysis row is canonical for one track and one selection lane. "
+        "Recomputed from every row on each write by one rule (highest producer "
+        "semver, tie to in-app over backfill, bench candidates never eligible), "
+        "so the answer depends on what was produced and never on write order."
+    ),
+    "analysis_projection": (
+        "Own-analysis scalars read at query time when a lane's source is `own`, "
+        "rebuilt whenever that track's canonical pointer moves. The ONLY place "
+        "own values live: they are never written into track_fields, so nothing "
+        "here reaches track_field_history or the sync path. Read it through "
+        "apps.analysis.selection.effective_fields, never directly."
+    ),
+    "analysis_source_default": (
+        "The persisted per-lane source (rbx or own), one row per selection lane, "
+        "absent until that lane is promoted. This is what a PROMOTION writes and "
+        "the only half of the source selection that survives a relaunch; the "
+        "PARITY-02 dev toggle is in-memory and is deliberately not stored."
+    ),
     "analysis_field_verification": (
         "How each field was verified, stored next to the values it "
         "produced: cross-source agreement, a one-sided single-source "

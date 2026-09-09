@@ -125,6 +125,19 @@ _ANALYSIS_TABLES_SQL: list[str] = [
     # Spec section 3: the filters on these fields must not scan records.
     "CREATE INDEX IF NOT EXISTS idx_analysis_projection_field_value "
     "ON analysis_projection(field, value)",
+    # The persisted per-lane source default: what a PROMOTION writes, and the
+    # only half of the selection surface that survives a relaunch. Declared
+    # HERE, with the other analysis-domain tables, rather than provisioned by
+    # the endpoint that writes it: a durable configuration table the schema
+    # authority does not know about is invisible to adoption, to the drift
+    # checks and to the database documentation (Codex P2, PR #1549).
+    """
+    CREATE TABLE IF NOT EXISTS analysis_source_default (
+        lane        TEXT PRIMARY KEY,
+        source      TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
 ]
 
 

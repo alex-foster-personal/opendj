@@ -84,7 +84,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 2
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -343,7 +343,24 @@ _ANALYSIS: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_type   ON analysis_events(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_analysis_events_stable ON analysis_events(stable_id)",
-    # --- native-analysis v1 (spec section 3, "Record") -------------------
+)
+
+
+# ==========================================================================
+# DOMAIN: native-analysis v1 -- canonical pointer, read-time projection, and
+# the persisted per-lane source default.
+# Legacy sources: apps/analysis/store.py (_ANALYSIS_TABLES_SQL) and
+# apps/analysis/selection.py (_SOURCE_DEFAULT_TABLE_SQL, created on the
+# first promotion).
+#
+# Kept as its own tuple rather than appended to _ANALYSIS because it is BOTH
+# the fresh-DB DDL and the body of migration v2: appending it to _V1 alone
+# would have meant a state.db already stamped at the current version never
+# gained these tables, since apply_migrations returns early at
+# `current >= SCHEMA_VERSION`. Reproduced Wed 9 Sep 2026 before this split.
+# ==========================================================================
+
+_NATIVE_ANALYSIS_V1: tuple[str, ...] = (
     # The deterministic canonical pointer. Rows in `analysis` never
     # overwrite across producers, so which row a reader gets cannot be a
     # last-writer-wins column; it is recomputed from ALL rows on every
@@ -387,6 +404,17 @@ _ANALYSIS: tuple[str, ...] = (
     # Spec section 3: the filters on these fields must not scan records.
     "CREATE INDEX IF NOT EXISTS idx_analysis_projection_field_value "
     "ON analysis_projection(field, value)",
+    # The persisted per-lane source default: what a PROMOTION writes, and the
+    # only half of the selection surface that survives a relaunch. Created by
+    # apps/analysis/selection.py on first use; declared here so schema
+    # adoption, drift checks and the fresh-database inventory all know it.
+    """
+    CREATE TABLE IF NOT EXISTS analysis_source_default (
+        lane        TEXT PRIMARY KEY,
+        source      TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -862,6 +890,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
     "analysis": "apps/analysis/store.py",
+    "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
@@ -899,11 +928,11 @@ TABLES: dict[str, tuple[str, ...]] = {
         "hub_changelog",
         "local_changelog",
     ),
-    "analysis": (
-        "analysis",
-        "analysis_events",
+    "analysis": ("analysis", "analysis_events"),
+    "native_analysis_v1": (
         "analysis_canonical",
         "analysis_projection",
+        "analysis_source_default",
     ),
     "analysis_retention": (
         "track_availability",
@@ -943,10 +972,36 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 
 # --- migration ladder -----------------------------------------------------
 
-_V1: list[str] = [stmt for domain in DOMAINS.values() for stmt in domain]
-"""Consolidated 0 -> 1: create everything. Fresh-DB path."""
+_V1: list[str] = [
+    stmt for name, domain in DOMAINS.items()
+    if name != "native_analysis_v1"
+    for stmt in domain
+]
+"""Consolidated 0 -> 1: create everything that existed at v1. Fresh-DB path."""
 
-MIGRATIONS: list[list[str]] = [_V1]
+_V2: list[str] = list(_NATIVE_ANALYSIS_V1)
+"""1 -> 2: native-analysis v1's canonical pointer, projection and source default.
+
+A NEW rung rather than an append to _V1. `apply_migrations` returns at
+`current >= SCHEMA_VERSION`, so a state.db already stamped at v1 -- which is
+every existing install -- would never have run an appended statement, and the
+fresh-DB tests would have passed anyway. Reproduced Wed 9 Sep 2026: dropping
+the two tables from a stamped database and re-running the ladder left them
+absent. Every statement is `IF NOT EXISTS`, so the rung is also safe on a
+database that already has them."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2]
+
+ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
+"""Every rung, flattened. What both the fresh path and adoption execute.
+
+The runner does not replay rungs one at a time: it runs the whole ladder and
+stamps the target version, and every statement is ``IF NOT EXISTS``, so a
+database that already has an object is a no-op rather than an error. The
+rungs still exist as separate lists because SCHEMA_VERSION is what decides
+whether an ALREADY-STAMPED database is brought forward at all -- adding a
+table without a new rung and a version bump means no existing install ever
+gets it, which is exactly what happened here before v2."""
 
 # Data-bearing statements the legacy ladder carried alongside its DDL. They
 # are re-run on adoption because a DB adopted mid-ladder may have the table
@@ -1367,7 +1422,7 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     (:func:`_assert_adoptable` + :func:`_audit_existing_shapes`).
     """
     was_missing = missing_tables(conn)
-    _create_all(conn, _V1)
+    _create_all(conn, ALL_DDL)
     for stmt in _ADOPTION_BACKFILL:
         conn.execute(stmt)
     return was_missing
@@ -1421,7 +1476,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
             _adopt(conn)
             _record(conn, ADOPTION_VERSION)
         else:
-            _create_all(conn, _V1)
+            _create_all(conn, ALL_DDL)
         _stamp_legacy_counters(conn)
         _record(conn, VERSION_OFFSET + SCHEMA_VERSION)
         conn.execute("COMMIT")
@@ -1468,6 +1523,7 @@ def was_adopted(conn: sqlite3.Connection) -> bool:
 __all__ = [
     "ADOPTION_VERSION",
     "ALL_CACHE_TABLES",
+    "ALL_DDL",
     "ALL_TABLES",
     "BUSY_TIMEOUT_MS",
     "CACHE_DOMAINS",

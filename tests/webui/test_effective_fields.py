@@ -34,6 +34,10 @@ from apps.webui.server import sqlite_backend as sb
 pytestmark = pytest.mark.requirement("NATIVE-04")
 
 STAMP = "2026-09-09T00:00:00Z"
+# A real digest: the record contract checks the SHAPE of this field.
+DECODE_FINGERPRINT = (
+    "sha256:663de53948b9c9d36e558f3db58a301677b498eb67da9637338ea0ba296965e8"
+)
 
 
 def _key_payload(camelot: str, segments: int = 1) -> dict:
@@ -61,7 +65,8 @@ def _own_key_record(stable_id: str, result: LaneResult) -> AnalysisRecord:
         key_camelot="8A", key_openkey="1m", key_confidence=0.8,
         energy=5, energy_source="inferred",
         producer="inapp", producer_version="1.0.0", uses_model=False,
-        model_sha256=None, decode_fingerprint="sha256:fixture",
+        model_sha256=None,
+                decode_fingerprint=DECODE_FINGERPRINT,
         lanes={"key": result},
     )
 
@@ -263,7 +268,7 @@ def test_smartlist_can_filter_on_the_own_only_fields(state) -> None:
                 key_camelot="8A", key_openkey="1m", key_confidence=0.8,
                 energy=5, energy_source="inferred",
                 producer="backfill", producer_version="1.0.0", uses_model=False,
-                model_sha256=None, decode_fingerprint="sha256:fixture",
+                model_sha256=None, decode_fingerprint=DECODE_FINGERPRINT,
                 lanes={"loudness": LaneResult(status="ok", payload={
                     "integrated_lufs": lufs, "true_peak_dbtp": -0.2,
                     "loudness_range_lu": 6.0, "rms_db": -12.0,
@@ -313,12 +318,25 @@ def test_own_lane_reads_missing_even_when_the_projection_table_does_not_exist(
         "confidence, modified_at) VALUES ('t1', 'key', '\"5A\"', 'rekordbox', 1.0, ?)",
         (STAMP,),
     )
-    selection.set_default(conn, "key", "own")
+    # Written with raw SQL, not `selection.set_default`: that function now
+    # provisions the whole analysis schema (the writer half of the same
+    # finding) and so can no longer produce this state. It is still reachable
+    # in the wild -- a database promoted by an older build -- and the READER
+    # must be hardened against it independently, or fixing the writer would
+    # silently retire the test for the reader.
+    conn.execute(
+        "CREATE TABLE analysis_source_default (lane TEXT PRIMARY KEY, "
+        "source TEXT NOT NULL, updated_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO analysis_source_default VALUES ('key', 'own', ?)", (STAMP,)
+    )
     conn.commit()
     # The precondition the defect depended on, asserted rather than assumed.
     assert conn.execute(
         "SELECT count(*) FROM sqlite_master WHERE name='analysis_projection'"
     ).fetchone()[0] == 0
+    assert selection.effective_source(conn, "key") == "own"
     conn.close()
 
     track = sb.SqliteBackend(path).get_track("t1")

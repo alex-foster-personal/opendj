@@ -26,6 +26,12 @@ from apps.analysis.record import AnalysisRecord
 
 STAMP = datetime(2026, 9, 9, 12, 0, 0, tzinfo=UTC)
 
+# Real sha256 digests. The contract now checks the SHAPE of both digest
+# fields, so a fixture using a readable placeholder would be exercising a
+# record the store refuses.
+DECODE_FINGERPRINT = "sha256:663de53948b9c9d36e558f3db58a301677b498eb67da9637338ea0ba296965e8"
+MODEL_SHA256 = "sha256:227e7b8b1facb2a9684479407fb7869ae9500a22f70f0af9d43d6984edf96ebb"
+
 
 def beatgrid_payload(bpm: float = 128.0, tempo_changes: int = 0) -> dict[str, Any]:
     return {
@@ -95,7 +101,7 @@ def own_record(
     result: LaneResult | None = None,
     uses_model: bool = False,
     model_sha256: str | None = None,
-    decode_fingerprint: str = "sha256:decode-fixture",
+    decode_fingerprint: str = DECODE_FINGERPRINT,
     backend: str | None = None,
 ) -> AnalysisRecord:
     """A minimal, contract-valid own record. Every field is stated, not defaulted."""

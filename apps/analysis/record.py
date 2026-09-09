@@ -51,6 +51,7 @@ either.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -70,6 +71,24 @@ EnergySource = Literal["mik", "inferred"]
 
 class RecordContractError(ValueError):
     """An own record violates the native-analysis v1 record contract."""
+
+
+# `sha256:` followed by exactly 64 lowercase hex digits. Both digest fields
+# are checked for SHAPE, not merely for presence: a truncated or mistyped
+# hash becomes canonical provenance that cannot identify the model or verify
+# a decode, and the cross-host parity gate (spec section 13) then compares
+# two strings that mean nothing. A prefix is required so the algorithm is
+# stated rather than inferred from the length.
+_SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _check_digest(field: str, value: str, stable_id: str) -> None:
+    if not _SHA256_RE.match(value):
+        raise RecordContractError(
+            f"own record for {stable_id!r} has {field}={value!r}, which is not "
+            "a sha256 digest (expected 'sha256:' followed by 64 lowercase hex "
+            "digits); an unverifiable hash is provenance in name only"
+        )
 
 
 @dataclass(frozen=True)
@@ -191,6 +210,12 @@ def _check_provenance_and_lanes(record: AnalysisRecord, parsed: OwnBackend) -> N
             f"model_sha256 {record.model_sha256!r}; a fabricated hash is worse than "
             "an absent one (NATIVE-09)"
         )
+    # Shape check AFTER the pairing check, so a model-free record carrying a
+    # perfectly well-formed digest still fails for the right reason.
+    if record.model_sha256:
+        _check_digest("model_sha256", record.model_sha256, record.stable_id)
+    if record.decode_fingerprint:
+        _check_digest("decode_fingerprint", record.decode_fingerprint, record.stable_id)
     if not record.decode_fingerprint:
         raise RecordContractError(
             f"own record for {record.stable_id!r} has no decode_fingerprint; without "

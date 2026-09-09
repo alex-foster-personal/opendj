@@ -57,13 +57,6 @@ DEFAULT_SOURCE: Source = "rbx"
 # as "measured and empty", which is not.
 _RBX_FIELDS: frozenset[str] = frozenset({"bpm", "key"})
 
-_SOURCE_DEFAULT_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS analysis_source_default (
-    lane        TEXT PRIMARY KEY,
-    source      TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-)
-"""
 
 
 class SelectionError(ValueError):
@@ -103,8 +96,17 @@ _check_lane = check_lane
 #-----------------------------------------------------------------------------
 
 def ensure_tables(conn: sqlite3.Connection) -> None:
-    """Create the selection table. WRITE path only -- see :func:`get_default`."""
-    conn.execute(_SOURCE_DEFAULT_TABLE_SQL)
+    """Create the analysis-domain tables. WRITE path only, see :func:`get_default`.
+
+    Delegates to :mod:`apps.analysis.store`, which is the schema authority
+    for this domain. A second CREATE TABLE here would be a durable
+    configuration table the authority does not declare, and therefore one
+    that adoption, the consolidated-schema drift checks and the database
+    documentation could not see.
+    """
+    from .store import _ensure_analysis_tables
+
+    _ensure_analysis_tables(conn)
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:

@@ -129,6 +129,12 @@ TABLES: dict[str, str] = {
         "so the answer depends on what was produced and never on write order. "
         "Derived: safe to delete and recompute, never hand-edited."
     ),
+    "analysis_source_default": (
+        "The persisted per-lane source (rbx or own), one row per selection lane, "
+        "absent until that lane is promoted. This is what a PROMOTION writes and "
+        "the only half of the source selection that survives a relaunch; the "
+        "PARITY-02 dev toggle is in-memory and is deliberately not stored."
+    ),
     "analysis_projection": (
         "Own-analysis scalars (bpm, key, loudness_lufs, loudness_dbtp, "
         "key_change_count, tempo_change_count) read at query time when a lane's "
