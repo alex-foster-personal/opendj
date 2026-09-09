@@ -174,6 +174,31 @@ def _diff_paths(cwd: Path, left: str, right: str) -> set[str]:
     return set(_git(cwd, "diff", "--name-only", left, right).splitlines())
 
 
+def _blob_at(cwd: Path, tree: str, path: str) -> str:
+    """The blob sha ``path`` has in ``tree``."""
+    return _git(cwd, "rev-parse", f"{tree}:{path}").strip()
+
+
+def _blob_ever_on(cwd: Path, ref: str, path: str) -> set[str]:
+    """Every blob sha ``path`` has EVER had on ``ref``, across its full history.
+
+    A tip-only comparison misses a resolution main landed and later edited
+    further: the tip content has moved on, but the resolved content still
+    reached main at some point. ``--raw`` on a path-scoped log prints the
+    post-image blob sha for every commit that touched the path, in one call
+    regardless of history length.
+    """
+    out = _git(cwd, "log", ref, "--format=", "--raw", "--no-abbrev", "--", path)
+    shas: set[str] = set()
+    for line in out.splitlines():
+        if not line.startswith(":"):
+            continue
+        fields = line.split()
+        if len(fields) >= 4:
+            shas.add(fields[3])
+    return shas
+
+
 def _worktree_dirty(cwd: Path) -> list[str]:
     """Tracked/unstaged/untracked paths that differ from HEAD on disk.
 
@@ -222,6 +247,14 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
     trivial auto-merge or was a real conflict with no auto-merge to diff
     against, because it never needs one: parents and the recorded merge_tree
     are always available.
+
+    "Against main" means main's whole HISTORY at each touched path, not its
+    current tip: if main lands the resolution and later edits that same path
+    again, the tip no longer matches, but the resolved content still reached
+    main at some point and must not re-age into a false DRIFT. ``git log
+    --raw`` on the path enumerates every blob that path has ever had on main
+    in one call, so this stays a single query per path regardless of how much
+    main has moved since.
     """
     main_trees: set[str] | None = None
     carrying: list[str] = []
@@ -261,7 +294,10 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
             touched = _diff_paths(cwd, parents[0], merge_tree) & _diff_paths(
                 cwd, parents[1], merge_tree
             )
-            if touched and _trees_identical(cwd, main_ref, merge_tree, *touched):
+            if touched and all(
+                _blob_at(cwd, merge_tree, p) in _blob_ever_on(cwd, main_ref, p)
+                for p in touched
+            ):
                 continue
         else:
             if main_trees is None:
@@ -623,7 +659,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.fetch:
-            _git(cwd, "fetch", "--quiet", "origin", "main", args.branch)
+            # Worktree mode reads the live preview head from HEAD, not from
+            # origin's preview ref, so it only needs `main` current. Remote
+            # mode reads BOTH from origin. Fetching the preview branch in
+            # worktree mode too means a deleted remote preview ref (the
+            # remediation this checker itself recommends for a FOSSIL) fails
+            # the whole fetch before the live worktree is ever inspected.
+            refs = ["main", args.branch] if args.remote else ["main"]
+            _git(cwd, "fetch", "--quiet", "origin", *refs)
         report = evaluate(
             cwd=cwd,
             preview_ref=preview_ref,
