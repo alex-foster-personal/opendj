@@ -2829,6 +2829,7 @@
 	}
 	.suggestion-panels {
 		display: flex;
+		align-items: flex-start;
 		min-height: 0;
 	}
 	.suggestion-panel-content {
@@ -2841,32 +2842,57 @@
 		pointer-events: none;
 		visibility: hidden;
 	}
+	/* Pin 9036adcedf4f: the rail is what decides how much the library gets
+	 * back, because `.suggestion-panels` is a flex ROW and the library's
+	 * `.tt-root` is `flex: 1` in the column above it -- so this box's height
+	 * is `max(content, rail)` and every pixel it releases lands in the
+	 * table automatically. Measured on e82773161 at 1680x1003, collapsing
+	 * both panels moved `.suggestion-panels` 34px -> 52px and the table
+	 * 226px -> 208px: collapsing COST the library 18px.
+	 *
+	 * The cause was `writing-mode: vertical-rl` on the collapsed labels.
+	 * Set down an 18px column, "NEXT" and "RECC" run ~26px each, against
+	 * ~17px for the `›` chevron each one replaces, so the act of collapsing
+	 * grew the chrome. Horizontal labels in a slightly wider rail cost 12px
+	 * apiece in the block direction whichever control is showing, which
+	 * makes the rail's height CONSTANT across the toggle and leaves
+	 * `max(content, rail)` free to fall to the rail's own floor.
+	 *
+	 * `align-items: flex-start` on the container is the other half: a
+	 * stretched rail would report the content's height rather than its own
+	 * and put the floor back. */
 	.suggestion-panel-rail {
 		display: flex;
 		flex: none;
 		flex-direction: column;
-		align-items: center;
+		align-items: stretch;
 		justify-content: flex-start;
-		width: 18px;
 		border-left: 1px solid var(--rb-border);
 	}
 	.suggestion-collapse,
 	.suggestion-rail-label {
+		display: block;
 		width: 100%;
-		padding: 2px 0;
+		height: 12px;
+		padding: 0 3px;
 		border: 0;
 		background: transparent;
 		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		line-height: 12px;
+		text-align: center;
 		cursor: pointer;
 	}
 	.suggestion-collapse:hover,
 	.suggestion-rail-label:hover {
 		color: var(--rb-accent);
 	}
+	.suggestion-collapse {
+		font-size: 11px;
+	}
 	.suggestion-rail-label {
 		font-size: 8px;
-		line-height: 1;
-		writing-mode: vertical-rl;
+		letter-spacing: 0.04em;
 	}
 	.bottom-bar {
 		grid-area: bottom;
