@@ -35,7 +35,7 @@ _STREAMING_URIS: tuple[str, ...] = (
 _LOCAL_PATHS: tuple[str, ...] = (
     "/music/Manual Library/foo.mp3",
     "/tmp/some-file.flac",
-    "/Users/dev/Music/track.aiff",
+    "/Users/user/Music/track.aiff",
 )
 
 

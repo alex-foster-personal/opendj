@@ -29,8 +29,8 @@ def _make_data_dir(tmp_path: Path, *, with_vocal_cache: bool = True) -> Path:
     conn.executemany(
         "INSERT INTO djmdContent (ID, FolderPath) VALUES (?, ?)",
         [
-            ("1", "/Users/dev/Music/track1.wav"),
-            ("2", "/Users/dev/Music/subdir/track2.wav"),
+            ("1", "/Users/user/Music/track1.wav"),
+            ("2", "/Users/user/Music/subdir/track2.wav"),
             ("3", "/Volumes/External/DJ/track3.wav"),
             ("4", None),
             ("5", "tidal:12345"),
@@ -115,7 +115,7 @@ def test_pack_discovers_distinct_folder_path_roots(tmp_path: Path) -> None:
 
     result = data_snapshot.pack(data_dir, out)
 
-    assert result["path_map_roots"] == ["/Users/dev", "/Volumes/External"]
+    assert result["path_map_roots"] == ["/Users/user", "/Volumes/External"]
 
 
 def test_pack_then_unpack_round_trips_members(tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ def test_pack_writes_generated_path_map_with_empty_to(tmp_path: Path) -> None:
 
     assert "entries" in payload
     froms = {entry["from"] for entry in payload["entries"]}
-    assert froms == {"/Users/dev", "/Volumes/External"}
+    assert froms == {"/Users/user", "/Volumes/External"}
     for entry in payload["entries"]:
         assert entry["to"] == ""
 

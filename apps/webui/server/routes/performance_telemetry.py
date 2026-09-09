@@ -95,7 +95,7 @@ def capture_client_performance(
     log_dir = Path(
         getattr(request.app.state, "performance_log_dir", DEFAULT_LOG_DIR)
     )
-    path = daily_log_path(log_dir, "webui-performance", time.localtime())
+    path = daily_log_path(log_dir, "webui-performance", time.gmtime())
     stored = append_json_record(path, record)
     if not stored:
         log.warning("performance sample %s not stored: daily cap reached at %s", event_id, path)

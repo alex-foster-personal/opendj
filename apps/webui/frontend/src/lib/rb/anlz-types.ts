@@ -68,7 +68,8 @@ export interface AnlzCue {
 	is_loop: boolean;
 	/** True when rekordbox stored this loop as the active one. */
 	active_loop: boolean;
-	/** Beat-length of the loop (4, 8, 16 ...); null when not beat-quantised. */
+	/** Vendor loop-size metadata. Values originating in djmdCue can be packed;
+	 * do not display this as a beat count without validating its encoding. */
 	beat_loop_size: number | null;
 	/** rekordbox colour table index for the marker; null when unset. */
 	color_table_index: number | null;

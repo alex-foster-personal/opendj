@@ -30,7 +30,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.analysis import store as analysis_store
+from apps.lyrics import cache as lyrics_cache
 from apps.shared.state.db import open_rw as open_state_rw
+from apps.vocals import cache as vocals_cache
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import ingest_upload as ingest_upload_mod
 
@@ -50,6 +52,7 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest_mod, "CONFIG_PATH", tmp_path / "ingest-config.json")
     monkeypatch.setattr(ingest_mod, "INGEST_INBOX", tmp_path / "_ingest")
     monkeypatch.setattr(ingest_mod, "VOCAL_CACHE_DIR", tmp_path / "vocal-cache")
+    monkeypatch.setattr(ingest_mod, "LYRICS_CACHE_DIR", tmp_path / "lyrics-cache")
     monkeypatch.setattr(ingest_mod, "DEFAULT_STEMS_DIR", tmp_path / "stems")
     monkeypatch.setattr(ingest_mod, "open_ro", lambda: sqlite3.connect(state_db))
     monkeypatch.setattr(ingest_mod._JOBS, "current", None)
@@ -142,6 +145,139 @@ def test_coverage_excludes_broken_links(client, app, tmp_path):
     assert out["unreachable"] == 1
     assert out["missing"]["analysis"] == 1           # bbb only, never ccc
     assert out["missing"]["stems"] == 2
+    assert out["missing"]["vocals"] == 2
+    assert out["missing"]["lyrics"] == 2
+    assert out["corrupt"] == {"analysis": 0, "stems": 0, "vocals": 0, "lyrics": 0}
+
+
+def _vocal_worker_result(**overrides):
+    base = {
+        "schema": vocals_cache.VOCAL_CACHE_SCHEMA,
+        "source": vocals_cache.VOCAL_CACHE_SOURCE,
+        "fps": 2.0,
+        "duration_s": 120.0,
+        "coverage_pct": 41.7,
+        "regions": [{"start_s": 10.0, "end_s": 60.0, "confidence": 0.84}],
+        "params": {"hop_s": 0.5, "on_ratio": 0.1},
+        "device": "cpu",
+        "timings": {"load_s": 1.0, "separate_s": 100.0},
+        "source_sample_rate": 44100,
+        "analysis_sample_rate": 44100,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_coverage_reports_lyrics_completion(client, app, tmp_path):
+    """The lyrics dot on the browser panel reads this key - a track with a
+    REAL, valid lyrics-cache entry (written through the production
+    apps.lyrics.cache writer, not a fabricated file) must count as covered,
+    one without must count as missing, and a broken-link track must never
+    appear in either."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    _seed_track(app, "bbb", real)
+    _seed_track(app, "ccc", tmp_path / "gone.mp3")   # broken link
+    lyrics_dir = ingest_mod.LYRICS_CACHE_DIR
+    lyrics_dir.mkdir(parents=True)
+    lyrics_cache.write(
+        lyrics_dir / "aaa.json",
+        lyrics_cache.Lyrics(
+            stable_id="aaa", source="lrclib",
+            lines=(lyrics_cache.LyricLine(start_ms=0, text="la la"),),
+        ),
+    )
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["on_disk"] == 2
+    assert out["missing"]["lyrics"] == 1             # bbb only, never ccc
+    assert out["corrupt"]["lyrics"] == 0             # a real entry is not corrupt
+
+
+def test_coverage_rejects_malformed_lyrics_cache_entry(client, app, tmp_path):
+    """An empty/truncated/schema-invalid lyrics-cache write (an interrupted
+    worker's leftover, exactly what a naive filename-only check would count
+    as done - the P1 bug this coverage path used to have) must count as
+    MISSING, never as complete."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    lyrics_dir = ingest_mod.LYRICS_CACHE_DIR
+    lyrics_dir.mkdir(parents=True)
+    (lyrics_dir / "aaa.json").write_text("{}")       # malformed: no schema
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["lyrics"] == 1
+    assert out["corrupt"]["lyrics"] == 1             # distinct from ordinary missing
+
+
+def test_coverage_rejects_identity_mismatched_lyrics_cache_entry(client, app, tmp_path):
+    """A lyrics-cache file named for one stable_id but whose own contents
+    describe a DIFFERENT stable_id (the same identity-mismatch
+    LyricsService.fetch guards against) must not count that filename as
+    complete."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    lyrics_dir = ingest_mod.LYRICS_CACHE_DIR
+    lyrics_dir.mkdir(parents=True)
+    lyrics_cache.write(
+        lyrics_dir / "aaa.json",
+        lyrics_cache.Lyrics(
+            stable_id="not-aaa", source="lrclib",
+            lines=(lyrics_cache.LyricLine(start_ms=0, text="la la"),),
+        ),
+    )
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["lyrics"] == 1
+    assert out["corrupt"]["lyrics"] == 1             # identity mismatch is corruption
+
+
+def test_coverage_reports_vocals_completion(client, app, tmp_path):
+    """The vocals dot: a REAL vocal-cache entry (written through the
+    production apps.vocals.cache writer, valid for the on-disk audio file)
+    counts as covered."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    _seed_track(app, "bbb", real)
+    vocal_dir = ingest_mod.VOCAL_CACHE_DIR
+    vocals_cache.write_entry(vocal_dir / "aaa.json", _vocal_worker_result(), real)
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["vocals"] == 1             # bbb only
+    assert out["corrupt"]["vocals"] == 0             # a real entry is not corrupt
+
+
+def test_coverage_rejects_malformed_vocal_cache_entry(client, app, tmp_path):
+    """Same P1 hazard as lyrics: a filename alone is not proof of work.
+    A corrupt/invalid vocal-cache JSON must count as missing."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    vocal_dir = ingest_mod.VOCAL_CACHE_DIR
+    vocal_dir.mkdir(parents=True)
+    (vocal_dir / "aaa.json").write_text("not even json")
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["vocals"] == 1
+    assert out["corrupt"]["vocals"] == 1             # distinct from ordinary missing
+
+
+def test_coverage_rejects_stale_vocal_cache_entry(client, app, tmp_path):
+    """A vocal-cache entry computed for a PRIOR generation of the audio file
+    (the file was since replaced, so its audio_signature no longer matches)
+    must count as missing, exactly like the live /anlz merge path treats it -
+    never silently served as still-complete."""
+    real = tmp_path / "real.mp3"
+    real.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", real)
+    vocal_dir = ingest_mod.VOCAL_CACHE_DIR
+    vocals_cache.write_entry(vocal_dir / "aaa.json", _vocal_worker_result(), real)
+    real.write_bytes(b"y" * 8192)                    # replaced -> new signature
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["missing"]["vocals"] == 1
+    # THE distinction that matters: stale is not corrupt. A track whose audio
+    # was simply replaced needs a routine re-run, not an alarm - conflating
+    # the two would make every stale entry scream as if it were corruption.
+    assert out["corrupt"]["vocals"] == 0
 
 
 # ----- refresh job ----------------------------------------------------------
@@ -316,3 +452,5 @@ def test_coverage_on_never_analysed_library(client, app):
     out = client.get("/api/v1/ingest/coverage")
     assert out.status_code == 200
     assert out.json()["missing"]["analysis"] == 0
+
+pytestmark = pytest.mark.rb_parity

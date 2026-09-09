@@ -283,6 +283,180 @@
         "title": "AiSearchOut",
         "type": "object"
       },
+      "AlignmentIn": {
+        "properties": {
+          "anchor_a_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor A Kind",
+            "type": "string"
+          },
+          "anchor_a_ms": {
+            "minimum": 0.0,
+            "title": "Anchor A Ms",
+            "type": "number"
+          },
+          "anchor_a_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor A Slot"
+          },
+          "anchor_b_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor B Kind",
+            "type": "string"
+          },
+          "anchor_b_ms": {
+            "minimum": 0.0,
+            "title": "Anchor B Ms",
+            "type": "number"
+          },
+          "anchor_b_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor B Slot"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_a",
+          "stable_b",
+          "anchor_a_kind",
+          "anchor_b_kind",
+          "anchor_a_ms",
+          "anchor_b_ms"
+        ],
+        "title": "AlignmentIn",
+        "type": "object"
+      },
+      "AlignmentOut": {
+        "properties": {
+          "anchor_a_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor A Kind",
+            "type": "string"
+          },
+          "anchor_a_ms": {
+            "title": "Anchor A Ms",
+            "type": "number"
+          },
+          "anchor_a_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor A Slot"
+          },
+          "anchor_b_kind": {
+            "enum": [
+              "hotcue",
+              "ms"
+            ],
+            "title": "Anchor B Kind",
+            "type": "string"
+          },
+          "anchor_b_ms": {
+            "title": "Anchor B Ms",
+            "type": "number"
+          },
+          "anchor_b_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor B Slot"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stable_a",
+          "stable_b",
+          "anchor_a_kind",
+          "anchor_b_kind",
+          "anchor_a_slot",
+          "anchor_b_slot",
+          "anchor_a_ms",
+          "anchor_b_ms",
+          "label",
+          "created_at"
+        ],
+        "title": "AlignmentOut",
+        "type": "object"
+      },
       "AnalysisQueueItemOut": {
         "description": "One queued track. ``file_path`` is what the runner decodes.\n\nNamed apart from ``models.QueueItemOut`` (the M3 triage queues) on\npurpose: two Pydantic models sharing a name collapse into one OpenAPI\nschema, and the loser is served under the winner's shape.",
         "properties": {
@@ -362,6 +536,61 @@
           "auto"
         ],
         "title": "AnalysisQueueOut",
+        "type": "object"
+      },
+      "AnalysisSourceOut": {
+        "properties": {
+          "lanes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LaneSourceOut"
+            },
+            "title": "Lanes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "lanes"
+        ],
+        "title": "AnalysisSourceOut",
+        "type": "object"
+      },
+      "AnalysisSourcePut": {
+        "description": "Set the default, the toggle, or both, for one lane.",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rbx or own. Persisted; survives a relaunch.",
+            "title": "Default"
+          },
+          "lane": {
+            "description": "beatgrid, key, waveform, loudness or vocal",
+            "title": "Lane",
+            "type": "string"
+          },
+          "toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "unset, rbx or own. In-memory; resets to unset on relaunch.",
+            "title": "Toggle"
+          }
+        },
+        "required": [
+          "lane"
+        ],
+        "title": "AnalysisSourcePut",
         "type": "object"
       },
       "AnlzCueOut": {
@@ -536,6 +765,35 @@
           "model"
         ],
         "title": "AssistantStatusOut",
+        "type": "object"
+      },
+      "AttachmentOut": {
+        "description": "A screenshot pasted into a comment pin (issue #1333, part 2 of #928).\n\n``url`` is the GET route that streams the stored bytes back (relative,\nsame convention as ``issue_url`` on ``CommentOut``); ``content_type`` and\n``size_bytes`` are recorded once, at upload time, so a caller can decide\nwhether to fetch the bytes without a HEAD round trip first. The bytes\nthemselves live under ``<data-dir>/feedback/attachments/`` - see\n``feedback_attachments.py``, the module that actually writes and serves\nthem; this file only owns the small record ``comments.json`` carries.",
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content_type",
+          "size_bytes",
+          "url"
+        ],
+        "title": "AttachmentOut",
         "type": "object"
       },
       "AutoAnalyzeOut": {
@@ -805,6 +1063,20 @@
           "batch"
         ],
         "title": "Body_upload_api_v1_ingest_upload_post",
+        "type": "object"
+      },
+      "Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
         "type": "object"
       },
       "BrokenTrackList": {
@@ -1418,6 +1690,89 @@
         "title": "ClientErrorOut",
         "type": "object"
       },
+      "ClientErrorRecord": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "received_at",
+          "kind",
+          "message"
+        ],
+        "title": "ClientErrorRecord",
+        "type": "object"
+      },
+      "ClientErrorTriageIn": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "fix",
+              "no-fix",
+              "duplicate"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disposition",
+          "ref"
+        ],
+        "title": "ClientErrorTriageIn",
+        "type": "object"
+      },
+      "ClientErrorTriageOut": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "fix",
+              "no-fix",
+              "duplicate"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disposition",
+          "ref",
+          "event_id"
+        ],
+        "title": "ClientErrorTriageOut",
+        "type": "object"
+      },
       "ClientEventIn": {
         "properties": {
           "client_event_id": {
@@ -1723,6 +2078,110 @@
         "title": "ClientPerformanceSampleOut",
         "type": "object"
       },
+      "CloudSyncStatusOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
+          "last_pull_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Pull At"
+          },
+          "last_push_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Push At"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastResultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recent_results": {
+            "items": {
+              "$ref": "#/components/schemas/RecentResultOut"
+            },
+            "title": "Recent Results",
+            "type": "array"
+          },
+          "rows_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Pending"
+          },
+          "signed_in_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed In As"
+          }
+        },
+        "required": [
+          "enabled",
+          "reason",
+          "signed_in_as",
+          "last_push_at",
+          "last_pull_at",
+          "last_result",
+          "rows_pending",
+          "endpoint",
+          "recent_results"
+        ],
+        "title": "CloudSyncStatusOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -1832,6 +2291,17 @@
       },
       "CommentCreateIn": {
         "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
           "anchor": {
             "anyOf": [
               {
@@ -1843,6 +2313,14 @@
             ],
             "title": "Anchor"
           },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
           "page": {
             "minLength": 1,
             "title": "Page",
@@ -1852,6 +2330,26 @@
             "minLength": 1,
             "title": "Text",
             "type": "string"
+          },
+          "ui": {
+            "enum": [
+              "chrome-loop",
+              "packaged-app"
+            ],
+            "title": "Ui",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Width",
+            "type": "integer"
           },
           "x_pct": {
             "maximum": 100.0,
@@ -1870,7 +2368,10 @@
           "x_pct",
           "y_pct",
           "page",
-          "text"
+          "text",
+          "ui",
+          "viewport_width",
+          "viewport_height"
         ],
         "title": "CommentCreateIn",
         "type": "object"
@@ -1911,6 +2412,17 @@
       },
       "CommentOut": {
         "properties": {
+          "agent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Kind"
+          },
           "agent_note": {
             "anyOf": [
               {
@@ -1933,12 +2445,40 @@
             ],
             "title": "Anchor"
           },
+          "attachment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author": {
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
           "build": {
             "$ref": "#/components/schemas/BuildStampOut"
           },
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinEnvironmentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -2044,16 +2584,9 @@
             "title": "Status"
           },
           "text": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
           }
         },
         "title": "CommentUpdateIn",
@@ -2172,6 +2705,13 @@
       },
       "CoverageOut": {
         "properties": {
+          "corrupt": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Corrupt",
+            "type": "object"
+          },
           "generated_at": {
             "title": "Generated At",
             "type": "number"
@@ -2201,6 +2741,7 @@
           "on_disk",
           "unreachable",
           "missing",
+          "corrupt",
           "generated_at"
         ],
         "title": "CoverageOut",
@@ -2314,6 +2855,57 @@
           "revision"
         ],
         "title": "DecisionRecordOut",
+        "type": "object"
+      },
+      "DeckMarkOut": {
+        "properties": {
+          "audible": {
+            "title": "Audible",
+            "type": "boolean"
+          },
+          "deck_id": {
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "loop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoopMarkOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "playing": {
+            "title": "Playing",
+            "type": "boolean"
+          },
+          "position_ms": {
+            "title": "Position Ms",
+            "type": "number"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          }
+        },
+        "required": [
+          "deck_id",
+          "stable_id",
+          "playing",
+          "audible",
+          "position_ms",
+          "loop"
+        ],
+        "title": "DeckMarkOut",
         "type": "object"
       },
       "DeckObservationsRequest": {
@@ -3917,6 +4509,33 @@
         "title": "LabelRequest",
         "type": "object"
       },
+      "LaneSourceOut": {
+        "description": "One lane's persisted default, dev toggle, and resulting source.",
+        "properties": {
+          "default": {
+            "description": "Persisted per-lane default source: rbx or own",
+            "title": "Default",
+            "type": "string"
+          },
+          "effective": {
+            "description": "The source actually read: the toggle unless it is unset",
+            "title": "Effective",
+            "type": "string"
+          },
+          "toggle": {
+            "description": "In-memory dev toggle: unset, rbx or own. Launches unset.",
+            "title": "Toggle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default",
+          "toggle",
+          "effective"
+        ],
+        "title": "LaneSourceOut",
+        "type": "object"
+      },
       "LastImportOut": {
         "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
         "properties": {
@@ -3999,6 +4618,28 @@
         "title": "LastImportOut",
         "type": "object"
       },
+      "LastResultOut": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "LastResultOut",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -4066,6 +4707,59 @@
           "redirect_uri"
         ],
         "title": "LoginOut",
+        "type": "object"
+      },
+      "LoopMarkOut": {
+        "properties": {
+          "in_ms": {
+            "title": "In Ms",
+            "type": "number"
+          },
+          "out_ms": {
+            "title": "Out Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "in_ms",
+          "out_ms"
+        ],
+        "title": "LoopMarkOut",
+        "type": "object"
+      },
+      "LyricLineOut": {
+        "description": "One cache-backed line timestamp in integer track milliseconds.",
+        "properties": {
+          "start_ms": {
+            "minimum": 0.0,
+            "title": "Start Ms",
+            "type": "integer"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_ms",
+          "text"
+        ],
+        "title": "LyricLineOut",
+        "type": "object"
+      },
+      "LyricsUnavailableOut": {
+        "description": "The explicit cache-miss response for one track's lyrics timeline.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "LyricsUnavailableOut",
         "type": "object"
       },
       "MachineModel": {
@@ -4402,6 +5096,75 @@
         "title": "MembershipReplaceIn",
         "type": "object"
       },
+      "MixerChannelMarkOut": {
+        "properties": {
+          "assign": {
+            "title": "Assign",
+            "type": "string"
+          },
+          "deck_id": {
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "eq_high": {
+            "title": "Eq High",
+            "type": "number"
+          },
+          "eq_low": {
+            "title": "Eq Low",
+            "type": "number"
+          },
+          "eq_mid": {
+            "title": "Eq Mid",
+            "type": "number"
+          },
+          "fader": {
+            "title": "Fader",
+            "type": "number"
+          },
+          "trim": {
+            "title": "Trim",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deck_id",
+          "trim",
+          "eq_low",
+          "eq_mid",
+          "eq_high",
+          "fader",
+          "assign"
+        ],
+        "title": "MixerChannelMarkOut",
+        "type": "object"
+      },
+      "MixerMarkOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/MixerChannelMarkOut"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "crossfader": {
+            "title": "Crossfader",
+            "type": "number"
+          },
+          "master": {
+            "title": "Master",
+            "type": "number"
+          }
+        },
+        "required": [
+          "crossfader",
+          "master",
+          "channels"
+        ],
+        "title": "MixerMarkOut",
+        "type": "object"
+      },
       "MyTagAssignIn": {
         "properties": {
           "add": {
@@ -4728,6 +5491,16 @@
             ],
             "title": "Notes"
           },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PairingSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "default": "manual",
             "enum": [
@@ -4748,6 +5521,80 @@
           "to_stable_id"
         ],
         "title": "PairingCreate",
+        "type": "object"
+      },
+      "PairingDeckSnapshot": {
+        "properties": {
+          "deck_id": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck Id",
+            "type": "integer"
+          },
+          "eq_adjusts": {
+            "items": {
+              "$ref": "#/components/schemas/PairingEqAdjust"
+            },
+            "title": "Eq Adjusts",
+            "type": "array"
+          },
+          "position_ms": {
+            "minimum": 0.0,
+            "title": "Position Ms",
+            "type": "integer"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/PairingTimestamp"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck_id",
+          "stable_id",
+          "title",
+          "position_ms",
+          "timestamp",
+          "eq_adjusts"
+        ],
+        "title": "PairingDeckSnapshot",
+        "type": "object"
+      },
+      "PairingEqAdjust": {
+        "properties": {
+          "band": {
+            "enum": [
+              "low",
+              "mid",
+              "high"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "band",
+          "value"
+        ],
+        "title": "PairingEqAdjust",
         "type": "object"
       },
       "PairingOut": {
@@ -4783,6 +5630,16 @@
             "title": "Pairing Id",
             "type": "string"
           },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PairingSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "enum": [
               "manual",
@@ -4811,6 +5668,58 @@
           "updated_at"
         ],
         "title": "PairingOut",
+        "type": "object"
+      },
+      "PairingSnapshot": {
+        "properties": {
+          "beat_sync_max": {
+            "title": "Beat Sync Max",
+            "type": "boolean"
+          },
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/PairingDeckSnapshot"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Decks",
+            "type": "array"
+          },
+          "version": {
+            "const": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "beat_sync_max",
+          "decks"
+        ],
+        "title": "PairingSnapshot",
+        "type": "object"
+      },
+      "PairingTimestamp": {
+        "properties": {
+          "unit": {
+            "enum": [
+              "beats",
+              "time"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "unit",
+          "value"
+        ],
+        "title": "PairingTimestamp",
         "type": "object"
       },
       "PassiveActivityOut": {
@@ -4944,6 +5853,68 @@
         "title": "PendingTrackOut",
         "type": "object"
       },
+      "PerformanceFeedbackMarkIn": {
+        "properties": {
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/DeckMarkOut"
+            },
+            "title": "Decks",
+            "type": "array"
+          },
+          "mixer": {
+            "$ref": "#/components/schemas/MixerMarkOut"
+          },
+          "recorded_at_ms": {
+            "minimum": 0.0,
+            "title": "Recorded At Ms",
+            "type": "integer"
+          },
+          "vote": {
+            "enum": [
+              "bad",
+              "good",
+              "great"
+            ],
+            "title": "Vote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recorded_at_ms",
+          "vote",
+          "decks",
+          "mixer"
+        ],
+        "title": "PerformanceFeedbackMarkIn",
+        "type": "object"
+      },
+      "PerformanceFeedbackMarksOut": {
+        "properties": {
+          "count": {
+            "maximum": 400.0,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "last_mark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PerformanceFeedbackMarkIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "count",
+          "last_mark"
+        ],
+        "title": "PerformanceFeedbackMarksOut",
+        "type": "object"
+      },
       "PermissionsOut": {
         "description": "The folder-access answer, and what to do about a refusal.",
         "properties": {
@@ -4975,6 +5946,44 @@
           "how_to_grant"
         ],
         "title": "PermissionsOut",
+        "type": "object"
+      },
+      "PinEnvironmentOut": {
+        "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
+        "properties": {
+          "machine": {
+            "title": "Machine",
+            "type": "string"
+          },
+          "release_version": {
+            "title": "Release Version",
+            "type": "string"
+          },
+          "ui": {
+            "enum": [
+              "chrome-loop",
+              "packaged-app"
+            ],
+            "title": "Ui",
+            "type": "string"
+          },
+          "viewport_height": {
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ui",
+          "viewport_width",
+          "viewport_height",
+          "machine",
+          "release_version"
+        ],
+        "title": "PinEnvironmentOut",
         "type": "object"
       },
       "PlanModel": {
@@ -5757,7 +6766,79 @@
         "title": "PlaylistWriteOut",
         "type": "object"
       },
+      "PreflightCheckOut": {
+        "description": "One row of PREFLIGHT-01's boot gate (issue #771).\n\n``status`` is never a two-way pass/fail: ``pending`` covers a check that\ngenuinely could not be exercised (e.g. audio-access with no resolvable\ntrack anywhere in a small sample), which is an honest denominator, never\na fabricated pass. ``remediation`` is null on a pass or a pending row and\na real sentence on a fail.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status",
+          "detail"
+        ],
+        "title": "PreflightCheckOut",
+        "type": "object"
+      },
+      "PreflightOut": {
+        "description": "``GET /api/v1/preflight`` -- the ONE source of truth for the boot\ngate. ``status`` is ``fail`` iff any check is ``fail``; a ``pending``\ncheck never blocks it, because a check that could not be exercised is\nnot a defect on its own.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/PreflightCheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "PreflightOut",
+        "type": "object"
+      },
       "ProvenanceOut": {
+        "description": "One field's value plus where it came from and whether it is real.\n\n``status`` has NO DEFAULT on purpose (native-analysis v1, spec section 3\nand `.planning/REQUIREMENTS.md` NATIVE-04). A default of ``ok`` would let\na caller omit the field and serialize a `failed` or `missing` own-analysis\nlane as a success, which is the exact silent-fallback shape this milestone\nexists to remove. Every construction site states its status, and the\nrekordbox/legacy boundary passes ``ok`` explicitly.",
         "properties": {
           "confidence": {
             "anyOf": [
@@ -5774,8 +6855,28 @@
             "title": "Modified At",
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "source": {
             "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Status",
             "type": "string"
           },
           "value": {
@@ -5785,7 +6886,8 @@
         "required": [
           "value",
           "source",
-          "modified_at"
+          "modified_at",
+          "status"
         ],
         "title": "ProvenanceOut",
         "type": "object"
@@ -6273,7 +7375,7 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False, no cues, no genre) while ``folder_path``, ``file_exists``\nand ``quality`` still carry the state layer's own disk truth.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the optional ``mutagen``\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False and no cues). Genre and comment instead come from the\nstate layer's import-time file tags, alongside ``folder_path``,\n``file_exists`` and ``quality``.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the optional ``mutagen``\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
@@ -6508,6 +7610,43 @@
           "verified"
         ],
         "title": "ReceiptModel",
+        "type": "object"
+      },
+      "RecentResultOut": {
+        "properties": {
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "finished_at",
+          "pushed",
+          "pulled"
+        ],
+        "title": "RecentResultOut",
         "type": "object"
       },
       "ReconcileSummary": {
@@ -7117,6 +8256,27 @@
             ],
             "title": "Artist"
           },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -7149,6 +8309,33 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
           },
           "etag": {
             "title": "Etag",
@@ -7283,6 +8470,11 @@
           "vocals",
           "stems",
           "has_rb_mapping",
+          "artwork_available",
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason",
           "match_context"
         ],
         "title": "SearchHit",
@@ -8355,6 +9547,224 @@
         "title": "SyncPolicyPut",
         "type": "object"
       },
+      "SyncSnapshotIn": {
+        "properties": {
+          "a_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Beat N"
+          },
+          "a_position_ms": {
+            "minimum": 0.0,
+            "title": "A Position Ms",
+            "type": "number"
+          },
+          "a_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Phase"
+          },
+          "a_tempo_ratio": {
+            "minimum": 0.0,
+            "title": "A Tempo Ratio",
+            "type": "number"
+          },
+          "b_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Beat N"
+          },
+          "b_position_ms": {
+            "minimum": 0.0,
+            "title": "B Position Ms",
+            "type": "number"
+          },
+          "b_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Phase"
+          },
+          "b_tempo_ratio": {
+            "minimum": 0.0,
+            "title": "B Tempo Ratio",
+            "type": "number"
+          },
+          "master_side": {
+            "enum": [
+              "a",
+              "b"
+            ],
+            "title": "Master Side",
+            "type": "string"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          },
+          "sync_mode": {
+            "enum": [
+              "bar",
+              "beat"
+            ],
+            "title": "Sync Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_a",
+          "stable_b",
+          "master_side",
+          "sync_mode",
+          "a_tempo_ratio",
+          "b_tempo_ratio",
+          "a_position_ms",
+          "b_position_ms"
+        ],
+        "title": "SyncSnapshotIn",
+        "type": "object"
+      },
+      "SyncSnapshotOut": {
+        "properties": {
+          "a_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Beat N"
+          },
+          "a_position_ms": {
+            "title": "A Position Ms",
+            "type": "number"
+          },
+          "a_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Position Phase"
+          },
+          "a_tempo_ratio": {
+            "title": "A Tempo Ratio",
+            "type": "number"
+          },
+          "b_position_beat_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Beat N"
+          },
+          "b_position_ms": {
+            "title": "B Position Ms",
+            "type": "number"
+          },
+          "b_position_phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Position Phase"
+          },
+          "b_tempo_ratio": {
+            "title": "B Tempo Ratio",
+            "type": "number"
+          },
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "master_side": {
+            "enum": [
+              "a",
+              "b"
+            ],
+            "title": "Master Side",
+            "type": "string"
+          },
+          "stable_a": {
+            "title": "Stable A",
+            "type": "string"
+          },
+          "stable_b": {
+            "title": "Stable B",
+            "type": "string"
+          },
+          "sync_mode": {
+            "enum": [
+              "bar",
+              "beat"
+            ],
+            "title": "Sync Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stable_a",
+          "stable_b",
+          "master_side",
+          "sync_mode",
+          "a_tempo_ratio",
+          "b_tempo_ratio",
+          "a_position_beat_n",
+          "a_position_phase",
+          "a_position_ms",
+          "b_position_beat_n",
+          "b_position_phase",
+          "b_position_ms",
+          "captured_at"
+        ],
+        "title": "SyncSnapshotOut",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -8733,16 +10143,9 @@
             "title": "Options"
           },
           "title": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
           }
         },
         "title": "TodoPatchIn",
@@ -8773,6 +10176,27 @@
             ],
             "title": "Artist"
           },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -8798,6 +10222,33 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
           },
           "file_exists": {
             "title": "File Exists",
@@ -8948,9 +10399,42 @@
           "file_exists",
           "quality",
           "vocals",
-          "stems"
+          "stems",
+          "artwork_available",
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason"
         ],
         "title": "TrackListItemOut",
+        "type": "object"
+      },
+      "TrackLyricsOut": {
+        "description": "Agent-native read model for cached line-synced lyrics only.",
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LyricLineOut"
+            },
+            "minItems": 1,
+            "title": "Lines",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "lines"
+        ],
+        "title": "TrackLyricsOut",
         "type": "object"
       },
       "TrackOut": {
@@ -9182,6 +10666,27 @@
             ],
             "title": "Artist"
           },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
           "bpm": {
             "anyOf": [
               {
@@ -9214,6 +10719,33 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
           },
           "etag": {
             "title": "Etag",
@@ -9343,7 +10875,12 @@
           "quality",
           "vocals",
           "stems",
-          "has_rb_mapping"
+          "has_rb_mapping",
+          "artwork_available",
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason"
         ],
         "title": "TrackRowOut",
         "type": "object"
@@ -9458,6 +10995,16 @@
             "title": "Hide Todo Settings",
             "type": "boolean"
           },
+          "show_agent_pins": {
+            "default": true,
+            "title": "Show Agent Pins",
+            "type": "boolean"
+          },
+          "technically_working_animate": {
+            "default": true,
+            "title": "Technically Working Animate",
+            "type": "boolean"
+          },
           "theme": {
             "default": "dark",
             "enum": [
@@ -9505,6 +11052,28 @@
               }
             ],
             "title": "Hide Todo Settings"
+          },
+          "show_agent_pins": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Agent Pins"
+          },
+          "technically_working_animate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technically Working Animate"
           },
           "theme": {
             "anyOf": [
@@ -10013,6 +11582,150 @@
           "target_mode"
         ],
         "title": "VendorCapabilityOut",
+        "type": "object"
+      },
+      "VocalsAnalyzeIn": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "from-stems",
+              "one"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "VocalsAnalyzeIn",
+        "type": "object"
+      },
+      "VocalsAnalyzeOut": {
+        "properties": {
+          "claimed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Claimed",
+            "type": "array"
+          },
+          "refused": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Refused",
+            "type": "object"
+          }
+        },
+        "required": [
+          "claimed",
+          "refused"
+        ],
+        "title": "VocalsAnalyzeOut",
+        "type": "object"
+      },
+      "VocalsRegionOut": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "intensity": {
+            "title": "Intensity",
+            "type": "integer"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_s",
+          "end_s",
+          "intensity"
+        ],
+        "title": "VocalsRegionOut",
+        "type": "object"
+      },
+      "VocalsStatusOut": {
+        "description": "Same shape and four states as ``/anlz``'s ``vocals`` field.",
+        "properties": {
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/VocalsRegionOut"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "rekordbox",
+              "no_vocals",
+              "demucs",
+              "not_analyzed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "status"
+        ],
+        "title": "VocalsStatusOut",
         "type": "object"
       },
       "VoiceProbeRequest": {
@@ -11294,6 +13007,66 @@
         ]
       }
     },
+    "/api/v1/analysis/source": {
+      "get": {
+        "operationId": "get_analysis_source_api_v1_analysis_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Analysis Source",
+        "tags": [
+          "analysis"
+        ]
+      },
+      "put": {
+        "operationId": "put_analysis_source_api_v1_analysis_source_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisSourcePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Analysis Source",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
     "/api/v1/assistant/chat": {
       "post": {
         "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
@@ -11698,6 +13471,51 @@
       }
     },
     "/api/v1/client-errors": {
+      "get": {
+        "operationId": "list_client_errors_api_v1_client_errors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "untriaged",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Untriaged",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClientErrorRecord"
+                  },
+                  "title": "Response List Client Errors Api V1 Client Errors Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Client Errors",
+        "tags": [
+          "client-errors"
+        ]
+      },
       "post": {
         "operationId": "capture_client_error_api_v1_client_errors_post",
         "requestBody": {
@@ -11733,6 +13551,58 @@
           }
         },
         "summary": "Capture Client Error",
+        "tags": [
+          "client-errors"
+        ]
+      }
+    },
+    "/api/v1/client-errors/{event_id}": {
+      "patch": {
+        "operationId": "triage_client_error_api_v1_client_errors__event_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorTriageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorTriageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Triage Client Error",
         "tags": [
           "client-errors"
         ]
@@ -12011,6 +13881,148 @@
         ]
       }
     },
+    "/api/v1/cloudsync/status": {
+      "get": {
+        "operationId": "get_status_api_v1_cloudsync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/commands": {
+      "post": {
+        "description": "Submit one declared order and wait for the real browser result.",
+        "operationId": "post_command_api_v1_commands_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/commands/next": {
+      "get": {
+        "description": "Let the sole open performance page claim its next agent order.",
+        "operationId": "next_command_api_v1_commands_next_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Next Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/commands/{order_id}/result": {
+      "post": {
+        "description": "Resolve an order with page-produced per-step statuses and mirror delta.",
+        "operationId": "complete_command_api_v1_commands__order_id__result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Complete Command Api V1 Commands  Order Id  Result Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
     "/api/v1/copilot/suggest-next": {
       "post": {
         "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",
@@ -12264,6 +14276,45 @@
         ]
       }
     },
+    "/api/v1/feedback/attachments/{attachment_id}": {
+      "get": {
+        "description": "Stream a stored attachment's bytes back - the agent-native fetch half.",
+        "operationId": "get_attachment_api_v1_feedback_attachments__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Attachment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/comments": {
       "get": {
         "operationId": "list_comments_api_v1_feedback_comments_get",
@@ -12326,7 +14377,7 @@
     },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
-        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.",
+        "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. Every write is a partial update; unset fields are untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
         "operationId": "update_comment_api_v1_feedback_comments__comment_id__patch",
         "parameters": [
           {
@@ -12415,6 +14466,59 @@
           }
         },
         "summary": "Archive Comment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/comments/{comment_id}/attachment": {
+      "post": {
+        "description": "Attach one screenshot to an existing pin (issue #1333).\n\nType and size are checked, and the bytes are verified to actually decode\nas the claimed image type, BEFORE anything touches disk or comments.json -\na declared Content-Type header is never trusted alone. Replaces any\nattachment the pin already carried, deleting its old file so attachments\nnever accumulate orphans.",
+        "operationId": "upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Attachment",
         "tags": [
           "feedback"
         ]
@@ -12535,6 +14639,66 @@
           }
         },
         "summary": "Put General",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/performance-marks": {
+      "get": {
+        "operationId": "get_performance_marks_api_v1_feedback_performance_marks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Performance Marks",
+        "tags": [
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "create_performance_mark_api_v1_feedback_performance_marks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PerformanceFeedbackMarkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceFeedbackMarksOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Performance Mark",
         "tags": [
           "feedback"
         ]
@@ -13204,6 +15368,157 @@
         ]
       }
     },
+    "/api/v1/library/wheel": {
+      "get": {
+        "operationId": "get_library_wheel_api_v1_library_wheel_get",
+        "parameters": [
+          {
+            "description": "Per-track overlay on the genre-grouped tree. A disabled axis (decade, overplayed_ness, set_played_in) still returns the real tree with every axis_value null and a stated reason, never a fabricated number.",
+            "in": "query",
+            "name": "axis",
+            "required": false,
+            "schema": {
+              "default": "play_count",
+              "description": "Per-track overlay on the genre-grouped tree. A disabled axis (decade, overplayed_ness, set_played_in) still returns the real tree with every axis_value null and a stated reason, never a fabricated number.",
+              "enum": [
+                "genre",
+                "decade",
+                "play_count",
+                "popularity",
+                "overplayed_ness",
+                "playlist",
+                "set_played_in"
+              ],
+              "title": "Axis",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Library Wheel Api V1 Library Wheel Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Library Wheel",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/library/wheel/axes": {
+      "get": {
+        "description": "Axis catalog alone, so a picker can render enabled/disabled without\npaying for a full tree fetch.",
+        "operationId": "get_library_wheel_axes_api_v1_library_wheel_axes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Get Library Wheel Axes Api V1 Library Wheel Axes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Wheel Axes",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/lyrics/search": {
+      "get": {
+        "operationId": "search_lyrics_api_v1_lyrics_search_get",
+        "parameters": [
+          {
+            "description": "Search text matched against cached synced lyrics only - never title, artist, genre or tags (see GET /api/v1/search for that).",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Search text matched against cached synced lyrics only - never title, artist, genre or tags (see GET /api/v1/search for that).",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Lyrics",
+        "tags": [
+          "lyrics"
+        ]
+      }
+    },
     "/api/v1/mytags": {
       "get": {
         "operationId": "list_mytags_api_v1_mytags_get",
@@ -13489,6 +15804,234 @@
         "summary": "Create Pairing",
         "tags": [
           "pairings"
+        ]
+      }
+    },
+    "/api/v1/pairings/alignments": {
+      "get": {
+        "operationId": "list_alignments_api_v1_pairings_alignments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stable_a",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable A"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stable_b",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable B"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlignmentOut"
+                  },
+                  "title": "Response List Alignments Api V1 Pairings Alignments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Alignments",
+        "tags": [
+          "pairings-capture"
+        ]
+      },
+      "post": {
+        "operationId": "create_alignment_api_v1_pairings_alignments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlignmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlignmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Alignment",
+        "tags": [
+          "pairings-capture"
+        ]
+      }
+    },
+    "/api/v1/pairings/sync-snapshots": {
+      "get": {
+        "operationId": "list_sync_snapshots_api_v1_pairings_sync_snapshots_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stable_a",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable A"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stable_b",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable B"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SyncSnapshotOut"
+                  },
+                  "title": "Response List Sync Snapshots Api V1 Pairings Sync Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sync Snapshots",
+        "tags": [
+          "pairings-capture"
+        ]
+      },
+      "post": {
+        "operationId": "create_sync_snapshot_api_v1_pairings_sync_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncSnapshotIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncSnapshotOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sync Snapshot",
+        "tags": [
+          "pairings-capture"
         ]
       }
     },
@@ -14352,6 +16895,27 @@
         "summary": "Get Writeback Targets",
         "tags": [
           "playlist-writeback"
+        ]
+      }
+    },
+    "/api/v1/preflight": {
+      "get": {
+        "operationId": "read_preflight_api_v1_preflight_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreflightOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Preflight",
+        "tags": [
+          "preflight"
         ]
       }
     },
@@ -15380,6 +17944,85 @@
         "summary": "Get Pending Tracks",
         "tags": [
           "spotify"
+        ]
+      }
+    },
+    "/api/v1/state/ui-mirror": {
+      "delete": {
+        "description": "Mark the performance page closed during its unmount lifecycle.",
+        "operationId": "close_ui_mirror_api_v1_state_ui_mirror_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Close Ui Mirror",
+        "tags": [
+          "agent-state"
+        ]
+      },
+      "get": {
+        "description": "Return the latest page mirror, or fail explicitly when no page is open.",
+        "operationId": "get_ui_mirror_api_v1_state_ui_mirror_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ui Mirror",
+        "tags": [
+          "agent-state"
+        ]
+      },
+      "put": {
+        "description": "Replace the page's current screen document with strict JSON input.",
+        "operationId": "publish_ui_mirror_api_v1_state_ui_mirror_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Publish Ui Mirror Api V1 State Ui Mirror Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Ui Mirror",
+        "tags": [
+          "agent-state"
         ]
       }
     },
@@ -16842,6 +19485,59 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/lyrics": {
+      "get": {
+        "description": "Read the real cached line timeline without fetching or inventing lyrics.",
+        "operationId": "get_track_lyrics_api_v1_tracks__stable_id__lyrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLyricsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LyricsUnavailableOut"
+                }
+              }
+            },
+            "description": "No cached line-synced lyrics exist for this track."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Lyrics",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/rb-meta": {
       "get": {
         "description": "Rekordbox vendor fields + file-existence flags for browser rows.",
@@ -17240,6 +19936,89 @@
         "summary": "Usb Volume Events",
         "tags": [
           "usb"
+        ]
+      }
+    },
+    "/api/v1/vocals/analyze": {
+      "post": {
+        "operationId": "analyze_vocals_api_v1_vocals_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocalsAnalyzeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocalsAnalyzeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze Vocals",
+        "tags": [
+          "vocals"
+        ]
+      }
+    },
+    "/api/v1/vocals/{stable_id}/status": {
+      "get": {
+        "operationId": "get_vocal_status_api_v1_vocals__stable_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocalsStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Vocal Status",
+        "tags": [
+          "vocals"
         ]
       }
     },

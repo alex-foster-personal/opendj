@@ -82,6 +82,7 @@ def _sample_library() -> OpenDjLibrary:
 
 @pytest.mark.requirement("OPEN-01")
 class TestExportModuleFamily:
+    """[if] module exports are requested [then] their contract remains available, [else stop]."""
     """Rekordbox / djay adapters via the module-family path."""
 
     def test_export_writes_canonical_doc(
@@ -183,6 +184,7 @@ class TestExportModuleFamily:
 
 @pytest.mark.requirement("OPEN-01")
 class TestExportClassFamily:
+    """[if] class exports are requested [then] their contract remains available, [else stop]."""
     """Serato / Traktor adapters via the class-family path (read/write)."""
 
     def test_traktor_export_roundtrip(self, tmp_path: Path) -> None:

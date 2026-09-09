@@ -36,7 +36,21 @@ from apps.spotify.acquisition import SOURCE_TEMPLATES
 from scripts import gap_sheet
 from scripts import missing_by_playcount as mbp
 
+#: Fake, obviously-not-real stale-home prefix used by tests. Never a real
+#: machine name (#910) -- the value only has to be consistent within a test.
+_TEST_DEAD_HOME = "/Users/test-dead-home/"
+
 # ----- fixtures -------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _dead_home_prefix_configured(monkeypatch):
+    """Most tests below don't care about dead-home matching at all, but
+    scripts.missing_by_playcount._classify reads MDT_DEAD_HOME_PREFIXES for
+    every non-empty path, so it must be set for those tests to run. The
+    fail-fast test explicitly deletes it again.
+    """
+    monkeypatch.setenv(mbp.DEAD_HOME_PREFIXES_ENV, _TEST_DEAD_HOME)
 
 
 def _make_db(tmp_path, rows):
@@ -79,8 +93,25 @@ def test_an_empty_path_is_its_own_status() -> None:
 
 
 def test_a_dead_machine_home_is_flagged_before_the_filesystem_is_consulted() -> None:
-    """/Users/dev is another machine's home -- never a live stat."""
-    assert mbp._classify("/Users/dev/Music/x.mp3") == "missing-dead-machine"
+    """The configured dead-home prefix is matched -- never a live stat."""
+    assert mbp._classify(f"{_TEST_DEAD_HOME}Music/x.mp3") == "missing-dead-machine"
+
+
+def test_dead_home_prefix_env_unset_fails_fast(monkeypatch) -> None:
+    """No hardcoded fallback (#910): an unset var must not silently match
+    zero rows, it must stop the run.
+    """
+    monkeypatch.delenv(mbp.DEAD_HOME_PREFIXES_ENV, raising=False)
+    with pytest.raises(SystemExit):
+        mbp._classify("/Users/whoever/Music/x.mp3")
+
+
+def test_dead_home_prefix_env_set_to_test_value_matches() -> None:
+    """The match mechanism itself (not just the env plumbing) still works
+    once a real value is supplied at runtime.
+    """
+    assert mbp._classify(f"{_TEST_DEAD_HOME}Music/x.mp3") == "missing-dead-machine"
+    assert mbp._classify("/Users/someone-else/Music/x.mp3") != "missing-dead-machine"
 
 
 def test_a_directory_is_not_a_present_file(tmp_path) -> None:

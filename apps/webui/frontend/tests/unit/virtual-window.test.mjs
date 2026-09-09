@@ -9,6 +9,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if topPad/bottomPad don't reconstruct the full scrollable height then the scrollbar lies
 // - if fetchAllPages stops before next_cursor is null then rows silently truncate again
 // - if fetchAllPages doesn't fail loudly past the safety ceiling then a pagination bug hides
+// - if onPage receives out-of-order or non-cumulative counts then the ad59ac load
+//   indicator would show progress jumping around instead of monotonically climbing
+// - if onPage claims work finer than completed cursor pages then the pin is broken
 
 let mod;
 
@@ -215,4 +218,35 @@ test('fetchAllPages: a real library exactly N * pageSize long does not falsely t
 	});
 	assert.equal(rows.length, FULL_PAGES * PAGE_SIZE);
 	assert.equal(pagesServed, FULL_PAGES + 1);
+});
+
+test('fetchAllPages: onPage receives cumulative counts in order, including the final confirming empty page', async () => {
+	const pages = [_page([1, 2], 'c1'), _page([3, 4, 5], 'c2'), _page([], null)];
+	const seen = [];
+	const rows = await mod.fetchAllPages(
+		async () => pages.shift(),
+		{ onPage: (info) => seen.push({ ...info }) }
+	);
+	assert.deepEqual(rows, [1, 2, 3, 4, 5]);
+	assert.deepEqual(seen, [
+		{ loaded: 2, pageCount: 1 },
+		{ loaded: 5, pageCount: 2 },
+		{ loaded: 5, pageCount: 3 }
+	]);
+});
+
+test('if onPage claims work finer than completed cursor pages then the pin is broken', async () => {
+	// onPage must fire exactly once per fetchPage resolution - never
+	// interpolated between pages - so a caller driving a progress bar off it
+	// can never show movement finer than a whole completed page.
+	let fetchCalls = 0;
+	let onPageCalls = 0;
+	await mod.fetchAllPages(
+		async () => {
+			fetchCalls += 1;
+			return fetchCalls <= 2 ? _page([fetchCalls], `c${fetchCalls}`) : _page([], null);
+		},
+		{ onPage: () => (onPageCalls += 1) }
+	);
+	assert.equal(onPageCalls, fetchCalls);
 });

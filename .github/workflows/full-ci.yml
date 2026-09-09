@@ -30,15 +30,115 @@ concurrency:
   # Pull requests keep the shared group and still cancel superseded runs.
   cancel-in-progress: true
 
+env:
+  # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
+  # made actions/checkout fail with EACCES and skip every test step (#1338).
+  # This covers interpreters these workflows start directly. It does NOT reach
+  # anything run through `sudo`, which resets the environment with no env_keep
+  # for this name, so the pre-checkout hygiene step below is the repair path
+  # for a root-run interpreter.
+  PYTHONDONTWRITEBYTECODE: "1"
+
 jobs:
   test:
     name: full pytest + coverage
+    env:
+      # The job venv IS `.venv`, the path `uv run` treats as the project
+      # environment. Tests spawn `uv run --with modal ...` (apps/stems/job.py)
+      # against the repo root, and a plain `uv run` SYNCS that environment to
+      # uv.lock first: it pruned pytest, librosa and soundfile out from under
+      # the running suite (trunk red Fri 4 Sep 2026 after #1106 moved the venv
+      # here). UV_NO_SYNC makes every child `uv run` use `.venv` as provisioned.
+      UV_NO_SYNC: "1"
+      # One native thread per process. Shards share a host with fifteen
+      # other runners, and on trunk e9ed11ecf (Fri 4 Sep 2026) `ps` on nucbox
+      # showed `apps.analysis.run --backend librosa` subprocesses spawned by
+      # the suite at 400-650 percent CPU each: OpenBLAS and numba fan every
+      # call across all 32 threads, sixteen runners do it at once, and the
+      # same shard then took 636 s there against 314 s on a quieter host.
+      # The tests measure behavior, not wall time; one thread each is the
+      # standard setting for a shared CI host. Pinned by
+      # tests/scripts/test_ci_thread_caps.py.
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
     # Runner is a repo-variable switch; see ci.yml's `test` job for the full
     # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 20
 
     steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
+      # checkout cleans the tree as the runner user, so one root-owned file in
+      # it fails the unlink with EACCES, dies at step 2, and skips every test
+      # step after it -- a red carrying no test evidence. The runner user has
+      # NOPASSWD sudo (e2e.yml documents it). This runs as root, so it is
+      # bounded three ways, and each bound is load-bearing. A mount point
+      # beneath the workspace fails the step outright: `-xdev` alone is not
+      # enough, because a bind mount from elsewhere on the SAME filesystem
+      # keeps the same st_dev and is traversed regardless (measured on the
+      # runner host, Fri 5 Sep 2026). `-xdev` then stops a cross-filesystem
+      # mount appearing after that check. The workspace path is escaped the way
+      # mountinfo escapes field 5 and handed to awk through ENVIRON, NOT `-v`:
+      # `-v` processes escape sequences, so it decodes \040 straight back to a
+      # space and undoes the escaping it was given. `chown -h` acts on a symlink
+      # itself rather than its referent, so a link pointing out of the tree cannot
+      # drag the repair outside. One `find` expression drives the count and
+      # the repair, so the number reported is the set acted on.
+      #
+      # The counts come from `find`, not from `chown -c`: GNU coreutils prints
+      # that report on stdout but uutils prints it on stderr, so a piped count
+      # reads 0 forever on a uutils host and the log would claim the step found
+      # nothing when it had just repaired thousands of files. `remaining` is
+      # the proof the repair landed, and a non-zero one fails here rather than
+      # letting checkout die at the next step with a worse message.
+      #
+      # It also NAMES the offending entries -- owner, UTC mtime, path -- and
+      # names them BEFORE the chown, because the repair destroys the very
+      # evidence that identifies the writer. #1338 could say 957 to 1130 files
+      # per runner but not which process wrote them, and cost a forensic
+      # session for want of exactly this. The listing goes to a file rather
+      # than into `head` down a pipe: under `pipefail` a SIGPIPE'd `find`
+      # fails the step. TZ reaches `find` through `env` because sudo here is
+      # `env_reset` with no SETENV, so `sudo TZ=UTC find` is refused outright,
+      # and an mtime printed in local time under a `Z` suffix is a lie.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -52,22 +152,78 @@ jobs:
         with:
           # 3.11 is the stable CI target; see ci.yml for why.
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
-      - name: System deps for pyrekordbox (SQLCipher)
-        # See ci.yml: libsqlcipher-dev ships the runtime shared library on
-        # Ubuntu noble.
-        run: |
-          scripts/ci_host_lock.sh packages sudo sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file'
+      - name: Setup uv for isolated dependency contracts
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
 
-      - name: Install Python deps
+      - name: Provision isolated Python test environment
         # modal is a CI test-environment tool, not a package dependency;
         # see the fuller note in ci.yml.
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install modal
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python -r requirements.txt modal
+
+      - name: System deps for pyrekordbox (SQLCipher)
+        # Keep the project interpreter available to any post-failure steps.
+        # See ci.yml: libsqlcipher-dev ships the runtime shared library on
+        # Ubuntu noble.
+        run: |
+          scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+
+      - name: Runner preflight - host binaries the suite shells out to
+        # Name the missing binary at second five rather than minute four:
+        # `file`, `bwrap` (#1056), the Tauri toolchain (93e11a47f) and `just`
+        # (#1363) each reddened a trunk shard as a bare FileNotFoundError when
+        # its test landed on the host that lacked it, green on the PR because
+        # that shard had landed on the other host. The list is pinned by
+        # tests/scripts/test_ci_shard_binary_preflight.py; provisioning lives in
+        # docs/ci-actions-cost-review-2026-08-16.md item 7.
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        # librosa's numba artifacts live beside its source by default, and this
+        # job recreates `.venv` every run, so every job paid a 25-45 s cold
+        # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
+        # every shard, 0.3 s once the cache survives venv recreation). One
+        # directory per RUNNER: a runner runs one job at a time, so the
+        # warm-up below is the only cold writer it ever sees, and the stamp
+        # next to it is what lets the warm-up prove the cache is still what
+        # that serial writer left. Hosted runners get a fresh HOME per job
+        # and simply compile once, as before.
+        # Keyed by the toolchain too (python, numba, llvmlite, librosa, numpy
+        # versions, printed by the module that owns the cache): an upgrade
+        # lands in an empty directory and compiles once under the lock,
+        # instead of numba rejecting stale artifacts at first use in whatever
+        # processes got there first, concurrently and cold.
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      - name: Warm the numba JIT cache before the suite (#1316)
+        # librosa's `@numba.guvectorize(..., cache=True)` hot paths compile on
+        # first call into `.nbi`/`.nbc` artifacts beside the librosa source.
+        # Two processes meeting a COLD cache interleave those writes and every
+        # later process that loads the result dies at a NULL instruction
+        # pointer, with no traceback and no Python exception (issue #1316).
+        # `apps.analysis.run` warms in the parent before it creates a pool, so
+        # this step is belt and braces - but it moves the one-off compile out
+        # of whichever test happens to touch analysis first, where it looks
+        # like an unrelated timeout, and it costs nothing on a cache that is
+        # already what a previous warm-up left.
+        #
+        # `--purge-if-stale`, not `--purge`: the cache now persists per runner
+        # (step above), so a purge on every job would buy a cold ~25-45 s
+        # compile each time to insure against a state a single serial writer
+        # cannot produce. The stamp is the witness: a cache the last serial
+        # warm-up left untouched is kept and the step takes ~0.3 s; a cache
+        # without a matching stamp (killed writer, racing writer, librosa
+        # upgrade) is purged before anything loads it, which is the only
+        # repair for a poisoned cache, since loading it is what segfaults.
+        # Pinned by tests/scripts/test_ci_jit_warmup.py.
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
       - name: Run full pytest with coverage
         # coverage: apps/* only. --cov-report=xml for external tools.
@@ -88,7 +244,7 @@ jobs:
         # apps/webui/frontend/node_modules/typescript, which this job never
         # installs. Both are a hard gate in ci.yml's `quality` job instead.
         run: |
-          pytest \
+          .venv/bin/pytest \
             --collect-floor 3700 \
             --ignore=tests/quality/test_frontend_typing_gate.py \
             --ignore=tests/quality/test_frontend_typing_directives.py \
@@ -101,27 +257,33 @@ jobs:
       - name: Upload coverage-matrix.md artifact
         if: always()
         # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-matrix
           path: coverage-matrix.md
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
       - name: Upload htmlcov/ artifact
         if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: htmlcov
           path: htmlcov/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
       - name: Upload coverage.xml
         if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3

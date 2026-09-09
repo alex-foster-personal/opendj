@@ -57,3 +57,5 @@ def test_openapi_schema_generated(client):
         "/api/v1/queues/{kind}", "/api/v1/health",
     ):
         assert path in paths, f"missing: {path}"
+
+pytestmark = pytest.mark.rb_parity

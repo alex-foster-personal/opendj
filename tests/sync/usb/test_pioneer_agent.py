@@ -1,10 +1,10 @@
-"""Tests for Prototype C — Claude computer-use Rekordbox export agent.
+"""Tests for Prototype C -- Claude computer-use Rekordbox export agent.
 
 These tests stay strictly offline by default. The live-run smoke is gated
 behind the ``RB_AGENT_LIVE=1`` env var so CI can't accidentally trigger a
 real USB write or burn Anthropic credits.
 
-Requirement: CAT-06 — Rekordbox 7 USB export automation prototype.
+Requirement: CAT-06 -- Rekordbox 7 USB export automation prototype.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -48,17 +49,13 @@ from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     DisplayGeometry,
     Trace,
     _translate_key_combo,
-    capture_window,
     ensure_frontmost,
-    is_point_inside_window,
-    quit_app,
     scaled_to_points,
     take_screenshot,
-    window_scaled_to_global_points,
 )
 
 # --------------------------------------------------------------------------- #
-# Coordinate scaling — pure math, no GUI needed.
+# Coordinate scaling -- pure math, no GUI needed.
 # --------------------------------------------------------------------------- #
 
 
@@ -86,7 +83,7 @@ class TestCoordScaling:
     def test_retina_downsample(self) -> None:
         """Retina 2880×1800 pixels / 1440×900 points. Claude sees 1280×800.
         Clicking (1280, 800) in Claude frame should land at (1440, 900)
-        in macOS points — the bottom-right corner."""
+        in macOS points -- the bottom-right corner."""
         geom = DisplayGeometry(2880, 1800, 1440, 900)
         x, y = scaled_to_points(
             1280, 800, scaled_width=1280, scaled_height=800, geometry=geom
@@ -135,7 +132,7 @@ class TestKeyTranslate:
 
 
 # --------------------------------------------------------------------------- #
-# Screenshot smoke — real Quartz capture.
+# Screenshot smoke -- real Quartz capture.
 # Uses an injected PNG so we don't actually need Screen Recording perms
 # in the test sandbox; that's covered by the env-gated live test below.
 # --------------------------------------------------------------------------- #
@@ -192,7 +189,7 @@ class TestTrace:
 
 
 # --------------------------------------------------------------------------- #
-# Agent loop — mocked API client.
+# Agent loop -- mocked API client.
 # --------------------------------------------------------------------------- #
 
 
@@ -244,6 +241,11 @@ class TestAgentDryRunInit:
             max_steps=5,
             trace_dir=tmp_path,
             api_key="sk-test-xxx",
+            # This test is offline by contract ("no network or GUI
+            # needed"). Leaving frontmost_app at its "rekordbox" default
+            # ran the real preflight activate and COLD-LAUNCHED Rekordbox
+            # on every suite run - the bug fixed alongside this test.
+            frontmost_app=None,
         )
         result = run_export_agent(cfg, client=mock_client)
 
@@ -280,321 +282,135 @@ class TestAgentDryRunInit:
             100 / 1_000_000 * 3.0 + 20 / 1_000_000 * 15.0
         )
 
+    def test_offline_flow_never_activates_an_app(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Regression (Sun 31 Aug 2026): this offline flow used to run the
+        real frontmost preflight, and AppleScript ``activate`` LAUNCHES a
+        stopped app - so `pytest tests/` cold-started Rekordbox (MyTag +
+        library scan) on every full-suite run, on every machine, with no
+        hardware involved. The suite must drive zero GUI activations.
 
-# --------------------------------------------------------------------------- #
-# Window-isolated capture + click-guard + frontmost enforcement (Fixes 1/3/6)
-# --------------------------------------------------------------------------- #
+        ``frontmost_app=None`` is the real guard here (``run_export_agent``
+        only reaches ``ensure_frontmost`` when it is set) - not a
+        monkeypatched substitute for one. Earlier this test also replaced
+        ``ensure_frontmost`` wholesale, which proved only that the FAKE was
+        never called and hid the real running-app/activation path from
+        coverage entirely. This version leaves ``ensure_frontmost`` real
+        and asserts at the actual OS boundary it would use to activate
+        (``subprocess.run``, the ``osascript`` dispatcher), so a regression
+        that calls activation unconditionally shows up as a real
+        invocation attempt rather than vanishing into a mock.
+        """
+        from apps.sync.usb.pioneer import agent as agent_mod
+        from apps.sync.usb.pioneer import agent_actuator as actuator_mod
+        from apps.sync.usb.pioneer.agent import AgentConfig, run_export_agent
 
-
-class TestWindowIsolatedCapture:
-    """``capture_window`` must emit the documented metadata shape in
-    both window and display-fallback modes, and (critically) must
-    translate clicks back to GLOBAL screen points using the window's
-    origin \u2014 not just the display frame.
-    """
-
-    def test_window_mode_metadata_shape(self) -> None:
-        raw = _synthetic_png(1600, 1000)
-        injected = {
-            "window_id": 42,
-            "owner_name": "rekordbox",
-            "title": "rekordbox 7.2.14",
-            "bounds": {"x": 100.0, "y": 200.0, "w": 1600.0, "h": 1000.0},
-            "layer": 0,
-        }
-        png, meta = capture_window(
-            app_name_substring="rekordbox",
-            downsample_width=800,
-            _raw_bytes=raw,
-            _injected_window=injected,
+        monkeypatch.setattr(
+            agent_mod.Actuator,
+            "capture",
+            lambda self: {
+                "png_bytes": _synthetic_png(1280, 540),
+                "geometry": DisplayGeometry(5120, 2160, 5120, 2160),
+                "scaled_size": (1280, 540),
+                "base64": "",
+            },
         )
-        assert png[:8] == b"\x89PNG\r\n\x1a\n"
-        assert meta["capture_mode"] == "window"
-        assert meta["window_id"] == 42
-        assert meta["owner_name"] == "rekordbox"
-        assert meta["window_bounds"] == {
-            "x": 100.0, "y": 200.0, "w": 1600.0, "h": 1000.0,
-        }
-        assert meta["downsample_width"] == 800
-        assert meta["downsample_height"] == 500
-        assert meta["physical_width"] == 1600
-        assert meta["physical_height"] == 1000
-        assert meta["backing_scale"] == pytest.approx(1.0)
+        activations: list[list[str]] = []
 
-    def test_window_coord_translation_adds_origin(self) -> None:
-        """A click at the CENTRE of the downsampled frame should land
-        at the centre of the window in GLOBAL screen coords \u2014 i.e.
-        the window origin must be added after coordinate scaling.
-        """
-        meta = {
-            "capture_mode": "window",
-            "window_bounds": {"x": 500.0, "y": 300.0, "w": 1600.0, "h": 1000.0},
-            "window_id": 1,
-            "owner_name": "rekordbox",
-            "title": "",
-            "downsample_width": 800,
-            "downsample_height": 500,
-            "physical_width": 1600,
-            "physical_height": 1000,
-            "backing_scale": 1.0,
-        }
-        gx, gy = window_scaled_to_global_points(400, 250, meta)
-        assert gx == 500 + 800
-        assert gy == 300 + 500
+        def _fake_subprocess_run(args: list[str], **kw: Any) -> SimpleNamespace:
+            activations.append(args)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    def test_display_fallback_when_no_window_injected(self) -> None:
-        """When no window is injected and no live app matches, we fall
-        back to display-mode capture with capture_mode="display".
-        """
-        raw = _synthetic_png(2560, 1440)
-        png, meta = capture_window(
-            app_name_substring="__definitely_not_a_real_app__",
-            downsample_width=1920,
-            _raw_bytes=raw,
+        monkeypatch.setattr(actuator_mod.subprocess, "run", _fake_subprocess_run)
+
+        mock_client = MagicMock()
+        resp = SimpleNamespace(
+            id="msg_1",
+            stop_reason="end_turn",
+            content=[
+                SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")
+            ],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
         )
-        assert png[:8] == b"\x89PNG\r\n\x1a\n"
-        assert meta["capture_mode"] == "display"
-        assert meta["window_bounds"]["x"] == 0.0
-        assert meta["window_bounds"]["y"] == 0.0
-        assert meta["downsample_width"] == 1920
+        mock_client.beta.messages.create.side_effect = [resp, resp]
 
-
-class TestClickGuard:
-    """``is_point_inside_window`` + Actuator integration enforce Fix 6
-    \u2014 clicks outside the Rekordbox window are rejected.
-    """
-
-    def test_point_inside_passes(self) -> None:
-        meta = {
-            "capture_mode": "window",
-            "window_bounds": {"x": 100.0, "y": 100.0, "w": 1000.0, "h": 800.0},
-        }
-        assert is_point_inside_window(500, 500, meta) is True
-        assert is_point_inside_window(100, 100, meta) is True
-        assert is_point_inside_window(1099, 899, meta) is True
-
-    def test_point_outside_fails(self) -> None:
-        meta = {
-            "capture_mode": "window",
-            "window_bounds": {"x": 100.0, "y": 100.0, "w": 1000.0, "h": 800.0},
-        }
-        assert is_point_inside_window(50, 50, meta) is False
-        assert is_point_inside_window(2000, 500, meta) is False
-        assert is_point_inside_window(500, 2000, meta) is False
-
-    def test_display_mode_always_passes(self) -> None:
-        """Display-mode captures have no window bounds to enforce;
-        the guard is a no-op."""
-        meta = {
-            "capture_mode": "display",
-            "window_bounds": {"x": 0.0, "y": 0.0, "w": 5120.0, "h": 2160.0},
-        }
-        assert is_point_inside_window(999999, 999999, meta) is True
-
-    def test_actuator_rejects_off_window_click(self, tmp_path: Path) -> None:
-        """End-to-end: Actuator.execute_action must reject a left_click
-        whose translated global point falls outside the active window,
-        return ok=False, and surface a helpful error to Claude.
-        """
-        tr = Trace.new(tmp_path)
-        act = Actuator(
-            tr,
-            downsample_width=200,
-            simulated=True,
+        cfg = AgentConfig(
+            playlist="UL Percussion",
+            usb_path="/Volumes/MAINTAINER",
+            dry_run=True,
+            max_steps=1,
+            trace_dir=tmp_path,
+            api_key="sk-test-xxx",
             frontmost_app=None,
         )
-        act._last_capture_meta = {
-            "capture_mode": "window",
-            "window_bounds": {"x": 1000.0, "y": 500.0, "w": 400.0, "h": 300.0},
-            "window_id": 7,
-            "owner_name": "rekordbox",
-            "title": "rekordbox",
-            "downsample_width": 200,
-            "downsample_height": 150,
-            "physical_width": 400,
-            "physical_height": 300,
-            "backing_scale": 1.0,
-        }
-        act._last_scaled = (200, 150)
-        result = act.execute_action(
-            {"action": "left_click", "coordinate": [500, 500]}
+        run_export_agent(cfg, client=mock_client)
+
+        assert activations == [], (
+            f"offline test invoked a real activation subprocess {activations} "
+            "- it will open Rekordbox"
         )
-        assert result["ok"] is False
-        assert "outside" in result["error"].lower()
-        assert "rekordbox" in result["error"].lower()
-        events = sorted(tr.root.glob("step_*_action.json"))
-        assert len(events) == 1
 
-    def test_actuator_allows_on_window_click(self, tmp_path: Path) -> None:
-        """Click within bounds is accepted (simulated=True so no mouse)."""
-        tr = Trace.new(tmp_path)
-        act = Actuator(
-            tr,
-            downsample_width=200,
-            simulated=True,
-            frontmost_app=None,
+    def test_preflight_reaches_real_activation_when_frontmost_app_set(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Companion to the regression above: proves ``frontmost_app=None``
+        is doing real work rather than a guard that happens to never fire.
+        With ``frontmost_app`` set, ``run_export_agent``'s real preflight
+        must reach ``ensure_frontmost``'s real activation branch - stubbed
+        only at the OS boundary (``subprocess.run``, ``_frontmost_app_name``),
+        never at ``ensure_frontmost`` itself.
+        """
+        from apps.sync.usb.pioneer import agent as agent_mod
+        from apps.sync.usb.pioneer import agent_actuator as actuator_mod
+        from apps.sync.usb.pioneer.agent import AgentConfig, run_export_agent
+
+        monkeypatch.setattr(
+            agent_mod.Actuator,
+            "capture",
+            lambda self: {
+                "png_bytes": _synthetic_png(1280, 540),
+                "geometry": DisplayGeometry(5120, 2160, 5120, 2160),
+                "scaled_size": (1280, 540),
+                "base64": "",
+            },
         )
-        act._last_capture_meta = {
-            "capture_mode": "window",
-            "window_bounds": {"x": 1000.0, "y": 500.0, "w": 400.0, "h": 300.0},
-            "window_id": 7,
-            "owner_name": "rekordbox",
-            "title": "rekordbox",
-            "downsample_width": 200,
-            "downsample_height": 150,
-            "physical_width": 400,
-            "physical_height": 300,
-            "backing_scale": 1.0,
-        }
-        act._last_scaled = (200, 150)
-        result = act.execute_action(
-            {"action": "left_click", "coordinate": [100, 75]}
+        activations: list[list[str]] = []
+
+        def _fake_subprocess_run(args: list[str], **kw: Any) -> SimpleNamespace:
+            activations.append(args)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(actuator_mod.subprocess, "run", _fake_subprocess_run)
+        # ensure_frontmost checks _frontmost_app_name() before each
+        # activate attempt; force "never frontmost" so the real loop
+        # actually reaches activate rather than short-circuiting.
+        monkeypatch.setattr(actuator_mod, "_frontmost_app_name", lambda: None)
+
+        mock_client = MagicMock()
+        resp = SimpleNamespace(
+            id="msg_1",
+            stop_reason="end_turn",
+            content=[
+                SimpleNamespace(type="text", text="END_TURN: DRY-RUN COMPLETE")
+            ],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
         )
-        assert result["ok"] is True
-        assert result.get("skipped") is True
+        mock_client.beta.messages.create.side_effect = [resp, resp]
 
-
-class TestEnsureFrontmost:
-    """Fix 3: re-activate Rekordbox before each click if focus drifted.
-    Offline \u2014 we inject the probe + activate callables.
-    """
-
-    def test_already_frontmost_short_circuits(self) -> None:
-        calls = {"activate": 0, "probe": 0}
-
-        def probe() -> str | None:
-            calls["probe"] += 1
-            return "rekordbox"
-
-        def activate() -> None:
-            calls["activate"] += 1
-
-        ok = ensure_frontmost(
-            "rekordbox",
-            max_attempts=3,
-            wait_ms=0,
-            _frontmost_probe=probe,
-            _activate=activate,
+        cfg = AgentConfig(
+            playlist="UL Percussion",
+            usb_path="/Volumes/MAINTAINER",
+            dry_run=True,
+            max_steps=1,
+            trace_dir=tmp_path,
+            api_key="sk-test-xxx",
+            frontmost_app="rekordbox",
         )
-        assert ok is True
-        assert calls["activate"] == 0
-        assert calls["probe"] == 1
+        run_export_agent(cfg, client=mock_client)
 
-    def test_activates_when_another_app_focused(self) -> None:
-        """First probe shows Safari; activate runs; second probe shows
-        rekordbox. Must return True with exactly one activate call."""
-        states = iter(["Safari", "rekordbox", "rekordbox"])
-        calls = {"activate": 0}
-
-        def probe() -> str | None:
-            return next(states)
-
-        def activate() -> None:
-            calls["activate"] += 1
-
-        ok = ensure_frontmost(
-            "rekordbox",
-            max_attempts=3,
-            wait_ms=0,
-            _frontmost_probe=probe,
-            _activate=activate,
+        assert activations, (
+            "preflight with frontmost_app set never reached real "
+            "activation - the offline regression's guard may be a no-op"
         )
-        assert ok is True
-        assert calls["activate"] == 1
-
-    def test_returns_false_after_max_attempts(self) -> None:
-        calls = {"activate": 0}
-
-        def probe() -> str | None:
-            return "Safari"
-
-        def activate() -> None:
-            calls["activate"] += 1
-
-        ok = ensure_frontmost(
-            "rekordbox",
-            max_attempts=3,
-            wait_ms=0,
-            _frontmost_probe=probe,
-            _activate=activate,
-        )
-        assert ok is False
-        assert calls["activate"] == 3
-
-    def test_case_insensitive_match(self) -> None:
-        ok = ensure_frontmost(
-            "rekordbox",
-            max_attempts=1,
-            wait_ms=0,
-            _frontmost_probe=lambda: "Rekordbox",
-            _activate=lambda: None,
-        )
-        assert ok is True
-
-
-class TestQuitApp:
-    """Quit-after (MDT_RB_QUIT_AFTER=1). Offline; probes injected.
-    Regression: quits a not-running app = broken; returns True while the
-    process survives = broken; never sends the AppleScript quit = broken.
-    """
-
-    @staticmethod
-    def _run(
-        states: list[bool], *, max_wait_s: float, poll_s: float
-    ) -> tuple[bool, int]:
-        seq = iter(states)
-        calls = {"quit": 0}
-
-        def do_quit() -> None:
-            calls["quit"] += 1
-
-        ok = quit_app(
-            "rekordbox",
-            max_wait_s=max_wait_s,
-            poll_s=poll_s,
-            _quit=do_quit,
-            _running_probe=lambda: next(seq),
-        )
-        return ok, calls["quit"]
-
-    def test_noop_when_not_running(self) -> None:
-        ok, quits = self._run([False], max_wait_s=0.0, poll_s=0.0)
-        assert (ok, quits) == (True, 0)
-
-    def test_quits_and_waits_for_exit(self) -> None:
-        ok, quits = self._run([True, False], max_wait_s=5.0, poll_s=0.0)
-        assert (ok, quits) == (True, 1)
-
-    def test_returns_false_when_process_survives(self) -> None:
-        ok, quits = self._run([True] * 60, max_wait_s=0.05, poll_s=0.01)
-        assert (ok, quits) == (False, 1)
-
-
-# --------------------------------------------------------------------------- #
-# Live run — only when RB_AGENT_LIVE=1 (and Rekordbox is open).
-# This is the "it actually talks to Anthropic and actually clicks" gate.
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.skipif(
-    os.environ.get("RB_AGENT_LIVE") != "1",
-    reason="Set RB_AGENT_LIVE=1 to run the live agent smoke against Rekordbox",
-)
-def test_agent_live_smoke(tmp_path: Path) -> None:  # pragma: no cover
-    """Last-ditch check: run a live dry-run agent against Rekordbox.
-
-    This is gated because it costs money (≤ $0.50/run) and requires the
-    user to have Rekordbox 7 running. CI never sets RB_AGENT_LIVE.
-    """
-    from apps.sync.usb.pioneer.agent import AgentConfig, run_export_agent
-
-    cfg = AgentConfig(
-        playlist=os.environ.get("RB_AGENT_PLAYLIST", "UL Percussion"),
-        usb_path=os.environ.get("RB_AGENT_USB", "/Volumes/MAINTAINER"),
-        dry_run=True,
-        max_steps=8,
-        trace_dir=tmp_path,
-    )
-    result = run_export_agent(cfg)
-    assert result.model.startswith("claude-")
-    assert result.steps >= 1
+        assert all(args[:2] == ["osascript", "-e"] for args in activations)

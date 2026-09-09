@@ -141,13 +141,13 @@ def _seed_v5_db(path: Path, *, locations: int) -> list[str]:
 # ----- (1) fresh DB --------------------------------------------------------
 
 
-def test_fresh_db_reaches_v7_with_foreign_keys_on(state_db_path: Path) -> None:
+def test_fresh_db_reaches_v8_with_foreign_keys_on(state_db_path: Path) -> None:
     conn = state_db.open_rw(state_db_path)
     try:
-        assert state_schema.SCHEMA_VERSION == 7
+        assert state_schema.SCHEMA_VERSION == 8
         assert len(state_schema.MIGRATIONS) == state_schema.SCHEMA_VERSION
         version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
-        assert version == 7
+        assert version == 8
         assert int(conn.execute("PRAGMA foreign_keys").fetchone()[0]) == 1
         tables = _user_tables(conn)
         for expected in state_schema.TABLES:
@@ -207,7 +207,11 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
 
     conn = state_db.open_rw(db_path)
     try:
-        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 7
+        # v8, not v7: this fixture seeds a v5 DB and opens it through
+        # open_rw, which migrates all the way to the CURRENT SCHEMA_VERSION
+        # (8 after the af--analysis-retention migration landed as v8), not
+        # to a version number frozen when this test was written.
+        assert conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 8
 
         rows = conn.execute(
             "SELECT location_id, stable_id, file_path, kind, role, available, "
@@ -419,15 +423,15 @@ def test_insert_without_location_id_mints_one(state_conn: sqlite3.Connection) ->
     assert isinstance(key, str) and len(key) == 32
 
 
-def test_v5_to_v7_is_idempotent(tmp_path: Path) -> None:
+def test_v5_to_v8_is_idempotent(tmp_path: Path) -> None:
     db_path = tmp_path / "twice.db"
     _seed_v5_db(db_path, locations=3)
     state_db.open_rw(db_path).close()
     conn = state_db.open_rw(db_path)
     try:
-        assert state_schema.apply_migrations(conn) == 7
+        assert state_schema.apply_migrations(conn) == 8
         assert conn.execute("SELECT COUNT(*) FROM track_locations").fetchone()[0] == 3
-        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == 7
+        assert conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0] == 8
     finally:
         conn.close()
 

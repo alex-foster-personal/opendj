@@ -12,9 +12,14 @@
 	 * the same typed command path used by browser IPC and presets.
 	 */
 	import { onMount } from 'svelte';
-	import { engine, isMasterMuted, mixerState, setMasterMuted } from '$lib/rb/audio-engine.svelte';
+	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
-	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import {
+		dispatchPerformanceCommand,
+		runPerformanceCommandFromUi,
+		type PairingSnapshot
+	} from '$lib/rb/performance-ipc.svelte';
+	import { autoPlayNextState } from '$lib/rb/auto-play-next.svelte';
 	import {
 		setAutoPlayEnabled,
 		setAutoPlayEnforceOrder,
@@ -27,7 +32,10 @@
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
@@ -44,6 +52,7 @@
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
+	import { APP_MODES } from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -56,9 +65,12 @@
 	const jobsUnavailable = $derived(jobsRefusal());
 
 	let pairingOpen = $state(false);
+	let pairingSnapshot = $state<PairingSnapshot | null>(null);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
+	let modePickerEl: HTMLDetailsElement | undefined = $state();
+	let modeMenuStyle = $state('');
 
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
@@ -66,8 +78,17 @@
 		return `AutoPlay ON (${d.short}) - last ~16s loads onto a free/stopped deck. ${d.detail}`;
 	});
 
+	// Pin fc60002b81a8: ">|" split of the AutoPlay button, early next-track
+	// transition trigger. Toggles arm/cancel through the same command path
+	// as every other performance control (see auto-play-next.svelte.ts).
+	function _toggleAutoPlayNext(): void {
+		void runPerformanceCommandFromUi(
+			autoPlayNextState.armed ? { type: 'auto_play_next_cancel' } : { type: 'auto_play_next_arm' }
+		);
+	}
+
 	function _placeAutoPlayMenu(): void {
-		if (autoPlayWrapEl === undefined) return;
+		if (!autoPlayWrapEl) return;
 		const r = autoPlayWrapEl.getBoundingClientRect();
 		autoPlayMenuStyle = `left:${Math.round(r.right)}px;top:${Math.round(r.bottom + 6)}px`;
 	}
@@ -86,6 +107,23 @@
 		// Fixed menu is outside the wrap - keep open when moving into it.
 		if (next instanceof Element && next.closest?.('.ap-menu')) return;
 		autoPlayMenuOpen = false;
+	}
+
+	function _placeModeMenu(): void {
+		if (!modePickerEl?.open) return;
+		const rect = modePickerEl.getBoundingClientRect();
+		modeMenuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
+	}
+
+	function _dismissModeMenuOnOutsidePointer(e: PointerEvent): void {
+		if (!modePickerEl?.open) return;
+		if (e.target instanceof Node && modePickerEl.contains(e.target)) return;
+		modePickerEl.open = false;
+	}
+
+	function _dismissModeMenuOnEscape(e: KeyboardEvent): void {
+		if (e.key !== 'Escape' || !modePickerEl?.open) return;
+		modePickerEl.open = false;
 	}
 
 	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
@@ -150,6 +188,13 @@
 		void runPerformanceCommandFromUi({ type: 'master_volume', value });
 	}
 
+	async function _openPairing(): Promise<void> {
+		const state = await dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		if (state.pairing_snapshot === null) throw new Error('pairing snapshot was not captured');
+		pairingSnapshot = state.pairing_snapshot;
+		pairingOpen = true;
+	}
+
 	function _masterFromEvent(e: PointerEvent): number {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		return _clamp01((e.clientX - rect.left) / rect.width);
@@ -183,6 +228,8 @@
 	}
 </script>
 
+<svelte:window onpointerdown={_dismissModeMenuOnOutsidePointer} onkeydown={_dismissModeMenuOnEscape} />
+
 <header
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
@@ -195,12 +242,37 @@
 	     time; clicking it opens the JOBS drawer for the per-job detail. -->
 	<StemsProgress />
 
-	<button class="mode-dd rb-inert" disabled title={plannedTitle('mode-dropdown')}>
-		PERFORMANCE
-		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
-			<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
-		</svg>
-	</button>
+	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
+		<summary class="mode-dd" aria-label="Choose app mode">
+			PERFORMANCE
+			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
+				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />
+			</svg>
+		</summary>
+		<div class="mode-menu" style={modeMenuStyle} aria-label="App modes">
+			<p class="mode-menu-heading">Choose app mode</p>
+			{#each APP_MODES as mode (mode.id)}
+				{#if mode.available}
+					<a class="mode-card" href={mode.href} aria-current={mode.id === 'performance' ? 'page' : undefined}>
+						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
+						<span class="mode-copy">
+							<strong>{mode.label}</strong>
+							<span>{mode.description}</span>
+						</span>
+					</a>
+				{:else}
+					<button class="mode-card" type="button" disabled={!mode.available} title={mode.unavailableReason}>
+						<span class={`mode-thumbnail ${mode.thumbnail}`} aria-hidden="true"></span>
+						<span class="mode-copy">
+							<strong>{mode.label}</strong>
+							<span>{mode.description}</span>
+						</span>
+						<span class="mode-unavailable">Not available</span>
+					</button>
+				{/if}
+			{/each}
+		</div>
+	</details>
 
 	<div class="icon-cluster">
 		<!-- list-view icon with dropdown caret -->
@@ -297,7 +369,7 @@
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
-		onclick={() => (pairingOpen = true)}
+		onclick={() => void _openPairing()}
 	>
 		Create pairing
 	</button>
@@ -334,6 +406,18 @@
 		>
 			AutoPlay
 		</button>
+		<button
+			type="button"
+			class="bsm-toggle ap-next-btn"
+			class:on={autoPlayNextState.armed}
+			aria-pressed={autoPlayNextState.armed}
+			title={autoPlayNextState.armed
+				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
+				: 'Next-track loop: loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'}
+			onclick={_toggleAutoPlayNext}
+		>
+			&gt;|
+		</button>
 		{#if autoPlayMenuOpen}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
@@ -364,6 +448,15 @@
 					/>
 					<span>Maximize reach (avoid stranding)</span>
 				</label>
+				<button
+					type="button"
+					class="ap-row ap-two-track rb-inert"
+					disabled
+					title={plannedTitle('autoplay-two-track')}
+				>
+					<span>Two-track AutoPlay</span>
+					<span class="ap-planned">Planned</span>
+				</button>
 				<p class="ap-hint">
 					Off enforce: key +-1 + Beat Sync BPM. Maximize reach (default on) prefers
 					fewer-outward twins so later tracks stay playable. Enforce order: next row
@@ -376,7 +469,7 @@
 	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
 	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
 	<button
-		class="midi-label"
+		class="midi-label topbar-slot-midi"
 		class:st-grey={midiStatus === 'grey'}
 		class:st-green={midiStatus === 'green'}
 		class:st-amber={midiStatus === 'amber'}
@@ -392,7 +485,7 @@
 	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
 	     Inert on a daemon with no jobs API, and the title says which. -->
 	<button
-		class="midi-label"
+		class="midi-label topbar-slot-jobs"
 		class:rb-inert={jobsUnavailable !== null}
 		disabled={jobsUnavailable !== null}
 		title={jobsUnavailable ??
@@ -408,7 +501,7 @@
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
 	<CommandEntry />
 
-	<button class="tb-icon rb-inert" disabled title={plannedTitle('information')} aria-label="information">
+	<button class="tb-icon rb-inert topbar-slot-utility" disabled title={plannedTitle('information')} aria-label="information">
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 			<circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" />
 			<rect x="5.3" y="5" width="1.4" height="4" fill="currentColor" />
@@ -420,7 +513,7 @@
 
 	<button
 		type="button"
-		class="tb-icon theme-toggle"
+		class="tb-icon theme-toggle topbar-slot-utility"
 		class:on={uiPrefs.theme === 'light'}
 		title={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
 		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -435,7 +528,7 @@
 
 	<button
 		type="button"
-		class="tb-icon theme-toggle"
+		class="tb-icon theme-toggle topbar-slot-utility"
 		title="Settings (Cmd+,)"
 		aria-label="Open settings"
 		onclick={() => openSettings()}
@@ -459,29 +552,43 @@
 	<RefreshAnalysisButton />
 
 	<!-- master volume: REAL -> engine master GainNode -->
-	<div
-		class="master-slider"
-		role="slider"
-		aria-label="master volume"
-		title="Master volume - final output gain"
-		aria-orientation="horizontal"
-		aria-valuemin={0}
-		aria-valuemax={1}
-		aria-valuenow={mixerState.master}
-		tabindex="0"
-		use:wheelAdjust={{
-			step: WHEEL_STEP.fader,
-			get: () => mixerState.master,
-			set: _setMaster
-		}}
-		onpointerdown={handleMasterDown}
-		onpointermove={handleMasterMove}
-		onpointerup={handleMasterUp}
-		onkeydown={handleMasterKeyDown}
-	>
-		<div class="master-track"></div>
-		<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
-		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
+	<div class="master-slider-wrap">
+		<div
+			class="master-slider"
+			role="slider"
+			aria-label="master volume"
+			title="Master volume - final output gain"
+			aria-orientation="horizontal"
+			aria-valuemin={0}
+			aria-valuemax={1}
+			aria-valuenow={mixerState.master}
+			tabindex="0"
+			use:wheelAdjust={{
+				step: WHEEL_STEP.fader,
+				get: () => mixerState.master,
+				set: _setMaster
+			}}
+			onpointerdown={handleMasterDown}
+			onpointermove={handleMasterMove}
+			onpointerup={handleMasterUp}
+			onkeydown={handleMasterKeyDown}
+		>
+			<div class="master-track"></div>
+			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
+		</div>
+
+		<!-- output-to-device bar: REAL -> audio-output-liveness verdict (pin
+		     93c82bb36eb7). A 1px line under the master slider distinguishing "we
+		     are sending audio" (the slider above) from "a device is actually
+		     receiving it" (this line). Idle paints nothing rather than a false
+		     "ok", per the pin's own "never healthy when the probe cannot tell"
+		     rule. -->
+		<div
+			class={`output-health-bar ${describeAudioOutputHealth(audioOutputHealth.snapshot).cssClass}`}
+			title={describeAudioOutputHealth(audioOutputHealth.snapshot).title}
+			aria-label="output to audio device"
+		></div>
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.
@@ -494,7 +601,7 @@
 		title={isMasterMuted()
 			? 'Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).'
 			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
-		onclick={() => setMasterMuted(!isMasterMuted())}
+		onclick={() => void runPerformanceCommandFromUi({ type: 'master_mute', muted: !isMasterMuted() })}
 	>
 		<!-- Muted says MUTED, because the button reports a STATE, not an
 		     action; audible shows the speaker glyph, because there is no state
@@ -521,10 +628,11 @@
 	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
 	     reachable from performance mode too - the shell topbar is not
 	     rendered on this route. Sized down to fit --rb-topbar-h. -->
+	<CloudSyncStatusChip />
 	<UserBauble size={20} />
 </header>
 
-<CreatePairingSheet bind:open={pairingOpen} />
+<CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
@@ -559,40 +667,125 @@
 	}
 
 	.vibe-slot {
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		transform: translate(-50%, -50%);
-		z-index: 1;
+		position: static;
+		flex: none;
+		margin-inline: 2px;
 	}
+	.rb-topbar :global(.fb-cluster) {
+		position: static;
+		transform: none;
+		flex: none;
+		margin-inline: 2px;
+	}
+	@media (max-width: 1400px) {
+		.rb-topbar .free-badge,
+		.rb-topbar .topbar-slot-utility { display: none; }
+	}
+	/* Pin T3 (packet 9h): between 1400px and 1180px nothing else yielded room,
+	   so at 1280px the row's total natural content width exceeded the
+	   viewport while every OTHER flex child still had its default
+	   `min-width: auto` floor (it can shrink to its own min-content size and
+	   no further). CommandEntry's `.cmd-entry { min-width: 0; }` (set so its
+	   inline `.cmd-status` result text can ellipsis) is the one flex child
+	   with NO such floor, so it silently absorbed the entire deficit and got
+	   crushed to a few px - present in the DOM, invisible and unhittable,
+	   with no console error. Measured Sun 6 Sep 2026 at 1280px: `.cmd-entry`
+	   offsetWidth 5px against a natural width of ~132px, a ~127px deficit
+	   nothing else could give back.
 
-	/* Wide chrome leaves VIBE centered; before controls can collide beneath
-	 * it, VIBE joins the flow in DOM order between the left and right clusters.
-	 * Then labels abbreviate, finally VIBE yields.
-	 * CommandEntry and JOBS are intentionally never hidden. */
+	   TRIED FIRST, MEASURED, REJECTED: pulling ONLY the 1180px tier's
+	   non-hiding `.cmd-input` shrink (130px -> 86px, ~44px) forward, without
+	   touching pairing/vibe. This does NOT clear the deficit - measured
+	   page.evaluate offsetWidth with that rule alone active:
+	     1280px: cmd-entry  5px (not hittable) <- the reported bug, UNFIXED
+	     1300px: cmd-entry 25px (not hittable)
+	     1340px: cmd-entry 65px (hittable, but see next paragraph)
+	   Shrinking `.cmd-input`'s declared width does not stop `.cmd-entry`
+	   from being crushed further, because `.cmd-entry`'s `min-width: 0`
+	   removes ITS OWN floor as a flex item of `.rb-topbar` - the ~127px
+	   deficit at 1280px is far larger than the ~44px the input shrink can
+	   ever give back. Only pairing (47px) + vibe (150px) carry enough real
+	   width to close a deficit that size.
+
+	   TRIED SECOND, MEASURED, REJECTED: hiding pairing+vibe only up to
+	   1300px (leaving them reappearing above it, as before) reopens the
+	   SAME crush from 1301px onward while the deficit is still large:
+	   1301px 26px, 1305px 30px, 1320px 45px (all not hittable) - and the
+	   point where offsetWidth alone predicts "hittable" is NOT reliably
+	   safe either: real elementFromPoint hit-tests measured 1310px
+	   hittable but 1315-1330px NOT hittable despite a slightly LARGER
+	   offsetWidth than 1310px, i.e. non-monotonic near the crush boundary.
+	   Threading a breakpoint through that band is not a safe fix.
+
+	   FIX: hide pairing+vibe up to 1340px - 25px of margin above the last
+	   point measured inside the unstable band (1315-1330px) above, and
+	   well short of the existing 1400px free-badge/utility breakpoint so
+	   the eviction window stays as narrow as the geometry allows rather
+	   than matching 1400px for convenience. Verified at 5px granularity
+	   across the FULL [1280px, 1400px] band (26 points, plus 1366px, a
+	   very common laptop width) with this rule active: `.cmd-entry`
+	   offsetWidth is a flat 130px through 1340px, then rises smoothly and
+	   monotonically from 68px (1345px) to 101px (1400px) once pairing+vibe
+	   reappear - and every one of those 26 points is hittable via a real
+	   elementFromPoint check, none borderline. 1401px shows a DIFFERENT,
+	   pre-existing crush (free-badge/utility reappearing past the
+	   untouched 1400px boundary) that reproduces identically with this
+	   diff fully reverted - out of scope for this fix, flagged separately
+	   (spawned task investigates it alongside the CI e2e-gate flake). */
+	@media (max-width: 1340px) {
+		.rb-topbar .topbar-slot-pairing,
+		.rb-topbar .topbar-slot-vibe { display: none; }
+	}
 	@media (max-width: 1180px) {
-		.vibe-slot {
-			position: static;
-			transform: none;
-			margin-inline: 2px;
-		}
+		.rb-topbar :global(.cmd-input) { width: 86px; }
+		.rb-topbar :global(.cmd-status) { display: none; }
+	}
+	@media (max-width: 1024px) {
+		.rb-topbar .icon-cluster,
+		.rb-topbar .link-btn,
+		.rb-topbar .topbar-slot-pad { display: none; }
 	}
 	@media (max-width: 980px) {
-		.topbar-slot-pairing { display: none; }
-		.topbar-slot-bsm { font-size: 0; }
-		.topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
-		.topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
-		.topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
+		.rb-topbar .topbar-slot-bsm { font-size: 0; }
+		.rb-topbar .topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
+		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
+		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
 	}
 	@media (max-width: 820px) {
-		.topbar-slot-vibe { display: none; }
-		.topbar-slot-pad, .free-badge, .link-btn { display: none; }
+		.rb-topbar .topbar-slot-midi,
+		.rb-topbar .topbar-slot-utility,
+		.rb-topbar .free-badge,
+		.rb-topbar .clock,
+		.rb-topbar :global(.cmd-entry),
+		.rb-topbar :global([data-testid="refresh-analysis"]),
+		.rb-topbar :global(.bauble-root) { display: none; }
 	}
 
 	.ap-wrap {
 		position: relative;
 		display: inline-flex;
 		align-items: center;
+	}
+	/* Pin fc60002b81a8: the ">|" next-track trigger reads as one button with
+	   the AutoPlay toggle plus an RHS section, not two separate controls. */
+	.ap-wrap > .bsm-toggle:first-child {
+		border-top-right-radius: 0;
+		border-bottom-right-radius: 0;
+		border-right: none;
+	}
+	.ap-next-btn {
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		padding-left: 6px;
+		padding-right: 6px;
+	}
+	/* The ">|" split is the least essential control in this row (an early-
+	   trigger shortcut, not a required transport) - drop it first, at the
+	   same 980px breakpoint this row already uses to abbreviate BSM/AutoPlay
+	   labels, rather than let it compete for room with controls a DJ or an
+	   agent actually needs. */
+	@media (max-width: 980px) {
+		.rb-topbar .topbar-slot-autoplay > .ap-next-btn { display: none; }
 	}
 	.ap-menu {
 		position: fixed;
@@ -625,6 +818,20 @@
 	}
 	.ap-row input {
 		margin: 0;
+	}
+	.ap-two-track {
+		justify-content: space-between;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		text-align: left;
+	}
+	.ap-planned {
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 	}
 	.ap-hint {
 		margin: 0;
@@ -662,6 +869,106 @@
 		letter-spacing: 0.05em;
 		padding: 2px 8px;
 		line-height: 1;
+		cursor: pointer;
+		list-style: none;
+	}
+	.mode-dd::-webkit-details-marker {
+		display: none;
+	}
+	.mode-picker {
+		position: relative;
+		z-index: 20;
+	}
+	.mode-picker[open] > .mode-dd {
+		border-color: var(--rb-accent);
+		color: var(--rb-text);
+	}
+	.mode-menu {
+		/* Fixed positioning escapes the topbar's deliberate overflow clip. */
+		position: fixed;
+		z-index: 100;
+		top: calc(100% + 5px);
+		left: 0;
+		width: 300px;
+		padding: 7px;
+		background: #0a0c0f;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+	}
+	.mode-menu-heading {
+		margin: 1px 3px 6px;
+		color: var(--rb-text-dim);
+		font-size: 9px;
+		font-weight: 650;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+	}
+	.mode-card {
+		display: grid;
+		grid-template-columns: 52px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 7px;
+		width: 100%;
+		min-height: 48px;
+		padding: 5px;
+		border: 1px solid transparent;
+		border-radius: 2px;
+		background: transparent;
+		color: var(--rb-text);
+		font: inherit;
+		text-align: left;
+		text-decoration: none;
+	}
+	a.mode-card:hover,
+	a.mode-card:focus-visible {
+		border-color: var(--rb-accent);
+		background: color-mix(in srgb, var(--rb-accent) 12%, transparent);
+		outline: none;
+	}
+	button.mode-card:disabled {
+		cursor: not-allowed;
+		opacity: 0.52;
+	}
+	.mode-copy {
+		display: grid;
+		gap: 2px;
+		min-width: 0;
+		font-size: 9px;
+		line-height: 1.25;
+	}
+	.mode-copy strong {
+		font-size: 10px;
+		letter-spacing: 0.03em;
+	}
+	.mode-copy > span {
+		color: var(--rb-text-dim);
+	}
+	.mode-unavailable {
+		color: var(--rb-text-dim);
+		font-size: 8px;
+		text-transform: uppercase;
+	}
+	.mode-thumbnail {
+		display: block;
+		height: 36px;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		background-color: #141920;
+	}
+	.mode-thumbnail.decks {
+		background:
+			linear-gradient(90deg, transparent 48%, #72b9ff 48% 52%, transparent 52%),
+			linear-gradient(#161d26 45%, #72b9ff 45% 52%, #161d26 52%);
+	}
+	.mode-thumbnail.library {
+		background:
+			linear-gradient(90deg, #3b79ad 0 22%, transparent 22% 28%, #346c3e 28% 50%, transparent 50% 56%, #7a5c33 56% 78%, transparent 78%),
+			#161d26;
+	}
+	.mode-thumbnail.player {
+		background:
+			radial-gradient(circle at 50% 50%, #a8b2bf 0 12%, #303b48 13% 31%, #72b9ff 32% 36%, #161d26 37%);
 	}
 
 	.icon-cluster {
@@ -810,6 +1117,12 @@
 		line-height: 1.4;
 	}
 
+	.master-slider-wrap {
+		display: flex;
+		flex-direction: column;
+		flex: 0 0 auto;
+		gap: 2px;
+	}
 	.master-slider {
 		position: relative;
 		width: 80px;
@@ -818,6 +1131,28 @@
 		touch-action: none;
 		outline: none;
 		flex: 0 0 auto;
+	}
+	.output-health-bar {
+		width: 80px;
+		height: 1px;
+		flex: 0 0 auto;
+		background: transparent;
+	}
+	.output-health-bar.ok {
+		background: var(--rb-accent);
+		opacity: 0.5;
+	}
+	.output-health-bar.dead {
+		/* --rb-danger is never defined (see StemsPrompt.svelte); --rb-red is the
+		   palette's real danger colour (theme.css). */
+		background: var(--rb-red, #e55);
+		opacity: 1;
+		height: 2px;
+		margin-top: -0.5px;
+	}
+	.output-health-bar.unknown {
+		background: var(--rb-text-dim);
+		opacity: 0.25;
 	}
 	.master-track {
 		position: absolute;

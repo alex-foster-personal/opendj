@@ -8,7 +8,14 @@
  * Not part of the performance command path - chrome-only signal for now.
  */
 
-import { getSettings, type SettingItem } from '$lib/api';
+import {
+	createPerformanceFeedback,
+	getPerformanceFeedback,
+	getSettings,
+	type PerformanceFeedbackMark,
+	type PerformanceFeedbackSummary,
+	type SettingItem
+} from '$lib/api';
 
 const STORAGE_KEY = 'mdt.rb.vibe-history.v1';
 const HISTORY_CAP = 400;
@@ -18,7 +25,6 @@ const BASE_FILL_PX = 1000;
 const MIN_MOVE_PX = 0.5;
 /** Logistic steepness for display S-curve (normalized to 0..1). */
 const S_CURVE_K = 10;
-const VOTE_DELTA = 0.18;
 /** Rainbow auto crawl (cycles / sec) - the "20% either way" baseline drift. */
 const RAINBOW_AUTO = 0.2;
 /** Max rainbow chase toward mouse (cycles / sec) - caps frantic jumps. */
@@ -38,6 +44,8 @@ export interface VibeSample {
 	/** How this sample was produced. */
 	source: VibeSource;
 }
+
+export type { PerformanceFeedbackMark } from '$lib/api';
 
 interface VibeHistoryBlob {
 	samples: VibeSample[];
@@ -68,11 +76,14 @@ let _lastSampleAt = 0;
 let _raf = 0;
 let _lastTick = 0;
 let _listening = false;
+let _feedbackSummary: PerformanceFeedbackSummary = { count: 0, last_mark: null };
+let _feedbackVersion = 0;
+let _feedbackWrite: Promise<void> = Promise.resolve();
 
 // ----------------------------------------------------------- _helpers
 
 function _storage(): Storage | null {
-	return typeof window === 'undefined' ? null : window.localStorage;
+	return typeof window === 'undefined' ? null : (window.localStorage ?? null);
 }
 
 function _clamp01(v: number): number {
@@ -111,6 +122,36 @@ function _persistSample(sample: VibeSample): void {
 	samples.push(sample);
 	while (samples.length > HISTORY_CAP) samples.shift();
 	storage.setItem(STORAGE_KEY, JSON.stringify({ samples } satisfies VibeHistoryBlob));
+}
+
+/** Hydrates the cached summary once from the engine-owned feedback store. */
+export async function hydratePerformanceFeedback(): Promise<void> {
+	const version = _feedbackVersion;
+	const data = await getPerformanceFeedback();
+	if (version === _feedbackVersion) _feedbackSummary = structuredClone(data);
+}
+
+/** Stores a detached dispatcher snapshot. It never reads the live audio model. */
+export async function recordPerformanceFeedback(
+	mark: PerformanceFeedbackMark
+): Promise<PerformanceFeedbackSummary> {
+	const detached = structuredClone(mark);
+	const write = _feedbackWrite.catch(() => undefined).then(async () => {
+		const data = await createPerformanceFeedback(detached);
+		_feedbackVersion += 1;
+		_feedbackSummary = structuredClone(data);
+		return performanceFeedbackSummary();
+	});
+	_feedbackWrite = write.then(
+		() => undefined,
+		() => undefined
+	);
+	return write;
+}
+
+/** Cached summary for regular IPC query reads; history is never reparsed here. */
+export function performanceFeedbackSummary(): PerformanceFeedbackSummary {
+	return structuredClone(_feedbackSummary);
 }
 
 function _maybeSample(now: number): void {
@@ -156,20 +197,6 @@ async function _fetchConfig(): Promise<void> {
 	vibeState.sensitivity = sensitivity;
 	vibeState.decay_per_sec = decay;
 	vibeState.config_ready = true;
-}
-
-/** Manual thumb nudge - instant provenance mark + charge bump/drop. */
-export function voteVibe(dir: 'up' | 'down'): void {
-	const delta = dir === 'up' ? VOTE_DELTA : -VOTE_DELTA;
-	_setCharge(vibeState.charge + delta);
-	_ensureRaf();
-	_persistSample({
-		t: Date.now(),
-		level: vibeState.display,
-		peak: vibeState.peak,
-		moved: 0,
-		source: dir
-	});
 }
 
 function _onPointerMove(e: PointerEvent): void {

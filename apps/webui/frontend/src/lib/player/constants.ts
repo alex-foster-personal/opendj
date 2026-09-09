@@ -8,6 +8,12 @@
  */
 
 import type { DeckId } from '$lib/rb/deck-slots';
+// Re-exported beside DECK_IDS so a policy module that validates deck ids takes
+// ONE dependency for the pair. deck-slots.ts sits exactly at its
+// frontend.max_fan_in allowance and a type-only import counts against it like
+// any other, which is what pushes a would-be importer into redefining the
+// type locally - a second source of truth for how many decks exist.
+export type { DeckId };
 
 export const DECK_IDS: readonly DeckId[] = [1, 2, 3, 4] as const;
 

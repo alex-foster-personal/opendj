@@ -153,7 +153,7 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
     publish("library.changed", {"kind": "mytags", "ids": sorted({*body.add, *body.remove})})
     return MyTagAssignOut(
         applied_count=len(tracks),
-        results=[MyTagAssignRowOut(stable_id=track.stable_id, tags=track.tags, etag=compute_etag(track.stable_id, track.updated_at)) for track in tracks],
+        results=[MyTagAssignRowOut(stable_id=track.stable_id, tags=track.tags, etag=compute_etag(track.stable_id, track.updated_at, track.selection_tag)) for track in tracks],
     )
 
 

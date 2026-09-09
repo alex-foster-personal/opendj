@@ -22,7 +22,7 @@
 		decodePlaylistDrag,
 		PLAYLIST_DRAG_MIME,
 		type PlaylistDragPayload
-	} from './pane-contract.svelte';
+	} from './playlist-drag';
 
 	let {
 		tabs,

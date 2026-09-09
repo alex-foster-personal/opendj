@@ -20,10 +20,8 @@
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
-	import type { HotCueMutation } from '$lib/rb/api-rb';
-	import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
 	import { deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
-	import { hasRealBeatGrid } from '$lib/player/grid-features';
+	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 	import {
 		performanceCommandStatus,
 		dismissPerformanceDeckError,
@@ -100,6 +98,7 @@
 	);
 
 	const INERT_TIP = 'not implemented - see PARITY-TODO';
+	const hotCueActions = createDeckHotCueActions(() => deckId, () => deck);
 
 	// ------------------------------------------------- engine call plumbing
 	// Engine methods throw loudly on empty decks (fail-fast contract);
@@ -107,6 +106,13 @@
 
 	async function seekTo(ms: number): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: ms });
+	}
+
+	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
+	 * honour BeatSyncMax - routed through hot_cue_trigger, not seekTo, so it
+	 * can arm for the deck's own next downbeat instead of jumping immediately. */
+	async function triggerHotCue(slot: HotCueSlot): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot });
 	}
 
 	async function playPause(): Promise<void> {
@@ -159,6 +165,13 @@
 			deck: deckId,
 			enabled: !deck.quantize_enabled
 		});
+	}
+
+	/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats). 'phase' is
+	 * plumbed but not implemented, so it never reaches here - JogDial's own
+	 * phase option is disabled and calls nothing. */
+	async function setQuantizeGrid(beats: 1 | 4 | 8): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'quantize_grid', deck: deckId, beats });
 	}
 
 	async function toggleBeatSync(): Promise<void> {
@@ -224,71 +237,6 @@
 	// they go straight to the REST write surface, then refresh the deck's
 	// hot_cues from the backend (rb_vendor.fetch_cues is always live).
 
-	async function saveHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {
-		const stableId = deck.stable_id;
-		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
-		const revision = deck.hot_cue_revisions[slot];
-		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
-		let ms = deck.position_ms;
-		// hasRealBeatGrid, not a bare length check: a one-beat or malformed grid
-		// passes "is it non-empty" and then throws inside quantizeToNearestBeat,
-		// refusing to save the hot cue at all. Same rule as transport - no
-		// usable grid means no snap, never a refusal.
-		const beats = deck.anlz?.beatgrid.beats;
-		if (deck.quantize_enabled && hasRealBeatGrid(beats)) {
-			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
-		}
-		try {
-			const state = await dispatchPerformanceCommand({
-				type: 'hot_cue_save', deck: deckId, slot, in_ms: ms, revision
-			});
-			const reversal = state.decks[deckId].hot_cue_reversal;
-			if (reversal === null) throw new Error(`hot cue ${slot}: dispatcher omitted reversal token`);
-			return { cue: null, revision: reversal.revision, reversal: { reversal_id: reversal.reversal_id } };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hot cue ${slot} save failed - ${message}`, 'error');
-			throw error;
-		}
-	}
-
-	async function clearHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {
-		const stableId = deck.stable_id;
-		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
-		const revision = deck.hot_cue_revisions[slot];
-		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
-		try {
-			const state = await dispatchPerformanceCommand({
-				type: 'hot_cue_clear', deck: deckId, slot, revision
-			});
-			const reversal = state.decks[deckId].hot_cue_reversal;
-			if (reversal === null) throw new Error(`hot cue ${slot}: dispatcher omitted reversal token`);
-			return { cue: null, revision: reversal.revision, reversal: { reversal_id: reversal.reversal_id } };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hot cue ${slot} clear failed - ${message}`, 'error');
-			throw error;
-		}
-	}
-
-	async function restoreHotCueAt(
-		slot: HotCueSlot,
-		revision: string,
-		reversalId: string
-	): Promise<void> {
-		const stableId = deck.stable_id;
-		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
-		try {
-			await dispatchPerformanceCommand({
-				type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Hot cue ${slot} restore failed - ${message}`, 'error');
-			throw error;
-		}
-	}
-
 	async function setTempo(ratio: number): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'tempo', deck: deckId, ratio });
 	}
@@ -348,6 +296,8 @@
 
 <section
 	class="rb-deck rb-panel"
+	role="group"
+	aria-label={`deck ${deckId}`}
 	class:drop-hover={dropHover}
 	class:loading={pending}
 	class:deck-focus={deckHoverUi.deckId === deckId}
@@ -374,8 +324,10 @@
 		{pending}
 		onBeatSync={toggleBeatSync}
 		onMaster={selectMaster}
+		onMasterTempo={toggleMasterTempo}
 		onKeySync={syncKey}
 		onKeyNudge={nudgeKey}
+		onResetTempo={setTempo}
 		onUnload={unloadDeck}
 		{keySyncAvailable}
 	/>
@@ -385,10 +337,10 @@
 	<div class="main-row">
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label="grid adjust">
+			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
 				<span class="ticks">&#9475;&#9475;&#9475;</span>
 			</button>
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label="grid shift">
+			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
 				<span class="ticks">&#9478;&#9478;&#9478;</span>
 			</button>
 		</div>
@@ -399,32 +351,19 @@
 			<HotCueBank
 				{deck}
 				{pending}
-				onJump={seekTo}
-				onSave={saveHotCueAt}
-				onDelete={clearHotCueAt}
-				onRestore={restoreHotCueAt}
+				onJump={triggerHotCue}
+				onSave={hotCueActions.saveHotCueAt}
+				onRename={hotCueActions.renameHotCueAt}
+				onDelete={hotCueActions.clearHotCueAt}
+				onRestore={hotCueActions.restoreHotCueAt}
 				inertTip={INERT_TIP}
 			/>
 		</div>
 
-		<!-- Keep the compact transport modifiers together, outside the cue
-		     bank. Beat jump leads the horizontal group so the hot-cue bank
-		     retains its full region. -->
+		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
 		<div class="loop-col">
+			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} inertTip={INERT_TIP} />
 			<BeatJump {deck} {pending} onJump={beatJump} />
-			<LoopCluster
-				{deck}
-				{deckId}
-				{pending}
-				onEngage={engageBeatLoop}
-				onDisengage={disengageLoop}
-				onSafetySave={saveSafetyLoop}
-				onSafetyArm={armSafetyLoop}
-				onSafetyClear={clearSafetyLoop}
-				onIntervalMode={setLoopIntervalMode}
-				onIntervalBase={setLoopIntervalBase}
-				inertTip={INERT_TIP}
-			/>
 		</div>
 
 		<TransportCluster {deck} {pending} onCue={returnToCue} onPlayPause={playPause} />
@@ -434,6 +373,7 @@
 			{pitchRange}
 			{pending}
 			onQuantize={toggleQuantize}
+			onQuantizeGrid={setQuantizeGrid}
 			onMasterTempo={toggleMasterTempo}
 			onSlip={toggleSlip}
 			inertTip={INERT_TIP}
@@ -588,7 +528,7 @@
 		flex: 0 0 auto;
 		min-height: 0;
 		/* This group stays beside the cue bank within main-row's fixed height.
-		 * BeatJump is a compact 2x2 grid, while LoopCluster keeps its own
+		 * LoopCluster keeps its own
 		 * fixed 44px width and vertical controls. */
 	}
 	.cue-flex {

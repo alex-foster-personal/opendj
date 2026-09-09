@@ -52,6 +52,11 @@ function readE2eSource(relative) {
 
 const SPEC_SRC = readE2eSource("webkit-deckload.spec.ts");
 const FIXTURE_SRC = readE2eSource("support/deckload_fixture.py");
+/** The engine half of the reload contract: unload must not roll the count back. */
+const ENGINE_SRC = readFileSync(
+  fileURLToPath(new URL("../../src/lib/rb/audio-engine.svelte.ts", import.meta.url)),
+  "utf8",
+).replaceAll("\r\n", "\n");
 
 /**
  * The body of one top-level function in the spec.
@@ -146,6 +151,48 @@ test("a wait for audible names the playhead it gave up on", () => {
         "deck are indistinguishable from the failure message",
     );
   }
+});
+
+test("a reload wait observes the durable successful-load generation", () => {
+  const body = specFunctionBody("_waitForDeckReloaded");
+  assert.match(
+    body,
+    /load_generation > previousLoadGeneration/,
+    "the reload wait no longer waits for the successful load generation, so a sub-poll empty state can be missed",
+  );
+  assert.doesNotMatch(
+    body,
+    /stable_id === null/,
+    "the reload wait still depends on the transient empty state instead of the durable load generation",
+  );
+  assert.match(
+    SPEC_SRC,
+    /const previousLoadGeneration = \(await _query\(page\)\)\.decks\[1\]\.load_generation;\s+const reload = await _dragRowToDeck\(page, 0, 1, \{ carryPayload: true \}\);[\s\S]{0,400}?await _waitForDeckReloaded\(page, 1, previousLoadGeneration\);/,
+    "the real WebKit reload path no longer captures its generation before " +
+      "dropping row 0 onto CH1, the only gesture that names its target deck",
+  );
+  assert.doesNotMatch(
+    SPEC_SRC,
+    /await _dblClickLoad\(page, 0\);\s+await _waitForDeckReloaded/,
+    "the reload is back on _dblClickLoad, which does not choose its deck: " +
+      "pickDoubleClickDeck excludes the master and prefers empty slots, so " +
+      "with CH1 master and CH3/CH4 empty it loads CH3 and the CH1 wait below " +
+      "burns its whole timeout while nothing is actually wrong",
+  );
+});
+
+test("an unload carries the load generation forward", () => {
+  // The reload wait above asks "has a NEW load committed since the number I
+  // held?". A destructive replace ejects before it loads, so an unload that
+  // reset the counter took a deck from 1 to 0 to 1 and that question could
+  // never be answered yes. Only a full engine dispose starts the count over.
+  assert.match(
+    ENGINE_SRC,
+    /deckStates\[deck\] = \{ \.\.\._emptyDeckState\(deck\), load_generation: st\.load_generation \};/,
+    "engine.unload resets load_generation again, so the reload wait in " +
+      "webkit-deckload.spec.ts can never see its generation advance across " +
+      "a replace",
+  );
 });
 
 test("the fixture audio is long enough to give every test a runway", () => {

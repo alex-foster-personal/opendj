@@ -83,9 +83,31 @@ def _has_marker(db_path: Path) -> bool:
         con.close()
 
 
+@pytest.fixture(scope="module")
+def encrypted_master_copy(
+    rb_plain_db_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """The committed plain fixture, SQLCipher-encrypted ONCE per module.
+
+    ``sqlcipher_export`` of the whole fixture is 20-30 s on a CI runner, and it
+    was paid inside every test's setup (five times per shard, measured Fri 4
+    Sep 2026 on trunk e9ed11ecf). The encrypted bytes are the same every time,
+    so they are built once here and COPIED into each test's own data dir
+    below; tests that unlink or overwrite their copy touch only that copy.
+    The decrypt under test still runs for real, per test, on the production
+    path.
+    """
+    root = tmp_path_factory.mktemp("encrypted-master")
+    source_plain = root / "source.plain.db"
+    shutil.copy2(rb_plain_db_path, source_plain)
+    encrypted = root / "master.db.copy"
+    _encrypt(source_plain, encrypted, _pyrekordbox_key())
+    return encrypted
+
+
 @pytest.fixture
 def fresh_checkout(
-    rb_plain_db_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    encrypted_master_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> dict[str, Path]:
     """A data dir holding only an ENCRYPTED ``master.db.copy`` -- no plain copy.
 
@@ -93,11 +115,9 @@ def fresh_checkout(
     """
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    source_plain = tmp_path / "source.plain.db"
-    shutil.copy2(rb_plain_db_path, source_plain)
 
     encrypted = data_dir / "master.db.copy"
-    _encrypt(source_plain, encrypted, _pyrekordbox_key())
+    shutil.copy2(encrypted_master_copy, encrypted)
     plain = data_dir / "master.plain.db"
 
     monkeypatch.setattr(shared_paths, "REKORDBOX_WORKING_DB", encrypted)

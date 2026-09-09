@@ -131,7 +131,7 @@ const TRANSPORT_ANCHORS = [
 	'	async play(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-	'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {',
+	'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false): Promise<void> {',
 	'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 ];
 
@@ -150,7 +150,7 @@ test('every transport quantize site reads the grid through the never-throwing he
 	for (const anchor of [
 		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-		'	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {',
+		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false): Promise<void> {',
 		'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);
@@ -176,7 +176,7 @@ test('_quantizeGrid returns null instead of throwing, which is what un-refuses p
 });
 
 test('saving a hot cue asks for a USABLE grid, not merely a non-empty one', () => {
-	const deckSrc = readFileSync(`${SRC}/lib/components/rb/Deck.svelte`, 'utf8');
+	const deckSrc = readFileSync(`${SRC}/lib/rb/deck-hot-cue-actions.ts`, 'utf8');
 	const at = deckSrc.indexOf('async function saveHotCueAt(');
 	assert.notEqual(at, -1, 'if saveHotCueAt moved then this guard is pointed at nothing');
 	const body = deckSrc.slice(at, at + 900);

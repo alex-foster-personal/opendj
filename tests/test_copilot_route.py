@@ -45,7 +45,8 @@ def _seed_track(
     provenance = {}
     if energy is not None:
         provenance["energy"] = Provenance(
-            value=energy, source="mik", confidence=1.0, modified_at=created
+            value=energy, source="mik", confidence=1.0, modified_at=created,
+            status="ok",
         )
     backend.seed_track(Track(
         stable_id=stable_id, title=title, artist=artist, bpm=bpm, key=key,

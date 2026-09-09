@@ -38,6 +38,13 @@ export interface LivenessEffects {
 	recordPerfEvent(kind: string, message: string, severity: 'info' | 'error'): void;
 	setInterval(fn: () => void, ms: number): unknown;
 	clearInterval(handle: unknown): void;
+	/**
+	 * Fired after EVERY poll (idle included), not only on a verdict change, so a
+	 * UI indicator (pin 93c82bb36eb7: the 1px bar under master volume) can show
+	 * the live verdict rather than only the toast trail of past transitions.
+	 * Optional so the many existing test harnesses need no update.
+	 */
+	onSnapshot?(snapshot: AudioOutputSnapshot): void;
 }
 
 export type LivenessVerdict = 'idle' | 'ok' | 'dead' | 'dead-escalated';
@@ -72,6 +79,11 @@ export function installOutputLiveness(
 	let verdict: LivenessVerdict = 'idle';
 
 	function tick(): void {
+		tickVerdict();
+		effects.onSnapshot?.(snapshotAudioOutput(ctx, verdict));
+	}
+
+	function tickVerdict(): void {
 		if (!isAnyDeckPlaying() || ctx.state !== 'running') {
 			deadPolls = 0;
 			verdict = 'idle';

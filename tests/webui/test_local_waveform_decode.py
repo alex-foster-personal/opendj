@@ -4,8 +4,11 @@ Cloud-buildable in the same shape as ``test_rb_meta_local_track.py``: a syntheti
 state.db in tmp_path holding a track with a real on-disk WAV and no
 ``track_vendor_ids`` row -- the first-run state, needing no data/master.plain.db.
 
-The audio is generated here: two seconds of a loud sine then two seconds of digital
-silence, so a payload whose second half is not flat did not come from this file.
+The audio is generated here: two seconds of a loud 60 Hz sine then two seconds of
+digital silence, so a payload whose second half is not flat did not come from this
+file. 60 Hz sits an octave and a half below the 200 Hz low/mid crossover
+(NATIVE-06), so this fixture also says which BAND a value should be in: the low
+band carries it and the other two are measured silence.
 
 CI has no ffmpeg on PATH, so tests needing a real decode are marked ``requires_ffmpeg``
 and skip there. The peak arithmetic, strip contract and cache revalidation are ALSO
@@ -23,9 +26,7 @@ Regression one-liners:
   - if a browser row lacks preview_b64 after the decode has run then broken
   - if an unknown stable_id stops 404ing TRACK_NOT_FOUND then broken
   - if an unset MDT_LIBRARY_MODE off darwin is swallowed into an empty lane then broken
-  - if peak columns don't track the PCM they were reduced from then broken
-  - if an int16-floor sample wraps a column to silence then broken
-  - if the strip isn't 360 bytes, or is invented for audio too short to fill it, then broken
+  - if the three served bands are one envelope copied three times then broken
   - if a cache entry outlives a change to the file it was decoded from then broken
   - if the admission cap parks a request thread instead of an immediate not_decoded then broken
   - if a crash between the strip and entry writes leaves the entry but not the strip then broken
@@ -49,32 +50,33 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.analysis_waveform import local_waveform
 from apps.shared.state import db as state_db
-from apps.shared.state.writer import StateWriter
 from apps.webui.server import rb_vendor
 from apps.webui.server.backend import Track
-from apps.webui.server.rb_vendor_pkg import local_waveform
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
 from tests import fs_clock
 
-pytestmark = pytest.mark.requirement("PARITY-03")
+pytestmark = [pytest.mark.requirement("PARITY-03"), pytest.mark.rb_parity]
 
 LOCAL_SID = "e" * 40
 BROKEN_SID = "f" * 40
 GONE_SID = "9" * 40
 UNKNOWN_SID = "0" * 40
 SAMPLE_RATE_HZ = 44_100
+# Deep in the low band, far from the 200 Hz crossover.
+TONE_HZ = 60.0
 LOUD_S = 2.0
 SILENT_S = 2.0
 DURATION_MS = int((LOUD_S + SILENT_S) * 1000)
 
 
 def _write_wav(path: Path, *, loud_s: float, silent_s: float) -> None:
-    """A real WAV: ``loud_s`` of a full-scale 220 Hz sine, then digital silence."""
+    """A real WAV: ``loud_s`` of a full-scale 60 Hz sine, then digital silence."""
     frames = bytearray()
     for i in range(int(SAMPLE_RATE_HZ * loud_s)):
-        value = int(32000 * math.sin(2 * math.pi * 220.0 * i / SAMPLE_RATE_HZ))
+        value = int(32000 * math.sin(2 * math.pi * TONE_HZ * i / SAMPLE_RATE_HZ))
         frames += struct.pack("<h", value)
     frames += b"\x00\x00" * int(SAMPLE_RATE_HZ * silent_s)
     with wave.open(str(path), "wb") as handle:
@@ -162,12 +164,17 @@ def test_unmapped_track_serves_locally_decoded_peaks(client: TestClient) -> None
     # browser row that already rendered can adopt it without a reload.
     assert len(base64.b64decode(local["preview_b64"])) == 360
     assert local["preview_max"] > 0
-    assert payload["waveform"]["kind"] == "mono"
+    assert payload["waveform"]["kind"] == "tri"
     detail = payload["waveform"]["detail"]
     assert detail["length"] > 0
     assert len(detail["low"]) == detail["length"]
-    assert detail["low"] == detail["mid"] == detail["high"], (
-        "one decoded envelope, duplicated - never three invented bands"
+    # A 60 Hz sine is low-band content. Three MEASURED bands say so; one
+    # envelope copied three times could not (NATIVE-06).
+    assert max(detail["low"]) > 0.8, "the low band must carry a 60 Hz sine"
+    assert max(detail["mid"]) < 0.1 and max(detail["high"]) < 0.1, (
+        "mid and high must be measured silence for a 60 Hz-only file, not a "
+        f"copy of the low band; got mid={max(detail['mid'])}, "
+        f"high={max(detail['high'])}"
     )
     assert payload["waveform"]["preview"]["length"] > 0
 
@@ -280,55 +287,21 @@ def test_browser_row_gains_the_decoded_strip(
     assert max(raw[: 180]) > max(raw[180:]), "loud half then silent half"
 
 
-# ----- the arithmetic, with no ffmpeg in sight --------------------------------
+# ----- the cache, with no ffmpeg in sight -------------------------------------
+# The peak arithmetic, the band split and the cache VERSION key live in
+# tests/analysis_waveform/ with the package that owns them (NATIVE-06); what
+# stays here is the source-file revalidation the /anlz route depends on.
 
 
-def _pcm(*amplitudes_and_counts: tuple[int, int]) -> bytes:
-    """Raw little-endian int16 PCM: ``(amplitude, sample count)`` runs."""
-    frames = bytearray()
-    for amplitude, count in amplitudes_and_counts:
-        frames += struct.pack("<h", amplitude) * count
-    return bytes(frames)
-
-
-def test_peak_columns_follow_the_pcm_they_reduce() -> None:
-    rate = local_waveform.DECODE_SAMPLE_RATE_HZ
-    spc = local_waveform.SAMPLES_PER_COLUMN
-    peaks = local_waveform._peak_columns(_pcm((32767, rate), (0, rate)))
-    # The reduction works in whole SAMPLES_PER_COLUMN-wide columns plus one
-    # short tail column for the leftover samples (streaming, issue #735), so
-    # the column count is a ceiling division, not an exact halves split.
-    total_samples = rate * 2
-    whole_columns, leftover_samples = divmod(total_samples, spc)
-    expected_columns = whole_columns + (1 if leftover_samples else 0)
-    assert len(peaks) == expected_columns
-    # A column spanning the loud/silent boundary carries both values, so only
-    # columns entirely on one side of `rate` samples are safe to assert on.
-    last_pure_loud = rate // spc
-    first_pure_silent = last_pure_loud + 1
-    assert peaks[:last_pure_loud].max() == 255, "full scale must reach the top of the range"
-    assert peaks[first_pure_silent:].max() == 0, "digital silence must reduce to zero"
-
-
-def test_int16_floor_sample_does_not_wrap_a_column_to_silence() -> None:
-    """-32768 has no positive int16 twin; an unclamped abs() would wrap it."""
-    peaks = local_waveform._peak_columns(_pcm((-32768, 4000)))
-    assert peaks.max() == 255
-
-
-def test_strip_is_the_360_byte_contract_and_is_never_padded() -> None:
-    loud_then_quiet = np.concatenate(
-        [np.full(600, 240, dtype=np.uint8), np.full(600, 30, dtype=np.uint8)]
-    )
-    preview_b64, preview_max = local_waveform._strip_from_peaks(loud_then_quiet)
-    assert preview_b64 is not None, "a full-length strip always encodes"
-    raw = base64.b64decode(preview_b64)
-    assert len(raw) == 360 and preview_max == 240
-    assert max(raw[:180]) == 240 and max(raw[180:]) == 30
-
-    too_short = np.full(local_waveform.STRIP_COLUMNS - 1, 240, dtype=np.uint8)
-    assert local_waveform._strip_from_peaks(too_short) == (None, None), (
-        "padding audio too short to fill the strip would be invented data"
+def _peaks(columns: int) -> np.ndarray:
+    """``(columns, 3)`` tri-band peaks, each band a different constant."""
+    return np.stack(
+        [
+            np.arange(columns, dtype=np.uint8),
+            np.full(columns, 9, dtype=np.uint8),
+            np.full(columns, 240, dtype=np.uint8),
+        ],
+        axis=1,
     )
 
 
@@ -338,7 +311,7 @@ def test_cache_entry_is_revalidated_against_its_source_file(
     monkeypatch.setattr(rb_config, "LOCAL_WAVEFORM_CACHE_DIR", tmp_path / "cache")
     source = tmp_path / "source.wav"
     _write_wav(source, loud_s=1.0, silent_s=0.0)
-    peaks = np.arange(600, dtype=np.uint8)
+    peaks = _peaks(600)
 
     key = local_waveform._source_key(source)
     local_waveform._store_peaks(LOCAL_SID, key, peaks)
@@ -361,7 +334,7 @@ def _seed_cached_source(
     source = tmp_path / "source.wav"
     _write_wav(source, loud_s=1.0, silent_s=0.0)
     key = local_waveform._source_key(source)
-    local_waveform._store_peaks(LOCAL_SID, key, np.arange(600, dtype=np.uint8))
+    local_waveform._store_peaks(LOCAL_SID, key, _peaks(600))
     assert local_waveform._cached_peaks(LOCAL_SID, key) is not None
     return source, source.stat()
 
@@ -421,7 +394,7 @@ def test_a_crash_mid_publish_leaves_the_cache_recoverable_not_half_broken(
     source = tmp_path / "source.wav"
     _write_wav(source, loud_s=1.0, silent_s=0.0)
     key = local_waveform._source_key(source)
-    peaks = np.arange(600, dtype=np.uint8)
+    peaks = _peaks(600)
 
     real_write_json = local_waveform._write_json
     calls = 0

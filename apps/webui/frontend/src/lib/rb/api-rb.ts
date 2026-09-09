@@ -46,26 +46,57 @@ export class RbApiError extends Error {
 	constructor(
 		public status: number,
 		public code: string,
-		message: string
+		message: string,
+		/** The raw `{detail: {...}}` error body, when a caller chose to keep
+		 * it - most callers only need code/message, so this defaults to null
+		 * rather than forcing every construction site to thread it through.
+		 * beatgrid-upgrade.ts reads `body.detail.anlz_available` off a 404
+		 * here: the same field a 200 response carries, but otherwise lost the
+		 * moment ApiError converts onto this type. */
+		public body: unknown = null
 	) {
 		super(`${code}: ${message}`);
 		this.name = 'RbApiError';
 	}
 }
 
+export type TrackLyrics = {
+	stable_id: string;
+	source: string;
+	lines: Array<{ start_ms: number; text: string }>;
+};
+
 // ----------------------------------------------------------- _helpers
 
 async function _throwRbApiError(r: Response): Promise<never> {
 	// Backend contract: errors are explicit JSON {"detail": {code, message}}
-	// (COMPONENT-MAP 2 shared plumbing). If the body is not that shape the
-	// json()/field access fails loudly, which is the behaviour we want.
-	const body = (await r.json()) as { detail?: { code?: string; message?: string } | string };
-	const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
-	throw new RbApiError(
-		r.status,
-		detail?.code ?? `HTTP_${r.status}`,
-		detail?.message ?? r.statusText
-	);
+	// (COMPONENT-MAP 2 shared plumbing). ServerErrorMiddleware emits plain
+	// text for unhandled errors, so parse text defensively to preserve the
+	// HTTP status rather than leaking a JSON SyntaxError to the user.
+	const text = await r.text();
+	let body: unknown;
+	try {
+		body = JSON.parse(text) as unknown;
+	} catch {
+		throw new RbApiError(r.status, `HTTP_${r.status}`, text.slice(0, 200));
+	}
+
+	const detail =
+		typeof body === 'object' && body !== null && 'detail' in body
+			? body.detail
+			: undefined;
+	if (
+		typeof detail === 'object' &&
+		detail !== null &&
+		'code' in detail &&
+		'message' in detail &&
+		typeof detail.code === 'string' &&
+		typeof detail.message === 'string'
+	) {
+		throw new RbApiError(r.status, detail.code, detail.message);
+	}
+
+	throw new RbApiError(r.status, `HTTP_${r.status}`, text.slice(0, 200));
 }
 
 async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
@@ -74,6 +105,48 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
+	if (typeof raw !== 'object' || raw === null) throw new Error('lyrics response must be an object');
+	const lyrics = raw as { stable_id?: unknown; source?: unknown; lines?: unknown };
+	if (lyrics.stable_id !== stableId || typeof lyrics.source !== 'string' || !lyrics.source) {
+		throw new Error('lyrics response has invalid stable_id or source');
+	}
+	if (!Array.isArray(lyrics.lines) || lyrics.lines.length === 0) {
+		throw new Error('lyrics response has no line-level lyrics');
+	}
+	let previousStartMs = -1;
+	const lines = lyrics.lines.map((line, index) => {
+		if (typeof line !== 'object' || line === null) throw new Error(`lyrics line ${index} is invalid`);
+		const value = line as { start_ms?: unknown; text?: unknown };
+		if (
+			typeof value.start_ms !== 'number' ||
+			!Number.isInteger(value.start_ms) ||
+			value.start_ms < 0 ||
+			value.start_ms <= previousStartMs ||
+			typeof value.text !== 'string' ||
+			!value.text.trim()
+		) {
+			throw new Error(`lyrics line ${index} is invalid`);
+		}
+		previousStartMs = value.start_ms;
+		return { start_ms: value.start_ms, text: value.text };
+	});
+	return { stable_id: stableId, source: lyrics.source, lines };
+}
+
+/** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
+export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
+	try {
+		return _parseTrackLyrics(
+			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
+			stableId
+		);
+	} catch (error) {
+		if (error instanceof RbApiError && error.status === 404) return null;
+		throw error;
+	}
 }
 
 async function _putJson<T>(path: string, body: unknown, ifMatch?: string): Promise<T> {
@@ -289,6 +362,9 @@ export interface PlaylistTrackRowWire {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
 	duration_ms: number | null;
 	genre: string | null;
 	comments: string | null;
@@ -310,6 +386,8 @@ export interface PlaylistTrackRowWire {
 	 * CONTRACT - the browser skips the lazy per-row fetch rather than
 	 * provoke a 404 the console logs unsuppressably on every visible row. */
 	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 }
 
 /** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
@@ -366,6 +444,28 @@ export async function searchCollection(params: {
 	return _fetchJson<SearchResultsWire>(`/api/v1/search?${qs.toString()}`);
 }
 
+// -------------------------------------------- lyric-only search (Part 3 of #935, #1344)
+// Matches cached synced lyrics only (never title/artist/genre/tags), over the
+// durable background index Part 2 builds. Rendered below a divider AFTER the
+// whole-collection search above settles - see LyricSearchResults.svelte.
+//
+// Reuses SearchHitWire/SearchResultsWire rather than declaring a
+// near-identical sibling: a hit is a hydrated track row plus an excerpt of
+// what matched either way. Here `match_context` is the one lyric line that
+// best carries the query, never the full transcript or a bare title.
+
+/** GET /lyrics/search - lyric-only search, not scoped to the active pane. */
+export async function searchLyrics(params: {
+	q: string;
+	limit?: number;
+	offset?: number;
+}): Promise<SearchResultsWire> {
+	const qs = new URLSearchParams({ q: params.q });
+	if (params.limit !== undefined) qs.set('limit', String(params.limit));
+	if (params.offset !== undefined) qs.set('offset', String(params.offset));
+	return _fetchJson<SearchResultsWire>(`/api/v1/lyrics/search?${qs.toString()}`);
+}
+
 /** PlaylistSummary + contract point 2's available_count. */
 export interface PlaylistSummaryHydrated extends PlaylistSummary {
 	/** Tracks whose audio file exists on disk (bulk-stat pass, cached). */
@@ -416,6 +516,9 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
  * absent here - the browser falls back to lazy rb-meta for those. */
 export type TrackListItemWire = Track & {
 	duration_ms?: number | null;
+	energy: number | null;
+	energy_source: 'mik' | null;
+	energy_reason: string;
 	preview_b64: string | null;
 	preview_max: number | null;
 	file_exists: boolean;
@@ -425,6 +528,8 @@ export type TrackListItemWire = Track & {
 	stems: StemSummary;
 	/** See PlaylistTrackRowWire.has_rb_mapping - same flag, same purpose. */
 	has_rb_mapping: boolean;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 };
 
 export interface TracksPageHydrated {
@@ -473,16 +578,29 @@ export async function listTracksHydrated(params: {
  * a library prefetch and a deck load do not double-hit the backend. */
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
-export async function fetchAnlz(stable_id: string, points = 38400): Promise<AnlzWithVocals> {
+/** `bypassCache: true` forces a `no-store` network read and skips the
+ * in-flight de-dup below: an authoritative recheck (a vendor mapping that
+ * may have landed after the deck's own /anlz already served the empty
+ * local payload, which the backend caches for an hour) must never be
+ * satisfied by either cache. */
+export async function fetchAnlz(
+	stable_id: string,
+	points = 38400,
+	bypassCache = false
+): Promise<AnlzWithVocals> {
 	const key = `${stable_id}:${points}`;
-	const existing = _inflightAnlz.get(key);
-	if (existing !== undefined) return existing;
+	if (!bypassCache) {
+		const existing = _inflightAnlz.get(key);
+		if (existing !== undefined) return existing;
+	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		bypassCache ? 'no-store' : undefined
 	).then((data) => {
 		vocalsOf(data);
 		return data;
 	});
+	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
 		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
 	});
@@ -876,4 +994,24 @@ export async function startStemGeneration(
 /** GET /stems/jobs/{id} - live state, including the real returncode. */
 export async function fetchStemJob(job_id: string): Promise<StemJob> {
 	return _fetchJson<StemJob>(`/api/v1/stems/jobs/${encodeURIComponent(job_id)}`);
+}
+
+// --------------------------------------------- vocal analysis trigger (PARITY-08)
+
+export interface VocalsAnalyzeResult {
+	claimed: string[];
+	refused: Record<string, string>;
+}
+
+/** POST /vocals/analyze - derive vocals from an existing stem bundle (CPU,
+ * no demucs). Refuses (not silently skips) any track outside the classifier's
+ * `todo` category; check `result.refused[stable_id]` for the reason. */
+export async function analyzeVocalsFromStems(stable_id: string): Promise<VocalsAnalyzeResult> {
+	const r = await fetch(`${RB_API_BASE}/api/v1/vocals/analyze`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ stable_ids: [stable_id], mode: 'from-stems' })
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return await r.json();
 }

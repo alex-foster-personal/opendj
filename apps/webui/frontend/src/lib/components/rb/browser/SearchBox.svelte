@@ -1,10 +1,22 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import ControlExplainer from '../deck/ControlExplainer.svelte';
+	import { SEARCH_QUERY_HELP } from '$lib/rb/browser-search-query';
 
 	// Browser pane search (SCREENSHOT-SPEC 5c). Modes:
 	//   filter     - Cmd+F: client filter within this track list
 	//   find       - Cmd+F again: in-place highlight (no filter), ≥3 chars
 	//   collection - Cmd+Shift+F: whole-collection FTS5
+	//
+	// Wrapped in ControlExplainer (pin 7ca47b21ead7, issue #936) so the
+	// `field:operator:value` search grammar (browser-search-query.ts) is
+	// discoverable - the same hover/focus pattern already used for stem tags
+	// and deck controls, reused rather than a third explainer component.
+	// ControlExplainer opens on pointer hover AND on focus-in, which is what
+	// puts it up in the EMPTY state the moment the box is focused, before a
+	// single character is typed - "a syntax nobody can discover is a syntax
+	// nobody uses".
+	const SEARCH_EXPLAINER_BULLETS = SEARCH_QUERY_HELP.map((h) => `${h.example} - ${h.hint}`);
 	let {
 		value,
 		mode = 'filter',
@@ -65,54 +77,59 @@
 	);
 </script>
 
-<label class="rb-search" class:find={mode === 'find'} class:all={mode === 'collection'} title={modeTitle}>
-	<span class="mode" aria-hidden="true">{modeLabel}</span>
-	<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-		<circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-		<path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" />
-	</svg>
-	<input
-		bind:this={inputEl}
-		type="text"
-		value={draft}
-		{placeholder}
-		spellcheck="false"
-		autocomplete="off"
-		oninput={(e) => {
-			// The caret never waits: echo first, then hand the owner the
-			// keystroke it will debounce.
-			draft = e.currentTarget.value;
-			oninput(draft);
-		}}
-		onfocus={() => onfocuschange?.(true)}
-		onblur={() => onfocuschange?.(false)}
-		onkeydown={(e) => {
-			if (e.key !== 'Escape') return;
-			e.preventDefault();
-			e.stopPropagation();
-			// Escape pressed mid-burst: the owner's `value` may still be the
-			// pre-burst string, so clearing it would not move the prop and the
-			// echo would keep showing what was typed. Clear the echo here.
-			draft = '';
-			(onescapeclear ?? onclear)();
-		}}
-	/>
-	{#if draft.trim() !== ''}
-		<button
-			type="button"
-			class="clear"
-			title="Clear search and return"
-			aria-label="Clear search"
-			onclick={(e) => {
-				e.preventDefault();
-				draft = '';
-				onclear();
+<!-- Native `title` dropped in favor of aria-label: ControlExplainer's own
+     popover heading carries this text, and the doc comment on that
+     component names exactly this overlap as the thing to avoid. -->
+<ControlExplainer title="Search syntax" bullets={[modeTitle, ...SEARCH_EXPLAINER_BULLETS]}>
+	<label class="rb-search" class:find={mode === 'find'} class:all={mode === 'collection'} aria-label={modeTitle}>
+		<span class="mode" aria-hidden="true">{modeLabel}</span>
+		<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+			<circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+			<path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" />
+		</svg>
+		<input
+			bind:this={inputEl}
+			type="text"
+			value={draft}
+			{placeholder}
+			spellcheck="false"
+			autocomplete="off"
+			oninput={(e) => {
+				// The caret never waits: echo first, then hand the owner the
+				// keystroke it will debounce.
+				draft = e.currentTarget.value;
+				oninput(draft);
 			}}
-		>
-			×
-		</button>
-	{/if}
-</label>
+			onfocus={() => onfocuschange?.(true)}
+			onblur={() => onfocuschange?.(false)}
+			onkeydown={(e) => {
+				if (e.key !== 'Escape') return;
+				e.preventDefault();
+				e.stopPropagation();
+				// Escape pressed mid-burst: the owner's `value` may still be the
+				// pre-burst string, so clearing it would not move the prop and the
+				// echo would keep showing what was typed. Clear the echo here.
+				draft = '';
+				(onescapeclear ?? onclear)();
+			}}
+		/>
+		{#if draft.trim() !== ''}
+			<button
+				type="button"
+				class="clear"
+				title="Clear search and return"
+				aria-label="Clear search"
+				onclick={(e) => {
+					e.preventDefault();
+					draft = '';
+					onclear();
+				}}
+			>
+				×
+			</button>
+		{/if}
+	</label>
+</ControlExplainer>
 
 <style>
 	.rb-search {

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 
+from apps.lyrics import cache as lyrics_cache
 from apps.shared import audio_quality
 from apps.shared.events import publish
 
@@ -15,9 +17,11 @@ from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
+    LyricsUnavailableOut,
     ProvenanceOut,
     QualityRungOut,
     TrackListItemOut,
+    TrackLyricsOut,
     TrackOut,
     TrackPatch,
     TracksPage,
@@ -54,6 +58,8 @@ def _track_to_out(track: Track, has_rb_mapping: bool) -> TrackOut:
             source=v.source,
             confidence=v.confidence,
             modified_at=v.modified_at,
+            status=v.status,
+            reason=v.reason,
         )
         for k, v in (track.provenance or {}).items()
     }
@@ -125,6 +131,11 @@ def list_tracks(
                 quality=row["quality"],
                 vocals=row["vocals"],
                 stems=row["stems"],
+                artwork_available=row["artwork_available"],
+                artwork_status=row["artwork_status"],
+                energy=row["energy"],
+                energy_source=row["energy_source"],
+                energy_reason=row["energy_reason"],
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)
@@ -137,6 +148,33 @@ def get_quality_ladder() -> list[QualityRungOut]:
     return [QualityRungOut(**rung) for rung in audio_quality.ladder()]
 
 
+@router.get(
+    "/{stable_id}/lyrics",
+    response_model=TrackLyricsOut,
+    responses={
+        404: {
+            "model": LyricsUnavailableOut,
+            "description": "No cached line-synced lyrics exist for this track.",
+        }
+    },
+)
+def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
+    """Read the real cached line timeline without fetching or inventing lyrics."""
+    state_db_path = Path(request.app.state.state_db_path)
+    lyrics = lyrics_cache.load(lyrics_cache.cache_path(state_db_path.parent.parent, stable_id))
+    if lyrics is None:
+        raise HTTPException(status_code=404, detail=f"no cached lyrics for {stable_id!r}")
+    if lyrics.stable_id != stable_id:
+        raise ValueError(f"lyrics-cache identity mismatch for {stable_id!r}")
+    if not lyrics.lines:
+        raise ValueError(f"lyrics-cache contains no line-level lyrics for {stable_id!r}")
+    return TrackLyricsOut(
+        stable_id=lyrics.stable_id,
+        source=lyrics.source,
+        lines=[{"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines],
+    )
+
+
 @router.get("/{stable_id}", response_model=TrackOut)
 def get_track(
     stable_id: str,
@@ -145,7 +183,7 @@ def get_track(
 ) -> TrackOut:
     # NotFoundError -> handle_not_found (errors.py).
     track = backend.get_track(stable_id)
-    response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at)
+    response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
     return _track_to_out(track, has_rb_mapping=_has_rb_mapping(stable_id))
 
 
@@ -182,6 +220,8 @@ def patch_track(
         # since only the route layer has _has_rb_mapping.
         exc.current["has_rb_mapping"] = _has_rb_mapping(stable_id)
         raise
-    response.headers["ETag"] = compute_etag(updated.stable_id, updated.updated_at)
+    response.headers["ETag"] = compute_etag(
+        updated.stable_id, updated.updated_at, updated.selection_tag
+    )
     publish("library.changed", {"kind": "tracks", "ids": [updated.stable_id]})
     return _track_to_out(updated, has_rb_mapping=_has_rb_mapping(stable_id))

@@ -5,10 +5,12 @@
 # `bash scripts/check-bundle-size.sh`; all the measurement lives in
 # scripts/bundle-budget.mjs, which documents each budget and its derivation.
 #
-# Budgets enforced (gzip, JS under build/_app/immutable/):
-#   library      256000  initial load of "/"          (UNCHANGED figure)
-#   performance  203776  /performance and children
-#   other-lazy    63488  every other route plus deferred shell chunks
+# Three budgets are enforced (gzip, JS under build/_app/immutable/):
+# library (initial load of "/"), performance (/performance and children) and
+# other-lazy (every other route plus deferred shell chunks). The byte limits
+# are NOT restated here on purpose: the BUDGETS array in bundle-budget.mjs is
+# the single source of truth, and figures copied into this header drifted
+# stale twice (Tue 1 Sep and Sat 5 Sep 2026). Read them there.
 # Plus a coverage assertion: an emitted chunk under no budget fails the run.
 #
 # Usage:

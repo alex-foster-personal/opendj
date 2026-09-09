@@ -15,7 +15,9 @@ development backend.
 """
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -246,6 +248,82 @@ class LibrosaBackend:
             downbeats_s=downbeats_s[:2000],
             rms_peaks_s=rms_peaks_s[:2000],
             features_blob=features_blob,
+        )
+
+    #: Length of the synthetic warm-up signal. Long enough for the CQT's
+    #: lowest-octave filters (~0.75 s at C1) and for the beat tracker to run
+    #: its DP over a real number of frames; short enough that the warmed calls
+    #: themselves are a fraction of the compile they trigger.
+    _WARMUP_SECONDS: float = 3.0
+
+    @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        """Where numba writes this backend's cached compilations.
+
+        ``NUMBA_CACHE_DIR`` wins when set, because numba then puts every
+        artifact there instead of beside the source. Otherwise the artifacts
+        land in ``__pycache__`` directories inside the installed ``librosa``
+        package, so the package directory is the root to walk.
+
+        Located with ``find_spec`` rather than ``import librosa``: this runs
+        on the fast path, where skipping the librosa import is most of the
+        saving. Returns ``()`` when librosa is not installed, which makes the
+        caller warm unconditionally and get the honest ``BackendNotAvailable``
+        from :meth:`warm_jit_cache` instead of a silent skip.
+        """
+        override = os.environ.get("NUMBA_CACHE_DIR")
+        if override:
+            return (Path(override),)
+        try:
+            spec = importlib.util.find_spec("librosa")
+        except (ImportError, ValueError):  # pragma: no cover - broken install
+            return ()
+        if spec is None or not spec.origin:
+            return ()
+        return (Path(spec.origin).parent,)
+
+    @classmethod
+    def warm_jit_cache(cls) -> str:
+        """Drive every librosa entry point ``analyze`` uses, on 3 s of noise.
+
+        Not a guess at which functions are numba-cached: it calls the SAME
+        entry points ``analyze`` calls, so whatever they compile is what gets
+        compiled here, and a librosa upgrade that moves a ``cache=True``
+        decorator needs no change to this list. Beats go through
+        ``cls._beats_and_bpm`` rather than ``librosa.beat.beat_track``
+        directly, so a subclass that swaps the beat tracker (see
+        :class:`LibrosaMadmomBackend`) warms ITS tracker and not one it never
+        calls.
+
+        The signal is ``float32`` on purpose. ``librosa.load`` returns
+        ``float32``, and numba caches per type signature, so warming with the
+        ``float64`` that ``np.random`` hands back by default would compile
+        signatures the real run never loads and leave the real ones to race.
+
+        Deterministic input (fixed seed), because a warm-up that behaved
+        differently run to run would make a failure here unreproducible.
+        """
+        cls._require_deps()
+
+        import librosa
+
+        cfg = _analysis_config.load_config()
+        sr = int(cfg["analyzer"]["sample_rate_hz"])
+        rng = np.random.default_rng(1316)
+        n = int(sr * cls._WARMUP_SECONDS)
+        y = rng.standard_normal(n).astype(np.float32) * np.float32(0.05)
+        # A click every half second, so the beat tracker has real peaks to
+        # run its dynamic program over rather than an all-noise envelope.
+        y[:: sr // 2] = np.float32(0.9)
+
+        cls._beats_and_bpm(y, sr)
+        librosa.onset.onset_detect(y=y, sr=sr, units="time")
+        rms = librosa.feature.rms(y=y, hop_length=512)[0]
+        cls._rms_peaks(rms, sr=sr, hop=512)
+        librosa.feature.chroma_cqt(y=y, sr=sr)
+        return (
+            f"warmed {cls.beat_tracking}+onset_detect+rms+chroma_cqt on "
+            f"{cls._WARMUP_SECONDS:g}s float32 @ {sr}Hz"
         )
 
     @classmethod

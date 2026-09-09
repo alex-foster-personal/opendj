@@ -150,7 +150,7 @@ def _readable_leader_verdict(
             "recorded spawn; the pid was recycled",
             alive=True,
         )
-    if cmdline != identity.argv:
+    if cmdline != identity.argv and not _renamed_worker_matches(identity, cmdline):
         return _LeaderVerdict(
             f"pid {identity.pgid} argv {list(cmdline)!r} does not match the "
             f"recorded {list(identity.argv)!r}",
@@ -167,6 +167,23 @@ def _readable_leader_verdict(
             f"pid {identity.pgid} exited during verification", alive=False
         )
     return _LeaderVerdict(None, alive=True)
+
+
+def _renamed_worker_matches(
+    identity: WorkerIdentity, cmdline: tuple[str, ...]
+) -> bool:
+    """Accept our process-title form without weakening the spawn proof.
+
+    ``setproctitle`` makes psutil expose one argv element. The title must keep
+    the exact, shell-escaped spawn argv, so recovery still rejects a pid whose
+    executable or arguments differ from the worker it recorded.
+    """
+    from apps.shared.process_identity import process_command
+
+    expected = process_command(
+        "worker", invocation_argv=identity.argv
+    )
+    return cmdline == (expected,)
 
 
 def identity_mismatch(identity: WorkerIdentity) -> str | None:

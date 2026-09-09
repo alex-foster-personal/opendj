@@ -65,6 +65,7 @@ export const WAVE_WINDOW_S = 24;
 /** Playhead is pure white in the screenshot; not a themed surface colour. */
 /** Center 'now' line - red by default; Beat Sync followers override via tone. */
 const PLAYHEAD_COLORS = {
+	stopped: '#fff',
 	now: '#e23a32',
 	master: '#e0cc6e',
 	bar1: '#35c04f',
@@ -72,7 +73,7 @@ const PLAYHEAD_COLORS = {
 	drift: '#ff2d2d'
 } as const;
 
-export type PlayheadTone = keyof typeof PLAYHEAD_COLORS;
+export type PlayheadTone = keyof typeof PLAYHEAD_COLORS | 'masterSynced';
 
 /** Rendering style only (matches rekordbox's white core): highs are drawn
  * at reduced height so the white band reads as the inner core. The band
@@ -101,6 +102,26 @@ interface BandNorms {
 
 /** Per-waveform normalization cache - computed once per anlz payload. */
 const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
+
+interface WaveBandImage {
+	canvas: HTMLCanvasElement;
+	key: string;
+}
+
+/**
+ * Band geometry is the expensive part of a scrolling waveform. It changes only
+ * with the immutable waveform data, zoom, row width, height, or palette, so
+ * retain an offscreen full-track image and translate it under the fixed
+ * playhead. The image is deliberately transparent: moving overlays remain on
+ * the destination canvas and no cached background can obscure them.
+ */
+/** Test-only cache reset. The production cache is weakly owned by ANLZ data. */
+export function resetWaveBandCacheForTest(): void {
+	// WeakMap has no clear(), so replace it for deterministic isolated tests.
+	_bandImages = new WeakMap<AnlzWaveform, WaveBandImage>();
+}
+
+let _bandImages = new WeakMap<AnlzWaveform, WaveBandImage>();
 
 function _p99(values: number[]): number {
 	const nonZero = values.filter((v) => v > 0);
@@ -169,7 +190,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const pxPerS = w / trackWindowS;
 
 	if (frame.anlz !== null && durS > 0) {
-		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
+		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		// Loop cue bands paint as background, before the beat grid/phrases they
 		// would otherwise blank out for their span; point cue markers stay in
@@ -198,10 +219,56 @@ function _mirrorRect(path: Path2D, x: number, centerY: number, halfHeight: numbe
 	path.rect(x, centerY - halfHeight, 1, halfHeight * 2);
 }
 
-function _drawBands(
+function _drawCachedBands(
 	ctx: CanvasRenderingContext2D,
 	waveform: AnlzWaveform,
 	tLeft: number,
+	pxPerS: number,
+	durS: number,
+	w: number,
+	h: number,
+	palette: WavePalette
+): void {
+	// Node painter tests intentionally provide only Path2D. Browser production
+	// always has document, while this direct branch keeps those geometry tests
+	// exercising the same real bucket painter without a fake DOM canvas.
+	if (typeof document === 'undefined') {
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette);
+		return;
+	}
+	const key = `${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}`;
+	let image = _bandImages.get(waveform);
+	if (image === undefined || image.key !== key) {
+		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette), key };
+		_bandImages.set(waveform, image);
+	}
+	ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
+}
+
+function _buildBandImage(
+	waveform: AnlzWaveform,
+	pxPerS: number,
+	durS: number,
+	h: number,
+	palette: WavePalette
+): HTMLCanvasElement {
+	if (typeof document === 'undefined') {
+		throw new Error('wave band cache requires a browser canvas');
+	}
+	const canvas = document.createElement('canvas');
+	const w = Math.max(1, Math.ceil(durS * pxPerS));
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext('2d');
+	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
+	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette);
+	return canvas;
+}
+
+/** Build the transparent full-track band image once, never per animation frame. */
+function _drawBands(
+	ctx: CanvasRenderingContext2D,
+	waveform: AnlzWaveform,
 	pxPerS: number,
 	durS: number,
 	w: number,
@@ -224,11 +291,8 @@ function _drawBands(
 	const highPath = new Path2D();
 
 	for (let x = 0; x < w; x++) {
-		const t0 = tLeft + x / pxPerS;
-		const t1 = t0 + 1 / pxPerS;
-		if (t1 <= 0 || t0 >= durS) continue;
-		const p0 = Math.max(0, Math.floor((t0 / durS) * n));
-		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil((t1 / durS) * n) - 1));
+		const p0 = Math.max(0, Math.floor((x / w) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
 		if (mono) {
 			// Heights only (PWAV/PWV3): the contract does not pin which band
 			// array carries them, so take the per-point max across all three.
@@ -364,6 +428,15 @@ function _drawVocals(
 	ctx.globalAlpha = 1;
 }
 
+/**
+ * CH3/4 get a lighter fill than --rb-bg (#0d0f12) so secondary rows read
+ * clearly under the opaque canvas (CSS alone cannot show through).
+ */
+export function resolvePaintPalette(deckId: number, palette: WavePalette): WavePalette {
+	const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
+	return rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
+}
+
 /** Fixed center playhead. Always drawn (busy waveforms + empty decks).
  * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red). */
 export function drawPlayhead(
@@ -374,25 +447,63 @@ export function drawPlayhead(
 	timeMs: number = 0
 ): void {
 	const centerX = Math.round(w / 2);
+	if (tone === 'masterSynced') {
+		// Two adjacent cores are deliberate: yellow says MASTER, while green
+		// retains its established meaning, Beat Sync is engaged. Their matching
+		// 3px glows / 1px cores keep the original equal-weight contract.
+		// Both translucent glows must land before either opaque core. Painting
+		// green's glow after yellow's core visibly contaminates the yellow core.
+		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
+		_drawPlayheadGlow(ctx, PLAYHEAD_COLORS.synced, centerX, h);
+		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.master, centerX - 1, h);
+		_drawPlayheadCore(ctx, PLAYHEAD_COLORS.synced, centerX, h);
+		return;
+	}
 	const color = PLAYHEAD_COLORS[tone];
-	let glow = 0.4;
+	// One weight for every tone. The geometry was always identical, but the
+	// glow alpha ran 0.32 (synced) to 0.55 (bar1), and a dimmer line at the
+	// same width reads as a THINNER line - which is why pin 4a1e7e603f49
+	// reported this as a width bug when nothing was ever a different width.
+	// The tone carries its meaning in the colour; making it carry meaning in
+	// the weight as well meant neither read cleanly.
+	let glow = 0.45;
 	let core = 1;
 	if (tone === 'drift') {
-		// Bright pulsing red - light-touch warning, still unmissable.
+		// Bright pulsing red - light-touch warning, still unmissable. The
+		// exception that stays: a pulse is a change over time, not a
+		// permanently different weight.
 		const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(timeMs / 160));
 		glow = 0.45 * pulse;
 		core = pulse;
-	} else if (tone === 'bar1') {
-		glow = 0.55;
-	} else if (tone === 'synced') {
-		glow = 0.32;
-	} else if (tone === 'master') {
-		glow = 0.5;
 	}
 	ctx.fillStyle = color;
 	ctx.globalAlpha = glow;
 	ctx.fillRect(centerX - 1, 0, 3, h);
 	ctx.globalAlpha = core;
 	ctx.fillRect(centerX, 0, 1, h);
+	ctx.globalAlpha = 1;
+}
+
+function _drawPlayheadGlow(
+	ctx: CanvasRenderingContext2D,
+	color: string,
+	coreX: number,
+	h: number
+): void {
+	ctx.fillStyle = color;
+	ctx.globalAlpha = 0.45;
+	ctx.fillRect(coreX - 1, 0, 3, h);
+	ctx.globalAlpha = 1;
+}
+
+function _drawPlayheadCore(
+	ctx: CanvasRenderingContext2D,
+	color: string,
+	coreX: number,
+	h: number
+): void {
+	ctx.fillStyle = color;
+	ctx.globalAlpha = 1;
+	ctx.fillRect(coreX, 0, 1, h);
 	ctx.globalAlpha = 1;
 }

@@ -29,11 +29,14 @@ rule); these are the twin the sync surface will match.
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 from pathlib import Path
 
 from apps.shared.state import db as state_db
+from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, generation
+from apps.sync_hub import status as sync_status
 
 
 def _open(data_dir: Path) -> sqlite3.Connection:
@@ -54,9 +57,34 @@ def sync(
     ``run_sync``'s declared failures (see its docstring) propagate out
     unchanged -- fail fast, no repair.
     """
-    return client.run_sync(
-        Path(data_dir), hub_url, transport=transport, name=name
+    started_at = sync_stamp.canonical_now()
+    try:
+        result = client.run_sync(
+            Path(data_dir), hub_url, transport=transport, name=name
+        )
+    except Exception as exc:
+        sync_status.write_result(
+            Path(data_dir),
+            sync_status.SyncResult(
+                finished_at=sync_stamp.canonical_now(),
+                status="error",
+                message=str(exc),
+                pushed=0,
+                pulled=0,
+            ),
+        )
+        raise
+    sync_status.write_result(
+        Path(data_dir),
+        sync_status.SyncResult(
+            finished_at=sync_stamp.canonical_now(),
+            status="ok",
+            message=f"completed sync started at {started_at}",
+            pushed=result.pushed,
+            pulled=result.pulled,
+        ),
     )
+    return result
 
 
 def prune(
@@ -121,6 +149,10 @@ def _parser() -> argparse.ArgumentParser:
     sync_command.add_argument(
         "--hub", required=True, help="the hub base URL, e.g. http://hub.tailnet:8686"
     )
+
+    subcommands.add_parser(
+        "status", parents=[common], help="print the CloudSync status object as JSON"
+    )
     sync_command.add_argument(
         "--name",
         default=None,
@@ -163,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
             f"{result.applied}), {result.rounds} round(s), hub seq "
             f"{result.hub_seq}{restored}"
         )
+    elif args.command == "status":
+        current = sync_status.read_status(args.data_dir)
+        print(json.dumps(current.to_wire(), sort_keys=True))
+        if current.last_result is not None and current.last_result["status"] == "error":
+            return 1
     elif args.command == "generation":
         print(show_generation(args.data_dir))
     elif args.command == "rotate":

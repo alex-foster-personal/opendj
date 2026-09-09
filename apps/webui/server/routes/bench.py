@@ -41,7 +41,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -187,8 +188,12 @@ def save_ratings(payload: RatingsIn) -> RatingsSaved:
             },
         )
 
-    now = datetime.now(timezone.utc)
-    filename = f"ratings-{slug}-{_stamp(now)}.json"
+    now = datetime.now(UTC)
+    # _stamp() is second precision, so two saves of the same track within one
+    # second need a disambiguating token or the second silently overwrites
+    # the first. The token also makes the .part temp path below unique per
+    # request, closing the same-name write race between concurrent saves.
+    filename = f"ratings-{slug}-{_stamp(now)}-{secrets.token_hex(4)}.json"
     target = RATINGS_DIR / filename
     body = {
         "track": payload.track,
@@ -248,7 +253,7 @@ def list_ratings() -> list[RatingsFile]:
         # saved_at; mtime is the only honest timestamp for them, and it is used
         # for ordering only -- saved_at stays null so nothing is invented.
         order_key = saved_at if isinstance(saved_at, str) else datetime.fromtimestamp(
-            stat.st_mtime, tz=timezone.utc).isoformat()
+            stat.st_mtime, tz=UTC).isoformat()
         dated.append((order_key, RatingsFile(
             filename=path.name,
             path=f"{RATINGS_REL}/{path.name}",

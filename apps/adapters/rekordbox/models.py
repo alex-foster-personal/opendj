@@ -39,6 +39,9 @@ class RbRowMeta:
     comment: str | None
     genre: str | None
     play_count: int
+    # ImagePath is included in the bulk listing query so artwork availability
+    # can be decided without a second /rb-meta request per visible table row.
+    image_path: str | None = None
 
 
 __all__ = ["RbContent", "RbRowMeta"]

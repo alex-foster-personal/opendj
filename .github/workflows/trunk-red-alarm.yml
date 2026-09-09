@@ -1,0 +1,73 @@
+name: Trunk Red Alarm
+
+# A PR CI result can be stale by the time it merges. The CI push run is the
+# first measurement of the actual merge result, so a failure there needs a
+# durable alert that does not depend on unrelated PR authors finding it first.
+# This watchdog runs after CI concludes and has its own failure state, so a
+# failed CI run cannot prevent the alarm from being recorded.
+on:
+  workflow_run:
+    workflows: [CI, E2E]
+    types: [completed]
+
+# workflow_run uses the default branch's workflow definition. Do not check out
+# or execute the triggering SHA because it may be untrusted pull-request code.
+permissions:
+  actions: read
+  issues: write
+
+concurrency:
+  group: trunk-red-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  trunk_red:
+    name: Alarm a failed push-to-main CI run
+    if: >-
+      github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == github.event.repository.default_branch
+      && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Open or update trunk-red issue and fail visibly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -euo pipefail
+          short="${HEAD_SHA:0:8}"
+          title="Trunk red: $WORKFLOW_NAME failed on main at $short"
+
+          gh label create ci:trunk-red \
+            --color B60205 \
+            --description "A push-to-main watched workflow failed and needs immediate triage" \
+            --force
+
+          report_file="${RUNNER_TEMP}/trunk-red-${RUN_ID}.md"
+          cat > "$report_file" <<EOF
+          # Trunk workflow is red
+
+          - Commit: \`$HEAD_SHA\`
+          - Workflow: \`$WORKFLOW_NAME\`
+          - Run: [$RUN_ID]($RUN_URL)
+          - Detection: the push-to-main workflow run measured the actual merge result and failed.
+
+          This issue is updated for every failed push-to-main watched workflow run until a human resolves it.
+          EOF
+
+          existing=$(gh issue list --label ci:trunk-red --state open \
+            --limit 1 --json number --jq '.[0].number // empty')
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body-file "$report_file"
+            issue_url=$(gh issue view "$existing" --json url --jq .url)
+          else
+            issue_url=$(gh issue create --title "$title" --label ci:trunk-red --body-file "$report_file")
+          fi
+
+          echo "::error title=$title::$WORKFLOW_NAME failed on the real main merge result. Alert: $issue_url"
+          exit 1

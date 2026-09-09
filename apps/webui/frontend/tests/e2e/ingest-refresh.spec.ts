@@ -11,9 +11,17 @@ import { test, expect } from '@playwright/test';
 
 test.describe('refresh analysis button', () => {
 	test('hover shows coverage popover, click runs a refresh to done', async ({ page }) => {
+		// This fixture intentionally has no Rekordbox master database or stem
+		// artifacts. Configure the real ingest endpoint for its runnable analysis
+		// step before exercising the top-bar control, rather than asking the
+		// unrelated vocals backfill to fail on unavailable fixture data.
+		const config = await page.request.put('/api/v1/ingest/config', {
+			data: { enabled: { analysis: true, stems: false, vocals: false } }
+		});
+		expect(config.ok()).toBe(true);
 		await page.goto('/performance');
 		const btn = page.getByTestId('refresh-analysis');
-		await expect(btn).toBeVisible();
+		await expect(btn).toBeVisible({ timeout: 15_000 });
 		await expect(btn).toBeEnabled();
 
 		await btn.hover();
@@ -42,8 +50,8 @@ test.describe('refresh analysis button', () => {
 		expect(rendered).toMatch(/auto\s+(on|off)/);
 
 		await btn.click();
-		// Empty seeded library: analysis has no targets and vocals from-stems
-		// returns quickly, so the job reaches a terminal phase fast.
+		// Empty seeded library: analysis has no targets, so the job reaches a
+		// terminal phase fast.
 		await expect(pop).toContainText(/done|error/, { timeout: 25_000 });
 		await expect(pop).not.toContainText('error', { timeout: 1_000 });
 	});

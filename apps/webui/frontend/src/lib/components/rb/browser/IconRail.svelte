@@ -7,9 +7,22 @@
 		d: string;
 		mode: 'fill' | 'stroke';
 		source?: 'spotify';
+		action?: 'record';
 	}
 
-	let { source, onspotify }: { source: 'collection' | 'spotify'; onspotify: () => void } = $props();
+	let {
+		source,
+		onspotify,
+		recording = false,
+		recordingBusy = false,
+		onrecord = () => {}
+	}: {
+		source: 'collection' | 'spotify';
+		onspotify: () => void;
+		recording?: boolean;
+		recordingBusy?: boolean;
+		onrecord?: () => void;
+	} = $props();
 
 	const TIP = 'not implemented - see PARITY-TODO';
 
@@ -48,10 +61,11 @@
 			mode: 'stroke'
 		},
 		{
-			tip: `${TIP} (recordings - future apps/sets)`,
+			tip: 'Start set recording',
 			color: '#d0342c',
 			d: 'M8 3a5 5 0 1 1 0 10A5 5 0 1 1 8 3M8 7a1 1 0 1 1 0 2a1 1 0 1 1 0-2',
-			mode: 'stroke'
+			mode: 'stroke',
+			action: 'record'
 		}
 	];
 
@@ -60,15 +74,19 @@
 
 <nav class="rail" aria-label="browser sources">
 	{#each ICONS as icon, i (i)}
+		{@const isRecord = icon.action === 'record'}
+		{@const isInert = icon.source === undefined && icon.action === undefined}
+		{@const tip = isRecord ? (recording ? 'Stop set recording' : icon.tip) : icon.tip}
 		<button
 			class="rail-btn"
-			class:rb-inert={icon.source === undefined}
+			class:rb-inert={isInert}
+			class:recording={isRecord && recording}
 			class:active={icon.source === 'spotify' && source === 'spotify'}
-			disabled={icon.source === undefined}
-			title={icon.tip}
-			aria-label={icon.tip}
-			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : undefined}
-			onclick={icon.source === 'spotify' ? onspotify : undefined}
+			disabled={isInert || (isRecord && recordingBusy)}
+			title={tip}
+			aria-label={tip}
+			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : isRecord ? recording : undefined}
+			onclick={icon.source === 'spotify' ? onspotify : isRecord ? onrecord : undefined}
 		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
 				{#if icon.mode === 'stroke'}
@@ -114,6 +132,10 @@
 	}
 	.rail-btn.rb-inert {
 		cursor: default;
+	}
+	.rail-btn.recording {
+		background: #4a1717;
+		box-shadow: inset 2px 0 #d0342c;
 	}
 	/* Horizontal section labels below the rail groups (SCREENSHOT-SPEC 5a) -
 	 * NOT rotated; the rail is narrow so the type is tiny like rekordbox's. */

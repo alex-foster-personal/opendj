@@ -3,8 +3,8 @@
 Usage::
 
     just feedback-harvest              # harvest local + silver, live
-    just feedback-harvest -- --dry-run # print only, archive nothing
-    just feedback-harvest -- --url http://127.0.0.1:8690  # extra target
+    just feedback-harvest --dry-run    # print only, archive nothing
+    just feedback-harvest --url http://127.0.0.1:8690  # extra target
 
 What it does, per reachable daemon:
 

@@ -16,8 +16,14 @@ environment that HAS mutagen, silently proving nothing about the one
 environment it exists to cover (AGENTS.md: "Never silently skip acceptance
 because ... a platform is missing").
 
-Regression one-liner:
+Regression one-liners:
   - if this test needs mutagen installed to run then it can never prove the mutagen-less path
+  - if the probe needs the project INSTALLED into the interpreter then it
+    passes only where something else installed it (the serial CI lane got
+    `apps` as a side effect of `make waveform-native-verify` reinstalling the
+    wheel into .venv; the sharded lane does not build the wheel, and the
+    probe died with ModuleNotFoundError on PR #1143). The probe is fed on
+    stdin with cwd at the repo root, so sys.path[0] is the tree itself.
 """
 from __future__ import annotations
 
@@ -31,7 +37,7 @@ import pytest
 
 from apps.shared.state import db as state_db
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 STABLE_ID = "e" * 40
 NO_FILE_SID = "d" * 40
@@ -99,8 +105,12 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
     _insert_local_track(state_path, NO_FILE_SID, str(tmp_path / "does-not-exist.mp3"))
     absent_master_db = tmp_path / "absent.db"
 
-    script = tmp_path / "probe_mutagen_absent.py"
-    script.write_text(
+    # Fed to the interpreter on STDIN rather than written to tmp_path: a script
+    # file puts ITS directory at sys.path[0], and `apps` is then importable
+    # only if the project is installed into the interpreter. `python -` with
+    # cwd at the repo root resolves `apps` from the tree, which is what this
+    # probe is meant to exercise.
+    probe = (
         textwrap.dedent(f"""
             import sys
             sys.modules["mutagen"] = None  # force a genuine ImportError, not a flag flip
@@ -122,7 +132,7 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
             rb_config.MASTER_PLAIN_DB = Path({str(absent_master_db)!r})
 
             app = FastAPI()
-            app.state.backend = make_backend()
+            app.state.backend = make_backend(Path({str(state_path)!r}))
             app.include_router(router, prefix="/api/v1")
             with TestClient(app) as test_client:
                 resp = test_client.get("/api/v1/tracks/{STABLE_ID}/artwork")
@@ -150,12 +160,12 @@ def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
             assert stale_meta.status_code == 200, stale_meta.text
             assert stale_meta.json()["artwork_available"] is False
             print("PROBE_OK")
-        """),
-        encoding="utf-8",
+        """)
     )
 
     result = subprocess.run(
-        [sys.executable, str(script)],
+        [sys.executable, "-"],
+        input=probe,
         capture_output=True,
         text=True,
         cwd=str(PROJECT_ROOT),

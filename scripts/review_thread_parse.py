@@ -20,6 +20,9 @@ import json
 import re
 from dataclasses import dataclass
 
+from scripts.review_claude import CLAUDE, is_claude_thread
+from scripts.review_sol import SOL, is_sol_thread
+
 BOT_LOGINS = frozenset(
     {
         "chatgpt-codex-connector",
@@ -138,6 +141,7 @@ class Thread:
     human_replies: int
     disposition: str | None
     ledger_indexed: bool
+    ledger_checked: bool = True
 
     @property
     def triaged(self) -> bool:
@@ -188,8 +192,37 @@ class Thread:
         The reply and the ledger append are one action in two places. A typo'd
         anchor, or a reply nobody followed through on, loses the finding just
         as silently as saying nothing at all.
+
+        Gated on `ledger_checked`: #805 round 8 (review_thread_triage.py:360).
+        A thread built on the deferred-read path never had its permalink
+        checked against anything -- `ledger_indexed` defaults False there, not
+        because the claim was absent, but because nobody looked. Asserting
+        NOT IN LEDGER from a default is exactly the accusation-from-an-
+        unmeasured-read #792 banned, just one layer up: the same class of bug
+        `LedgerReadError` exists to keep out of a rendered verdict, but for a
+        read that was skipped by design rather than one that failed outright.
         """
-        return self.disposition == "DEBT-LOGGED" and not self.ledger_indexed
+        return self.disposition == "DEBT-LOGGED" and self.ledger_checked and not self.ledger_indexed
+
+    @property
+    def ledger_relevant(self) -> bool:
+        """A DEBT-LOGGED claim whose place in `PullRequest.failing` actually
+        hinges on ledger membership. #805 round 8 (review_thread_triage.py:347):
+        `illegal_debt_log` already fails a P0/P1 or BLOCKING debt-log
+        regardless of `ledger_indexed`, and an unresolved thread already fails
+        via `triaged` regardless too -- in both cases a ledger read can only
+        downgrade an already-known verdict to COULD NOT MEASURE if the read
+        happens to fail (a deleted historical base, a predates-the-ledger
+        head). Only a RESOLVED, non-blocking DEBT-LOGGED thread's outcome is
+        actually undetermined without `ledger_indexed`; that is the one shape
+        `debt_not_in_ledger` can flip from passing to failing.
+        """
+        return (
+            self.disposition == "DEBT-LOGGED"
+            and self.resolved
+            and self.severity not in {"P0", "P1"}
+            and self.blocking != "BLOCKING"
+        )
 
 
 @dataclass(frozen=True)
@@ -201,7 +234,15 @@ class PullRequest:
     state: str
     merged: bool
     url: str
+    # The head the threads were fetched at. A gate that certified coverage at
+    # one SHA must refuse to render a verdict off threads read at another.
+    head_sha: str
     threads: tuple[Thread, ...]
+    # The branch this PR merges into. A DEBT-LOGGED claim may be indexed here
+    # rather than at the head, because `.planning/TECH-DEBT.md` sanctions
+    # appends pushed straight to main; the default is what every caller before
+    # #805 was implicitly assuming.
+    base_ref: str = "main"
 
     @property
     def unterminated(self) -> tuple[Thread, ...]:
@@ -258,6 +299,34 @@ def _normalize_login(login: str) -> str:
 def _is_bot(login: str) -> bool:
     """A review bot whose threads the three-state rule governs."""
     return _normalize_login(login) in BOT_LOGINS
+
+
+def _reviewer_lane(login: str, body: str) -> str:
+    """Which CLI review lane wrote this opening comment, if any.
+
+    Sol and Claude both post through `gh` as the maintainer (issues #1211 and the Sun 6
+    Sep 2026 Claude lane), so neither has a bot login to recognize and each is
+    identified by the marker its own lane writes. The marker is checked at ANY
+    head, not the current one: an outdated finding still has to reach a
+    disposition.
+    """
+    if is_sol_thread(login, body):
+        return SOL
+    if is_claude_thread(login, body):
+        return CLAUDE
+    return ""
+
+
+def _is_reviewer_thread(login: str, body: str) -> bool:
+    """Is this opening comment a REVIEW that the three-state rule governs?
+
+    Bot login is the usual answer; the CLI lanes are the exception. Without
+    the lane branch a Sol or Claude finding would be an ordinary human
+    comment, and the silence detector would let a P0 sit unanswered through a
+    merge -- the exact gap this module exists to close, just wearing a
+    different login.
+    """
+    return _is_bot(login) or bool(_reviewer_lane(login, body))
 
 
 def _is_human(login: str) -> bool:
@@ -389,28 +458,37 @@ def _disposition(replies: list[dict]) -> str | None:
     return latest
 
 
-def build_thread(node: dict, ledger: frozenset[str] = frozenset()) -> Thread | None:
-    """Turn one GraphQL reviewThread node into a Thread, or None if not a bot's."""
+def build_thread(
+    node: dict, ledger: frozenset[str] = frozenset(), *, ledger_checked: bool = True
+) -> Thread | None:
+    """Turn one GraphQL reviewThread node into a Thread, or None if not a bot's.
+
+    `ledger_checked` defaults True because every direct caller (production's
+    normal read path, and every test in this suite that hand-feeds a `ledger`
+    set) genuinely attempted the read. `fetch_pull_request`'s deferred-read
+    path is the one caller that passes `ledger_checked=False`, for threads it
+    built without ever attempting a read at all.
+    """
     comments = node["comments"]["nodes"]
     if not comments:
         return None
     first = comments[0]
     author = (first.get("author") or {}).get("login") or ""
-    if not _is_bot(author):
+    body = first["body"]
+    if not _is_reviewer_thread(author, body):
         return None
     replies = [
         comment
         for comment in comments[1:]
         if _is_human((comment.get("author") or {}).get("login") or "")
     ]
-    body = first["body"]
     return Thread(
         node_id=node["id"],
         path=node["path"] or "(file gone)",
         line=node["line"],
         resolved=node["isResolved"],
         outdated=node["isOutdated"],
-        bot=author,
+        bot=_reviewer_lane(author, body) or author,
         severity=_severity(body),
         blocking=_blocking(body),
         summary=_summary(body),
@@ -419,4 +497,5 @@ def build_thread(node: dict, ledger: frozenset[str] = frozenset()) -> Thread | N
         human_replies=len(replies),
         disposition=_disposition(replies),
         ledger_indexed=first["url"] in ledger,
+        ledger_checked=ledger_checked,
     )

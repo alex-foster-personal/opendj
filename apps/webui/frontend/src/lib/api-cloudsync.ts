@@ -84,6 +84,26 @@ export interface CloudSyncOverview {
 	machines: MachineOverview[];
 }
 
+export interface CloudSyncRecentResult {
+	finished_at: string;
+	status: 'ok' | 'error';
+	message: string;
+	pushed: number;
+	pulled: number;
+}
+
+export interface CloudSyncStatus {
+	enabled: boolean;
+	reason: string | null;
+	signed_in_as: string | null;
+	last_push_at: string | null;
+	last_pull_at: string | null;
+	last_result: { status: 'ok' | 'error'; message: string } | null;
+	rows_pending: number | null;
+	endpoint: string | null;
+	recent_results: CloudSyncRecentResult[];
+}
+
 // ----------------------------------------------------------- local path table
 
 type CloudSyncPaths = {
@@ -112,6 +132,9 @@ type CloudSyncPaths = {
 	};
 	'/api/v1/cloudsync/overview': {
 		get: { responses: { 200: { content: { 'application/json': CloudSyncOverview } } } };
+	};
+	'/api/v1/cloudsync/status': {
+		get: { responses: { 200: { content: { 'application/json': CloudSyncStatus } } } };
 	};
 };
 
@@ -149,4 +172,8 @@ export async function putPlaylistPin(body: PlaylistPinPutBody): Promise<Playlist
 
 export async function getOverview(): Promise<CloudSyncOverview> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/overview', {}));
+}
+
+export async function getStatus(): Promise<CloudSyncStatus> {
+	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/status', {}));
 }

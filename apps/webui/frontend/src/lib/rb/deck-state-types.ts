@@ -17,6 +17,12 @@ import type { StemDeckState } from './stem-types';
  * requires the follower PQTZ beat number (1..4) to match the master. */
 export type SyncMode = 'beat' | 'bar';
 
+/** Quantize grid a quantized seek/cue/loop-end snaps to, in beats. 'phase'
+ * (match to the detected phase length) is plumbed but NOT implemented
+ * (pin a67bafbfc4b0) - selecting it is rejected with not_implemented before
+ * it can reach the engine (performance-ipc.svelte.ts _dispatchUnknown). */
+export type QuantizeGrid = 1 | 4 | 8 | 'phase';
+
 /** Active loop on a deck. */
 export interface LoopState {
 	/** Loop-in position ms. */
@@ -49,6 +55,10 @@ export interface DeckState {
 	title: string | null;
 	/** Track artist; null until loaded. */
 	artist: string | null;
+	/** Track rating (0-5, library convention); null until loaded or unrated.
+	 * Editable in-place from the deck header, same PATCH path as the
+	 * library rating cell (see audio-engine.svelte.ts rateDeckTrack). */
+	rating: number | null;
 	/** Track BPM from TrackOut (format to 2dp, e.g. 128.00); null unknown. */
 	bpm: number | null;
 	/** Camelot key text from TrackOut (e.g. '7A'); null unknown. */
@@ -73,6 +83,8 @@ export interface DeckState {
 	pitch: number;
 	/** Quantize transport seeks, cue placement, and loop endpoints to PQTZ. */
 	quantize_enabled: boolean;
+	/** Quantize grid the seek/cue/loop-end snaps to (pin a67bafbfc4b0). */
+	quantize_grid_beats: QuantizeGrid;
 	/** Follow the elected master deck's local PQTZ tempo and phase. */
 	beat_sync_enabled: boolean;
 	/** Keep this deck's audible Camelot key aligned to the elected master.
@@ -117,6 +129,12 @@ export interface DeckState {
 	/** Last successful load wall time in ms; null until a load completes.
 	 * UI shows a rounded form (e.g. 2.3s / ~300ms) - performance feature. */
 	last_load_latency_ms: number | null;
+	/** Monotonic successful-load commit number. Consumers use this durable edge
+	 * to distinguish a completed reload from the outgoing track it replaced.
+	 * Survives an unload (engine.unload carries it forward), so it stays
+	 * monotonic across a destructive replace, which ejects before it loads.
+	 * Only a full engine dispose resets it. */
+	load_generation: number;
 	/** Last load stage timings (ms) for IPC/CLI KPI; null until a load. */
 	last_load_stages: Record<string, number> | null;
 	/** Globally exclusive MASTER deck state. */

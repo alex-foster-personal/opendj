@@ -8,24 +8,32 @@
 	// as the smartlist self-fetch below.
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { PlaylistNode } from '$lib/rb/library-types';
-	import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
-	import { RbApiError } from '$lib/rb/api-rb';
-	import { tick } from 'svelte';
+	import { type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
 	import {
 		acceptTrackDragOver,
 		droppedStableIds,
 		endTrackDrag
 	} from '$lib/rb/track-drag.svelte';
-	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './pane-contract.svelte';
+	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
+	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
+	import TreeCurrentFold from './TreeCurrentFold.svelte';
+	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
+	import { TreeSmartlists } from './tree-smartlists.svelte';
+	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
+	import TreeContextMenu from './TreeContextMenu.svelte';
 
 	let {
 		nodes,
+		playlistsLoading,
+		playlistsError,
 		allTracksCount,
 		allTracksBrokenCount,
 		allTracksError,
 		selectedId,
 		trackSelectedId,
+		deckLoadedPlaylistIds = new Set(),
+		multiPanePlaylistIds = new Set(),
 		onselect,
 		onselectsmartlist,
 		onselecttrack,
@@ -36,6 +44,15 @@
 		ondroptracks
 	}: {
 		nodes: PlaylistNode[];
+		/** Pin e0f3a90652a9: names/counts is a cheap read, but available_count
+		 * is a real per-member disk-existence pass and can take a couple of
+		 * seconds cold (first load after app focus). Required, not optional --
+		 * an unwired caller must fail the Svelte type check rather than silently
+		 * render as if already loaded (a missed wire previously read as a
+		 * healthy empty playlist panel, the exact silent-success failure the
+		 * pin was about). */
+		playlistsLoading: boolean;
+		playlistsError: string | null;
 		allTracksCount: number | null;
 		allTracksBrokenCount: number | null;
 		allTracksError: string | null;
@@ -45,6 +62,13 @@
 		 * independent selection that would desync on pane switches. Distinct
 		 * from `selectedId` above, which is the selected PLAYLIST id. */
 		trackSelectedId: string | null;
+		/** Pin 2ac3a0: playlists holding a track currently loaded into a deck
+		 * (light blue tint) and playlists open in 2+ pane tabs at once
+		 * (darker blue tint) - both derived by BrowserPanel from ALREADY
+		 * HYDRATED pane rows only. Absent = no tinting (e.g. an integrator
+		 * that hasn't wired deck/pane context yet). */
+		deckLoadedPlaylistIds?: ReadonlySet<string>;
+		multiPanePlaylistIds?: ReadonlySet<string>;
 		onselect: (node: PlaylistNode) => void;
 		/** Optional until the browser integrator wires smartlist selection
 		 * into BrowserPanel; absent = smartlist rows render inert. */
@@ -68,6 +92,7 @@
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
+	let treeContextMenu = $state<TreeContextMenu | null>(null);
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
@@ -106,11 +131,12 @@
 		if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'copy';
 	}
 
-	let editingId = $state<string | null>(null);
-	let editDraft = $state('');
-	let renameInputEl = $state<HTMLInputElement | null>(null);
-	/** Set after '+'; rename starts once the new node appears in `nodes`. */
-	let pendingRenameId = $state<string | null>(null);
+	/** Inline playlist rename + create-then-rename flow (tree-playlist-rename.svelte.ts). */
+	const rename = new TreePlaylistRename(
+		() => nodes,
+		() => onrenameplaylist,
+		() => oncreateplaylist
+	);
 
 	let mode = $state<'tree' | 'column'>('tree');
 	// ColumnBrowser mounts lazily on first activation (its onMount walks
@@ -123,26 +149,8 @@
 		if (mode === 'column') columnMounted = true;
 	});
 	let playlistsOpen = $state(true);
-	let smartlistsOpen = $state(true);
-	// Smartlists are self-fetched here (LANE smartlists-router) so this
-	// component needs zero BrowserPanel / api-rb.ts (hotspot) changes.
-	let smartlists = $state<SmartlistSummary[] | null>(null);
-	let smartlistsError = $state<string | null>(null);
-
-	$effect(() => {
-		listSmartlists().then(
-			(rows) => (smartlists = rows),
-			(err: unknown) => {
-				// Explicit backend error (e.g. SMARTLISTS_DB_UNAVAILABLE on an
-				// in-memory deploy) renders as a dim error row - never hidden.
-				smartlistsError = err instanceof RbApiError ? err.code : String(err);
-			}
-		);
-	});
-
-	function _smartlistClick(sl: SmartlistSummary): void {
-		if (onselectsmartlist) onselectsmartlist(sl);
-	}
+	/** Smartlists tree-section state (tree-smartlists.svelte.ts). */
+	const smartlists = new TreeSmartlists(() => onselectsmartlist);
 
 	const allNode = $derived<PlaylistNode>({
 		playlist_id: 'all',
@@ -167,59 +175,32 @@
 		if (event.key === 'Enter') onselect(node);
 	}
 
-	async function _beginRename(node: PlaylistNode): Promise<void> {
-		if (onrenameplaylist === undefined) return;
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
-		editingId = node.playlist_id;
-		editDraft = node.name;
-		await tick();
-		renameInputEl?.focus();
-		renameInputEl?.select();
-	}
-
-	async function _commitRename(): Promise<void> {
-		const id = editingId;
-		if (id === null || onrenameplaylist === undefined) return;
-		const node = nodes.find((n) => n.playlist_id === id);
-		editingId = null;
-		if (node === undefined) return;
-		const next = editDraft.trim();
-		if (next === '' || next === node.name) return;
-		await onrenameplaylist(node, next);
-	}
-
-	function _cancelRename(): void {
-		editingId = null;
-	}
-
-	async function _createAndRename(): Promise<void> {
-		if (oncreateplaylist === undefined) return;
-		const createdId = await oncreateplaylist();
-		if (createdId === null || createdId === '') return;
-		pendingRenameId = createdId;
-	}
-
-	function _renameKeydown(event: KeyboardEvent): void {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			void _commitRename();
-		} else if (event.key === 'Escape') {
-			event.preventDefault();
-			_cancelRename();
-		}
-	}
-
 	$effect(() => {
-		const id = pendingRenameId;
-		if (id === null) return;
-		const node = nodes.find((n) => n.playlist_id === id);
-		if (node === undefined) return;
-		pendingRenameId = null;
-		void _beginRename(node);
+		rename.checkPending();
 	});
+
+	function _tintOf(node: PlaylistNode): PlaylistTint {
+		return playlistTintOf({
+			playlist_id: node.playlist_id,
+			selected: selectedId === node.playlist_id,
+			deckLoadedPlaylistIds,
+			multiPanePlaylistIds
+		});
+	}
+
+	// -------------------------------------------------------- CURRENT fold (2ac3a0)
+	// Mirrors TrackTable's MASTER-with-chevron fold (masterFold/jumpToMaster) so a
+	// library with MANY playlists never loses track of which one is the active
+	// pane's selection once it scrolls out of the tree's own viewport. The
+	// tracking state + the button UI live in tree-fold-tracker.svelte.ts /
+	// TreeCurrentFold.svelte; this component still owns the scrollable
+	// container and the row elements the tracker watches, so it wires them
+	// up via the tracker's exposed fields/action/handler.
+	const foldTracker = new TreeFoldTracker();
 </script>
 
 <div class="tree-root">
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} {onselect} />
 	<div class="view-tabs">
 		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
 			Tree View
@@ -233,7 +214,14 @@
 			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
 		</div>
 	{/if}
-	<div class="tree-scroll" class:hidden={mode === 'column'}>
+	<TreeCurrentFold fold={foldTracker.current} onjump={() => foldTracker.jumpToCurrent()} />
+	<div
+		class="tree-scroll"
+		class:hidden={mode === 'column'}
+		bind:this={foldTracker.scrollEl}
+		bind:clientHeight={foldTracker.viewportHeight}
+		onscroll={foldTracker.onScroll}
+	>
 		<div
 			class="row"
 			class:selected={selectedId === 'all'}
@@ -254,12 +242,15 @@
 		</div>
 		<div
 			class="row folder"
+			data-testid="playlist-folder"
 			role="button"
 			tabindex="0"
 			onclick={() => (playlistsOpen = !playlistsOpen)}
 			onkeydown={(e) => {
 				if (e.key === 'Enter') playlistsOpen = !playlistsOpen;
+				treeContextMenu?.openFromKeyboard(e, 'folder');
 			}}
+			oncontextmenu={(e) => treeContextMenu?.open(e, 'folder')}
 		>
 			<span class="disclosure" class:open={playlistsOpen}>&#9656;</span>
 			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -273,7 +264,7 @@
 					title="Create playlist"
 					onclick={(e) => {
 						e.stopPropagation();
-						void _createAndRename();
+						void rename.createAndRename();
 					}}
 				>
 					+
@@ -281,17 +272,27 @@
 			{/if}
 		</div>
 		{#if playlistsOpen}
+			{#if nodes.length === 0 && playlistsLoading}
+				<div class="row child rb-inert" data-testid="playlists-loading">Loading playlists...</div>
+			{:else if nodes.length === 0 && playlistsError !== null}
+				<div class="row child rb-inert" title={playlistsError}>Playlist load failed</div>
+			{/if}
 			{#each nodes as node (node.playlist_id)}
 				<div
 					class="row child"
+					data-testid="playlist-row"
 					class:selected={selectedId === node.playlist_id}
 					class:broken={node.mostly_broken}
 					class:drop-target={dropTargetId === node.playlist_id}
+					class:tint-deck={_tintOf(node) === 'deck'}
+					class:tint-multi={_tintOf(node) === 'multi'}
 					role="button"
 					tabindex="0"
 					draggable="true"
+					use:foldTracker.bindSelectedRow={selectedId === node.playlist_id}
 					onclick={() => onselect(node)}
-					onkeydown={(e) => _rowKeydown(e, node)}
+					onkeydown={(e) => { _rowKeydown(e, node); treeContextMenu?.openFromKeyboard(e, 'playlist', node); }}
+					oncontextmenu={(e) => treeContextMenu?.open(e, 'playlist', node)}
 					ondragstart={(e) => _onPlaylistDragStart(e, node)}
 					ondragover={(e) => _onTrackDragOver(e, node)}
 					ondragleave={() => _onTrackDragLeave(node)}
@@ -300,18 +301,18 @@
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
 					</svg>
-					{#if editingId === node.playlist_id}
+					{#if rename.editingId === node.playlist_id}
 						<input
-							bind:this={renameInputEl}
+							bind:this={rename.inputEl}
 							class="rename-input"
 							type="text"
-							value={editDraft}
+							value={rename.editDraft}
 							aria-label="Rename playlist"
 							onclick={(e) => e.stopPropagation()}
 							onmousedown={(e) => e.stopPropagation()}
-							oninput={(e) => (editDraft = e.currentTarget.value)}
-							onkeydown={_renameKeydown}
-							onblur={() => void _commitRename()}
+							oninput={(e) => (rename.editDraft = e.currentTarget.value)}
+							onkeydown={(e) => rename.onKeydown(e)}
+							onblur={() => void rename.commit()}
 						/>
 					{:else}
 						<span class="name" title={node.name}>{node.name}</span>
@@ -323,7 +324,7 @@
 							title="Rename playlist"
 							onclick={(e) => {
 								e.stopPropagation();
-								void _beginRename(node);
+								void rename.begin(node);
 							}}
 						>
 							✎
@@ -353,28 +354,28 @@
 			class="row folder"
 			role="button"
 			tabindex="0"
-			onclick={() => (smartlistsOpen = !smartlistsOpen)}
+			onclick={() => smartlists.toggle()}
 			onkeydown={(e) => {
-				if (e.key === 'Enter') smartlistsOpen = !smartlistsOpen;
+				if (e.key === 'Enter') smartlists.toggle();
 			}}
 		>
-			<span class="disclosure" class:open={smartlistsOpen}>&#9656;</span>
+			<span class="disclosure" class:open={smartlists.open}>&#9656;</span>
 			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
 			</svg>
 			<span class="name">Smartlists</span>
 		</div>
-		{#if smartlistsOpen}
-			{#if smartlistsError !== null}
-				<div class="row child rb-inert" title={smartlistsError}>
+		{#if smartlists.open}
+			{#if smartlists.error !== null}
+				<div class="row child rb-inert" title={smartlists.error}>
 					<span class="name error">smartlists unavailable</span>
 				</div>
-			{:else if smartlists === null}
+			{:else if smartlists.rows === null}
 				<div class="row child rb-inert">
 					<span class="name dim">...</span>
 				</div>
 			{:else}
-				{#each smartlists as sl (sl.id)}
+				{#each smartlists.rows as sl (sl.id)}
 					<div
 						class="row child"
 						class:rb-inert={!onselectsmartlist}
@@ -384,9 +385,9 @@
 						title={onselectsmartlist
 							? sl.rule_summary
 							: 'not implemented - see PARITY-TODO'}
-						onclick={() => _smartlistClick(sl)}
+						onclick={() => smartlists.click(sl)}
 						onkeydown={(e) => {
-							if (e.key === 'Enter') _smartlistClick(sl);
+							if (e.key === 'Enter') smartlists.click(sl);
 						}}
 					>
 						<svg class="gear" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -405,10 +406,25 @@
 
 <style>
 	.tree-root {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
 		height: 100%;
+	}
+	/* Pin 2ac3a0: deck-membership tints for a non-selected playlist row - the
+	 * selection colour (.row.selected) always wins over both, and the darker
+	 * multi-tab tint outranks the lighter loaded-deck tint (see
+	 * playlistTintOf's precedence in pane-contract.svelte.ts). */
+	.row.child.tint-deck:not(.selected) {
+		background: color-mix(in srgb, var(--rb-accent) 14%, transparent);
+	}
+	.row.child.tint-multi:not(.selected) {
+		background: color-mix(in srgb, var(--rb-accent) 30%, transparent);
+	}
+	.row.child.tint-deck:not(.selected):hover,
+	.row.child.tint-multi:not(.selected):hover {
+		background: color-mix(in srgb, var(--rb-accent) 40%, transparent);
 	}
 	.view-tabs {
 		display: flex;

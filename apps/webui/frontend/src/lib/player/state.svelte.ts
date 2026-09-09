@@ -19,6 +19,7 @@
  */
 
 import { playbackBpm } from '$lib/rb/beat-sync-math';
+import { recordDeckStateBaseline } from '$lib/rb/perf-event-log';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
 import type { PitchRange } from '$lib/player/constants';
@@ -34,6 +35,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		stable_id: null,
 		title: null,
 		artist: null,
+		rating: null,
 		bpm: null,
 		key: null,
 		key_shift_semitones: 0,
@@ -45,6 +47,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		cue_ms: null,
 		pitch: 1,
 		quantize_enabled: true,
+		quantize_grid_beats: 1,
 		beat_sync_enabled: true,
 		key_sync_enabled: false,
 		master_tempo_enabled: true,
@@ -63,6 +66,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		anlz: null,
 		anlz_error: null,
 		last_load_latency_ms: null,
+		load_generation: 0,
 		last_load_stages: null,
 		is_master: false
 	};
@@ -117,6 +121,13 @@ export const deckStates: Record<DeckId, DeckState> = $state({
 	3: _emptyDeckState(3),
 	4: _emptyDeckState(4)
 });
+
+// The four decks above are created empty on EVERY page load - a constant, not
+// an event. Recording it as four ring rows restated the fact each load and
+// evicted real diagnostics from the shared quiet budget, and a single unrelated
+// row could then evict a deck's only state row and blind the resource probe.
+// Record it once as a durable non-ring baseline instead.
+recordDeckStateBaseline();
 
 /** Explicit audio-load error per deck (backend code or decode message);
  * null = no failed load. DeckState has no audio-error field by contract,

@@ -64,7 +64,8 @@
 			disabled={!hasTrack}
 			aria-busy={pending}
 			title={cueTitle}
-			aria-label="cue"
+			aria-label={`cue deck ${deck.deck_id}`}
+			data-testid={`cue-deck-${deck.deck_id}`}
 			data-performance-control="cue"
 			onclick={async () => await onCue()}
 		>
@@ -77,8 +78,9 @@
 		disabled={!hasTrack}
 		aria-busy={pending}
 		title={playTitle}
-		aria-label={deck.playing ? 'pause' : 'play'}
+		aria-label={`play deck ${deck.deck_id}`}
 		aria-pressed={deck.playing}
+		data-testid={`play-deck-${deck.deck_id}`}
 		data-performance-control="play"
 		data-state={deck.playing ? 'on' : 'off'}
 		onclick={async () => await onPlayPause()}

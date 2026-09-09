@@ -494,3 +494,5 @@ def test_the_router_and_the_sync_client_agree_on_this_machine(
         assert conn.execute("SELECT COUNT(*) FROM machines").fetchone()[0] == 1
     finally:
         conn.close()
+
+pytestmark = pytest.mark.rb_parity

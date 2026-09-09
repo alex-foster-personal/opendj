@@ -127,6 +127,27 @@ export interface PerfEvent {
 }
 
 const STORAGE_KEY = 'mdt.perfEventLog';
+const DECK_STATE_STORAGE_KEY = 'mdt.deckState';
+
+/**
+ * The durable "all four decks were created empty" stamp, written once per page
+ * load.
+ *
+ * The initial deck state is a CONSTANT, so recording it as four ring rows on
+ * every load spent shared-budget rows restating a fact and evicted real
+ * diagnostics. It lives here instead, as a single non-ring record the resource
+ * probe reads to tell "decks are unloaded" from "the ring has no deck-state
+ * evidence". `t` doubles as the reset gate: ring rows OLDER than it describe an
+ * earlier page session whose deck states this page-load reset discarded.
+ */
+export interface DeckStateBaseline {
+	/** Shape version. */
+	v: 1;
+	/** ISO instant the four decks were created empty. */
+	t: string;
+	/** The decks that were empty at `t`. */
+	unloaded: [1, 2, 3, 4];
+}
 
 /**
  * Per-kind budgets. The ring is still bounded at the sum of these, so the
@@ -136,28 +157,38 @@ const STORAGE_KEY = 'mdt.perfEventLog';
  * __mdtLastLoads() reads. 16 rows is four full 4-deck loads.
  * transport-schedule is the latency instrument, and the noisy one: 16 rows is
  * the tail of one gesture, which is all a scheduled_offset_ms comparison needs.
+ * deck-state covers `deck-state-empty` (legacy empty-deck boot rows) and
+ * `deck-unload`, i.e. the rows the resource probe reconstructs deck state
+ * from. Deck churn must be able neither to evict the audio-liveness kinds below
+ * nor to be evicted by them, so it is not part of the shared remainder; 8 rows
+ * is two full unload cycles.
  * Everything else (audio-context device floors, sync-failure, beat-sync-skip,
  * processor-latency-read-failed) is low volume and shares the remainder.
  */
 const DECK_LOAD_BUDGET = 16;
 const TRANSPORT_SCHEDULE_BUDGET = 16;
+const DECK_STATE_BUDGET = 8;
 const OTHER_BUDGET = 8;
 
 /** Trailing coalesce window for the localStorage write. */
 const FLUSH_DEBOUNCE_MS = 250;
 
-type PerfBucket = 'deck-load' | 'transport-schedule' | 'other';
+type PerfBucket = 'deck-load' | 'transport-schedule' | 'deck-state' | 'other';
 
 const BUDGETS: Record<PerfBucket, number> = {
 	'deck-load': DECK_LOAD_BUDGET,
 	'transport-schedule': TRANSPORT_SCHEDULE_BUDGET,
+	'deck-state': DECK_STATE_BUDGET,
 	other: OTHER_BUDGET
 };
 
-/** Prefix match, because kinds carry a suffix (`deck-load sid=<id>`). */
+/** Prefix match, because kinds carry a suffix (`deck-load sid=<id>`).
+ * `deck-unload` is matched exactly: it shares the deck-state bucket with the
+ * `deck-state-*` kinds but predates the `deck-state-` prefix on its own kind. */
 function _bucketOf(kind: string): PerfBucket {
 	if (kind.startsWith('deck-load')) return 'deck-load';
 	if (kind.startsWith('transport-schedule')) return 'transport-schedule';
+	if (kind.startsWith('deck-state') || kind === 'deck-unload') return 'deck-state';
 	return 'other';
 }
 
@@ -173,6 +204,7 @@ function _withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
 	const taken: Record<PerfBucket, number> = {
 		'deck-load': 0,
 		'transport-schedule': 0,
+		'deck-state': 0,
 		other: 0
 	};
 	for (let i = events.length - 1; i >= 0; i--) {
@@ -231,6 +263,30 @@ export function flushPerfEventLog(): void {
 	} catch {
 		// Private mode / quota - console still has the line, and the rows stay
 		// outstanding so the next flush retries rather than dropping them.
+	}
+}
+
+/**
+ * Record that the player's four decks were just created empty (page-load
+ * reset) as ONE durable baseline, not four ring rows.
+ *
+ * Call from the module that owns the empty deck states, once per page load.
+ * Written synchronously because it is one small write on the boot path, not a
+ * row on a gesture path; a missing baseline degrades to the probe reporting
+ * "no deck-state evidence", never to a fabricated clean unload.
+ */
+export function recordDeckStateBaseline(): void {
+	if (typeof localStorage === 'undefined') return;
+	const stamp: DeckStateBaseline = {
+		v: 1,
+		t: new Date().toISOString(),
+		unloaded: [1, 2, 3, 4]
+	};
+	try {
+		localStorage.setItem(DECK_STATE_STORAGE_KEY, JSON.stringify(stamp));
+	} catch {
+		// Private mode / quota: load/unload ring rows still describe state
+		// changes, and the probe already reports a missing baseline as such.
 	}
 }
 

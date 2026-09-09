@@ -168,6 +168,24 @@ def test_lock_is_reusable_after_a_clean_release(tmp_path: Path) -> None:
         second.release()
 
 
+def test_lock_records_the_loopback_endpoint_for_live_tier_discovery(
+    tmp_path: Path,
+) -> None:
+    """A live probe must find the exact engine, never guess a port."""
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(
+        lock_path,
+        boot_id="boot-a",
+        host="127.0.0.1",
+        port=8585,
+    ):
+        recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+
+    assert recorded["host"] == "127.0.0.1"
+    assert recorded["port"] == 8585
+    assert recorded["role"] == "opendj-engine"
+
+
 def test_heartbeat_refreshes_the_holder_record(tmp_path: Path) -> None:
     lock_path = tmp_path / ".engine.lock"
     with EngineLock(lock_path, boot_id="boot-a") as lock:

@@ -32,6 +32,7 @@ def _rb_track(**overrides) -> RBTrackInput:
 
 @pytest.mark.requirement("OPEN-02")
 class TestExport:
+    """[if] the Rekordbox adapter exports data [then] its contract remains stable, [else stop]."""
     def test_minimum_track_validates(self) -> None:
         result = build_library([_rb_track()])
         assert result.tracks_count == 1
@@ -121,6 +122,7 @@ class TestExport:
 
 @pytest.mark.requirement("OPEN-02")
 class TestIsrcNormalisation:
+    """[if] ISRC values are normalized [then] their canonical form is preserved, [else stop]."""
     def test_lowercase_isrc_uppercased(self) -> None:
         result = build_library([_rb_track(isrc="gbcen0900132")])
         t = result.document["tracks"][0]

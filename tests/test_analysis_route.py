@@ -22,6 +22,7 @@ Regression one-liners:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterator
 
 import pytest
@@ -30,6 +31,7 @@ from fastapi.testclient import TestClient
 
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
+from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis import (
     AUTO_CUES_SOURCE,
@@ -160,6 +162,35 @@ def test_auto_cues_backend_param_selects_row(client: TestClient) -> None:
     assert r.status_code == 200
     assert r.json()["backend"] == "mik"
     assert r.json()["backend_version"] == "old-0.1"
+
+
+@pytest.mark.requirement("META-04")
+def test_production_app_wires_configured_db_for_analysis_routes(
+    tmp_path: Path,
+) -> None:
+    """The production app factory must bind analysis reads to its state DB."""
+    configured_db = tmp_path / "configured-data" / "state" / "state.db"
+    upsert_record(_record(SID_FULL), db_path=configured_db)
+
+    app = create_app(
+        backend=InMemoryBackend(),
+        state_db_path=str(configured_db),
+        mount_frontend=False,
+        port=18698,
+        frontend_port=19412,
+    )
+    app.state.anlz_available_fn = lambda _sid: False
+
+    with TestClient(app) as production_client:
+        auto_cues = production_client.get(
+            f"/api/v1/tracks/{SID_FULL}/auto-cues"
+        )
+        beatgrid = production_client.get(
+            f"/api/v1/tracks/{SID_FULL}/beatgrid-fallback"
+        )
+
+    assert auto_cues.status_code == 200, auto_cues.text
+    assert beatgrid.status_code == 200, beatgrid.text
 
 
 # ----- /beatgrid-fallback -----------------------------------------------------

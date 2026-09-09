@@ -28,25 +28,14 @@
  */
 
 import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
+import { matchesSearchQuery } from '$lib/rb/browser-search-query';
+import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { RbMeta, TrackQuality } from '$lib/rb/library-types';
+import type { SortDir, SortKey } from './browser-sort-ipc';
+export { installBrowserSortIpc } from './browser-sort-ipc';
+export type { SortDir, SortKey } from './browser-sort-ipc';
 
 // ------------------------------------------------------------ row types
-
-/** Sortable column keys (client-side sort - ordering is not server-provided). */
-export type SortKey =
-	| 'order'
-	| 'plays'
-	| 'title'
-	| 'artist'
-	| 'key'
-	| 'bpm'
-	| 'rating'
-	| 'comments'
-	| 'time'
-	| 'genre';
-
-/** Sort direction: 1 = ascending, -1 = descending. */
-export type SortDir = 1 | -1;
 
 /** One browser table row, hydrated INLINE from the listing payloads
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
@@ -61,6 +50,12 @@ export interface BrowserRow {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	/** MIK energy on the display's explicit 1-9 scale. */
+	energy: number | null;
+	/** `mik` only. A future computed value must not masquerade as MIK. */
+	energy_source: 'mik' | null;
+	/** Honest reason shown when energy is null, never a fallback value. */
+	energy_reason: string;
 	/** '' for All Tracks rows (listing carries no ETag) - rating edits
 	 * lazily fetch one. Playlist rows carry it inline (contract 4). */
 	etag: string;
@@ -96,7 +91,11 @@ export interface BrowserRow {
 	 * #505 rb-meta would answer 200, but with nothing the row does not
 	 * already carry, so rb_meta stays null and no request is made. */
 	has_rb_mapping: boolean;
-	/** Lazy rb-meta (artwork_available + genre/streaming fallback);
+	/** Inline listing verdict. The artwork cell must not rely on visibility
+	 * hydration, which can be absent for a virtualized row. */
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	/** Lazy rb-meta (genre/streaming and analysis fallback);
 	 * null until the row first scrolls into view, and permanently null when
 	 * has_rb_mapping is false. */
 	rb_meta: RbMeta | null;
@@ -202,10 +201,19 @@ export class PaneStore {
 	search_results = $state<BrowserRow[]>([]);
 	searching = $state(false);
 	search_total = $state(0);
+	search_result_query = $state('');
 	/** Playlist-level ETag from the load's GET (add-remove-reorder-tracks
 	 * node) - '' for the All Tracks / blank pane, which have no single
 	 * playlist row to CAS against. Required If-Match for the next mutation. */
 	etag = $state('');
+	/** Page-granular load progress for the LibraryLoadIndicator (ad59ac).
+	 * null when there is no load in flight, or once one has settled -
+	 * a terminal state has nothing left to show progress toward.
+	 * `total` is null until a track_count / health figure is known; the
+	 * indicator must never fabricate a percentage in that case. Updated
+	 * ONLY via updateLoadProgress under the current load's token, so a
+	 * superseded page fetch can never paint over the pane that replaced it. */
+	load_progress = $state<{ loaded: number; total: number | null } | null>(null);
 
 	/** Monotonic load token - deliberately NOT reactive. */
 	#load_seq = 0;
@@ -224,12 +232,24 @@ export class PaneStore {
 		this.truncated = false;
 		this.scroll_top = 0;
 		this.etag = '';
+		this.load_progress = null;
 		return this.#load_seq;
 	}
 
 	/** True while `seq` is still the newest load on this pane. */
 	isCurrentLoad(seq: number): boolean {
 		return this.#load_seq === seq;
+	}
+
+	/** Publish one page's worth of load progress for `seq` (ad59ac). Stale
+	 * tokens are a full no-op, same guard as completeLoad/failLoad - a
+	 * superseded pane's late-arriving page must never paint over the pane
+	 * that replaced it. `total` is null until a total is known; callers must
+	 * not invent one. */
+	updateLoadProgress(seq: number, loaded: number, total: number | null): boolean {
+		if (!this.isCurrentLoad(seq)) return false;
+		this.load_progress = { loaded, total };
+		return true;
 	}
 
 	/** Publish rows for load `seq`. Stale tokens are a full no-op
@@ -241,6 +261,7 @@ export class PaneStore {
 		this.truncated = truncated;
 		this.loading = false;
 		this.etag = etag;
+		this.load_progress = null;
 		return true;
 	}
 
@@ -249,11 +270,22 @@ export class PaneStore {
 		if (!this.isCurrentLoad(seq)) return false;
 		this.error = error;
 		this.loading = false;
+		this.load_progress = null;
 		return true;
 	}
 
-	/** Header click cycle: new key asc → desc → clear (natural order). */
+	/** Header click cycle: ordinary keys asc → desc → clear; AutoPlay asc → clear. */
 	toggleSort(key: SortKey): void {
+		if (key === 'autoplay') {
+			if (this.sort_key === 'autoplay') {
+				this.sort_key = null;
+				this.sort_dir = 1;
+			} else {
+				this.sort_key = 'autoplay';
+				this.sort_dir = 1;
+			}
+			return;
+		}
 		if (this.sort_key !== key) {
 			this.sort_key = key;
 			this.sort_dir = 1;
@@ -401,13 +433,14 @@ export function resolveBootPlaylist(args: {
 
 // -------------------------------------------- client search + sort pipeline
 
-/** FR-1 hide-broken filter THEN case-insensitive substring search over
- * title/artist/comments/key/genre (genre falls back to lazy rb_meta).
- *
- * Genre demos (search box / chip clicks):
- *   `genre:House`  - strict: a comma-split genre token equals the tag
- *   `genre:~House` - loose: genre field contains the tag as a substring
- * Plain queries still match across title/artist/comments/key/genre.
+/** FR-1 hide-broken filter THEN the search grammar (browser-search-query.ts,
+ * pin 7ca47b21ead7 / issue #936): case-insensitive substring search over
+ * title/artist/comments/key/genre (genre falls back to lazy rb_meta),
+ * layered with `field:operator:value` predicates over bpm, rating and key,
+ * plus the pre-existing `genre:` / `genre:~` tag filters. See that module's
+ * doc comment for the full grammar; this function only adapts a BrowserRow
+ * into the pure module's SearchableTrack shape (resolving the rb_meta genre
+ * fallback here, since that fallback is BrowserRow-specific).
  *
  * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
  * hide-broken: they are intentional unmatched placeholders, not broken links. */
@@ -416,40 +449,21 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 	const base = hideBroken
 		? rows.filter((r) => r.file_exists || r.is_streaming === true || r.spotify_pending === true)
 		: rows;
-	const raw = query.trim();
-	if (raw === '') return base;
-
-	const genreStrict = /^genre:(?!~)(.+)$/i.exec(raw);
-	if (genreStrict !== null) {
-		const tag = genreStrict[1].trim().toLowerCase();
-		if (tag === '') return base;
-		return base.filter((r) => _genreTokens(r).some((t) => t === tag));
-	}
-	const genreLoose = /^genre:~(.+)$/i.exec(raw);
-	if (genreLoose !== null) {
-		const tag = genreLoose[1].trim().toLowerCase();
-		if (tag === '') return base;
-		return base.filter((r) => {
-			const g = (r.genre ?? r.rb_meta?.genre ?? '').toLowerCase();
-			return g.includes(tag);
-		});
-	}
-
-	const q = raw.toLowerCase();
+	if (query.trim() === '') return base;
 	return base.filter((r) =>
-		[r.title, r.artist, r.comments, r.key, r.genre ?? r.rb_meta?.genre ?? null].some(
-			(field) => field !== null && field.toLowerCase().includes(q)
+		matchesSearchQuery(
+			{
+				title: r.title,
+				artist: r.artist,
+				comments: r.comments,
+				key: r.key,
+				genre: r.genre ?? r.rb_meta?.genre ?? null,
+				bpm: r.bpm,
+				rating: r.rating
+			},
+			query
 		)
 	);
-}
-
-function _genreTokens(row: BrowserRow): string[] {
-	const raw = row.genre ?? row.rb_meta?.genre ?? '';
-	if (raw.trim() === '') return [];
-	return raw
-		.split(',')
-		.map((t) => t.trim().toLowerCase())
-		.filter((t) => t !== '');
 }
 
 /** Comparable cell value for a sort key (null = missing, sorts last). */
@@ -463,13 +477,21 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'rating') return row.rating;
 	else if (key === 'comments') return row.comments;
 	else if (key === 'time') return row.duration_ms;
-	else return row.genre ?? row.rb_meta?.genre ?? null;
+	else if (key === 'energy') return row.energy;
+	else if (key === 'genre') return row.genre ?? row.rb_meta?.genre ?? null;
+	throw new Error('AutoPlay ranks are not cell values');
 }
 
 /** Stable client sort; nulls last regardless of direction. Returns a
  * new array (never mutates the pane's membership-ordered rows). */
-export function sortRows(rows: BrowserRow[], key: SortKey | null, dir: SortDir): BrowserRow[] {
+export function sortRows(
+	rows: BrowserRow[],
+	key: SortKey | null,
+	dir: SortDir,
+	autoPlayRankOf: ReadonlyMap<string, number> = new Map()
+): BrowserRow[] {
 	if (key === null) return rows;
+	if (key === 'autoplay') return sortRowsByAutoPlayOrder(rows, autoPlayRankOf);
 	return rows.slice().sort((a, b) => {
 		const av = sortValue(a, key);
 		const bv = sortValue(b, key);
@@ -485,8 +507,17 @@ export function sortRows(rows: BrowserRow[], key: SortKey | null, dir: SortDir):
 }
 
 /** The full read pipeline a pane renders: FR-1 filter -> search -> sort. */
-export function visibleRowsOf(pane: PaneStore, hideBroken: boolean): BrowserRow[] {
-	return sortRows(filterRows(pane.rows, pane.search, hideBroken), pane.sort_key, pane.sort_dir);
+export function visibleRowsOf(
+	pane: PaneStore,
+	hideBroken: boolean,
+	autoPlayRankOf: ReadonlyMap<string, number> = new Map()
+): BrowserRow[] {
+	return sortRows(
+		filterRows(pane.rows, pane.search, hideBroken),
+		pane.sort_key,
+		pane.sort_dir,
+		autoPlayRankOf
+	);
 }
 
 /** Writes a decoded strip into every matching row in every pane, ALWAYS overwriting - the audience-ambiguous sidecar (TECH-DEBT.md) never outranks /anlz's own audience-scoped decode. */
@@ -503,97 +534,29 @@ export function applyDecodedStripAcrossPanes(
 }
 
 // ---------------------------------------------------------------- pane tabs
-// RECOVERED, not designed. `BrowserPanel.svelte` has imported both of these
-// since cfbfe55 ("wip(spike)", Fri 24 Jul 2026 01:19) but they were never
-// committed anywhere -- not in the branch, not in the Cursor backup snapshot
-// 718cc81 -- so /performance could not build for anyone. Reconstructed from
-// the two call sites; semantics are inferred, so treat as provisional and
-// replace if the original turns up.
+// Tab reordering + new-tab placement moved to ./pane-tabs (plain array/index
+// math, a distinct concern from the reactive PaneStore contract above).
+// Re-exported here so BrowserPanel.svelte and the existing tests keep one
+// import site for the pane vocabulary.
+export { reorderPanesInPlace, resolveNewTabIndex } from './pane-tabs';
 
-/**
- * Move a pane tab and return where the ACTIVE pane ended up.
- *
- * Mutates ``panes`` in place because the caller holds the same array
- * reference (hence "InPlace" in the name); returns the new active index
- * rather than mutating it, since the caller owns that state.
- */
-export function reorderPanesInPlace<T>(
-	panes: T[],
-	from: number,
-	to: number,
-	activePane: number
-): number {
-	if (
-		from === to ||
-		from < 0 ||
-		to < 0 ||
-		from >= panes.length ||
-		to >= panes.length
-	) {
-		return activePane;
-	}
-	const [moved] = panes.splice(from, 1);
-	panes.splice(to, 0, moved);
-	// Follow the dragged tab if it was the active one; otherwise shift only
-	// when the move crossed the active index.
-	if (activePane === from) return to;
-	if (from < activePane && to >= activePane) return activePane - 1;
-	if (from > activePane && to <= activePane) return activePane + 1;
-	return activePane;
-}
-
-/**
- * Index of the tab a newly opened playlist should take, or null if none is free.
- *
- * Null means every tab is sticky (locked); the caller surfaces that as an
- * explicit toast rather than silently stealing a locked tab.
- */
-export function resolveNewTabIndex(panes: { sticky?: boolean }[]): number | null {
-	const free = panes.findIndex((p) => p.sticky !== true);
-	return free === -1 ? null : free;
-}
+// ---------------------------------------------- playlist deck-context tints
+// Pin 2ac3a0: the tint derivations + the tree's CURRENT fold control moved to
+// ./playlist-context (a distinct concern from the pane store itself - pure
+// derivations over already-hydrated pane state). Re-exported here so existing
+// importers (BrowserPanel.svelte, PlaylistTree.svelte, tests) keep one import
+// site for the pane vocabulary, matching the playlist-drag re-export below.
+export {
+	type PlaylistTint,
+	playlistTintOf,
+	derivePlaylistDeckMembership,
+	derivePlaylistPaneOpenCounts,
+	multiPanePlaylistIds,
+	computeTreeCurrentFold
+} from './playlist-context';
 
 // -------------------------------------------------- playlist drag payload
-
-/** dataTransfer type for a playlist dragged out of the tree onto the tabs. */
-export const PLAYLIST_DRAG_MIME = 'application/x-mdt-playlist';
-
-/**
- * The subset of PlaylistNode that survives a drag. Children are dropped
- * because the payload crosses a dataTransfer JSON round trip and the tab
- * bar only ever opens the dragged node itself.
- */
-export interface PlaylistDragPayload {
-	playlist_id: string;
-	name: string;
-	track_count: number;
-	kind: 'all_tracks' | 'playlist' | 'folder';
-}
-
-/** Serialize a playlist for dataTransfer. */
-export function encodePlaylistDrag(payload: PlaylistDragPayload): string {
-	return JSON.stringify(payload);
-}
-
-/**
- * Parse a dropped playlist payload, or null when the drop is not one of
- * ours. Returns null rather than throwing because a drop handler receives
- * whatever the OS hands it - foreign drags are an expected input, not a bug.
- */
-export function decodePlaylistDrag(raw: string): PlaylistDragPayload | null {
-	if (raw.trim() === '') return null;
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-	if (typeof parsed !== 'object' || parsed === null) return null;
-	const record = parsed as Record<string, unknown>;
-	const { playlist_id, name, track_count, kind } = record;
-	if (typeof playlist_id !== 'string' || playlist_id === '') return null;
-	if (typeof name !== 'string') return null;
-	if (typeof track_count !== 'number' || !Number.isFinite(track_count)) return null;
-	if (kind !== 'all_tracks' && kind !== 'playlist' && kind !== 'folder') return null;
-	return { playlist_id, name, track_count, kind };
-}
+// The codec itself lives in ./playlist-drag (pure, runeless, importless).
+// The payload type stays exported here so BrowserPanel keeps ONE import
+// site for the pane vocabulary, matching TrackTable's row re-exports.
+export type { PlaylistDragPayload } from './playlist-drag';

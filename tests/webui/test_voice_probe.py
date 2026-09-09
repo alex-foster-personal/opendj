@@ -175,3 +175,5 @@ def test_committed_openapi_covers_the_legacy_surface(client):
     assert not missing, (
         f"legacy routes absent from the committed engine contract: {sorted(missing)}"
     )
+
+pytestmark = pytest.mark.rb_parity

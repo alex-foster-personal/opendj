@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
@@ -145,3 +146,5 @@ def test_solve_energy_missing_is_not_gating(client: TestClient) -> None:
     r = client.post("/api/v1/play-it/pl-002/solve", json={"duration_min": 60})
     assert r.status_code == 200, r.text
     assert all(step["energy"] is None for step in r.json()["steps"])
+
+pytestmark = pytest.mark.rb_parity

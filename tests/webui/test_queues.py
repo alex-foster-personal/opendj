@@ -36,3 +36,5 @@ def test_queue_marked_unavailable_shows_note(client, seed_backend):
     body = r.json()
     assert body["items"] == []
     assert "not merged" in body["note"]
+
+pytestmark = pytest.mark.rb_parity

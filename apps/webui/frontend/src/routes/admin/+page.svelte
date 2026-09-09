@@ -24,6 +24,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
+	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import KpiTile from './KpiTile.svelte';
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
@@ -142,6 +143,10 @@
 </section>
 
 <QualityRatchet />
+
+<!-- PREFLIGHT-01 (#771): read-only, always-live-polling reference. Same
+     GET /api/v1/preflight the boot gate reads; no navigation side effect. -->
+<PreflightScreen mode="admin" />
 
 <TipLayer />
 

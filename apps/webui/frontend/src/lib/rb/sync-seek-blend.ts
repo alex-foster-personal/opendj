@@ -1,3 +1,12 @@
+export {
+	beatSyncMaxFollowers,
+	planSeekSync,
+	seekSyncMaster,
+	syncChangeRequiresReschedule,
+	syncMayWriteTempo,
+	type SeekSyncPlan
+} from '$lib/rb/beat-sync-decisions';
+
 /**
  * Beat-4 lead-in for synced waveform seeks that snap backwards.
  * PQTZ n cycles 1..4; the n=4 immediately at/before the landing is the

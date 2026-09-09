@@ -416,7 +416,7 @@ def test_identity_maps_google_claims() -> None:
             "id_token": _jwt_with_claims(
                 {
                     "sub": "1234567890",
-                    "email": "owner@example.com",
+                    "email": "maintainer",
                     "name": "the maintainer",
                     "picture": "https://lh3.googleusercontent.com/a/pic",
                 }
@@ -424,7 +424,7 @@ def test_identity_maps_google_claims() -> None:
         }
     )
     assert identity.google_sub == "1234567890"
-    assert identity.email == "owner@example.com"
+    assert identity.email == "maintainer"
     assert identity.avatar_url == "https://lh3.googleusercontent.com/a/pic"
     assert identity.refresh_token == "rt"
 
@@ -443,3 +443,5 @@ def test_identity_rejects_claims_with_no_subject() -> None:
                 "id_token": _jwt_with_claims({"email": "a@b.c"}),
             }
         )
+
+pytestmark = pytest.mark.rb_parity

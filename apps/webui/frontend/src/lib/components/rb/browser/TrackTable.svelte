@@ -7,7 +7,7 @@
 <script lang="ts">
 	// Browser track table (SCREENSHOT-SPEC 5c). Columns in screenshot order:
 	// funnel | cloud | # | Preview | Artwork | Track Title | Artist | K | B |
-	// Rating | Comments | Time | Venue (quality badge) | Genre | Stems.
+	// Rating | Comments | Time | Venue (quality badge) | Energy | Genre | Stems.
 	// Preview strips + file_exists arrive
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
@@ -26,11 +26,13 @@
 	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
-	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
-	import { genreHoverColor } from '$lib/rb/genre-color';
+	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat, genreHoverColor } from './track-table-colors';
+	import { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
+	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
+	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
 	import { buildCurveSegments, segmentPath } from '$lib/rb/autoplay-curve';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
@@ -42,11 +44,13 @@
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
+	import { columnExplainer } from './column-explainer-placement';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
-	import AnalysisDots from './AnalysisDots.svelte';
+	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
 	import StemTags from './StemTags.svelte';
+	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import { computeVirtualWindow } from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -56,6 +60,9 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
+	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
+	import SpinnerIcon from './SpinnerIcon.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
@@ -64,53 +71,13 @@
 	const ROW_HEIGHT_COSY = 30;
 	const OVERSCAN = 10;
 
-	type ColId =
-		| 'funnel'
-		| 'err'
-		| 'cloud'
-		| 'order'
-		| 'preview'
-		| 'art'
-		| 'title'
-		| 'artist'
-		| 'key'
-		| 'bpm'
-		| 'plays'
-		| 'rating'
-		| 'comments'
-		| 'time'
-		| 'quality'
-		| 'genre'
-		| 'stems'
-		| 'autoplay';
-
 	// ----- AUTOPLAY-COL -----------------------------------------------------
 	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
 	const AUTOPLAY_COL_COUNT = 18;
 	const AUTOPLAY_THEAD_H = 20;
 
-	const COL_DEFAULTS: Record<ColId, number> = {
-		funnel: 24,
-		err: 24,
-		cloud: 24,
-		order: 34,
-		preview: 177,
-		art: 54,
-		title: 220,
-		artist: 140,
-		key: 36,
-		bpm: 42,
-		plays: 36,
-		rating: 80,
-		comments: 110,
-		time: 48,
-		quality: 92,
-		genre: 90,
-		stems: 148,
-		autoplay: 46
-	};
-
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
+	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
 	let resizeStartX = 0;
 	let resizeStartW = 0;
@@ -128,6 +95,38 @@
 		y: number;
 	} | null>(null);
 	let loadConfirmEveryTime = $state(false);
+	let contextMenu = $state<{ x: number; y: number; row: BrowserRow } | null>(null);
+
+	function trackMenuItems(row: BrowserRow): ContextMenuItem[] {
+		const selected = selectedIds.includes(row.stable_id) ? selectedIds : [row.stable_id];
+		return [
+			...DECKS.map((deck) => ({ id: `load-${deck}`, label: `Load to deck ${deck}`, run: () => onloadrow(row, deck) })),
+			{ id: 'add-playlist', label: 'Add to playlist...' }, { id: 'edit', label: 'Edit' },
+			{ id: 'bulk-edit', label: `Bulk edit (${selected.length})` }, { id: 'find-replace', label: 'Find/replace' },
+			{ id: 'mytag', label: 'My Tag editor' }, { id: 'relocate', label: 'Relocate' },
+			{ id: 'finder', label: 'Show in Finder' }, { id: 'copy-path', label: 'Copy path' },
+			{ id: 'analyze', label: 'Analyze' }, { id: 'stems-generate', label: 'Stems - generate' },
+			{ id: 'stems-open', label: 'Stems - open' }, { id: 'lyrics', label: 'Lyrics' },
+			{ id: 'offline', label: 'Mark offline' }, { id: 'cloud-only', label: 'Cloud-only' },
+			{ id: 'remove-playlist', label: 'Remove from playlist', run: removable ? () => onremoverow?.(row) : undefined },
+			{ id: 'remove-library', label: 'Remove from library' }
+		];
+	}
+
+	function openTrackMenu(event: MouseEvent, row: BrowserRow): void {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
+		contextMenu = { x: event.clientX, y: event.clientY, row };
+	}
+
+	function onTrackKeydown(event: KeyboardEvent, row: BrowserRow): void {
+		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		event.preventDefault();
+		if (!selectedIds.includes(row.stable_id)) onselectrow(row);
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		contextMenu = { x: rect.left + 8, y: rect.top + 8, row };
+	}
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -135,13 +134,15 @@
 		const handle = event.currentTarget as HTMLElement;
 		handle.setPointerCapture(event.pointerId);
 		resizeCol = col;
+		manuallyResizedColumns.add(col);
 		resizeStartX = event.clientX;
 		resizeStartW = colWidths[col];
 	}
 
 	function onColResizeMove(event: PointerEvent): void {
 		if (resizeCol === null) return;
-		const next = Math.max(28, resizeStartW + (event.clientX - resizeStartX));
+		const minimum = Math.min(28, COL_DEFAULTS[resizeCol]);
+		const next = Math.max(minimum, resizeStartW + (event.clientX - resizeStartX));
 		colWidths = { ...colWidths, [resizeCol]: next };
 	}
 
@@ -242,6 +243,7 @@
 		sortKey,
 		sortDir,
 		emptyMessage,
+		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
 		removable = false,
@@ -276,6 +278,8 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Honest note when a tiny search result bypasses Next-only only. */
+		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
 		 * scroll cursor restores when this changes, NOT on row updates. */
 		restoreKey: string | number;
@@ -291,7 +295,7 @@
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
 		onsort: (key: SortKey) => void;
-		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
+		onselectrow: (row: BrowserRow, event?: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
 		 * `reservation` must be set only when `deck` came from onpickdoubledeck
 		 * (it reserved that deck, at that generation) - never for an explicit
@@ -445,6 +449,19 @@
 	}
 
 	const rows = $derived(provider.rows);
+	const maxRowOrder = $derived(rows.reduce((max, row) => Math.max(max, row.order), 0));
+	$effect(() => {
+		const compact = compactUtilityWidths(maxRowOrder);
+		const musical = compactMusicalWidths(rows);
+		void wrapWidth;
+		// Manual K/B drags stay authoritative; other utility widths reflow with data.
+		const current = untrack(() => colWidths);
+		colWidths = {
+			...current,
+			...compact,
+			...autoMusicalWidths(current, musical, manuallyResizedColumns)
+		};
+	});
 	const selectedIdSet = $derived(new Set(selectedIds));
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
@@ -479,6 +496,18 @@
 	});
 
 	const apCurveX = $derived(Math.max(8, colWidths.autoplay / 2));
+	const apCurveArrowId = $derived(`ap-curve-arrow-${restoreKey}`);
+
+	/** r3919185343: `table-layout: fixed` at `width: 100%` redistributes any
+	 * extra space beyond the configured column total across the columns on a
+	 * wide wrap, so the rendered title column drifts right of where
+	 * masterFoldCenterPx (computed from the raw colWidths) puts the badge.
+	 * Pinning the table to exactly this sum removes the extra space there is
+	 * to redistribute - narrower than the wrap just leaves blank space to the
+	 * right, same as any wrap wider than its content. */
+	const tableWidthPx = $derived(
+		Object.values(colWidths).reduce((sum, w) => sum + w, 0)
+	);
 
 	// ------------------------------------------- per-pane scroll cursor
 	// Restore ONLY when the rendered pane changes (restoreKey): reading
@@ -489,7 +518,22 @@
 	// Starts at 0; the restore $effect below syncs it from the prop before
 	// paint (same tick it sets el.scrollTop), so there is no row-0 flash.
 	let liveScrollTop = $state(0);
+	/* Only the master-jump badge needs this, and the wrap's existing onscroll
+	 * already has the value in hand - so tracking it costs one assignment, not
+	 * a listener (pin b44c957f082f). */
+	let liveScrollLeft = $state(0);
 	let viewportHeight = $state(0);
+	/** Wrap's own rendered width, for the master-fold badge's right-edge
+	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
+	 * extra (pin b44c957f082f follow-up). */
+	let wrapWidth = $state(0);
+	/** The master-jump badge's own rendered width, so its clamp can account
+	 * for `translateX(-50%)` pushing its edge half a badge-width past the
+	 * clamped centre (Sol review r3941617671). `bind:clientWidth` below is a
+	 * one-off read of an element whose size only changes with its own text/
+	 * font, never with a window resize, so this is not the listener the
+	 * pin's "lazy on resize" requirement was written against. */
+	let masterFoldBadgeWidth = $state(0);
 
 	$effect(() => {
 		void restoreKey; // the one tracked dependency
@@ -506,9 +550,13 @@
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
+		wrapWidth = el.clientWidth;
 		if (typeof ResizeObserver === 'undefined') return; // SSR guard
 		const ro = new ResizeObserver((entries) => {
-			for (const entry of entries) viewportHeight = entry.contentRect.height;
+			for (const entry of entries) {
+				viewportHeight = entry.contentRect.height;
+				wrapWidth = entry.contentRect.width;
+			}
 		});
 		ro.observe(el);
 		return () => ro.disconnect();
@@ -722,11 +770,11 @@
 	<th
 		class={`h-${key} sortable`}
 		style={`width:${colWidths[col]}px`}
+		use:columnExplainer={{ text: columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`) }}
 		onclick={(e) => {
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
 		}}
-		title={columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`)}
 	>
 		<span class="th-label">
 			<span>{label}</span>
@@ -745,13 +793,22 @@
 	</th>
 {/snippet}
 
-<div class="tt-root" data-density={uiPrefs.library_density}>
+<div
+	class="tt-root"
+	data-density={uiPrefs.library_density}
+	data-truncated={provider.truncated ? 'true' : 'false'}
+>
+	{#if contextMenu !== null}
+		<ContextMenu items={trackMenuItems(contextMenu.row)} x={contextMenu.x} y={contextMenu.y} onclose={() => (contextMenu = null)} />
+	{/if}
 	{#if masterFold === 'above'}
 		<button
 			type="button"
 			class="master-fold above"
+			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is above - click to jump"
+			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			▲ MASTER
 		</button>
@@ -760,8 +817,10 @@
 		<button
 			type="button"
 			class="master-fold below"
+			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is below - click to jump"
+			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			▼ MASTER
 		</button>
@@ -772,10 +831,11 @@
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
 			liveScrollTop = top;
+			liveScrollLeft = e.currentTarget.scrollLeft;
 			onscrollcursor(top);
 		}}
 	>
-		<table data-testid="track-table">
+		<table data-testid="track-table" style={`width:${tableWidthPx}px`}>
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
 				<col style={`width:${colWidths.err}px`} />
@@ -793,12 +853,17 @@
 				<col style={`width:${colWidths.comments}px`} />
 				<col style={`width:${colWidths.time}px`} />
 				<col style={`width:${colWidths.quality}px`} />
+				<col style={`width:${colWidths.energy}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
 			</colgroup>
 			<thead>
 				<tr>
-					<th class="h-icon" style={`width:${colWidths.funnel}px`} title="filter - not implemented, see PARITY-TODO">
+					<th
+						class="h-icon"
+						style={`width:${colWidths.funnel}px`}
+						use:columnExplainer={{ text: 'filter - not implemented, see PARITY-TODO' }}
+					>
 						<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
 							<path d="M2 3h12l-4.5 5v5l-3-1.5V8z" fill="currentColor" />
 						</svg>
@@ -814,7 +879,7 @@
 					<th
 						class="h-icon h-err"
 						style={`width:${colWidths.err}px`}
-						title="Err - detected analysis data-quality issues, hover a square for detail"
+						use:columnExplainer={{ text: 'Err - detected analysis data-quality issues, hover a square for detail' }}
 					>
 						Err
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -826,7 +891,11 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					<th class="h-icon" style={`width:${colWidths.cloud}px`} title="cloud/streaming flag">
+					<th
+						class="h-icon"
+						style={`width:${colWidths.cloud}px`}
+						use:columnExplainer={{ text: 'cloud/streaming flag' }}
+					>
 						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
 							<path
 								d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
@@ -844,19 +913,48 @@
 					</th>
 					{@render sortableTh('order', '#', 'order')}
 					{#if autoPlayMode !== 'off'}
-						<th class="h-icon h-autoplay" style={`width:${colWidths.autoplay}px`} title="AutoPlay order - rank in AutoPlay's next handoffs for the open playlist">
-							<AutoPlayExplainer>
+						<th
+							class="h-icon h-autoplay"
+							style={`width:${colWidths.autoplay}px`}
+							title={autoPlayQueue.active
+								? `AutoPlay queue - ${autoPlayQueue.entries.length} planned handoff${autoPlayQueue.entries.length === 1 ? '' : 's'}`
+								: 'AutoPlay queue - starts when AutoPlay is enabled'}
+							data-autoplay-queue-active={autoPlayQueue.active}
+						>
+							<AutoPlayExplainer queue={autoPlayQueue.entries}>
 								{#snippet demo()}
 									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
 								{/snippet}
-								<span aria-hidden="true">🤖</span>
+								<button
+									class="autoplay-sort"
+									aria-pressed={sortKey === 'autoplay'}
+									aria-label={sortKey === 'autoplay' ? 'AutoPlay order, sorted 1 to n - activate to restore pane order' : 'AutoPlay order - activate to sort 1 to n'}
+									onclick={() => onsort('autoplay')}
+								>
+									<svg
+										class="autoplay-icon"
+										viewBox="0 0 16 16"
+										width="12"
+										height="12"
+										aria-hidden="true"
+									>
+										<path
+											d="M8 1.5v2M5.5 2.5h5M4 5.5h8v6H4zM6.25 8h.01M9.75 8h.01M6.25 10h3.5M2.5 7.5H4M12 7.5h1.5"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.25"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+								</button>
 							</AutoPlayExplainer>
 						</th>
 					{/if}
 					<th
 						class="h-preview"
 						style={`width:${colWidths.preview}px`}
-						title={columnHeaderTitle('preview')}
+						use:columnExplainer={{ text: columnHeaderTitle('preview') }}
 					>
 						Preview
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -869,11 +967,14 @@
 						></span>
 					</th>
 					<th
-						class="h-art"
+						class="h-icon h-art"
 						style={`width:${colWidths.art}px`}
-						title={columnHeaderTitle('art')}
+						use:columnExplainer={{ text: columnHeaderTitle('art') }}
 					>
-						Artwork
+						<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+							<path d="M1 3h14v10H1zm1 9 3.4-3.9 2.3 2.6 2.1-2.3L14 12V4H2z" fill="currentColor" />
+							<circle cx="5" cy="6" r="1" fill="currentColor" />
+						</svg>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -890,16 +991,18 @@
 					<th
 						class="h-key sortable"
 						style={`width:${colWidths.key}px`}
+						use:columnExplainer={{
+							text: columnHeaderTitle(
+								'key',
+								masterKey !== null
+									? `Master key ${masterKey} - sort by key (asc → desc → clear)`
+									: 'Sort by key (asc → desc → clear)'
+							)
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('key');
 						}}
-						title={columnHeaderTitle(
-							'key',
-							masterKey !== null
-								? `Master key ${masterKey} - sort by key (asc → desc → clear)`
-								: 'Sort by key (asc → desc → clear)'
-						)}
 					>
 						<span class="th-label">
 							{#if masterKey !== null}
@@ -928,16 +1031,18 @@
 					<th
 						class="h-bpm sortable"
 						style={`width:${colWidths.bpm}px`}
+						use:columnExplainer={{
+							text: columnHeaderTitle(
+								'bpm',
+								masterBpm !== null
+									? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
+									: 'Sort by BPM (asc → desc → clear)'
+							)
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('bpm');
 						}}
-						title={columnHeaderTitle(
-							'bpm',
-							masterBpm !== null
-								? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
-								: 'Sort by BPM (asc → desc → clear)'
-						)}
 					>
 						<span class="th-label">
 							{#if masterBpm !== null}
@@ -968,9 +1073,9 @@
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						title="biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps"
+						use:columnExplainer={{ text: "QLT - audio quality as the biggest venue this file survives, from effective bitrate (size over duration) and container. The badge shows the rung's initial and its colour; hover a badge for the full rung name, the kbps and the container" }}
 					>
-						<span class="th-label"><span>Venue</span></span>
+						<span class="th-label"><span>QLT</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -980,11 +1085,35 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<th
+						class="h-energy"
+						class:h-icon={true}
+						class:sortable={true}
+						style={`width:${colWidths.energy}px`}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('energy');
+						}}
+						title="Energy 1-9, from Mixed In Key - sort ascending, descending, then clear"
+						aria-label="Energy 1-9, from Mixed In Key"
+					>
+						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg><span class="energy-glyph" aria-hidden="true">⚡</span>{#if sortKey === 'energy'}<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>{/if}</span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'energy')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					{@render sortableTh('genre', 'Genre', 'genre')}
 					<th
 						class="h-stems"
 						style={`width:${colWidths.stems}px`}
-						title="Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes"
+						use:columnExplainer={{ text: 'Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes' }}
 					>
 						<span class="th-label"><span>Stems</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1012,6 +1141,7 @@
 						use:observeRow={row}
 						data-testid="track-row"
 						data-stable-id={row.stable_id}
+						tabindex="0"
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
@@ -1034,6 +1164,8 @@
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
 						ondblclick={(e) => onRowDblClick(e, row)}
+						oncontextmenu={(e) => openTrackMenu(e, row)}
+						onkeydown={(e) => onTrackKeydown(e, row)}
 						ondragstart={(e) => onRowDragStart(e, row)}
 						ondragend={onRowDragEnd}
 						ondragover={onRowDragOver}
@@ -1058,10 +1190,10 @@
 									aria-hidden="true"
 								></span>
 							{/if}
-							<AnalysisDots badge={_badgeFor(row)} />
+							<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />
 						</td>
 						<td class="c-err">
-							<AnalysisDots issues={_issuesFor(row)} mode="issues" />
+							<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />
 						</td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a
@@ -1110,7 +1242,7 @@
 										class="ap-rank"
 										class:ap-rank-hot={hoveredApId === row.stable_id}
 										tabindex="0"
-										title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}
+										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
 										onpointerenter={() => (hoveredApId = row.stable_id)}
 										onpointerleave={() => { if (hoveredApId === row.stable_id) hoveredApId = null; }}
 										onfocus={() => (hoveredApId = row.stable_id)}
@@ -1128,9 +1260,49 @@
 								nowRatio={_nowRatioFor(row.stable_id)}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
+						</td>
+						<td
+							class="c-art"
+							title={row.artwork_available !== true
+								? row.artwork_available === null
+									? 'artwork could not be checked (tag reader not installed in this build)'
+									: (artworkStatusLabel(row.artwork_status) ??
+										'artwork unavailable')
+								: undefined}
+						>
+							<span class="art-slate" aria-hidden="true"></span>
+							{#if row.artwork_available === true}
+								<img
+									src={artworkUrl(row.stable_id, 's')}
+									alt=""
+									loading="lazy"
+									onerror={_hideBrokenImg}
+								/>
+							{/if}
+						</td>
+						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''}>
+							<!-- Pin 27f889893790: the quick-load box is anchored here (not
+							     .c-preview) so its hitbox can never sit over the mini preview
+							     strip (.preview-hit) - hovering it must never block the
+							     journey from artwork/title to the mini preview. Revealed by
+							     hovering .c-art or .c-title specifically (CSS below), never
+							     the bare row or the preview cell.
+							     Pin fce26c7493b0: it floats ABOVE this row rather than on the
+							     row's own line, so it can never swallow the row's own
+							     double-click. The title text moved into .title-text because
+							     THAT span now owns the ellipsis clip - the cell itself has to
+							     stop clipping for the box to escape upwards. -->
 							<span class="deck-btns">
+								<span class="deck-btns-title">load to deck:</span>
 								{#each DECKS as d (d)}
+									{@const target = deckStates[d]}
+									{@const isLoading = performanceCommandStatus.deck_pending[d] > 0}
+									{@const isThisTrack = target.stable_id === row.stable_id}
 									<button
+										class="deck-target"
+										class:master-target={target.is_master}
+										class:loading-target={isLoading}
+										class:loaded-target={isThisTrack}
 										title={`Load onto deck ${d}`}
 										onclick={(e) => {
 											e.stopPropagation();
@@ -1138,7 +1310,11 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{d}
+										{#if isLoading}
+											<SpinnerIcon size={9} />
+										{:else}
+											{d}
+										{/if}
 									</button>
 								{/each}
 								{#if removable}
@@ -1155,30 +1331,11 @@
 									</button>
 								{/if}
 							</span>
-						</td>
-						<td
-							class="c-art"
-							title={row.rb_meta !== null && !row.rb_meta.artwork_available
-								? row.rb_meta.artwork_available === null
-									? 'artwork could not be checked (tag reader not installed in this build)'
-									: (artworkStatusLabel(row.rb_meta.artwork_status) ??
-										'artwork unavailable')
-								: undefined}
-						>
-							<span class="art-slate" aria-hidden="true"></span>
-							{#if row.rb_meta !== null && row.rb_meta.artwork_available}
-								<img
-									src={artworkUrl(row.stable_id, 's')}
-									alt=""
-									loading="lazy"
-									onerror={_hideBrokenImg}
-								/>
-							{/if}
-						</td>
-						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''}>
-							{#each hl(row.title) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-							{/each}
+							<span class="title-text"
+								>{#each hl(row.title) as part, i (i)}{#if part.hit}<mark
+											class="find-hit">{part.text}</mark
+										>{:else}{part.text}{/if}{/each}</span
+							>
 						</td>
 						<td class="c-artist" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.artist ?? ''}>
 							{#each hl(row.artist) as part, i (i)}
@@ -1210,7 +1367,9 @@
 							class="c-plays"
 							title="play count (rekordbox history + djay)"
 						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
-						<td class="c-rating">
+						<!-- The cell hands its own width to CSS so the stars can
+						     tighten then shrink to fit it (pin 8f60606750c6). -->
+						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
 						</td>
 						<td class="c-comments" title={row.comments ?? ''}>
@@ -1220,7 +1379,10 @@
 						</td>
 						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
-							<QualityBadge quality={row.quality} />
+							<QualityBadge quality={row.quality} compact showContainer={false} />
+						</td>
+						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
+							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
 							{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
@@ -1249,6 +1411,7 @@
 						</td>
 						<td class="c-stems">
 							<StemTags stems={row.stems} />
+							<VocalAnalyzeButton stableId={row.stable_id} stems={row.stems} />
 						</td>
 					</tr>
 				{/each}
@@ -1262,18 +1425,27 @@
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">{emptyMessage}</div>
 		{/if}
+		{#if filterBypassNote !== null}
+			<p class="filter-bypass-note" data-testid="filter-bypass-note">{filterBypassNote}</p>
+		{/if}
 		{#if apCurveSegments.length > 0}
 			<svg
 				class="ap-curve"
 				aria-hidden="true"
 				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.funnel + colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
+				<defs>
+					<marker id={apCurveArrowId} viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto">
+						<path d="M0 0L6 3L0 6z" class="ap-curve-arrow" />
+					</marker>
+				</defs>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
 					<path
 						d={segmentPath(seg, apCurveX)}
 						class="ap-curve-seg"
 						class:skips={seg.skips}
 						fill="none"
+						marker-end={`url(#${apCurveArrowId})`}
 					/>
 					<circle
 						cx={apCurveX}
@@ -1366,10 +1538,22 @@
 	.ap-rank:focus {
 		color: var(--rb-accent);
 	}
+	.autoplay-sort {
+		display: inline-flex;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+	}
 	.h-autoplay :global(.ap-explain-wrap) {
 		color: inherit;
 	}
 	.ap-curve {
+		/* r3919669577: anchored to the sum of the columns before autoplay
+		   (funnel/err/cloud/order), not table-wrap's right edge - table-wrap
+		   can be wider than the table, and `right: 0` against table-wrap left
+		   the curve floating in that blank space instead of over the column. */
 		position: absolute;
 		top: 0;
 		left: var(--ap-curve-left);
@@ -1395,17 +1579,51 @@
 	.ap-curve-node.hot {
 		opacity: 1;
 	}
+	.ap-curve-arrow {
+		fill: var(--rb-accent);
+	}
 
 	.tt-root {
 		display: flex;
 		flex-direction: column;
 		flex: 1;
-		min-height: 0;
+		/* LIBUX-01: floor, not 0 - guarantees >= 5 rows survive flex-shrink
+		 * against SuggestNextStrip/RecommendedSection (thead 20px + 5 rows
+		 * at the current density's own --tt-row-h, so compact and cosy each
+		 * get their own correct floor from the same declaration, plus a
+		 * 17px classic-scrollbar-gutter allowance: table-wrap is
+		 * `overflow: auto` and the default column widths already exceed a
+		 * 1280px window's list-panel, so a horizontal scrollbar is real on
+		 * platforms without overlay scrollbars (Windows, many Linux
+		 * themes) - without this the scrollbar eats into the 5-row content
+		 * area from inside the same box height, PR #1007 discussion
+		 * r3921198996). The enclosing .perf-root grid reserves enough
+		 * total height for this floor to actually fit without overflowing
+		 * (see +page.svelte).
+		 *
+		 * `--tt-truncation-h` is the fourth term: when a whole-collection
+		 * search hits its 200-row safety cap, `.truncated-note` renders as a
+		 * `flex: none` SIBLING of `.table-wrap` INSIDE this same box, so its
+		 * height comes straight out of the space budgeted for the thead, the
+		 * five rows and the scrollbar gutter - one full row disappears at
+		 * cosy density on non-overlay-scrollbar platforms. The banner is
+		 * given a declared 17px height below (rather than letting font
+		 * metrics decide) so this floor and the +page.svelte reservation can
+		 * both add the SAME number, and it is added only while the banner is
+		 * actually showing (PR #1007 discussion r3923591731). */
+		--tt-truncation-note-h: 17px;
+		--tt-truncation-h: 0px;
+		min-height: calc(20px + 5 * var(--tt-row-h) + 17px + var(--tt-truncation-h));
 		position: relative;
 		/* compact = current tight rows; cosy = taller + roomier cell pad */
 		--tt-row-h: 22px;
 		--tt-art: 22px;
 		--tt-td-pad-x: 6px;
+	}
+	/* Only while the banner is on screen - an unconditional term would steal
+	 * 17px from the deck area on every window that never truncates. */
+	.tt-root[data-truncated='true'] {
+		--tt-truncation-h: var(--tt-truncation-note-h);
 	}
 	.tt-root[data-density='cosy'] {
 		--tt-row-h: 30px;
@@ -1418,8 +1636,42 @@
 		overflow: auto;
 		position: relative;
 	}
+	.table-wrap::-webkit-scrollbar {
+		height: 2px;
+	}
+	.table-wrap::-webkit-scrollbar-thumb:horizontal {
+		background: var(--rb-text-dim);
+	}
+	.table-wrap::-webkit-scrollbar-track:horizontal {
+		background: transparent;
+	}
+	.table-wrap::-webkit-scrollbar-button:horizontal {
+		display: none;
+	}
+	/* Static column explanations are portalled to body by columnExplainer(), so
+	 * scope this deliberately-global skin here and outrank sticky headers and
+	 * the table's own curve/load overlays. */
+	:global(.column-explain-panel) {
+		position: fixed;
+		z-index: 100;
+		width: min(280px, calc(100vw - 16px));
+		max-height: calc(100vh - 16px);
+		overflow-y: auto;
+		padding: 6px 8px;
+		background: var(--rb-panel-raised, #0a0c0f);
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 10px;
+		line-height: 1.4;
+		pointer-events: none;
+	}
 	table {
-		width: 100%;
+		/* width set inline below, from the sum of colWidths (r3919185343) -
+		   never 100%, so table-layout: fixed has no extra space to
+		   redistribute across columns on a wrap wider than the content. */
 		border-collapse: collapse;
 		table-layout: fixed;
 		font-size: var(--rb-fs-browser);
@@ -1441,9 +1693,19 @@
 		overflow: visible;
 	}
 	.col-resize {
+		/* `thead th` is `position: sticky` (below), which gives every th its
+		 * own stacking context - z-index only orders paint WITHIN one th, so
+		 * it can never win against a later-DOM-order sibling th regardless
+		 * of this element's z-index. `right: -3px` used to let half this
+		 * handle's box sit outside its own th (poking into the next
+		 * column's th box), which that later th always painted over. Fixed
+		 * by absorbing the whole 7px width leftward (`right: 0`) so the
+		 * handle never depends on painting above a sibling's stacking
+		 * context - verified via document.elementFromPoint at the handle's
+		 * own center, see performance-col-resize-hit-target.spec.ts. */
 		position: absolute;
 		top: 0;
-		right: -3px;
+		right: 0;
 		width: 7px;
 		height: 100%;
 		cursor: col-resize;
@@ -1459,6 +1721,16 @@
 		font-size: 9px;
 		font-weight: 600;
 		letter-spacing: 0.02em;
+	}
+	thead th:nth-child(-n + 3),
+	.c-funnel,
+	.c-err,
+	.c-cloud {
+		padding: 0 2px;
+	}
+	thead th:nth-child(4) .th-label {
+		padding: 0 2px;
+		font-size: 9px;
 	}
 	th.sortable {
 		padding: 0;
@@ -1661,9 +1933,11 @@
 		background: color-mix(in srgb, var(--rb-green) 26%, var(--rb-panel-raised));
 	}
 
+	/* `left` comes from masterFoldCenterPx as an inline style: the middle of
+	 * the TABLE pointed at Rating / Comments, which is not what the badge is
+	 * about. See src/lib/rb/master-fold-anchor.ts (pin b44c957f082f). */
 	.master-fold {
 		position: absolute;
-		left: 50%;
 		transform: translateX(-50%);
 		z-index: 4;
 		padding: 3px 14px;
@@ -1696,7 +1970,11 @@
 		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
-	.c-order,
+	.c-order {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		padding: 0 2px;
+	}
 	.c-bpm,
 	.c-plays,
 	.c-time {
@@ -1704,12 +1982,68 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--rb-text-dim);
 	}
+	.h-order .th-label {
+		justify-content: center;
+		padding: 0 2px;
+	}
 	.c-plays {
 		font-size: 10px;
 	}
+	.c-order {
+		font-size: 9px;
+		padding: 0 2px;
+	}
+
+	/* Five stars are a fixed-width control, so truncating them is never the
+	 * right answer: at 11px with 1px gaps they come to ~67px of advance width
+	 * inside 68px of usable cell, and the generic td rule then hangs an
+	 * ellipsis off the sliver that did not fit - all five stars painted, and a
+	 * '..' after them (pin 8f60606750c6, the maintainer, Wed 2 Sep 2026).
+	 *
+	 * Two stages, in the order the pin asks for: give back the 1px gaps first,
+	 * and only shrink the glyphs once there is no gap left to give. Both
+	 * measure against --rating-w, which the cell publishes from colWidths -
+	 * state the table already owns, so no ResizeObserver and no layout read.
+	 * STAR_ADV (1.2em) is the ★ glyph's advance, which is wider than 1em; using
+	 * 1em here would under-measure and let the overflow back in. */
+	.c-rating {
+		--rating-avail: calc(var(--rating-w, 80px) - 2 * var(--tt-td-pad-x));
+		/* Four gaps, each tripled for unrated stars. */
+		--rb-star-gap: clamp(
+			0px,
+			calc((var(--rating-avail) - 5 * 1.2 * var(--rb-fs-browser)) / 12),
+			1px
+		);
+		--rb-star-size: min(var(--rb-fs-browser), calc(var(--rating-avail) / 6));
+		text-overflow: clip;
+	}
 	.c-quality {
+		padding: 0 2px;
 		overflow: hidden;
 		white-space: nowrap;
+	}
+	.c-energy {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		padding: 0;
+	}
+	.c-energy.energy-unset {
+		color: var(--rb-text-dim);
+	}
+	.energy-icon {
+		width: 11px;
+		height: 11px;
+		fill: currentColor;
+	}
+	.energy-glyph { display: none; }
+	/* At the compact 34px default the base 6-8px td/th padding plus
+	 * .th-label's own inner padding leaves too little room for the "QLT"
+	 * label and clips the compact badge's border (the maintainer, review thread on
+	 * PR #1095): give this column the same tight 2px treatment as the
+	 * funnel/err/cloud utility columns instead of widening it back out. */
+	.h-quality,
+	.h-quality .th-label {
+		padding: 0 2px;
 	}
 	.c-order .grip {
 		margin-right: 2px;
@@ -1815,42 +2149,164 @@
 		border-radius: 1px;
 	}
 
-	/* preview cell hosts the hover deck-load buttons */
+	/* preview cell hosts only the mini preview strip: pin 27f889893790 moved
+	 * the quick-load box off this cell entirely (onto .c-title, below) so
+	 * its hitbox can never sit over .preview-hit and block the mouse
+	 * journey to the mini preview. */
 	.c-preview {
 		position: relative;
 	}
+	/* The loader opens only from artwork or title (pin 27f889893790), and is
+	 * anchored inside .c-title so it renders clear of the preview column.
+	 * Pin fce26c7493b0: it sits ABOVE the row (bottom: 100%), never on the
+	 * row's own line - inline it covered the title's right-hand side and its
+	 * buttons stopPropagation on dblclick, so a double-click aimed at the row
+	 * hit a button and the row's own load-and-play never fired. It must never
+	 * extend below the row either: that would cover the following row's normal
+	 * targets. Because a `td` clips (`overflow: hidden`, for title
+	 * truncation), an absolutely positioned box can only escape upwards if the
+	 * cell stops clipping - so .c-title is `overflow: visible` and the
+	 * ellipsis moved onto the inner .title-text span, which clips the text and
+	 * nothing else. Visible
+	 * on hover+selected (mouse), per pin 616aaf77b792: hover-only used to
+	 * block visibility outright. display stays inline-flex always (never
+	 * `none`) so the buttons remain Tab-reachable regardless of
+	 * hover/selection - a keyboard user tabbing through the row must have
+	 * an equal path to the mouse's hover, and a display:none element cannot
+	 * receive the very focus that would reveal it. opacity+pointer-events
+	 * do the hiding instead, and :focus-within always wins so Tab landing
+	 * on any of these buttons reveals the whole group before the very next
+	 * Tab press. Hiding pointer-events lags 100ms behind losing hover (pin
+	 * 27f889893790's corridor): the pointer can leave .c-art/.c-title,
+	 * cross the short gap, and still land on a deck button before the
+	 * group goes fully inert. Showing has no such delay. */
+	.c-title {
+		position: relative;
+		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the
+		 * cell cannot clip. The text keeps its own clip on .title-text. */
+		overflow: visible;
+	}
+	.c-title .title-text {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.deck-btns {
-		display: none;
-		position: absolute;
-		top: 2px;
-		right: 4px;
-		gap: 2px;
-	}
-	tbody tr:hover .deck-btns {
 		display: inline-flex;
+		position: absolute;
+		bottom: 100%;
+		top: auto;
+		right: 0;
+		height: auto;
+		max-width: 100%;
+		box-sizing: border-box;
+		gap: 2px;
+		align-items: center;
+		padding: 1px 4px;
+		border: 1px solid var(--rb-line, #2a3140);
+		border-radius: 3px;
+		background: var(--rb-panel-raised, #0a0c0f);
+		opacity: 0;
+		/* The box hangs over the PREVIOUS row (bottom: 100%), so the box
+		 * ITSELF must never take a pointer: its padding, border and
+		 * background would swallow that row's hover and double-click exactly
+		 * the way the on-the-line version swallowed its own row's (Sol P1 on
+		 * pin fce26c7493b0). Only the buttons are hittable, and only while
+		 * revealed - so the pointer travelling up from .c-title to a deck
+		 * button passes THROUGH the box's dead area onto the row above
+		 * instead of latching onto it. Interactivity therefore lives on
+		 * .deck-btns button below, corridor grace and all. */
+		pointer-events: none;
+		z-index: 5;
+		transition: opacity 120ms ease;
 	}
+	/* The buttons carry BOTH the interactivity and the footprint, because over
+	 * the row above those are the same thing.
+	 * Hitbox: hiding pointer-events lags 100ms behind losing hover (pin
+	 * 27f889893790's corridor); showing has no such delay.
+	 * Size: the global `button` rule (padding 0.4rem 0.9rem) made a
+	 * single-digit target 37px wide - measured, the whole box came to 220px,
+	 * the ENTIRE width of the title column, and 32px tall against a 22px row,
+	 * so a selected row blanked its neighbour's whole title cell. Sized to the
+	 * row instead, the cluster keeps to that cell's right-hand side, clear of
+	 * its midpoint (the point a click on that row uses), and the box is
+	 * shorter than one row so it cannot reach past its immediate neighbour
+	 * into the header. */
 	.deck-btns button {
-		width: 16px;
+		pointer-events: none;
+		transition: pointer-events 0s 100ms;
+		padding: 0 4px;
+		min-width: 16px;
 		height: 16px;
-		padding: 0;
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		color: var(--rb-text);
-		font-size: 9px;
 		line-height: 1;
-		cursor: pointer;
+		font-size: 10px;
+		border-radius: 2px;
 	}
-	.deck-btns button:hover {
-		background: var(--rb-accent);
+	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns,
+	.deck-btns:hover,
+	.deck-btns:focus-within {
+		opacity: 1;
+		transition-delay: 0s;
+	}
+	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns button,
+	.deck-btns:hover button,
+	.deck-btns:focus-within button {
+		pointer-events: auto;
+		transition-delay: 0s;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		/* Pin 27f889893790's corridor grace (pointer-events lagging 100ms
+		 * behind hover) must survive reduced motion - it is not decorative,
+		 * it is what lets the mouse travel .c-art/.c-title -> deck button
+		 * without the box going inert underfoot. Only the opacity fade is a
+		 * pure animation; disable that alone, never the whole transition. */
+		.deck-btns {
+			transition: opacity 0s;
+		}
+		.deck-btns button {
+			transition: pointer-events 0s 100ms;
+		}
+	}
+	.deck-btns-title {
+		font-size: 8px;
+		color: var(--rb-text-dim);
+		margin-right: 2px;
+		white-space: nowrap;
+	}
+	/* Per-deck state on the quick-load targets, per the pin: dim by default
+	   (empty deck = blank, no extra class), yellow border while that deck is
+	   master, the shared loading-wheel spinner while a command for that deck
+	   is in flight, slightly grey once that deck already holds THIS row's
+	   track. Numerals stay white throughout so they read against every
+	   state. */
+	.deck-btns button.deck-target {
 		color: #fff;
+		opacity: 0.55;
+	}
+	.deck-btns button.deck-target.loaded-target {
+		opacity: 0.75;
+		background: color-mix(in srgb, var(--rb-panel-raised) 60%, #000 20%);
+	}
+	.deck-btns button.deck-target.master-target {
+		opacity: 1;
+		border-color: var(--rb-yellow, #e8c13a);
+	}
+	.deck-btns button.deck-target.loading-target {
+		opacity: 1;
+		color: var(--rb-accent);
 	}
 	.deck-btns button.remove-btn {
 		color: var(--rb-red);
 		font-size: 11px;
 		font-weight: 700;
+		line-height: 1;
+		cursor: pointer;
 	}
-	.deck-btns button.remove-btn:hover {
+	tbody tr:hover .row-remove {
+		display: block;
+	}
+	.row-remove:hover {
 		background: var(--rb-red);
 		color: #fff;
 	}
@@ -1886,12 +2342,29 @@
 		text-align: center;
 		color: var(--rb-text-dim);
 	}
+	.filter-bypass-note {
+		margin: 0;
+		padding: 3px 8px;
+		border-top: 1px solid var(--rb-border);
+		color: var(--rb-orange);
+		font-size: var(--rb-fs-label);
+	}
+	/* Declared height, not font-metric height: `.tt-root`'s min-height floor
+	 * and `+page.svelte`'s library reservation both have to add this exact
+	 * number, and a box whose height depends on the rendered line box cannot
+	 * be added to a static budget (PR #1007 discussion r3923591731).
+	 * border-box so the 1px border and 2px padding are inside the 17px. */
 	.truncated-note {
 		flex: none;
+		box-sizing: border-box;
+		height: var(--tt-truncation-note-h);
 		padding: 2px 8px;
 		border-top: 1px solid var(--rb-border);
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.load-confirm {

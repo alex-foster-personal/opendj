@@ -96,6 +96,25 @@ function _nearestBeatIndex(beats: readonly AnlzBeat[], positionSec: number): num
 	return earlierDistance <= laterDistance ? earlierIndex : laterIndex;
 }
 
+/**
+ * Return a stored loop's length only when both endpoints are exact PQTZ beat
+ * timestamps. Rekordbox BeatLoopSize is vendor metadata that can be packed,
+ * so it is deliberately not an input to this calculation.
+ */
+export function pqtzLoopBeatCount(
+	beats: readonly Pick<AnlzBeat, 't'>[],
+	inMs: number,
+	outMs: number
+): number | null {
+	if (!Number.isFinite(inMs) || !Number.isFinite(outMs) || outMs <= inMs) return null;
+	const startSec = inMs / 1000;
+	const endSec = outMs / 1000;
+	const startIndex = beats.findIndex((beat) => Math.abs(beat.t - startSec) < 1e-9);
+	const endIndex = beats.findIndex((beat) => Math.abs(beat.t - endSec) < 1e-9);
+	const count = endIndex - startIndex;
+	return startIndex >= 0 && endIndex > startIndex ? count : null;
+}
+
 function _enclosingBeatIndex(
 	beats: readonly AnlzBeat[],
 	positionSec: number,
@@ -329,6 +348,100 @@ export function quantizeToNearestBeat(
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionSec', positionSec);
 	return beats[_nearestBeatIndex(beats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the nearest real PQTZ bar downbeat (n === 1).
+ *
+ * BeatSyncMax stores hot cues on bars, rather than merely on the nearest beat:
+ * a hand-set cue must be phase-safe before a later synchronized launch can
+ * use it. Ties are stable toward the earlier downbeat, matching ordinary
+ * quantization.
+ */
+export function quantizeToNearestDownbeat(
+	beats: readonly AnlzBeat[],
+	positionSec: number
+): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the nearest grid line for the DECK's selected
+ * quantize grid (pin a67bafbfc4b0): every beat (1), every bar downbeat (4,
+ * assumed 4/4 - same set `quantizeToNearestDownbeat` snaps to), or every
+ * OTHER bar downbeat (8 - a 2-bar grid). 'phase' never reaches here: it is
+ * rejected in performance-ipc._dispatchUnknown before it can become a
+ * setting change, so this function's grid parameter excludes it entirely.
+ *
+ * `validateBeatGrid` enforces an unbroken n=1,2,3,4 cadence with no gaps, so
+ * every downbeat is exactly 4 real beats after the last: the 2-bar grid's
+ * `index % 2 === 0` IS the musical bar parity here, not merely array order,
+ * because the schema forbids a bar going missing mid-grid.
+ *
+ * A grid with no downbeat at all (0 or 1 detected - a track with sparse or
+ * failed downbeat detection) degrades to the nearest available beat, or to
+ * that single downbeat, rather than throwing: an approximate grid line beats
+ * refusing to seek/loop at all.
+ */
+export function quantizeToNearestGridBeat(
+	beats: readonly AnlzBeat[],
+	positionSec: number,
+	gridBeats: 1 | 4 | 8
+): number {
+	if (gridBeats === 1) return quantizeToNearestBeat(beats, positionSec);
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) return quantizeToNearestBeat(beats, positionSec);
+	if (gridBeats === 4 || downbeats.length === 1) {
+		return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
+	}
+	const twoBarBeats = downbeats.filter((_beat, index) => index % 2 === 0);
+	return twoBarBeats[_nearestBeatIndex(twoBarBeats, positionSec)].t;
+}
+
+/**
+ * Return the exact time of the next real PQTZ bar downbeat at or after
+ * `positionSec` - the moment a BeatSyncMax hot-cue TRIGGER (#884) defers to,
+ * rather than the nearest one SAVE (above) snaps to. Once the grid runs out
+ * (`positionSec` past the last downbeat, near track end) there is no future
+ * phase-locked moment left, so this returns `positionSec` itself: fire now.
+ */
+export function nextDownbeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: number): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	const downbeats = beats.filter((beat) => beat.n === 1);
+	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	const index = _firstBeatAtOrAfter(downbeats, positionSec);
+	return index < downbeats.length ? downbeats[index].t : positionSec;
+}
+
+export type HotCueTriggerPlan = { kind: 'immediate' } | { kind: 'armed'; armAtPositionSec: number };
+
+/**
+ * Decide whether a hot-cue TRIGGER (#884) jumps immediately or waits for the
+ * deck's own next downbeat.
+ *
+ * BeatSyncMax only protects an audible transition already in progress, so a
+ * stopped deck (nothing audible to protect) and a positionSec past an engaged
+ * loop's own already-tight window both jump immediately regardless of the
+ * preference. Cross-deck follower re-anchoring (the OTHER meaning of
+ * BeatSyncMax, for seek) is out of scope here - this is self-referential to
+ * the triggering deck's own grid only.
+ */
+export function planHotCueTrigger(
+	beatSyncMax: boolean,
+	playing: boolean,
+	loopEngaged: boolean,
+	positionSec: number,
+	beats: readonly AnlzBeat[]
+): HotCueTriggerPlan {
+	if (!beatSyncMax || !playing || loopEngaged) return { kind: 'immediate' };
+	return { kind: 'armed', armAtPositionSec: nextDownbeatAtOrAfter(beats, positionSec) };
 }
 
 /**

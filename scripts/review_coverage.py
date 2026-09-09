@@ -28,6 +28,18 @@ Current live state, both directions verified Tue 1 Sep 2026:
 Opposite verdicts on the same two reviewers is the control: a classifier stuck
 at either answer cannot produce it.
 
+Policy change, issue #1016 (Thu 3 Sep 2026): CodeRabbit is rate-limited on
+every PR and Devin's trial expired at #530, so both are gone from
+EXPECTED_REVIEWERS -- see the same issue's `.coderabbit.yaml` for CodeRabbit's
+disable and CLAUDE.md's "BOT REVIEW THREADS" clause for the matching policy
+text. Codex (`chatgpt-codex-connector`) replaces them as the sole expected
+reviewer. Codex posts NO check-run at all -- confirmed live on #1049 and #1051
+(Thu 3 Sep 2026): `gh pr checks` lists no "Codex" row even though
+`pulls/<n>/reviews` carries a real `COMMENTED` review from
+`chatgpt-codex-connector[bot]`. So Codex has no status line to be a weaker
+instrument than; its evidence artifact IS the only instrument, not a
+cross-check on one. See CHECKLESS_REVIEWERS below.
+
 Requirements (mini-PRD):
   / A reviewer whose check is absent, skipped, rate limited or credit-blocked
     reports NOT REVIEWED and fails the run.
@@ -39,22 +51,80 @@ Requirements (mini-PRD):
     always-MISS classifier satisfies every other row here
   / A failure to MEASURE (bad PR number, gh error) exits 3, never a verdict.
     [if] an API error prints a clean board [then broken]
+  / An artifact left against an earlier push does not certify the current one.
+    [if] a review's own `commit_id`, or a summary comment's own embedded SHA,
+    predates the PR's current head and still counts toward coverage
+    [then broken]
+
+Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
+Sep 2026): evidence used to count from ANY push, not just the current one.
+Codex reviews are per-push and routinely skip a head after a fix-push --
+documented live on #1009: Codex `Completed` on `884ca47`, then `aeea7de3`
+pushed, no new round, and this gate would have reported coverage PASS on
+`aeea7de3` off the stale `884ca47` round. `_evidence` now filters every
+artifact to the PR's `headRefOid` before it ever reaches a classifier, so a
+stale round reads as NO evidence rather than as coverage.
+
+Follow-up findings, issue #1016, PR #1053, same Codex round(s) that reviewed
+the head-tie fix above -- each row's own docstring carries the full story:
+  / Status Queued/In progress/Failed on the CURRENT head's row must not count
+    even though the Commit column already shows that SHA (thread r3927558602,
+    P1 BLOCKING): see `_body_is_at_head`.
+  / Every review-artifact endpoint must be paginated, not just page 1 (thread
+    r3927558605, P2 BLOCKING): see `scripts.review_gh._paginated_json_list`.
+  / Evidence sampled against one head is void if the PR moved while the
+    network calls ran (thread r3927877681, P1 BLOCKING): see
+    `_require_head_unchanged`.
+  / This module's own tests must exercise `_gh`'s real subprocess path, never
+    a lambda standing in for it (thread r3927877691, P1 BLOCKING): see
+    scripts/review_gh.py's docstring and tests/scripts/test_review_coverage_pagination.py.
+
+gh plumbing (`TriageError`, `_gh`, `_checks`, `_head_sha`, `_flatten_pages`,
+`_paginated_json_list`) lives in scripts/review_gh.py, split out so this
+module's own domain logic can grow the fixes above without crossing this
+repo's 600-line file-size ratchet -- see that module's docstring for why.
+`_body_is_at_head` joined it there Sun 6 Sep 2026 for the same reason (#T8).
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+try:
+    from scripts.review_gh import (
+        TriageError,
+        _body_is_at_head,
+        _checks,
+        _head_sha,
+        _paginated_json_list,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
+    raise
+from scripts.review_claude import CLAUDE, is_claude_artifact
+from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
+
 REPO = "maintainer/music-dj-tools"
 
-#: Reviewers the merge gate expects. A name absent from a PR's checks is NOT a
-#: pass; it is an unmeasured reviewer, which is the whole point of this tool.
-EXPECTED_REVIEWERS: tuple[str, ...] = ("CodeRabbit", "Devin Review")
+#: Reviewers the merge gate expects. A name absent from a PR's checks (or, for
+#: a CHECKLESS_REVIEWERS entry, absent from evidence) is NOT a pass; it is an
+#: unmeasured reviewer, which is the whole point of this tool. CodeRabbit and
+#: Devin were removed here by issue #1016 (Thu 3 Sep 2026): CodeRabbit is
+#: rate-limited on every PR and Devin's trial expired at #530, so neither
+#: produces a real review to require.
+#: Sol joined Thu 4 Sep 2026 (issue #1211): the Codex GitHub app ran out of
+#: quota at ~18:30Z and has posted a usage-limit notice instead of a review
+#: ever since. The three are ALTERNATIVES, not additional requirements -- see
+#: `review_sol.substitute_alternatives`, applied in `triage` below.
+#: Claude joined Sun 6 Sep 2026, authorized by the maintainer: by then BOTH ChatGPT
+#: subscription seats Sol can reach were walled too, with a stated reset of
+#: Thu 11 Sep, so every named reviewer was down at once and no new PR head
+#: could be covered by anything.
+EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL, CLAUDE)
 
 #: Substrings that mean the check reported success WITHOUT reviewing. Matched
 #: case-insensitively against the check's description.
@@ -81,9 +151,31 @@ OUTAGE_MARKERS: tuple[str, ...] = (
 #: -- a submitted review, an inline comment, or a review summary comment -- shows
 #: that something actually looked at the diff.
 REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
-    "CodeRabbit": ("coderabbitai",),
-    "Devin Review": ("devin-ai-integration",),
+    "Codex": ("chatgpt-codex-connector",),
 }
+
+#: Reviewers recognized by login PLUS an embedded marker rather than by a bot
+#: login alone, each with the matcher that owns that pair. A CLI lane posts
+#: through `gh` as the maintainer, so neither signal is sufficient by itself; the
+#: matchers live beside the markers they read (scripts/review_sol.py,
+#: scripts/review_claude.py) so a writer and its reader cannot drift apart.
+_MARKER_REVIEWERS: dict[str, Callable[[str, str, str], bool]] = {
+    SOL: is_sol_artifact,
+    CLAUDE: is_claude_artifact,
+}
+
+#: Reviewers that post NO check-run at all, ever -- they review by submitting a
+#: PR review (and/or inline comments) directly, so there is no status line to
+#: require or cross-check against. Codex is the confirmed case (see the module
+#: docstring): looking it up in `_checks()` always returns None, which the
+#: check-based path below reads as "no check reported", indistinguishable from
+#: a reviewer that never ran. For a name listed here, evidence is not a
+#: cross-check on a weaker status signal, it is the ONLY signal, so
+#: `classify_reviewer` skips the check lookup entirely rather than misreading
+#: its permanent absence as a failure.
+#: Sol and Claude post no check either: each is a CLI run whose only trace on
+#: the PR is the review it submits, so evidence is their sole instrument too.
+CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL, CLAUDE})
 
 #: Reviewers KNOWN to be unavailable, with the owner of restoring each. A gate
 #: that can never go green blocks all work, so a known-dead reviewer must not
@@ -101,33 +193,20 @@ REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
 #: designed, saying the exemption was now hiding a live reviewer, and the entry
 #: is deleted per its own remediation. Nothing about the outage is inferred
 #: here: the trigger was an artifact on a diff, not a status line.
+#:
+#: As of issue #1016 (Thu 3 Sep 2026) this dict is structurally empty, not
+#: just currently empty: `outage` is only ever set on the check-based path in
+#: `classify_reviewer`, and the sole entry in EXPECTED_REVIEWERS (Codex) is a
+#: CHECKLESS_REVIEWERS entry that never takes that path. It stays wired up for
+#: whichever future reviewer posts a check again.
 KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
-class TriageError(RuntimeError):
-    """Measurement failed. Never rendered as a verdict."""
-
-
-# ----- gh plumbing --------------------------------------------------------
-
-
-def _gh(args: list[str]) -> str:
-    proc = subprocess.run(
-        ["gh", *args], capture_output=True, text=True, check=False
-    )
-    if proc.returncode != 0:
-        raise TriageError(
-            f"gh {' '.join(args)} failed ({proc.returncode}): "
-            f"{proc.stderr.strip() or '<no stderr>'}"
-        )
-    return proc.stdout
-
-
-def _checks(pr: str) -> list[dict[str, str]]:
-    raw = _gh(["pr", "checks", pr, "--json", "name,bucket,state,description"])
-    if not raw.strip():
-        raise TriageError(f"gh returned an empty check list for PR {pr}")
-    return json.loads(raw)
+# gh plumbing (`TriageError`, `_gh`, `_checks`, `_head_sha`, `_flatten_pages`,
+# `_paginated_json_list`, `_body_is_at_head`) lives in scripts/review_gh.py;
+# `TriageError`, `_checks` and `_head_sha` are re-exported here (via the
+# import above) for this module's own use and for
+# scripts/review_thread_triage.py's `review_coverage.TriageError` reference.
 
 
 # ----- review artifacts ---------------------------------------------------
@@ -147,32 +226,77 @@ class ReviewerEvidence:
 
 
 def _matches(login: str, name: str) -> bool:
-    return any(stem in login.lower() for stem in REVIEWER_LOGINS.get(name, ()))
+    """Exact match on the normalized login, never a substring test.
+
+    issue #1016 P1 BLOCKING, thread r3929765931 (PR #1053, Thu 3 Sep 2026): a
+    substring check accepted `chatgpt-codex-connector-attacker` as Codex,
+    because `"chatgpt-codex-connector" in login.lower()` is true for any
+    login merely CONTAINING the trusted stem. On a public repo any commenter
+    could post a current-head `Completed` line under that name and pass
+    coverage without a real Codex review. Normalize the `[bot]` suffix and
+    require full equality, the same rule `review_thread_parse._is_bot` already
+    applies to its own bot-identity check.
+    """
+    return login.removesuffix("[bot]").lower() in REVIEWER_LOGINS.get(name, ())
 
 
-def _evidence(pr: str) -> dict[str, ReviewerEvidence]:
-    """Collect per-reviewer artifacts from the three places bots post."""
-    reviews = json.loads(_gh(["api", f"repos/{REPO}/pulls/{pr}/reviews"]))
-    inline = json.loads(_gh(["api", f"repos/{REPO}/pulls/{pr}/comments"]))
-    issue = json.loads(_gh(["api", f"repos/{REPO}/issues/{pr}/comments"]))
+def _collect_evidence(
+    name: str,
+    reviews: list[dict],
+    inline: list[dict],
+    issue_comments: list[dict],
+    head_sha: str,
+) -> ReviewerEvidence:
+    """Turn raw API-shaped payloads into evidence tied to the PR's CURRENT
+    head. Split out from `_evidence` as a pure step so the head-tie itself is
+    directly testable against real captured payload shapes, no network call
+    or mock required.
 
-    collected: dict[str, ReviewerEvidence] = {}
-    for name in EXPECTED_REVIEWERS:
-        bodies: list[str] = []
-        submitted = 0
-        for review in reviews:
-            if _matches((review.get("user") or {}).get("login", ""), name):
-                submitted += 1
-                if review.get("body"):
-                    bodies.append(review["body"])
-        comments = sum(
-            1 for c in inline if _matches((c.get("user") or {}).get("login", ""), name)
-        )
-        for comment in issue:
-            if _matches((comment.get("user") or {}).get("login", ""), name):
-                bodies.append(comment.get("body") or "")
-        collected[name] = ReviewerEvidence(submitted, comments, tuple(bodies))
-    return collected
+    Submitted reviews and inline review comments both carry `commit_id`, the
+    push each was left against, so those filter on plain equality. Issue
+    comments carry no such field, so they fall back to `_body_is_at_head`.
+    """
+    def wrote(payload: dict) -> bool:
+        """Did `name` write this artifact? Codex is known by its bot login;
+        the CLI lanes have no bot account and are known by login PLUS marker
+        (see scripts/review_sol.py for why neither half suffices alone)."""
+        login = (payload.get("user") or {}).get("login", "")
+        if matcher := _MARKER_REVIEWERS.get(name):
+            return matcher(login, payload.get("body") or "", head_sha)
+        return _matches(login, name)
+
+    bodies: list[str] = []
+    submitted = 0
+    for review in reviews:
+        if not wrote(review):
+            continue
+        if review.get("commit_id") != head_sha:
+            continue
+        submitted += 1
+        if review.get("body"):
+            bodies.append(review["body"])
+    comments = sum(1 for c in inline if wrote(c) and c.get("commit_id") == head_sha)
+    for comment in issue_comments:
+        if not wrote(comment):
+            continue
+        body = comment.get("body") or ""
+        # A lane marker already carries the head it reviewed, so `wrote` has
+        # done the head-tie `_body_is_at_head` does for Codex's summary table.
+        if name in _MARKER_REVIEWERS or _body_is_at_head(body, head_sha):
+            bodies.append(body)
+    return ReviewerEvidence(submitted, comments, tuple(bodies))
+
+
+def _evidence(pr: str, head_sha: str) -> dict[str, ReviewerEvidence]:
+    """Collect per-reviewer artifacts from the three places bots post, each
+    filtered to the PR's current head SHA before it reaches a classifier."""
+    reviews = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/reviews")
+    inline = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/comments")
+    issue = _paginated_json_list(f"repos/{REPO}/issues/{pr}/comments")
+    return {
+        name: _collect_evidence(name, reviews, inline, issue, head_sha)
+        for name in EXPECTED_REVIEWERS
+    }
 
 
 # ----- classification -----------------------------------------------------
@@ -188,12 +312,43 @@ class ReviewerVerdict:
     # must not apply to it: its findings can still arrive, and arriving after
     # a merge is exactly the disposition gap the gate exists to prevent.
     in_progress: bool = False
+    # The alternative reviewer that covered for this one, when this reviewer
+    # left nothing. Not folded into `reason`: the board prints `sub` off this
+    # field, so a covered row never reads as "ok" and claims a review that did
+    # not happen. See `review_sol.substitute_alternatives`.
+    substituted_by: str = ""
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
     # bodies makes it permanent and un-retractable. The exemption is a claim
     # about NOW, so it must rest on evidence from now.
     outage: bool = False
+
+
+def _classify_from_evidence(name: str, evidence: ReviewerEvidence | None) -> ReviewerVerdict:
+    """Classify a CHECKLESS_REVIEWERS entry: evidence is the only instrument.
+
+    There is no status line here to be the weaker signal, so this is not the
+    two-instrument cross-check `classify_reviewer` runs below -- zero
+    artifacts means nobody looked, full stop. It still scans bodies for the
+    NOT_REVIEWED_MARKERS vocabulary, on the same reasoning CodeRabbit's rate
+    limit lives in a comment rather than a status: a checkless reviewer that
+    ever reports its own skip in a comment body must not read as a pass.
+    """
+    if evidence is None or evidence.artifact_count == 0:
+        return ReviewerVerdict(
+            name,
+            False,
+            "left NO review artifact (0 submitted reviews, 0 inline comments, "
+            "0 summary comments); this reviewer posts no status check to fall "
+            "back on",
+        )
+    for body in evidence.bodies:
+        lowered_body = body.lower()
+        for marker in NOT_REVIEWED_MARKERS:
+            if marker in lowered_body:
+                return ReviewerVerdict(name, False, marker)
+    return ReviewerVerdict(name, True, f"{evidence.artifact_count} artifact(s) found")
 
 
 def classify_reviewer(
@@ -208,7 +363,15 @@ def classify_reviewer(
     observed live on #682. So a clean status is necessary and not sufficient:
     an ARTIFACT must exist too. Pass ``evidence=None`` only when artifacts were
     deliberately not collected, e.g. a unit test of the status layer alone.
+
+    A name in CHECKLESS_REVIEWERS never has a status to begin with, so it skips
+    straight to the evidence-only path: reading its permanent check-absence as
+    the failure "no check reported" would be indistinguishable from a reviewer
+    that genuinely never ran, and it isn't the same thing.
     """
+    if name in CHECKLESS_REVIEWERS:
+        return _classify_from_evidence(name, evidence)
+
     match = next((c for c in checks if c.get("name") == name), None)
     if match is None:
         return ReviewerVerdict(name, False, "no check reported on this PR")
@@ -312,19 +475,35 @@ def partition_verdicts(
     return unavailable, unreviewed, revived
 
 
+def _require_head_unchanged(sampled: str, current: str) -> None:
+    """Evidence gathered against `sampled` is void if the PR moved to
+    `current` while the three network calls ran (issue #1016 P1 BLOCKING,
+    thread r3927877681): `head_sha` was sampled once, before those
+    round-trips, with no re-check after. Raising here keeps this a failed
+    MEASUREMENT, never a rendered verdict, for a race no retry can undo.
+    """
+    if sampled != current:
+        raise TriageError(
+            f"PR head moved from {sampled} to {current} while collecting "
+            "review evidence; re-run against the new head"
+        )
+
+
 def triage(pr: str) -> int:
     checks = _checks(pr)
-    evidence = _evidence(pr)
-    verdicts = [
-        classify_reviewer(name, checks, evidence.get(name))
-        for name in EXPECTED_REVIEWERS
-    ]
+    head_sha = _head_sha(pr)
+    evidence = _evidence(pr, head_sha)
+    _require_head_unchanged(head_sha, _head_sha(pr))
+    verdicts = substitute_alternatives(
+        [classify_reviewer(name, checks, evidence.get(name)) for name in EXPECTED_REVIEWERS],
+        EXPECTED_REVIEWERS,
+    )
 
-    print(f"[review-coverage] PR #{pr}")
+    print(f"[review-coverage] PR #{pr} @ head {head_sha}")
     print()
     print("  reviewer coverage")
     for verdict in verdicts:
-        mark = "ok  " if verdict.reviewed else "MISS"
+        mark = "MISS" if not verdict.reviewed else ("sub " if verdict.substituted_by else "ok  ")
         found = evidence.get(verdict.name)
         artifacts = f" [{found.artifact_count} artifact(s)]" if found else ""
         print(f"    {mark} {verdict.name}: {verdict.reason}{artifacts}")
@@ -373,8 +552,13 @@ def triage(pr: str) -> int:
         return 1
 
     covered = len(verdicts) - len(unavailable)
+    # Substitutions are counted OUT of "reviewed" rather than folded into it:
+    # "all 2 reviewed" on a PR only Sol looked at is the same class of lie the
+    # artifact requirement exists to stop.
+    subbed = sum(1 for v in verdicts if v.substituted_by)
     print(
-        f"[review-coverage] PASS: all {covered} AVAILABLE reviewer(s) reviewed"
+        f"[review-coverage] PASS: {covered - subbed} of {covered} AVAILABLE reviewer(s) reviewed"
+        + (f", {subbed} covered by an alternative" if subbed else "")
         + (f"; {len(unavailable)} known-unavailable." if unavailable else ".")
     )
     return 0

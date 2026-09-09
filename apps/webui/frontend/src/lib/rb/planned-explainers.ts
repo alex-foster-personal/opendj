@@ -34,7 +34,6 @@ export const NOT_BUILT_MARK = 'Not built yet';
  * carry.
  */
 export const PLANNED_CONTROLS: Record<string, string> = {
-	'mode-dropdown': 'PERFORMANCE mode - switches the whole window between rekordbox-style modes - EXPORT for library prep, PERFORMANCE for playing. Only PERFORMANCE exists today, which is why it is fixed.',
 	'list-view': 'List view - shows the browser as one compact line per track with no preview waveform, so more rows fit on screen. The caret picks which columns.',
 	fx: 'FX panel - opens the beat-effects rack - delay, echo, reverb, roll - synced to the deck tempo. Separate from the per-channel Sound Color FX dial on the mixer.',
 	'split-view': 'Split view - splits the window so the browser and the decks each get half, instead of the decks owning the top and the browser the bottom.',
@@ -47,6 +46,7 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	pad: 'PAD - labels the performance-pad row: hot cues, beat loops, beat jump and sampler banks for the focused deck.',
 	information: 'Track information - opens the full record for the focused deck - every tag, the analysis provenance, play history and the file path.',
 	'free-badge': 'Free plan - is the licence tier this copy runs on. Everything on this screen is included; the badge marks where paid tiers will differ once there are any.',
+	'autoplay-two-track': 'Two-track AutoPlay - will match and mix a second automatic track alongside the primary handoff, with its own evolving selection rules.'
 };
 
 /** The tooltip for a planned control. Throws on an unknown id: an empty

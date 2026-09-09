@@ -233,3 +233,5 @@ def test_adding_a_third_model_store_needs_only_the_roots_tuple(
 
     assert bundle.layout == "roformer2"
     assert tuple(bundle.files) == stem_artifacts.ROFORMER_PARTS
+
+pytestmark = pytest.mark.rb_parity

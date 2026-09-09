@@ -18,7 +18,7 @@ primary checkout's ``data/``. This module builds a throwaway one instead:
 What that honestly leaves OUT is named rather than faked: these tracks have no
 rekordbox vendor mapping, so ``/anlz`` serves a payload whose beatgrid, cues
 and phrases are all empty. Since Tue 1 Sep 2026 its WAVEFORM is not: those
-peaks come from our own ffmpeg decode of the fixture audio (PARITY-03), so a
+peaks come from our own ffmpeg decode of the fixture audio (PARITY-08), so a
 lane drawn here describes the real tone. The only in-repo beatgrid producer
 for arbitrary audio is ``apps.analysis`` (librosa+madmom), which is
 deliberately absent from the repo venv, so nothing here invents a grid.
@@ -38,8 +38,8 @@ regenerates a stale fixture dir instead of silently measuring old audio.
 
 Usage::
 
-    uv run --no-sync python apps/webui/frontend/tests/e2e/support/deckload_fixture.py \
-        --data-dir /abs/path/to/tests/e2e/fixtures/deckload-data
+    uv run --no-sync python -m apps.webui.frontend.tests.e2e.support.deckload_fixture \
+        --data-dir /abs/path/to/tests/e2e/fixtures/deckload-data --seed-playlists
 
 Acceptance tests:
 
@@ -48,6 +48,8 @@ Acceptance tests:
 - [if] --data-dir is relative [then] it exits non-zero before writing anything.
 - [if] the dir was built by an older FIXTURE_REVISION [then] the audio and the
   state db are wiped and rebuilt, never reused.
+- [if] --seed-playlists is set [then] one populated and one empty playlist are
+  written through StateWriter, never direct SQLite inserts.
 """
 
 from __future__ import annotations
@@ -64,11 +66,14 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared.state import db as state_db
+from apps.shared.state.writer import StateWriter
+
 REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 2
+FIXTURE_REVISION: int = 3
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100
@@ -112,6 +117,9 @@ FIXTURE_TRACKS: tuple[FixtureTrack, ...] = (
 
 AUDIO_SUBDIR: str = "fixture-audio"
 
+POPULATED_PLAYLIST_ID: str = "e2e-fixture-populated"
+EMPTY_PLAYLIST_ID: str = "e2e-fixture-empty"
+
 
 # ----- audio generation ------------------------------------------------------
 def _pulse_envelope(sample_index: int, beat_period_samples: float) -> float:
@@ -130,7 +138,7 @@ def write_tone_and_pulse_wav(path: Path, track: FixtureTrack) -> int:
     a PULSE_HZ transient on every beat (so the file behaves like a track with
     onsets rather than a test tone).
     """
-    frame_count = int(round(track.seconds * SAMPLE_RATE_HZ))
+    frame_count = round(track.seconds * SAMPLE_RATE_HZ)
     beat_period_samples = SAMPLE_RATE_HZ * 60.0 / track.bpm
     peak = float(2**15 - 1)
     tone_step = 2.0 * math.pi * TONE_HZ / SAMPLE_RATE_HZ
@@ -165,7 +173,7 @@ def ensure_audio(audio_dir: Path) -> list[Path]:
     written: list[Path] = []
     for track in FIXTURE_TRACKS:
         path = audio_dir / track.filename
-        expected = int(round(track.seconds * SAMPLE_RATE_HZ))
+        expected = round(track.seconds * SAMPLE_RATE_HZ)
         if path.is_file() and _wav_frame_count(path) == expected:
             written.append(path)
             continue
@@ -199,7 +207,8 @@ def _state_cli(data_dir: Path, *args: str) -> None:
         *args,
     ]
     result = subprocess.run(
-        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True
+        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True,
+        check=False,
     )
     if result.returncode != 0:
         sys.stderr.write(result.stdout)
@@ -241,7 +250,38 @@ def _discard_stale_revision(data_dir: Path) -> None:
     marker.write_text(f"{FIXTURE_REVISION}\n", encoding="utf-8")
 
 
-def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
+def _seed_playlists(
+    state_db_path: Path, rows: list[tuple[str, str | None, str | None]]
+) -> None:
+    """Write browser-addressable populated and empty playlists through StateWriter."""
+    stable_ids = [stable_id for stable_id, _title, _file_path in rows]
+    if len(stable_ids) < 2:
+        raise SystemExit("[ERROR] playlist fixture needs at least two ingested tracks")
+    conn = state_db.open_rw(state_db_path)
+    writer = StateWriter(conn, actor="e2e-deckload-fixture")
+    try:
+        writer.insert_playlist(
+            playlist_id=POPULATED_PLAYLIST_ID,
+            name="E2E Fixture Set",
+            vendor="fixture",
+            vendor_pl_id=POPULATED_PLAYLIST_ID,
+        )
+        writer.set_playlist_memberships(POPULATED_PLAYLIST_ID, stable_ids)
+        writer.insert_playlist(
+            playlist_id=EMPTY_PLAYLIST_ID,
+            name="E2E Empty Set",
+            vendor="fixture",
+            vendor_pl_id=EMPTY_PLAYLIST_ID,
+        )
+        writer.set_playlist_memberships(EMPTY_PLAYLIST_ID, [])
+    finally:
+        writer.close()
+        conn.close()
+
+
+def build(
+    data_dir: Path, *, seed_playlists: bool = False
+) -> list[tuple[str, str | None, str | None]]:
     """Generate the audio, run the real ingest, verify the result."""
     _discard_stale_revision(data_dir)
     audio_dir = data_dir / AUDIO_SUBDIR
@@ -264,6 +304,8 @@ def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
             raise SystemExit(
                 f"[ERROR] track {stable_id} has no readable file_path: {file_path!r}"
             )
+    if seed_playlists:
+        _seed_playlists(state_db, rows)
     return rows
 
 
@@ -277,12 +319,17 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="absolute path of the throwaway fixture data dir",
     )
+    parser.add_argument(
+        "--seed-playlists",
+        action="store_true",
+        help="seed browser-addressable populated and empty playlists",
+    )
     args = parser.parse_args(argv)
     data_dir = Path(args.data_dir).expanduser()
     if not data_dir.is_absolute():
         raise SystemExit(f"[ERROR] --data-dir must be absolute, got {args.data_dir!r}")
     data_dir.mkdir(parents=True, exist_ok=True)
-    rows = build(data_dir)
+    rows = build(data_dir, seed_playlists=args.seed_playlists)
     print(f"[OK] fixture library at {data_dir} with {len(rows)} track(s):")
     for stable_id, title, file_path in rows:
         print(f"  {stable_id}  {title!r}  {file_path}")

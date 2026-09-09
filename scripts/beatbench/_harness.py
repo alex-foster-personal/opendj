@@ -26,16 +26,58 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import traceback
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+# A manifest whose fixture paths are written relative to the manifest FILE
+# rather than to the caller's working directory says so with this key. See
+# `resolve_fixture_paths`.
+PATHS_RELATIVE_TO_MANIFEST = "manifest"
+
 # An analyzer takes a wav path and returns (beats, downbeats, native_bpm).
 # downbeats is None when the analyzer has no downbeat concept at all, which is
 # reported as N/A rather than as a failure to find any.
 Analyzer = Callable[[str], tuple[Sequence[float], Sequence[float] | None, float | None]]
+
+
+def resolve_fixture_paths(manifest: dict[str, Any], manifest_path: str) -> list[dict[str, Any]]:
+    """Fixtures whose `wav` a candidate can actually open, whatever the cwd is.
+
+    THE TWO MANIFEST SHAPES DISAGREE ABOUT WHAT A RELATIVE PATH MEANS, so the
+    manifest has to say which it is rather than the reader guessing. A BENCH
+    manifest written by `fixtures.py` stores the path the builder was given,
+    which is relative to the REPO ROOT (`.tmp/beatbench-r1/wav/...` in the
+    committed round-1 set), and every existing runner opens it from there. A
+    portable BUNDLE stores `wav/<stable_id>.wav`, relative to ITSELF, because a
+    bundle that named the machine it was built on would not be portable.
+
+    Reading both as cwd-relative is what broke: `bundle.py --verify` passes,
+    because it joins against the bundle directory, while a candidate run from
+    anywhere else records file-not-found on every track and still writes a
+    complete-looking artifact (Codex P2 BLOCKING on PR #1514).
+
+    So a bundle DECLARES `paths_relative_to: manifest` and gets its paths
+    joined against the manifest's own directory; a manifest that declares
+    nothing keeps the cwd-relative behavior it has today, unchanged. An
+    unrecognised value is refused rather than defaulted, because guessing here
+    is exactly the failure above. Absolute paths pass through `os.path.join`
+    untouched, so applying this twice is harmless.
+    """
+    fixtures = manifest["fixtures"]
+    declared = manifest.get("paths_relative_to")
+    if declared is None:
+        return fixtures
+    if declared != PATHS_RELATIVE_TO_MANIFEST:
+        raise SystemExit(
+            f"[beatbench] {manifest_path} declares paths_relative_to "
+            f"{declared!r}, which this harness does not know how to resolve"
+        )
+    base = os.path.dirname(os.path.abspath(manifest_path))
+    return [{**f, "wav": os.path.join(base, f["wav"])} for f in fixtures]
 
 
 def build_argparser(description: str, default_workers: int) -> argparse.ArgumentParser:
@@ -60,7 +102,7 @@ def run(
     """Run one candidate across the fixture set and write its raw beat times."""
     with open(args.fixtures, encoding="utf-8") as fh:
         manifest = json.load(fh)
-    fixtures = manifest["fixtures"]
+    fixtures = resolve_fixture_paths(manifest, args.fixtures)
     if args.limit:
         fixtures = fixtures[: args.limit]
 

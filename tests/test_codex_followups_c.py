@@ -149,3 +149,5 @@ def test_p11_f03_toast_captures_own_id() -> None:
     )
     # After the fix we capture the id in a local `id` const.
     assert "t.id === id" in text
+
+pytestmark = pytest.mark.rb_parity

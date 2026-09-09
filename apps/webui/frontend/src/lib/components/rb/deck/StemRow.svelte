@@ -54,7 +54,7 @@
 	}
 </script>
 
-<div class="stems" data-stems-status={deck.stems.status} title={statusTip}>
+	<div class="stems" role="group" aria-label={`stem controls deck ${deck.deck_id}`} data-stems-status={deck.stems.status} title={statusTip}>
 	<span class="mute">MUTE</span>
 	{#each STEMS as stem (stem.id)}
 		<button
@@ -64,7 +64,8 @@
 			class:unavailable={unavailable(stem.id)}
 			disabled={!ready || pending || unavailable(stem.id)}
 			title={chipTip(stem.id, stem.label)}
-			aria-label={`${stem.label} stem mute; Shift+click solo`}
+			aria-label={`${stem.label} stem mute deck ${deck.deck_id}; Shift+click solo`}
+			data-testid={`stem-${stem.id}-deck-${deck.deck_id}`}
 			data-unavailable={unavailable(stem.id)}
 			aria-pressed={deck.stems.controls[stem.id].muted}
 			data-performance-control={`stem-${stem.id}`}

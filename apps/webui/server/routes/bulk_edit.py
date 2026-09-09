@@ -97,7 +97,7 @@ def bulk_edit(
     results = [
         BulkEditRowOut(
             stable_id=track.stable_id,
-            etag=compute_etag(track.stable_id, track.updated_at),
+            etag=compute_etag(track.stable_id, track.updated_at, track.selection_tag),
         )
         for track in tracks
     ]
