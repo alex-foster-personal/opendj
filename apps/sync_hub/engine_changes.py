@@ -26,7 +26,7 @@ from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol, sync_set
 from apps.sync_hub.engine_common import (
-    _APPLY_ORDER,
+    apply_rank,
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
     _pk_predicate,
@@ -211,7 +211,7 @@ def _changelog_rows(
     one place, and it holds even for a writer that forgot to bump
     ``playlists.updated_at`` (ADR 08 point 8b, still an open question).
 
-    Rows are returned in ``_APPLY_ORDER`` (parents before children), which
+    Rows are returned in ``apply_rank`` order (parents before children), which
     the batching in :mod:`apps.sync_hub.client` depends on: a chunk boundary
     must never put a child row in an earlier request than its parent.
 
@@ -245,14 +245,13 @@ def _changelog_rows(
     # its dependants are decided. The sort at the end orders what SURVIVES;
     # this one orders what is DECIDED, and the two are not the same pass.
     for table_name, row_pk in sorted(
-        latest, key=lambda entry: (_APPLY_ORDER[entry[0]], entry[1])
+        latest, key=lambda entry: (apply_rank(entry[0], source=changelog), entry[1])
     ):
-        spec = SPEC_BY_TABLE.get(table_name)
-        if spec is None:
-            raise SyncApplyError(
-                f"{changelog} references table {table_name!r}, which is not "
-                f"in the sync set"
-            )
+        # apply_rank has already refused any name outside the sync set, and
+        # both indexes are comprehensions over the same SYNC_TABLES, so this
+        # lookup cannot miss. The invariant is pinned by
+        # test_the_rank_index_and_the_spec_index_agree_on_the_sync_set.
+        spec = SPEC_BY_TABLE[table_name]
         pk = protocol.decode_row_pk(row_pk)
         columns = protocol.table_columns(conn, table_name)
         row = conn.execute(
@@ -288,7 +287,9 @@ def _changelog_rows(
             held_rows.append(replace(change, seq=latest[(table_name, row_pk)]))
             continue
         changes.append(change)
-    changes.sort(key=lambda change: (_APPLY_ORDER[change.table], change.pk))
+    changes.sort(
+        key=lambda change: (apply_rank(change.table, source=changelog), change.pk)
+    )
     return Offer(rows=changes, held=tuple(held_rows)), skipped
 
 

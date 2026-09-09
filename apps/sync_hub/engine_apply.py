@@ -16,7 +16,7 @@ from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol
 from apps.sync_hub.engine_common import (
-    _APPLY_ORDER,
+    apply_rank,
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
     SyncSchemaMismatch,
@@ -333,15 +333,17 @@ def _apply(
     # stamp naming the same instant -- hub_changelog.received_at would look a
     # fraction of a second older than it really is.
     stamp = received_at or sync_stamp.canonical_now()
-    ordered = sorted(changes, key=lambda change: _APPLY_ORDER[change.table])
+    ordered = sorted(
+        changes,
+        key=lambda change: apply_rank(change.table, source="the offered batch"),
+    )
     accepted = 0
     rejected = 0
     quarantined = 0
     faults: list[protocol.StampFault] = []
     for change in ordered:
-        spec = SPEC_BY_TABLE.get(change.table)
-        if spec is None:
-            raise SyncApplyError(f"{change.table!r} is not in the sync set")
+        # apply_rank refused any out-of-set name during the sort above.
+        spec = SPEC_BY_TABLE[change.table]
         columns, values = _checked_values(conn, change.table, spec, change)
         verdict = _resolve_against_stored(conn, spec, change)
         if verdict.faults:
