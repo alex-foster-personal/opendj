@@ -18,6 +18,10 @@
  *     only `beatgrid` makes "adopts tempo_changes and performance_hints
  *     alongside beatgrid, and drops them on a switch back" fail in both
  *     directions (Codex P2 BLOCKING, PR #1587).
+ *   - adoptAuthoritativeGrid skip decision: reverting the short-circuit to
+ *     bare `sameBeatgrid` makes "does not skip when beats are unchanged but
+ *     source/status changed" fail (Codex P2 BLOCKING, PR #1587, second
+ *     round finding).
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -46,6 +50,10 @@ function _beats(count, bpm = 120) {
 		bpm,
 		t: index * (60 / bpm)
 	}));
+}
+
+function _tempoChange(atS, bpmBefore, bpmAfter, confidence = 0.9) {
+	return { at_s: atS, bpm_before: bpmBefore, bpm_after: bpmAfter, confidence };
 }
 
 function _anlz(stableId, beats) {
@@ -256,10 +264,10 @@ test('adoptAuthoritativeGrid carries tempo_changes and performance_hints alongsi
 	// beatgrid stranding the deck's stale (or absent) tempo_changes.
 	const h = _harness();
 	h.stableIds[1] = 'sid-a';
-	h.anlz[1] = { ..._anlz('sid-a', _beats(8, 128)), tempo_changes: [{ t: 0, bpm: 128 }] };
+	h.anlz[1] = { ..._anlz('sid-a', _beats(8, 128)), tempo_changes: [_tempoChange(0, 120, 128)] };
 	const ownGrid = {
 		..._anlz('sid-a', _beats(16, 124)),
-		tempo_changes: [{ t: 0, bpm: 124 }, { t: 10, bpm: 126 }],
+		tempo_changes: [_tempoChange(0, 120, 124), _tempoChange(10, 124, 126)],
 		performance_hints: { dynamic_tempo: true }
 	};
 	h.guards.adoptAuthoritativeGrid('sid-a', ownGrid);
@@ -282,6 +290,27 @@ test('adoptAuthoritativeGrid carries tempo_changes and performance_hints alongsi
 		'a deck switched back to rekordbox must not retain stale own-only dynamic tempo metadata'
 	);
 	assert.equal(h.anlz[1].performance_hints, undefined);
+});
+
+test('adoptAuthoritativeGrid does not skip when beats are unchanged but source/status changed', async () => {
+	// An empty rekordbox grid and an own `missing` result are both `beats:
+	// []`, so a beats-only equality check reads them as identical - exactly
+	// the case Codex's follow-up finding names (PR #1587).
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = { ..._anlz('sid-a', []), beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] } };
+	const ownMissing = {
+		..._anlz('sid-a', []),
+		beatgrid: { source: 'own', beat_count: 0, beats: [], status: 'missing', reason: null }
+	};
+	h.guards.adoptAuthoritativeGrid('sid-a', ownMissing);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		h.anlz[1].beatgrid.source,
+		'own',
+		'identical (empty) beats arrays must not mask a real source/status transition'
+	);
+	assert.equal(h.anlz[1].beatgrid.status, 'missing');
 });
 
 test('adoptAuthoritativeGrid does not republish a grid the deck already holds', async () => {

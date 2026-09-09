@@ -95,6 +95,25 @@ function _withSourceDependentAnlzFields(base: AnlzData, data: AnlzData): AnlzDat
 	return merged;
 }
 
+/** True only when NONE of the source-dependent fields differ, so adoption can
+ * genuinely skip a no-op. `sameBeatgrid` alone compares `beats` only, so an
+ * empty Rekordbox grid and an own `missing`/`failed` result (also `beats:
+ * []`) read as identical to it even though `source`/`status`/`reason` flip -
+ * skipping the merge on that alone strands the wrong source label and any
+ * changed `tempo_changes`/`performance_hints` too (Codex P2 BLOCKING, PR
+ * #1587, fresh finding after the merge helper above landed). */
+function _sameSourceDependentAnlzFields(current: AnlzData, data: AnlzData): boolean {
+	return (
+		sameBeatgrid(current.beatgrid, data.beatgrid) &&
+		current.beatgrid.source === data.beatgrid.source &&
+		current.beatgrid.status === data.beatgrid.status &&
+		current.beatgrid.reason === data.beatgrid.reason &&
+		current.beatgrid.bpm === data.beatgrid.bpm &&
+		JSON.stringify(current.tempo_changes) === JSON.stringify(data.tempo_changes) &&
+		JSON.stringify(current.performance_hints) === JSON.stringify(data.performance_hints)
+	);
+}
+
 export interface BeatgridResyncGuards {
 	/** PARITY-10: fires after load() released [deck]; reclaims it (or wider, see resyncSettlementNeedsFullBarrier) and publishes inside that reclaimed scope - retry/pending/abandon logic lives in beatgrid-resync.ts. isStale is re-asked here, not just inside publish(), so a stale settlement skips reconciliation entirely rather than acting on a replacement track. Full widen/[deck]-occupancy rationale: performance-ipc.svelte.ts's installScopedSyncRunner (r3913492572 / r3913693383 / r3914267990).
 	 *
@@ -290,7 +309,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 			for (const deck of ports.deckIds) {
 				if (deckStableId(deck) !== stableId) continue;
 				const current = deckAnlz(deck);
-				if (current === null || sameBeatgrid(current.beatgrid, data.beatgrid)) continue;
+				if (current === null || _sameSourceDependentAnlzFields(current, data)) continue;
 				const runtime = deckRuntime(deck);
 				const token = deckLoadToken(deck);
 				const isStale = (): boolean =>
