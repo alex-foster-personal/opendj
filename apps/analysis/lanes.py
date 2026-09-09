@@ -327,6 +327,27 @@ def validate_lane_payload(lane: str, payload: Mapping[str, Any]) -> None:
     validator(payload)
 
 
+def _check_lane_confidence(lane: str, confidence: float | None) -> None:
+    """`None` or a finite number.
+
+    It is copied verbatim into ``analysis_projection.confidence`` and from
+    there into ``ProvenanceOut.confidence`` (``float | None``), so a string
+    reaches pydantic and a non-finite float reaches the JSON encoder, turning
+    a valid track response into an error. It is a measurement like every
+    other number on every other lane and is held to the same rule.
+    """
+    if confidence is None:
+        return
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        raise LaneContractError(
+            f"{lane}.confidence must be a number or None, got {confidence!r}"
+        )
+    if not math.isfinite(confidence):
+        raise LaneContractError(
+            f"{lane}.confidence is {confidence!r}, which is not a finite measurement"
+        )
+
+
 def validate_lane_result(lane: str, result: LaneResult) -> None:
     """Check one lane block: status, reason discipline, and payload shape."""
     if lane not in LANES:
@@ -335,24 +356,7 @@ def validate_lane_result(lane: str, result: LaneResult) -> None:
         raise LaneContractError(
             f"{lane}.status must be one of {LANE_STATUSES}, got {result.status!r}"
         )
-    if result.confidence is not None:
-        # The lane-level confidence is copied verbatim into
-        # analysis_projection.confidence and from there into
-        # ProvenanceOut.confidence (`float | None`), so a string reaches
-        # pydantic and a non-finite float reaches the JSON encoder. It is a
-        # measurement like any other and is held to the same rule.
-        if isinstance(result.confidence, bool) or not isinstance(
-            result.confidence, (int, float)
-        ):
-            raise LaneContractError(
-                f"{lane}.confidence must be a number or None, got "
-                f"{result.confidence!r}"
-            )
-        if not math.isfinite(result.confidence):
-            raise LaneContractError(
-                f"{lane}.confidence is {result.confidence!r}, which is not a "
-                "finite measurement"
-            )
+    _check_lane_confidence(lane, result.confidence)
     if result.status == "failed":
         if not result.reason:
             raise LaneContractError(
