@@ -247,15 +247,33 @@ test('performance: switching to LESS frees real height to the library versus MOR
 	// MORE, not just any-positive-px - pin 246b0f5 shrank the margin (the
 	// mixer's real LESS-mode content now sets the deck-area floor, not just
 	// one deck panel - see the header comment above), so this no longer
-	// asserts a full collapsed-deck-column's worth (the achievable gain
-	// today is 210px: (4-2 wavestack rows)*43px + (524-400 deck floor)px -
-	// 524/400 are the Sol-P1-fixed MORE/LESS mixer floors (up from the
-	// pre-fix 497/388) - see library-min-5-rows.test.mjs's matching
-	// source-derived assertion), but a bare `> 0` would let a future change
-	// shrink the gain to 1px and still pass, exactly the regression this
-	// test exists to catch. 150px is comfortably under the 210px ceiling,
-	// leaving real headroom.
-	const MIN_LESS_LIBRARY_GAIN_PX = 150;
+	// asserts a full collapsed-deck-column's worth. A bare `> 0` would let a
+	// future change shrink the gain to 1px and still pass, exactly the
+	// regression this test exists to catch.
+	//
+	// FIX ROUND 2 correction: this threshold was previously 150px, carried
+	// over from library-min-5-rows.test.mjs's *grid-row* reservation math
+	// ((4-2 wavestack rows)*43 + (524-400 deck floor) = 210px achievable
+	// ceiling, 150 pinned under it). That arithmetic is correct for the
+	// `.rb-browser` grid row itself (confirmed live this round: MORE reserves
+	// it 76px tall, LESS 283px, a real 207px row-level gain, matching the
+	// unit test) - but this assertion measures `.table-wrap`'s own rendered
+	// box, a DIFFERENT, downstream quantity, and the two are not 1:1. Round 1
+	// could not run Playwright at all in its worktree (no seeded library, see
+	// the PR's "Not verified"), so this 150px number was never actually
+	// checked against a real render; it silently assumed every freed row-px
+	// lands on `.table-wrap`. It does not: `.tt-root`'s LIBUX-01 min-height is
+	// an ABSOLUTE floor (147px) that MORE mode already sits at (clipped,
+	// per `.list-panel{overflow:hidden}`'s own comment above) - freed height
+	// first goes toward un-clipping that already-floored box, and only past
+	// that point does `.table-wrap` itself grow taller. Measured live
+	// (Playwright, this fixture, 1280x800): moreBox.height=147 (the floor,
+	// clipped), lessBox.height=206, a real 59px gain - genuine and positive,
+	// just far short of the row-level 207px. 40px is pinned comfortably under
+	// that measured 59px (19px headroom), while still catching a regression
+	// toward a token few-px "gain": it fails just as hard on a 1px gain as
+	// the old 150px did.
+	const MIN_LESS_LIBRARY_GAIN_PX = 40;
 	expect(lessBox!.height - moreBox!.height).toBeGreaterThanOrEqual(MIN_LESS_LIBRARY_GAIN_PX);
 
 	// Decks 1/2 must stay fully unclipped in LESS, same floor as MORE.

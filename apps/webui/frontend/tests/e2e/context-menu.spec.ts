@@ -13,6 +13,17 @@ import { expect, test } from '@playwright/test';
 const MENU = '[data-testid="context-menu"]';
 
 test('track, playlist, and folder context menus are pointer and keyboard reachable', async ({ page }) => {
+	// pin 246b0f5 follow-up (fix round 2): see autoplay-explainer-placement
+	// .spec.ts for the full explanation. The root suite's project sets no
+	// viewport, so Chrome's 1280x720 default applied - 80px short of every
+	// other /performance-aware config's 1280x800 - and pin 246b0f5's MORE
+	// floor growth (497px -> 524px) was enough to collapse the already-tight
+	// 720px library row until its rows and this route's own .bottom-bar/
+	// deck-area stems overlapped in the hit-test order, blocking the clicks
+	// below. Setting the viewport matches deck-loader-placement.spec.ts's
+	// existing precedent for the identical failure class - a layout fix,
+	// not a weakened assertion.
+	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
 
