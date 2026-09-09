@@ -388,6 +388,8 @@ def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any
         scored[name] = {
             "role": arm["role"],
             "note": arm.get("note", ""),
+            "producer": arm["payload"].get("candidate"),
+            "generated_at": arm["payload"].get("generated_at"),
             "n_failed_reported": arm["payload"].get("n_failed"),
             **attempt,
             "vs_rekordbox": _score_against(stable_ids, rekordbox, answers),
@@ -417,12 +419,13 @@ def render_table(report: dict[str, Any]) -> str:
         "",
         f"n_fixtures (bundle denominator) = {report['n_fixtures']}",
         "",
-        "| arm | role | n_omitted | n_failed (of attempted) | "
+        "| arm | role | producer (generated_at) | n_omitted | "
+        "n_failed (of attempted) / producer-reported | "
         "vs rekordbox (n) | MIREX% (all/successful-only) | KSEA% | mode% | "
         "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
         "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) | "
         "DISAGREE-NO-ANSWER (n: stable_ids) | NO-REFERENCE-PAIR (n) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, arm in order:
         rb, mikr, buckets = arm["vs_rekordbox"], arm["vs_mik"], arm["buckets"]
@@ -442,9 +445,27 @@ def render_table(report: dict[str, Any]) -> str:
         # denominator).
         unrelated_ids = ", ".join(unrelated["stable_ids"]) or "-"
         no_answer_ids = ", ".join(no_answer["stable_ids"]) or "-"
+        # `producer`/`generated_at` come straight from the arm's own payload
+        # (`payload["candidate"]`/`payload["generated_at"]`, written by
+        # controls.py and every real candidate CLI) -- this is which producer
+        # artifact and run generated the row, distinct from the per-fixture
+        # `AnalysisRecord.producer`/`producer_version` that do not exist at
+        # the arm level. "-" for a missing field, never a fabricated value
+        # (Codex P1 BLOCKING, PR #1620). `n_failed_reported` is rendered
+        # BESIDE the derived `n_failed` rather than replacing or refusing on
+        # a mismatch: the two counting different things (the producer's own
+        # aggregate vs. this scorer's per-fixture walk) is expected, not an
+        # error to raise on, and a bare "0" here would be indistinguishable
+        # from "the producer reported nothing at all" (Codex P2 BLOCKING,
+        # PR #1620).
+        producer = arm["producer"] if arm["producer"] is not None else "-"
+        generated_at = arm["generated_at"] if arm["generated_at"] is not None else "-"
+        n_failed_reported = (
+            arm["n_failed_reported"] if arm["n_failed_reported"] is not None else "-"
+        )
         lines.append(
-            f"| {name} | {arm['role']} | {arm['n_omitted']} | "
-            f"{arm['n_failed']} of {arm['failure_rate'].split('/')[1]} | "
+            f"| {name} | {arm['role']} | {producer} ({generated_at}) | {arm['n_omitted']} | "
+            f"{arm['n_failed']} of {arm['failure_rate'].split('/')[1]} / {n_failed_reported} | "
             f"{rb['n']} | {rb['mirex_mean_pct']}/{rb_succ['mirex_mean_pct']} | "
             f"{rb['ksea_pct']} | {rb['mode_accuracy_pct']} | "
             f"{mikr['n']} | {mikr['mirex_mean_pct']}/{mikr_succ['mirex_mean_pct']} | "
