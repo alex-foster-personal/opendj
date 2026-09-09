@@ -214,7 +214,20 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
        it was previously unhandled here, so a fallback that happened to
        collide with the reference scored as a real answer (Codex P1
        BLOCKING, PR #1620).
-    3. Parse whichever of `key_camelot` / `key_openkey` are present.
+    3. `no_tonal_center` truthy -> None. `apps/analysis_key/flags.py`
+       exists precisely so a low-confidence-but-nonzero or ambiguous-margin
+       estimate (a long drone, a noise/FX intro, unpitched percussion) does
+       not publish its best-of-24 guess as a finding; the same signal is
+       named `no_tonal_center` end to end (`flags.TonalCenterFlag
+       .no_tonal_center`, `LaneResult.reason="no_tonal_center"`,
+       `specs/native-analysis-v1.md`'s own key-lane row). Checked
+       separately from `key_confidence == 0.0` above: a flagged estimate's
+       confidence can be any nonzero value below `flags.CONFIDENCE_
+       THRESHOLD` (or above it with a thin margin), so it would otherwise
+       be accepted as a real answer and inflate MIREX/KSEA/mode-accuracy
+       and the successful-result count on exactly the ambiguous tracks this
+       flag exists to catch (Codex P1 BLOCKING, PR #1620).
+    4. Parse whichever of `key_camelot` / `key_openkey` are present.
        `key_openkey` (no underscore) is the field name used throughout the
        repo already -- `AnalysisRecord.key_openkey`, `apps/analysis/store.py`,
        `apps/analysis/backends/mik.py`. A value that fails to normalise
@@ -227,7 +240,7 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
        `apps.equivalence.normalisers.normalise_key` maps to `MISSING`), a
        second, distinct case an `except NormaliseError` alone still let
        through uncaught (Codex P1 BLOCKING, PR #1620).
-    4. `AnalysisRecord.key_camelot`/`key_openkey` are BOTH mandatory fields
+    5. `AnalysisRecord.key_camelot`/`key_openkey` are BOTH mandatory fields
        (`apps/analysis/record.py`), so a real candidate answer always
        carries both. If both are present and parse to DIFFERENT keys, the
        answer is internally inconsistent -- exactly the class of
@@ -238,6 +251,8 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
     if not result or result.get("error"):
         return None
     if result.get("key_confidence") == 0.0:
+        return None
+    if result.get("no_tonal_center"):
         return None
     camelot, open_key = result.get("key_camelot"), result.get("key_openkey")
     try:
