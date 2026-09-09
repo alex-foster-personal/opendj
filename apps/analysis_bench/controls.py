@@ -63,7 +63,50 @@ def _beatgrid_positive(fixtures_path: Path) -> dict[str, Any]:
     }
 
 
-_BUILDERS = {("beatgrid", "positive"): _beatgrid_positive}
+# Matches the note already declared for this control in lanes.py: "always
+# answers A minor". Camelot 8A, checked against apps.analysis_key.canon in
+# tests/analysis_bench/test_key_lane.py so the literal here cannot drift from
+# what the scorer parses it as.
+KEY_CONSTANT_CAMELOT = "8A"
+
+
+def _key_negative(fixtures_path: Path) -> dict[str, Any]:
+    from apps.analysis_bench.scorers import key_lane
+
+    _, rekordbox, _mik = key_lane.load_bundle(fixtures_path.parent)
+    results = {stable_id: {"key_camelot": KEY_CONSTANT_CAMELOT} for stable_id in rekordbox}
+    return {
+        "candidate": "constant_key",
+        "candidate_version": f"control, always answers Camelot {KEY_CONSTANT_CAMELOT}",
+        "results": results,
+    }
+
+
+def _key_positive(fixtures_path: Path) -> dict[str, Any]:
+    from apps.analysis_bench.scorers import key_lane
+
+    _, rekordbox, _mik = key_lane.load_bundle(fixtures_path.parent)
+    # A fixture with no rekordbox reference is skipped, not fabricated: this
+    # control's job is to echo the reference, and there is nothing to echo.
+    # It still counts as an honest omission when scored (key_lane.py's
+    # n_omitted), not a silently smaller denominator.
+    results = {
+        stable_id: {"key_camelot": key_lane.canon.to_camelot(key)}
+        for stable_id, key in rekordbox.items()
+        if key is not None
+    }
+    return {
+        "candidate": "truth_echo",
+        "candidate_version": "control, echoes the rekordbox reference key",
+        "results": results,
+    }
+
+
+_BUILDERS = {
+    ("beatgrid", "positive"): _beatgrid_positive,
+    ("key", "positive"): _key_positive,
+    ("key", "negative"): _key_negative,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
