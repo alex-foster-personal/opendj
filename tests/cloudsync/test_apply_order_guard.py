@@ -36,6 +36,8 @@ Acceptance criteria, one test each:
 - if ``_APPLY_ORDER`` and ``SPEC_BY_TABLE`` ever answer "in the sync set"
   differently, ``apply_rank`` guards one lookup while a later
   ``SPEC_BY_TABLE[...]`` index does the raising -- broken.
+
+[if] an out-of-set table raises anything but SyncApplyError [then] fail, [else stop].
 """
 from __future__ import annotations
 
