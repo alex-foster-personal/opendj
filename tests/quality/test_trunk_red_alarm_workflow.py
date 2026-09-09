@@ -1,14 +1,18 @@
-"""Issues #1155 and #1309: failed push-to-main checks must create a loud trunk alarm.
+"""Issues #1155, #1309 and #1504: failed trunk checks must create a loud alarm.
 
 The quality ratchet evaluates the actual merge result only after it has landed.
 Without a separate workflow-run watchdog, a normal failed CI conclusion stays in
 the Actions tab until PR authors notice their unrelated failures. This test reads
 the shipped workflow, not a second hand-maintained representation, and pins the
-only event that matters: a CI run triggered by a push to the default branch that
-concludes ``failure``.
+two events that matter: a CI or E2E run triggered by a push to the default
+branch, and a scheduled E2E run (E2E's `extended` job runs ONLY on schedule or
+workflow_dispatch, never push, so a push-only filter can never see it fail --
+issue #1504, the nightly extended tier failed 8 nights running with no alarm).
+Both must conclude ``failure`` on the default branch to fire.
 
 Regression lines:
   - if a push-to-main CI or E2E failure cannot reach the alarm job then broken
+  - if a scheduled E2E failure cannot reach the alarm job then broken
   - if the alarm job does not open or update the durable trunk-red issue then broken
   - if the alarm job can report success after it records a red run then broken
 """
@@ -95,3 +99,30 @@ def test_removing_e2e_from_the_alarm_trigger_fails_the_mutation_check() -> None:
     except AssertionError:
         return
     raise AssertionError("removing E2E must make the watchdog contract fail")
+
+
+def test_narrowing_the_alarm_back_to_push_only_fails_the_mutation_check() -> None:
+    """Issue #1504: a scheduled E2E failure must not silently stop reaching the alarm.
+
+    E2E's `extended` job runs ONLY on schedule/workflow_dispatch, never push, so
+    reverting the `if:` guard to push-only re-opens the exact blind spot that let
+    the nightly extended tier fail 8 nights running with no human-visible alert.
+    """
+    workflow = _workflow()
+    job = workflow["jobs"]["trunk_red"]
+    condition = " ".join(job["if"].split())
+    assert "github.event.workflow_run.event == 'schedule'" in condition, (
+        "the alarm's if-condition must admit a scheduled trunk-watched workflow run; "
+        f"got {condition!r}"
+    )
+
+    push_only = (
+        "github.event.workflow_run.event == 'push' "
+        "&& github.event.workflow_run.head_branch "
+        "== github.event.repository.default_branch "
+        "&& github.event.workflow_run.conclusion == 'failure'"
+    )
+    assert "schedule" in condition and condition != push_only, (
+        "a push-only condition would leave every scheduled E2E failure unalarmed "
+        "(issue #1504)"
+    )
