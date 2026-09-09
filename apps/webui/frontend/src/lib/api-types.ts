@@ -311,6 +311,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis/backfill/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Backfill Batches */
+        get: operations["list_backfill_batches_api_v1_analysis_backfill_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Backfill
+         * @description Cancel pending AND in-flight items. Terminal ones are left alone.
+         */
+        post: operations["cancel_backfill_api_v1_analysis_backfill_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue Backfill
+         * @description Plan a batch: admission rule, worker count, band, refusals by name.
+         */
+        post: operations["enqueue_backfill_api_v1_analysis_backfill_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backfill Progress */
+        get: operations["get_backfill_progress_api_v1_analysis_backfill_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/backfill/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Backfill
+         * @description Put cancelled and abandoned items back; re-plan from what is LEFT.
+         */
+        post: operations["resume_backfill_api_v1_analysis_backfill_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis/source": {
         parameters: {
             query?: never;
@@ -3417,6 +3511,240 @@ export interface components {
              * @default false
              */
             rekordbox: boolean;
+        };
+        /** BackfillBatchIn */
+        BackfillBatchIn: {
+            /** Batch Id */
+            batch_id: string;
+        };
+        /** BackfillBatchListOut */
+        BackfillBatchListOut: {
+            /** Batches */
+            batches: components["schemas"]["BackfillBatchSummaryOut"][];
+        };
+        /**
+         * BackfillBatchSummaryOut
+         * @description One batch without its items.
+         */
+        BackfillBatchSummaryOut: {
+            /**
+             * Band
+             * @description under_20_min, 20_to_45_min, over_45_min, or empty
+             */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * State
+             * @description queued, running, cancelled or done
+             */
+            state: string;
+            /**
+             * Workers
+             * @description Concurrency the admission rule chose from the LONGEST ADMITTED track, never from core count
+             */
+            workers: number;
+        };
+        /** BackfillCancelOut */
+        BackfillCancelOut: {
+            /** Batch Id */
+            batch_id: string;
+            /**
+             * Cancelled
+             * @description Open items (pending and in flight) cancelled
+             */
+            cancelled: number;
+        };
+        /** BackfillEnqueueIn */
+        BackfillEnqueueIn: {
+            /**
+             * Backend
+             * @description Producer to run, own_<lane>.<producer>
+             */
+            backend: string;
+            /**
+             * Lane
+             * @description beatgrid, key, waveform, loudness or vocal
+             */
+            lane: string;
+            /**
+             * Note
+             * @description Why this batch exists
+             */
+            note?: string | null;
+            /**
+             * Stable Ids
+             * @description Tracks to (re)analyze
+             */
+            stable_ids: string[];
+        };
+        /**
+         * BackfillEnqueueOut
+         * @description The plan. ``offered = admitted + refused``, always.
+         */
+        BackfillEnqueueOut: {
+            /** Admitted */
+            admitted: number;
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            memory_model: components["schemas"]["BackfillMemoryModelOut"];
+            /** Offered */
+            offered: number;
+            /** Refused */
+            refused: number;
+            /** Workers */
+            workers: number;
+        };
+        /**
+         * BackfillItemOut
+         * @description One (track, lane) of work and its state.
+         *
+         *     Named apart from ``routes/queues.py``'s ``QueueItemOut`` (the M3 triage
+         *     queues) for the reason its neighbour ``routes/analysis_queue.py`` states:
+         *     two Pydantic models sharing a name collapse into ONE OpenAPI schema and
+         *     the loser is served under the winner's shape. That collision really
+         *     happened here on the first openapi dump, and it is silent -- the schema
+         *     still validates, it just describes the wrong thing.
+         */
+        BackfillItemOut: {
+            /**
+             * Attempts
+             * @description Claims so far; a kill-and-resume shows 2
+             */
+            attempts: number;
+            /** Backend */
+            backend: string;
+            /**
+             * Duration S
+             * @description Audio length the admission rule budgeted with
+             */
+            duration_s?: number | null;
+            /** Lane */
+            lane: string;
+            /**
+             * Predicted Peak Mb
+             * @description floor + slope x minutes under the batch model
+             */
+            predicted_peak_mb?: number | null;
+            /**
+             * Reason
+             * @description Named cause for a refusal, a failure, or a skip
+             */
+            reason?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * State
+             * @description pending, running, done, skipped, failed, refused or cancelled
+             */
+            state: string;
+        };
+        /**
+         * BackfillMemoryModelOut
+         * @description The measured peak-RSS model a batch was budgeted under.
+         *
+         *     Carried on every response rather than assumed, because the floor and
+         *     slope are MEASURED numbers for one producer version. A report that says
+         *     "budgeted at 330 MB + 68 MB/min" without saying where that was measured
+         *     is quoting a remembered figure.
+         */
+        BackfillMemoryModelOut: {
+            /**
+             * Backend
+             * @description Producer the model was measured on
+             */
+            backend: string;
+            /**
+             * Floor Mb
+             * @description Predicted peak RSS at zero length, MB
+             */
+            floor_mb: number;
+            /**
+             * Measured On
+             * @description Host, method and date of the measurement
+             */
+            measured_on: string;
+            /**
+             * Producer Version
+             * @description Version it was measured at
+             */
+            producer_version: string;
+            /**
+             * Slope Mb Per Min
+             * @description Extra peak RSS per audio minute, MB
+             */
+            slope_mb_per_min: number;
+            /**
+             * Source
+             * @description Document the measurement is recorded in
+             */
+            source: string;
+        };
+        /**
+         * BackfillProgressOut
+         * @description Aggregate + per-item progress. ``counts`` carries every state's zero.
+         */
+        BackfillProgressOut: {
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Items */
+            items: components["schemas"]["BackfillItemOut"][];
+            /** Memory Model */
+            memory_model: {
+                [key: string]: unknown;
+            };
+            /**
+             * Settled
+             * @description done + skipped + failed + refused
+             */
+            settled: number;
+            /** State */
+            state: string;
+            /** Total */
+            total: number;
+            /** Updated At */
+            updated_at: string;
+            /** Workers */
+            workers: number;
+        };
+        /** BackfillResumeOut */
+        BackfillResumeOut: {
+            /** Band */
+            band: string;
+            /** Batch Id */
+            batch_id: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Requeued
+             * @description Items put back in the queue
+             */
+            requeued: number;
+            /**
+             * Workers
+             * @description Concurrency re-planned from what is LEFT
+             */
+            workers: number;
         };
         /** BeatgridFallbackOut */
         BeatgridFallbackOut: {
@@ -8132,6 +8460,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+        };
+    };
+    list_backfill_batches_api_v1_analysis_backfill_batches_get: {
+        parameters: {
+            query?: {
+                /** @description Newest first */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillBatchListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_backfill_api_v1_analysis_backfill_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillCancelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_backfill_api_v1_analysis_backfill_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillEnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillEnqueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backfill_progress_api_v1_analysis_backfill_progress_get: {
+        parameters: {
+            query: {
+                /** @description Batch to report on */
+                batch_id: string;
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillProgressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_backfill_api_v1_analysis_backfill_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillBatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillResumeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
