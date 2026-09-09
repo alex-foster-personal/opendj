@@ -233,7 +233,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
     list in the KPI script.
     """
     fixture = _copy_fixture(tmp_path)
-    (fixture / "jobs" / "residents-watchdog.sh").write_text(
+    (fixture / "jobs" / "watchdog.sh").write_text(
         'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
     )
     (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
@@ -250,7 +250,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
 
     assert proc.returncode == 0, out
     assert (
-        "ticks lane=merge-even RETIRED (not driven by residents-watchdog.sh; "
+        "ticks lane=merge-even RETIRED (not driven by watchdog.sh; "
         "last log 2026-09-02T16:29:22Z)"
     ) in out
     assert "ticks lane=merge-odd ran=0 skipped=0 skip_ratio=ALERT" in out
@@ -260,7 +260,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
 def test_retired_lane_without_timestamp_fails_loudly(tmp_path):
     """If a retired log lacks an exact UTC timestamp but KPI reports it then broken."""
     fixture = _copy_fixture(tmp_path)
-    (fixture / "jobs" / "residents-watchdog.sh").write_text(
+    (fixture / "jobs" / "watchdog.sh").write_text(
         'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
     )
     (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
