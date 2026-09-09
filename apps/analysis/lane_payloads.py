@@ -16,6 +16,7 @@ or the JSON encoder. Nothing here is defensive-by-habit.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -191,6 +192,49 @@ def _validate_beatgrid(payload: Mapping[str, Any]) -> None:
         _require_confidence(where, change, "confidence")
 
 
+# 1..12 followed by A (minor) or B (major). The deck's own parser is
+# `parseCamelotKey` in apps/webui/frontend/src/lib/player/key/camelot.ts; it
+# returns null for anything else, which silently disables Key Sync and
+# harmonic compatibility while provenance still claims `status: ok` (Codex
+# P2, PR #1549). A key the deck cannot parse is a failed measurement.
+_CAMELOT_RE = re.compile(r"^(?:[1-9]|1[0-2])[AB]$")
+
+# Camelot wheel -> (pitch class, is_minor). 8A is A minor, 8B is C major.
+_CAMELOT_PITCH_CLASS: dict[str, tuple[int, bool]] = {
+    f"{n}{mode}": (pc, mode == "A")
+    for mode, roots in (
+        # Minor keys around the wheel from 1A = A-flat minor (pc 8).
+        ("A", [8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1]),
+        # Major keys from 1B = B major (pc 11).
+        ("B", [11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4]),
+    )
+    for n, pc in enumerate(roots, start=1)
+}
+
+
+def _require_camelot(lane: str, payload: Mapping[str, Any], key: str) -> None:
+    _require_str(lane, payload, key)
+    value = payload[key]
+    if not _CAMELOT_RE.match(value):
+        raise LaneContractError(
+            f"{lane}.{key} is {value!r}, which is not a Camelot key (1..12 "
+            "followed by A or B); the deck's parseCamelotKey returns null for "
+            "it and silently disables Key Sync"
+        )
+    expected_pc, expected_minor = _CAMELOT_PITCH_CLASS[value]
+    if payload.get("pitch_class") != expected_pc:
+        raise LaneContractError(
+            f"{lane}.camelot {value!r} is pitch class {expected_pc}, but the "
+            f"record says {payload.get('pitch_class')!r}; the two spellings of "
+            "one measurement must agree"
+        )
+    if payload.get("is_minor") != expected_minor:
+        raise LaneContractError(
+            f"{lane}.camelot {value!r} is {'minor' if expected_minor else 'major'}, "
+            f"but is_minor says {payload.get('is_minor')!r}"
+        )
+
+
 def _validate_key_segments(segments_block: Any) -> None:
     if not isinstance(segments_block, Mapping):
         raise LaneContractError(f"key.segments must be a mapping, got {segments_block!r}")
@@ -220,26 +264,37 @@ def _validate_key_segments(segments_block: Any) -> None:
             f"key.segments.status is {status!r} but carries {len(segments)} segments"
         )
     for i, seg in enumerate(segments):
-        if not isinstance(seg, Mapping):
-            raise LaneContractError(f"key.segments.segments[{i}] must be a mapping")
-        where = f"key.segments.segments[{i}]"
-        _require_keys(where, seg, (
-            "start_bar", "end_bar", "start_s", "end_s",
-            "key_camelot", "key_openkey", "confidence",
-        ))
-        for key in ("start_bar", "end_bar", "start_s", "end_s"):
-            _require_number(where, seg, key)
-        _require_confidence(where, seg, "confidence")
-        _require_str(where, seg, "key_camelot")
-        _require_str(where, seg, "key_openkey")
+        _validate_one_key_segment(f"key.segments.segments[{i}]", seg)
+
+
+def _validate_one_key_segment(where: str, seg: Any) -> None:
+    """One bar-indexed key segment: bounds, its own Camelot key, confidence."""
+    if not isinstance(seg, Mapping):
+        raise LaneContractError(f"{where} must be a mapping")
+    _require_keys(where, seg, (
+        "start_bar", "end_bar", "start_s", "end_s",
+        "key_camelot", "key_openkey", "confidence",
+    ))
+    for key in ("start_bar", "end_bar", "start_s", "end_s"):
+        _require_number(where, seg, key)
+    _require_confidence(where, seg, "confidence")
+    _require_str(where, seg, "key_camelot")
+    if not _CAMELOT_RE.match(seg["key_camelot"]):
+        raise LaneContractError(
+            f"{where}.key_camelot is {seg['key_camelot']!r}, which is not a "
+            "Camelot key"
+        )
+    _require_str(where, seg, "key_openkey")
 
 
 def _validate_key(payload: Mapping[str, Any]) -> None:
     _require_keys("key", payload, (
         "camelot", "openkey", "pitch_class", "is_minor", "confidence", "segments",
     ))
-    _require_str("key", payload, "camelot")
     _require_str("key", payload, "openkey")
+    # ORDER MATTERS: each field is checked on its own terms BEFORE the
+    # cross-check that they agree, so a bad pitch class reports as a bad
+    # pitch class rather than as a disagreement with a perfectly good key.
     # An INTEGER, not a number that rounds into range. Pitch class is the
     # discrete identity the key and mode bit are read against, so `-0.5` and
     # `11.9` are malformed input, not edge values: int() would have turned
@@ -252,6 +307,7 @@ def _validate_key(payload: Mapping[str, Any]) -> None:
     if not 0 <= pitch_class <= 11:
         raise LaneContractError(f"key.pitch_class must be 0..11, got {pitch_class!r}")
     _require_bool("key", payload, "is_minor")
+    _require_camelot("key", payload, "camelot")
     _require_confidence("key", payload, "confidence")
     _validate_key_segments(payload["segments"])
 

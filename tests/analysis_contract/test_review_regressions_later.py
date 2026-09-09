@@ -285,14 +285,22 @@ def test_an_out_of_range_integer_pitch_class_is_still_refused(
         )
 
 
-def test_every_valid_pitch_class_is_accepted(db) -> None:
-    """The other control: 0..11 inclusive, not 1..10."""
+def test_every_valid_pitch_class_is_accepted() -> None:
+    """The other control: 0..11 inclusive, not 1..10.
+
+    Driven through all 24 Camelot keys rather than by mutating one payload's
+    pitch class, because the contract now cross-checks that `camelot`,
+    `pitch_class` and `is_minor` agree -- a loop over bare pitch classes
+    would be feeding it 11 records it is right to refuse.
+    """
+    from apps.analysis.lane_payloads import _CAMELOT_PITCH_CLASS
     from apps.analysis.lanes import validate_lane_payload
 
-    for pitch_class in range(12):
-        payload = key_payload()
-        payload["pitch_class"] = pitch_class
-        validate_lane_payload("key", payload)
+    seen = set()
+    for camelot in _CAMELOT_PITCH_CLASS:
+        validate_lane_payload("key", key_payload(camelot=camelot))
+        seen.add(_CAMELOT_PITCH_CLASS[camelot][0])
+    assert seen == set(range(12)), "every pitch class 0..11 must be reachable"
 
 
 #-----------------------------------------------------------------------------

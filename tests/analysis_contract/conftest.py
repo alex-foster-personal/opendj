@@ -53,11 +53,21 @@ def beatgrid_payload(bpm: float = 128.0, tempo_changes: int = 0) -> dict[str, An
 
 
 def key_payload(camelot: str = "8A", segments: int = 1) -> dict[str, Any]:
+    """A key payload that is INTERNALLY CONSISTENT for whatever key is asked.
+
+    `pitch_class` and `is_minor` are derived from `camelot` rather than
+    hardcoded: the contract cross-checks that the three spellings of one
+    measurement agree, so a fixture pinning `pitch_class: 9` beside an
+    arbitrary key would be testing a record the store refuses.
+    """
+    from apps.analysis.lane_payloads import _CAMELOT_PITCH_CLASS
+
+    pitch_class, is_minor = _CAMELOT_PITCH_CLASS[camelot]
     return {
         "camelot": camelot,
         "openkey": "1m",
-        "pitch_class": 9,
-        "is_minor": True,
+        "pitch_class": pitch_class,
+        "is_minor": is_minor,
         "confidence": 0.77,
         "segments": {
             "status": "ok",

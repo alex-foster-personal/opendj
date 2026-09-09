@@ -41,9 +41,13 @@ DECODE_FINGERPRINT = (
 
 
 def _key_payload(camelot: str, segments: int = 1) -> dict:
+    """Derived, not hardcoded: the contract cross-checks the three spellings."""
+    from apps.analysis.lane_payloads import _CAMELOT_PITCH_CLASS
+
+    pitch_class, is_minor = _CAMELOT_PITCH_CLASS[camelot]
     return {
-        "camelot": camelot, "openkey": "1m", "pitch_class": 9,
-        "is_minor": True, "confidence": 0.8,
+        "camelot": camelot, "openkey": "1m", "pitch_class": pitch_class,
+        "is_minor": is_minor, "confidence": 0.8,
         "segments": {
             "status": "ok", "reason": None,
             "segments": [

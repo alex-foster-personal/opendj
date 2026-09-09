@@ -85,7 +85,17 @@ def _open_ro(request: Request) -> sqlite3.Connection:
     rather than by the filesystem: a `state.db` on a writable volume would
     otherwise still accept one.
     """
-    conn = sqlite3.connect(f"file:{_db_path(request)}?mode=ro", uri=True)
+    path = _db_path(request)
+    if not path.exists():
+        # `mode=ro` raises on an absent file, so a GET on a fresh daemon --
+        # which is exactly when `make_backend()` chose InMemoryBackend
+        # BECAUSE state.db does not exist -- would 500 instead of answering
+        # with the documented rbx defaults (Codex P2, PR #1549). An in-memory
+        # database is the honest stand-in: no table, so `get_default` returns
+        # `rbx` for every lane, which is the true answer, and nothing is
+        # created on disk.
+        return sqlite3.connect(":memory:")
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.execute("PRAGMA query_only = ON")
     return conn
 
@@ -183,7 +193,13 @@ def put_analysis_source(
     if body.default is not None:
         _require_persistent_backend(request)
 
-    conn = _open(request)
+    # A toggle-only PUT must not TOUCH the disk. The toggle is process-local
+    # by definition, and opening writably would create state.db -- after
+    # which `make_backend()` picks SqliteBackend on the NEXT launch purely
+    # because the file exists, so a session-only developer toggle would
+    # permanently replace an in-memory library with an empty SQLite one
+    # (Codex P2, PR #1549). Only a persisted default earns a writable open.
+    conn = _open(request) if body.default is not None else _open_ro(request)
     try:
         if body.default is not None:
             sel.set_default(conn, body.lane, body.default)
