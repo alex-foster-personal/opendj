@@ -161,7 +161,7 @@ def build(manifest_path: str, out_dir: str) -> int:
         "reads": {
             "truth": "rekordbox-truth.json",
             "checksums": "SHA256SUMS",
-            "scorer": "scripts/beatbench/scorer.py (version stamped in every artifact)",
+            "scorer": "apps/analysis_bench/scorers/beatgrid.py (version stamped in every artifact)",
         },
         "fixtures": entries,
     }

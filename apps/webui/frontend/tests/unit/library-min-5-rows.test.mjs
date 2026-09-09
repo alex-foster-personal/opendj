@@ -416,7 +416,7 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	// the bottom - exactly the maintainer's "you ddin't move the 1/2 levels" report.
 	// So the floor is now >= perDeckPx (the deck's own requirement is still
 	// respected) rather than exactly perDeckPx; the precise mixer-driven
-	// number (400, including the mixer's own chrome - Sol P1 finding,
+	// number (401, including the mixer's own chrome - Sol P1 finding,
 	// comment 3963232874) is pinned and derived from the real component CSS
 	// in channel-strip-less-floor.test.mjs, not duplicated here.
 	assert.ok(
@@ -441,12 +441,14 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	// this test - it exists to catch a future change that shrinks LESS's
 	// library benefit back toward nothing. The achievable gain today is
 	// `(moreWavestackRows - lessWavestackRows) * waverowPx + (moreDeckFloor -
-	// lessDeckFloor)` = (4 - 2) * 43 + (497 - 400) = 183px (all four terms
+	// lessDeckFloor)` = (4 - 2) * 43 + (497 - 401) = 182px (all four terms
 	// read from source above, not hand-typed; round 3 restored MORE's floor
 	// to the original 497px - see +page.svelte's LIBUX-01 comment - while
-	// keeping LESS's Sol-P1-fixed 400px floor, so this is neither the
-	// round-1 524/210 figures nor the original pre-pin 497/388 pair).
-	// MIN_LESS_LIBRARY_GAIN is pinned well under that (150px), leaving 33px
+	// keeping LESS's floor at 401px - issue #1578's fix, one px above the
+	// prior Sol-P1-fixed 400px, to also cover the R/M `.cal-controls` row -
+	// so this is neither the round-1 524/210 figures nor the original
+	// pre-pin 497/388 pair).
+	// MIN_LESS_LIBRARY_GAIN is pinned well under that (150px), leaving 32px
 	// of real headroom for a future legitimate shrink (e.g. a further
 	// mixer-height adjustment) while still catching a regression toward a
 	// token few-px "gain".

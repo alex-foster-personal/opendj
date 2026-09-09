@@ -294,3 +294,179 @@ test('hydrateConfirmPrefsFromDisk applies deck_layout fields from disk', async (
 	assert.equal(prefs.uiPrefs.deck_layout_animate, false);
 	assert.equal(prefs.uiPrefs.deck_layout_duration_ms, 300);
 });
+
+// ----- #1475: by-ear level calibration (R/M) --------------------------------
+
+test('level calibration defaults to uncaptured and disabled', async () => {
+	const storage = installPrefsStorage();
+	try {
+		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+		assert.deepEqual(isolated.uiPrefs.level_calibration, {
+			red_dbfs: null,
+			red_enabled: false,
+			ceiling_dbfs: null,
+			ceiling_enabled: false
+		});
+	} finally {
+		storage.restore();
+	}
+});
+
+test('setLevelCalibrationCapture stores the level and enables, fires PUT', async () => {
+	const storage = installPrefsStorage();
+	try {
+		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+		let seen;
+		let body;
+		let release;
+		const gate = new Promise((resolve) => {
+			release = resolve;
+		});
+		globalThis.fetch = async (request) => {
+			seen = request;
+			body = await request.clone().json();
+			release();
+			return jsonResponse({ theme: 'dark' });
+		};
+
+		isolated.setLevelCalibrationCapture('red', -4.2);
+		await gate;
+
+		assert.equal(isolated.uiPrefs.level_calibration.red_dbfs, -4.2);
+		assert.equal(isolated.uiPrefs.level_calibration.red_enabled, true);
+		assert.equal(seen.url, `${API_BASE}/api/v1/ui-prefs`);
+		assert.equal(seen.method, 'PUT');
+		assert.deepEqual(body.level_calibration, {
+			red_dbfs: -4.2,
+			red_enabled: true,
+			ceiling_dbfs: null,
+			ceiling_enabled: false
+		});
+		assert.equal(
+			JSON.parse(storage.values.get('mdt.rb.ui-prefs.v1')).level_calibration.red_dbfs,
+			-4.2
+		);
+	} finally {
+		storage.restore();
+	}
+});
+
+test('setLevelCalibrationDisabled clears the flag but keeps the captured number', async () => {
+	const storage = installPrefsStorage();
+	try {
+		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+		globalThis.fetch = async () => jsonResponse({ theme: 'dark' });
+
+		isolated.setLevelCalibrationCapture('ceiling', -1.0);
+		assert.equal(isolated.uiPrefs.level_calibration.ceiling_enabled, true);
+
+		isolated.setLevelCalibrationDisabled('ceiling');
+
+		assert.equal(isolated.uiPrefs.level_calibration.ceiling_enabled, false);
+		assert.equal(isolated.uiPrefs.level_calibration.ceiling_dbfs, -1.0);
+	} finally {
+		storage.restore();
+	}
+});
+
+test('setLevelCalibrationCapture rejects a non-finite dbfs', async () => {
+	assert.throws(() => prefs.setLevelCalibrationCapture('red', Number.NaN), /dbfs must be finite/);
+});
+
+test('setLevelCalibrationCapture rejects a capture outside the persisted bounds', async () => {
+	// A hot source + max trim + boosted EQ can genuinely produce a post-EQ tap
+	// above +12 dBFS. Persisting it would round-trip fine now and then brick
+	// the uiPrefs singleton on the NEXT load, since parseLevelCalibration
+	// enforces the same bounds with no try/catch around module-scope init.
+	assert.throws(
+		() => prefs.setLevelCalibrationCapture('red', 20.0),
+		/between -60 and 12/
+	);
+	assert.throws(
+		() => prefs.setLevelCalibrationCapture('ceiling', -120.0),
+		/between -60 and 0/
+	);
+});
+
+test('setLevelCalibrationCapture rejects a ceiling above 0 dBFS, but not a red anchor', async () => {
+	// min(1, 10**(dbfs/20)) is a no-op attenuation above 0 dBFS, so a ceiling
+	// capture there would arm M while leaving the master gain untouched. Red
+	// is a meter anchor, not a gain multiplier, so it keeps the wider range.
+	assert.throws(
+		() => prefs.setLevelCalibrationCapture('ceiling', 2.0),
+		/ceiling dbfs must be finite and between -60 and 0/
+	);
+	const storage = installPrefsStorage();
+	try {
+		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+		globalThis.fetch = async () => jsonResponse({ theme: 'dark' });
+		isolated.setLevelCalibrationCapture('red', 2.0);
+		assert.equal(isolated.uiPrefs.level_calibration.red_dbfs, 2.0);
+		assert.equal(isolated.uiPrefs.level_calibration.red_enabled, true);
+	} finally {
+		storage.restore();
+	}
+});
+
+test('level calibration rejects a persisted enabled flag with no captured level', async () => {
+	const storage = installPrefsStorage(
+		JSON.stringify({
+			hide_broken_links: false,
+			level_calibration: { red_dbfs: null, red_enabled: true, ceiling_dbfs: null, ceiling_enabled: false }
+		})
+	);
+	try {
+		await assert.rejects(
+			() => loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE }),
+			/level_calibration.red_enabled requires red_dbfs to be set/
+		);
+	} finally {
+		storage.restore();
+	}
+});
+
+test('level calibration rejects a persisted level outside -60..12 dBFS', async () => {
+	const storage = installPrefsStorage(
+		JSON.stringify({
+			hide_broken_links: false,
+			level_calibration: { red_dbfs: 13, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false }
+		})
+	);
+	try {
+		await assert.rejects(
+			() => loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE }),
+			/level_calibration.red_dbfs must be a finite number between -60 and 12/
+		);
+	} finally {
+		storage.restore();
+	}
+});
+
+test('hydrateConfirmPrefsFromDisk applies level_calibration from disk', async () => {
+	prefs.uiPrefs.level_calibration = {
+		red_dbfs: null,
+		red_enabled: false,
+		ceiling_dbfs: null,
+		ceiling_enabled: false
+	};
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			theme: 'dark',
+			level_calibration: { red_dbfs: -2.5, red_enabled: true, ceiling_dbfs: -0.5, ceiling_enabled: true }
+		});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.deepEqual(prefs.uiPrefs.level_calibration, {
+		red_dbfs: -2.5,
+		red_enabled: true,
+		ceiling_dbfs: -0.5,
+		ceiling_enabled: true
+	});
+});
+
+// Real-http-transport write-ordering tests (Codex P2/P1 on #1503, and the
+// cross-setter follow-on from issue #1578) live in
+// prefs-write-ordering.test.mjs - split out once a second such test pushed
+// this file over the 600-line quality gate ceiling.

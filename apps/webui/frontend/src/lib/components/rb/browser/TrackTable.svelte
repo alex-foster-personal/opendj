@@ -349,6 +349,39 @@
 	let _genreClickTimer: ReturnType<typeof setTimeout> | null = null;
 	let _rowGenreTimer: ReturnType<typeof setTimeout> | null = null;
 
+	/** Issue #1558: must clear the platform double-click interval (~400ms)
+	 * with margin, so a real double-click's second click always lands inside
+	 * it, but a deliberate single click on a deck button - which arrives well
+	 * after human reaction time - is unaffected. */
+	const DBLCLICK_GUARD_MS = 500;
+	/** Rows currently within their post-click guard window: the quick-load
+	 * box's buttons stay pointer-events: none for these ids even while the
+	 * row is selected and hovered (see .dblclick-guard-active below). A JS
+	 * timer, not a CSS transition-delay: pointer-events is a discrete
+	 * property, so a browser only honors transition-delay on it with
+	 * `transition-behavior: allow-discrete` (Chrome 117+/Safari 17.4+) -
+	 * verified empirically on PR #1570 (Codex review) - and this app's
+	 * packaged WKWebView targets macOS 11, whose system WebKit predates that
+	 * entirely, so the CSS-only guard silently did nothing there. A plain
+	 * class-gated selector has no such floor. */
+	let dblclickGuardRowIds = $state(new Set<string>());
+	const _dblclickGuardTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function _armDblclickGuard(rowId: string): void {
+		const existing = _dblclickGuardTimers.get(rowId);
+		if (existing !== undefined) clearTimeout(existing);
+		dblclickGuardRowIds = new Set(dblclickGuardRowIds).add(rowId);
+		_dblclickGuardTimers.set(
+			rowId,
+			setTimeout(() => {
+				_dblclickGuardTimers.delete(rowId);
+				const next = new Set(dblclickGuardRowIds);
+				next.delete(rowId);
+				dblclickGuardRowIds = next;
+			}, DBLCLICK_GUARD_MS)
+		);
+	}
+
 	function genreWindowOpen(): boolean {
 		return genreFilterUntil > 0 && Date.now() < genreFilterUntil;
 	}
@@ -390,6 +423,10 @@
 	}
 
 	function onRowPointer(event: MouseEvent, row: BrowserRow): void {
+		// Any click on the row is where its FIRST double-click click would
+		// land, whether the row was already selected or is only selecting
+		// now - both cases must stay guarded (issue #1558).
+		_armDblclickGuard(row.stable_id);
 		onselectrow(row, event);
 		if (!genreWindowOpen() || ongenrefilter === undefined || event.detail < 2) return;
 		if (_rowGenreTimer !== null) clearTimeout(_rowGenreTimer);
@@ -1144,6 +1181,7 @@
 						tabindex="0"
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
+						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
@@ -2179,7 +2217,11 @@
 	 * Tab press. Hiding pointer-events lags 100ms behind losing hover (pin
 	 * 27f889893790's corridor): the pointer can leave .c-art/.c-title,
 	 * cross the short gap, and still land on a deck button before the
-	 * group goes fully inert. Showing has no such delay. */
+	 * group goes fully inert. Showing has no such delay for the corridor-
+	 * travel and keyboard-focus paths - but the row-selection-driven reveal
+	 * DOES delay showing (DBLCLICK_GUARD_MS, issue #1558): that trigger can
+	 * fire on the first click of a double-click aimed at the row, and an
+	 * instantly-clickable box there hijacked the gesture's second click. */
 	.c-title {
 		position: relative;
 		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the
@@ -2249,7 +2291,31 @@
 		opacity: 1;
 		transition-delay: 0s;
 	}
-	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns button,
+	/* Issue #1558: selecting a row makes this :has() match true at the exact
+	 * instant of the FIRST click of a double-click, with the pointer already
+	 * resting on .c-art/.c-title (a click cannot happen anywhere else). An
+	 * instant pointer-events here put a deck button under the gesture's
+	 * SECOND click, which the button's own ondblclick stopPropagation then
+	 * ate before the row's own dblclick handler ever ran - "Load onto deck
+	 * N" fired (no play) instead of the row's smart-load-and-play. The box
+	 * itself stays pointer-events: none throughout (see above), so while the
+	 * guard is active the click passes through to the row beneath, exactly
+	 * like the box was never there.
+	 * `.dblclick-guard-active` is a plain JS-timed class (DBLCLICK_GUARD_MS,
+	 * TrackTable.svelte script - armed on every row click), not a CSS
+	 * transition-delay: pointer-events is a discrete property, so a browser
+	 * only honors transition-delay on it with `transition-behavior:
+	 * allow-discrete` (Chrome 117+/Safari 17.4+ only) - tried first on this
+	 * PR and verified empirically to do nothing on this app's packaged
+	 * WKWebView floor (macOS 11, Codex review PR #1570). A class flip has no
+	 * such requirement.
+	 * `.deck-btns:hover`/`:focus-within` below are the corridor-travel and
+	 * keyboard-focus cases (the box is already open), so those stay instant;
+	 * only the SELECT-driven reveal needs the guard. */
+	tr.rb-row-selected:not(.dblclick-guard-active):has(.c-art:hover, .c-title:hover) .deck-btns button {
+		pointer-events: auto;
+		transition-delay: 0s;
+	}
 	.deck-btns:hover button,
 	.deck-btns:focus-within button {
 		pointer-events: auto;

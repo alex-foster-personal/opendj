@@ -233,8 +233,12 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 	// bar behaved like an on/off lamp. The count is pinned here; WHICH band each
 	// segment carries is pinned in meter-math.test.mjs, where it can be checked
 	// against the dB scale that decides it.
+	// #1475: thresholds now route through segmentThresholdsForRed(), which
+	// returns the unmodified SEGMENT_THRESHOLDS_DBFS when calibration is off -
+	// this component still owns none of the shift/band policy itself.
 	it('renders ten segments and owns none of the policy that colors them', () => {
-		assert.match(meter, /SEGMENT_THRESHOLDS_DBFS\.map/);
+		assert.match(meter, /segmentThresholdsForRed\(/);
+		assert.match(meter, /thresholds\.map/);
 		assert.match(meter, /segmentBand\(index \+ 1\)/);
 		// If a threshold or a band name is ever pasted back into this component,
 		// the single source of truth has forked and this catches it.
@@ -251,7 +255,12 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		// The exact regression: `ceil(meter * SEGMENTS.length)` is linear and
 		// must not come back.
 		assert.doesNotMatch(meter, /Math\.ceil\(\s*meter\s*\*/);
-		assert.match(meter, /reading\.segments/);
+		// #1475: segments are recomputed from the calibrated thresholds rather
+		// than trusted from meter-tap's `reading.segments`, which only ever
+		// knows the uncalibrated default scale (meter-tap stays deck-agnostic
+		// and policy-free by design - see meter-tap.ts's module doc).
+		assert.doesNotMatch(meter, /reading\.segments/);
+		assert.match(meter, /segmentsLitFromDbfs\(reading\.db, thresholds\)/);
 		assert.match(meter, /reading\.db/);
 	});
 
@@ -272,6 +281,41 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		assert.match(fader, /import ChannelLevelMeter from '\.\/ChannelLevelMeter\.svelte'/);
 		assert.match(fader, /<ChannelLevelMeter \{deckId\} \{playing\} \/>/);
 		assert.doesNotMatch(fader, /peekDeckMeter/);
+	});
+
+	// Codex P2 BLOCKING on #1503. Scoping the clip rule to `.lit` (which stopped
+	// a latch painting segments that were not lit) ALSO made the latch invisible
+	// the moment the level fell back below red -- exactly the brief overshoot the
+	// latch exists to show. The latch now owns a dedicated segment.
+	//
+	// Regression line: if the latch has no indicator of its own again, a
+	// transient clip is unreportable and the latch is decorative.
+	it('the clip latch owns a segment rather than repainting the red band', () => {
+		assert.match(meter, /class:clip-latch=\{clipped && index === SEGMENTS\.length - 1\}/);
+		assert.match(meter, /\.rb-channel-level-meter-segment\.clip-latch\s*\{/);
+		// The level-scoped rule must still require .lit, or the original bug returns.
+		assert.match(meter, /\.clipped \.rb-channel-level-meter-segment\.red\.lit\s*\{/);
+		assert.doesNotMatch(meter, /\.clipped \.rb-channel-level-meter-segment\.red\s*\{/);
+	});
+
+	// Codex P1 BLOCKING on #1503: capturing on a stopped deck reads the meter
+	// floor, and arming that ceiling applies a 0.001 master multiplier, i.e. one
+	// click silences the whole output.
+	//
+	// Regression line: if the floor guard goes, M on a silent channel mutes the app.
+	it('a calibration capture at the meter floor is refused', () => {
+		const stripSrc = readFileSync(
+			fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)),
+			'utf8'
+		);
+		// Transport state FIRST: the meter's PPM ballistics decay at ~11.8 dB/s,
+		// so for seconds after a pause the tap still reads a real-looking value
+		// on its way down. A numeric floor alone lets that be captured.
+		assert.match(stripSrc, /if \(!playing\) return;/);
+		assert.match(stripSrc, /if \(db <= METER_FLOOR_DBFS\) return;/);
+		assert.match(stripSrc, /import \{ METER_FLOOR_DBFS \} from '\$lib\/rb\/meter-math'/);
+		// The refusal must be explained where the user can see it.
+		assert.match(stripSrc, /stopped or silent channel captures nothing/i);
 	});
 
 	it('accepts exactly the deck identifier type supported by the meter API', () => {
