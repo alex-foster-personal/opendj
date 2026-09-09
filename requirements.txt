@@ -56,6 +56,16 @@ Pillow>=10.0
 numpy>=1.26,<2
 scipy>=1.13
 librosa==0.10.*
+# numba and llvmlite are librosa's JIT and are PINNED to what uv.lock resolves,
+# because this file is the CI shard venv's resolver (ci.yml: `uv pip install -r
+# requirements.txt`) while the e2e job syncs the lock. Unpinned, the shards
+# drifted to numba 0.67.0 / llvmlite 0.49.0 on Tue 8 Sep 2026 while the lock
+# and e2e stayed on 0.65.1 / 0.47.0, two venvs per runner host, and
+# `apps.analysis.run` began dying with SIGSEGV (ip 0) under the e2e daemon at
+# about one crash a minute (kernel log on agentbox, 48 in one hour).
+# tests/scripts/test_requirements_pins_match_lock.py keeps the two in step.
+numba==0.65.1
+llvmlite==0.47.0
 # madmom 0.16.1 still imports ``collections.MutableSequence`` (removed in
 # Python 3.10+).  The maintained git HEAD has 3.12+ fixes.  Install with
 # ``pip install --no-build-isolation -r requirements.txt`` because madmom

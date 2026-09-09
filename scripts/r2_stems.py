@@ -100,7 +100,7 @@ def r2_client(invocation: str = "scripts/stem_inventory.py --check-r2") -> Any:
 
 
 def list_r2_sizes(client: Any, bucket: str) -> dict[str, int]:
-    """{key: size} for every stem object in the bucket.
+    """{key: size} for every content-addressed object in the bucket.
 
     Paginated: a full library is thousands of objects, well past the 1000-key
     cap on one response, and taking page one silently would make the migration
@@ -108,7 +108,7 @@ def list_r2_sizes(client: Any, bucket: str) -> dict[str, int]:
     """
     sizes: dict[str, int] = {}
     for page in client.get_paginator("list_objects_v2").paginate(
-        Bucket=bucket, Prefix=f"{R2_STEM_PREFIX}/"
+        Bucket=bucket, Prefix="assets/"
     ):
         for item in page.get("Contents", []):
             sizes[item["Key"]] = item["Size"]

@@ -9,8 +9,10 @@ name: Trunk Red Alarm
 # 'schedule' is watched too, and only E2E carries that trigger (CI has none):
 # E2E's `extended` job runs ONLY on schedule/workflow_dispatch (never push), so
 # a push-only filter can never see it fail. Issue #1504 -- the nightly
-# extended tier failed 8 nights running at the FULL webkit artifact suite step
-# with no alarm, because nothing watched a scheduled run.
+# extended tier failed 8 nights running (Tue 1 to Tue 8 Sep 2026) at the FULL
+# webkit artifact suite step with no alarm, because a scheduled run is
+# attached to no PR and nothing watched it. A scheduled run's head_branch is
+# still the default branch, so the same gate below admits it too.
 on:
   workflow_run:
     workflows: [CI, E2E]
@@ -44,11 +46,11 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
-          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -euo pipefail
           short="${HEAD_SHA:0:8}"
-          title="Trunk red: $WORKFLOW_NAME failed on main at $short"
+          title="Trunk red: $WORKFLOW_NAME ($RUN_EVENT) failed on main at $short"
 
           gh label create ci:trunk-red \
             --color B60205 \
@@ -61,8 +63,8 @@ jobs:
 
           - Commit: \`$HEAD_SHA\`
           - Workflow: \`$WORKFLOW_NAME\`
-          - Trigger: \`$TRIGGER_EVENT\`
           - Run: [$RUN_ID]($RUN_URL)
+          - Event: \`$RUN_EVENT\` (push = the merge result; schedule = the nightly extended tier on main)
           - Detection: this trunk-watched workflow run (push-to-main or scheduled) measured the actual state of main and failed.
 
           This issue is updated for every failed push-to-main or scheduled trunk-watched workflow run until a human resolves it.

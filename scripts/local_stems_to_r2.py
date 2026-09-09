@@ -33,24 +33,55 @@ next run does exactly the remainder.
 
 VERIFIED BY RE-LISTING, NOT BY STATUS CODES. After uploading, the bucket is
 listed again and sizes compared, because a truncated PUT can still answer
-HTTP 200. Size rather than checksum: boto3 switches to multipart above its
-threshold, which makes the ETag a hash-of-hashes rather than the object's
-MD5, so an ETag comparison would be sound for small objects and quietly wrong
-for exactly the large ones most likely to truncate.
+HTTP 200. Size rather than checksum, even though every upload here is one
+``put_object`` call with the body already in hand (never multipart): a fresh
+listing is independent of the upload path's own return value, so it also
+catches an object another rail already left short before this run ever
+touched it.
+
+ONE READ PER SOURCE, NOT TWO. The body is read once while planning and
+handed straight to ``put_object``; nothing re-opens the path a second time
+to perform the transfer. A source re-opened after being hashed can be
+replaced in between by a same-size render, which a size-only reconciliation
+would then wave through under the previous run's content-addressed key --
+so the upload ships the exact bytes that were hashed, not a fresh read of
+whatever is at that path when the network call happens.
 
 Requirements (mini-PRD):
   ✔︎ ✅ the work set is (local objects) - (R2 objects with matching size).
     [if] re-run after a full success [then] it uploads nothing and exits 0
     [if] killed mid-run [then] the next run resumes with no repeated uploads
     [if] an object exists in R2 at the wrong size [then] it is re-uploaded
-  ✔︎ ✅ keys match the farm scheme, stems/<preset>/<stable_id>/<filename>.
-    [if] a key would differ from modal_vocal_farm's [then ⛔️] raise
+  ✔︎ ✅ keys are content-addressed, assets/<sha256[:2]>/<sha256>.
+    [if] a key differs from the source body's SHA-256 address [then ⛔️] raise
   ✔︎ ✅ no local file is ever deleted or modified.
     [if] any code path would unlink a source [then ⛔️] it does not exist
   ✔︎ ✅ uploads are confirmed against a fresh listing, not against HTTP codes.
     [if] a size differs after upload [then ⛔️] report it and exit non-zero
-  ✔︎ ✅ every run appends what it did to a journal.
-    [if] a run uploads objects [then] the journal gains one line per run
+  ✔︎ ✅ every confirmed object's mapping is journaled, not only this run's batch.
+    [if] a PUT lands but the process dies before appending [then] the next
+    run's journal still records it once R2 confirms it
+    [if] another rail already published the digest [then] this run's journal
+    still records the legacy-to-content mapping for it
+  ✔︎ ✅ each source is read once; the bytes hashed are the bytes shipped.
+    [if] the source changes between hashing and the PUT [then ⛔️] raise
+    before any client call, and never re-open the path for the transfer
+  ✔︎ ✅ a torn final journal line does not block the next run.
+    [if] the process is killed mid-append [then] the next run's journal read
+    tolerates the truncated last line and still raises on any earlier
+    corruption
+    [if] a later run appends on top of that same torn tail [then] the WRITER
+    truncates it first (a stderr note names what was discarded), instead of
+    concatenating valid JSON onto invalid bytes and losing every mapping
+    appended after it; a well-formed prior tail is left untouched
+    [if] a kill lands right after the final closing brace but before its
+    newline is flushed [then] the WRITER inserts the missing separator
+    before appending, instead of concatenating the new record onto the old
+    one with no separator and silently losing both mappings on the next read
+    [if] the repair write itself is interrupted [then] it writes to a
+    sibling temp file and renames it over the original, instead of
+    truncating the journal in place, so a kill mid-repair cannot lose every
+    prior mapping (not just the torn line)
 
 Run (R2_* come from Doppler; boto3 is inline, so no repo venv needed):
   uv run scripts/local_stems_to_r2.py --dry-run
@@ -67,6 +98,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -75,6 +107,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from apps.cloud.r2_keys import asset_object_key
 from scripts.r2_stems import DEFAULT_BUCKET, list_r2_sizes, r2_client
 from scripts.stem_inventory import (
     REPO_ROOT,
@@ -105,10 +138,35 @@ class Upload:
     key: str
     source: Path
     size: int
+    legacy_key: str = ""
 
     @property
     def content_type(self) -> str:
         return CONTENT_TYPES.get(self.source.suffix.lower(), "application/octet-stream")
+
+
+def object_key_for_body(body: bytes) -> str:
+    """Derive the canonical R2 location for these exact bytes."""
+    return asset_object_key(hashlib.sha256(body).hexdigest())
+
+
+def _read_and_key(source: Path, legacy_key: str = "") -> tuple[bytes, Upload]:
+    """Read a source exactly once and key it, returning both.
+
+    ``upload_one`` needs the bytes it validated against, not a second read of
+    the path: reading here and handing the same buffer to ``put_object``
+    closes the window where a same-size replacement between validation and
+    transfer would ship the wrong bytes under the previous content-addressed
+    key.
+    """
+    body = source.read_bytes()
+    return body, Upload(object_key_for_body(body), source, len(body), legacy_key)
+
+
+def upload_for_source(source: Path, legacy_key: str = "") -> Upload:
+    """Snapshot a local object's content address and size before publishing."""
+    _, item = _read_and_key(source, legacy_key)
+    return item
 
 
 #----- work set ---------------------------------------------------------------
@@ -124,9 +182,7 @@ def planned_uploads(bundles: list[Bundle]) -> list[Upload]:
         if not bundle.is_publishable:
             continue
         for filename, source in sorted(bundle.files.items()):
-            planned.append(
-                Upload(bundle.key_for(filename), source, source.stat().st_size)
-            )
+            planned.append(upload_for_source(source, bundle.key_for(filename)))
     return planned
 
 
@@ -142,14 +198,39 @@ def outstanding(planned: list[Upload], remote: dict[str, int]) -> list[Upload]:
 
 #----- transfer ---------------------------------------------------------------
 
+def _put_object_kwargs(item: Upload) -> dict[str, Any]:
+    """Build the exact ``put_object`` payload from one read of ``item.source``.
+
+    Pinned as its own pure function so this decision is testable without a
+    client of any kind: ``Body`` is the bytes already read into memory, never
+    the path, so nothing downstream (real boto3 or otherwise) can reopen the
+    source a second time. Refuses a source changed since it was keyed.
+    """
+    body, snapshot = _read_and_key(item.source, item.legacy_key)
+    if snapshot != item:
+        raise RuntimeError(
+            f"source changed after content-addressing: {item.source}; rerun to re-plan"
+        )
+    return {"Key": item.key, "Body": body, "ContentType": item.content_type}
+
+
 def upload_one(client: Any, bucket: str, item: Upload) -> None:
-    """Put one object. Raises on failure; the caller records and continues."""
-    client.upload_file(
-        str(item.source),
-        bucket,
-        item.key,
-        ExtraArgs={"ContentType": item.content_type},
-    )
+    """Put one object from the single body it was keyed from.
+
+    ``client.upload_file`` would reopen ``item.source`` a second time, and a
+    same-size replacement in that window would silently ship the wrong bytes
+    under a content-addressed key that no longer matches them; passing
+    ``Body=`` (built by ``_put_object_kwargs``) removes the path argument that
+    vulnerability needed in the first place.
+
+    Built as its own statement, not inlined into the call: ``client.put_object``
+    is resolved (attribute lookup) before a call's arguments are evaluated, so
+    inlining ``_put_object_kwargs(item)`` there would attempt that lookup
+    before a changed source is ever detected, touching ``client`` on exactly
+    the path meant to raise before any client call.
+    """
+    kwargs = _put_object_kwargs(item)
+    client.put_object(Bucket=bucket, **kwargs)
 
 
 def upload_all(
@@ -192,24 +273,121 @@ def reconcile(
     return confirmed, bad
 
 
-def verify(
-    client: Any, bucket: str, attempted: list[Upload]
-) -> tuple[list[Upload], list[str]]:
-    """Re-list the bucket and confirm each object landed at the right size.
-
-    Deliberately independent of the upload's own return values: the whole
-    point is to catch the case where the transfer reported success and the
-    object is nonetheless short.
-    """
-    return reconcile(attempted, list_r2_sizes(client, bucket))
-
-
 def append_journal(path: Path, record: dict[str, Any]) -> None:
     """One line per run. Append-only, so a later run can never rewrite the
-    history of an earlier one."""
+    history of an earlier one.
+
+    Repairs a torn tail left by a kill mid-append first: appending straight
+    onto a truncated final line would concatenate this run's valid JSON onto
+    invalid bytes with no separator, corrupting the new record too and
+    silently swallowing every mapping recorded from this point forward.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    _truncate_torn_tail(path)
     with path.open("a") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def _truncate_torn_tail(path: Path) -> None:
+    """Repair a journal so the next append never lands mid-line.
+
+    Two shapes come out of a kill mid-write: a genuinely torn line (drop it,
+    only ever touching the LAST line -- an earlier corrupt line is real
+    corruption and stays in place to raise), and a complete-but-unterminated
+    final object whose trailing newline never landed. Read-time tolerance
+    treats the second as fine, since json.loads ignores a missing trailing
+    newline, but appending straight onto it would concatenate the new record
+    right after the old one with no separator, corrupting both on the next
+    read.
+    """
+    if not path.is_file():
+        return
+    lines = path.read_text().splitlines(keepends=True)
+    if not lines:
+        return
+    try:
+        json.loads(lines[-1])
+    except json.JSONDecodeError:
+        print(
+            f"local_stems_to_r2: discarding torn tail line from {path}: {lines[-1]!r}",
+            file=sys.stderr,
+        )
+        # write_text() truncates in place first: a kill between that
+        # truncation and the write landing would lose every prior mapping,
+        # not just the torn line. Write the repair to a sibling temp file
+        # and rename it over the original, so a kill mid-repair leaves
+        # either the untouched original or the fully-written repair, never
+        # a partial file.
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("".join(lines[:-1]))
+        tmp.replace(path)
+        return
+    if not lines[-1].endswith("\n"):
+        with path.open("a") as handle:
+            handle.write("\n")
+
+
+def _journaled_mappings(path: Path) -> set[tuple[str, str]]:
+    """(legacy_key, key) pairs already recorded across every prior run.
+
+    Paired identity, not legacy_key alone: re-rendering a source keeps the
+    same legacy_key but changes its content key, and a legacy_key-only dedup
+    would silently drop that new mapping forever, which is the same class of
+    permanent mapping loss this journal exists to prevent.
+
+    Tolerates a torn FINAL line only: a process killed mid-append leaves a
+    truncated last record, and this job's own kill-and-resume design means
+    the very next run must read the journal, not need manual repair first.
+    An earlier line that fails to parse is real corruption, not an
+    interrupted write, and still raises.
+    """
+    if not path.is_file():
+        return set()
+    mappings: set[tuple[str, str]] = set()
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    for index, line in enumerate(lines):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            if index == len(lines) - 1:
+                break
+            raise
+        for obj in record.get("objects", []):
+            mappings.add((obj["legacy_key"], obj["key"]))
+    return mappings
+
+
+def new_journal_mappings(
+    planned: list[Upload],
+    final_remote: dict[str, int],
+    already_journaled: set[tuple[str, str]],
+) -> list[Upload]:
+    """Every planned source whose destination is confirmed in R2 right now and
+    whose (legacy_key, key) pair has not already been journaled.
+
+    Covers uploads confirmed THIS run and objects a prior interrupted run or
+    another rail already put in place: both are "confirmed present in R2",
+    and both need their legacy-to-content mapping recorded exactly once, or
+    that association is permanently lost despite R2 holding the object.
+    """
+    return [
+        item
+        for item in planned
+        if final_remote.get(item.key) == item.size
+        and (item.legacy_key, item.key) not in already_journaled
+    ]
+
+
+def run_worth_recording(batch: list[Upload], new_mappings: list[Upload]) -> bool:
+    """Whether this run has anything a durable record must not lose.
+
+    True whenever uploads were attempted, even if every one of them failed or
+    came up short: `upload_errors` and `size_mismatches` are the only durable
+    trace of that outcome, and gating the journal append on `new_mappings`
+    alone would silently drop them on a run that attempted work and confirmed
+    none of it, printing "nothing to do" over what was actually a failure.
+    """
+    return bool(batch) or bool(new_mappings)
 
 
 #----- cli --------------------------------------------------------------------
@@ -280,29 +458,47 @@ def main(argv: list[str] | None = None) -> int:
         f"r2 holds {len(remote)} stem objects; outstanding={len(todo)}, "
         f"this run={len(batch)} ({sum(i.size for i in batch) / 1e9:.2f} GB)"
     )
-    if not batch:
-        print("nothing to do: R2 is caught up with local")
-        return 0
 
-    failures = upload_all(client, args.bucket, batch, args.parallelism)
-    confirmed, mismatched = verify(client, args.bucket, batch)
+    failures: dict[str, str] = {}
+    if batch:
+        failures = upload_all(client, args.bucket, batch, args.parallelism)
+        # Re-list rather than trust upload_all's own return values: the
+        # whole point is to catch a transfer that reported success while the
+        # object landed short. Reused below for journaling too, so an object
+        # another rail already published gets its mapping recorded even
+        # though this run never uploaded it.
+        final_remote = list_r2_sizes(client, args.bucket)
+    else:
+        final_remote = remote
 
-    record = {
-        "at": dt.datetime.now(dt.UTC).isoformat(),
-        "bucket": args.bucket,
-        "attempted": len(batch),
-        "confirmed": len(confirmed),
-        "bytes_confirmed": sum(i.size for i in confirmed),
-        "upload_errors": failures,
-        "size_mismatches": mismatched,
-    }
-    append_journal(args.journal, record)
+    confirmed, mismatched = reconcile(batch, final_remote)
 
-    print(
-        f"\ndone: {len(confirmed)}/{len(batch)} objects confirmed in R2 "
-        f"({sum(i.size for i in confirmed) / 1e9:.2f} GB). "
-        f"journal: {args.journal}"
-    )
+    already_journaled = _journaled_mappings(args.journal)
+    new_mappings = new_journal_mappings(planned, final_remote, already_journaled)
+
+    if run_worth_recording(batch, new_mappings):
+        record = {
+            "at": dt.datetime.now(dt.UTC).isoformat(),
+            "bucket": args.bucket,
+            "attempted": len(batch),
+            "confirmed": len(confirmed),
+            "bytes_confirmed": sum(i.size for i in confirmed),
+            "upload_errors": failures,
+            "size_mismatches": mismatched,
+            "objects": [
+                {"legacy_key": item.legacy_key, "key": item.key}
+                for item in new_mappings
+            ],
+        }
+        append_journal(args.journal, record)
+        print(
+            f"\ndone: {len(confirmed)}/{len(batch)} objects confirmed in R2 "
+            f"({sum(i.size for i in confirmed) / 1e9:.2f} GB); "
+            f"{len(new_mappings)} new mapping(s) journaled. journal: {args.journal}"
+        )
+    else:
+        print("nothing to do: R2 is caught up with local and the journal is current")
+
     for key, reason in list(failures.items())[:10]:
         print(f"  upload failed {key}: {reason}", file=sys.stderr)
     for line in mismatched[:10]:
