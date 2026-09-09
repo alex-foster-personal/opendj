@@ -58,6 +58,8 @@ def _track_to_out(track: Track, has_rb_mapping: bool) -> TrackOut:
             source=v.source,
             confidence=v.confidence,
             modified_at=v.modified_at,
+            status=v.status,
+            reason=v.reason,
         )
         for k, v in (track.provenance or {}).items()
     }

@@ -46,6 +46,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence
 
+from apps.analysis import selection as analysis_selection
+from apps.analysis.selection import EffectiveField
 from apps.shared.state import db as _state_db
 from apps.shared.state import queries as _state_queries
 from apps.shared.state import schema as _state_schema
@@ -209,7 +211,7 @@ def _parse_rfc3339(ts: str) -> datetime:
 
 def _effective_updated_at(
     row_updated_at: str,
-    fields: dict[str, tuple[Any, str, Optional[float], str]],
+    fields: dict[str, EffectiveField],
 ) -> str:
     """Latest of the row ``updated_at`` and every field ``modified_at``.
 
@@ -217,13 +219,20 @@ def _effective_updated_at(
     ``StateWriter.set_field`` must advance the etag even though they never
     touch the ``tracks`` identity row. Returns the original string of the
     winning stamp so the derivation is byte-stable across restarts.
+
+    A field with an EMPTY stamp is skipped: an own lane with no analysis
+    record yet reports ``status: missing`` and no time, and there is no
+    stamp to compare. Parsing "" here would raise on every unanalyzed
+    track the moment a lane is switched to own.
     """
     best = row_updated_at
     best_dt = _parse_rfc3339(row_updated_at)
-    for _value, _source, _confidence, modified_at in fields.values():
-        dt = _parse_rfc3339(modified_at)
+    for view in fields.values():
+        if not view.modified_at:
+            continue
+        dt = _parse_rfc3339(view.modified_at)
         if dt > best_dt:
-            best, best_dt = modified_at, dt
+            best, best_dt = view.modified_at, dt
     return best
 
 
@@ -248,12 +257,16 @@ def _row_to_track(
         except (json.JSONDecodeError, TypeError):
             artist = None
 
-    bpm = fields.get("bpm", (None,))[0]
-    key = fields.get("key", (None,))[0]
-    rating = fields.get("rating", (None,))[0]
-    tags_val = fields.get("tags", (None,))[0]
-    notes = fields.get("notes", (None,))[0]
-    last_played_at = fields.get("last_played_at", (None,))[0]
+    def _val(name: str) -> Any:
+        view = fields.get(name)
+        return view.value if view is not None else None
+
+    bpm = _val("bpm")
+    key = _val("key")
+    rating = _val("rating")
+    tags_val = _val("tags")
+    notes = _val("notes")
+    last_played_at = _val("last_played_at")
 
     if isinstance(bpm, (int, float)):
         bpm = float(bpm)
@@ -276,10 +289,10 @@ def _row_to_track(
         key = str(key)
 
     provenance: dict[str, Provenance] = {}
-    for fname, (value, source, confidence, modified_at) in fields.items():
+    for fname, view in fields.items():
         provenance[fname] = Provenance(
-            value=value, source=source, confidence=confidence,  # type: ignore[arg-type]
-            modified_at=modified_at,
+            value=view.value, source=view.source, confidence=view.confidence,
+            modified_at=view.modified_at, status=view.status, reason=view.reason,
         )
 
     return Track(
@@ -303,17 +316,28 @@ def _row_to_track(
 
 def _fetch_fields(
     conn: sqlite3.Connection, stable_ids: list[str],
-) -> dict[str, dict[str, tuple[Any, str, Optional[float], str]]]:
-    """Fetch the EAV-projected fields for ``stable_ids``.
+) -> dict[str, dict[str, EffectiveField]]:
+    """Fetch the effective projected fields for ``stable_ids``.
 
-    Returns ``{stable_id: {field_name: (value, source, confidence, modified_at)}}``.
-    Only fields in :data:`_EAV_FIELDS` are returned.
+    Returns ``{stable_id: {field_name: EffectiveField}}``.
+
+    Two sources, one function. The ordinary EAV fields
+    (:data:`_EAV_FIELDS`) come from ``track_fields`` as they always have.
+    The LANE-OWNED fields (``bpm``, ``key``, ``loudness_lufs``,
+    ``loudness_dbtp``, ``key_change_count``, ``tempo_change_count``) come
+    from :func:`apps.analysis.selection.effective_fields`, which reads
+    ``track_fields`` for a lane on rbx and ``analysis_projection`` for a
+    lane on own. Its answer OVERRIDES the EAV pass, so switching a lane to
+    own cannot leave the rekordbox value showing, and an own lane with no
+    record shows ``status: missing`` rather than silently falling back --
+    which is the substitution native-analysis v1 exists to remove.
+
+    Nothing here writes. An own value never reaches ``track_fields`` or
+    ``track_field_history``.
     """
     if not stable_ids:
         return {}
-    out: dict[str, dict[str, tuple[Any, str, Optional[float], str]]] = {
-        sid: {} for sid in stable_ids
-    }
+    out: dict[str, dict[str, EffectiveField]] = {sid: {} for sid in stable_ids}
     # Use chunked IN (...) to avoid SQLite's default 999 variable cap.
     chunk = 500
     eav_placeholders = ",".join("?" * len(_EAV_FIELDS))
@@ -334,10 +358,44 @@ def _fetch_fields(
                 value = json.loads(row["value_json"])
             except (json.JSONDecodeError, TypeError):
                 value = row["value_json"]
-            out[sid][fname] = (
-                value, row["source"], row["confidence"], row["modified_at"],
+            out[sid][fname] = EffectiveField(
+                value=value, source=row["source"], confidence=row["confidence"],
+                modified_at=row["modified_at"], status="ok", reason=None,
             )
+
+    for sid, lane_fields in _lane_owned_fields(conn, stable_ids).items():
+        out[sid].update(lane_fields)
     return out
+
+
+def _lane_owned_fields(
+    conn: sqlite3.Connection, stable_ids: list[str],
+) -> dict[str, dict[str, EffectiveField]]:
+    """The lane-owned half, or nothing at all on a pre-migration database.
+
+    ``analysis_projection`` and ``analysis_source_default`` are created by
+    :mod:`apps.analysis.store` / :mod:`apps.analysis.selection` on their
+    first write. A read-only backend pointed at a state.db that has never
+    seen an own record therefore has neither table, and every lane is on
+    ``rbx`` by definition: the EAV pass above already produced the right
+    answer, so there is nothing to overlay.
+
+    This is NOT a fallback that hides a failure. It is scoped to the one
+    condition where the own half provably cannot exist, and it is checked
+    by asking sqlite_master rather than by catching an error, so a table
+    that exists and is broken still raises.
+    """
+    if not _table_exists_by_name(conn, "analysis_projection"):
+        return {}
+    selection = analysis_selection.Selection.resolve(conn)
+    return analysis_selection.effective_fields(conn, stable_ids, selection)
+
+
+def _table_exists_by_name(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone()
+    return row is not None
 
 
 def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:

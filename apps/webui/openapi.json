@@ -538,6 +538,61 @@
         "title": "AnalysisQueueOut",
         "type": "object"
       },
+      "AnalysisSourceOut": {
+        "properties": {
+          "lanes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LaneSourceOut"
+            },
+            "title": "Lanes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "lanes"
+        ],
+        "title": "AnalysisSourceOut",
+        "type": "object"
+      },
+      "AnalysisSourcePut": {
+        "description": "Set the default, the toggle, or both, for one lane.",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rbx or own. Persisted; survives a relaunch.",
+            "title": "Default"
+          },
+          "lane": {
+            "description": "beatgrid, key, waveform, loudness or vocal",
+            "title": "Lane",
+            "type": "string"
+          },
+          "toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "unset, rbx or own. In-memory; resets to unset on relaunch.",
+            "title": "Toggle"
+          }
+        },
+        "required": [
+          "lane"
+        ],
+        "title": "AnalysisSourcePut",
+        "type": "object"
+      },
       "AnlzCueOut": {
         "description": "Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).",
         "properties": {
@@ -4454,6 +4509,33 @@
         "title": "LabelRequest",
         "type": "object"
       },
+      "LaneSourceOut": {
+        "description": "One lane's persisted default, dev toggle, and resulting source.",
+        "properties": {
+          "default": {
+            "description": "Persisted per-lane default source: rbx or own",
+            "title": "Default",
+            "type": "string"
+          },
+          "effective": {
+            "description": "The source actually read: the toggle unless it is unset",
+            "title": "Effective",
+            "type": "string"
+          },
+          "toggle": {
+            "description": "In-memory dev toggle: unset, rbx or own. Launches unset.",
+            "title": "Toggle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default",
+          "toggle",
+          "effective"
+        ],
+        "title": "LaneSourceOut",
+        "type": "object"
+      },
       "LastImportOut": {
         "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
         "properties": {
@@ -6756,6 +6838,7 @@
         "type": "object"
       },
       "ProvenanceOut": {
+        "description": "One field's value plus where it came from and whether it is real.\n\n``status`` has NO DEFAULT on purpose (native-analysis v1, spec section 3\nand `.planning/REQUIREMENTS.md` NATIVE-04). A default of ``ok`` would let\na caller omit the field and serialize a `failed` or `missing` own-analysis\nlane as a success, which is the exact silent-fallback shape this milestone\nexists to remove. Every construction site states its status, and the\nrekordbox/legacy boundary passes ``ok`` explicitly.",
         "properties": {
           "confidence": {
             "anyOf": [
@@ -6772,8 +6855,28 @@
             "title": "Modified At",
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "source": {
             "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing"
+            ],
+            "title": "Status",
             "type": "string"
           },
           "value": {
@@ -6783,7 +6886,8 @@
         "required": [
           "value",
           "source",
-          "modified_at"
+          "modified_at",
+          "status"
         ],
         "title": "ProvenanceOut",
         "type": "object"
@@ -12898,6 +13002,66 @@
           }
         },
         "summary": "Run Analysis Queue",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/analysis/source": {
+      "get": {
+        "operationId": "get_analysis_source_api_v1_analysis_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Analysis Source",
+        "tags": [
+          "analysis"
+        ]
+      },
+      "put": {
+        "operationId": "put_analysis_source_api_v1_analysis_source_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisSourcePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Analysis Source",
         "tags": [
           "analysis"
         ]

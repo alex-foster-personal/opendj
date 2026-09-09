@@ -26,6 +26,13 @@ FIELD_TYPES: dict[str, str] = {
     "added_date": "date",
     "last_played": "date",
     "paired_with": "string",
+    # native-analysis v1 (NATIVE-05, NATIVE-07). These three have no
+    # rekordbox equivalent and exist only in `analysis_projection`, read
+    # through apps.analysis.selection.field_column_sql so a filter on them
+    # resolves the same way the track list does.
+    "loudness_lufs": "number",
+    "key_change_count": "number",
+    "tempo_change_count": "number",
 }
 ALLOWED_FIELDS: tuple[str, ...] = tuple(FIELD_TYPES.keys())
 
@@ -45,6 +52,9 @@ ALLOWED_OPS_BY_FIELD: dict[str, tuple[str, ...]] = {
     "added_date": _DATE_OPS,
     "last_played": _DATE_OPS,
     "paired_with": ("=", "!=", "in"),
+    "loudness_lufs": _NUMERIC_OPS,
+    "key_change_count": _NUMERIC_OPS,
+    "tempo_change_count": _NUMERIC_OPS,
 }
 
 LOGICAL_OPS: tuple[str, ...] = ("and", "or", "not")

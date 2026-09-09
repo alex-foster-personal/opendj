@@ -311,6 +311,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analysis/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Analysis Source */
+        get: operations["get_analysis_source_api_v1_analysis_source_get"];
+        /** Put Analysis Source */
+        put: operations["put_analysis_source_api_v1_analysis_source_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
@@ -3215,6 +3233,34 @@ export interface components {
             /** Unreachable */
             unreachable: number;
         };
+        /** AnalysisSourceOut */
+        AnalysisSourceOut: {
+            /** Lanes */
+            lanes: {
+                [key: string]: components["schemas"]["LaneSourceOut"];
+            };
+        };
+        /**
+         * AnalysisSourcePut
+         * @description Set the default, the toggle, or both, for one lane.
+         */
+        AnalysisSourcePut: {
+            /**
+             * Default
+             * @description rbx or own. Persisted; survives a relaunch.
+             */
+            default?: string | null;
+            /**
+             * Lane
+             * @description beatgrid, key, waveform, loudness or vocal
+             */
+            lane: string;
+            /**
+             * Toggle
+             * @description unset, rbx or own. In-memory; resets to unset on relaunch.
+             */
+            toggle?: string | null;
+        };
         /**
          * AnlzCueOut
          * @description Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).
@@ -4629,6 +4675,27 @@ export interface components {
             labeler: string;
         };
         /**
+         * LaneSourceOut
+         * @description One lane's persisted default, dev toggle, and resulting source.
+         */
+        LaneSourceOut: {
+            /**
+             * Default
+             * @description Persisted per-lane default source: rbx or own
+             */
+            default: string;
+            /**
+             * Effective
+             * @description The source actually read: the toggle unless it is unset
+             */
+            effective: string;
+            /**
+             * Toggle
+             * @description In-memory dev toggle: unset, rbx or own. Launches unset.
+             */
+            toggle: string;
+        };
+        /**
          * LastImportOut
          * @description What the previous rekordbox import did. Mirrors ``ImportOutcome``.
          *
@@ -5502,14 +5569,31 @@ export interface components {
              */
             status: "pass" | "fail";
         };
-        /** ProvenanceOut */
+        /**
+         * ProvenanceOut
+         * @description One field's value plus where it came from and whether it is real.
+         *
+         *     ``status`` has NO DEFAULT on purpose (native-analysis v1, spec section 3
+         *     and `.planning/REQUIREMENTS.md` NATIVE-04). A default of ``ok`` would let
+         *     a caller omit the field and serialize a `failed` or `missing` own-analysis
+         *     lane as a success, which is the exact silent-fallback shape this milestone
+         *     exists to remove. Every construction site states its status, and the
+         *     rekordbox/legacy boundary passes ``ok`` explicitly.
+         */
         ProvenanceOut: {
             /** Confidence */
             confidence?: number | null;
             /** Modified At */
             modified_at: string;
+            /** Reason */
+            reason?: string | null;
             /** Source */
             source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "missing";
             /** Value */
             value: unknown;
         };
@@ -8022,6 +8106,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+        };
+    };
+    get_analysis_source_api_v1_analysis_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisSourceOut"];
+                };
+            };
+        };
+    };
+    put_analysis_source_api_v1_analysis_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisSourcePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisSourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

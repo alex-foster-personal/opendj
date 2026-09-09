@@ -39,6 +39,9 @@ Source = Literal[
     "open-dj-tool", "manual", "inferred", "webui",
 ]
 
+# Whether a field's value is real, measured-and-failed, or not yet measured.
+FieldStatus = Literal["ok", "failed", "missing"]
+
 DEFAULT_LIMIT: int = 200
 MAX_LIMIT: int = 1000
 
@@ -49,11 +52,23 @@ def _utcnow_iso() -> str:
 
 @dataclass
 class Provenance:
-    """Provenance envelope per open-dj v0 strawman section 6 / OPEN-01c."""
+    """Provenance envelope per open-dj v0 strawman section 6 / OPEN-01c.
+
+    ``status`` and ``reason`` carry native-analysis v1's failure half: an own
+    lane that ran and could not measure is `failed` with the lane's named
+    reason, and a lane with no record yet is `missing`. ``status`` is required
+    for the reason spelled out on :class:`~apps.webui.server.models.ProvenanceOut`.
+
+    ``source`` widened to `Source | str` when own analysis arrived: an own
+    value's source is its canonical backend name (`own_beatgrid.inapp`), which
+    is an open set the closed Literal cannot enumerate.
+    """
     value: Any
-    source: Source
+    source: Source | str
     confidence: float | None
     modified_at: str
+    status: FieldStatus
+    reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -401,18 +416,21 @@ class InMemoryBackend:
                 if "rating" in update.patch:
                     updated.rating = update.patch["rating"]
                     prov["rating"] = Provenance(value=updated.rating, source=source,
-                                                 confidence=1.0, modified_at=now)
+                                                confidence=1.0, modified_at=now,
+                                                status="ok")
                 if "notes" in update.patch:
                     updated.notes = update.patch["notes"]
                     prov["notes"] = Provenance(value=updated.notes, source=source,
-                                                confidence=1.0, modified_at=now)
+                                               confidence=1.0, modified_at=now,
+                                               status="ok")
                 if "file_path" in update.patch:
                     file_path = update.patch["file_path"]
                     if not isinstance(file_path, str) or not file_path:
                         raise BackendError("file_path must be a non-empty string")
                     updated.file_path = file_path
                     prov["file_path"] = Provenance(value=file_path, source=source,
-                                                    confidence=1.0, modified_at=now)
+                                                   confidence=1.0, modified_at=now,
+                                                   status="ok")
                 tags = list(updated.tags or [])
                 if update.patch.get("tags_add"):
                     for tag in update.patch["tags_add"]:
@@ -423,7 +441,8 @@ class InMemoryBackend:
                 if "tags_add" in update.patch or "tags_remove" in update.patch:
                     updated.tags = tags
                     prov["tags"] = Provenance(value=list(tags), source=source,
-                                               confidence=1.0, modified_at=now)
+                                              confidence=1.0, modified_at=now,
+                                              status="ok")
                 updated.provenance = prov
                 results.append(updated)
             changed = any(
