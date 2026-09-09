@@ -5,6 +5,12 @@ name: Trunk Red Alarm
 # durable alert that does not depend on unrelated PR authors finding it first.
 # This watchdog runs after CI concludes and has its own failure state, so a
 # failed CI run cannot prevent the alarm from being recorded.
+#
+# 'schedule' is watched too, and only E2E carries that trigger (CI has none):
+# E2E's `extended` job runs ONLY on schedule/workflow_dispatch (never push), so
+# a push-only filter can never see it fail. Issue #1504 -- the nightly
+# extended tier failed 8 nights running at the FULL webkit artifact suite step
+# with no alarm, because nothing watched a scheduled run.
 on:
   workflow_run:
     workflows: [CI, E2E]
@@ -22,9 +28,9 @@ concurrency:
 
 jobs:
   trunk_red:
-    name: Alarm a failed push-to-main CI run
+    name: Alarm a failed trunk-watched CI/E2E run
     if: >-
-      github.event.workflow_run.event == 'push'
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
       && github.event.workflow_run.head_branch == github.event.repository.default_branch
       && github.event.workflow_run.conclusion == 'failure'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
@@ -38,6 +44,7 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -euo pipefail
           short="${HEAD_SHA:0:8}"
@@ -45,7 +52,7 @@ jobs:
 
           gh label create ci:trunk-red \
             --color B60205 \
-            --description "A push-to-main watched workflow failed and needs immediate triage" \
+            --description "A push-to-main or scheduled trunk-watched workflow failed and needs immediate triage" \
             --force
 
           report_file="${RUNNER_TEMP}/trunk-red-${RUN_ID}.md"
@@ -54,10 +61,11 @@ jobs:
 
           - Commit: \`$HEAD_SHA\`
           - Workflow: \`$WORKFLOW_NAME\`
+          - Trigger: \`$TRIGGER_EVENT\`
           - Run: [$RUN_ID]($RUN_URL)
-          - Detection: the push-to-main workflow run measured the actual merge result and failed.
+          - Detection: this trunk-watched workflow run (push-to-main or scheduled) measured the actual state of main and failed.
 
-          This issue is updated for every failed push-to-main watched workflow run until a human resolves it.
+          This issue is updated for every failed push-to-main or scheduled trunk-watched workflow run until a human resolves it.
           EOF
 
           existing=$(gh issue list --label ci:trunk-red --state open \
