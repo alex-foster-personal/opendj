@@ -109,10 +109,10 @@ def _line_quality(bucket: Sequence[WordRow]) -> tuple[int, int, float | None]:
 
 def _line_bounds(bucket: Sequence[WordRow]) -> tuple[float | None, float | None]:
     """(first sung onset, last sung offset). None when nothing in the line is timed."""
-    timed = [w for w in bucket if w.start_s is not None]
+    starts = [w.start_s for w in bucket if w.start_s is not None]
     ends = [w.end_s for w in bucket if w.end_s is not None]
     return (
-        min(w.start_s for w in timed) if timed else None,
+        min(starts) if starts else None,
         max(ends) if ends else None,
     )
 

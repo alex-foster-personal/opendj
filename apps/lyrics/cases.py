@@ -49,7 +49,7 @@ def build_cases(song: JamendoSong, language_peers: list[JamendoSong]) -> list[Ve
     true_words = [w.word for w in song.words]
     finals = [w.line_final for w in song.words]
     seed = zlib.crc32(song.name.encode())
-    identity = list(range(len(true_words)))
+    identity: list[int | None] = list(range(len(true_words)))
     cases: list[VersionCase] = [
         VersionCase("none", true_words, "matched", None, None, source_idx=identity)
     ]

@@ -119,6 +119,7 @@ def _plan_edits(
     inserts: list[tuple[int, list[tuple], str]] = []  # (sheet position, block, log label)
     edits: list[str] = []
     asr_sourced = 0
+    block: list[tuple]
     for f in verdict.findings:
         if f.kind in ("sheet_repeat_unsupported", "missing_in_audio"):
             deletions.update(range(f.sheet_start, f.sheet_end + 1))
