@@ -33,20 +33,62 @@ DECODE_FINGERPRINT = "sha256:663de53948b9c9d36e558f3db58a301677b498eb67da9637338
 MODEL_SHA256 = "sha256:227e7b8b1facb2a9684479407fb7869ae9500a22f70f0af9d43d6984edf96ebb"
 
 
-def beatgrid_payload(bpm: float = 128.0, tempo_changes: int = 0) -> dict[str, Any]:
+# `own_record`'s duration_s is 300.0. The default grid below ends EXACTLY
+# there -- not past it -- because `beats_within_duration` (Codex P2, PR
+# #1562, round two: the first fix's own grid ran to 310.312s against a
+# 300s record) now refuses a grid that outlives the record. Ending exactly
+# on the boundary, rather than short of it, keeps a tempo change legally
+# placeable at the boundary itself (`at_s == duration_s`).
+_FIXTURE_GRID_SPAN_S = 300.0
+
+
+def beatgrid_payload(
+    bpm: float = 128.0, tempo_changes: int = 0, grid_span_s: float = _FIXTURE_GRID_SPAN_S,
+) -> dict[str, Any]:
+    """A beatgrid payload with a real 1-2-3-4 cadence spanning ``[0, grid_span_s]``.
+
+    The next-to-last beat falls out of the regular `interval` cadence; the
+    LAST beat is then pinned to exactly ``grid_span_s`` regardless of where
+    that cadence lands, so the grid never exceeds it (whatever `bpm` is) and
+    a caller can still place a marker on the boundary itself. Pass a
+    `grid_span_s` past `own_record`'s 300.0 to build a grid that
+    deliberately outlives the record, for a test of `beats_within_duration`
+    itself.
+    """
+    interval = 60.0 / bpm
+    beats: list[dict[str, Any]] = []
+    n = 1
+    i = 0
+    while i * interval < grid_span_s:
+        beats.append({"t": round(i * interval, 3), "n": n, "bpm": bpm})
+        n = 1 if n == 4 else n + 1
+        i += 1
+    if beats[-1]["t"] < grid_span_s:
+        # Rounding the regular cadence to 3 decimals can itself land exactly
+        # on grid_span_s (e.g. 299.9996 rounds to 300.0); only append the
+        # boundary beat when that has not already happened, or the two
+        # would tie and fail the strictly-increasing check below.
+        beats.append({"t": grid_span_s, "n": n, "bpm": bpm})
+    # A tempo change is only ever a real one when it sits AT a beat (P2,
+    # PR #1562): the producer, apps.analysis_beatgrid.tempo_change
+    # .detect_tempo_changes, emits every marker at `beats[split]`. Spreading
+    # `tempo_changes` interior beats evenly across the grid (never the first
+    # or last -- the boundary tests exercise those directly) keeps this
+    # fixture a payload the contract actually accepts.
+    marker_indices = [
+        round((i + 1) * (len(beats) - 1) / (tempo_changes + 1))
+        for i in range(tempo_changes)
+    ]
     return {
-        "beats": [
-            {"t": round(i * 60.0 / bpm, 3), "n": (i % 4) + 1, "bpm": bpm}
-            for i in range(8)
-        ],
+        "beats": beats,
         "bpm": bpm,
         "bpm_confidence": 0.93,
         "octave_reason": "beat interval admits only one octave in 60..200",
         "first_downbeat_s": 0.0,
         "tempo_changes": [
-            {"at_s": 120.0 + i, "bpm_before": bpm, "bpm_after": bpm * 1.03,
+            {"at_s": beats[idx]["t"], "bpm_before": bpm, "bpm_after": bpm * 1.03,
              "confidence": 0.8}
-            for i in range(tempo_changes)
+            for idx in marker_indices
         ],
         "static_grid_untrusted": tempo_changes > 0,
     }
