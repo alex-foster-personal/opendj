@@ -420,6 +420,7 @@ export async function updateSmartlist(
 /** The coalescer key for the health body read. One string, one endpoint. */
 const HEALTH_KEY = 'GET /api/v1/health';
 
+
 /**
  * The daemon's health body, shared with any other caller asking inside the
  * boot window (see `src/lib/api/request-coalescer.ts` for the measurement
@@ -435,6 +436,12 @@ const HEALTH_KEY = 'GET /api/v1/health';
 export async function getHealth(
 	options: { fresh?: boolean } = {}
 ): Promise<{ health: HealthOut; bindWarning: string | null }> {
+	// NOT shared with the capability probe, deliberately: that probe reads the
+	// raw bytes to tell a legacy daemon from an engine one, and carries its own
+	// memoization with its own rules. A 2s TTL underneath it would change what
+	// "the daemon is legacy" means, since a daemon whose identity changed inside
+	// the window would keep reporting the identity it had at the start of it.
+	// Joining it was tried and reverted; daemon-capabilities.test.mjs refuses it.
 	const call =
 		options.fresh === true
 			? api.GET('/api/v1/health')
