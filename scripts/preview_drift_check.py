@@ -147,14 +147,15 @@ def _rev_parse(cwd: Path, ref: str) -> str:
     return out
 
 
-def _trees_identical(cwd: Path, left: str, right: str) -> bool:
-    """True when two refs have the SAME tree content.
+def _trees_identical(cwd: Path, left: str, right: str, *paths: str) -> bool:
+    """True when two refs have the SAME content, or the same content restricted
+    to ``paths`` when given.
 
     ``git diff --quiet`` exits 0 for identical and 1 for different; anything
     else is a FAILED MEASUREMENT and must never be rendered as either answer.
     """
     proc = subprocess.run(
-        ["git", "diff", "--quiet", left, right],
+        ["git", "diff", "--quiet", left, right, *(["--", *paths] if paths else [])],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -214,6 +215,7 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
     for sha in shas:
         merge_tree = _git(cwd, "rev-parse", f"{sha}^{{tree}}").strip()
         parents = _git(cwd, "rev-parse", f"{sha}^@").split()
+        replayed = ""
         if len(parents) != 2:
             # An octopus merge cannot be replayed pairwise. That is a failed
             # measurement of that commit, not a clean bill of health, so it
@@ -243,10 +245,24 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
                 is_carrying = replayed != merge_tree
         if not is_carrying:
             continue
-        if main_trees is None:
-            main_trees = set(_git(cwd, "log", main_ref, "--format=%T").split())
-        if merge_tree in main_trees:
-            continue
+        if replayed:
+            # Diff-scoped, not whole-tree: main can land this resolution
+            # bundled with any unrelated change in the SAME commit, which
+            # gives that commit a different whole-tree hash than merge_tree
+            # even though every path the resolution actually touched is
+            # byte-identical on main -- a %T membership test then keeps
+            # flagging it as carrying forever. Comparing only the paths where
+            # the human resolution diverged from the trivial auto-merge is
+            # immune to that, because an unrelated change elsewhere never
+            # appears in this path list.
+            changed = _git(cwd, "diff", "--name-only", replayed, merge_tree).splitlines()
+            if changed and _trees_identical(cwd, main_ref, merge_tree, *changed):
+                continue
+        else:
+            if main_trees is None:
+                main_trees = set(_git(cwd, "log", main_ref, "--format=%T").split())
+            if merge_tree in main_trees:
+                continue
         carrying.append(sha)
     return carrying
 
@@ -372,6 +388,18 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _promote_to_fossil(report: Report, dirty_forces_drift: bool) -> None:
+    """Escalate ``report.verdict`` to FOSSIL, unless a dirty worktree already
+    forced DRIFT. A currently-served, uncommitted edit is a more urgent,
+    orthogonal finding than a stranded fossil ref -- FOSSIL's own message
+    ("safe to re-point or delete, not unmerged work") is the wrong thing to
+    say the instant something live and ungated is on disk, so it must never
+    mask the DRIFT the dirty check already raised.
+    """
+    if not dirty_forces_drift:
+        report.verdict = "FOSSIL"
+
+
 # ----- the check ----------------------------------------------------------
 
 
@@ -423,9 +451,11 @@ def evaluate(
     # --worktree mode, `cwd` IS the served directory, and a staged, unstaged,
     # or untracked edit on top of HEAD can be live in the browser while HEAD
     # equals main and every check above reports clean. Set before the
-    # FOSSIL/DRIFT branches below so a later FOSSIL verdict (which returns
-    # early) still keeps this reason on the record even though FOSSIL takes
-    # priority over the DRIFT verdict set here.
+    # FOSSIL/DRIFT branches below, and `dirty_forces_drift` keeps this DRIFT
+    # from being overwritten by a later FOSSIL verdict: FOSSIL means "stale
+    # rewritten lineage, safe to ignore as unmerged work", which is the wrong
+    # message the instant something currently being served is uncommitted --
+    # that is live and ungated regardless of how the ref's history looks.
     if mode == "worktree":
         report.dirty_paths = _worktree_dirty(cwd)
         if report.dirty_paths:
@@ -439,6 +469,7 @@ def evaluate(
                 f"files from disk, not from a commit object, so this can be "
                 f"live with no PR gate having seen it"
             )
+    dirty_forces_drift = bool(report.dirty_paths)
 
     if report.serves_main_tree:
         if report.preview_only:
@@ -454,7 +485,7 @@ def evaluate(
             # A three-figure merge count is the divergent-lineage shape, and
             # replaying that many merges is not a cheap check. Say what it is
             # rather than spending minutes reaching the same answer.
-            report.verdict = "FOSSIL"
+            _promote_to_fossil(report, dirty_forces_drift)
             report.reasons.append(
                 f"{len(merges)} merge commits on the preview and not on "
                 f"{main_ref} (ceiling {fossil_threshold}). That is a divergent "
@@ -487,7 +518,7 @@ def evaluate(
     if len(stale) >= fossil_threshold:
         oldest = min(stale, key=lambda c: c.committed_at)
         newest = max(stale, key=lambda c: c.committed_at)
-        report.verdict = "FOSSIL"
+        _promote_to_fossil(report, dirty_forces_drift)
         report.reasons.append(
             f"{len(stale)} preview-only commits (ceiling {fossil_threshold}), "
             f"spanning {oldest.committed_at.date()} to {newest.committed_at.date()}. "
