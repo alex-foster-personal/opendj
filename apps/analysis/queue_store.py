@@ -57,6 +57,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from .queue_stale import (
+    STALE_DEPENDENCY_MOVED,
+    STALE_TABLES_SQL,
+    clear_stale,
+    mark_stale,
+    stale_rows,
+)
+
 #: Item states. Terminal states are the ones a resume never revisits.
 ITEM_PENDING: str = "pending"
 ITEM_RUNNING: str = "running"
@@ -94,10 +102,6 @@ BATCH_STATES: tuple[str, ...] = (
 #: Why an item was skipped without running.
 SKIP_ALREADY_CURRENT: str = "already_current_version"
 
-#: Why a record went stale.
-STALE_DEPENDENCY_MOVED: str = "dependency_record_changed"
-
-
 QUEUE_TABLES_SQL: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS analysis_queue_batch (
@@ -134,23 +138,12 @@ QUEUE_TABLES_SQL: list[str] = [
     "ON analysis_queue_item(state)",
     "CREATE INDEX IF NOT EXISTS idx_analysis_queue_item_track "
     "ON analysis_queue_item(stable_id, lane)",
-    """
-    CREATE TABLE IF NOT EXISTS analysis_stale (
-        stable_id        TEXT NOT NULL,
-        lane             TEXT NOT NULL,
-        backend          TEXT NOT NULL,
-        backend_version  TEXT NOT NULL,
-        reason           TEXT NOT NULL,
-        detected_at      TEXT NOT NULL,
-        PRIMARY KEY (stable_id, lane, backend, backend_version)
-    )
-    """,
 ]
 
 
 def ensure_queue_tables(conn: sqlite3.Connection) -> None:
-    """Provision the queue schema. Idempotent."""
-    for sql in QUEUE_TABLES_SQL:
+    """Provision the queue schema, staleness table included. Idempotent."""
+    for sql in (*QUEUE_TABLES_SQL, *STALE_TABLES_SQL):
         conn.execute(sql)
 
 
@@ -524,64 +517,6 @@ def revive_cancelled_items(conn: sqlite3.Connection, batch_id: str) -> int:
     ).rowcount
 
 
-#-----------------------------------------------------------------------------
-# staleness
-#-----------------------------------------------------------------------------
-
-def mark_stale(
-    conn: sqlite3.Connection,
-    *,
-    stable_id: str,
-    lane: str,
-    backend: str,
-    backend_version: str,
-    reason: str,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO analysis_stale
-            (stable_id, lane, backend, backend_version, reason, detected_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(stable_id, lane, backend, backend_version) DO UPDATE SET
-            reason = excluded.reason, detected_at = excluded.detected_at
-        """,
-        (stable_id, lane, backend, backend_version, reason, _now_iso()),
-    )
-
-
-def clear_stale(
-    conn: sqlite3.Connection,
-    *,
-    stable_id: str,
-    lane: str,
-    backend: str | None = None,
-    backend_version: str | None = None,
-) -> int:
-    sql = "DELETE FROM analysis_stale WHERE stable_id = ? AND lane = ?"
-    params: list[Any] = [stable_id, lane]
-    if backend is not None:
-        sql += " AND backend = ?"
-        params.append(backend)
-    if backend_version is not None:
-        sql += " AND backend_version = ?"
-        params.append(backend_version)
-    return conn.execute(sql, params).rowcount
-
-
-def stale_rows(
-    conn: sqlite3.Connection, stable_id: str, lane: str
-) -> set[tuple[str, str]]:
-    """``(backend, backend_version)`` pairs excluded from the canonical pointer."""
-    return {
-        (row[0], row[1])
-        for row in conn.execute(
-            "SELECT backend, backend_version FROM analysis_stale "
-            "WHERE stable_id = ? AND lane = ?",
-            (stable_id, lane),
-        )
-    }
-
-
 __all__ = [
     "BATCH_CANCELLED",
     "BATCH_DONE",
@@ -599,6 +534,7 @@ __all__ = [
     "QUEUE_TABLES_SQL",
     "SKIP_ALREADY_CURRENT",
     "STALE_DEPENDENCY_MOVED",
+    "STALE_TABLES_SQL",
     "TERMINAL_ITEM_STATES",
     "NewItem",
     "QueueBatch",

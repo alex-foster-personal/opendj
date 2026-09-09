@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from . import queue_store
+from . import queue_stale
 from .lanes import LANES, LaneResult, SemverError, parse_own_backend, semver_key
 from .record import AnalysisRecord
 
@@ -93,7 +93,7 @@ def _eligible_rows(
         "SELECT backend, backend_version, record_json FROM analysis WHERE stable_id = ?",
         (stable_id,),
     ).fetchall()
-    stale = queue_store.stale_rows(conn, stable_id, lane)
+    stale = queue_stale.stale_rows(conn, stable_id, lane)
     out: list[tuple[str, str, str]] = []
     for backend, backend_version, record_json in rows:
         parsed = parse_own_backend(backend)

@@ -150,6 +150,7 @@ _ANALYSIS_TABLES_SQL: list[str] = [
 # it would leave the pointer's inputs invisible to adoption, to the drift
 # checks and to the database documentation.
 _ANALYSIS_TABLES_SQL.extend(queue_store.QUEUE_TABLES_SQL)
+_ANALYSIS_TABLES_SQL.extend(queue_store.STALE_TABLES_SQL)
 
 
 def _ensure_analysis_tables(conn: sqlite3.Connection) -> None:

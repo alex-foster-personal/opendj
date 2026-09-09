@@ -51,7 +51,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import queue as queue_api
-from . import queue_store
+from . import queue_store, queue_targets
 from .backends import get_backend
 from .backends.base import AnalyzerBackend
 from .queue_runner import run_batch
@@ -106,7 +106,7 @@ def _emit(payload: dict[str, Any], *, as_json: bool) -> None:
 def cmd_enqueue(args: argparse.Namespace) -> int:
     conn = _conn(args.db)
     try:
-        candidates = queue_api.candidates_from_state(
+        candidates = queue_targets.candidates_from_state(
             conn, args.stable_id, lane=args.lane, backend=args.backend
         )
         result = queue_api.enqueue(conn, candidates, note=args.note)
@@ -261,7 +261,7 @@ def cmd_version_bump(args: argparse.Namespace) -> int:
             backend=args.backend,
             current_version=args.version,
             lane=args.lane,
-            resolve=queue_api.candidates_from_state,
+            resolve=queue_targets.candidates_from_state,
         )
     finally:
         conn.close()

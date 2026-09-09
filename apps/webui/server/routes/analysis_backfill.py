@@ -48,7 +48,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from apps.analysis import queue as queue_api
-from apps.analysis import queue_store
+from apps.analysis import queue_store, queue_targets
 from apps.analysis import store as analysis_store
 from apps.shared.paths import STATE_DB
 
@@ -234,7 +234,7 @@ def enqueue_backfill(
         )
     conn = _open(request)
     try:
-        candidates = queue_api.candidates_from_state(
+        candidates = queue_targets.candidates_from_state(
             conn, body.stable_ids, lane=body.lane, backend=body.backend
         )
         result = queue_api.enqueue(conn, candidates, note=body.note)
