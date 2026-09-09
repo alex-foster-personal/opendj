@@ -23,7 +23,7 @@
  *       PQTZ grid [then] the engine's deck.anlz adopts it and re-reconciles ⛔️
  */
 import type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
-import { sameBeatgrid } from '$lib/rb/beatgrid-fallback';
+import { hasAnlzBeatgrid, sameBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { isScopedCommandInvalidated } from '$lib/rb/performance-command-scheduler';
 import { createScopedSyncRunner, type ScopedSyncRunner } from '$lib/player/scoped-sync-runner';
 export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracking';
@@ -281,9 +281,17 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 					deckLoadToken(deck) !== token ||
 					deckStableId(deck) !== stableId;
 				const next: AnlzData = { ...current, beatgrid: data.beatgrid };
+				// `landed` is whether the deck ENDS UP with a grid, not whether
+				// an update happened. The cache now also delivers an
+				// authoritative ABSENCE (a settled own answer of missing or
+				// failed), and calling that landed would have the reconciler
+				// treat a gridless deck as freshly gridded, so Beat Sync would
+				// settle against beats that are no longer there (Codex P1
+				// BLOCKING, PR #1587).
+				const landed = hasAnlzBeatgrid(next);
 				afterBeatgridUpgrade(
 					deck,
-					true,
+					landed,
 					() => {
 						// Re-read rather than trust `current`: the publish thunk runs
 						// inside a scope claim this call had to queue for, and a

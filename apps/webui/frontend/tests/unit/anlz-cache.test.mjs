@@ -743,3 +743,49 @@ test('a failed revalidation leaves the good entry in place', async () => {
 		globalThis.fetch = originalFetch;
 	}
 });
+
+test('a settled own answer of missing reaches the engine, an empty rekordbox grid does not', async () => {
+	// The gate used to be "does this payload carry beats", which is right for
+	// a retryable payload (it must not wipe a deck's working grid) and wrong
+	// for a settled own answer of missing/failed: the effective source has no
+	// grid, and a deck left on the pre-promotion rekordbox beats keeps
+	// quantize and Beat Sync running on a grid the app no longer serves
+	// (Codex P1 BLOCKING, PR #1587). Revalidation is what made this reachable,
+	// since it is the one caller that turns a populated grid into an empty one
+	// for a track already loaded.
+	const adopted = [];
+	cache.installAuthoritativeAnlzGridSink((stable_id, data) => {
+		adopted.push([stable_id, data.beatgrid]);
+	});
+
+	const originalFetch = globalThis.fetch;
+	try {
+		// An empty REKORDBOX grid is the ordinary un-analyzed state and says
+		// nothing authoritative, so it must not clear anything.
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }
+			});
+		cache.ensureAnlz('unanalyzed-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(adopted.length, 0, 'an empty rekordbox grid is not an authoritative absence');
+
+		// A settled OWN answer of missing is.
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'own', status: 'missing', reason: null, beat_count: 0, beats: [] }
+			});
+		cache.ensureAnlz('own-missing-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			adopted.map(([id]) => id),
+			['own-missing-track'],
+			'a settled own missing answer must reach the engine so it can drop the stale grid'
+		);
+		assert.equal(adopted[0][1].beats.length, 0);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});

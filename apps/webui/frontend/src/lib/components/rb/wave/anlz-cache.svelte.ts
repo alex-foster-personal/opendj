@@ -194,6 +194,29 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * due for refetch, so a consumer returning later (`ensureAnlz` via
  * `_dueForEnsureRefetch`) revives it with no special-casing on either
  * side. */
+/** True when `data` is a grid answer the engine must adopt, INCLUDING an
+ * authoritative absence.
+ *
+ * `hasAnlzBeatgrid` alone gates on beats existing, which is right for the
+ * ambient retry (a still-loading or retryable payload must not wipe a deck's
+ * working grid) and wrong for a settled own-sourced answer of `missing` or
+ * `failed`. In that case the effective source genuinely has no grid, and a
+ * deck left holding the pre-promotion rekordbox beats keeps quantize and Beat
+ * Sync running on a grid the app is no longer serving (Codex P1 BLOCKING,
+ * PR #1587). The revalidation path made that reachable: it is the one caller
+ * that can turn a populated grid into an empty one for a track already
+ * loaded.
+ *
+ * The distinction is TERMINAL-AND-OWN, not empty: a rekordbox payload with no
+ * beats is the ordinary un-analyzed state and says nothing authoritative, and
+ * a retryable payload is not an answer at all. */
+function _isAuthoritativeGridAnswer(data: AnlzData): boolean {
+	if (hasAnlzBeatgrid(data)) return true;
+	if (isRetryableAnlzData(data)) return false;
+	const grid = data.beatgrid;
+	return grid.source === 'own' && (grid.status === 'missing' || grid.status === 'failed');
+}
+
 function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 	const existingTimer = _retryTimers.get(stable_id);
 	if (existingTimer !== undefined) {
@@ -211,7 +234,8 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 	// that gap; it fires for every real grid this cache learns about,
 	// including the very first, and the engine decides whether any loaded deck
 	// is actually holding a different one.
-	if (_authoritativeGridSink !== null && hasAnlzBeatgrid(data)) _authoritativeGridSink(stable_id, data);
+	if (_authoritativeGridSink !== null && _isAuthoritativeGridAnswer(data))
+		_authoritativeGridSink(stable_id, data);
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
 		return;
