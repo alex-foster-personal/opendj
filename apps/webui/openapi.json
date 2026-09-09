@@ -5161,6 +5161,11 @@
             "title": "Fader",
             "type": "number"
           },
+          "filter": {
+            "default": 0.5,
+            "title": "Filter",
+            "type": "number"
+          },
           "trim": {
             "title": "Trim",
             "type": "number"

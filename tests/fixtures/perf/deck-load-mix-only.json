@@ -1,0 +1,24 @@
+[
+  {
+    "t": "2026-08-19T13:40:18.836Z",
+    "kind": "deck-load sid=d804890178cb",
+    "deck": 3,
+    "message": "probeStem=68 getTrack=70 ...",
+    "stages": {
+      "probeStem": 68,
+      "getTrack": 70,
+      "fetchHotCues": 172,
+      "fetchAnlz": 621,
+      "fetchAudio": 778,
+      "fetchWall": 782,
+      "audioBytes": 11045007,
+      "audioPrefetchHit": 0,
+      "stretchCreate": 69,
+      "decodeMix": 1316,
+      "stretchLoad": 46,
+      "processorLatency": 2,
+      "totalBeforeSwap": 2186,
+      "total": 2233
+    }
+  }
+]
