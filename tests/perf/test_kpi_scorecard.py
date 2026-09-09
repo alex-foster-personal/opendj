@@ -15,15 +15,17 @@ import pytest
 from scripts.perf.kpi_scorecard import (
     UNMEASURED,
     age_in_days,
+    budget_drift,
     drift,
     newest_reading,
     score_scenarios,
+    spec_budget_cells,
     spec_scenario_ids,
     verdict_for,
 )
 
-LOWER = {"budget": 30.0, "acceptable": 60.0, "lower_is_better": True}
-HIGHER = {"budget": 60.0, "acceptable": 30.0, "lower_is_better": False}
+LOWER = {"budget": 30.0, "acceptable": 60.0, "breaking": 100.0, "lower_is_better": True}
+HIGHER = {"budget": 60.0, "acceptable": 30.0, "breaking": 10.0, "lower_is_better": False}
 
 
 @pytest.mark.parametrize(
@@ -33,7 +35,9 @@ HIGHER = {"budget": 60.0, "acceptable": 30.0, "lower_is_better": False}
         (30.0, "PASS"),
         (45.0, "ACCEPTABLE"),
         (60.0, "ACCEPTABLE"),
-        (61.0, "BREAKING"),
+        (61.0, "OVER"),
+        (100.0, "OVER"),
+        (101.0, "BREAKING"),
     ],
 )
 def test_lower_is_better_bands(value: float, expected: str) -> None:
@@ -47,7 +51,9 @@ def test_lower_is_better_bands(value: float, expected: str) -> None:
         (60.0, "PASS"),
         (45.0, "ACCEPTABLE"),
         (30.0, "ACCEPTABLE"),
-        (29.0, "BREAKING"),
+        (29.0, "OVER"),
+        (10.0, "OVER"),
+        (9.0, "BREAKING"),
     ],
 )
 def test_higher_is_better_bands(value: float, expected: str) -> None:
@@ -101,32 +107,99 @@ def test_never_recorded_reads_as_absent_not_zero() -> None:
 
 
 def test_scenario_with_a_live_reading_scores() -> None:
-    kpi_map = {"scenarios": {"S1": {"title": "t", "class": "P0", "kpis": ["k"], **LOWER}}}
+    kpi_map = {
+        "scenarios": {
+            "S1": {"title": "t", "class": "P0", "kpis": ["k"], "required": ["k"], **LOWER}
+        }
+    }
     entries = [{"kpi": "k", "value": 12, "unit": "ms", "date": "2026-09-01"}]
     (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
     assert score.verdict == "PASS"
     assert score.age_days == 8
 
 
-def test_proxy_only_scenario_never_scores_even_with_a_passing_reading() -> None:
-    """The defect this flag exists for: on Wed 9 Sep 2026 three scenarios read
-    PASS off KPIs whose own notes said they measured something else."""
+def test_a_context_kpi_alone_never_scores_a_scenario() -> None:
+    """A reviewer's case: with an any-measured test, a scenario reports PASS on
+    an adjacent reading while the KPI that proves it is still missing."""
     kpi_map = {
         "scenarios": {
             "S9": {
                 "title": "t",
                 "class": "P1",
-                "kpis": ["k"],
-                "proxy_only": True,
+                "kpis": ["walk_time", "time_to_interactive"],
+                "required": ["time_to_interactive"],
                 "missing_kpi": "server cost, not time to interactive",
                 **LOWER,
             }
         }
     }
-    entries = [{"kpi": "k", "value": 0.17, "unit": "s", "date": "2026-09-09"}]
+    entries = [{"kpi": "walk_time", "value": 0.17, "unit": "s", "date": "2026-09-09"}]
     (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
     assert score.verdict == UNMEASURED
-    assert "PROXY ONLY" in score.note
+    assert "time_to_interactive" in score.note
+
+
+def test_a_partially_measured_scenario_does_not_score() -> None:
+    """S2's shape: press-to-schedule recorded, press-to-AUDIBLE still missing."""
+    kpi_map = {
+        "scenarios": {
+            "S2": {
+                "title": "t",
+                "class": "P0",
+                "kpis": ["press_to_schedule_ms_p95", "input_to_audible_ms_p95"],
+                "required": ["input_to_audible_ms_p95"],
+                "missing_kpi": "press-to-audible is the point of this scenario",
+                **LOWER,
+            }
+        }
+    }
+    entries = [{"kpi": "press_to_schedule_ms_p95", "value": 2, "unit": "ms", "date": "2026-09-09"}]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == UNMEASURED
+
+
+def test_a_null_breaking_threshold_never_reports_breaking() -> None:
+    """The spec declines to define one for S10; none may be invented here."""
+    cfg = {"budget": 1.0, "acceptable": 2.0, "breaking": None, "lower_is_better": True}
+    assert verdict_for(99.0, cfg) == "OVER"
+
+
+def test_budget_drift_is_silent_when_the_spec_is_unchanged() -> None:
+    kpi_map = {
+        "scenarios": {"S1": {"spec_cells": {"target": "a", "acceptable": "b", "breaking": "c"}}}
+    }
+    spec = "| S1 | scenario | P0 | a | b | c | yes |\n"
+    assert budget_drift(kpi_map, spec) == []
+
+
+def test_budget_drift_fires_when_the_spec_changes_a_threshold() -> None:
+    """The failure this exists for: budgets normally evolve WITHOUT a rename,
+    so id drift alone would keep scoring against a stale duplicated copy."""
+    kpi_map = {
+        "scenarios": {
+            "S1": {"spec_cells": {"target": "<=2s warm", "acceptable": "b", "breaking": "c"}}
+        }
+    }
+    spec = "| S1 | scenario | P0 | <=1s warm | b | c | yes |\n"
+    (finding,) = budget_drift(kpi_map, spec)
+    assert "S1 target" in finding and "<=1s warm" in finding
+
+
+def test_budget_drift_reports_a_scenario_that_records_no_spec_cells() -> None:
+    kpi_map = {"scenarios": {"S1": {}}}
+    (finding,) = budget_drift(kpi_map, "| S1 | scenario | P0 | a | b | c | yes |\n")
+    assert "spec_cells" in finding
+
+
+def test_shipped_map_has_no_budget_drift_against_the_shipped_spec() -> None:
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    kpi_map = json.loads((root / "docs" / "perf" / "kpi-map.json").read_text())
+    spec = (root / "specs" / "perf-latency-program.md").read_text()
+    assert spec_budget_cells(spec), "no budget rows parsed, which would make this check vacuous"
+    assert budget_drift(kpi_map, spec) == []
 
 
 def test_unmeasured_scenario_carries_its_reason() -> None:

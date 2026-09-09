@@ -142,17 +142,38 @@ def _as_float(value: object) -> float | None:
 
 
 def verdict_for(value: float, cfg: dict) -> str:
-    """PASS at target, ACCEPTABLE inside the looser band, BREAKING past it."""
+    """PASS at target, ACCEPTABLE inside the looser band, OVER past that, BREAKING past `breaking`.
+
+    The OVER band exists because the spec declares THREE thresholds and an
+    earlier version of this function read only two, calling everything past
+    `acceptable` BREAKING. That made the tool's only measured headline verdict
+    false: an 8,038 ms reading was reported as breaking against a spec that
+    defines breaking for that scenario as greater than 10,000 ms.
+
+    `breaking` may be None, meaning the spec declines to define one. Such a
+    scenario can report OVER but never BREAKING, rather than having a threshold
+    invented for it here.
+    """
     lower_is_better = bool(cfg.get("lower_is_better", True))
     budget = float(cfg["budget"])
     acceptable = float(cfg["acceptable"])
+    raw_breaking = cfg.get("breaking")
+    breaking = None if raw_breaking is None else float(raw_breaking)
     if lower_is_better:
         if value <= budget:
             return "PASS"
-        return "ACCEPTABLE" if value <= acceptable else "BREAKING"
+        if value <= acceptable:
+            return "ACCEPTABLE"
+        if breaking is not None and value > breaking:
+            return "BREAKING"
+        return "OVER"
     if value >= budget:
         return "PASS"
-    return "ACCEPTABLE" if value >= acceptable else "BREAKING"
+    if value >= acceptable:
+        return "ACCEPTABLE"
+    if breaking is not None and value < breaking:
+        return "BREAKING"
+    return "OVER"
 
 
 def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
@@ -166,25 +187,35 @@ def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
 
 
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
+    """Score each scenario on its REQUIRED KPIs alone.
+
+    Anything else bound to a scenario is context: it prints, it never scores.
+    A reviewer showed why an any-measured test was not enough. S2 would have
+    reported PASS the moment press-to-schedule was recorded, while
+    press-to-AUDIBLE, the number the scenario exists for, was still missing.
+    That recreates the partial pass this tool exists to prevent.
+    """
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
+        required = list(cfg.get("required", []))
         readings = tuple(newest_reading(entries, name) for name in cfg.get("kpis", []))
-        measured = [] if cfg.get("proxy_only") else [r for r in readings if r.measured]
-        if not measured:
+        by_name = {r.kpi: r for r in readings}
+        required_readings = [by_name[name] for name in required if name in by_name]
+        missing = [name for name in required if name not in by_name or not by_name[name].measured]
+        if not required or missing:
             note = str(cfg.get("missing_kpi", "")) or "no KPI is bound to this scenario"
-            if cfg.get("proxy_only"):
-                note = "PROXY ONLY, so not scored. " + note
+            if missing:
+                note = f"required KPI not recorded: {', '.join(missing)}. " + note
             scores.append(
                 Score(sid, cfg["title"], cfg.get("class", "?"), UNMEASURED, readings, None, note)
             )
             continue
-        verdicts = [verdict_for(r.value, cfg) for r in measured if r.value is not None]
-        worst = (
-            "BREAKING"
-            if "BREAKING" in verdicts
-            else ("ACCEPTABLE" if "ACCEPTABLE" in verdicts else "PASS")
+        verdicts = [verdict_for(r.value, cfg) for r in required_readings if r.value is not None]
+        worst = next(
+            (level for level in ("BREAKING", "OVER", "ACCEPTABLE") if level in verdicts),
+            "PASS",
         )
-        ages = [a for a in (age_in_days(r.date, today) for r in measured) if a is not None]
+        ages = [a for a in (age_in_days(r.date, today) for r in required_readings) if a is not None]
         scores.append(
             Score(
                 sid,
@@ -193,7 +224,7 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
                 worst,
                 readings,
                 max(ages) if ages else None,
-                str(cfg.get("missing_kpi", "")),
+                str(cfg.get("caveat", "")),
             )
         )
     return scores
@@ -203,6 +234,57 @@ def drift(kpi_map: dict, spec_ids: list[str]) -> tuple[list[str], list[str]]:
     """Scenarios the spec has and the map lacks, and the reverse."""
     mapped = list(kpi_map["scenarios"].keys())
     return ([s for s in spec_ids if s not in mapped], [s for s in mapped if s not in spec_ids])
+
+
+def spec_budget_cells(spec_text: str) -> dict[str, dict[str, str]]:
+    """The Target, Acceptable and Breaking cells of each scenario row, verbatim.
+
+    Splitting a markdown row on the pipe is robust enough while the table keeps
+    its shape, and a row whose shape changed is skipped rather than guessed at,
+    which surfaces as a drift finding because its cells will not match.
+    """
+    cells: dict[str, dict[str, str]] = {}
+    for line in spec_text.splitlines():
+        if not _SCENARIO_ROW.match(line):
+            continue
+        parts = [c.strip() for c in line.split("|")[1:-1]]
+        if len(parts) < 6:
+            continue
+        cells.setdefault(
+            parts[0], {"target": parts[3], "acceptable": parts[4], "breaking": parts[5]}
+        )
+    return cells
+
+
+def budget_drift(kpi_map: dict, spec_text: str) -> list[str]:
+    """Budget text in the map that no longer matches the spec it was copied from.
+
+    The map duplicates every threshold as a machine-readable number, so the
+    spec can change a Target without renaming anything and the tool would go on
+    scoring against the stale copy. Comparing the spec's cell TEXT verbatim
+    catches any such edit without parsing prose into numbers, and forces a
+    human to re-derive the numbers deliberately.
+    """
+    found = spec_budget_cells(spec_text)
+    problems: list[str] = []
+    for sid, cfg in kpi_map["scenarios"].items():
+        recorded = cfg.get("spec_cells")
+        if not recorded:
+            problems.append(
+                f"{sid}: the map records no spec_cells, so budget drift cannot be detected for it"
+            )
+            continue
+        current = found.get(sid)
+        if current is None:
+            problems.append(f"{sid}: no parseable budget row found in the spec")
+            continue
+        problems.extend(
+            f"{sid} {column}: spec now reads {current[column]!r}, "
+            f"the map was built against {recorded.get(column)!r}"
+            for column in ("target", "acceptable", "breaking")
+            if str(recorded.get(column, "")) != current[column]
+        )
+    return problems
 
 
 # ---------------------------------------------------------------- output
@@ -223,8 +305,9 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
                 lines.append(f"       {r.kpi} = SUPERSEDED, not scored")
             else:
                 lines.append(f"       {r.kpi} = never recorded")
-        if s.verdict == UNMEASURED and s.note:
-            lines.append(f"       WHY UNMEASURED: {s.note}")
+        if s.note:
+            label = "WHY UNMEASURED" if s.verdict == UNMEASURED else "READ THIS WITH THE VERDICT"
+            lines.append(f"       {label}: {s.note}")
     counts: dict[str, int] = {}
     for s in scores:
         counts[s.verdict] = counts.get(s.verdict, 0) + 1
@@ -254,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
     spec_ids = spec_scenario_ids(_SPEC.read_text())
     today = _dt.date.fromisoformat(args.today) if args.today else _dt.datetime.now(_dt.UTC).date()
 
+    spec_text = _SPEC.read_text()
     unmapped, unknown = drift(kpi_map, spec_ids)
     if unmapped or unknown:
         print("[kpi-scorecard] MAP DRIFT, refusing to score:", file=sys.stderr)
@@ -261,6 +345,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  spec declares {sid}; the map does not score it", file=sys.stderr)
         for sid in unknown:
             print(f"  the map scores {sid}; the spec no longer declares it", file=sys.stderr)
+        return 1
+
+    budget_problems = budget_drift(kpi_map, spec_text)
+    if budget_problems:
+        print("[kpi-scorecard] BUDGET DRIFT, refusing to score:", file=sys.stderr)
+        for problem in budget_problems:
+            print(f"  {problem}", file=sys.stderr)
         return 1
 
     scores = score_scenarios(kpi_map, ledger["entries"], today)

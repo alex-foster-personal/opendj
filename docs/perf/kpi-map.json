@@ -7,15 +7,27 @@
       "title": "Audible integrity while playing (no dropout, xrun or glitch)",
       "class": "P0",
       "kpis": [
-        "xrun_sentinel_false_positive_rate_idle"
+        "xrun_sentinel_false_positive_rate_idle",
+        "xruns_per_playing_hour"
       ],
       "missing_kpi": "xruns_per_playing_hour, and silent_while_playing_events_per_hour now that PR #856 detects both a silent output and a stalled presentation clock. The sentinel proves the INSTRUMENT is quiet at idle; it does not yet report the RATE during a real set, which is the number S1 is about.",
       "lower_is_better": true,
       "budget": 0,
       "acceptable": 0,
-      "breaking": 1,
+      "breaking": 0,
       "unit": "events per playing hour",
-      "proxy_only": true
+      "spec_cells": {
+        "target": "0 xruns",
+        "acceptable": "0 xruns",
+        "breaking": "any audible glitch during a set"
+      },
+      "required": [
+        "xruns_per_playing_hour"
+      ],
+      "context_kpis": [
+        "xrun_sentinel_false_positive_rate_idle"
+      ],
+      "caveat": "The recorded sentinel figure is an IDLE false-positive check on the instrument, bound here as context. The scenario needs the rate during a real set."
     },
     "S2": {
       "title": "Play or cue press-to-audible, autosync off",
@@ -29,7 +41,18 @@
       "budget": 30,
       "acceptable": 60,
       "breaking": 60,
-      "unit": "ms"
+      "unit": "ms",
+      "spec_cells": {
+        "target": "<=30ms audible, <=16ms visual (LATENCY-01)",
+        "acceptable": "<=60ms",
+        "breaking": ">60ms (current e2e ceiling)"
+      },
+      "required": [
+        "input_to_audible_ms_p95"
+      ],
+      "context_kpis": [
+        "press_to_schedule_ms_p95"
+      ]
     },
     "S3": {
       "title": "Play pressed with autosync on (quantized launch)",
@@ -39,27 +62,45 @@
       "lower_is_better": true,
       "budget": 16,
       "acceptable": 16,
-      "breaking": 17,
-      "unit": "ms to armed feedback"
+      "breaking": 16,
+      "unit": "ms to armed feedback",
+      "spec_cells": {
+        "target": "phase-locked start on the next quantum; armed feedback <=16ms",
+        "acceptable": "same",
+        "breaking": "wrong-phase start, or no armed feedback"
+      },
+      "required": [],
+      "context_kpis": []
     },
     "S4": {
       "title": "Waveform smoothness while playing",
       "class": "P1",
-      "kpis": [],
+      "kpis": [
+        "waveform_frame_delta_ms_p95"
+      ],
       "missing_kpi": "p95 rAF frame delta and dropped-frame percentage per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green.",
       "lower_is_better": true,
       "budget": 16.7,
       "acceptable": 33.3,
       "breaking": 50,
-      "unit": "ms p95 frame delta"
+      "unit": "ms p95 frame delta",
+      "spec_cells": {
+        "target": "p95 frame delta <= display refresh interval",
+        "acceptable": "<5% dropped frames per 10s window",
+        "breaking": "visible stutter / freeze while audible"
+      },
+      "required": [
+        "waveform_frame_delta_ms_p95"
+      ],
+      "context_kpis": []
     },
     "S5": {
       "title": "Deck load to playable (mix path)",
       "class": "P1",
       "kpis": [
+        "boot_window_deck_load_fetchwall_ms",
         "packaged_deck_load_total_ms",
         "packaged_decode_throughput_mb_s",
-        "boot_window_deck_load_fetchwall_ms",
         "settled_deck_load_fetchwall_ms_ab"
       ],
       "missing_kpi": "The ledger holds a WORST case and a throughput, not a p95 over a named window. The boot-window and settled figures are the same scenario measured under two conditions and should be scored separately, because a user meeting the app for the first time only ever experiences the boot-window one.",
@@ -67,26 +108,53 @@
       "budget": 2000,
       "acceptable": 5000,
       "breaking": 10000,
-      "unit": "ms"
+      "unit": "ms",
+      "spec_cells": {
+        "target": "<=2s warm",
+        "acceptable": "<=5s cold",
+        "breaking": ">10s"
+      },
+      "required": [
+        "packaged_deck_load_total_ms"
+      ],
+      "context_kpis": [
+        "packaged_decode_throughput_mb_s",
+        "boot_window_deck_load_fetchwall_ms",
+        "settled_deck_load_fetchwall_ms_ab"
+      ],
+      "caveat": "packaged_deck_load_total_ms is currently the MAX of 8 loads, not a p95 over a named window, so read the verdict as a worst-case reading. The boot-window and settled fetch walls are components of the same scenario under two conditions and are bound as context only."
     },
     "S6": {
       "title": "Deck load to stems-ready, deck already playable",
       "class": "P1",
       "kpis": [
+        "deck_load_to_stems_ready_s",
         "stemmed_deck_load_total_s"
       ],
       "missing_kpi": "The measured 14.8s figure is a load where stems sit ON the critical path, so it scores the CURRENT design, not this scenario. This scenario only becomes scoreable once mix-first loading lands and playability is separable from stems-ready.",
       "lower_is_better": true,
       "budget": 15,
       "acceptable": 25,
-      "breaking": 26,
+      "breaking": 25,
       "unit": "s",
-      "proxy_only": true
+      "spec_cells": {
+        "target": "<=15s background, deck already playable",
+        "acceptable": "<=25s",
+        "breaking": "blocks playability at all"
+      },
+      "required": [
+        "deck_load_to_stems_ready_s"
+      ],
+      "context_kpis": [
+        "stemmed_deck_load_total_s"
+      ],
+      "caveat": "stemmed_deck_load_total_s measures a load where stems sit ON the critical path, so it scores the current design rather than this scenario; bound as context."
     },
     "S7": {
       "title": "Library filter keystroke to render",
       "class": "P1",
       "kpis": [
+        "library_filter_keystroke_ms_p95",
         "local_filter_settle_ms"
       ],
       "missing_kpi": "p95 over a real typing session. The recorded 80ms is a settle time from a controlled run, not a keystroke distribution, and the spec's budget is explicitly a p95.",
@@ -95,23 +163,46 @@
       "acceptable": 100,
       "breaking": 250,
       "unit": "ms p95",
-      "proxy_only": true
+      "spec_cells": {
+        "target": "p95 <=50ms",
+        "acceptable": "<=100ms",
+        "breaking": ">250ms or dropped keystrokes"
+      },
+      "required": [
+        "library_filter_keystroke_ms_p95"
+      ],
+      "context_kpis": [
+        "local_filter_settle_ms"
+      ],
+      "caveat": "local_filter_settle_ms is a settle time from a controlled run, not a keystroke p95; bound as context."
     },
     "S8": {
       "title": "Whole-collection search round trip",
       "class": "P1",
-      "kpis": [],
+      "kpis": [
+        "collection_search_round_trip_ms_p95"
+      ],
       "missing_kpi": "No timing at all; only a boolean searching flag exists. The lyric-search work landed a typed result-latency boundary (PR #1397) but wires no KPI yet.",
       "lower_is_better": true,
       "budget": 250,
       "acceptable": 500,
       "breaking": 1000,
-      "unit": "ms"
+      "unit": "ms",
+      "spec_cells": {
+        "target": "<=250ms",
+        "acceptable": "<=500ms",
+        "breaking": ">1s"
+      },
+      "required": [
+        "collection_search_round_trip_ms_p95"
+      ],
+      "context_kpis": []
     },
     "S9": {
       "title": "All Tracks pane time to interactive",
       "class": "P1",
       "kpis": [
+        "all_tracks_time_to_interactive_s",
         "all_tracks_walk_warm_s_per_poll"
       ],
       "missing_kpi": "The walk time is a SERVER-side cost per poll, not the pane's time to interactive, which is what a user waits on. Scoring one against the other would flatter the app.",
@@ -120,30 +211,64 @@
       "acceptable": 3,
       "breaking": 5,
       "unit": "s",
-      "proxy_only": true
+      "spec_cells": {
+        "target": "<=1.5s (STANDARD tier)",
+        "acceptable": "<=3s",
+        "breaking": ">5s"
+      },
+      "required": [
+        "all_tracks_time_to_interactive_s"
+      ],
+      "context_kpis": [
+        "all_tracks_walk_warm_s_per_poll"
+      ],
+      "caveat": "all_tracks_walk_warm_s_per_poll is a SERVER-side cost per poll, not the pane's time to interactive; bound as context."
     },
     "S10": {
       "title": "Row-select prefetch ready before a plausible load click",
       "class": "P2",
-      "kpis": [],
+      "kpis": [
+        "row_select_prefetch_ready_s"
+      ],
       "missing_kpi": "Only a hit or miss flag is recorded, with no duration, so the prefetch can be losing its race every time and still report hits.",
       "lower_is_better": true,
       "budget": 1,
       "acceptable": 2,
-      "breaking": 3,
-      "unit": "s"
+      "breaking": null,
+      "unit": "s",
+      "spec_cells": {
+        "target": "<=1s",
+        "acceptable": "<=2s",
+        "breaking": "n/a (degrades to cold load)"
+      },
+      "required": [
+        "row_select_prefetch_ready_s"
+      ],
+      "context_kpis": []
     },
     "S11": {
       "title": "App cold start to first browse",
       "class": "P2",
-      "kpis": [],
+      "kpis": [
+        "cold_start_to_first_browse_s"
+      ],
       "missing_kpi": "Nothing measures launch to usable. This is the composite a first-time user actually meets, and the 8038ms boot-window fetch wall says it is likely the worst number in the app.",
       "lower_is_better": true,
       "budget": 3,
       "acceptable": 6,
       "breaking": 10,
-      "unit": "s"
+      "unit": "s",
+      "spec_cells": {
+        "target": "<=3s",
+        "acceptable": "<=6s",
+        "breaking": ">10s"
+      },
+      "required": [
+        "cold_start_to_first_browse_s"
+      ],
+      "context_kpis": []
     }
   },
-  "proxy_note": "`proxy_only` marks a scenario whose only bound KPI measures something ADJACENT to what the scenario is about (a server-side cost standing in for a user-visible wait, a settle time standing in for a p95, an idle instrument check standing in for a rate during a real set). Such a scenario reports UNMEASURED with its reason, never PASS. It is set by hand, deliberately, because the flattering direction is the automatic one: on Wed 9 Sep 2026 the first run of the scorecard scored three of these PASS off their own notes saying they did not measure the scenario."
+  "proxy_note": "Superseded by `required` plus `context_kpis`. A scenario scores ONLY on its required KPIs, the ones that prove the thing the scenario is about. Everything else bound to it prints as context and never scores. This replaced an earlier `proxy_only` flag that had to be set by hand, and which a reviewer correctly showed was not enough: with an any-measured test, S2 would have reported PASS the moment press-to-schedule was recorded, while press-to-AUDIBLE, the number the scenario exists for, was still missing.",
+  "breaking_note": "`breaking` is the value BEYOND which the scenario is broken, compared strictly, and is derived from the spec's own Breaking cell (kept verbatim in `spec_cells` so drift is detectable). `null` means the spec declines to define one, and such a scenario can never report BREAKING. The band between `acceptable` and `breaking` reports OVER: worse than acceptable, not yet breaking. An earlier version never read this field at all and called everything past `acceptable` BREAKING, which made the tool's only measured headline verdict false."
 }
