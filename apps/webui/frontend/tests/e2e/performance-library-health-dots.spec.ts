@@ -1,8 +1,15 @@
 /**
  * pin be1b8f94f167 (reopened): the browser-sources health dots must be
- * horizontal, bottom-right (done in #1051), and cover FOUR signals -
+ * horizontal, bottom-right (done in #1051), and cover FOUR coverage signals -
  * library health, vocals completion, stems completion, and lyrics
  * completion - each hoverable to its own full label+detail popover.
+ *
+ * pin a66ee132a14e: e03dc164d ("move the status dots to the bottom right")
+ * carried only the library signal across into this row and silently dropped
+ * the other two dots the old `conn-dots` strip had (Frontend online, Backend
+ * online) - the only signals that distinguish "the engine is not answering"
+ * from "the library really is empty". They are restored here as two more
+ * dots in the SAME cluster, so the row is now SIX dots, not four.
  *
  * #1051 shipped library/vocals/stems but the reopen found vocal detection
  * is not proof lyric analysis ran: this proves a real, distinct lyrics dot
@@ -13,15 +20,15 @@
  * WHAT THIS EXISTS TO CATCH. A unit test can fake IngestCoverage and never
  * notice the dot never actually renders, that two dots share one popover
  * (so hovering one leaks another's detail), or that the dots collapsed
- * back to three because "vocals" and "lyrics" got merged again. It must
- * also fail if the coverage REQUEST itself is broken (a missing key, a
- * 500, a frontend/backend contract mismatch) rather than accepting four
+ * back to four because the restored liveness dots got dropped again. It
+ * must also fail if the coverage REQUEST itself is broken (a missing key, a
+ * 500, a frontend/backend contract mismatch) rather than accepting six
  * "error" dots as if that were a passing layout check - and it must fail
  * if the group is anchored to the bottom-LEFT instead of the right, since
  * checking only "lower half" cannot tell those apart.
  *
  * Acceptance:
- *   [if] fewer than 4 .health-dot buttons render          [then STOP] a
+ *   [if] fewer than 6 .health-dot buttons render          [then STOP] a
  *        signal was dropped or never added
  *   [if] the /ingest/coverage request fails, or any dot lands in its
  *        'error' state                                    [then STOP] the
@@ -40,6 +47,8 @@
 import { expect, test } from '@playwright/test';
 
 const EXPECTED_LABELS = [
+	'Frontend',
+	'Backend',
 	'Library health',
 	'Vocals completion',
 	'Stems completion',
@@ -105,7 +114,7 @@ test('browser-sources health dots cover library/vocals/stems/lyrics with per-dot
 	// "not error", which an 'unavailable' fallback could also satisfy.
 	const lyricsLabel = dotStates.find((s) => s.label.startsWith('Lyrics completion:'))?.label ?? '';
 	expect(lyricsLabel, 'Lyrics completion dot never reached a real coverage verdict').toMatch(
-		/complete, \d+ missing, \d+ unreachable/
+		/playable complete, \d+ missing, \d+ broken (link|links)/
 	);
 
 	const ariaLabels = dotStates.map((s) => s.label);
