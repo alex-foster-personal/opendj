@@ -10,10 +10,13 @@ and the JSON count could disagree, and the printed one is the one people quote.
 """
 from __future__ import annotations
 
+import hashlib
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from scripts import r2_stems
 
 if TYPE_CHECKING:  # imported for types only, so there is no runtime cycle
     from scripts.stem_inventory import Bundle, TrackResolver
@@ -37,6 +40,14 @@ def duplicate_ids(bundles: Iterable[Bundle]) -> dict[str, list[Bundle]]:
 def r2_state_for(bundle: Bundle, remote: dict[str, int]) -> str:
     """Whether R2 already holds this bundle, judged by size and not by name.
 
+    ``remote`` (from ``r2_stems.list_r2_sizes``) only ever lists the
+    content-addressed ``assets/`` prefix, so the wanted keys must be derived
+    the same way a publisher would derive them: from each file's own body
+    SHA-256, not from ``bundle.key_for()``'s legacy
+    ``stems/<preset>/<stable_id>/<filename>`` staging path. Matching on the
+    legacy key against a content-addressed listing always misses, even for a
+    fully published bundle.
+
     A key that exists at the wrong size is reported as "partial" rather than
     counted as present, because a truncated PUT still answers HTTP 200 and
     would otherwise be indistinguishable from a good upload.
@@ -44,8 +55,10 @@ def r2_state_for(bundle: Bundle, remote: dict[str, int]) -> str:
     if not bundle.is_publishable:
         return "not-publishable"
     wanted = {
-        bundle.key_for(name): path.stat().st_size
-        for name, path in bundle.files.items()
+        r2_stems.content_addressed_key(
+            hashlib.sha256(path.read_bytes()).hexdigest()
+        ): path.stat().st_size
+        for path in bundle.files.values()
     }
     matched = sum(1 for key, size in wanted.items() if remote.get(key) == size)
     if matched == len(wanted):
