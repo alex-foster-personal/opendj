@@ -15,7 +15,8 @@ fails as loudly as a new violation. Without that, D-05's zero could mean "the
 subject disappeared" rather than "the subject is clean".
 
 The run AS A WHOLE -- its floors, its wiring, and the gate that reads it --
-is attacked in test_sync_drift_floors.py beside this file.
+is attacked in test_sync_drift_floors.py beside this file, and the SOURCE-TEXT
+scan behind NAIVE_DEFAULT_SOURCES in test_sync_drift_sources.py.
 
 Regression lines:
   - if a synced-looking table is not in SYNC_TABLES and D-01 stays silent then broken
@@ -36,11 +37,8 @@ Regression lines:
     firing then broken
   - if a DEFAULT naming CURRENT_TIMESTAMP that sqlite cannot evaluate returns a
     verdict instead of raising then broken
-  - if the tracked-file probe reports nothing for a token the tree contains then broken
   - if the allowlist names a triple that no longer exists then the debt list has
     gone stale, so broken
-  - if a file outside NAIVE_DEFAULT_SOURCES declares a naive default and
-    D-05 has no ladder that builds it then broken
   - if any check reports a violation against the real tree then broken
 """
 
@@ -50,8 +48,6 @@ import copy
 import dataclasses
 import re
 import sqlite3
-import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -62,36 +58,6 @@ from apps.sync_hub import protocol_common
 from scripts import sync_drift_lint as lint
 from scripts import sync_drift_rules as rules
 from scripts import sync_drift_subject as subject
-
-REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-#: The source-text pattern behind NAIVE_DEFAULT_SOURCES. Deliberately blunt:
-#: its job is to name FILES that need a ladder before D-05 can see them, not
-#: to decide whether any one default is a defect. That decision is D-05's, and
-#: it makes it by evaluating the expression against sqlite.
-_DEFAULT_NOW = re.compile(r"DEFAULT\s+CURRENT_TIMESTAMP", re.IGNORECASE)
-
-def _tracked_files_matching(pattern: re.Pattern[str], *roots: str) -> set[str]:
-    """Tracked files under ``roots`` whose text matches ``pattern``.
-
-    ``git ls-files`` rather than a filesystem walk: it is the tree, not
-    whatever a build left lying in it, and it is what keeps gitignored
-    vendored output (apps/desktop/src-tauri/payload/ and target/) out of a
-    source scan. Undecodable bytes are replaced rather than raising, so a
-    binary blob under a scanned root is a non-match instead of an error
-    wearing the costume of a finding.
-    """
-    listing = subprocess.run(
-        ["git", "ls-files", "-z", *roots],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
-    ).stdout
-    names = [name for name in listing.split("\0") if name]
-    assert names, f"git ls-files returned nothing for {roots}; the scan root is wrong"
-    return {
-        name
-        for name in names
-        if pattern.search((REPO_ROOT / name).read_text(encoding="utf-8", errors="replace"))
-    }
-
 
 TRIO: tuple[str, ...] = protocol_common.SYNC_COLUMNS
 PAIR: tuple[str, ...] = (protocol_common.UPDATED_AT, protocol_common.ORIGIN_DEVICE_ID)
@@ -485,57 +451,6 @@ def test_d05_allowlist_entries_still_name_a_real_defect(
         f"allowlist names {ladder}:{table}.{column}, which no longer defaults "
         "to CURRENT_TIMESTAMP. The debt is paid; delete the entry."
     )
-
-
-def test_d05_scans_every_file_that_declares_a_naive_default() -> None:
-    """D-05's floors prove it measured A database, not the RIGHT databases.
-
-    A ``DEFAULT CURRENT_TIMESTAMP`` in a module no scanned ladder builds is
-    invisible to D-05, and invisible reads exactly like clean. So the set of
-    files that declare one is compared against a fresh read of the tree:
-    both sides are derived, so neither can rot, and a new file that starts
-    minting naive stamps fails HERE, by name, instead of silently sitting
-    outside the subject.
-
-    Enumerated from ``git ls-files``, and NOT restricted to ``*.py``. An
-    rglob walked apps/desktop/src-tauri/payload/ and target/, which are
-    gitignored but present in any tree that has run a Tauri build and stage
-    the whole installed dependency closure -- sqlalchemy alone puts a
-    ``DEFAULT CURRENT_TIMESTAMP`` in that walk, so this test failed on a
-    vendored third-party file and told the reader to give it a ladder. The
-    ``*.py`` lens was the same blind spot D-08 hit for real: it cannot see a
-    naive default declared in .rs, .sql or .ts.
-    """
-    found = _tracked_files_matching(_DEFAULT_NOW, "apps")
-
-    assert found, (
-        "the source scan found no DEFAULT CURRENT_TIMESTAMP anywhere under "
-        "apps/. An empty result is what a broken walk returns too, so this "
-        "is an unmeasured tree, not a clean one."
-    )
-    assert found == set(rules.NAIVE_DEFAULT_SOURCES), (
-        "files declaring a naive stamp default have changed. Newly found: "
-        f"{sorted(found - set(rules.NAIVE_DEFAULT_SOURCES))}; no longer "
-        f"found: {sorted(set(rules.NAIVE_DEFAULT_SOURCES) - found)}. A new "
-        "file here needs a ladder in scripts.sync_drift_subject.OTHER_LADDERS "
-        "before D-05 can see it at all."
-    )
-
-
-def test_the_tracked_file_probe_can_find_something_and_can_report_absent() -> None:
-    """The instrument behind the two source scans, validated both ways.
-
-    A scan that finds nothing proves nothing until it has been shown able to
-    find something, and an empty result is also what a broken walk, a bad
-    pattern and a wrong root all return. So: a pattern the tree certainly
-    contains must come back non-empty, and a pattern nothing contains must
-    come back empty rather than raising or matching everything.
-    """
-    present = _tracked_files_matching(re.compile(r"\bSCHEMA_VERSION\b"), "apps")
-    absent = _tracked_files_matching(re.compile(r"af_probe_no_such_token_anywhere"), "apps")
-
-    assert "apps/shared/state/schema.py" in present
-    assert absent == set()
 
 
 def test_d05_allowlist_names_the_live_originals_not_only_the_dormant_copies() -> None:
