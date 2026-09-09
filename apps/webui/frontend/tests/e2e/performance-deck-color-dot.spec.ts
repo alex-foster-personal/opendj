@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { inflateSync } from 'node:zlib';
 
 /**
@@ -156,6 +156,36 @@ function inkCentroidY(bitmap: Bitmap, x0: number, x1: number, background: number
 	return weighted / total;
 }
 
+/**
+ * The row's pixels, once it has actually painted something.
+ *
+ * `toBeHidden` on the launch overlay is necessary but not sufficient: the
+ * element can be gone while the compositor has not yet drawn the app beneath
+ * it, and a screenshot taken in that window is uniformly background. That is
+ * the silent failure mode this whole file is exposed to -- an all-background
+ * bitmap does not throw, it just measures nothing -- so wait on the real paint
+ * rather than on a proxy for it.
+ */
+async function _paintedBitmap(row: Locator): Promise<Bitmap> {
+	let bitmap: Bitmap | null = null;
+	await expect
+		.poll(
+			async () => {
+				const shot = decodePng(await row.screenshot());
+				const background = backgroundOf(shot);
+				let total = 0;
+				for (let y = 0; y < shot.height; y += 1) {
+					for (let x = 0; x < shot.width; x += 1) total += inkAt(shot, x, y, background);
+				}
+				bitmap = shot;
+				return total;
+			},
+			{ timeout: 20_000, message: 'the rating row never painted any ink' }
+		)
+		.toBeGreaterThan(0);
+	return bitmap!;
+}
+
 async function _anyOnDiskTrack(request: APIRequestContext): Promise<string> {
 	const response = await request.get(`${API_BASE}/api/v1/tracks?limit=50&available=true`);
 	expect(response.ok(), 'track listing must succeed').toBeTruthy();
@@ -174,11 +204,15 @@ async function _anyOnDiskTrack(request: APIRequestContext): Promise<string> {
 async function _deckOneLoaded(page: Page, request: APIRequestContext) {
 	const stableId = await _anyOnDiskTrack(request);
 	await page.setViewportSize({ width: 1280, height: 800 });
-	// The launch animation paints an opaque overlay over the whole app for a
-	// few seconds; a screenshot taken under it is uniformly background and
-	// every ink measurement below would silently read zero.
-	await page.addInitScript(() => localStorage.setItem('odj.brand-launch.v1', 'complete'));
 	await page.goto(`${UI_BASE}/performance`);
+	// The launch animation paints an opaque overlay over the whole app; a
+	// screenshot taken under it is uniformly background and every ink
+	// measurement below would silently read zero (observed while building
+	// this spec: an all-background 96x11 row that scored no ink at all).
+	// So wait it OUT rather than seeding `odj.brand-launch.v1` to skip it --
+	// pre-seeding that key is fabricated application state, and this spec is
+	// acceptance evidence for a pin (AGENTS.md, "Do not use ... fabricated
+	// application state ... in tests"; #1550 review thread 3964052808).
 	await expect(page.getByLabel('Open DJ launch animation')).toBeHidden({ timeout: 20_000 });
 	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, null, {
 		timeout: 60_000
@@ -222,7 +256,7 @@ test('the deck colour dot paints vertically centred on the star icons', async ({
 		Math.min(Math.ceil(left - rowBox.x + width), Math.round(rowBox.width))
 	];
 
-	const bitmap = decodePng(await row.screenshot());
+	const bitmap = await _paintedBitmap(row);
 	const background = backgroundOf(bitmap);
 	const [starsFrom, starsTo] = slice(starsBox.x, starsBox.width);
 	const [dotFrom, dotTo] = slice(dotBox.x, dotBox.width);
