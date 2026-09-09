@@ -532,9 +532,12 @@
 	 * carries `line-height: 1`, and the ☆ glyph paints low inside that line
 	 * box, so the stars' ink centre sat 0.67px below the dot's. `top` here is
 	 * that optical correction, in em of the STAR's font size rather than the
-	 * row's, so it tracks the glyph it is aligning to when the rating column
-	 * shrinks the stars (see TrackTable `.c-rating` --rb-star-size). 0.045em
-	 * is the measured 0.5px at the 11px default; the residual is 0.17px.
+	 * row's, written as the SAME expression theme.css gives `.rb-star` so the
+	 * two cannot drift apart. In this subtree it always resolves to the
+	 * `--rb-fs-browser` fallback: `--rb-star-size` is a local custom property
+	 * on TrackTable's `.c-rating` cell, and a deck header is never a
+	 * descendant of one, so the narrowed-rating-column case cannot reach here.
+	 * 0.045em is the measured 0.5px at that 11px default; residual 0.17px.
 	 * Measured, not assumed -- performance-deck-color-dot.spec.ts reads the
 	 * composited pixels back and fails if this is reverted. */
 	.color-dot {

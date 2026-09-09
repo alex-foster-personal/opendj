@@ -19,8 +19,8 @@ import { inflateSync } from 'node:zlib';
  * delta -0.67px, with the dot also a full 9px tall against an 11px row.
  *
  * So this reads the composited pixels of the row, exactly as the maintainer sees them,
- * and splits them into the star run and the dot run by their horizontal ink
- * groups.
+ * and slices them into the star run and the dot run at those two elements'
+ * own box edges.
  *
  * TOLERANCE. 0.35px is half the measured main-head defect: it is loose enough
  * that antialiasing noise cannot flip it and tight enough that reverting the
@@ -142,25 +142,6 @@ function backgroundOf(bitmap: Bitmap): number[] {
 	return best[0].split(',').map(Number);
 }
 
-/** Contiguous runs of columns that carry any ink, left to right. */
-function inkColumnGroups(bitmap: Bitmap, background: number[]): [number, number][] {
-	const groups: [number, number][] = [];
-	let start: number | null = null;
-	for (let x = 0; x < bitmap.width; x += 1) {
-		let lit = false;
-		for (let y = 0; y < bitmap.height && !lit; y += 1) {
-			if (inkAt(bitmap, x, y, background) > 30) lit = true;
-		}
-		if (lit && start === null) start = x;
-		else if (!lit && start !== null) {
-			groups.push([start, x]);
-			start = null;
-		}
-	}
-	if (start !== null) groups.push([start, bitmap.width]);
-	return groups;
-}
-
 /** Ink-weighted vertical centroid of one horizontal slice, in pixels. */
 function inkCentroidY(bitmap: Bitmap, x0: number, x1: number, background: number[]): number {
 	let weighted = 0;
@@ -181,6 +162,9 @@ async function _anyOnDiskTrack(request: APIRequestContext): Promise<string> {
 	const payload = (await response.json()) as {
 		items: { stable_id: string; file_exists: boolean }[];
 	};
+	// `available=true` is the backend's own filter; `file_exists` is re-checked
+	// here because the two are not the same claim (a track on an unmounted
+	// volume is listed as available and is not on disk -- pin 765f848be484).
 	const track = payload.items.find((item) => item.file_exists);
 	expect(track, 'the fixture library must carry one on-disk track').toBeDefined();
 	return track!.stable_id;
@@ -221,14 +205,31 @@ test('the deck colour dot paints vertically centred on the star icons', async ({
 	request
 }) => {
 	const row = await _deckOneLoaded(page, request);
+
+	// The two slices are taken from the elements' OWN boxes rather than from
+	// runs of inked columns. An earlier revision split the row by ink groups
+	// and asserted it found exactly six (five stars, then the dot), which
+	// quietly depended on the loaded track being UNRATED: RatingStars only
+	// triples the inter-glyph gap while `rating` is null or 0, so a rated
+	// track drops to a 1px gap where adjacent glyph antialiasing can merge two
+	// stars into one group. That would have gone red for a reason with nothing
+	// to do with this pin. Boxes cannot merge.
+	const rowBox = (await row.boundingBox())!;
+	const starsBox = (await row.locator('.rb-stars').boundingBox())!;
+	const dotBox = (await row.locator('.color-dot').boundingBox())!;
+	const slice = (left: number, width: number): [number, number] => [
+		Math.max(0, Math.floor(left - rowBox.x)),
+		Math.min(Math.ceil(left - rowBox.x + width), Math.round(rowBox.width))
+	];
+
 	const bitmap = decodePng(await row.screenshot());
 	const background = backgroundOf(bitmap);
-	const groups = inkColumnGroups(bitmap, background);
-	// Five stars then the dot: six ink groups, dot last.
-	expect(groups.length, `expected five stars and a dot, got ${groups.length} ink groups`).toBe(6);
-	const stars = inkCentroidY(bitmap, groups[0][0], groups[4][1], background);
-	const dotSlice = groups[5];
-	const dotCentre = inkCentroidY(bitmap, dotSlice[0], dotSlice[1], background);
+	const [starsFrom, starsTo] = slice(starsBox.x, starsBox.width);
+	const [dotFrom, dotTo] = slice(dotBox.x, dotBox.width);
+	expect(starsTo, 'the star run must end before the dot begins').toBeLessThanOrEqual(dotFrom);
+
+	const stars = inkCentroidY(bitmap, starsFrom, starsTo, background);
+	const dotCentre = inkCentroidY(bitmap, dotFrom, dotTo, background);
 	expect(
 		Math.abs(dotCentre - stars),
 		`dot ink centre ${dotCentre.toFixed(2)}px vs star ink centre ${stars.toFixed(2)}px`
