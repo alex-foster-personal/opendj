@@ -2530,6 +2530,7 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	deckStableId: (deck) => deckStates[deck].stable_id,
 	deckAnlz: (deck) => deckStates[deck].anlz,
 	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
+	publishDeckBpm: (deck, bpm) => (deckStates[deck].bpm = bpm),
 	reportError: (message) => pushToast(message, 'error')
 });
 installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);

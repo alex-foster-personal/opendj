@@ -58,6 +58,14 @@ export interface BeatgridResyncGuardDeps {
 	deckStableId: (deck: DeckId) => string | null;
 	deckAnlz: (deck: DeckId) => AnlzData | null;
 	publishDeckAnlz: (deck: DeckId, anlz: AnlzData) => void;
+	/** The deck's own projected BPM, surfaced to the header, IPC state,
+	 * browser recommendations and autoplay - distinct from `deckAnlz`'s
+	 * `beatgrid.bpm`, which Beat Sync reads directly. Called only when an
+	 * adopted grid carries its own projected BPM (own payloads with `status:
+	 * ok`), so those consumers cannot keep exposing the old source's BPM
+	 * while Beat Sync already settled against the newly adopted beats
+	 * (Codex P2 BLOCKING, PR #1587). */
+	publishDeckBpm: (deck: DeckId, bpm: number) => void;
 	reportError: (message: string) => void;
 }
 
@@ -202,7 +210,7 @@ export interface BeatgridResyncGuards {
 
 export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): BeatgridResyncGuards {
 	const { ports, deckRuntime, deckLoadToken, reportError } = deps;
-	const { deckStableId, deckAnlz, publishDeckAnlz } = deps;
+	const { deckStableId, deckAnlz, publishDeckAnlz, publishDeckBpm } = deps;
 	const scopedSync = createScopedSyncRunner<DeckId>();
 	const runScoped = scopedSync.run;
 	const afterBeatgridUpgrade: BeatgridResyncGuards['afterBeatgridUpgrade'] = (
@@ -340,6 +348,15 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 							deck,
 							latest === null ? next : _withSourceDependentAnlzFields(latest, data)
 						);
+						// Beat Sync reads `deck.anlz.beatgrid.bpm` directly, but the
+						// header, IPC state, browser recommendations and autoplay all
+						// read the deck's separately-tracked BPM, last set from
+						// `candidateTrack.bpm` at load time. Refresh it in the SAME
+						// transaction whenever the adopted grid projects its own BPM
+						// (own payloads with `status: ok`), so those consumers cannot
+						// keep exposing the old source's tempo once Beat Sync has
+						// already settled against the newly adopted beats.
+						if (data.beatgrid.bpm !== undefined) publishDeckBpm(deck, data.beatgrid.bpm);
 					},
 					isStale
 				).catch(

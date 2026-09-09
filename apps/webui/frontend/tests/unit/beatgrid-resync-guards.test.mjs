@@ -103,6 +103,7 @@ function _harness(overrides = {}) {
 	const tokens = Object.fromEntries(DECKS.map((deck) => [deck, 0]));
 	const stableIds = Object.fromEntries(DECKS.map((deck) => [deck, null]));
 	const anlz = Object.fromEntries(DECKS.map((deck) => [deck, null]));
+	const bpm = Object.fromEntries(DECKS.map((deck) => [deck, null]));
 	const errors = [];
 	const ports = {
 		..._ports(),
@@ -122,6 +123,7 @@ function _harness(overrides = {}) {
 		deckStableId: (deck) => stableIds[deck],
 		deckAnlz: (deck) => anlz[deck],
 		publishDeckAnlz: (deck, next) => (anlz[deck] = next),
+		publishDeckBpm: (deck, next) => (bpm[deck] = next),
 		reportError: (message) => errors.push(message)
 	});
 	// The claim is granted a turn LATE on purpose: every finding on this surface
@@ -131,7 +133,7 @@ function _harness(overrides = {}) {
 		await Promise.resolve();
 		await task(async (work) => await work());
 	});
-	return { anlz, calls, errors, guards, runtimes, stableIds, tokens };
+	return { anlz, bpm, calls, errors, guards, runtimes, stableIds, tokens };
 }
 
 test('beforeClear excludes a follower that reloaded before the deferred reconciliation ran', async () => {
@@ -233,6 +235,7 @@ test('beforeClear on an empty stranded list claims no scope at all', () => {
 		deckStableId: () => null,
 		deckAnlz: () => null,
 		publishDeckAnlz: () => {},
+		publishDeckBpm: () => {},
 		reportError: () => {}
 	});
 	guards.installScopedSyncRunner(() => {
@@ -257,6 +260,35 @@ test('adoptAuthoritativeGrid replaces a deck fallback grid with the authoritativ
 		'the beat math reads deck.anlz - adopting only in the WaveRow paint leaves quantize and Beat Sync on ' +
 			'the stale fallback (discussion_r3919779323)'
 	);
+});
+
+test('adoptAuthoritativeGrid refreshes the deck BPM when the adopted grid projects one', async () => {
+	// Beat Sync reads deck.anlz.beatgrid.bpm directly; the header, IPC state,
+	// browser recommendations and autoplay all read the deck's SEPARATE bpm,
+	// last set from candidateTrack.bpm at load time (Codex P2 BLOCKING, PR
+	// #1587): without the refresh below they would keep exposing the old
+	// source's tempo after Beat Sync already settled against the new beats.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	h.bpm[1] = 128;
+	const ownGrid = { ..._anlz('sid-a', _beats(16, 124)), beatgrid: { ..._anlz('sid-a', _beats(16, 124)).beatgrid, source: 'own', status: 'ok', bpm: 124.3 } };
+	h.guards.adoptAuthoritativeGrid('sid-a', ownGrid);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.bpm[1], 124.3, 'the deck BPM must adopt the grid\'s projected BPM in the same transaction');
+});
+
+test('adoptAuthoritativeGrid leaves the deck BPM alone when the adopted grid projects none', async () => {
+	// A rekordbox source (or an own grid that is not status: ok) never
+	// carries beatgrid.bpm; the deck's existing BPM must not be clobbered
+	// with undefined in that case.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = { ..._anlz('sid-a', []), beatgrid: { source: 'own', beat_count: 0, beats: [], status: 'missing', reason: null } };
+	h.bpm[1] = 128;
+	h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(8, 132)));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.bpm[1], 128, 'a grid with no projected BPM must not overwrite the deck BPM');
 });
 
 test('adoptAuthoritativeGrid carries tempo_changes and performance_hints alongside beatgrid, both ways', async () => {
@@ -351,6 +383,7 @@ test('adoptAuthoritativeGrid skips a deck that reloaded before the claim was gra
 		deckStableId: (deck) => h.stableIds[deck],
 		deckAnlz: (deck) => h.anlz[deck],
 		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
+		publishDeckBpm: (deck, next) => (h.bpm[deck] = next),
 		reportError: () => {}
 	});
 	// Reload the deck inside the gap between submission and the claim.
