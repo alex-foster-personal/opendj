@@ -7,7 +7,7 @@ numbers the record will eventually carry. Writing `AnalysisRecord` rows is the
 nav1-contract lane's job in wave 1, so nothing here touches the store.
 
 The four pure modules are STDLIB ONLY on purpose, exactly as
-`scripts/beatbench/scorer.py` is. They are imported by pytest inside the repo
+`apps/analysis_bench/scorers/beatgrid.py` is. They are imported by pytest inside the repo
 venv while the model itself lives in a throwaway PEP 723 environment carrying
 torch. Keeping the policy code dependency-free is what lets the octave rule and
 the changepoint detector and the bar-phase assignment be unit tested in the normal

@@ -52,6 +52,20 @@ const CUE_BTN_PX = 14;
 const STEM_SLOT_PX = 54;
 const STEM_LABEL_PX = 8;
 const LOWER_PX = 76;
+// Issue #1578: `.strip-head` is a flex ROW holding `.ch-num` AND the R/M
+// `.cal-controls` group (#1475) side by side, in BOTH modes - #1475 landed
+// after CH_NUM_PX above was measured and never re-measured the row. A flex
+// row's cross-axis (height) size is the tallest child regardless of
+// align-items, so `.strip-head`'s real height is max(CH_NUM_PX,
+// CAL_CONTROLS_PX), not the bare CH_NUM_PX both floor tests assumed - a 1px
+// understatement in LESS mode, where the floor has no slack. Measured the
+// same way as the other constants above (Playwright/Chromium, isolated
+// fixture with ChannelStrip.svelte's exact `.strip-head`/`.cal-controls`/
+// `.cal-btn` CSS): { head: 11, chnum: 10, cal: 11, calBtn: 11 }. The chnum
+// reading is a positive control - it reproduces the already-recorded
+// CH_NUM_PX (10) exactly, which is what makes the cal reading trustworthy
+// despite the fixture's hand-copied CSS and missing Inter/SF Pro font.
+const CAL_CONTROLS_PX = 11;
 
 const CHANNEL_STRIP_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)
@@ -196,7 +210,7 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 	const flexGapsTotalPx = (CHILD_COUNT_LESS - 1) * stripFlexGapPx;
 
 	const stripContentPx =
-		CH_NUM_PX +
+		Math.max(CH_NUM_PX, CAL_CONTROLS_PX) +
 		(knobBoxPx(lessTrimSize) + trimMarginPx) +
 		(3 * knobBoxPx(lessEqSize) + 2 * eqGapPx) +
 		(CUE_BTN_PX + cueMarginPx) +
@@ -281,7 +295,7 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 	const flexGapsTotalPx = (CHILD_COUNT_MORE - 1) * stripFlexGapPx;
 
 	const stripContentPx =
-		CH_NUM_PX +
+		Math.max(CH_NUM_PX, CAL_CONTROLS_PX) +
 		(knobBoxPx(trimSize) + trimMarginPx) +
 		(3 * knobBoxPx(eqSize) + 2 * eqGapPx) +
 		(knobBoxPx(filterSize) + filterMarginPx) +
