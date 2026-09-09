@@ -101,7 +101,7 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /const completed = coverage\.on_disk - missing;/);
-	assert.match(src, /\$\{coverage\.unreachable\} unreachable/);
+	assert.match(src, /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
 	assert.match(src, /async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\)\]\);/);
 	assert.doesNotMatch(src, /import \{ api, unwrap \} from '\$lib\/api\/client';/);
 	const ingest = source('../server/routes/ingest.py');
