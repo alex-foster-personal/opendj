@@ -18,8 +18,14 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import engine, protocol
+from apps.sync_hub import capabilities, engine, protocol
 from apps.sync_hub.transport import API_PREFIX, HubTransport, SyncTransportError
+
+#: What this build advertises on every request that can be answered
+#: partially (round 5 gate B-1). One comma-free token per request for the
+#: GET side, because :meth:`HubTransport.get` carries flat string params and
+#: FastAPI reads a single occurrence into a one-element list.
+_ADVERTISED: tuple[str, ...] = capabilities.THIS_BUILD
 
 
 def _local_machine_row(
@@ -178,6 +184,7 @@ def _push_in_batches(
                 "schema_version": state_schema.SCHEMA_VERSION,
                 "rows": [change.to_wire() for change in chunk],
                 "machines": wire_fleet,
+                "capabilities": list(_ADVERTISED),
             },
         )
         accepted += _int_from(payload, "accepted", "push")
@@ -220,6 +227,7 @@ def _pull_in_chunks(
                 "machine_id": machine_id,
                 "since_seq": str(cursor),
                 "limit": str(limit),
+                "capabilities": capabilities.QUARANTINE_V1,
             },
         )
         incoming = _rows_from(payload, "pull")

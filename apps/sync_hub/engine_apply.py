@@ -47,12 +47,19 @@ class ApplyResult:
     (round 5). Distinct from ``rejected``, which means the incoming row lost
     a comparison that actually happened: a quarantined row was never
     compared at all, and the local row it met is untouched.
+
+    ``faults`` names the stored values behind that count (round 5 gate B-1).
+    A caller that has to REFUSE the batch rather than report the shortfall --
+    :mod:`apps.sync_hub.service` answering a peer too old to understand a
+    partial answer -- needs the same detail ``origin/main``'s 422 carried, or
+    the operator is handed a number and told to go looking.
     """
 
     accepted: int
     rejected: int
     seq: int
     quarantined: int = 0
+    faults: tuple[protocol.StampFault, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -330,6 +337,7 @@ def _apply(
     accepted = 0
     rejected = 0
     quarantined = 0
+    faults: list[protocol.StampFault] = []
     for change in ordered:
         spec = SPEC_BY_TABLE.get(change.table)
         if spec is None:
@@ -338,6 +346,7 @@ def _apply(
         verdict = _resolve_against_stored(conn, spec, change)
         if verdict.faults:
             quarantined += 1
+            faults.extend(verdict.faults)
             _log_quarantine(change, verdict.faults)
             continue
         if verdict.loses:
@@ -354,6 +363,7 @@ def _apply(
         rejected=rejected,
         seq=current_seq(conn),
         quarantined=quarantined,
+        faults=tuple(faults),
     )
 
 
