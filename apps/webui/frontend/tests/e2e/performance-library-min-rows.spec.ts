@@ -15,18 +15,30 @@ import { expect, test } from '@playwright/test';
 // perf-root comment, PR #1007 discussions r3921198996, r3921321752,
 // r3921443899 and r3923591731): the deck area's documented content-tight
 // floor (protected via `minmax(<floor>px, ...)`, since `.rb-deck` uses
-// overflow: hidden and a shorter box genuinely clips controls - pin 246b0f5
-// / Sol P1 findings raised this from 497px to 524px, see below), and the
-// library's 272px 5-row floor. Their sum plus topbar/wave (200px) is 996px,
-// taller than the repo's standard 1280x800 viewport, so only ONE floor can
-// be fully satisfied below that height. Decks/mixer win the conflict
-// (protecting already-shipped controls), so this file tests each floor at
-// the viewport where it is actually supposed to hold, instead of asserting
-// both at once somewhere neither can be true - and then tests, AT 1280x800,
-// what the losing side does with the shortfall, which is where the real
-// defect was.
+// overflow: hidden and a shorter box genuinely clips controls - 497px, the
+// deck's own two-deck-column requirement), and the library's 272px 5-row
+// floor. Their sum plus topbar/wave (200px) is 969px, taller than the repo's
+// standard 1280x800 viewport, so only ONE floor can be fully satisfied below
+// that height. Decks/mixer win the conflict (protecting already-shipped
+// controls), so this file tests each floor at the viewport where it is
+// actually supposed to hold, instead of asserting both at once somewhere
+// neither can be true - and then tests, AT 1280x800, what the losing side
+// does with the shortfall, which is where the real defect was.
+//
+// FIX ROUND 3 note: pin 246b0f5 round 1 briefly raised the MORE deck-area
+// floor to 524px (to cover the mixer's own un-collapsed content), which
+// moved this 969px threshold to 996px without amending REQUIREMENTS.md's
+// LIBUX-01 acceptance line - a real regression two independent reviewers
+// (Sol comment 3963434154, P2 BLOCKING; a blinded reviewer separately) both
+// caught. Round 3 fixed it the other way: ChannelStrip.svelte's MORE-mode
+// margins were compacted so the mixer's real content fits back inside the
+// ORIGINAL 497px floor (channel-strip-less-floor.test.mjs's "MORE floor"
+// test proves 492.6px required, comfortably under 497), restoring the
+// documented 969px threshold instead of moving the requirement. The two
+// tests further down this file at 969px and 720px are the boundary
+// regression coverage for that finding.
 
-// 1000px clears the >= 996px threshold at which BOTH floors fit (524
+// 1000px clears the >= 969px threshold at which BOTH floors fit (497
 // deck/mixer + 272 library + 200 topbar/wave), so the 5-row guarantee is
 // actually claimable here. Below it the guarantee does not hold and the
 // tests further down assert what happens instead, rather than pretending it
@@ -41,9 +53,9 @@ const TALL_VIEWPORT = { width: 1280, height: 1000 };
 // sandbox's Chromium happens to render overlay scrollbars, which cost 0
 // layout height, so this assertion cannot itself distinguish "budgeted the
 // 17px and it went unused" from "the budget is wrong" - see NOT-verified in
-// the PR body). 1000px is tall enough that the deck-area floor (524px,
-// Sol-P1-fixed - see the header comment above) is not in the way (996px
-// needed for both floors at once, 1000 > 996).
+// the PR body). 1000px is tall enough that the deck-area floor (497px, FIX
+// ROUND 3 restored - see the header comment above) is not in the way (969px
+// needed for both floors at once, 1000 > 969).
 const MIN_TABLE_WRAP_HEIGHT = 20 + 5 * 22 + 17;
 
 test('performance: library table-wrap keeps a 5-row floor once the window is tall enough for both floors', async ({
@@ -323,4 +335,120 @@ test('performance: the truncation banner adds its own height to the 5-row floor'
 		measured.before.bannerHeight,
 		1
 	);
+});
+
+// FIX ROUND 3 boundary regression coverage for the two Sol BLOCKING findings
+// on +page.svelte:281 (comments 3963623911 P1, 3963434154 P2), both about
+// this file's own deck-area floor arithmetic:
+//
+// - P2 (LIBUX-01's own 969px threshold): the five-row guarantee must hold at
+//   any window >= 969px tall (REQUIREMENTS.md LIBUX-01). Round 1's 524px
+//   floor silently moved that boundary to 996px; round 3 restored 497px so
+//   969px is real again. This test sits exactly ON that boundary rather than
+//   comfortably above it (TALL_VIEWPORT, 1000px) - the previous tests in
+//   this file already prove the interior; this one proves the edge.
+// - P1 (the short-window contract, REQUIREMENTS.md ~2581-2586): below the
+//   969px threshold the shortfall must cost ROWS ONLY, never let the deck
+//   area's own overflow intercept clicks meant for the library. Round 1's
+//   524px floor collapsed the browser row to ~0px at the repo's default
+//   1280x720 viewport, which is exactly what broke
+//   autoplay-explainer-placement.spec.ts and context-menu.spec.ts (both now
+//   pass again at the native, unmodified 720px viewport with no per-spec
+//   override - see those files). This test is the direct, page-agnostic
+//   proof: a real Playwright click (which itself performs the same
+//   actionability checks - visible, stable, receives-pointer-events - that
+//   made those two specs time out on round 1's floor) must reach and
+//   select the first track row, and the same click on the row's context
+//   menu trigger must open its menu rather than intercepting on deck/
+//   bottom-bar chrome painted over it.
+const LIBUX01_THRESHOLD_VIEWPORT = { width: 1280, height: 969 };
+const SHORT_WINDOW_VIEWPORT = { width: 1280, height: 720 };
+
+test('performance: LIBUX-01 five-row guarantee holds exactly at its documented 969px threshold', async ({
+	page
+}) => {
+	await page.setViewportSize(LIBUX01_THRESHOLD_VIEWPORT);
+	await page.goto('/performance');
+
+	const tableWrap = page.locator('.table-wrap');
+	await expect(tableWrap).toBeVisible();
+
+	const box = await tableWrap.boundingBox();
+	expect(box).not.toBeNull();
+	// -1px tolerance for subpixel layout rounding across browser engines,
+	// same tolerance the TALL_VIEWPORT test above uses.
+	expect(box!.height).toBeGreaterThanOrEqual(MIN_TABLE_WRAP_HEIGHT - 1);
+
+	// Decks 1/2 must stay at their own content-tight floor too - the 969px
+	// threshold is only meaningful if BOTH floors hold simultaneously here.
+	const deck1 = page.locator('.rb-deck').first();
+	await expect(deck1).toBeVisible();
+	const deck1Box = await deck1.boundingBox();
+	expect(deck1Box).not.toBeNull();
+	expect(deck1Box!.height).toBeGreaterThanOrEqual(MIN_DECK_HEIGHT - 1);
+
+	// `.tt-root`'s min-height floor (147px, what the box.height check above
+	// reads) holds REGARDLESS of how much room its container actually has -
+	// getBoundingClientRect() reports the box's own un-clipped layout size
+	// even when `.list-panel`'s `overflow: hidden` (BrowserPanel.svelte) is
+	// clipping it out of view, and `.perf-root`'s own scrollHeight does not
+	// grow either, because that clip absorbs the overflow internally without
+	// ever reaching the grid track (confirmed live: mutating the deck-area
+	// floor to 650px at this exact viewport still read table-wrap box.height
+	// 147 and perf-root scrollHeight == clientHeight, while the rows were
+	// actually clipped invisible - neither of the checks above would have
+	// caught that regression). So the real proof that the five rows are
+	// genuinely VISIBLE, not just present in the DOM, is that table-wrap's
+	// own box fits entirely inside `.list-panel`'s box - if the deck-area
+	// floor eats into the library's 272px budget at 969px, table-wrap's
+	// bottom edge runs past `.list-panel`'s and is silently clipped away.
+	const listPanel = page.locator('.list-panel');
+	await expect(listPanel).toBeVisible();
+	const listPanelBox = await listPanel.boundingBox();
+	expect(listPanelBox).not.toBeNull();
+	expect(box!.y + box!.height).toBeLessThanOrEqual(listPanelBox!.y + listPanelBox!.height + 1);
+});
+
+test('performance: at the short 1280x720 window, the shortfall costs library rows only - it never lets deck/bottom-bar chrome intercept a click on the track list', async ({
+	page
+}) => {
+	await page.setViewportSize(SHORT_WINDOW_VIEWPORT);
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+
+	// The page itself must not overflow its own viewport (same invariant the
+	// 1280x800 test above proves; this is the same check at the window this
+	// pin's floor arithmetic actually has to defend, 720px, not 800px).
+	const overflow = await page.evaluate(() => {
+		const root = document.querySelector('.perf-root');
+		if (root === null) {
+			throw new Error('.perf-root not found');
+		}
+		return { scrollHeight: root.scrollHeight, clientHeight: root.clientHeight };
+	});
+	expect(overflow.scrollHeight).toBeLessThanOrEqual(overflow.clientHeight + OVERFLOW_TOLERANCE_PX);
+
+	// The direct proof Sol's P1 finding names: a real Playwright click - which
+	// itself performs the browser's actionability checks (scrolls the target
+	// into view, waits for it to be stable and to actually receive pointer
+	// events at its resolved coordinates) - must reach the first track row
+	// rather than timing out with "subtree intercepts pointer events" the way
+	// context-menu.spec.ts and autoplay-explainer-placement.spec.ts did
+	// against round 1's 524px floor. A raw, unscrolled `elementFromPoint` at
+	// the row's pre-click boundingBox is NOT equivalent to this - Chromium's
+	// own `.click()` scrolls the element into view first (confirmed live:
+	// this row's boundingBox.y moves from 742 to 689 across the click), so
+	// asserting against the pre-scroll box would fail even on a fully
+	// healthy layout. The click itself, not a static coordinate, is the real
+	// contract.
+	const track = page.locator('[data-testid="track-row"]').first();
+	await track.click({ timeout: 5_000 });
+	await expect(track).toHaveClass(/rb-row-selected/);
+
+	// And the same for the row's own context menu (context-menu.spec.ts's
+	// exact assertion, re-run at this exact 720px boundary rather than
+	// relying on that spec happening to run at the same viewport).
+	await track.click({ button: 'right', timeout: 5_000 });
+	await expect(page.locator('[data-testid="context-menu"]')).toContainText('Load to deck 1');
+	await page.keyboard.press('Escape');
 });

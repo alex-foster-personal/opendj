@@ -204,11 +204,21 @@
 		color: var(--rb-text);
 		line-height: 1;
 	}
+	/* Pin 246b0f5 FIX ROUND 3 (Sol P1/P2 BLOCKING, both on +page.svelte:281):
+	 * this margin (and filter-slot's/cue-btn's/fader-slot's/stem-label's
+	 * below) was tightened from its pre-fix value so the un-collapsed MORE
+	 * strip's real content fits back inside the 497px deck-area floor
+	 * LIBUX-01 documents as NOT reclaimable, instead of growing that floor
+	 * to 524px (which broke both the short-window contract at 720px and
+	 * the LIBUX-01 969-995px five-row guarantee - see channel-strip-less
+	 * -floor.test.mjs's "MORE floor" test and +page.svelte's floor comment
+	 * for the full arithmetic). Purely cosmetic spacing, no control removed
+	 * or made smaller. */
 	.trim-slot {
-		margin-bottom: 7px;
+		margin-bottom: 3px;
 	}
 	/* Pin 246b0f5 LESS mode: FILTER (the inert stub below) drops out of the
-	 * layout entirely, so the remaining vertical margins tighten too -
+	 * layout entirely, so the remaining vertical margins tighten further -
 	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
 	 * from these exact numbers, so a change here must stay in step with
 	 * that test. */
@@ -222,8 +232,8 @@
 		gap: 3px;
 	}
 	.filter-slot {
-		margin-top: 7px;
-		margin-bottom: 10px;
+		margin-top: 1px;
+		margin-bottom: 3px;
 	}
 	.cue-btn {
 		background: var(--rb-panel-raised);
@@ -236,7 +246,7 @@
 		padding: 2px 5px;
 		line-height: 1;
 		margin-top: 0;
-		margin-bottom: 10px;
+		margin-bottom: 3px;
 		flex: none;
 		cursor: pointer;
 	}
@@ -255,7 +265,7 @@
 		justify-content: center;
 		align-items: stretch;
 		margin-top: 0;
-		margin-bottom: 8px;
+		margin-bottom: 4px;
 	}
 	.strip.less .fader-slot {
 		margin-bottom: 4px;
@@ -267,7 +277,7 @@
 		line-height: 1;
 		flex: none;
 		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
-		margin-top: 5px;
+		margin-top: 2px;
 	}
 	.strip.less .stem-label {
 		margin-top: 2px;
