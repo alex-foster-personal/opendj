@@ -714,6 +714,12 @@
 		// refetch is allowed to run, and its coalescer guarantees it is only
 		// ever one refetch.
 		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
+		// Another tab or API client creating/deleting a playlist must not leave
+		// the "N playlists found" health-dot total stale until this tab does a
+		// local playlist op or a reload.
+		const unsubscribePlaylists = subscribeKind('playlists', () =>
+			_libraryRefreshGate.request()
+		);
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
@@ -737,6 +743,7 @@
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
+			unsubscribePlaylists();
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
@@ -1193,7 +1200,7 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
-		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary()]);
+		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
 			const healthRes = await getHealth();
 			allTracksCount = healthRes.health.state_db.tracks;
@@ -1237,11 +1244,11 @@
 	 * The only entry point for a background library refresh: WHEN it may run,
 	 * and how many times.
 	 *
-	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
-	 * the 60s degraded-path poll) and a single gap-revealing `library.changed`
-	 * frame fires the first two for ONE event. Unguarded that is two concurrent
-	 * full library reads racing to write the same panes; the gate's coalescer
-	 * makes it one run plus one trailing run (`$lib/rb/coalesce`).
+	 * Four triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
+	 * `subscribeResync` and the 60s degraded-path poll) and a single gap-revealing
+	 * `library.changed` frame fires two of them for ONE event. Unguarded that is
+	 * concurrent full library reads racing to write the same panes; the gate's
+	 * coalescer makes it one run plus one trailing run (`$lib/rb/coalesce`).
 	 *
 	 * PERFMODE-04 on top of that: no background refetch AT ALL while a deck is
 	 * playing. A refresh is a full library read per open pane followed by a

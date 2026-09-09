@@ -51,18 +51,18 @@ export function libraryHealthDot(
 	}
 	const playlistPart =
 		playlistCount > 0 ? `${playlistCount} ${playlistCount === 1 ? 'playlist' : 'playlists'} found` : 'no playlists found';
+	// Checked BEFORE the settled/unsettled branch below, not nested inside
+	// it: a refresh that fails AFTER an earlier one succeeded keeps the prior
+	// non-null counts (the caller retains them on failure), so nesting this
+	// inside `allTracksNonBrokenCount === null` would let the dot go on
+	// quoting stale counts forever instead of surfacing the failure.
+	if (allTracksReconcileError !== null) {
+		return { label, state: 'error', detail: allTracksReconcileError };
+	}
 	// Until the reconcile summary lands there is no honest non-broken total,
 	// so the dot says the count is still settling rather than quoting the
-	// raw row count in the meantime - quoting it is the bug. But if the
-	// reconcile summary FAILED (backend error, timeout, contract break),
-	// allTracksNonBrokenCount never settles - it stays null forever - so
-	// this branch must not be a permanent home for it. Surface the
-	// reconcile error and go red instead of freezing on "counting
-	// non-broken tracks" indefinitely.
+	// raw row count in the meantime - quoting it is the bug.
 	if (allTracksNonBrokenCount === null) {
-		if (allTracksReconcileError !== null) {
-			return { label, state: 'error', detail: allTracksReconcileError };
-		}
 		return {
 			label,
 			state: allTracksCount > 0 ? 'incomplete' : 'unavailable',

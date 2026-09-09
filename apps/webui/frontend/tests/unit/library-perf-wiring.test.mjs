@@ -102,7 +102,10 @@ test('coverage counts only reachable audio and refetches through the library ref
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /const completed = coverage\.on_disk - missing;/);
 	assert.match(src, /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
-	assert.match(src, /async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\)\]\);/);
+	assert.match(
+		src,
+		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\);/
+	);
 	assert.doesNotMatch(src, /import \{ api, unwrap \} from '\$lib\/api\/client';/);
 	const ingest = source('../server/routes/ingest.py');
 	assert.match(ingest, /finally:\s*job\.current_step = None\s*job\.finished_at = time\.time\(\)\s*publish\("library\.changed", \{"kind": "tracks", "ids": \[\]\}\)/);
