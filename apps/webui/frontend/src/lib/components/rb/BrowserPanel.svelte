@@ -28,6 +28,10 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import {
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -205,17 +209,6 @@
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
-	type LibraryHealthDot = {
-		label:
-			| 'Frontend'
-			| 'Backend'
-			| 'Library health'
-			| 'Vocals completion'
-			| 'Stems completion'
-			| 'Lyrics completion';
-		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
-		detail: string;
-	};
 	// Restored by pin a66ee132a14e. #1339/#1352 replaced the old three-dot
 	// `conn-dots` strip (fe / be / lib) with this coverage row and carried
 	// only the `lib` signal across as `libraryHealth`, so the two liveness
@@ -244,7 +237,16 @@
 	 * quote the wrong number, so the dot is computed from whatever has landed
 	 * instead of frozen at the first thing that did.
 	 */
-	const libraryHealth = $derived<LibraryHealthDot>(_libraryHealthDot());
+	const libraryHealth = $derived<LibraryHealthDot>(
+		_computeLibraryHealthDot(
+			libraryHealthError,
+			allTracksCount,
+			playlists.length,
+			allTracksPlayableCount,
+			allTracksBrokenCount,
+			allTracksReconcileError
+		)
+	);
 	let vocalsCompletion = $state<LibraryHealthDot>({
 		label: 'Vocals completion',
 		state: 'loading',
@@ -739,72 +741,11 @@
 			window.removeEventListener('keydown', onKey);
 		};
 	});
-
-
 	/**
-	 * The Library health dot: playlists found, and a total that counts only
-	 * tracks that can actually be played.
-	 *
-	 * pin a66ee132a14e asks for three things and this is two of them - the
-	 * "playlist library found" signal that vanished with the old `conn-dots`
-	 * strip, and a total that never quotes rows whose files are gone. The
-	 * broken count is stated alongside rather than hidden, because a library
-	 * that is 5,000 rows and 1,300 playable is a fact the operator wants,
-	 * just not one to be told as "5,000 available".
+	 * The Library health dot policy now lives in `$lib/rb/library-health-dots`
+	 * (pure, unit tested with no component or network mock), the same split
+	 * as `meter-math.ts`. `libraryHealth` above calls it directly.
 	 */
-	function _libraryHealthDot(): LibraryHealthDot {
-		const label = 'Library health' as const;
-		if (libraryHealthError !== null) {
-			return { label, state: 'error', detail: libraryHealthError };
-		}
-		if (allTracksCount === null) {
-			return { label, state: 'loading', detail: 'checking library health' };
-		}
-		const playlistPart =
-			playlists.length > 0
-				? `${playlists.length} ${playlists.length === 1 ? 'playlist' : 'playlists'} found`
-				: 'no playlists found';
-		// Until the reconcile summary lands there is no honest playable total,
-		// so the dot says the count is still settling rather than quoting the
-		// raw row count in the meantime - quoting it is the bug. But if the
-		// reconcile summary FAILED (backend error, timeout, contract break),
-		// allTracksPlayableCount never settles - it stays null forever - so
-		// this branch must not be a permanent home for it. Surface the
-		// reconcile error and go red instead of freezing on "counting
-		// playable tracks" indefinitely.
-		if (allTracksPlayableCount === null) {
-			if (allTracksReconcileError !== null) {
-				return { label, state: 'error', detail: allTracksReconcileError };
-			}
-			return {
-				label,
-				state: allTracksCount > 0 ? 'incomplete' : 'unavailable',
-				// "counting" implies pending work, which is wrong when the
-				// library is already known to be empty (allTracksCount === 0) -
-				// there is nothing left to count.
-				detail:
-					allTracksCount > 0 ? `${playlistPart}, counting playable tracks` : `${playlistPart}, library empty`
-			};
-		}
-		const broken = allTracksBrokenCount ?? 0;
-		const brokenPart =
-			broken > 0 ? `, ${broken} broken ${broken === 1 ? 'link' : 'links'}` : ', no broken links';
-		if (allTracksPlayableCount <= 0) {
-			return {
-				label,
-				state: 'unavailable',
-				detail:
-					broken > 0
-						? `${playlistPart}, no playable tracks - all ${broken} ${broken === 1 ? 'link is' : 'links are'} broken`
-						: `${playlistPart}, no playable tracks`
-			};
-		}
-		return {
-			label,
-			state: broken > 0 ? 'incomplete' : 'complete',
-			detail: `${playlistPart}, ${allTracksPlayableCount} playable${brokenPart}`
-		};
-	}
 
 	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
 	const CONN_PING_MS = 2500;
