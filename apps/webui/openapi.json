@@ -3238,7 +3238,7 @@
         "type": "object"
       },
       "FallbackBeatgridOut": {
-        "description": "Identical shape to the ``beatgrid`` object served by /anlz.",
+        "description": "Identical shape to the ``beatgrid`` object served by /anlz.\n\n``source`` is fixed at ``\"own\"``: every grid this endpoint can serve came\nfrom an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ\nto read), and the ANLZ contract this shape mirrors makes the field\nREQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here\nleft the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a\nreal mismatch: a fail-closed, source-aware reader would reject this grid\noutright (Codex P2 BLOCKING, PR #1587).",
         "properties": {
           "beat_count": {
             "title": "Beat Count",
@@ -3250,9 +3250,15 @@
             },
             "title": "Beats",
             "type": "array"
+          },
+          "source": {
+            "const": "own",
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
+          "source",
           "beat_count",
           "beats"
         ],

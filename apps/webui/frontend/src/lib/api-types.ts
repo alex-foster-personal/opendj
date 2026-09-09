@@ -4202,12 +4202,25 @@ export interface components {
         /**
          * FallbackBeatgridOut
          * @description Identical shape to the ``beatgrid`` object served by /anlz.
+         *
+         *     ``source`` is fixed at ``"own"``: every grid this endpoint can serve came
+         *     from an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ
+         *     to read), and the ANLZ contract this shape mirrors makes the field
+         *     REQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here
+         *     left the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a
+         *     real mismatch: a fail-closed, source-aware reader would reject this grid
+         *     outright (Codex P2 BLOCKING, PR #1587).
          */
         FallbackBeatgridOut: {
             /** Beat Count */
             beat_count: number;
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
+            /**
+             * Source
+             * @constant
+             */
+            source: "own";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
