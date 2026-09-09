@@ -13,6 +13,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { engine, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { anyDeckPlaying } from '$lib/rb/playing-gate';
 	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import {
 		dispatchPerformanceCommand,
@@ -52,6 +53,7 @@
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
+	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import { APP_MODES } from '$lib/rb/app-mode';
 
 	interface MasterCapableEngine extends AudioEngine {
@@ -226,6 +228,13 @@
 			_setMaster(_clamp01(mixerState.master - 0.02));
 		}
 	}
+
+	// TopBar is mounted for the whole /performance session, so the master
+	// meter's RAF loop must not run unconditionally from route mount - it
+	// stops the instant nothing is playing, same gate as
+	// armAudioContextWatchdog's arm predicate (anyDeckPlaying is the one
+	// shared source of truth for "is this session live").
+	const masterMeterActive = $derived(anyDeckPlaying());
 </script>
 
 <svelte:window onpointerdown={_dismissModeMenuOnOutsidePointer} onkeydown={_dismissModeMenuOnEscape} />
@@ -577,6 +586,14 @@
 			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
 			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 		</div>
+
+		<!-- master output level meter: REAL -> engine master bus, post master
+		     gain (pin 5a5c3b8033d8's still-open half; the ten-segment channel
+		     meters shipped in PR #1062 tap post-EQ/pre-fader and so do not move
+		     with this control). Distinct from the output-health-bar below,
+		     which answers "is a device receiving audio" rather than "how loud
+		     is the master bus". -->
+		<MasterLevelMeter active={masterMeterActive} />
 
 		<!-- output-to-device bar: REAL -> audio-output-liveness verdict (pin
 		     93c82bb36eb7). A 1px line under the master slider distinguishing "we

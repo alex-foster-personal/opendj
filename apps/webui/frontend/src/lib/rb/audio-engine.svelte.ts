@@ -1,6 +1,12 @@
 import {
-	METER_FLOOR_DBFS,
 	createMeterTap,
+	SILENT_METER_READING,
+	createMasterMeterSource,
+	masterMeterReading,
+	metersUnavailable,
+	onMetersUnavailableChange,
+	meterClockMs,
+	releaseMasterMeterTap,
 	readMeterTap,
 	type MeterReading,
 	type MeterTap,
@@ -572,26 +578,21 @@ const _meterTaps: Record<DeckId, MeterTap | null> = { 1: null, 2: null, 3: null,
 
 export function peekDeckMeterReading(deck: DeckId): MeterReading {
 	const tap = _meterTaps[deck];
-	if (_rt[deck].nodes === null || tap === null) {
-		return {
-			db: METER_FLOOR_DBFS,
-			peakDb: METER_FLOOR_DBFS,
-			segments: 0,
-			normalized: 0,
-			clipped: false
-		};
-	}
-	return readMeterTap(tap, _meterClockMs());
+	if (_rt[deck].nodes === null || tap === null) return SILENT_METER_READING;
+	return readMeterTap(tap, meterClockMs());
 }
 
-/** Wall clock for meter ballistics. Falls back to Date.now() only where
- * performance.now() is genuinely absent, and both are monotonic enough for a
- * decay measured in hundreds of milliseconds. */
-function _meterClockMs(): number {
-	return typeof performance === 'object' && typeof performance.now === 'function'
-		? performance.now()
-		: Date.now();
+/** Master output level. The tap, the silent fallback and the "what does red
+ * mean here" contract all live in meter-tap.ts; the engine supplies only the
+ * clock, so the barrel stays the one import edge a meter component needs. */
+export function peekMasterMeterReading(): MeterReading {
+	return masterMeterReading(meterClockMs());
 }
+
+/** Re-exported so a meter component can tell a genuinely broken meter
+ * (worklet failed to arm) apart from a genuinely silent bus. See
+ * meter-tap.ts's metersUnavailable/UNAVAILABLE_METER_READING. */
+export { metersUnavailable, onMetersUnavailableChange };
 
 export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	const presentation = _rt[deck].presentation;
@@ -714,9 +715,13 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect(_masterMuteGain);
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	// Post-EQ, pre-fader tap points, one per deck. Collected here and armed
-	// after the loop because addModule is async and the graph build is not.
+	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
+	// from `_masterGain` itself (post master gain, so the master volume
+	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
+	// Collected here and armed after the loop because addModule is async and
+	// the graph build is not.
 	const meterSources: MeterTapSource[] = [];
+	meterSources.push(createMasterMeterSource(_masterGain));
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -2782,6 +2787,7 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		releaseMasterMeterTap();
 		// The mute VALUE survives teardown on purpose: a route remount must not
 		// hand a headless agent its audio back. Only the node is released.
 		attachMasterMuteNode(null);
