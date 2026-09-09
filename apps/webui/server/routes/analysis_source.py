@@ -25,14 +25,15 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from apps.analysis import selection as sel
 from apps.analysis import store as analysis_store
 from apps.shared.paths import STATE_DB
 
-from ..backend import InMemoryBackend
+from ..backend import InMemoryBackend, StateBackend
+from ..deps import get_write_state
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -118,7 +119,18 @@ def get_analysis_source(request: Request) -> AnalysisSourceOut:
 
 
 @router.put("/source", response_model=AnalysisSourceOut)
-def put_analysis_source(request: Request, body: AnalysisSourcePut) -> AnalysisSourceOut:
+def put_analysis_source(
+    request: Request,
+    body: AnalysisSourcePut,
+    # Cross-host write exclusion. This route opens state.db READ-WRITE, so it
+    # is a mutating route and has to answer to the same lock as every other
+    # one: 503 when another host holds the writer lock, and 503 when the lock
+    # PROBE itself failed (deps.py fails closed there). Without the
+    # dependency it would persist a promotion straight through both states
+    # (Codex P1, PR #1549). The returned backend is unused -- the guard is
+    # the point.
+    _write_guard: StateBackend = Depends(get_write_state),
+) -> AnalysisSourceOut:
     if body.default is None and body.toggle is None:
         raise HTTPException(
             status_code=422,

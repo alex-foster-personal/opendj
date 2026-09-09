@@ -293,3 +293,50 @@ def test_every_valid_pitch_class_is_accepted(db) -> None:
         payload = key_payload()
         payload["pitch_class"] = pitch_class
         validate_lane_payload("key", payload)
+
+
+#-----------------------------------------------------------------------------
+# P2 round 6: a grid the deck cannot consume is not `ok`
+#-----------------------------------------------------------------------------
+
+def _beats(*specs) -> list[dict]:
+    return [{"t": t, "n": n, "bpm": bpm} for t, n, bpm in specs]
+
+
+@pytest.mark.parametrize(
+    "beats,why",
+    [
+        (_beats((0.0, 1, 128.0)), "one beat"),
+        (_beats((0.0, 1, 128.0), (0.5, 1.5, 128.0)), "fractional n"),
+        (_beats((0.0, 1, 128.0), (0.5, 9, 128.0)), "n out of 1..4"),
+        (_beats((0.0, 1, 128.0), (0.5, 2, 0.0)), "nonpositive bpm"),
+        (_beats((-1.0, 1, 128.0), (0.5, 2, 128.0)), "negative t"),
+        (_beats((0.0, 1, 128.0), (0.0, 2, 128.0)), "t not increasing"),
+        (_beats((0.0, 1, 128.0), (0.5, 3, 128.0)), "broken 1-2-3-4 cadence"),
+    ],
+)
+def test_a_grid_the_deck_would_reject_is_refused(db, beats, why: str) -> None:
+    """Transcribed from `validateBeatGrid` in beat-sync-math.ts, the real consumer.
+
+    The reviewer's own example, `{t: 0, n: 1.5, bpm: 0}`, passed before this.
+    """
+    from tests.analysis_contract.conftest import beatgrid_payload
+
+    payload = beatgrid_payload()
+    payload["beats"] = beats
+    with pytest.raises(LaneContractError):
+        analysis_store.upsert_record(
+            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
+        )
+
+
+def test_a_grid_the_deck_accepts_is_still_stored(db) -> None:
+    """The control: the invariant must reject bad grids, not all grids.
+
+    The conftest fixture is a real 1-2-3-4 cadence at 128 BPM, which is
+    exactly what `validateBeatGrid` is written to accept.
+    """
+    assert analysis_store.upsert_record(own_record(), conn=db).inserted is True
+    assert db.execute(
+        "SELECT value FROM analysis_projection WHERE field='bpm'"
+    ).fetchone()[0] == 128.0

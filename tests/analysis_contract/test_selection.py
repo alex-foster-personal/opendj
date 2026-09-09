@@ -262,3 +262,40 @@ def test_cli_refuses_a_port_it_cannot_parse(monkeypatch, capsys) -> None:
     monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "not-a-port")
     assert selection_cli.main(["show"]) == selection_cli.EXIT_UNREACHABLE
     assert "not-a-port" in capsys.readouterr().out
+
+
+def test_the_source_put_answers_to_the_cross_host_write_lock(tmp_path) -> None:
+    """A mutating route must 503 when another host holds the writer lock.
+
+    Exercised through the SAME `lock_status_fn` seam every other mutating
+    route is tested through, not by patching the router: the claim is that
+    this endpoint is subject to the repository's write exclusion, and the
+    only honest way to show that is to trip the real one.
+    """
+    from fastapi.testclient import TestClient
+
+    from apps.analysis import store as analysis_store
+    from apps.webui.server.app import create_app
+    from apps.webui.server.sqlite_backend import SqliteBackend
+
+    db_path = tmp_path / "state.db"
+    analysis_store.open_conn(db_path).close()
+    app = create_app()
+    app.state.analysis_db_path = db_path
+    app.state.backend = SqliteBackend(db_path)
+    app.state.hostname = "this-host"
+    app.state.lock_status_fn = lambda: {"holder": "some-other-host"}
+
+    with TestClient(app) as client:
+        resp = client.put(
+            "/api/v1/analysis/source", json={"lane": "key", "default": "own"}
+        )
+        assert resp.status_code == 503, resp.text
+
+        # Control: with the lock free, the same request succeeds, so the 503
+        # above is the guard and not a broken endpoint.
+        app.state.lock_status_fn = lambda: {"holder": "this-host"}
+        ok = client.put(
+            "/api/v1/analysis/source", json={"lane": "key", "default": "own"}
+        )
+        assert ok.status_code == 200, ok.text

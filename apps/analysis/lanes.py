@@ -140,6 +140,70 @@ def _require_list(lane: str, payload: Mapping[str, Any], key: str) -> list[Any]:
     return value
 
 
+def _validate_beats(beats: list[Any]) -> None:
+    """The DECK's grid invariant, enforced at the write boundary.
+
+    Transcribed from the actual consumer, `validateBeatGrid` in
+    `apps/webui/frontend/src/lib/rb/beat-sync-math.ts`. Anything it throws on
+    is a record that would be made canonical here and then disable or error
+    the grid-dependent transport controls, so a shape the deck cannot consume
+    is not `status: ok` -- it is a producer that failed, and it says so with a
+    reason (Codex P2, PR #1549).
+
+    At least two beats, `n` an INTEGER cycling 1,2,3,4, `bpm` finite and > 0,
+    `t` finite, >= 0 and strictly increasing.
+    """
+    if len(beats) < 2:
+        raise LaneContractError(
+            f"beatgrid.beats has {len(beats)} beat(s); the deck requires at "
+            "least 2 (beat-sync-math.ts validateBeatGrid)"
+        )
+    previous_t = -1.0
+    previous_n = 0
+    for i, beat in enumerate(beats):
+        where = f"beatgrid.beats[{i}]"
+        n = _validate_one_beat(where, beat)
+        if i > 0:
+            _validate_beat_follows(where, i, beat, n, previous_t, previous_n)
+        previous_t, previous_n = float(beat["t"]), n
+
+
+def _validate_one_beat(where: str, beat: Any) -> int:
+    """One beat in isolation. Returns its validated bar position."""
+    if not isinstance(beat, Mapping):
+        raise LaneContractError(f"{where} must be a mapping, got {beat!r}")
+    _require_keys(where, beat, ("t", "n", "bpm"))
+    _require_number(where, beat, "t")
+    _require_number(where, beat, "bpm")
+    n = beat["n"]
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise LaneContractError(f"{where}.n must be an integer 1..4, got {n!r}")
+    if not 1 <= n <= 4:
+        raise LaneContractError(f"{where}.n must be within 1..4, got {n!r}")
+    if beat["bpm"] <= 0:
+        raise LaneContractError(f"{where}.bpm must be > 0, got {beat['bpm']!r}")
+    if beat["t"] < 0:
+        raise LaneContractError(f"{where}.t must be >= 0, got {beat['t']!r}")
+    return n
+
+
+def _validate_beat_follows(
+    where: str, i: int, beat: Mapping[str, Any], n: int,
+    previous_t: float, previous_n: int,
+) -> None:
+    """One beat relative to the one before it: time order and bar cadence."""
+    if beat["t"] <= previous_t:
+        raise LaneContractError(
+            f"beatgrid.beats times must strictly increase: [{i - 1}].t="
+            f"{previous_t}, {where}.t={beat['t']}"
+        )
+    expected = 1 if previous_n == 4 else previous_n + 1
+    if n != expected:
+        raise LaneContractError(
+            f"beatgrid.beats n must cycle 1,2,3,4: {where}.n={n}, expected {expected}"
+        )
+
+
 def _validate_beatgrid(payload: Mapping[str, Any]) -> None:
     _require_keys("beatgrid", payload, (
         "beats", "bpm", "bpm_confidence", "octave_reason", "first_downbeat_s",
@@ -154,13 +218,7 @@ def _validate_beatgrid(payload: Mapping[str, Any]) -> None:
             "beatgrid.beats is empty with status ok; a lane that found no pulse "
             "records status failed with reason no_trackable_pulse instead"
         )
-    for i, beat in enumerate(beats):
-        if not isinstance(beat, Mapping):
-            raise LaneContractError(f"beatgrid.beats[{i}] must be a mapping, got {beat!r}")
-        _require_keys(f"beatgrid.beats[{i}]", beat, ("t", "n", "bpm"))
-        _require_number(f"beatgrid.beats[{i}]", beat, "t")
-        _require_number(f"beatgrid.beats[{i}]", beat, "n")
-        _require_number(f"beatgrid.beats[{i}]", beat, "bpm")
+    _validate_beats(beats)
     _require_number("beatgrid", payload, "bpm")
     _require_number("beatgrid", payload, "bpm_confidence")
     _require_str("beatgrid", payload, "octave_reason")
