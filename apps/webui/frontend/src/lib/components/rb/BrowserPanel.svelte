@@ -195,7 +195,7 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
-	let allTracksPlayableCount = $state<number | null>(null);
+	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
@@ -233,7 +233,7 @@
 	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
 	 * available" on a library where most of those rows are broken links to
 	 * files that are permanently gone. The playable total is
-	 * `allTracksPlayableCount`, which the reconcile summary settles a moment
+	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
 	 * AFTER init - assigning the dot at init time is precisely how it came to
 	 * quote the wrong number, so the dot is computed from whatever has landed
 	 * instead of frozen at the first thing that did.
@@ -243,7 +243,7 @@
 			libraryHealthError,
 			allTracksCount,
 			playlists.length,
-			allTracksPlayableCount,
+			allTracksNonBrokenCount,
 			allTracksBrokenCount,
 			allTracksReconcileError
 		)
@@ -849,7 +849,7 @@
 	async function _loadReconcileSummary(): Promise<void> {
 		try {
 			const summary = await getReconcileSummary();
-			allTracksPlayableCount = summary.total_tracks - summary.total_broken;
+			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
@@ -1414,7 +1414,7 @@
 			const result =
 				node.kind === 'all_tracks'
 					? await _fetchAllRows((info) =>
-							p.updateLoadProgress(seq, info.loaded, allTracksPlayableCount)
+							p.updateLoadProgress(seq, info.loaded, allTracksNonBrokenCount)
 						)
 					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
@@ -2397,7 +2397,7 @@
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
-				allTracksCount={allTracksPlayableCount}
+				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
