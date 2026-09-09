@@ -5,16 +5,18 @@ the cost of being wrong is one-sided: naming too few tests loses some of the fas
 naming too many wastes a little time. Nothing is ever skipped on this basis. The tests
 below pin that asymmetry rather than an exact selection.
 
+[if] the selector stops naming the tests a change reaches, or starts naming
+everything [then] fail, [else stop].
+
 Regression lines:
-  - if a test that imports a changed module directly is not named then broken
-  - if a test that reaches a changed module only transitively is not named then broken
-  - if a changed test file does not name itself then broken
-  - if an unrelated test is named then broken (the selection would be worthless at
-    720 modules if everything reached everything)
-  - if a file that fails to parse aborts the whole graph then broken (a syntax error is
-    the suite's problem to report, not this script's)
-  - if `from x import y` is treated as a dependency on `x.y` only, missing the `x` edge,
-    then broken
+  - [if] a test importing a changed module directly is not named [then] fail, [else stop].
+  - [if] a test reaching a changed module only transitively is not named [then] fail, [else stop].
+  - [if] a changed test file does not name itself [then] fail, [else stop].
+  - [if] an unrelated test is named [then] fail, [else stop]. The selection would carry no
+    information at 720 modules if everything reached everything.
+  - [if] a file that fails to parse aborts the whole graph [then] fail, [else stop]. A syntax
+    error is the suite's problem to report, not this script's.
+  - [if] `from x import y` records only `x.y` and drops the `x` edge [then] fail, [else stop].
 """
 
 from __future__ import annotations
