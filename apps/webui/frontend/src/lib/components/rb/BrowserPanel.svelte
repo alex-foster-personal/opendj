@@ -2829,6 +2829,7 @@
 	}
 	.suggestion-panels {
 		display: flex;
+		align-items: flex-start;
 		min-height: 0;
 	}
 	.suggestion-panel-content {
@@ -2841,32 +2842,79 @@
 		pointer-events: none;
 		visibility: hidden;
 	}
+	/* Pin 9036adcedf4f: the rail is what decides how much the library gets
+	 * back, because `.suggestion-panels` is a flex ROW and the library's
+	 * `.tt-root` is `flex: 1` in the column above it -- so this box's height
+	 * is `max(content, rail)` and every pixel it releases lands in the
+	 * table automatically. Measured on e82773161 at 1680x1003, collapsing
+	 * both panels moved `.suggestion-panels` 34px -> 52px and the table
+	 * 226px -> 208px: collapsing COST the library 18px.
+	 *
+	 * The cause was `writing-mode: vertical-rl` on the collapsed labels.
+	 * Set down an 18px column, "NEXT" and "RECC" run ~26px each, against
+	 * ~17px for the `›` chevron each one replaces, so the act of collapsing
+	 * grew the chrome. Horizontal labels in a slightly wider rail cost 12px
+	 * apiece in the block direction whichever control is showing, which
+	 * makes the rail's height CONSTANT across the toggle and leaves
+	 * `max(content, rail)` free to fall to the rail's own floor.
+	 *
+	 * `align-items: flex-start` on the container is the other half: a
+	 * stretched rail would report the content's height rather than its own
+	 * and put the floor back. */
 	.suggestion-panel-rail {
 		display: flex;
 		flex: none;
 		flex-direction: column;
-		align-items: center;
+		align-items: stretch;
 		justify-content: flex-start;
-		width: 18px;
+		/* Constant in BOTH directions across the toggle. Height is the pin
+		 * itself; width is the same trap one axis over -- a rail sized to its
+		 * content is 12px holding a chevron and ~27px holding the word
+		 * "RECC", so an auto width would buy the vertical reclaim by taking
+		 * 15px of library WIDTH on every collapse. This fix did exactly that
+		 * before the e2e assertion below caught it. Declared once, wide
+		 * enough for the longest label at the size set below WITH margin:
+		 * "RECC" at 7px needs 20px of content box, and a 26px rail left only
+		 * 19px, so the label was clipped by 1px in every state that showed
+		 * one. That was invisible until `overflow: hidden` below made the
+		 * real content width observable as scrollWidth -- an earlier reading
+		 * of "25 == 25" was taken while the overflow was still painting
+		 * outside the box. 32px leaves 25px of content for a 20px label, so
+		 * the wider metrics of Segoe UI or Roboto have somewhere to go. */
+		width: 32px;
 		border-left: 1px solid var(--rb-border);
 	}
 	.suggestion-collapse,
 	.suggestion-rail-label {
+		display: block;
 		width: 100%;
-		padding: 2px 0;
+		height: 12px;
+		padding: 0 3px;
 		border: 0;
 		background: transparent;
 		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		line-height: 12px;
+		text-align: center;
+		/* Defensive floor, not tuning. The 26px above was measured once, on
+		 * macOS Chromium, and the system-UI stack resolves to different
+		 * metrics on Windows (Segoe UI) and Linux (Roboto). The e2e
+		 * assertion fails loudly if a label ever outgrows its box, but in
+		 * PRODUCTION an unclipped overflow would paint the label over the
+		 * panel border beside it, so clip rather than bleed. */
+		overflow: hidden;
 		cursor: pointer;
 	}
 	.suggestion-collapse:hover,
 	.suggestion-rail-label:hover {
 		color: var(--rb-accent);
 	}
+	.suggestion-collapse {
+		font-size: 11px;
+	}
 	.suggestion-rail-label {
-		font-size: 8px;
-		line-height: 1;
-		writing-mode: vertical-rl;
+		font-size: 7px;
+		letter-spacing: 0.02em;
 	}
 	.bottom-bar {
 		grid-area: bottom;
