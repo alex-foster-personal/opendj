@@ -36,16 +36,21 @@ fresh install (spec section 4, "no network after install"). This backend always
 passes the local file `apps.analysis_beatgrid.weights` resolved and verified by
 sha256, and stamps THAT measured digest into the record's ``model_sha256``.
 
-## A track that could not be gridded still gets a record
+## A track that was ANALYZED and could not be gridded still gets a record
 
-`no_trackable_pulse`, an unestablished bar phase, a broken bar cadence and a
-decode error inside the runner all produce a record whose `beatgrid` lane is
-``status: failed`` with the named reason, rather than no row at all. That is
-the whole point of the lane status: `/anlz` can then say `failed` with a reason
-instead of `missing`, and the queue does not keep re-analyzing a track that has
-already been answered. A file that VANISHED is different and raises
+`no_trackable_pulse`, an unestablished bar phase and a broken bar cadence all
+produce a record whose `beatgrid` lane is ``status: failed`` with the named
+reason, rather than no row at all. That is the whole point of the lane status:
+`/anlz` can then say `failed` with a reason instead of `missing`, and the queue
+does not keep re-analyzing a track that has already been answered.
+
+Two cases are NOT that, and both raise instead. A file that VANISHED raises
 :class:`~apps.analysis.backends.base.TrackVanished`: it was never attempted, so
-recording an outcome for it would be a fabrication.
+recording an outcome for it would be a fabrication. A track the RUNNER ITSELF
+errored on raises :class:`~apps.analysis.backends.base.TrackUnreadable`: its
+error path records no `decode_fingerprint`, which the v1 record contract
+requires on every own record precisely so the player's own decode can be checked
+against it, and there is nothing honest to put in its place.
 
 -Claude
 """
@@ -243,10 +248,16 @@ def _sample_rate(
                 "sample_rate; a payload that decoded audio decoded it at a rate"
             )
         return 0
-    if int(rate) <= 0 and lane_ok:
+    # Checked on BOTH branches. The 0 above is the ABSENT sentinel for a lane
+    # that failed; a failed lane that explicitly STATES a rate of 0 or -1 is
+    # malformed measured metadata wearing that sentinel's clothes, and letting
+    # it through would make the two indistinguishable in the stored row
+    # (Sol P2, PR #1587).
+    if int(rate) <= 0:
         raise RunnerPayloadError(
             f"runner result for {audio_path} states sample_rate {rate!r}, which "
-            "is not a rate, alongside a grid it claims to have measured"
+            "is not a rate; a rate this producer did not measure is absent, "
+            "never zero"
         )
     return int(rate)
 

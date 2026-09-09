@@ -177,15 +177,22 @@ def _pulse_and_phase(
     if error:
         return _failed(f"{REASON_RUNNER_ERROR}: {error}")
 
-    if "beats" not in result:
-        raise LanePayloadError(
-            f"runner result carries no `beats` key; got {sorted(result)}"
-        )
+    for key in ("beats", "downbeats"):
+        if key not in result:
+            # `downbeats` is required, not defaulted to []. An explicitly EMPTY
+            # list is a measured result (the model found no downbeat) and flows
+            # on to `no_downbeat_anchor`; a MISSING key is producer contract
+            # drift, and turning it into the same lane failure would persist a
+            # `failed` record that `--only-missing` then declines to retry once
+            # the protocol is fixed (Sol P1 BLOCKING, PR #1587).
+            raise LanePayloadError(
+                f"runner result carries no `{key}` key; got {sorted(result)}"
+            )
     beats: list[float] = [float(t) for t in result["beats"]]
-    downbeats: list[float] = [float(t) for t in (result.get("downbeats") or [])]
+    downbeats: list[float] = [float(t) for t in result["downbeats"]]
 
     pulse = evaluate_pulse(
-        beats, result.get("activation_peak"), result.get("downbeats"), threshold=threshold
+        beats, result.get("activation_peak"), downbeats, threshold=threshold
     )
     if pulse.no_trackable_pulse:
         assert pulse.reason is not None  # evaluate_pulse names every failure

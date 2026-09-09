@@ -20,6 +20,7 @@ from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import QualityOut
+from ..rb_vendor_pkg import own_beatgrid_overlay
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -195,9 +196,31 @@ def get_track_anlz(
         # listener's lane is drawn from the rung they actually hear.
         share = getattr(request.state, "share_audience", "local") == "share"
         payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+        # The own-beatgrid overlay again, on THIS branch too. `build_anlz_payload`
+        # applies it on the mapped branch, but a locally imported file never goes
+        # through that function, so a track with a canonical own record was still
+        # served an empty rekordbox-labelled grid under `beatgrid=own` - and a
+        # local import is exactly the track most likely to have no rekordbox
+        # analysis and most likely to depend on ours (Codex P1 BLOCKING,
+        # PR #1587). Applied here rather than inside `local_anlz_payload`, which
+        # belongs to the waveform lane; this route already owns choosing between
+        # the two branches.
+        payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
-    cache_control = _CACHE_ANLZ_RETRYABLE if retryable else _CACHE_ANLZ
+    # An own-sourced beatgrid is NOT publicly cacheable for an hour. This
+    # response varies with two things the URL does not name: whether an own
+    # record has landed for the track, and the PARITY-02 source selection, which
+    # is a process-local toggle that can flip mid-session. With `max-age=3600` a
+    # browser keeps replaying the old grid for up to an hour after either
+    # changes, and no ETag exists on this endpoint to revalidate against
+    # (Codex P1 BLOCKING, PR #1587). The rekordbox-sourced path is unchanged: it
+    # varies only with the ANLZ files, which the file cache already keys on.
+    beatgrid = payload.get("beatgrid")
+    own_sourced = isinstance(beatgrid, dict) and beatgrid.get("source") == "own"
+    cache_control = (
+        _CACHE_ANLZ_RETRYABLE if (retryable or own_sourced) else _CACHE_ANLZ
+    )
     return JSONResponse(payload, headers={"Cache-Control": cache_control})
 
 
