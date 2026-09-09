@@ -10,15 +10,15 @@ test('centered FILTER has a real dry route around both BiquadFilterNodes', () =>
 	assert.match(ENGINE, /filterLpWet: GainNode;/);
 	assert.match(ENGINE, /filterHpWet: GainNode;/);
 	assert.match(ENGINE, /const \{ lpHz, hpHz, dryGain, lpWetGain, hpWetGain \} = filterParamsFromKnob\(ch\.filter\);/);
-	assert.match(ENGINE, /high\.connect\(filterDry\);/);
-	assert.match(ENGINE, /high\.connect\(filterLp\);/);
-	assert.match(ENGINE, /high\.connect\(filterHp\);/);
-	assert.match(ENGINE, /filterDry\.connect\(cue\);/);
-	assert.match(ENGINE, /filterLpWet\.connect\(cue\);/);
-	assert.match(ENGINE, /filterHpWet\.connect\(cue\);/);
-	assert.match(ENGINE, /filterDry\.connect\(fader\);/);
-	assert.match(ENGINE, /filterLpWet\.connect\(fader\);/);
-	assert.match(ENGINE, /filterHpWet\.connect\(fader\);/);
+	assert.match(ENGINE, /for \(const stage of \[filterDry, filterLp, filterHp\]\) high\.connect\(stage\);/);
+	assert.match(
+		ENGINE,
+		/for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(cue\);/
+	);
+	assert.match(
+		ENGINE,
+		/for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(fader\);/
+	);
 	assert.match(ENGINE, /_setParam\(nodes\.filterDry\.gain, dryGain\);/);
 	assert.match(ENGINE, /_setParam\(nodes\.filterLpWet\.gain, lpWetGain\);/);
 	assert.match(ENGINE, /_setParam\(nodes\.filterHpWet\.gain, hpWetGain\);/);

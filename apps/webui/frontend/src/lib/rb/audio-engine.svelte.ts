@@ -740,10 +740,7 @@ function _ensureGraph(): AudioContext {
 		filterHp.frequency.value = hpHz;
 		const filterDry = _ctx.createGain();
 		filterDry.gain.value = dryGain;
-		// LP and HP each get their own wet gain rather than a shared one after a
-		// series chain: whichever side is inactive is silenced at 0 gain, so it
-		// stops coloring the signal instead of merely parking at its gentlest
-		// cutoff (issue #990 follow-up - both biquads used to stay in series).
+		// Separate wet gains so the inactive side is silenced (0 gain), not left in series (#990).
 		const filterLpWet = _ctx.createGain();
 		filterLpWet.gain.value = lpWetGain;
 		const filterHpWet = _ctx.createGain();
@@ -758,18 +755,12 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
-		high.connect(filterDry);
-		high.connect(filterLp);
-		high.connect(filterHp);
+		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
 		filterLp.connect(filterLpWet);
 		filterHp.connect(filterHpWet);
-		filterDry.connect(cue);
-		filterLpWet.connect(cue);
-		filterHpWet.connect(cue);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
 		cue.connect(headphones.cueSum);
-		filterDry.connect(fader);
-		filterLpWet.connect(fader);
-		filterHpWet.connect(fader);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
