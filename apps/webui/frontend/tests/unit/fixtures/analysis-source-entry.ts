@@ -14,4 +14,8 @@
  * dispatch path.
  */
 export * from '$lib/rb/analysis-source.svelte';
+// Same one-bundle argument as the bus below: the failed-switch rollback only
+// exists when a REAL deck refresh really fails, which needs a real loaded deck
+// in the SAME audio-engine instance analysis-source.svelte.ts calls into.
+export { deckStates } from '$lib/rb/audio-engine.svelte';
 export { connect as connectEventsBus } from '$lib/api/events-bus';

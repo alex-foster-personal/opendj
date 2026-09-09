@@ -489,11 +489,22 @@ export interface AnalysisSourceRefreshDeck {
  * other lane-owned field a deck holds; when its lane is on rbx the read model
  * returns the same rekordbox value it already had, so writing it is a no-op
  * rather than a second special case. Staged in the SAME `Promise.all` as the
- * grid so the all-or-nothing guarantee above covers both. */
+ * grid so the all-or-nothing guarantee above covers both.
+ *
+ * RETURNS THE SOURCE THE SERVER ACTUALLY SERVED, or null when no deck had a
+ * track loaded and nothing was fetched. `/anlz` resolves rbx-vs-own
+ * SERVER-side at fetch time (rb_assets.py `_resolve_beatgrid_source`) and
+ * stamps it on the payload, so this is the one non-guessed answer to "which
+ * source are the decks on now": the caller cannot infer it from the selection
+ * it started with, because the awaits here are unbounded and the daemon can
+ * move under them (discussion_r3970117741 P1 BLOCKING). Staged payloads that
+ * DISAGREE mean the selection changed mid-batch and the fleet would end up
+ * split across two sources, so that throws before anything is published and
+ * the all-or-nothing guarantee covers it too. */
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
 	decks: Record<DeckId, AnalysisSourceRefreshDeck>
-): Promise<void> {
+): Promise<'rekordbox' | 'own' | null> {
 	bumpAnlzFetchGeneration();
 	invalidateAllAnlzCacheEntries();
 	const wanted = new Map<string, DeckId[]>();
@@ -515,6 +526,13 @@ export async function refreshAnalysisSourceDecks(
 			return { stableId, holders, fresh, track: row.track };
 		})
 	);
+	const served = new Set(staged.map(({ fresh }) => fresh.beatgrid_source));
+	if (served.size > 1) {
+		throw new Error(
+			`analysis source changed mid-refresh: /anlz served ${[...served].sort().join(' and ')} ` +
+				'within one batch, so publishing would split the decks across both'
+		);
+	}
 	for (const { stableId, fresh } of staged) {
 		refreshAnlzCacheEntry(stableId, fresh);
 		// `refreshAnlzCacheEntry` notifies the sink only for a payload that
@@ -544,6 +562,9 @@ export async function refreshAnalysisSourceDecks(
 			decks[deck].key = track.key ?? null;
 		}
 	}
+	// `?? null` rather than a default: no loaded deck means nothing was served,
+	// which is not the same claim as "the server served rekordbox".
+	return [...served][0] ?? null;
 }
 
 /** Count of ready ANLZ entries for memory tracking. */

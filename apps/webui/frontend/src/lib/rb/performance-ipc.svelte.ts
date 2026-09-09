@@ -305,6 +305,14 @@ export interface PerformanceState {
 	 * (discussion_r3968214027 P1 BLOCKING). Empty until the first
 	 * loadAnalysisSource lands, which is "not asked yet", never a default. */
 	analysis_source: Record<string, AnalysisSource>;
+	/** PARITY-02: the source the loaded DECKS are actually on, which lags
+	 * `analysis_source` by up to one poll and, on a switch whose deck refresh
+	 * keeps failing, may never catch up. An agent that PUT a source and wants to
+	 * know whether the decks followed can only read that here: the two fields
+	 * disagreeing IS the split (discussion_r3970117737, discussion_r3970117741).
+	 * Empty until the first refresh lands, which is "not asked yet", never a
+	 * default. */
+	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
@@ -1295,6 +1303,10 @@ export function queryPerformanceState(): PerformanceState {
 		// Spread, not the live rune: this snapshot is structuredClone'd across
 		// the IPC boundary and a $state Proxy is never cloneable.
 		analysis_source: { ...analysisSourceState.features },
+		// Spread for the same reason as the line above: analysisSourceState is a
+		// $state rune, so handing the live Proxy out breaks structuredClone for
+		// every agent reading this snapshot over IPC.
+		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary()
 	};
 }

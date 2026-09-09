@@ -3074,8 +3074,8 @@ class RbAudioEngine implements AudioEngine {
 	 * could still `load()` straight out of the stale pre-switch HTTP cache
 	 * entry via the ordinary `fetchAnlz` path, since this loop never touches
 	 * anything outside `DECK_IDS` (discussion_r3921839825). */
-	async refreshDecksForAnalysisSourceChange(): Promise<void> {
-		await refreshAnalysisSourceDecks(DECK_IDS, deckStates);
+	async refreshDecksForAnalysisSourceChange(): Promise<'rekordbox' | 'own' | null> {
+		return refreshAnalysisSourceDecks(DECK_IDS, deckStates);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */

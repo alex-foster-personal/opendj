@@ -43,12 +43,26 @@ function _source() {
 
 test('polls loadAnalysisSource on an interval, not just once on mount', () => {
 	const text = _source();
-	const pollMatches = [...text.matchAll(/setInterval\([\s\S]{0,60}?loadAnalysisSource/g)];
+	// Asserts the INVARIANT (one timer, and it reaches the loader), not one
+	// spelling of it. The previous form required `loadAnalysisSource` to appear
+	// literally within 60 characters of `setInterval(`, so hoisting the callback
+	// into a named helper -- which is what let the mount call and the tick share
+	// one rejection handler -- read as "the control no longer polls".
+	const intervals = [...text.matchAll(/setInterval\(\s*([\w$]+|\(\s*\)\s*=>)/g)];
 	assert.equal(
-		pollMatches.length,
+		intervals.length,
 		1,
-		'expected exactly one setInterval wired to loadAnalysisSource - none means an agent-side PUT ' +
-			'never reaches this control, more than one is unexplained duplication'
+		'expected exactly one setInterval in this control - none means an agent-side PUT ' +
+			'never reaches it, more than one is unexplained duplication'
+	);
+	const callback = intervals[0][1];
+	const reachesLoader = callback.startsWith('(')
+		? /setInterval\([\s\S]{0,120}?loadAnalysisSource/.test(text)
+		: new RegExp(`\\b${callback}\\b\\s*=[\\s\\S]{0,400}?loadAnalysisSource`).test(text);
+	assert.ok(
+		reachesLoader,
+		`the interval callback (${callback}) must reach loadAnalysisSource - a timer that ` +
+			'polls nothing is a control that silently stops tracking the daemon'
 	);
 });
 

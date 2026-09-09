@@ -35,9 +35,21 @@
 	// owns the OWN-grid invalidation subscription: a re-analysis replaces the
 	// record `/anlz` derives an own grid from, and nothing else would notice
 	// (see subscribeAnalysisRecordChanges).
+	// Reported, not discarded. `loadAnalysisSource` throws through on a failed
+	// deck refresh by design, and `void`-ing it made every such failure an
+	// unhandled rejection with nothing said to anyone (the same shape
+	// discussion_r3969942725 flagged on the record-change path). The poll
+	// itself is the retry: the next tick re-reads the daemon and the deck
+	// watermark still disagrees, so the refresh runs again.
+	const _poll = (): void => {
+		void loadAnalysisSource().catch((exc) => {
+			console.error('[analysis-source] poll failed; retrying on the next tick', exc);
+		});
+	};
+
 	$effect(() => {
-		void loadAnalysisSource();
-		const id = setInterval(() => void loadAnalysisSource(), POLL_MS);
+		_poll();
+		const id = setInterval(_poll, POLL_MS);
 		const unsubscribe = subscribeAnalysisRecordChanges();
 		return () => {
 			clearInterval(id);
