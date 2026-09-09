@@ -191,22 +191,45 @@ def apply_own_beatgrid(payload: dict[str, Any], stable_id: str) -> dict[str, Any
     block, tempo_changes = _own_beatgrid_block(result, stable_id)
     payload["beatgrid"] = block
     payload["tempo_changes"] = tempo_changes
-    if tempo_changes:
-        # The hint readers that already consult this field (AnlzPerformanceHints
-        # in lib/rb/anlz-types.ts) get it from here; the field stays ABSENT when
-        # the grid is static, because absent means "not analyzed" to them and
-        # false would claim we looked and found none on a rekordbox payload too.
-        # A NEW dict rather than a mutation of whatever was there. The cached
-        # branch hands this function a SHALLOW copy of the cache entry, so
-        # mutating a nested dict in place would write the hint into the cached
-        # object itself and leave it there for the next request, after the
-        # source had flipped back (Codex-class aliasing bug, caught by review
-        # of this function rather than by a test, so a test now covers it).
-        existing = payload.get("performance_hints")
-        hints = dict(existing) if isinstance(existing, dict) else {}
-        hints["dynamic_tempo"] = True
-        payload["performance_hints"] = hints
+    _set_dynamic_tempo_hint(payload, present=bool(tempo_changes))
     return payload
+
+
+def _set_dynamic_tempo_hint(payload: dict[str, Any], *, present: bool) -> None:
+    """Make `performance_hints.dynamic_tempo` say what the OWN record says.
+
+    RECONCILED FOR EVERY OUTCOME, not only set when markers exist. Once the
+    lane is on own, the own record is the authority for this field, and the
+    payload it lands on may already carry a `dynamic_tempo: true` from a
+    cached entry written while a DIFFERENT record was canonical. Setting the
+    hint on the dynamic branch and leaving the static, failed and missing
+    branches alone let that stale `true` survive, so an own grid the analyzer
+    measured as static would be served as dynamic (Sol P1 BLOCKING, PR #1587).
+    So the flag is either set or REMOVED, never inherited.
+
+    Removal rather than `false`: absent means "not analyzed" to the readers in
+    `lib/rb/anlz-types.ts`, and a rekordbox payload has no such key at all, so
+    writing `false` here would give the same field two different meanings
+    depending on which branch produced it.
+
+    A NEW dict rather than a mutation of whatever was there: the cached branch
+    hands this function a SHALLOW copy of the cache entry, so mutating a
+    nested dict in place would write into the cached object itself and leave
+    it there for the next request.
+    """
+    existing = payload.get("performance_hints")
+    hints = dict(existing) if isinstance(existing, dict) else {}
+    if present:
+        hints["dynamic_tempo"] = True
+    else:
+        hints.pop("dynamic_tempo", None)
+    if hints:
+        payload["performance_hints"] = hints
+    else:
+        # An empty hints object is not a state either: it would read as
+        # "analyzed, nothing found" where the contract says absence means the
+        # analyzer has not spoken.
+        payload.pop("performance_hints", None)
 
 
 __all__ = ["_beatgrid_payload", "apply_own_beatgrid"]

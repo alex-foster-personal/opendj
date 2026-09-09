@@ -221,6 +221,36 @@ def _duration_s(
     return float(n_frames) / fps
 
 
+def _sample_rate(
+    result: dict[str, Any], *, lane_ok: bool, audio_path: Path
+) -> int:
+    """The decode's sample rate, or 0 when the lane failed before it mattered.
+
+    The sibling of :func:`_duration_s`, and it exists because the rule was
+    applied to one of the two and not the other: `int(result.get(...) or 0)`
+    turned a payload that never states a rate into a record claiming 0 Hz,
+    which is not a sample rate (Sol P1 BLOCKING, PR #1587). A run that produced
+    a grid decoded audio, so its rate is present and its absence is a malformed
+    payload; a run whose lane FAILED may have decoded and still found no pulse,
+    in which case the rate is present too, but the runner's own shapes do not
+    guarantee it there, and no own reader consults this column.
+    """
+    rate = result.get("sample_rate")
+    if rate is None:
+        if lane_ok:
+            raise RunnerPayloadError(
+                f"runner result for {audio_path} produced a grid but records no "
+                "sample_rate; a payload that decoded audio decoded it at a rate"
+            )
+        return 0
+    if int(rate) <= 0 and lane_ok:
+        raise RunnerPayloadError(
+            f"runner result for {audio_path} states sample_rate {rate!r}, which "
+            "is not a rate, alongside a grid it claims to have measured"
+        )
+    return int(rate)
+
+
 def record_from_payload(
     payload: dict[str, Any],
     *,
@@ -258,9 +288,24 @@ def record_from_payload(
     fps = float(_require(payload, "fps"))
 
     result = _one_result(payload, audio_path)
+    runner_error = result.get("error")
+    if runner_error:
+        # A track the RUNNER itself could not get through is not a lane result:
+        # its error path records no `decode_fingerprint`, and the v1 record
+        # contract requires one on every own record precisely so the player's
+        # own decode can be checked against it. There is nothing to fingerprint
+        # and nothing honest to put in its place, so this is a per-FILE failure
+        # rather than a `failed` lane block (Sol P1 BLOCKING, PR #1587).
+        # `build_beatgrid_lane` still maps the same condition to a `failed`
+        # lane for the bench path, which converts artifacts and writes no
+        # records.
+        raise TrackUnreadable(
+            f"beat_this_runner.py could not analyze {audio_path}: {runner_error}"
+        )
     lane = build_beatgrid_lane(result, threshold=threshold)
     decode_fingerprint = _require(result, "decode_fingerprint")
     duration_s = _duration_s(result, lane_ok=lane.ok, fps=fps, audio_path=audio_path)
+    sample_rate = _sample_rate(result, lane_ok=lane.ok, audio_path=audio_path)
 
     # The pre-v2 scalar columns. This producer measures no key and no energy,
     # so it states nothing rather than a plausible-looking default; the lane
@@ -272,7 +317,7 @@ def record_from_payload(
         backend_version=PRODUCER_VERSION,
         analyzed_at=datetime.now(UTC),
         duration_s=duration_s,
-        sample_rate=int(result.get("sample_rate") or 0),
+        sample_rate=sample_rate,
         bpm=float(lane.payload["bpm"]) if lane.ok else 0.0,
         bpm_confidence=float(lane.payload["bpm_confidence"]) if lane.ok else 0.0,
         key_camelot="",
@@ -319,20 +364,24 @@ class OwnBeatgridBackfillBackend:
             raise BackendNotAvailable(str(exc)) from exc
         device = os.environ.get(DEVICE_ENV, "").strip() or DEFAULT_DEVICE
         payload = run_runner(audio_path, checkpoint, device=device)
-        try:
-            return record_from_payload(
-                payload,
-                stable_id=stable_id,
-                audio_path=audio_path,
-                model_sha256=model_sha256,
-            )
-        except RunnerPayloadError:
-            raise
-        except (KeyError, ValueError) as exc:
-            raise TrackUnreadable(
-                f"{audio_path} produced a runner result this lane cannot convert: "
-                f"{type(exc).__name__}: {exc}"
-            ) from exc
+        # NO conversion guard here on purpose. An earlier version caught
+        # KeyError and ValueError and re-raised them as TrackUnreadable, which
+        # relabels a MALFORMED PAYLOAD -- a schema change in the runner, a
+        # LanePayloadError, a LaneContractError, all of them ValueErrors -- as
+        # "this file is unreadable". `analyze_one` turns that into a per-track
+        # error and `run.py` into EXIT_TRACK_FAILURES, the one status a
+        # chunking caller may continue past, so a systemic defect would be
+        # rediscovered once per file across the whole library while reading as
+        # a handful of bad tracks (Sol P1 BLOCKING, PR #1587). The per-FILE
+        # cases are raised deliberately and by name: TrackVanished above,
+        # TrackUnreadable inside record_from_payload for a runner-reported
+        # error. Everything else propagates as the systemic fault it is.
+        return record_from_payload(
+            payload,
+            stable_id=stable_id,
+            audio_path=audio_path,
+            model_sha256=model_sha256,
+        )
 
     @classmethod
     def jit_cache_roots(cls) -> tuple[Path, ...]:
