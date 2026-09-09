@@ -3051,29 +3051,13 @@ class RbAudioEngine implements AudioEngine {
 		st.loop = _displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
 	}
 
-	/** Forces every loaded deck and the shared ANLZ cache off whatever they
-	 * read before an rbx-vs-own analysis source switch (PARITY-02,
-	 * analysis-source.svelte.ts loadAnalysisSource/setAnalysisSource). The
-	 * switch changes what the SAME /anlz URL returns (beatgrid_source), and
-	 * without this the one-fetch-per-session shared cache plus each deck's
-	 * terminal st.anlz would keep serving the pre-switch payload - the 1h
-	 * Cache-Control on that route (_CACHE_ANLZ, rb_assets.py) can even serve
-	 * it straight out of the browser HTTP cache with no network round trip
-	 * (discussion_r3921666943). Evicts every cached entry outright, since the
-	 * field lives inside every track's payload, not just the loaded ones, and
-	 * republishes a fresh, cache-bypassing fetch onto each deck that
-	 * currently has a track loaded. Guards the same deck-swap race
-	 * refreshHotCues does: a load() that lands mid-request wins, this never
-	 * overwrites it.
-	 *
-	 * Bumps the shared fetch generation (anlz-fetch-generation.ts) FIRST, so
-	 * every /anlz request issued anywhere after this point - not just the
-	 * cache-bypassing ones below for currently-loaded decks - addresses a
-	 * query string the browser's own HTTP cache has never served. Without
-	 * this, a track only prefetched (library hover, an unloaded deck slot)
-	 * could still `load()` straight out of the stale pre-switch HTTP cache
-	 * entry via the ordinary `fetchAnlz` path, since this loop never touches
-	 * anything outside `DECK_IDS` (discussion_r3921839825). */
+	/** PARITY-02: forces every loaded deck and the shared ANLZ cache off
+	 * whatever they read before an rbx-vs-own analysis source switch, and
+	 * reports the source the server ACTUALLY served. The whole behavior, and
+	 * the review history behind each of its ordering rules, lives on
+	 * `refreshAnalysisSourceDecks` (anlz-cache.svelte.ts) beside the cache
+	 * primitives it writes through; this is the engine-side entry point only,
+	 * kept here because `deckStates` is this module's. */
 	async refreshDecksForAnalysisSourceChange(): Promise<'rekordbox' | 'own' | null> {
 		return refreshAnalysisSourceDecks(DECK_IDS, deckStates);
 	}
