@@ -128,6 +128,14 @@ class Key:
         return int(self.camelot[:-1])
 
     @property
+    def open_key(self) -> str:
+        # Reverse of the open_key pre-pass rule above. No caller needed
+        # this direction before apps/analysis_key/canon.py.
+        letter = "m" if self.mode == MODE_MINOR else "d"
+        number = ((self.camelot_number - 1 - _OPEN_KEY_TO_CAMELOT_OFFSET) % 12) + 1
+        return f"{number}{letter}"
+
+    @property
     def relative(self) -> Key:
         """The relative major of a minor key, or relative minor of a major.
 
