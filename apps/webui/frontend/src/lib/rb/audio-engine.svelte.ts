@@ -88,8 +88,8 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
-import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
-import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
+import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
 import {
 	notePresentationClock,
@@ -2839,9 +2839,8 @@ class RbAudioEngine implements AudioEngine {
 		// mix decoded into; re-resolving it after the swap could hand the stems a
 		// rebuilt graph and a silent sample-rate mismatch.
 		let loadCtx: AudioContext | null = null;
-		// Always-on stage timings -> recordPerfTiming / DevTools filter `[perf]`.
-		const perfT0 = performance.now();
-		const perfMs = (): number => Math.round(performance.now() - perfT0);
+		// Always-on stage timings + load conditions -> DevTools filter `[perf]`.
+		const perfMs = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
 		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
 			const t0 = performance.now();
@@ -2918,7 +2917,7 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
+			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState);
 			if (processor !== null) {
 				try {
 					await processor.dispose();
@@ -3036,7 +3035,7 @@ class RbAudioEngine implements AudioEngine {
 		st.last_load_latency_ms = stages.total;
 		st.load_generation += 1;
 		st.last_load_stages = { ...stages };
-		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
+		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
 		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
 		// deck can play; the stem bundle lands afterwards and moves st.stems off
 		// `loading` on its own. Errors are handled inside, so no rejection can

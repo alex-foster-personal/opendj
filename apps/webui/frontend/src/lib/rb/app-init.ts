@@ -12,6 +12,7 @@
  */
 
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
+import { startMachinePressurePolling } from './machine-pressure';
 import { installPerfEventLogGlobal } from './perf-event-log';
 import { installReloadCountdown } from './reload-countdown';
 import { startUsageHeartbeat } from './usage-heartbeat';
@@ -38,8 +39,13 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	// REFRESH-01 (#891): a full reload while the maintainer is looking at the tab gets a
 	// 10 s on-top countdown first. Also installs __mdtScheduleReload for agents.
 	const stopReloadCountdown = installReloadCountdown();
+	// PERF-CONTEXT: keep the machine's load/memory pressure in memory so a deck
+	// load can stamp the conditions it was measured under without the load path
+	// itself awaiting anything. Polls only while the page is visible.
+	const stopMachinePressurePolling = startMachinePressurePolling();
 
 	return () => {
+		stopMachinePressurePolling();
 		stopReloadCountdown();
 		stopUsageHeartbeat();
 		stopBootScheduler();

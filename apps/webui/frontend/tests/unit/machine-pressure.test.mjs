@@ -1,0 +1,220 @@
+/**
+ * The machine-condition stamp: what a deck-load row says about the box.
+ *
+ * Two properties matter more than the happy path here, and both are cases
+ * that MUST show an absence rather than a number:
+ *
+ * 1. NEVER A ZERO. A row written before any reading arrived says
+ *    `pressure=unknown` and carries no numeric field at all. `load_avg_1m=0`
+ *    on an unsampled box reads exactly like a genuinely idle one, and an
+ *    unmeasured condition rendered as a real reading is the defect
+ *    .claude/rules/verification.md exists to forbid.
+ * 2. THE POLLER STOPS. A hidden tab loads no decks, and a timer the browser
+ *    silently throttles to a minute would turn a documented 10 s cadence into
+ *    an undocumented one.
+ */
+import assert from 'node:assert/strict';
+import { afterEach, before, beforeEach, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const API_BASE = 'https://engine.example.test';
+
+let pressure;
+let originalFetch;
+let originalSetInterval;
+let originalClearInterval;
+let visibilityHandlers;
+let intervals;
+let fetched;
+let respond;
+
+function defineGlobal(name, value) {
+	Object.defineProperty(globalThis, name, {
+		value,
+		configurable: true,
+		writable: true,
+		enumerable: true
+	});
+}
+
+/** A document whose visibility the test drives by hand. */
+function fakeDocument(initial) {
+	return {
+		visibilityState: initial,
+		addEventListener(type, handler) {
+			if (type === 'visibilitychange') visibilityHandlers.push(handler);
+		},
+		removeEventListener(type, handler) {
+			if (type !== 'visibilitychange') return;
+			visibilityHandlers = visibilityHandlers.filter((entry) => entry !== handler);
+		}
+	};
+}
+
+function setVisibility(state) {
+	globalThis.document.visibilityState = state;
+	for (const handler of [...visibilityHandlers]) handler();
+}
+
+/** Let every fetch already issued settle before asserting on the cache. */
+async function settle() {
+	for (let i = 0; i < 5; i++) await Promise.resolve();
+}
+
+before(async () => {
+	originalFetch = globalThis.fetch;
+	originalSetInterval = globalThis.setInterval;
+	originalClearInterval = globalThis.clearInterval;
+});
+
+beforeEach(async () => {
+	visibilityHandlers = [];
+	intervals = [];
+	fetched = [];
+	respond = () => ({ ok: true, json: async () => ({ available: false, reason: 'stub' }) });
+	defineGlobal('window', { addEventListener() {}, removeEventListener() {} });
+	defineGlobal('document', fakeDocument('visible'));
+	defineGlobal('fetch', (url) => {
+		fetched.push(url);
+		return Promise.resolve(respond());
+	});
+	defineGlobal('setInterval', (fn, delayMs) => {
+		const handle = { fn, delayMs, cleared: false };
+		intervals.push(handle);
+		return handle;
+	});
+	defineGlobal('clearInterval', (handle) => {
+		if (handle) handle.cleared = true;
+	});
+	// A fresh module per case: the snapshot cache is module state with a page
+	// lifetime in production, so isolating cases by reloading is honest rather
+	// than reaching in to reset something production never resets.
+	pressure = await loadTypeScriptModule('src/lib/rb/machine-pressure.ts', {
+		viteApiBase: API_BASE
+	});
+});
+
+afterEach(() => {
+	defineGlobal('fetch', originalFetch);
+	defineGlobal('setInterval', originalSetInterval);
+	defineGlobal('clearInterval', originalClearInterval);
+});
+
+test('with no reading ever taken, a row says unknown and carries NO numbers', () => {
+	const labels = pressure.pressureLabels(pressure.readMachinePressure(), 1_000);
+	assert.deepEqual(labels, { pressure: 'unknown' });
+	// Named explicitly: these are the keys a reader would mistake for a real
+	// measurement if this module ever defaulted them.
+	for (const key of ['load_avg_1m', 'mem_free_mb', 'swap_used_mb', 'pressure_age_ms']) {
+		assert.equal(labels[key], undefined, `${key} must be absent, not zero`);
+	}
+});
+
+test('a real reading becomes numeric labels with an honest age', async () => {
+	respond = () => ({
+		ok: true,
+		json: async () => ({
+			available: true,
+			load_avg_1m: 5.76,
+			mem_free_mb: 67.7,
+			swap_used_mb: 6535.4,
+			cache_age_ms: 250
+		})
+	});
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	const snapshot = pressure.readMachinePressure();
+	assert.notEqual(snapshot, null);
+	const labels = pressure.pressureLabels(snapshot, snapshot.receivedAtMs + 1_000);
+	assert.equal(labels.load_avg_1m, '5.76');
+	assert.equal(labels.mem_free_mb, '67.7');
+	assert.equal(labels.swap_used_mb, '6535.4');
+	// 1000 ms since this client received it, plus the 250 ms the sample was
+	// already stale server-side. Counting from the response instead would make
+	// a slow round trip look fresh.
+	assert.equal(labels.pressure_age_ms, '1250');
+	assert.equal(labels.pressure, undefined);
+	stop();
+});
+
+test('an engine that says it cannot measure leaves the cache empty', async () => {
+	respond = () => ({
+		ok: true,
+		json: async () => ({ available: false, reason: 'native machine sampler is not importable' })
+	});
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	assert.equal(pressure.readMachinePressure(), null);
+	assert.deepEqual(pressure.pressureLabels(pressure.readMachinePressure(), 0), {
+		pressure: 'unknown'
+	});
+	stop();
+});
+
+test('a partial reading stamps only the fields the engine could read', async () => {
+	respond = () => ({
+		ok: true,
+		json: async () => ({ available: true, load_avg_1m: 12.5, cache_age_ms: 0 })
+	});
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	const snapshot = pressure.readMachinePressure();
+	const labels = pressure.pressureLabels(snapshot, snapshot.receivedAtMs);
+	assert.equal(labels.load_avg_1m, '12.5');
+	assert.equal(labels.mem_free_mb, undefined);
+	assert.equal(labels.swap_used_mb, undefined);
+	stop();
+});
+
+test('an engine that is down leaves the cache empty rather than throwing', async () => {
+	defineGlobal('fetch', () => Promise.reject(new Error('connection refused')));
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	assert.equal(pressure.readMachinePressure(), null);
+	stop();
+});
+
+test('the poll targets the engine base and the documented low-rate cadence', async () => {
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	assert.equal(fetched[0], `${API_BASE}/api/v1/performance/telemetry/pressure`);
+	assert.equal(intervals.length, 1);
+	assert.equal(intervals[0].delayMs, 10_000);
+	stop();
+});
+
+test('hiding the page stops the timer; showing it resamples and restarts', async () => {
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	const firstTimer = intervals[0];
+	const pollsWhileVisible = fetched.length;
+
+	setVisibility('hidden');
+	assert.equal(firstTimer.cleared, true, 'a hidden tab must not keep a timer armed');
+	assert.equal(fetched.length, pollsWhileVisible, 'hiding must not issue a poll');
+
+	setVisibility('visible');
+	await settle();
+	assert.equal(fetched.length, pollsWhileVisible + 1, 'coming back must resample at once');
+	assert.equal(intervals.length, 2);
+	assert.equal(intervals[1].cleared, false);
+	stop();
+});
+
+test('teardown clears the timer and removes the visibility listener', async () => {
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	stop();
+	assert.equal(intervals[0].cleared, true);
+	assert.equal(visibilityHandlers.length, 0);
+});
+
+test('a page that starts hidden arms nothing until it is shown', async () => {
+	defineGlobal('document', fakeDocument('hidden'));
+	const stop = pressure.startMachinePressurePolling();
+	await settle();
+	assert.equal(fetched.length, 0);
+	assert.equal(intervals.length, 0);
+	stop();
+});
