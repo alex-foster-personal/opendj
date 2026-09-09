@@ -48,6 +48,7 @@ class MixerChannelMarkOut(BaseModel):
     eq_low: float
     eq_mid: float
     eq_high: float
+    filter: float = 0.5  # neutral dead-zone default: marks from before issue #990 lack this field
     fader: float
     assign: str
 

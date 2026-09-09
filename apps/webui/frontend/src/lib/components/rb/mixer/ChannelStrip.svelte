@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * One mixer channel strip (SCREENSHOT-SPEC 4), top-down:
-	 * channel number, TRIM, HI/MID/LOW, FILTER (visual stub),
+	 * channel number, TRIM, HI/MID/LOW, FILTER,
 	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
@@ -29,10 +29,11 @@
 		 * MORE (the mixer shares `.deck-area`'s single grid row with the
 		 * decks, and that row's floor shrinks in LESS - see +page.svelte's
 		 * `.perf-root.deck-layout-less` comment), so the strip compacts:
-		 * smaller TRIM/EQ knobs, tighter margins, and the inert FILTER stub
-		 * (not a "required dial" - it is not wired to anything yet, see the
-		 * FILTER_SLOT_SIZE comment below) drops out entirely. TRIM/EQ/CUE/
-		 * the fader+level-meter/STEM stay - those are the real controls. */
+		 * smaller TRIM/EQ knobs, tighter margins, and the FILTER dial drops
+		 * out entirely. It is a live dial since issue #990, but it is the one
+		 * control with a neutral resting value (0.5 = bypass) and a state
+		 * that survives the strip not drawing it, so LESS still sheds it
+		 * first. TRIM/EQ/CUE/the fader+level-meter/STEM stay. */
 		less: boolean;
 		/** TRIM knob 0..1; 0.5 = unity. */
 		trim: number;
@@ -42,12 +43,15 @@
 		eqMid: number;
 		/** LOW knob 0..1; 0.5 = flat. */
 		eqLow: number;
+		/** FILTER knob 0..1; 0.5 = bypass. */
+		filter: number;
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
 		stemPending: boolean;
 		ontrim: (value: number) => void;
 		oneq: (band: EqBand, value: number) => void;
+		onfilter: (value: number) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 		onStemMute: (stem: StemControl) => Promise<void>;
@@ -61,11 +65,13 @@
 		eqHigh,
 		eqMid,
 		eqLow,
+		filter,
 		fader,
 		cueEnabled,
 		stemPending,
 		ontrim,
 		oneq,
+		onfilter,
 		onfader,
 		oncue,
 		onStemMute,
@@ -82,7 +88,9 @@
 	/** Halfway between TRIM's former 21px and the 30px EQ dials. MORE only -
 	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
 	const TRIM_SIZE = 25.5;
-	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
+	/** FILTER stays visually larger than the EQ stack, matching the mixer
+	 * layout contract. The exact number is main's, not this branch's 39:
+	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
 	const FILTER_SLOT_SIZE = 35.1;
 
 	// ------------------------------------------------------- level calibration (#1475)
@@ -216,10 +224,9 @@
 				knobId={knobId(deckId, 'filter')}
 				label="FILTER"
 				accessibleLabel={`filter deck ${deckId}`}
-				value={0.5}
-				tone="rainbow"
+				value={filter}
 				size={FILTER_SLOT_SIZE}
-				inert
+				onchange={onfilter}
 			/>
 		</div>
 	{/if}

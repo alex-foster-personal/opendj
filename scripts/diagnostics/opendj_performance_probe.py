@@ -179,13 +179,18 @@ class OpenDJProbe:
         self.prior_io = {pid: value for pid, value in self.prior_io.items() if pid in live_pids}
 
     def _deep_vmmap(self, processes: list[dict[str, Any]]) -> dict[str, Any]:
-        webcontent = next(
-            (process for process in processes if process["role"] == "webkit-webcontent"),
-            None,
-        )
-        if webcontent is None:
+        webcontents = [process for process in processes if process["role"] == "webkit-webcontent"]
+        if not webcontents:
             return {"available": False, "reason": "WebContent not found"}
-        return vmmap_summary(int(webcontent["pid"]))
+        profiled_pid = int(webcontents[0]["pid"])
+        result = vmmap_summary(profiled_pid)
+        if len(webcontents) > 1:
+            result["partial"] = True
+            result["profiled_pid"] = profiled_pid
+            result["unprofiled_webcontent_pids"] = [
+                int(process["pid"]) for process in webcontents[1:]
+            ]
+        return result
 
     def sample(self, *, deep: bool) -> dict[str, Any]:
         monotonic_now = time.monotonic()
