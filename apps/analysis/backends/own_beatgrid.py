@@ -66,6 +66,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from apps.analysis.pcm_fingerprint import (
+    FingerprintUnavailable,
+    canonical_decode_fingerprint,
+    require_resampler,
+)
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
@@ -268,8 +273,17 @@ def record_from_payload(
     stable_id: str,
     audio_path: Path,
     model_sha256: str,
+    decode_fingerprint: str,
 ) -> AnalysisRecord:
     """Turn one runner payload into one v2 record. Pure; raises, never guesses.
+
+    ``decode_fingerprint`` is the CANONICAL one, taken by the caller from the
+    audio itself (`apps.analysis.pcm_fingerprint`). It is a parameter rather
+    than something measured here so this function stays pure and offline: the
+    runner payload's own `decode_fingerprint` is a hash of Beat This's float32
+    model input, which no other decoder reproduces, so stamping it would fail
+    the cross-host comparison the field exists for on byte-identical audio
+    (Codex P1 BLOCKING, PR #1587).
 
     ``model_sha256`` is the digest `apps.analysis_beatgrid.weights` MEASURED on
     the checkpoint file it resolved, not a constant and not the payload's own
@@ -314,7 +328,18 @@ def record_from_payload(
             f"beat_this_runner.py could not analyze {audio_path}: {runner_error}"
         )
     lane = build_beatgrid_lane(result, threshold=threshold)
-    decode_fingerprint = _require(result, "decode_fingerprint")
+    # The runner reports the sha256 of ITS OWN model input: Beat This's
+    # `load_audio` float32 at whatever rate it chose. The record may not carry
+    # that. `decode_fingerprint` is defined over the canonical decode (44100
+    # Hz, mono, s16, soxr) precisely so a second host, or the player about to
+    # use this grid, can recompute it; a model-input hash is reproducible by
+    # nothing but this runner, so the comparison the field exists for would
+    # fail on byte-identical audio (Codex P1 BLOCKING, PR #1587). Still
+    # REQUIRED from the payload, because a runner that stopped emitting it is
+    # a schema change worth failing on, and its value is what the parity gate
+    # compares when two hosts disagree about the model input rather than the
+    # decode.
+    _require(result, "decode_fingerprint")
     duration_s = _duration_s(result, lane_ok=lane.ok, fps=fps, audio_path=audio_path)
     sample_rate = _sample_rate(result, lane_ok=lane.ok, audio_path=audio_path)
 
@@ -373,6 +398,17 @@ class OwnBeatgridBackfillBackend:
             checkpoint, model_sha256 = weights.resolve_checkpoint()
         except weights.WeightsError as exc:
             raise BackendNotAvailable(str(exc)) from exc
+        try:
+            # Checked up front, not per track: without a working ffmpeg
+            # resampler EVERY record fails its fingerprint, and a host-wide
+            # gap reported once per file reads as thousands of unreadable
+            # tracks. The probe runs the real filter chain, so it fails here
+            # for a build that merely accepts the option name.
+            require_resampler()
+        except FingerprintUnavailable as exc:
+            raise BackendNotAvailable(
+                f"the canonical decode fingerprint cannot be taken on this host: {exc}"
+            ) from exc
         device = os.environ.get(DEVICE_ENV, "").strip() or DEFAULT_DEVICE
         payload = run_runner(audio_path, checkpoint, device=device)
         # NO conversion guard here on purpose. An earlier version caught
@@ -387,11 +423,22 @@ class OwnBeatgridBackfillBackend:
         # cases are raised deliberately and by name: TrackVanished above,
         # TrackUnreadable inside record_from_payload for a runner-reported
         # error. Everything else propagates as the systemic fault it is.
+        try:
+            decode_fingerprint = canonical_decode_fingerprint(audio_path)
+        except FingerprintUnavailable as exc:
+            # Per-FILE, like the runner-error path: a resampler this host
+            # cannot run was already refused above, so reaching here means
+            # THIS file did not decode.
+            raise TrackUnreadable(
+                f"the canonical decode fingerprint could not be taken for "
+                f"{audio_path}: {exc}"
+            ) from None
         return record_from_payload(
             payload,
             stable_id=stable_id,
             audio_path=audio_path,
             model_sha256=model_sha256,
+            decode_fingerprint=decode_fingerprint,
         )
 
     @classmethod
