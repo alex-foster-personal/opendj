@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
@@ -64,3 +65,42 @@ def test_client_error_rejects_unbounded_stack(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert list(tmp_path.iterdir()) == []
+
+
+def test_client_error_triage_hides_decided_event_without_rewriting_daily_log(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    with TestClient(app) as client:
+        created = client.post("/api/v1/client-errors", json=_payload())
+        event_id = created.json()["event_id"]
+        daily_log = next(tmp_path.glob("webui-client-errors-*.log"))
+        daily_before = daily_log.read_bytes()
+
+        untriaged = client.get("/api/v1/client-errors?untriaged=1")
+        triaged = client.patch(
+            f"/api/v1/client-errors/{event_id}",
+            json={"disposition": "no-fix", "ref": "known browser limitation"},
+        )
+        after = client.get("/api/v1/client-errors?untriaged=1")
+
+    assert untriaged.status_code == 200
+    assert [record["event_id"] for record in untriaged.json()] == [event_id]
+    assert triaged.status_code == 200
+    assert triaged.json()["event_id"] == event_id
+    assert after.json() == []
+    assert daily_log.read_bytes() == daily_before
+    sidecars = list(tmp_path.glob("webui-client-errors-*.triage.jsonl"))
+    assert len(sidecars) == 1
+    assert json.loads(sidecars[0].read_text(encoding="utf-8")) == {
+        "disposition": "no-fix",
+        "event_id": event_id,
+        "ref": "known browser limitation",
+    }
+
+pytestmark = pytest.mark.rb_parity

@@ -11,17 +11,30 @@
 
 	/** 'coverage' (default) = today's "is it done" funnel dots; 'issues' =
 	 * the Err column, colored red/orange only for kinds with a REAL detected
-	 * problem - undetected kinds stay off, never a guessed/fabricated state. */
+	 * problem - undetected kinds stay off, never a guessed/fabricated state.
+	 *
+	 * Presentational only (props in, markup out) - no global store, no
+	 * fetch: this is what keeps it storied (storybook-stories.test.mjs holds
+	 * that line). AnalysisDotsPopover.svelte wraps this with a live hover
+	 * popover (jobProgress, order-analysis) and is deliberately NOT storied,
+	 * the same split PerfMeters already establishes for anything reaching
+	 * for jobProgress. */
 	let {
 		badge = {},
 		issues = {},
 		mode = 'coverage',
-		title
+		title,
+		suppressDotTitles = false
 	}: {
 		badge?: AnalysisBadge;
 		issues?: AnalysisIssues;
 		mode?: 'coverage' | 'issues';
 		title?: string;
+		/** Set by AnalysisDotsPopover: its richer per-kind popover supersedes
+		 * these native per-dot titles, and showing both at once is the exact
+		 * overlap ControlExplainer's own doc comment (pin dd4f0f5ae33f) warns
+		 * against - drop the native title there, keep only the container's. */
+		suppressDotTitles?: boolean;
 	} = $props();
 
 	const doneCount = $derived(
@@ -53,6 +66,7 @@
 	}
 
 	function dotTitle(kind: AnalysisKind): string | undefined {
+		if (suppressDotTitles) return undefined;
 		if (mode === 'issues') return issues[kind]?.detail;
 		return `${ANALYSIS_LABELS[kind]} analysis: ${badge[kind] === true ? 'done' : 'not yet analyzed'}`;
 	}

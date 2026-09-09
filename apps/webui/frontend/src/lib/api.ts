@@ -51,11 +51,28 @@ export type SettingsOut = components['schemas']['SettingsOut'];
 /** The daemon's schema is named EngineHealthOut; the frontend name is kept so
  * no call site moves. `status` is an open string there, not the literal 'ok'. */
 export type HealthOut = components['schemas']['EngineHealthOut'];
+type PairingCreateBody = Omit<components['schemas']['PairingCreate'], 'direction' | 'source'> &
+	Partial<Pick<components['schemas']['PairingCreate'], 'direction' | 'source'>>;
+export type PerformanceFeedbackMark = components['schemas']['PerformanceFeedbackMarkIn'];
+export type PerformanceFeedbackSummary = components['schemas']['PerformanceFeedbackMarksOut'];
 
 export class ConflictError extends Error {
 	constructor(public current: Track, public etag: string) {
 		super('If-Match mismatch');
 	}
+}
+
+/** Engine-owned user judgements, retained independently of the browser origin. */
+export async function getPerformanceFeedback(): Promise<PerformanceFeedbackSummary> {
+	return requireBody(await api.GET('/api/v1/feedback/performance-marks')).data;
+}
+
+export async function createPerformanceFeedback(
+	mark: PerformanceFeedbackMark
+): Promise<PerformanceFeedbackSummary> {
+	return requireBody(
+		await api.POST('/api/v1/feedback/performance-marks', { body: mark })
+	).data;
 }
 
 export interface PlayItGoal {
@@ -203,13 +220,31 @@ export async function listPairings(source?: string): Promise<Pairing[]> {
 	);
 }
 
-export async function createPairing(body: {
-	from_stable_id: string;
-	to_stable_id: string;
-	direction?: '->' | '<->';
-	source?: 'manual' | 'learned' | 'ai';
-	notes?: string;
-}): Promise<Pairing> {
+/** Every pairing touching `stableId`, either direction. The route only
+ * filters by ONE side per call (`from_stable_id` XOR `to_stable_id`), so this
+ * issues both and merges by `pairing_id` - a pairing is directional data
+ * (`direction`), but "is this track paired with anything" has to look both
+ * ways. Used to default-show the paired track in the recommended bar (pin
+ * 72ac80073f92 / issue #878). */
+export async function listPairingsFor(stableId: string): Promise<Pairing[]> {
+	const [asFrom, asTo] = await Promise.all([
+		unwrap(
+			api.GET('/api/v1/pairings', {
+				params: { query: { from_stable_id: stableId, to_stable_id: null, source: null } }
+			})
+		),
+		unwrap(
+			api.GET('/api/v1/pairings', {
+				params: { query: { from_stable_id: null, to_stable_id: stableId, source: null } }
+			})
+		)
+	]);
+	const byId = new Map<string, Pairing>();
+	for (const p of [...asFrom, ...asTo]) byId.set(p.pairing_id, p);
+	return [...byId.values()];
+}
+
+export async function createPairing(body: PairingCreateBody): Promise<Pairing> {
 	try {
 		// `direction` and `source` carry server-side defaults, which the generated
 		// request type spells as required.
@@ -237,6 +272,28 @@ export async function deletePairing(pairing_id: string, etag: string): Promise<v
 		if (error instanceof ApiError) throw new Error(`delete failed: ${error.status}`);
 		throw error;
 	}
+}
+
+export type SyncSnapshot = components['schemas']['SyncSnapshotOut'];
+export type Alignment = components['schemas']['AlignmentOut'];
+type AlignmentCreateBody = components['schemas']['AlignmentIn'];
+
+/** PAIR-02's durable LV1 snapshots (`/api/v1/pairings/sync-snapshots`, GET).
+ * `stable_a`/`stable_b` match directionally, unlike `listAlignments` below --
+ * see `lib/rb/pairing-capture.ts` for the query-both-orders caller. */
+export async function listSyncSnapshots(
+	stable_a: string,
+	stable_b: string,
+	limit: number
+): Promise<SyncSnapshot[]> {
+	return unwrap(
+		api.GET('/api/v1/pairings/sync-snapshots', { params: { query: { stable_a, stable_b, limit } } })
+	);
+}
+
+/** PAIR-02's durable LV2 alignment marks (`/api/v1/pairings/alignments`, POST). */
+export async function createAlignment(body: AlignmentCreateBody): Promise<Alignment> {
+	return unwrap(api.POST('/api/v1/pairings/alignments', { body }));
 }
 
 export async function getQueue(kind: string): Promise<QueueOut> {
@@ -363,4 +420,31 @@ export async function updateSmartlist(
 export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
 	const { data, response } = requireBody(await api.GET('/api/v1/health'));
 	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
+}
+
+/** PREFLIGHT-01's boot gate (issue #771) reads `GET /api/v1/preflight`.
+ *
+ * It lives HERE, beside `getHealth`, rather than in its own
+ * `src/lib/preflight/` transport module, for one measured reason: every new
+ * direct importer of `src/lib/api/client.ts` moves `frontend.max_fan_in`,
+ * which sits at its recorded floor with zero headroom (ops/quality/README.md
+ * -- allowances only shrink). This module already depends on the client, so
+ * routing the call through it adds no edge, and preflight is a health-family
+ * read anyway: same daemon, same "is this thing ready" question.
+ *
+ * One call serves both "Re-check" and "Re-request permissions": the server's
+ * audio-access check performs the real gated read every time it runs, so a
+ * second GET after granting an OS permission is both at once. There is no
+ * separate mutating endpoint to keep in sync with this one -- see
+ * `apps/webui/server/routes/preflight.py`.
+ *
+ * The verdict is READ, never recomputed: callers take `PreflightOut.status`
+ * as given rather than deriving pass/fail from the check list, so the server
+ * stays the one source of truth (this issue's own parity clause).
+ */
+export type PreflightResult = components['schemas']['PreflightOut'];
+export type PreflightCheck = components['schemas']['PreflightCheckOut'];
+
+export async function getPreflight(): Promise<PreflightResult> {
+	return unwrap(api.GET('/api/v1/preflight'));
 }

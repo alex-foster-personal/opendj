@@ -64,14 +64,14 @@ before(async () => {
 	});
 	apiBase = `http://127.0.0.1:${port}`;
 
-	// Real PUT against the real /api/v1/analysis-source route - the same
+	// Real PUT against the real /api/v1/analysis/source route - the same
 	// endpoint AnalysisSourceToggle.svelte drives - so every /anlz this
 	// server serves for the rest of the file goes through the real 'own'
 	// branch of _resolve_beatgrid_source.
-	const put = await fetch(`${apiBase}/api/v1/analysis-source`, {
+	const put = await fetch(`${apiBase}/api/v1/analysis/source`, {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ feature: 'beatgrid', source: 'own' })
+		body: JSON.stringify({ lane: 'beatgrid', toggle: 'own' })
 	});
 	assert.equal(put.status, 200, 'fixture server rejected the real source switch');
 

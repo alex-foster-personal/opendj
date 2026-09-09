@@ -134,7 +134,9 @@ def test_signing_identity_without_a_notary_profile_is_refused() -> None:
 
 
 @pytest.mark.requirement("INSTALL-04")
-@pytest.mark.parametrize("stage", ["payload", "verify-dmg-app", "dmg", "notarize"])
+@pytest.mark.parametrize(
+    "stage", ["payload", "verify-dmg-app", "notarize-app", "dmg", "notarize"]
+)
 def test_every_signing_stage_refuses_without_an_identity(stage: str) -> None:
     """No stage may run unsigned, and each must name the variable that is missing.
 

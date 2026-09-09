@@ -463,3 +463,12 @@ export function pausedSeekClock(
 	}
 	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
 }
+
+export function decodedTransportDurationMs(decodedDurationSec: number): number {
+	if (!Number.isFinite(decodedDurationSec) || decodedDurationSec <= 0) {
+		throw new RangeError(
+			`decoded audio duration must be finite and positive, got ${decodedDurationSec}`
+		);
+	}
+	return decodedDurationSec * 1000;
+}

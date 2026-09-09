@@ -2,7 +2,8 @@
 	/**
 	 * PARITY-02: top-left rbx-vs-own source toggle. A per-feature A/B switch
 	 * for testing our own-rolled analysis lanes against rekordbox's, backed
-	 * by GET/PUT /api/v1/analysis-source (analysis-source.svelte.ts). Never
+	 * by GET/PUT /api/v1/analysis/source (analysis-source.svelte.ts), which
+	 * this control drives through the in-memory dev toggle half only. Never
 	 * persisted: every feature starts (and always restarts) on 'rekordbox'.
 	 */
 	import {
@@ -18,7 +19,7 @@
 	};
 
 	// Live-but-not-noisy, matching usb-tracker.svelte.ts / feedback-store.svelte.ts's
-	// POLL_MS. An agent driving PUT /api/v1/analysis-source directly (this
+	// POLL_MS. An agent driving PUT /api/v1/analysis/source directly (this
 	// endpoint's whole agent-native-parity point) mutates the daemon with no
 	// event this tab hears - a one-shot mount fetch would leave the visible
 	// control mislabeling whichever source is actually being served

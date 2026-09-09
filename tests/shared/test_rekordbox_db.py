@@ -178,3 +178,5 @@ def test_open_db_raises_when_live_and_working_both_missing(
 
     with pytest.raises(FileNotFoundError):
         rekordbox_db.open_db()
+
+pytestmark = pytest.mark.rb_parity

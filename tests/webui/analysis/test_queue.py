@@ -229,11 +229,11 @@ def test_the_queue_reads_the_same_file_the_served_backend_does():
     re-derives from ``MDT_DATA_DIR``, so selection, serving and writes are one
     file by construction.
 
-    It is specifically NOT bound to ``app.state.state_db_path``, which is not
-    a source of truth: ``_build_default_app`` never passes it, so on the real
-    daemon it holds the RELATIVE default ``"data/state/state.db"`` while the
-    backend serves the absolute ``STATE_DB``. Binding the queue to that string
-    would point the scan at a different file from the one being served.
+    It is specifically NOT bound to ``app.state.state_db_path``. ``_build_default_app``
+    now passes ``STATE_DB`` explicitly there too (#949), so in practice they
+    agree, but the queue does not rely on that: binding it to the app-state
+    string would make the scan follow whatever a future caller passes there,
+    which is a knob this reader has no business honoring.
 
     This test is the guard on that reasoning. If either default moves, the
     queue and the backend split and this reds instead of shipping a scan that
@@ -454,3 +454,5 @@ def test_a_storage_failure_stops_the_job_at_the_first_chunk(tmp_path, monkeypatc
     assert any("NotADirectoryError" in line for line in job.log), (
         "the underlying fault was swallowed rather than logged"
     )
+
+pytestmark = pytest.mark.rb_parity

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import cast
 
 from . import paths
 from ._mutagen import HAS_MUTAGEN
@@ -23,6 +24,8 @@ class AudioMetadata:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
+    genre: str | None = None
+    comment: str | None = None
     duration_s: float | None = None
     bitrate_kbps: int | None = None
     sample_rate: int | None = None
@@ -81,7 +84,7 @@ def read_metadata(path: Path) -> AudioMetadata | None:
 
     try:
         f = mutagen.File(str(path), easy=True)
-    except Exception:
+    except Exception:  # noqa: BLE001 - malformed tags must not stop scanning
         return None
     if f is None:
         return None
@@ -94,6 +97,8 @@ def read_metadata(path: Path) -> AudioMetadata | None:
         title=_first(f, "title"),
         artist=_first(f, "artist"),
         album=_first(f, "album"),
+        genre=_first(f, "genre"),
+        comment=_first(f, "comment"),
         duration_s=float(info.length) if info and getattr(info, "length", None) else None,
         bitrate_kbps=bitrate_kbps,
         sample_rate=int(info.sample_rate) if info and getattr(info, "sample_rate", None) else None,
@@ -106,18 +111,19 @@ _RASTER_MAGIC_BY_MIME: dict[str, tuple[bytes, ...]] = {
     "image/gif": (b"GIF87a", b"GIF89a"),
     "image/bmp": (b"BM",),
 }
+MAX_EMBEDDED_ARTWORK_BYTES = 4 * 1024 * 1024
 
 
-def _is_valid_webp(data: bytes) -> bool:
+def _is_valid_webp(header: bytes) -> bool:
     """``RIFF`` alone is a container signature shared with WAV/AVI/etc, not a
     format signature -- the ``WEBP`` marker at bytes 8-11 is what actually
     says "this RIFF payload is an image". Checking only the ``RIFF`` prefix
     would let a WAV or AVI declared as ``image/webp`` pass the gate.
     """
-    return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return header[:4] == b"RIFF" and header[8:12] == b"WEBP"
 
 
-def _is_safe_raster_image(data: bytes, mime: str) -> bool:
+def _is_safe_raster_image(header: bytes, mime: str) -> bool:
     """The declared mime must be allow-listed AND the bytes must match THAT
     format's own magic number, not merely any raster format's.
 
@@ -129,13 +135,39 @@ def _is_safe_raster_image(data: bytes, mime: str) -> bool:
     where e.g. ``mime="image/png"`` with JPEG bytes would otherwise pass.
     """
     if mime == "image/webp":
-        return _is_valid_webp(data)
+        return _is_valid_webp(header)
     magics = _RASTER_MAGIC_BY_MIME.get(mime)
-    return magics is not None and data.startswith(magics)
+    return magics is not None and header.startswith(magics)
+
+
+def _safe_picture_mime(data: object, mime: str) -> str | None:
+    """Normalized mime when ``data`` is a bounded, safe raster payload.
+
+    Mutagen already owns the frame payload. Check its length and only copy the
+    tiny magic-byte prefix before materializing a response-sized ``bytes``
+    object, so oversized tag frames cannot multiply the process's memory use.
+    """
+    try:
+        if len(data) > MAX_EMBEDDED_ARTWORK_BYTES:  # type: ignore[arg-type]
+            return None
+        header = bytes(data[:12])  # type: ignore[index]
+    except (TypeError, ValueError):
+        return None
+    normalized_mime = mime.strip().lower()
+    return normalized_mime if _is_safe_raster_image(header, normalized_mime) else None
+
+
+def _as_bytes(data: object) -> bytes | None:
+    if isinstance(data, bytes):
+        return data
+    try:
+        return bytes(cast(bytes | bytearray | memoryview, data))
+    except (TypeError, ValueError):
+        return None
 
 
 def _first_safe_picture(
-    candidates: list[tuple[bytes, str, int | None]],
+    candidates: Iterator[tuple[object, str, int | None]],
 ) -> tuple[bytes, str] | None:
     """First SAFE candidate, but a type-3 (front cover) safe candidate wins
     over an earlier non-cover one.
@@ -150,56 +182,57 @@ def _first_safe_picture(
     allow-list lookup normalizes case here rather than at every caller. The
     normalized form is also what gets served as the HTTP ``Content-Type``.
     """
-    fallback: tuple[bytes, str] | None = None
+    fallback: tuple[object, str] | None = None
     for data, mime, pic_type in candidates:
-        normalized_mime = mime.strip().lower()
-        if not _is_safe_raster_image(data, normalized_mime):
+        normalized_mime = _safe_picture_mime(data, mime)
+        if normalized_mime is None:
             continue
         if pic_type == 3:
-            return (data, normalized_mime)
+            payload = _as_bytes(data)
+            return (payload, normalized_mime) if payload is not None else None
         if fallback is None:
             fallback = (data, normalized_mime)
-    return fallback
+    if fallback is None:
+        return None
+    payload = _as_bytes(fallback[0])
+    return (payload, fallback[1]) if payload is not None else None
 
 
-def _flac_picture(audio: object) -> tuple[bytes, str] | None:
+def _has_safe_picture(candidates: Iterator[tuple[object, str, int | None]]) -> bool:
+    """Whether a bounded, safe embedded picture exists without copying it."""
+    return any(_safe_picture_mime(data, mime) is not None for data, mime, _ in candidates)
+
+
+def _picture_candidates(audio: object) -> Iterator[tuple[object, str, int | None]]:
+    """Picture frames in the reader's established FLAC, ID3, then MP4 order."""
     pictures = getattr(audio, "pictures", None)
-    if not pictures:
-        return None
-    return _first_safe_picture(
-        [(bytes(p.data), p.mime or "", getattr(p, "type", None)) for p in pictures]
-    )
+    if pictures:
+        for picture in pictures:
+            yield picture.data, picture.mime or "", getattr(picture, "type", None)
+        return
+    tags = getattr(audio, "tags", None)
+    if tags is None:
+        return
+    yield from _tag_picture_candidates(tags)
 
 
-def _id3_apic(tags: object) -> tuple[bytes, str] | None:
+def _tag_picture_candidates(tags: object) -> Iterator[tuple[object, str, int | None]]:
     getall = getattr(tags, "getall", None)
-    if getall is None:
-        return None
-    apics = getall("APIC")
-    if not apics:
-        return None
-    return _first_safe_picture(
-        [(bytes(p.data), p.mime or "", getattr(p, "type", None)) for p in apics]
-    )
-
-
-def _mp4_covr(tags: object) -> tuple[bytes, str] | None:
-    from mutagen.mp4 import MP4Cover  # type: ignore
-
+    if getall is not None:
+        for picture in getall("APIC") or ():
+            yield picture.data, picture.mime or "", getattr(picture, "type", None)
     covers = tags.get("covr") if hasattr(tags, "get") else None
     if not covers:
-        return None
-    candidates = [
-        (
-            bytes(cover),
+        return
+    from mutagen.mp4 import MP4Cover  # type: ignore
+
+    for cover in covers:
+        mime = (
             "image/png"
             if getattr(cover, "imageformat", None) == MP4Cover.FORMAT_PNG
-            else "image/jpeg",
-            None,
+            else "image/jpeg"
         )
-        for cover in covers
-    ]
-    return _first_safe_picture(candidates)
+        yield cover, mime, None
 
 
 def read_embedded_artwork(path: Path) -> tuple[bytes, str] | None:
@@ -223,19 +256,30 @@ def read_embedded_artwork(path: Path) -> tuple[bytes, str] | None:
     if audio is None:
         return None
 
-    picture = _flac_picture(audio)
-    if picture is None:
-        tags = audio.tags
-        picture = (_id3_apic(tags) or _mp4_covr(tags)) if tags is not None else None
+    picture = _first_safe_picture(_picture_candidates(audio))
 
-    if picture is None or not _is_safe_raster_image(*picture):
+    if picture is None:
         return None
     return picture
+
+
+def embedded_artwork_available(path: Path) -> bool:
+    """Whether ``path`` contains a bounded safe picture without copying it."""
+    if not HAS_MUTAGEN:
+        return False
+    import mutagen  # type: ignore  # guarded above
+
+    try:
+        audio = mutagen.File(str(path))
+    except (mutagen.MutagenError, OSError):
+        return False
+    return audio is not None and _has_safe_picture(_picture_candidates(audio))
 
 
 __all__ = [
     "AudioFile",
     "AudioMetadata",
+    "embedded_artwork_available",
     "read_embedded_artwork",
     "read_metadata",
     "scan_music_files",

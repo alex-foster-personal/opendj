@@ -87,7 +87,7 @@
 	}
 
 	async function onEnter(): Promise<void> {
-		if (wrapEl !== undefined) {
+		if (wrapEl) {
 			const r = wrapEl.getBoundingClientRect();
 			popStyle = `right:${Math.round(window.innerWidth - r.right)}px;top:${Math.round(r.bottom + 4)}px`;
 		}

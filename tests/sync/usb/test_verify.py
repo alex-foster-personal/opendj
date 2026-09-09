@@ -11,10 +11,9 @@ from apps.sync.usb import verify as verify_mod
 from apps.sync.usb.profile import load_from_string
 from apps.sync.usb.verify import FileStatus, plan_from_verify, verify_drive
 
-# Pioneer USB actuator flow stays Mac-side (PLAN: skip cleanly off-Mac).
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
-pytestmark = [pytest.mark.requires_darwin, pytest.mark.rekordbox_writeback]
+pytestmark = pytest.mark.rekordbox_writeback
 
 
 def _profile():

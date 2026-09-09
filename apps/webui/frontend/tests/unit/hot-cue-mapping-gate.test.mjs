@@ -52,8 +52,7 @@ const DECK_STATE_TYPES = 'lib/rb/deck-state-types.ts';
 const STATE = 'lib/player/state.svelte.ts';
 const AUDIO_ENGINE = 'lib/rb/audio-engine.svelte.ts';
 
-const EMPTY_SLOT_GUARD =
-	/if\s*\(\s*entry\.cue\s*===\s*null\s*&&\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!deck\.has_rb_mapping\s*\)\s*\)\s*return/;
+const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!deck\.has_rb_mapping\s*\)\s*return/;
 
 test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before it can save', () => {
 	const text = source(HOT_CUE_BANK);
@@ -64,19 +63,18 @@ test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before i
 	const fnText = text.slice(fnStart, fnEnd);
 
 	assert.ok(
-		EMPTY_SLOT_GUARD.test(fnText),
+		EMPTY_SAVE_GUARD.test(fnText),
 		'onSlotClick no longer refuses an empty slot on an unmapped-or-unloaded deck - a click can ' +
 			'reach onSave and either fire a djmdCue write with nowhere to land (404, #736) or save ' +
 			'onto a deck with nothing loaded, throwing "deck is not loaded" unhandled (#804)'
 	);
 
-	// The guard must be scoped to `entry.cue === null` (an EMPTY slot). A
-	// filled slot's onclick still needs to jump, regardless of has_rb_mapping
-	// or stable_id (a filled slot cannot exist on an empty deck, but the
-	// jump branch must not be reachable-but-gated either).
-	const guardIndex = fnText.search(EMPTY_SLOT_GUARD);
-	const jumpIndex = fnText.indexOf('onJump(entry.cue.in_ms)');
-	assert.ok(jumpIndex > guardIndex, 'the jump branch must still run after the empty-slot guard');
+	// The jump branch deliberately precedes the empty-save guard: filled pads
+	// are Class A immediate controls even while a rename persistence write is
+	// queued, and a filled slot must never be blocked by mapping metadata.
+	const guardIndex = fnText.search(EMPTY_SAVE_GUARD);
+	const jumpIndex = fnText.indexOf('onJump(entry.slot)');
+	assert.ok(jumpIndex >= 0 && jumpIndex < guardIndex, 'the jump branch must stay immediate before the empty-save guard');
 });
 
 test('onClearClick refuses to fire against a deck with nothing loaded', () => {

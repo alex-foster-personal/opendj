@@ -226,16 +226,56 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		'utf8'
 	);
 
-	it('renders exactly ten segments split into six green, two yellow, and two red', () => {
-		const segments = meter.match(/^\s*'(green|yellow|red)'/gm) ?? [];
-		assert.equal(segments.length, 10);
-		assert.equal(segments.filter((segment) => segment.includes('green')).length, 6);
-		assert.equal(segments.filter((segment) => segment.includes('yellow')).length, 2);
-		assert.equal(segments.filter((segment) => segment.includes('red')).length, 2);
+	// The band split moved from a hardcoded 6/2/2 array in this component to
+	// meter-math's dB thresholds, because the old lighting rule was
+	// `ceil(meter * 10)` against a LINEAR amplitude: real music sits far below
+	// full scale in linear terms, so the top segments were unreachable and the
+	// bar behaved like an on/off lamp. The count is pinned here; WHICH band each
+	// segment carries is pinned in meter-math.test.mjs, where it can be checked
+	// against the dB scale that decides it.
+	// #1475: thresholds now route through segmentThresholdsForRed(), which
+	// returns the unmodified SEGMENT_THRESHOLDS_DBFS when calibration is off -
+	// this component still owns none of the shift/band policy itself.
+	it('renders ten segments and owns none of the policy that colors them', () => {
+		assert.match(meter, /segmentThresholdsForRed\(/);
+		assert.match(meter, /thresholds\.map/);
+		assert.match(meter, /segmentBand\(index \+ 1\)/);
+		// If a threshold or a band name is ever pasted back into this component,
+		// the single source of truth has forked and this catches it.
+		assert.doesNotMatch(meter, /^\s*'(green|amber|yellow|red)',/m);
+		for (const threshold of ['-34', '-26', '-20', '-16', '-12', '-9', '-6', '-3']) {
+			assert.ok(
+				!meter.includes(`${threshold},`),
+				`ChannelLevelMeter hardcodes the dB threshold ${threshold}`
+			);
+		}
+	});
+
+	it('lights segments from a dB reading, never from a linear amplitude', () => {
+		// The exact regression: `ceil(meter * SEGMENTS.length)` is linear and
+		// must not come back.
+		assert.doesNotMatch(meter, /Math\.ceil\(\s*meter\s*\*/);
+		// #1475: segments are recomputed from the calibrated thresholds rather
+		// than trusted from meter-tap's `reading.segments`, which only ever
+		// knows the uncalibrated default scale (meter-tap stays deck-agnostic
+		// and policy-free by design - see meter-tap.ts's module doc).
+		assert.doesNotMatch(meter, /reading\.segments/);
+		assert.match(meter, /segmentsLitFromDbfs\(reading\.db, thresholds\)/);
+		assert.match(meter, /reading\.db/);
+	});
+
+	it('labels the tap position honestly and does not claim speaker risk', () => {
+		// The old label said "post-deck, pre-channel-fader" while the underlying
+		// tap sat BEFORE trim and EQ, so no mixer control moved it.
+		assert.match(meter, /post-EQ pre-fader/);
+		assert.match(meter, /not speaker risk/);
+		assert.doesNotMatch(meter, /speaker damage|damage risk/i);
+		// House rule: a numeric readout says what the number is.
+		assert.match(meter, /dBFS/);
 	});
 
 	it('keeps real analyser sampling in the extracted component and does not use a gradient', () => {
-		assert.match(meter, /peekDeckMeter\(deckId\)/);
+		assert.match(meter, /peekDeckMeterReading\(deckId\)/);
 		assert.match(meter, /requestAnimationFrame\(tick\)/);
 		assert.doesNotMatch(meter, /linear-gradient/);
 		assert.match(fader, /import ChannelLevelMeter from '\.\/ChannelLevelMeter\.svelte'/);
@@ -243,8 +283,46 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		assert.doesNotMatch(fader, /peekDeckMeter/);
 	});
 
+	// Codex P2 BLOCKING on #1503. Scoping the clip rule to `.lit` (which stopped
+	// a latch painting segments that were not lit) ALSO made the latch invisible
+	// the moment the level fell back below red -- exactly the brief overshoot the
+	// latch exists to show. The latch now owns a dedicated segment.
+	//
+	// Regression line: if the latch has no indicator of its own again, a
+	// transient clip is unreportable and the latch is decorative.
+	it('the clip latch owns a segment rather than repainting the red band', () => {
+		assert.match(meter, /class:clip-latch=\{clipped && index === SEGMENTS\.length - 1\}/);
+		assert.match(meter, /\.rb-channel-level-meter-segment\.clip-latch\s*\{/);
+		// The level-scoped rule must still require .lit, or the original bug returns.
+		assert.match(meter, /\.clipped \.rb-channel-level-meter-segment\.red\.lit\s*\{/);
+		assert.doesNotMatch(meter, /\.clipped \.rb-channel-level-meter-segment\.red\s*\{/);
+	});
+
+	// Codex P1 BLOCKING on #1503: capturing on a stopped deck reads the meter
+	// floor, and arming that ceiling applies a 0.001 master multiplier, i.e. one
+	// click silences the whole output.
+	//
+	// Regression line: if the floor guard goes, M on a silent channel mutes the app.
+	it('a calibration capture at the meter floor is refused', () => {
+		const stripSrc = readFileSync(
+			fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)),
+			'utf8'
+		);
+		// Transport state FIRST: the meter's PPM ballistics decay at ~11.8 dB/s,
+		// so for seconds after a pause the tap still reads a real-looking value
+		// on its way down. A numeric floor alone lets that be captured.
+		assert.match(stripSrc, /if \(!playing\) return;/);
+		assert.match(stripSrc, /if \(db <= METER_FLOOR_DBFS\) return;/);
+		assert.match(stripSrc, /import \{ METER_FLOOR_DBFS \} from '\$lib\/rb\/meter-math'/);
+		// The refusal must be explained where the user can see it.
+		assert.match(stripSrc, /stopped or silent channel captures nothing/i);
+	});
+
 	it('accepts exactly the deck identifier type supported by the meter API', () => {
-		assert.match(meter, /deckId: Parameters<typeof peekDeckMeter>\[0\]/);
+		// Now a direct import: the meter API no longer exposes a single function
+		// whose first parameter can stand in for the type.
+		assert.match(meter, /deckId: Parameters<typeof peekDeckMeterReading>\[0\]/);
+		// Holds an import edge off deck-slots, which sits near the fan-in allowance.
 		assert.doesNotMatch(meter, /from '\$lib\/rb\/deck-slots'/);
 	});
 });

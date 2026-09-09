@@ -177,11 +177,13 @@ describe('captured prefs blobs load in the current build', () => {
 		assert.equal(got.auto_play_enabled, true, 'the capture must actually carry enabled=true');
 
 		const snap = autoPlay.createAutoPlayFeedSnapshot();
-		const atMount = snap.step(got.auto_play_enabled, []);
+		// Pin 0e5fa1 added the playlist scope: the same playlist across both
+		// observations, so this still exercises hydration and not a switch.
+		const atMount = snap.step(got.auto_play_enabled, 'playlist:vas', []);
 		assert.equal(atMount.snapshotted, false, 'persisted-on + empty view must not freeze');
 		assert.equal(snap.active, false);
 
-		const hydrated = snap.step(got.auto_play_enabled, [
+		const hydrated = snap.step(got.auto_play_enabled, 'playlist:vas', [
 			{ stable_id: 'a', key: '8A', bpm: 128, file_exists: true }
 		]);
 		assert.equal(hydrated.snapshotted, true, 'first rows take the activation snapshot');

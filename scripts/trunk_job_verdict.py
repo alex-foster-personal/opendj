@@ -93,7 +93,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from scripts.ci_health_core import REPO, PreconditionError
+try:
+    from scripts.ci_health_core import REPO, PreconditionError
+except ModuleNotFoundError as exc:
+    if exc.name == "scripts":
+        raise SystemExit("uv run --no-sync python -m scripts.trunk_job_verdict") from None
+    raise
 from scripts.trunk_job_verdict_core import (
     DEFAULT_BRANCH,
     DEFAULT_LIMIT,

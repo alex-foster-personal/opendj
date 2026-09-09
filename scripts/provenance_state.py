@@ -94,7 +94,7 @@ def _write_atomic(path: Path, text: str) -> None:
 
 
 @contextlib.contextmanager
-def sweep_lock(repo: Path):
+def sweep_lock(repo: Path, *, lockfile: str = LOCKFILE, directory: Path | None = None):
     """Hold an exclusive per-checkout lock, or yield False if one is already held.
 
     Every Stop detaches a sweep, and a full sweep takes minutes, so turns overlap
@@ -104,7 +104,7 @@ def sweep_lock(repo: Path):
     arriving by a different door. A skipped run costs nothing: the next sweep
     reads the same sources.
     """
-    path = repo / OUT_DIRNAME / LOCKFILE
+    path = (repo / OUT_DIRNAME if directory is None else directory) / lockfile
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         handle = path.open("w")

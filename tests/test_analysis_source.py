@@ -1,21 +1,22 @@
-"""Regression tests for PARITY-02 (in-app rbx-vs-own analysis source toggle).
+"""Regression tests for PARITY-02's /anlz beatgrid-override seam.
 
-Self-contained: the store/routes half needs nothing but a bare FastAPI app;
-the /anlz beatgrid-override half builds a real, production-migrated state.db
-(apps.analysis.store.upsert_record, same fixture shape as
-tests/test_analysis_route.py) with deliberately UNMAPPED tracks, rebinds it
-onto apps.adapters.rekordbox.config.STATE_DB, and drives the real
-GET /api/v1/tracks/{stable_id}/anlz route end to end -- so it needs no real
-rekordbox data (data/master.plain.db / data/state/state.db, both gitignored
-and absent in CI) while still exercising production code, not a fabricated
-request (AGENTS.md:L55-L63).
+The persisted-default / in-memory-toggle selection surface itself
+(GET/PUT /api/v1/analysis/source, apps.analysis.selection) is comprehensively
+covered by tests/analysis_contract/test_selection.py (PR #1549, issue #1476) --
+this module does not duplicate that coverage. What that module does NOT
+exercise is the one thing genuinely new here: rb_assets.py's beatgrid /anlz
+payload overlay, which reads the resolved selection and swaps in the
+apps.analysis grid for "own".
+
+Builds a real, production-migrated state.db (apps.analysis.store.upsert_record,
+same fixture shape as tests/test_analysis_route.py) with deliberately UNMAPPED
+tracks, rebinds it onto apps.adapters.rekordbox.config.STATE_DB, and drives the
+real GET /api/v1/tracks/{stable_id}/anlz route end to end -- so it needs no
+real rekordbox data (data/master.plain.db / data/state/state.db, both
+gitignored and absent in CI) while still exercising production code, not a
+fabricated request (AGENTS.md:L55-L63).
 
 Regression one-liners:
-  - if GET /analysis-source doesn't default every feature to rekordbox then broken
-  - if PUT /analysis-source doesn't 404 ANALYSIS_SOURCE_FEATURE_NOT_FOUND for an
-    unknown feature then broken
-  - if PUT /analysis-source doesn't persist within the process AND a fresh
-    store doesn't default back to rekordbox then broken
   - if a rekordbox-selected /anlz doesn't leave the served beatgrid alone then broken
   - if an own-selected /anlz with a real analysis record doesn't swap in the
     apps.analysis grid, exact ANLZ {n,bpm,t} shape then broken
@@ -34,12 +35,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.analysis import selection as sel
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
-from apps.webui.server.analysis_source import AnalysisSourceStore
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis import router as analysis_router
-from apps.webui.server.routes.analysis_source import router as analysis_source_router
 from apps.webui.server.routes.rb_assets import router as rb_assets_router
 
 DURATION_S = 60.0
@@ -70,53 +70,17 @@ def _record(sid: str, *, downbeats: list[float] | None = None) -> AnalysisRecord
     )
 
 
-# ----- GET/PUT /api/v1/analysis-source ----------------------------------------
+@pytest.fixture(autouse=True)
+def _clean_toggles() -> Iterator[None]:
+    """Every test starts at the launch state and leaves it there.
 
-
-@pytest.fixture()
-def source_client() -> Iterator[TestClient]:
-    app = FastAPI()
-    app.state.analysis_source = AnalysisSourceStore()
-    app.include_router(analysis_source_router, prefix="/api/v1")
-    with TestClient(app) as test_client:
-        yield test_client
-
-
-@pytest.mark.requirement("PARITY-02")
-def test_default_source_is_rekordbox(source_client: TestClient) -> None:
-    r = source_client.get("/api/v1/analysis-source")
-    assert r.status_code == 200, r.text
-    assert r.json() == {"features": {"beatgrid": "rekordbox"}}
-
-
-@pytest.mark.requirement("PARITY-02")
-def test_put_switches_source_and_get_reflects_it(source_client: TestClient) -> None:
-    r = source_client.put("/api/v1/analysis-source", json={"feature": "beatgrid", "source": "own"})
-    assert r.status_code == 200, r.text
-    assert r.json() == {"features": {"beatgrid": "own"}}
-    assert source_client.get("/api/v1/analysis-source").json() == {"features": {"beatgrid": "own"}}
-
-
-@pytest.mark.requirement("PARITY-02")
-def test_put_unknown_feature_404s(source_client: TestClient) -> None:
-    r = source_client.put("/api/v1/analysis-source", json={"feature": "vocals", "source": "own"})
-    assert r.status_code == 404
-    assert r.json()["detail"]["code"] == "ANALYSIS_SOURCE_FEATURE_NOT_FOUND"
-    # And the known feature's selection is untouched by the rejected call.
-    unchanged = source_client.get("/api/v1/analysis-source").json()
-    assert unchanged == {"features": {"beatgrid": "rekordbox"}}
-
-
-@pytest.mark.requirement("PARITY-02")
-def test_a_fresh_store_never_inherits_a_prior_selection() -> None:
-    """Models a relaunch: a new AnalysisSourceStore is a new process's worth
-    of state, so it must not remember a previous instance's 'own' pick."""
-    first = AnalysisSourceStore()
-    first.set("beatgrid", "own")
-    assert first.get("beatgrid") == "own"
-
-    second = AnalysisSourceStore()
-    assert second.get("beatgrid") == "rekordbox"
+    apps.analysis.selection's dev toggle is process-local (module-level, by
+    design -- PARITY-02), not per-app, so a test that sets "own" for beatgrid
+    leaks into the next test in this process unless reset both sides.
+    """
+    sel.reset_toggles()
+    yield
+    sel.reset_toggles()
 
 
 # ----- _resolve_beatgrid_source, exercised through the real /anlz route ------
@@ -181,14 +145,18 @@ def anlz_client(
     app = FastAPI()
     app.state.backend = InMemoryBackend()
     app.state.analysis_db_path = anlz_state_db
-    app.state.analysis_source = AnalysisSourceStore()
     app.include_router(rb_assets_router, prefix="/api/v1")
     with TestClient(app) as test_client:
         yield test_client
 
 
 def _set_source(client: TestClient, source: str) -> None:
-    client.app.state.analysis_source.set("beatgrid", source)
+    # "own"/"rekordbox" is this test module's own wire vocabulary (matching
+    # /anlz's beatgrid_source field); apps.analysis.selection's dev toggle
+    # speaks "own"/"rbx"/"unset" -- translate at the boundary, same as
+    # rb_assets.py's _current_beatgrid_source does the other direction.
+    del client  # the toggle is process-local, not client-scoped
+    sel.set_toggle("beatgrid", "own" if source == "own" else "rbx")
 
 
 @pytest.mark.requirement("PARITY-02")
@@ -232,27 +200,6 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
     assert body["beatgrid_source"] == "own"
     assert body["beatgrid"] == {"beat_count": 0, "beats": []}
     assert body["beatgrid_own_unavailable_reason"] == "no own analysis for this track"
-
-
-@pytest.mark.requirement("PARITY-02")
-def test_no_analysis_source_on_app_state_defaults_to_rekordbox(
-    anlz_state_db: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A test app that mounts only the rb-assets router (test_rb_assets.py's
-    own fixture shape) never sets app.state.analysis_source. That must not
-    AttributeError -- it is the same 'test app is a subset of the real one'
-    convention routes.analysis already honors for analysis_db_path."""
-    monkeypatch.setattr(rb_config, "STATE_DB", anlz_state_db)
-    app = FastAPI()
-    app.state.backend = InMemoryBackend()
-    app.state.analysis_db_path = anlz_state_db
-    app.include_router(rb_assets_router, prefix="/api/v1")
-    with TestClient(app) as client:
-        r = client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["beatgrid_source"] == "rekordbox"
-    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
 
 
 @pytest.mark.requirement("PARITY-02")

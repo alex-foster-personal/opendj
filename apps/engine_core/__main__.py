@@ -14,9 +14,11 @@ is bound.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from apps.engine_core.config import (
     ENGINE_VERSION,
@@ -152,7 +154,7 @@ def _telemetry_decision():
 
 
 def _serve(cfg: EngineConfig, *, log_level: str) -> int:
-    lock = EngineLock(cfg.lock_path)
+    lock = EngineLock(cfg.lock_path, host=cfg.host, port=cfg.port)
     try:
         lock.acquire()
     except EngineLockError as exc:
@@ -169,7 +171,18 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
         import uvicorn
 
         from apps.engine_core.app import create_app
+        from apps.engine_core.warning_log import configure_warning_log
         from apps.shared.telemetry import TelemetryConfigError, init_telemetry
+
+        warning_log = os.environ.get("OPENDJ_ENGINE_WARN_LOG")
+        warning_boot_id = os.environ.get("OPENDJ_ENGINE_LOG_BOOT_ID")
+        if (warning_log is None) != (warning_boot_id is None):
+            raise EngineBootError(
+                "OPENDJ_ENGINE_WARN_LOG and OPENDJ_ENGINE_LOG_BOOT_ID must be set together"
+            )
+        if warning_log is not None:
+            logging.basicConfig(level=logging.INFO)
+            configure_warning_log(Path(warning_log), warning_boot_id)
 
         # BEFORE create_app, not after: the Sentry FastAPI integration wraps
         # route handlers as they are registered, so a later init would leave
@@ -191,7 +204,12 @@ def _serve(cfg: EngineConfig, *, log_level: str) -> int:
             flush=True,
         )
         uvicorn.run(
-            app, host=cfg.host, port=cfg.port, log_level=log_level, workers=1
+            app,
+            host=cfg.host,
+            port=cfg.port,
+            log_level=log_level,
+            log_config=None,
+            workers=1,
         )
     finally:
         lock.release()

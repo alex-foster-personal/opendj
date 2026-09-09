@@ -106,6 +106,14 @@ def test_endpoint_matches_the_shell_configuration() -> None:
     )
 
 
+def test_endpoint_uses_the_public_release_host() -> None:
+    """An unauthenticated updater cannot read assets from the private repo."""
+    assert UPDATE_ENDPOINT == (
+        "https://github.com/maintainer/issue-assets"
+        "/releases/latest/download/latest.json"
+    )
+
+
 def test_the_shell_carries_a_public_key() -> None:
     conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
     pubkey = conf["plugins"]["updater"]["pubkey"]
@@ -200,8 +208,7 @@ def test_a_404_is_refused_not_reassuring() -> None:
         result = resolve_update_check(_identity(), client=client, key=KEY)
     assert result.status == "endpoint-refused"
     assert "404" in (result.detail or "")
-    # The private-repo reality is explained where somebody will actually read it.
-    assert "PRIVATE" in (result.detail or "")
+    assert "public release host" in (result.detail or "")
 
 
 def test_a_non_json_body_is_malformed() -> None:
@@ -297,6 +304,7 @@ def test_the_cli_exists_and_refuses_an_unreachable_channel() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     assert result.returncode == 2, (
         f"expected a non-zero exit on an unreachable channel; "

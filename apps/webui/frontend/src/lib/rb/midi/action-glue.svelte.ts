@@ -38,6 +38,7 @@
 
 import { pushToast } from '$lib/stores.svelte';
 import { deckStates, engine, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	getDeviceMap,
 	midiState,
@@ -109,28 +110,29 @@ function _continuous01(value: MidiInputValue): number {
 
 /** REBASE ADAPTER: play/pause toggle command for one deck. */
 function _cmdPlayToggle(deck: DeckId): void {
-	if (deckStates[deck].playing) engine.pause(deck);
-	else engine.play(deck);
+	void dispatchPerformanceCommand({ type: 'play', deck, playing: !deckStates[deck].playing });
 }
 
 /** REBASE ADAPTER: physical CUE button command for one deck. */
 function _cmdPressCue(deck: DeckId): void {
-	engine.pressCue(deck);
+	void dispatchPerformanceCommand({ type: 'cue', deck });
 }
 
-/** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). */
-function _cmdHotCue(deck: DeckId, inMs: number): void {
-	engine.cueJump(deck, inMs);
+/** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). Slot-
+ * addressed, not a raw ms (#884): hot_cue_trigger, unlike a plain seek, can
+ * honour BeatSyncMax and arm for the deck's own next downbeat. */
+function _cmdHotCue(deck: DeckId, slot: HotCueSlot): void {
+	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot });
 }
 
 /** REBASE ADAPTER: engage an auto/beat loop from the current position. */
 function _cmdBeatLoop(deck: DeckId, beats: number): void {
-	engine.engageBeatLoop(deck, beats);
+	void dispatchPerformanceCommand({ type: 'beat_loop', deck, beats });
 }
 
 /** REBASE ADAPTER: disengage the active loop. */
 function _cmdLoopExit(deck: DeckId): void {
-	engine.setLoop(deck, null);
+	void dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
 }
 
 // ------------------------------------------------------------ action switch
@@ -160,7 +162,7 @@ export function handleMidiAction(action: MidiAction, value: MidiInputValue): voi
 				pushToast(`Deck ${action.deck}: no hot cue in slot ${action.slot}`, 'info');
 				return;
 			}
-			_cmdHotCue(action.deck, cue);
+			_cmdHotCue(action.deck, action.slot);
 			return;
 		}
 		case 'deck_beat_loop': {
@@ -178,14 +180,14 @@ export function handleMidiAction(action: MidiAction, value: MidiInputValue): voi
 		case 'mixer_channel': {
 			const v = _continuous01(value);
 			if (action.target === 'trim') {
-				engine.setTrim(action.deck, v);
+				void dispatchPerformanceCommand({ type: 'trim', deck: action.deck, value: v });
 			} else if (action.target === 'eq') {
 				if (action.band === undefined) {
 					throw new Error('mixer_channel eq action requires band (device map bug)');
 				}
-				engine.setEq(action.deck, action.band, v);
+				void dispatchPerformanceCommand({ type: 'eq', deck: action.deck, band: action.band, value: v });
 			} else if (action.target === 'fader') {
-				engine.setFader(action.deck, v);
+				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v });
 			} else {
 				const _exhaustive: never = action.target;
 				throw new Error(`Unhandled mixer_channel target: ${_exhaustive}`);
@@ -195,9 +197,9 @@ export function handleMidiAction(action: MidiAction, value: MidiInputValue): voi
 		case 'mixer_global': {
 			const v = _continuous01(value);
 			if (action.target === 'crossfader') {
-				engine.setCrossfader(v);
+				void dispatchPerformanceCommand({ type: 'crossfader', value: v });
 			} else if (action.target === 'master') {
-				engine.setMaster(v);
+				void dispatchPerformanceCommand({ type: 'master_volume', value: v });
 			} else {
 				const _exhaustive: never = action.target;
 				throw new Error(`Unhandled mixer_global target: ${_exhaustive}`);
@@ -207,7 +209,9 @@ export function handleMidiAction(action: MidiAction, value: MidiInputValue): voi
 		case 'deck_pitch': {
 			const v = _continuous01(value);
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
-			engine.setPitch(action.deck, pitchRatioFromFader(v, pitchRanges[action.deck]));
+			void dispatchPerformanceCommand({
+				type: 'tempo', deck: action.deck, ratio: pitchRatioFromFader(v, pitchRanges[action.deck])
+			});
 			return;
 		}
 		case 'browse_encoder': {

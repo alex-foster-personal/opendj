@@ -5,9 +5,12 @@
 # tells you almost nothing; polling costs a minute and buys the one resource
 # that actually kills a run.
 set -euo pipefail
+# This repo's own checkout location, not a machine-specific value (#910): no
+# personal home should ever be hardcoded here.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # An unguarded `cd` here would poll, and then LAUNCH A MODAL RUN, from whatever
 # directory the caller happened to be in. Explicit so it cannot be silent.
-cd /Users/dev/Music/music-dj-tools || { echo "FATAL: repo checkout missing" >&2; exit 1; }
+cd "$REPO" || { echo "FATAL: repo checkout missing" >&2; exit 1; }
 MAX=${MAX_POLLS:-180}   # 3h at 60s
 for i in $(seq 1 "$MAX"); do
   # BLOCK is the EXPECTED answer ~88% of the time, so a nonzero gate status is
@@ -17,7 +20,7 @@ for i in $(seq 1 "$MAX"); do
   OUT=$(uv run scripts/mem_gate.py check 2>&1 | tail -1) || true
   if uv run scripts/mem_gate.py check >/dev/null 2>&1; then
     echo "[$(date +%H:%M:%S)] poll $i: $OUT -> LAUNCHING"
-    exec uv run --with modal python -m scripts.stem_split_runner --limit 100 --dest bifrost2
+    exec uv run --no-sync --with modal python -m scripts.stem_split_runner --limit 100 --dest bifrost2
   fi
   echo "[$(date +%H:%M:%S)] poll $i: $OUT"
   sleep 60

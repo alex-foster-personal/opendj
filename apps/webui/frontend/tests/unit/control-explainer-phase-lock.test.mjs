@@ -50,6 +50,7 @@ function readSource(relative) {
 }
 
 const DECK_HEADER_SRC = readSource("lib/components/rb/deck/DeckHeader.svelte");
+const CONTROL_EXPLAINER_SRC = readSource("lib/components/rb/deck/ControlExplainer.svelte");
 const JOG_DIAL_SRC = readSource("lib/components/rb/deck/JogDial.svelte");
 const TRANSPORT_SRC = readSource(
   "lib/components/rb/deck/TransportCluster.svelte",
@@ -154,7 +155,7 @@ test("setBeatSync clears the lit flag before rethrowing an impossible phase lock
   );
 });
 
-test("ControlExplainer is mounted on CUE, SLIP, BEAT SYNC and MASTER", () => {
+test("ControlExplainer is mounted on CUE, SLIP, KEY SYNC, BEAT SYNC and MASTER", () => {
   for (const [label, src] of [
     ["CUE", TRANSPORT_SRC],
     ["SLIP", JOG_DIAL_SRC],
@@ -174,10 +175,25 @@ test("ControlExplainer is mounted on CUE, SLIP, BEAT SYNC and MASTER", () => {
   const deckHeaderMounts = DECK_HEADER_SRC.match(/<ControlExplainer\b/g) ?? [];
   assert.equal(
     deckHeaderMounts.length,
-    2,
-    "if DeckHeader does not mount exactly two explainers then BEAT SYNC or " +
-      "MASTER has lost its own",
+    // 3 -> 4: pin 815937c87bc1 (issue #931) added a 4th mount wrapping the
+    // tempo/key readout with a "reset to original" hover action. Bumped
+    // deliberately alongside that feature, not to silence a real drift -
+    // KEY SYNC / BEAT SYNC / MASTER still each have their own (asserted
+    // individually above).
+    4,
+    "if DeckHeader does not mount exactly four explainers then KEY SYNC, " +
+      "BEAT SYNC, MASTER, or the tempo/key readout reset has lost its own",
   );
+	assert.match(
+		DECK_HEADER_SRC,
+		/keySyncPreview\(deckId\)/,
+		'KEY SYNC hover must read the shared authoritative preview, not duplicate its arithmetic',
+	);
+	assert.match(
+		DECK_HEADER_SRC,
+		/Enable MT/,
+		'KEY SYNC MT-off hover must expose the existing Master Tempo command',
+	);
   assert.match(
     TRANSPORT_SRC,
     /demo="cue"/,
@@ -188,4 +204,17 @@ test("ControlExplainer is mounted on CUE, SLIP, BEAT SYNC and MASTER", () => {
     /demo="slip"/,
     "if the slip demo is dropped then the SVG teach is gone",
   );
+});
+
+test("interactive ControlExplainer closes after Escape returns focus to its trigger", () => {
+  const escape = CONTROL_EXPLAINER_SRC.match(/function _onKeydown\([\s\S]*?\n\t}/)?.[0] ?? "";
+  const focus = escape.indexOf("?.focus()");
+  const close = escape.indexOf("_close();");
+  assert.ok(focus >= 0 && close > focus, "Escape must close after trigger focus avoids reopening the popover");
+});
+
+test("MT-off warning remains available while the exact Key Sync target is unavailable", () => {
+  const warning = DECK_HEADER_SRC.match(/const keySyncWarning:[\s\S]*?\n\t\);/)?.[0] ?? "";
+  assert.match(warning, /!deck\.master_tempo_enabled/);
+  assert.doesNotMatch(warning, /keySyncPlan/, "MT warning and recovery action must not depend on a settled pitch preview");
 });

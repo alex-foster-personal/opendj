@@ -462,8 +462,8 @@ def dated_log_path(
     durable_dir: Path | None = None,
     now: time.struct_time | None = None,
 ) -> Path:
-    """One append-only file per process per local day."""
-    day = time.strftime("%Y-%m-%d", now or time.localtime())
+    """One append-only file per process per UTC day."""
+    day = time.strftime("%Y-%m-%d", now or time.gmtime())
     return (durable_dir or log_dir_for(name)) / f"{name}-{day}.log"
 
 

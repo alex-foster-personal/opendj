@@ -10,10 +10,18 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { fetchAnlz, RbApiError } from '$lib/rb/api-rb';
+import { fetchAnlz, fetchAnlzBypassingHttpCache, RbApiError } from '$lib/rb/api-rb';
+import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
-import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+import { bumpAnlzFetchGeneration, currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import type { AnlzData } from '$lib/rb/anlz-types';
+
+export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-lazy';
+export {
+	createBeatgridResyncGuards,
+	createBeatgridResyncTracking
+} from '$lib/player/beatgrid-resync-guards';
+export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 
 export type AnlzEntry =
 	| { status: 'loading' }
@@ -207,6 +215,18 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 		clearTimeout(existingTimer);
 		_retryTimers.delete(stable_id);
 	}
+	// `resolveDisplayedAnlz` below already prefers a cache-entry grid over the
+	// deck's own, but that is only the DISPLAY projection: quantize, beat
+	// loops, _synchronizeFollowers and the master-grid read all take the
+	// engine's `deck.anlz`. A local deck that merged the synthetic fallback
+	// grid, then had a vendor mapping land, gets its authoritative PQTZ grid
+	// from exactly this ambient retry - and nothing was propagating it back,
+	// so the waveform painted PQTZ while the beat math still ran on the
+	// fallback (discussion_r3919779323 P1 BLOCKING). The sink is what closes
+	// that gap; it fires for every real grid this cache learns about,
+	// including the very first, and the engine decides whether any loaded deck
+	// is actually holding a different one.
+	if (_authoritativeGridSink !== null && hasAnlzBeatgrid(data)) _authoritativeGridSink(stable_id, data);
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
 		return;
@@ -220,6 +240,22 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 			_fetchAndPublish(stable_id);
 		}, RETRYABLE_COOLDOWN_MS)
 	);
+}
+
+/** Notified with every /anlz payload this cache learns that carries a REAL
+ * beatgrid, so the engine can adopt it over a deck's merged fallback grid.
+ * Installed rather than imported: this module is a display-layer cache and
+ * must not reach into audio-engine.svelte.ts, which imports the other way
+ * round already. Install is once-only; a second install is a wiring bug and
+ * throws rather than silently replacing the first sink. */
+export type AuthoritativeAnlzGridSink = (stable_id: string, data: AnlzData) => void;
+let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
+
+export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink): void {
+	if (_authoritativeGridSink !== null) {
+		throw new Error('an authoritative anlz grid sink is already installed');
+	}
+	_authoritativeGridSink = sink;
 }
 
 /** True when a loaded deck's own `$effect` (WaveRow.svelte) should call
@@ -247,7 +283,23 @@ export function deckAnlzNeedsFetch(anlz: AnlzData | null, anlz_error: string | n
  * NOT to the deck - without preferring the cache here, a deck published
  * with a still-retryable anlz would keep re-fetching forever yet never
  * actually show the decode once it lands (Codex finding, issue #735
- * follow-up, discussion_r3907741366 - the display half of the same gap). */
+ * follow-up, discussion_r3907741366 - the display half of the same gap).
+ *
+ * A real cache-entry beatgrid always wins over the deck's own: the cache's
+ * ambient waveform retry hits the same `/anlz` endpoint, so once ITS payload
+ * carries a real grid (e.g. a rekordbox mapping landed and the retry raced
+ * ahead of the engine's own PARITY-10 upgrade fetch) that grid is at least as
+ * fresh as whatever the deck already holds, and must not be discarded in
+ * favor of a possibly-stale fallback one (discussion_r3916394792).
+ *
+ * Only when the cache entry does NOT yet have a real grid does the deck's own
+ * beatgrid win: PARITY-10's deferred upgrade merges the analysis-derived grid
+ * into `deck.anlz` without touching `local_waveform`, so a track whose
+ * waveform decode is still retryable keeps reporting retryable here forever
+ * even after its grid has landed. Preferring the cache entry WHOLESALE in
+ * that case would silently drop the already-merged grid every waveform
+ * refetch - quantize and Beat Sync read the engine's `deck.anlz`, so this
+ * row's paint must never disagree with them about whether a grid exists. */
 export function resolveDisplayedAnlz(
 	deckAnlz: AnlzData | null,
 	stable_id: string | null
@@ -255,7 +307,10 @@ export function resolveDisplayedAnlz(
 	if (deckAnlz !== null && !isRetryableAnlzData(deckAnlz)) return deckAnlz;
 	if (stable_id === null) return deckAnlz;
 	const entry = _cache[stable_id];
-	return entry !== undefined && entry.status === 'ready' ? entry.data : deckAnlz;
+	if (entry === undefined || entry.status !== 'ready') return deckAnlz;
+	if (hasAnlzBeatgrid(entry.data)) return entry.data;
+	if (deckAnlz !== null && hasAnlzBeatgrid(deckAnlz)) return { ...entry.data, beatgrid: deckAnlz.beatgrid };
+	return entry.data;
 }
 
 /** Fetches /anlz for a deck load and publishes whatever it settles on into
@@ -361,6 +416,49 @@ export function invalidateAnlzCacheEntry(stable_id: string): void {
  * stale hit later (discussion_r3921666943). */
 export function invalidateAllAnlzCacheEntries(): void {
 	for (const stable_id of Object.keys(_cache)) delete _cache[stable_id];
+}
+
+type DeckId = 1 | 2 | 3 | 4;
+
+export interface AnalysisSourceRefreshDeck {
+	stable_id: string | null;
+	anlz: AnlzData | null;
+}
+
+/** Replaces loaded decks without allowing an in-flight stale response to win.
+ * Lives here, not as its own module, so it can write straight through this
+ * cache's own primitives (kept next to `invalidateAllAnlzCacheEntries` above,
+ * which it always pairs with) instead of adding a fan-out edge onto a module
+ * audio-engine.svelte.ts already imports from for every other cache concern. */
+export async function refreshAnalysisSourceDecks(
+	deckIds: readonly DeckId[],
+	decks: Record<DeckId, AnalysisSourceRefreshDeck>
+): Promise<void> {
+	bumpAnlzFetchGeneration();
+	invalidateAllAnlzCacheEntries();
+	await Promise.all(
+		deckIds.map(async (deck) => {
+			const stableId = decks[deck].stable_id;
+			if (stableId === null) return;
+			const fresh = await fetchAnlzBypassingHttpCache(stableId).catch((error: unknown) => {
+				invalidateAnlzCacheEntry(stableId);
+				throw error;
+			});
+			if (decks[deck].stable_id !== stableId) return;
+			// Deck state first, cache mirror second: refreshAnlzCacheEntry also
+			// notifies the authoritative-grid sink below, which exists for an
+			// AMBIENT prefetch discovering a better grid for a track a deck
+			// already has loaded, and reconciles followers as if the deck's own
+			// grid were stale. A deliberate rbx-vs-own switch has already
+			// decided and applied the swap on this exact deck by the time the
+			// cache write happens, so the sink must see the deck's grid already
+			// matching `fresh` (sameBeatgrid short-circuits it) instead of
+			// racing its own out-of-band reconciliation against this direct
+			// assignment.
+			decks[deck].anlz = fresh;
+			refreshAnlzCacheEntry(stableId, fresh);
+		})
+	);
 }
 
 /** Count of ready ANLZ entries for memory tracking. */

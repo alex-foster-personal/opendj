@@ -31,7 +31,7 @@ from apps.dedup import schema as dedup_schema
 from apps.webui.server.backend import InMemoryBackend, Track
 from apps.webui.server.routes import dedup_review
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 # Cold spawn start re-imports this module (fastapi and friends) in each child,
 # which can exceed 5s on a loaded machine. Generous deadlines keep the test

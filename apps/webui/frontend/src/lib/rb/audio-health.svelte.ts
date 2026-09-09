@@ -27,6 +27,75 @@ let _hz = $state<number | null>(null);
 let _level = $state<AudioHealthLevel>('idle');
 let _samplerId: ReturnType<typeof setInterval> | null = null;
 
+/** Waveform paint cadence, not audio or device health. A stutter is a gap over
+ * two 60 Hz frames (34ms) during a real visible waveform draw. The latest
+ * 2s draw window is intentionally unsmoothed so a single dropped frame stays
+ * inspectable through UI and public IPC. */
+const WAVEFORM_STUTTER_WINDOW_MS = 2000;
+const WAVEFORM_STUTTER_GAP_MS = 34;
+interface WavePaintCadence { previousMs: number; frames: number; stutters: number; worstGapMs: number; }
+const _waveRows = new Map<number, WavePaintCadence>();
+let _waveWindowStartMs: number | null = null;
+let _waveSnapshot = $state({ active: false, frames: 0, stutters: 0, worst_gap_ms: 0, elapsed_ms: 0, window_ms: WAVEFORM_STUTTER_WINDOW_MS, threshold_ms: WAVEFORM_STUTTER_GAP_MS });
+
+function _publishWaveformWindow(elapsedMs = 0): void {
+	const rows = [..._waveRows.values()];
+	_waveSnapshot = {
+		active: rows.length > 0,
+		frames: rows.reduce((total, row) => total + row.frames, 0),
+		stutters: rows.reduce((total, row) => total + row.stutters, 0),
+		worst_gap_ms: Math.round(rows.reduce((worst, row) => Math.max(worst, row.worstGapMs), 0)),
+		elapsed_ms: Math.round(elapsedMs),
+		window_ms: WAVEFORM_STUTTER_WINDOW_MS,
+		threshold_ms: WAVEFORM_STUTTER_GAP_MS
+	};
+}
+
+/** Called from the actual WaveRow rAF callback with its browser timestamp. */
+export function noteWaveformPaintFrame(deck: number, nowMs: number): void {
+	if (!Number.isFinite(nowMs)) throw new TypeError(`waveform paint timestamp must be finite, got ${nowMs}`);
+	let row = _waveRows.get(deck);
+	if (row === undefined) {
+		row = { previousMs: nowMs, frames: 1, stutters: 0, worstGapMs: 0 };
+		_waveRows.set(deck, row);
+		if (_waveWindowStartMs === null) _waveWindowStartMs = nowMs;
+		_publishWaveformWindow(nowMs - _waveWindowStartMs);
+		return;
+	}
+	const gapMs = nowMs - row.previousMs;
+	row.previousMs = nowMs;
+	row.frames += 1;
+	row.worstGapMs = Math.max(row.worstGapMs, gapMs);
+	if (gapMs > WAVEFORM_STUTTER_GAP_MS) row.stutters += 1;
+	const elapsedMs = nowMs - (_waveWindowStartMs ?? nowMs);
+	if (elapsedMs < WAVEFORM_STUTTER_WINDOW_MS) return;
+	_publishWaveformWindow(elapsedMs);
+	_waveWindowStartMs = nowMs;
+	for (const activeRow of _waveRows.values()) {
+		activeRow.frames = 0;
+		activeRow.stutters = 0;
+		activeRow.worstGapMs = 0;
+	}
+}
+
+/** Stop/hidden/unmounted rows are unavailable, never synthetic stutters. */
+export function resetWaveformPaintCadence(deck: number): void {
+	_waveRows.delete(deck);
+	if (_waveRows.size === 0) _waveWindowStartMs = null;
+	_publishWaveformWindow();
+}
+
+export function waveformStutterSnapshot(): Readonly<typeof _waveSnapshot> {
+	return _waveSnapshot;
+}
+
+export function waveformStutterHover(): string {
+	const metric = _waveSnapshot;
+	return metric.active
+		? `Waveform paint stutters: ${metric.stutters} frame gap(s) over ${metric.threshold_ms}ms in the measured ${metric.elapsed_ms}ms window (${metric.frames} draws, worst gap ${metric.worst_gap_ms}ms). This measures visual canvas cadence, not audio glitches.`
+		: 'Waveform paint stutter KPI is inactive until a visible waveform draws.';
+}
+
 function _ensureSampler(): void {
 	if (_samplerId !== null || typeof window === 'undefined') return;
 	_windowStart = performance.now();

@@ -213,13 +213,13 @@ def _generate_command(
     root = _repo_root()
     if tier.where == "local":
         return [
-            "uv", "run", str(root / "scripts/stem_bundle_worker.py"),
+            "uv", "run", "--no-sync", str(root / "scripts/stem_bundle_worker.py"),
             "--audio", audio_path,
             "--stable-id", stable_id,
             "--out-dir", str(stems_dir / stable_id),
         ]
     return [
-        "uv", "run", "--with", "modal", "python", "-m",
+        "uv", "run", "--no-sync", "--with", "modal", "python", "-m",
         "scripts.modal_vocal_farm",
         "--tier", tier.key,
         "--only-stable-id", stable_id,

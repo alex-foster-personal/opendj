@@ -178,3 +178,5 @@ def test_stem_summary_cache_hands_out_isolated_summaries(tmp_path: Path) -> None
     second = summarize_stem_bundle(sid, stems_dir=tmp_path)
     assert second["status"] == "ready"
     assert second["groups"]["V"]["bytes"] == 1000
+
+pytestmark = pytest.mark.rb_parity

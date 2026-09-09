@@ -35,7 +35,6 @@ from fastapi import FastAPI, Request
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
-from apps.webui.server.analysis_source import AnalysisSourceStore
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis_source import router as analysis_source_router
 from apps.webui.server.routes.rb_assets import router as rb_assets_router
@@ -109,7 +108,6 @@ def create_app() -> FastAPI:
     app = FastAPI()
     rb_config.STATE_DB = _DB_PATH
     app.state.backend = InMemoryBackend()
-    app.state.analysis_source = AnalysisSourceStore()
     app.state.analysis_db_path = _DB_PATH
     app.state.requests = []
     app.state.delay_next_analysis_source_get = False
@@ -127,7 +125,7 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         if (
             request.method == "GET"
-            and request.url.path == "/api/v1/analysis-source"
+            and request.url.path == "/api/v1/analysis/source"
             and app.state.delay_next_analysis_source_get
         ):
             app.state.delay_next_analysis_source_get = False

@@ -62,6 +62,66 @@ def test_write_then_load_roundtrip(tmp_path: Path, audio: Path) -> None:
     assert loaded["regions"][1]["intensity"] == 1  # floor at 1
 
 
+def test_stem_upload_mapping_is_persisted_when_present(
+    tmp_path: Path, audio: Path
+) -> None:
+    # The R2 destination's returned content-addressed keys are the only link
+    # from this stable_id to its opaque objects; they must survive the cache
+    # write or the bundle cannot be rediscovered after the run exits.
+    path = vcache.cache_path(tmp_path, "abc123")
+    upload = {
+        "manifest_key": "assets/ab/" + "ab" * 32,
+        "keys": ["assets/cd/" + "cd" * 32, "assets/ef/" + "ef" * 32],
+        "bytes": 123456,
+    }
+    written = vcache.write_entry(path, _worker_result(stem_upload=upload), audio)
+    assert written["worker"]["stem_upload"] == upload
+
+
+def test_stem_upload_is_absent_for_non_r2_destinations(
+    tmp_path: Path, audio: Path
+) -> None:
+    # local/none runs never produce stem_upload; the entry must not carry an
+    # empty placeholder that a reader could mistake for a published bundle.
+    path = vcache.cache_path(tmp_path, "abc123")
+    written = vcache.write_entry(path, _worker_result(), audio)
+    assert "stem_upload" not in written["worker"]
+
+
+def test_non_r2_refarm_preserves_an_existing_r2_stem_upload_mapping(
+    tmp_path: Path,
+) -> None:
+    """A refarm without an upload must not orphan prior opaque R2 objects."""
+    path = vcache.cache_path(tmp_path, "stable-id")
+    audio = tmp_path / "track.wav"
+    audio.write_bytes(b"audio")
+    upload = {"part_keys": ["assets/sha256/part"], "manifest_key": "assets/sha256/manifest"}
+    vcache.write_entry(path, _worker_result(stem_upload=upload), audio)
+
+    refarmed = vcache.write_entry(path, _worker_result(), audio)
+
+    assert refarmed["worker"]["stem_upload"] == upload
+    persisted = vcache.load_valid_entry(path, audio)
+    assert persisted is not None
+    assert persisted["worker"]["stem_upload"] == upload
+
+
+def test_non_r2_refarm_does_not_preserve_r2_mapping_for_replaced_audio(
+    tmp_path: Path,
+) -> None:
+    """A new audio generation must not inherit an old R2 stem bundle."""
+    path = vcache.cache_path(tmp_path, "stable-id")
+    audio = tmp_path / "track.wav"
+    audio.write_bytes(b"old audio")
+    upload = {"part_keys": ["assets/sha256/part"], "manifest_key": "assets/sha256/manifest"}
+    vcache.write_entry(path, _worker_result(stem_upload=upload), audio)
+    audio.write_bytes(b"replacement audio with a different size")
+
+    refarmed = vcache.write_entry(path, _worker_result(), audio)
+
+    assert "stem_upload" not in refarmed["worker"]
+
+
 def test_audio_mtime_change_invalidates(tmp_path: Path, audio: Path) -> None:
     path = vcache.cache_path(tmp_path, "abc123")
     vcache.write_entry(path, _worker_result(), audio)

@@ -411,26 +411,109 @@ def _frontmost_app_name() -> str | None:  # pragma: no cover - macOS only
         return None
 
 
+def _find_running_app(app_name: str) -> Any | None:  # pragma: no cover - macOS only
+    """Return the running ``NSRunningApplication`` matching ``app_name``
+    exactly (case-insensitive), or ``None``.
+
+    Exact match, not substring: the deliberately-lingering
+    ``rekordboxAgent`` helper (docs/QNA.md) would otherwise satisfy a
+    substring check for "rekordbox" while the main app is closed, letting
+    ``ensure_frontmost`` proceed straight to ``activate`` and cold-launch
+    it. Returns ``None`` (not just a bool) so callers can reuse the exact
+    reference for activation instead of a second, racy lookup-by-name.
+    """
+    try:
+        from AppKit import NSWorkspace  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    needle = app_name.lower()
+    for app in NSWorkspace.sharedWorkspace().runningApplications():
+        name = app.localizedName()
+        if name and str(name).lower() == needle:
+            return app
+    return None
+
+
+def _app_is_running(app_name: str) -> bool:  # pragma: no cover - macOS only
+    """True iff a running application matches ``app_name`` exactly.
+
+    Matches NSWorkspace's running applications on localized name - the same
+    source as ``_frontmost_app_name``, so "rekordbox" means the same thing
+    to both probes. Falls back to ``pgrep -x`` when AppKit is unavailable.
+    """
+    try:
+        import AppKit  # noqa: F401  type: ignore[import-not-found]
+    except ImportError:
+        # No pyobjc (non-macOS, or a bare venv): fall back to the process
+        # table. Only the missing-import case is handled - anything else
+        # is a real fault and must surface, not be masked.
+        return _app_process_running(app_name)
+    return _find_running_app(app_name) is not None
+
+
 def ensure_frontmost(
     app_name: str = "rekordbox",
     *,
     max_attempts: int = 3,
     wait_ms: int = 500,
+    allow_launch: bool = False,
     _frontmost_probe: Any = None,
     _activate: Any = None,
+    _running_probe: Any = None,
 ) -> bool:
     """Ensure ``app_name`` is macOS frontmost. Returns True on success.
 
-    ``_frontmost_probe`` / ``_activate`` are test hooks.
+    AppleScript ``activate`` is launch-OR-focus, not focus: sent to an app
+    that is not running, it LAUNCHES it. A "bring the window forward"
+    helper must therefore refuse to act on a non-running app, or every
+    caller silently becomes an "open Rekordbox" side effect - which is
+    exactly what made Rekordbox cold-start on every test run (root cause
+    in docs/QNA.md, Sun 31 Aug 2026).
+
+    So: not running -> return False without touching osascript, unless the
+    caller passes ``allow_launch=True`` to say it genuinely intends to
+    start the app. Default is OFF, per no-hidden-side-effects.
+
+    The not-running gate and the activation below share ONE
+    ``NSRunningApplication`` reference (``running_app``) instead of a
+    check-by-name followed by a separate activate-by-name: activating a
+    held reference cannot launch a fresh instance even if the app quit in
+    between, whereas AppleScript ``activate`` launches by BUNDLE NAME and
+    would. A second by-name lookup would leave that exact window open
+    again, just narrower.
+
+    ``_frontmost_probe`` / ``_activate`` / ``_running_probe`` are test
+    hooks. ``_running_probe`` (legacy) reports only a bool, so when it is
+    supplied ``_do_activate`` defers to ``_activate``; real callers never
+    supply ``_running_probe`` and go through the reference path below.
     """
     needle = app_name.lower()
     probe = _frontmost_probe or _frontmost_app_name
+
+    running_app: Any = None
+    if not allow_launch:
+        if _running_probe is not None:
+            if not _running_probe():
+                return False
+        else:
+            running_app = _find_running_app(app_name)
+            if running_app is None:
+                return False
 
     def _do_activate() -> None:
         if _activate is not None:
             _activate()
             return
-        # pragma: no cover - live only
+        if running_app is not None:
+            # pragma: no cover - macOS only
+            from AppKit import NSApplicationActivateIgnoringOtherApps
+
+            running_app.activateWithOptions_(
+                NSApplicationActivateIgnoringOtherApps
+            )
+            return
+        # pragma: no cover - live only (allow_launch=True: launching by
+        # name is the explicit intent here, no reference exists yet)
         subprocess.run(
             ["osascript", "-e", f'tell application "{app_name}" to activate'],
             check=False, capture_output=True, text=True,
@@ -438,13 +521,13 @@ def ensure_frontmost(
 
     for _ in range(max_attempts):
         current = probe()
-        if current and needle in current.lower():
+        if current and current.lower() == needle:
             return True
         _do_activate()
         if wait_ms > 0:
             time.sleep(wait_ms / 1000.0)
     final = probe()
-    return bool(final and needle in final.lower())
+    return bool(final and final.lower() == needle)
 
 
 def _app_process_running(app_name: str) -> bool:  # pragma: no cover - live
@@ -679,7 +762,108 @@ class Actuator:
             "base64": base64.standard_b64encode(png).decode("ascii"),
         }
 
+    def _reject_if_focus_lost(
+        self, action: str, payload: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Re-activate ``frontmost_app`` before any input-producing action
+        and reject the action if focus cannot be confirmed (Fix 3).
+
+        Called from every dispatch branch that sends real input - click,
+        ``left_click_drag``, ``type``, ``key``, and ``scroll`` - not only
+        the click branch: Rekordbox may have quit or crashed after the
+        screenshot, and dispatching cliclick/System Events anyway would
+        send input to whatever app now sits at the stale coordinate or
+        holds focus, so a failed check must reject the action rather than
+        proceed. No-op for ``mouse_move`` (no focus needed), when
+        ``simulated`` (unit tests), or when no ``frontmost_app`` is set.
+        Returns an ``{"ok": False, ...}`` result to return early, or
+        ``None`` to proceed.
+        """
+        if (
+            action == "mouse_move"
+            or self.simulated
+            or self.frontmost_app is None
+            or ensure_frontmost(self.frontmost_app, max_attempts=2)
+        ):
+            return None
+        err = (
+            f"could not confirm {self.frontmost_app!r} is frontmost; "
+            "refusing to click at a possibly-stale coordinate"
+        )
+        payload["outcome"] = "rejected: focus enforcement failed"
+        payload["guard_error"] = err
+        self.trace.record("action", payload)
+        return {"ok": False, "error": err, "meta": payload}
+
     # -- core dispatch ------------------------------------------------- #
+    def _execute_pointer_action(
+        self, action_type: str, coordinate: Any, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Dispatch one mouse move or click after its coordinate is validated."""
+        if coordinate is None:
+            err = f"action {action_type!r} requires coordinate"
+            payload["outcome"] = f"error: {err}"
+            self.trace.record("action", payload)
+            return {"ok": False, "error": err, "meta": payload}
+        point = self._to_points(coordinate)
+        payload["point"] = list(point)
+        click_guard = self._reject_outside_window_click(action_type, point, payload)
+        if click_guard is not None:
+            return click_guard
+        focus_guard = self._reject_if_focus_lost(action_type, payload)
+        if focus_guard is not None:
+            return focus_guard
+        if self.simulated and action_type != "mouse_move":
+            payload["outcome"] = "simulated skip"
+            self.trace.record("action", payload)
+            self._last_cursor = point
+            return {"ok": True, "skipped": True, "meta": payload}
+        cli_cmd = {
+            "mouse_move": ["m:"],
+            "left_click": ["c:"],
+            "right_click": ["rc:"],
+            "double_click": ["dc:"],
+        }[action_type]
+        cli_cmd[0] = f"{cli_cmd[0]}{_point_arg(*point)}"
+        cp = _run_cliclick(cli_cmd)
+        self._last_cursor = point
+        payload["cli"] = cli_cmd
+        payload["outcome"] = "ok" if cp.returncode == 0 else f"rc={cp.returncode}"
+        if cp.stderr:
+            payload["stderr"] = cp.stderr.strip()
+        self.trace.record("action", payload)
+        return {"ok": cp.returncode == 0, "meta": payload}
+
+    def _reject_outside_window_click(
+        self,
+        action_type: str,
+        point: tuple[int, int],
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Reject a click outside the most recent isolated window capture."""
+        is_click = action_type in {"left_click", "right_click", "double_click"}
+        if (
+            not self.enforce_click_guard
+            or not is_click
+            or self._last_capture_meta is None
+            or is_point_inside_window(
+                point[0], point[1], self._last_capture_meta
+            )
+        ):
+            return None
+        bounds = self._last_capture_meta.get("window_bounds") or {}
+        err = (
+            f"click at ({point[0]},{point[1]}) falls outside Rekordbox window bounds "
+            f"x={bounds.get('x', 0):.0f},y={bounds.get('y', 0):.0f},"
+            f"w={bounds.get('w', 0):.0f},h={bounds.get('h', 0):.0f}. "
+            "Re-assess from the latest screenshot - the target UI element you "
+            "clicked is NOT inside Rekordbox."
+        )
+        payload["outcome"] = "rejected: click outside window"
+        payload["guard_error"] = err
+        self.trace.record("action", payload)
+        return {"ok": False, "error": err, "meta": payload}
+
     def execute_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Execute one Claude computer-use action.
 
@@ -716,71 +900,8 @@ class Actuator:
             self.trace.record("action", payload)
             return {"ok": True, "x": x, "y": y, "meta": payload}
 
-        # Actions that need a coordinate
         if a in {"mouse_move", "left_click", "right_click", "double_click"}:
-            if coord is None:
-                err = f"action {a!r} requires coordinate"
-                payload["outcome"] = f"error: {err}"
-                self.trace.record("action", payload)
-                return {"ok": False, "error": err, "meta": payload}
-            pt = self._to_points(coord)
-            payload["point"] = list(pt)
-            # --- Click-guard (Fix 6): reject off-window clicks. mouse_move
-            # is harmless so we don't guard it. Display-mode captures
-            # have no isolated window bounds so is_point_inside_window
-            # is a no-op (always True).
-            if (
-                self.enforce_click_guard
-                and a in {"left_click", "right_click", "double_click"}
-                and self._last_capture_meta is not None
-                and not is_point_inside_window(
-                    pt[0], pt[1], self._last_capture_meta
-                )
-            ):
-                bounds = self._last_capture_meta.get("window_bounds") or {}
-                err = (
-                    f"click at ({pt[0]},{pt[1]}) falls outside "
-                    f"Rekordbox window bounds "
-                    f"x={bounds.get('x', 0):.0f},"
-                    f"y={bounds.get('y', 0):.0f},"
-                    f"w={bounds.get('w', 0):.0f},"
-                    f"h={bounds.get('h', 0):.0f}. "
-                    "Re-assess from the latest screenshot — the target "
-                    "UI element you clicked is NOT inside Rekordbox."
-                )
-                payload["outcome"] = "rejected: click outside window"
-                payload["guard_error"] = err
-                self.trace.record("action", payload)
-                return {"ok": False, "error": err, "meta": payload}
-            # --- Frontmost enforcement (Fix 3): re-activate Rekordbox if
-            # another app stole focus. Skip for mouse_move (no focus
-            # needed) and when simulated (unit tests).
-            if (
-                a != "mouse_move"
-                and not self.simulated
-                and self.frontmost_app is not None
-            ):
-                ensure_frontmost(self.frontmost_app, max_attempts=2)
-            if self.simulated and a != "mouse_move":
-                payload["outcome"] = "simulated skip"
-                self.trace.record("action", payload)
-                self._last_cursor = pt
-                return {"ok": True, "skipped": True, "meta": payload}
-            cli_cmd = {
-                "mouse_move": ["m:"],
-                "left_click": ["c:"],
-                "right_click": ["rc:"],
-                "double_click": ["dc:"],
-            }[a]
-            cli_cmd[0] = f"{cli_cmd[0]}{_point_arg(*pt)}"
-            cp = _run_cliclick(cli_cmd)
-            self._last_cursor = pt
-            payload["cli"] = cli_cmd
-            payload["outcome"] = "ok" if cp.returncode == 0 else f"rc={cp.returncode}"
-            if cp.stderr:
-                payload["stderr"] = cp.stderr.strip()
-            self.trace.record("action", payload)
-            return {"ok": cp.returncode == 0, "meta": payload}
+            return self._execute_pointer_action(a, coord, payload)
 
         if a == "left_click_drag":
             start = action.get("start_coordinate") or action.get("start")
@@ -794,6 +915,9 @@ class Actuator:
             e = self._to_points(end)
             payload["from"] = list(s)
             payload["to"] = list(e)
+            guard_result = self._reject_if_focus_lost(a, payload)
+            if guard_result is not None:
+                return guard_result
             if self.simulated:
                 payload["outcome"] = "simulated skip"
                 self.trace.record("action", payload)
@@ -812,6 +936,9 @@ class Actuator:
                 self.trace.record("action", payload)
                 return {"ok": False, "error": err, "meta": payload}
             payload["text"] = text
+            guard_result = self._reject_if_focus_lost(a, payload)
+            if guard_result is not None:
+                return guard_result
             if self.simulated:
                 payload["outcome"] = "simulated skip"
                 self.trace.record("action", payload)
@@ -830,6 +957,9 @@ class Actuator:
             key_cmd = _translate_key_combo(text)
             payload["text"] = text
             payload["cli"] = key_cmd
+            guard_result = self._reject_if_focus_lost(a, payload)
+            if guard_result is not None:
+                return guard_result
             if self.simulated:
                 payload["outcome"] = "simulated skip"
                 self.trace.record("action", payload)
@@ -854,10 +984,13 @@ class Actuator:
             if coord is not None:
                 pt = self._to_points(coord)
                 payload["point"] = list(pt)
-                if not self.simulated:
-                    _run_cliclick([f"m:{_point_arg(*pt)}"])
             payload["direction"] = direction
             payload["amount"] = amount
+            guard_result = self._reject_if_focus_lost(a, payload)
+            if guard_result is not None:
+                return guard_result
+            if coord is not None and not self.simulated:
+                _run_cliclick([f"m:{_point_arg(*pt)}"])
             if self.simulated:
                 payload["outcome"] = "simulated skip"
                 self.trace.record("action", payload)

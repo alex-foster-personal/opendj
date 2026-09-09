@@ -124,6 +124,46 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	assert.match(tree, /title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}/);
 });
 
+test('BrowserPanel keeps the existing mostly-broken threshold and hides zero-track empty playlists', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0\.3;/);
+	assert.match(
+		src,
+		/function playlistMostlyBroken\(p: PlaylistSummaryHydrated\): boolean \{\s*if \(p\.track_count === 0\) return p\.available_count === 0;\s*return p\.available_count \/ p\.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;/,
+		'empty playlists must no longer escape the broken-link filter, while nonempty playlists retain the 30% policy'
+	);
+});
+
+test('BrowserPanel keeps a playlist inside its create grace visible while broken links are hidden', () => {
+	// r3929355475: with Broken unchecked the '+' flow creates a zero-track
+	// playlist that the filter would remove before PlaylistTree can focus its
+	// rename, so creation appeared to do nothing.
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /isWithinCreateGrace,/);
+	assert.match(
+		src,
+		/!uiPrefs\.hide_broken_links \|\|\s*isWithinCreateGrace\(p\.playlist_id\) \|\|\s*!playlistMostlyBroken\(p\)/,
+		'the tree filter must exempt playlists still inside their create grace'
+	);
+});
+
+test('BrowserPanel tooltip states the real playlist threshold', () => {
+	// r3929355481: the tooltip claimed only playlists with no playable tracks
+	// vanish, but the predicate hides anything under 30% playable.
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /hides playlists with fewer than 30% playable tracks, including empty ones/);
+});
+
+test('BrowserPanel presents the persisted hide preference as an affirmative Broken checkbox', () => {
+	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(
+		src,
+		/aria-label="Show broken links"\s*checked=\{!uiPrefs\.hide_broken_links\}\s*onchange=\{\(e\) => setHideBrokenLinks\(!e\.currentTarget\.checked\)\}/,
+		'the checked UI state must keep the persisted hide flag inverted at the component boundary'
+	);
+	assert.match(src, /<span>Broken<\/span>/);
+});
+
 test('the row-select prefetch caches emit sampled timings', () => {
 	assert.match(
 		source('src/lib/components/rb/wave/anlz-cache.svelte.ts'),

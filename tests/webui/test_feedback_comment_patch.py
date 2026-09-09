@@ -8,6 +8,7 @@
 [if] a patch is rejected by CommentOut validation [then] comments.json is untouched and
     GET /comments still lists every pin
 """
+
 from __future__ import annotations
 
 import json
@@ -42,27 +43,86 @@ def http_client(tmp_path: Path) -> TestClient:
 def _create(client: TestClient) -> dict:
     r = client.post(
         "/api/v1/feedback/comments",
-        json={"x_pct": 10, "y_pct": 20, "anchor": ".bank", "page": "/performance", "text": "hot cues ignore BSM"},
+        json={
+            "x_pct": 10,
+            "y_pct": 20,
+            "anchor": ".bank",
+            "page": "/performance",
+            "text": "hot cues ignore BSM",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
+        },
     )
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def test_patch_records_lifecycle_fields_without_touching_the_pin(client: TestClient, tmp_path: Path) -> None:
+def test_patch_records_lifecycle_fields_without_touching_the_pin(
+    client: TestClient, tmp_path: Path
+) -> None:
     pin = _create(client)
     r = client.patch(
         f"/api/v1/feedback/comments/{pin['id']}",
-        json={"status": "issued", "issue_url": "https://github.com/x/y/issues/1", "agent_note": "queued as #1"},
+        json={
+            "status": "issued",
+            "issue_url": "https://github.com/x/y/issues/1",
+            "agent_note": "queued as #1",
+        },
     )
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["text"] == "hot cues ignore BSM" and out["x_pct"] == 10 and out["anchor"] == ".bank"
-    assert out["status"] == "issued" and out["issue_url"].endswith("/issues/1") and out["agent_note"] == "queued as #1"
-    assert out["updated_at"] is not None, "if a patch leaves no updated_at then nobody can tell when the agent acted - broken"
+    assert (
+        out["status"] == "issued"
+        and out["issue_url"].endswith("/issues/1")
+        and out["agent_note"] == "queued as #1"
+    )
+    assert out["updated_at"] is not None, (
+        "if a patch leaves no updated_at then nobody can tell when the agent acted - broken"
+    )
     on_disk = json.loads((tmp_path / "feedback" / "comments.json").read_text())["comments"]
-    assert on_disk[0]["status"] == "issued", "if the patch is not persisted then the pin forgets on reload - broken"
+    assert on_disk[0]["status"] == "issued", (
+        "if the patch is not persisted then the pin forgets on reload - broken"
+    )
     listed = client.get("/api/v1/feedback/comments").json()["comments"]
     assert listed[0]["agent_note"] == "queued as #1"
+
+
+def test_agent_authored_pin_keeps_its_author_and_kind(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/feedback/comments",
+        json={
+            "x_pct": 10,
+            "y_pct": 20,
+            "page": "/performance",
+            "text": "red-team finding",
+            "ui": "chrome-loop",
+            "viewport_width": 1280,
+            "viewport_height": 800,
+            "author": "agent",
+            "agent_kind": "redteam-haiku",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["author"] == "agent"
+    assert r.json()["agent_kind"] == "redteam-haiku"
+
+    operator = _create(client)
+    assert operator["author"] == "operator"
+    assert operator["agent_kind"] is None
+
+    filed = client.patch(
+        f"/api/v1/feedback/comments/{r.json()['id']}",
+        json={
+            "status": "fixed",
+            "issue_url": "https://github.com/maintainer/music-dj-tools/issues/940",
+        },
+    )
+    assert filed.status_code == 200, filed.text
+    assert filed.json()["author"] == "agent"
+    assert filed.json()["agent_kind"] == "redteam-haiku"
+    assert filed.json()["issue_url"].endswith("/issues/940")
 
 
 def test_patch_unknown_id_is_404_and_writes_nothing(client: TestClient, tmp_path: Path) -> None:
@@ -76,7 +136,10 @@ def test_patch_unknown_id_is_404_and_writes_nothing(client: TestClient, tmp_path
 def test_patch_rejects_empty_body_and_unknown_status(client: TestClient) -> None:
     pin = _create(client)
     assert client.patch(f"/api/v1/feedback/comments/{pin['id']}", json={}).status_code == 422
-    assert client.patch(f"/api/v1/feedback/comments/{pin['id']}", json={"status": "done"}).status_code == 422
+    assert (
+        client.patch(f"/api/v1/feedback/comments/{pin['id']}", json={"status": "done"}).status_code
+        == 422
+    )
 
 
 def test_rejected_patch_leaves_the_store_readable(http_client: TestClient, tmp_path: Path) -> None:
@@ -95,9 +158,18 @@ def test_rejected_patch_leaves_the_store_readable(http_client: TestClient, tmp_p
     assert r.status_code != 200, "if a null text is accepted then CommentOut.text is a lie - broken"
 
     after = (tmp_path / "feedback" / "comments.json").read_text()
-    assert after == before, "if a rejected patch still writes then one bad request corrupts the store - broken"
+    assert after == before, (
+        "if a rejected patch still writes then one bad request corrupts the store - broken"
+    )
 
     listed = http_client.get("/api/v1/feedback/comments")
-    assert listed.status_code == 200, "if the list 500s after a rejected patch then the widget is bricked - broken"
+    assert listed.status_code == 200, (
+        "if the list 500s after a rejected patch then the widget is bricked - broken"
+    )
     ids = {c["id"] for c in listed.json()["comments"]}
-    assert bystander["id"] in ids and victim["id"] in ids, "if a pin vanished then the rejected patch ate data - broken"
+    assert bystander["id"] in ids and victim["id"] in ids, (
+        "if a pin vanished then the rejected patch ate data - broken"
+    )
+
+
+pytestmark = pytest.mark.rb_parity

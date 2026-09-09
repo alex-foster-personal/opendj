@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from typing import TYPE_CHECKING
+
+from .base import BackendNonshippable
 
 if TYPE_CHECKING:
     from .base import AnalyzerBackend
@@ -11,6 +14,28 @@ BACKENDS: dict[str, "type[AnalyzerBackend]"] = {}
 # Portable default: librosa + scipy install from PyPI wheels (`analysis`
 # extra), unlike the git-HEAD-only madmom dev backend.
 DEFAULT_BACKEND: str = "librosa"
+
+#: NATIVE-08. Set to "1" to select a backend named in ``NONSHIPPABLE_BACKENDS``.
+#: Never set for a shipped build; a CI bench job that needs one of these
+#: backends sets it for that job only.
+NONSHIPPABLE_ENV: str = "MDT_BENCH_NONSHIPPABLE"
+
+#: Backends the registry refuses to resolve without ``NONSHIPPABLE_ENV=1``,
+#: keyed by name with the licensing reason ``get_backend`` raises verbatim.
+#: madmom's own code is BSD-3-Clause, but the pretrained beat/downbeat
+#: models ``librosa+madmom`` loads are Creative Commons
+#: Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA), which forbids
+#: shipping them in a product that is not itself CC BY-NC-SA.
+NONSHIPPABLE_BACKENDS: dict[str, str] = {
+    "librosa+madmom": (
+        "librosa+madmom loads madmom's pretrained beat/downbeat models, "
+        "licensed CC BY-NC-SA 4.0 (non-commercial, share-alike); madmom's "
+        "own code is BSD-3-Clause but the models are not, so this backend "
+        "can never ship. Set MDT_BENCH_NONSHIPPABLE=1 to select it for "
+        "bench/reference use only (see "
+        "scripts/beatbench/run_madmom_reference_only.py)."
+    ),
+}
 
 #: What ``DEFAULT_BACKEND`` needs importable at runtime. Kept in step with
 #: ``LibrosaBackend._require_deps``, which raises BackendNotAvailable on the
@@ -39,7 +64,15 @@ def register(name: str, cls: "type[AnalyzerBackend]") -> None:
 
 
 def get_backend(name: str) -> "type[AnalyzerBackend]":
-    """Lazy lookup.  Imports the named backend module if not yet loaded."""
+    """Lazy lookup.  Imports the named backend module if not yet loaded.
+
+    NATIVE-08: checked before the import, on the requested name alone, so a
+    prior preload of ``name`` (e.g. via the "load everything" branch below)
+    can never leave the gate bypassed on a later call.
+    """
+    reason = NONSHIPPABLE_BACKENDS.get(name)
+    if reason is not None and os.environ.get(NONSHIPPABLE_ENV) != "1":
+        raise BackendNonshippable(reason)
     if name not in BACKENDS:
         # Lazy-import each independently so a preload of one backend does
         # not block the other.
@@ -68,6 +101,8 @@ __all__ = [
     "BACKENDS",
     "DEFAULT_BACKEND",
     "DEFAULT_BACKEND_MODULES",
+    "NONSHIPPABLE_BACKENDS",
+    "NONSHIPPABLE_ENV",
     "default_backend_installed",
     "get_backend",
     "register",

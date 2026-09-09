@@ -473,6 +473,100 @@ test('resolveDisplayedAnlz: a still-retryable deck.anlz defers to a fresher cach
 	assert.equal(resolved.local_waveform.status, 'decoded');
 });
 
+test('resolveDisplayedAnlz: a still-retryable deck.anlz that already carries an engine-merged beatgrid keeps that grid when a fresher cache entry lands', async () => {
+	// PARITY-09's deferred upgrade (audio-engine.svelte.ts) merges the
+	// analysis-derived grid into deck.anlz without touching local_waveform,
+	// so a track whose waveform decode is still saturated/retryable stays
+	// the retryable CLASS even after its grid has landed. The cache's own
+	// /anlz refetch never carries that client-side merge - only deck.anlz
+	// does - so preferring the cache entry wholesale here would silently
+	// drop the already-merged grid the moment the waveform decode refreshes.
+	const realBeats = [
+		{ bpm: 120, n: 1, t: 0 },
+		{ bpm: 120, n: 2, t: 0.5 },
+		{ bpm: 120, n: 3, t: 1.0 },
+		{ bpm: 120, n: 4, t: 1.5 }
+	];
+	const mergedButRetryable = {
+		...anlzPayload({
+			status: 'not_decoded',
+			reason: 'decoder saturated',
+			preview_b64: null,
+			preview_max: null,
+			retryable: true
+		}),
+		beatgrid: { beat_count: realBeats.length, beats: realBeats }
+	};
+
+	globalThis.fetch = async () =>
+		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'CCCC', preview_max: 200 }));
+	try {
+		cache.ensureAnlz('merged-grid-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+
+	const resolved = cache.resolveDisplayedAnlz(mergedButRetryable, 'merged-grid-track');
+	assert.equal(resolved.local_waveform.status, 'decoded', "the cache's refreshed waveform must still be adopted");
+	assert.deepEqual(
+		resolved.beatgrid,
+		mergedButRetryable.beatgrid,
+		'the engine-merged beatgrid must survive - the cache entry never has it, since only the engine merges the fallback grid'
+	);
+});
+
+test('resolveDisplayedAnlz: a fresher cache entry that already carries a real beatgrid wins over a stale fallback grid on the deck', async () => {
+	// discussion_r3916394792 (P2 BLOCKING): a local deck can be showing a
+	// fallback (analysis-derived) beatgrid on deck.anlz while its waveform is
+	// still retryable. If a rekordbox mapping lands and the cache's own
+	// ambient /anlz retry races ahead of the engine's separate PARITY-09
+	// upgrade fetch, the cache entry can carry the newly authoritative real
+	// grid before deck.anlz does. That must not be discarded in favor of the
+	// deck's older fallback grid just because the deck's grid is also "real".
+	const fallbackBeats = [
+		{ bpm: 128, n: 1, t: 0 },
+		{ bpm: 128, n: 2, t: 0.46875 },
+		{ bpm: 128, n: 3, t: 0.9375 },
+		{ bpm: 128, n: 4, t: 1.40625 }
+	];
+	const authoritativeBeats = [
+		{ bpm: 174, n: 1, t: 0 },
+		{ bpm: 174, n: 2, t: 0.3448 },
+		{ bpm: 174, n: 3, t: 0.6897 },
+		{ bpm: 174, n: 4, t: 1.0345 }
+	];
+	const staleDeckAnlz = {
+		...anlzPayload({
+			status: 'not_decoded',
+			reason: 'decoder saturated',
+			preview_b64: null,
+			preview_max: null,
+			retryable: true
+		}),
+		beatgrid: { beat_count: fallbackBeats.length, beats: fallbackBeats }
+	};
+
+	globalThis.fetch = async () =>
+		jsonResponse({
+			...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'DDDD', preview_max: 200 }),
+			beatgrid: { beat_count: authoritativeBeats.length, beats: authoritativeBeats }
+		});
+	try {
+		cache.ensureAnlz('mapping-landed-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+
+	const resolved = cache.resolveDisplayedAnlz(staleDeckAnlz, 'mapping-landed-track');
+	assert.deepEqual(
+		resolved.beatgrid,
+		{ beat_count: authoritativeBeats.length, beats: authoritativeBeats },
+		'the fresher cache-entry beatgrid must win once it is itself real, not the older fallback grid the deck still holds'
+	);
+});
+
 test('refreshAnlzCacheEntry overwrites a stale published entry without fetching', async () => {
 	globalThis.fetch = async () => jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
 	try {

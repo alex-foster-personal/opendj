@@ -1,14 +1,22 @@
 /**
  * PARITY-02: rbx-vs-own analysis source toggle -- reactive client for
- * GET/PUT /api/v1/analysis-source.
+ * GET/PUT /api/v1/analysis/source.
  *
- * Deliberately NOT localStorage-backed, unlike prefs.svelte.ts: this is a
- * TESTING/DEV affordance whose default is always 'rekordbox' and which must
- * NOT survive a relaunch. The daemon (apps.webui.server.analysis_source) is
- * the single source of truth; this module just mirrors it into a $state rune
- * so the TopBar dropdown and any other reader stay in sync with what the
- * server actually has selected, including a change an agent made directly
- * over the endpoint.
+ * The backend (apps.analysis.selection) models this as a per-lane PERSISTED
+ * default plus a per-lane IN-MEMORY dev toggle, with `effective = toggle
+ * unless toggle is unset, else default`. This UI is a binary rbx/own
+ * switch and is documented (spec section 3, PARITY-02) as a TESTING/DEV
+ * affordance that never survives a relaunch -- so it writes ONLY the
+ * toggle half, never the persisted default, and reads the resolved
+ * `effective` value. That also means this UI cannot return a lane to
+ * `unset`: the daemon does that itself on every launch (reset_toggles()),
+ * and there is no third button here to ask for it early.
+ *
+ * Deliberately NOT localStorage-backed, unlike prefs.svelte.ts: the daemon
+ * is the single source of truth; this module just mirrors it into a $state
+ * rune so the TopBar dropdown and any other reader stay in sync with what
+ * the server actually has selected, including a change an agent made
+ * directly over the endpoint.
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
@@ -18,10 +26,18 @@ import { engine } from './audio-engine.svelte';
 export type AnalysisSource = 'rekordbox' | 'own';
 
 /** Features with a genuine own-rolled counterpart to A/B against rekordbox.
- * Mirrors apps.webui.server.analysis_source.FEATURES -- widen only once the
- * backend actually grows another same-shape own-rolled lane. */
+ * Mirrors the one lane apps.analysis.lanes' 5 lanes that this UI exposes --
+ * widen only once another lane grows a real own-rolled counterpart. */
 export const ANALYSIS_SOURCE_FEATURES = ['beatgrid'] as const;
 export type AnalysisSourceFeature = (typeof ANALYSIS_SOURCE_FEATURES)[number];
+
+// This UI's feature id doubles as the backend's lane name (both "beatgrid"),
+// but the two vocabularies are declared independently on purpose: the wire
+// vocabulary here is UI-facing and predates apps.analysis.lanes.
+const _LANE_OF_FEATURE: Record<AnalysisSourceFeature, string> = { beatgrid: 'beatgrid' };
+
+const _UI_SOURCE_OF_EFFECTIVE: Record<string, AnalysisSource> = { rbx: 'rekordbox', own: 'own' };
+const _TOGGLE_OF_UI_SOURCE: Record<AnalysisSource, 'rbx' | 'own'> = { rekordbox: 'rbx', own: 'own' };
 
 interface AnalysisSourceState {
 	features: Record<string, AnalysisSource>;
@@ -84,19 +100,38 @@ async function _adopt(features: Record<string, AnalysisSource>, mutation: number
  * (AnalysisSourceToggle.svelte's poll is what makes the latter visible). */
 export async function loadAnalysisSource(): Promise<void> {
 	const mutation = _latestMutation;
-	const body = await unwrap(api.GET('/api/v1/analysis-source'));
+	const body = await unwrap(api.GET('/api/v1/analysis/source'));
 	if (mutation !== _latestMutation) return;
-	await _adopt(body.features, mutation);
+	const features: Record<string, AnalysisSource> = {};
+	for (const feature of ANALYSIS_SOURCE_FEATURES) {
+		const lane = body.lanes[_LANE_OF_FEATURE[feature]];
+		if (lane === undefined) continue;
+		features[feature] = _UI_SOURCE_OF_EFFECTIVE[lane.effective];
+	}
+	await _adopt(features, mutation);
 }
 
-/** Sets one feature's source. Fails loudly (throws) on a rejected feature
- * name or a daemon error -- no optimistic local write, since a silently
- * unapplied switch is exactly the defect PARITY-02 exists to prevent. */
+/** Sets one feature's source. Writes the in-memory dev TOGGLE, never the
+ * persisted default -- this control is documented to reset on relaunch, and
+ * the persisted half is a separate, promotion-only concept the UI here does
+ * not expose. Fails loudly (throws) on a rejected feature name or a daemon
+ * error -- no optimistic local write, since a silently unapplied switch is
+ * exactly the defect PARITY-02 exists to prevent. */
 export async function setAnalysisSource(
 	feature: AnalysisSourceFeature,
 	source: AnalysisSource
 ): Promise<void> {
 	const mutation = ++_latestMutation;
-	const body = await unwrap(api.PUT('/api/v1/analysis-source', { body: { feature, source } }));
-	await _adopt(body.features, mutation);
+	const body = await unwrap(
+		api.PUT('/api/v1/analysis/source', {
+			body: { lane: _LANE_OF_FEATURE[feature], toggle: _TOGGLE_OF_UI_SOURCE[source] }
+		})
+	);
+	const features: Record<string, AnalysisSource> = {};
+	for (const featureName of ANALYSIS_SOURCE_FEATURES) {
+		const lane = body.lanes[_LANE_OF_FEATURE[featureName]];
+		if (lane === undefined) continue;
+		features[featureName] = _UI_SOURCE_OF_EFFECTIVE[lane.effective];
+	}
+	await _adopt(features, mutation);
 }

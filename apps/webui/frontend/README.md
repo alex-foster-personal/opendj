@@ -101,8 +101,9 @@ fast. The stories are written so that adopting it later needs no rewrite.
 pnpm test:e2e
 ```
 
-Run against a running dev daemon + SvelteKit dev server. CI skips if no
-headless Chromium is available.
+Installs the `tags` and `analysis` extras, builds a generated-audio fixture,
+starts a real local engine and Vite, then runs the root Playwright suite in
+Chromium. It never reads a personal library.
 
 ## Bundle budgets
 
@@ -133,6 +134,13 @@ Two properties matter more than the numbers:
   constructs a build state that trips each budget in turn, plus the
   unattributed-chunk case, against a synthetic build tree in a temp dir. No
   `pnpm build` needed; it runs in `pnpm test:unit`.
+
+The `measured` column is the esbuild-minified baseline the ceilings were derived
+from. Since then `vite.config.ts` switched the production minifier to terser,
+which takes about 6% off every surface (`performance` 205,141 -> 193,290 on
+`main`), so today's readings sit well under the recorded figures. **The ceilings
+themselves are unchanged** - the extra room is a real reduction in shipped bytes,
+not a widened budget, and the ratchet still bites at the same numbers.
 
 The `library` figure of 256,000 is unchanged from the gate's introduction. The
 other two are ratchets at their measured value plus 5%, rounded up to the next

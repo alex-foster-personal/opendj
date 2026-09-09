@@ -11,6 +11,16 @@
  * FAILS the test if it is ever reached, rather than to a canned 403 -- a 403
  * would still mean the request was fired.
  *
+ * That "no daemon" fixture has to answer PREFLIGHT-01's boot gate (#771) too:
+ * the root layout renders NOTHING but the gate until `GET /api/v1/preflight`
+ * returns a real `status: "pass"`, so without a preflight fixture /reconcile
+ * never paints and the relocate control is unreachable. The stub below is the
+ * genuine all-pass payload the daemon emits when a healthy library is
+ * attached -- the same condition every other route stubbed here already
+ * describes -- NOT a gate bypass. There is deliberately no skip control to
+ * reach for, and inventing one in a test would be inventing the exact hole
+ * the gate exists to close.
+ *
  * Acceptance:
  *   - [if] the "Use this file" button renders enabled [then ⛔️]
  *   - [if] it lacks the one-way-import tooltip [then ⛔️]
@@ -38,6 +48,31 @@ const BROKEN_TRACK = {
 	is_streaming: false
 };
 
+/** The daemon's own all-pass shape (apps/webui/server/preflight_checks.py):
+ * four rows, every one `pass`, so `PreflightOut.status` is `pass` and the
+ * boot gate clears the way it does against a healthy install. */
+const PREFLIGHT_PASS = {
+	status: 'pass',
+	checks: [
+		{ id: 'engine-alive', label: 'Engine alive', status: 'pass', detail: 'the endpoint answered', remediation: null },
+		{
+			id: 'state-db',
+			label: 'State database',
+			status: 'pass',
+			detail: 'schema_meta version current (expected current)',
+			remediation: null
+		},
+		{
+			id: 'audio-access',
+			label: 'Audio access',
+			status: 'pass',
+			detail: 'read 1 byte from a sampled track in 2ms',
+			remediation: null
+		},
+		{ id: 'library-attached', label: 'Library attached', status: 'pass', detail: '1 tracks', remediation: null }
+	]
+};
+
 const CANDIDATE = {
 	path: '/Users/dj/Music/Midnight Drive.mp3',
 	identity_token: 'identity-1',
@@ -58,6 +93,8 @@ test('the relocate control is inert and fires nothing while sync is disabled', a
 		applyAttempts.push(route.request().url());
 		await route.abort();
 	});
+
+	await page.route('**/api/v1/preflight', (route) => route.fulfill({ json: PREFLIGHT_PASS }));
 
 	await page.route('**/api/v1/rekordbox/writeback-gate', (route) =>
 		route.fulfill({

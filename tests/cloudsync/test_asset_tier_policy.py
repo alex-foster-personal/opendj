@@ -122,6 +122,25 @@ def test_excluded_short_circuits_even_with_a_local_file(
     assert source.origin == "unavailable"
 
 
+@pytest.mark.parametrize("mode", ["cached", "excluded"])
+def test_malformed_content_hash_does_not_block_local_or_excluded_resolution(
+    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path, mode: str
+):
+    """Only a remote read needs a valid digest-derived object key."""
+    audio = _write(tmp_path / "music" / "song.flac", b"local body")
+    _seed_track(conn, "t1", content_hash="not-a-sha256")
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", mode)
+    _seed_local_location(conn, "t1", audio)
+
+    source = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "cache", cfg=cfg
+    )
+
+    assert source.origin == ("unavailable" if mode == "excluded" else "local")
+    assert source.content_hash == "not-a-sha256"
+
+
 def test_a_stale_available_flag_does_not_hand_back_a_dead_path(
     conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
 ):
@@ -278,6 +297,27 @@ def test_a_presign_without_a_config_raises_instead_of_returning_nothing(
     assert "R2_ACCESS_KEY_ID" in str(excinfo.value)
 
 
+def test_a_prefixed_stored_hash_still_resolves_to_a_content_addressed_key(
+    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
+):
+    """``tracks.content_hash`` is stored ``sha256:<hex>`` by the state layer;
+    the read path must normalize it before it can name a cache entry or mint
+    a presigned URL, or the backfilled hashes never address an object."""
+    body = b"audio that ingest hashed with apps.shared.hashing"
+    digest = _sha(body)
+    _seed_track(conn, "t1", content_hash=f"sha256:{digest}")
+    _seed_machine(conn, "m1")
+    _seed_policy(conn, "m1", "stream")
+
+    source = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "c", cfg=cfg
+    )
+
+    assert source.origin == "presigned"
+    assert source.content_hash == digest  # bare hex, not sha256:<hex>
+    assert digest in (source.url or "")
+
+
 def test_remote_content_hash_wins_over_the_ingest_copy(
     conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
 ):
@@ -364,5 +404,4 @@ def test_evict_cache_treats_a_missing_dir_as_empty(tmp_path: Path):
 def test_evict_cache_rejects_a_negative_budget(tmp_path: Path):
     with pytest.raises(hydration.HydrationError):
         hydration.evict_cache(tmp_path, budget_mb=-1)
-
 

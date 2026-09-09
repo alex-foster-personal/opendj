@@ -24,7 +24,15 @@ import soundfile as sf
 import tensorflow as tf
 from scipy.signal import resample_poly
 
-MODEL = "/Users/dev/Library/Application Support/Pioneer/rekordbox6/models/spleeter_model"
+MODEL = str(
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "Pioneer"
+    / "rekordbox6"
+    / "models"
+    / "spleeter_model"
+)
 FRAME_LENGTH, FRAME_STEP, T, F = 4096, 1024, 512, 1024
 STEMS = ("vocals", "drums", "bass", "other")
 

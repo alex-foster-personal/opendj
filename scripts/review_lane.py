@@ -1,0 +1,414 @@
+"""Mechanics every CLI review lane shares: pin the head, fetch the diff,
+anchor findings to it, and post them as one review.
+
+WHY THIS IS A SEPARATE MODULE. There are now two lanes that drive a model
+over a PR diff and post the result as review threads -- `sol_review.py`
+(GPT-5.6 through the Codex CLI) and `claude_review.py` (Claude through the
+`claude` CLI) -- and everything between "which PR" and "which model" is
+identical between them. Every rule below was learned the hard way on the Sol
+lane and is written down in the function that enforces it; a second copy of
+any of them is a second place to forget one. `review_gh.py` was split out of
+`review_coverage.py` for the same reason and is the layer below this one.
+
+WHAT IS DELIBERATELY NOT HERE: the marker a lane writes (each lane owns its
+own, in `review_sol.py` / `review_claude.py`, so coverage's reader and the
+lane's writer cannot drift), the summary wording, and everything about
+reaching a model. Those are the parts that genuinely differ.
+
+Requirements (mini-PRD):
+  / Refuse to act on a head the ref and the PR object disagree about.
+    [if a review posts while the branch is mid-push then broken]
+  / Never let a finding with an unpostable anchor vanish.
+    [if a finding with a bad line number is dropped silently then broken]
+  / Derive the verdict from the severity, never from the model's own wording.
+    [if a P1 can post as NON-BLOCKING then broken]
+  / Refuse to post if the head moved while the model was running.
+    [if a review of the pre-push tree is marked as covering the push then broken]
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import time
+from dataclasses import dataclass
+
+from scripts.review_gh import TriageError, _gh
+from scripts.review_prompt import RUN_ID_PLACEHOLDER, Fence
+
+REPO = "maintainer/music-dj-tools"
+
+#: Seconds to wait for the PR object to catch up with the branch ref.
+HEAD_AGREE_TIMEOUT_S: int = 90
+
+#: Severity to verdict. AGENTS.md defines the tiering; this is the only place
+#: it is applied, so the two halves of a finding's marker cannot disagree.
+BLOCKING_SEVERITIES: frozenset[str] = frozenset({"P0", "P1"})
+
+#: Shields colors matching the Codex bot's own badges, so every reviewer
+#: renders identically in a thread list. `review_thread_parse._SEVERITY_BADGE`
+#: reads the P-level straight out of this URL.
+BADGE_COLORS: dict[str, str] = {"P0": "red", "P1": "orange", "P2": "yellow", "P3": "blue"}
+
+#: Phrases `review_coverage.NOT_REVIEWED_MARKERS` reads as "this reviewer did
+#: not really look". They are legitimate English, so model prose may contain
+#: one; in a SUMMARY body that would make a real review self-report as a
+#: non-review and fail its own coverage check. Withheld there by `withheld`,
+#: kept verbatim in the inline thread where nothing parses them.
+COVERAGE_POISON: tuple[str, ...] = (
+    "rate limited",
+    "review skipped",
+    "trial expired",
+    "no credits",
+    "skipped:",
+)
+
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+_DEBT_HEADING = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+
+#: Characters `normalized_finding_title` keeps, because they carry a title's
+#: MEANING rather than its rendering. Markdown decoration (`*`, `_`, backtick,
+#: `#`) is deliberately absent: a debt heading and a model's own title differ
+#: in exactly that way all the time, which is what the normalization is for.
+_SEMANTIC_OPERATORS: frozenset[str] = frozenset("<>=+")
+
+#: A `-` that is a sign rather than a dash: it precedes a digit and follows
+#: something that is not a word character.
+_SIGN = re.compile(r"(?<!\w)-(?=\d)")
+
+
+def first_group(pattern: re.Pattern[str], text: str) -> str:
+    """The pattern's first capture, or "unknown". Reporting-only: a missing
+    model or token line must never fail a review that already happened."""
+    match = pattern.search(text)
+    return match.group(1) if match else "unknown"
+
+
+def withheld(text: str) -> str:
+    """Blank a title that would make a summary self-report as a non-review.
+
+    See `COVERAGE_POISON`. The finding itself is untouched in its own thread;
+    only its appearance in the coverage-scanned summary is replaced.
+    """
+    lowered = text.lower()
+    if any(p in lowered for p in COVERAGE_POISON):
+        return "(title withheld here; it contains a coverage-marker phrase. See the thread.)"
+    return text
+
+
+@dataclass(frozen=True)
+class Finding:
+    path: str
+    line: int | None
+    severity: str
+    title: str
+    detail: str
+
+    @property
+    def verdict(self) -> str:
+        return "BLOCKING" if self.severity in BLOCKING_SEVERITIES else "NON-BLOCKING"
+
+    def body(self, marker: str) -> str:
+        """The thread body, shaped so `review_thread_parse` reads both halves.
+
+        The badge gives `_severity` the P-level. The NEXT line must OPEN with
+        the verdict, because `_blocking` anchors its match to the start of the
+        headline and markdown images are stripped before that test -- a line
+        reading "P1 BLOCKING: ..." parses as `unmarked` and tiers a blocker as
+        an ordinary finding. The lane's own marker is passed in rather than
+        built here: each lane owns its marker, and this module must not be
+        able to write one lane's marker into another lane's thread.
+        """
+        color = BADGE_COLORS.get(self.severity, "lightgrey")
+        badge = (
+            f"![{self.severity} Badge]"
+            f"(https://img.shields.io/badge/{self.severity}-{color}?style=flat)"
+        )
+        return (
+            f"{badge}\n"
+            f"{self.verdict} {self.severity}: {self.title}\n\n"
+            f"{self.detail}\n\n"
+            f"{marker}\n"
+        )
+
+
+def normalized_finding_title(text: str) -> str:
+    """Narrow title equivalence for independently rendered debt headings.
+
+    Case, whitespace and DECORATIVE punctuation are presentation and collapse
+    away. `_SEMANTIC_OPERATORS` do not: `Reject values > 5` and
+    `Reject values < 5` are opposite findings, and folding them to one key
+    lets a debt heading suppress the finding that contradicts it -- the worst
+    outcome this module has, because the suppressed thread never appears
+    anywhere for a human to notice.
+
+    `-` is decorative rather than semantic, because this repo writes `--`
+    where other prose writes an U+2014 character, so a bare hyphen is far more often a
+    dash than a minus. It survives only in SIGN position (before a digit,
+    after a non-word character), which is where it is the negation half of
+    `+` and where no dash ever appears.
+    """
+    signs = {match.start() for match in _SIGN.finditer(text)}
+    return " ".join(
+        "".join(_normalized_char(char, index in signs) for index, char in enumerate(text)).split()
+    )
+
+
+def _normalized_char(char: str, is_sign: bool) -> str:
+    """One title character, padded so a kept operator is its own token."""
+    if is_sign or char in _SEMANTIC_OPERATORS:
+        return f" {char} "
+    return char.casefold() if char.isalnum() else " "
+
+
+def debt_logged_findings(
+    findings: list[Finding], debt_text: str
+) -> tuple[list[Finding], list[Finding]]:
+    """Return (post, suppressed), preserving blockers and uncertain matches.
+
+    Title equality after only presentation normalization is intentionally
+    stricter than semantic similarity. A finding with new meaning must post.
+    """
+    headings = {normalized_finding_title(heading) for heading in _DEBT_HEADING.findall(debt_text)}
+    post: list[Finding] = []
+    suppressed: list[Finding] = []
+    for finding in findings:
+        matched = normalized_finding_title(finding.title) in headings
+        if finding.severity not in BLOCKING_SEVERITIES and matched:
+            suppressed.append(finding)
+        else:
+            post.append(finding)
+    return post, suppressed
+
+
+# ----- head pinning -------------------------------------------------------
+
+
+def _branch(pr: str) -> str:
+    """The PR's head branch, refusing a PR that is not open.
+
+    A merged or closed PR usually has no branch left, and `git ls-remote`
+    answers a deleted ref with exit 0 and empty output -- indistinguishable
+    from a network problem if the state is not checked first. Observed on
+    #1224 (Fri 5 Sep 2026), which merged between being picked as a review
+    target and the lane running.
+    """
+    query = '.state + " " + .headRefName'
+    args = ["pr", "view", pr, "--repo", REPO, "--json", "state,headRefName", "-q", query]
+    state, branch = _gh(args).split()
+    if state != "OPEN":
+        raise TriageError(f"PR #{pr} is {state}, not OPEN; there is nothing left to review")
+    return branch
+
+
+def _ref_sha(branch: str) -> str:
+    """The branch tip straight from the remote ref, via `git ls-remote`.
+
+    Deliberately not `gh pr view --json headRefOid`: the PR object lags the
+    ref, and this repo has already shipped one bug from gating on the lagging
+    copy. The remote URL is spelled out rather than using `origin`, so the
+    answer does not depend on which checkout the lane happens to run from.
+    """
+    proc = subprocess.run(
+        ["git", "ls-remote", f"https://github.com/{REPO}.git", f"refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise TriageError(
+            f"git ls-remote found no refs/heads/{branch}: {proc.stderr.strip() or '<empty>'}"
+        )
+    return proc.stdout.split()[0]
+
+
+def _pr_head(pr: str) -> str:
+    args = ["pr", "view", pr, "--repo", REPO, "--json", "headRefOid", "-q", ".headRefOid"]
+    return _gh(args).strip()
+
+
+def pinned_head(pr: str) -> str:
+    """The head SHA, taken from the REF and confirmed against the PR object.
+
+    Two readings of the same fact, and they disagree for a real reason: the
+    PR object's `headRefOid` lags the branch ref for seconds to minutes after
+    a push. Reviewing the ref's SHA while coverage measures the PR object's
+    would post evidence at a SHA the gate is not asking about, so the review
+    would be invisible to the very gate it exists to satisfy. Wait for them to
+    agree, then pin; never average them, never pick one.
+    """
+    branch = _branch(pr)
+    deadline = time.monotonic() + HEAD_AGREE_TIMEOUT_S
+    while True:
+        ref, obj = _ref_sha(branch), _pr_head(pr)
+        if ref == obj:
+            return ref
+        if time.monotonic() >= deadline:
+            raise TriageError(
+                f"branch {branch} is at {ref} but PR #{pr} still reports {obj} after "
+                f"{HEAD_AGREE_TIMEOUT_S}s. The PR is mid-push; re-run once it settles."
+            )
+        time.sleep(5)
+
+
+# ----- the diff -----------------------------------------------------------
+
+
+def diff_of(pr: str) -> str:
+    return _gh(["api", f"repos/{REPO}/pulls/{pr}", "-H", "Accept: application/vnd.github.v3.diff"])
+
+
+def anchorable_lines(diff: str) -> dict[str, set[int]]:
+    """RIGHT-side line numbers a review comment may be attached to.
+
+    GitHub rejects the whole review with a 422 if ANY comment names a line
+    outside the diff, so one bad anchor loses every finding in the batch. This
+    is the pure half of that defense; `split_by_anchor` is what acts on it.
+    Added and context lines both count; removed lines have no right-side
+    number and are deliberately absent.
+    """
+    lines: dict[str, set[int]] = {}
+    path, cursor = "", 0
+    for raw in diff.splitlines():
+        if raw.startswith("+++ b/"):
+            path, cursor = raw[6:], 0
+            lines.setdefault(path, set())
+        elif (hunk := _HUNK.match(raw)) and path:
+            cursor = int(hunk.group(1))
+        elif path and cursor:
+            if raw.startswith(("+", " ")):
+                lines[path].add(cursor)
+                cursor += 1
+            elif raw.startswith("-"):
+                continue
+            else:
+                cursor = 0
+    return lines
+
+
+def split_by_anchor(
+    findings: list[Finding], anchors: dict[str, set[int]]
+) -> tuple[list[Finding], list[Finding]]:
+    """(postable inline, carried in the summary instead)."""
+    inline: list[Finding] = []
+    carried: list[Finding] = []
+    for finding in findings:
+        ok = finding.line is not None and finding.line in anchors.get(finding.path, set())
+        (inline if ok else carried).append(finding)
+    return inline, carried
+
+
+# ----- the model's reply --------------------------------------------------
+
+
+def parse_findings(output: str, run_id: str, fence: Fence, max_findings: int) -> list[Finding]:
+    """Pull THIS RUN's fenced JSON out of a model transcript.
+
+    Every block is considered and the last one CARRYING THIS RUN'S ID wins.
+    Both halves matter. Last, because a model may restate the shape while
+    reasoning. This run's id, because the transcript may also contain blocks
+    the model never wrote: `codex exec` echoes the prompt, so the example
+    block is always in there, and a diff that touches these files carries
+    more. Accepting the last block unconditionally means a reply with no block
+    at all silently degrades into posting the EXAMPLE as findings -- a
+    fabricated review, which is strictly worse than no review.
+
+    EVERY contract violation below used to read as "clean" on the Sol lane. A
+    missing `findings` key defaulted to an empty list, and a list longer than
+    the cap was silently sliced. Both discard real findings while still
+    posting a current-head marker that satisfies coverage, which is the exact
+    shape of a check that cannot fail.
+    """
+    block = re.compile(re.escape(fence.open) + r"(.*?)" + re.escape(fence.close), re.DOTALL)
+    blocks = [b for b in block.findall(output) if RUN_ID_PLACEHOLDER not in b]
+    mine = [b for b in blocks if run_id in b]
+    if not mine:
+        raise TriageError(
+            f"no {fence.open} block carrying run id {run_id} in the model output; the "
+            f"model did not follow the reply contract. Tail:\n{output[-800:]}"
+        )
+    try:
+        payload = json.loads(mine[-1].strip())
+    except json.JSONDecodeError as exc:
+        # Without this the lane dies with a traceback and exit 1, which reads
+        # as an ordinary failure rather than "could not review". Every other
+        # contract violation here is a TriageError for that reason, and a
+        # truncated or malformed block is the likeliest of them.
+        raise TriageError(
+            f"the {fence.open} block for run {run_id} is not valid JSON ({exc}); "
+            f"the model did not follow the reply contract. Block:\n{mine[-1][-800:]}"
+        ) from exc
+    if payload.get("run") != run_id:
+        raise TriageError(f"reply block names run {payload.get('run')!r}, not {run_id!r}")
+    raw_findings = payload.get("findings")
+    if not isinstance(raw_findings, list):
+        raise TriageError(f"reply carries no findings list (got {type(raw_findings).__name__})")
+    if len(raw_findings) > max_findings:
+        raise TriageError(
+            f"reply carries {len(raw_findings)} findings, over the {max_findings} cap; "
+            "truncating here would drop findings the model actually made"
+        )
+    findings = []
+    for raw in raw_findings:
+        severity = str(raw.get("severity", "")).upper()
+        if severity not in BADGE_COLORS:
+            raise TriageError(f"finding carries an unknown severity {severity!r}: {raw}")
+        for field in ("path", "title"):
+            if not str(raw.get(field, "")).strip():
+                raise TriageError(f"finding is missing a {field}: {raw}")
+        line = raw.get("line")
+        findings.append(
+            Finding(
+                path=str(raw["path"]),
+                line=int(line) if isinstance(line, int) else None,
+                severity=severity,
+                title=str(raw["title"]).strip(),
+                detail=str(raw.get("detail", "")).strip(),
+            )
+        )
+    return findings
+
+
+# ----- posting ------------------------------------------------------------
+
+
+def post_review(
+    pr: str,
+    sha: str,
+    summary: str,
+    inline: list[Finding],
+    marker: str,
+    tag: str,
+) -> str:
+    """Post one review: a summary plus an inline thread per anchored finding.
+
+    `inline` is what `split_by_anchor` said can carry a line anchor; GitHub
+    rejects the WHOLE review with a 422 if any one comment names a line
+    outside the diff, so the split happens before this call and the findings
+    that failed it travel in the summary the caller built.
+
+    The head is re-read here. It was pinned before a model run that can last
+    twenty minutes, and a branch that advanced in that window would otherwise
+    get a review of the tree BEFORE the push, marked as covering the tree
+    after it -- the stale-round failure issue #1016 already fixed on the
+    reading side.
+    """
+    if (now := pinned_head(pr)) != sha:
+        raise TriageError(
+            f"PR #{pr} moved from {sha} to {now} while the review ran; nothing posted. "
+            "Re-run against the new head."
+        )
+    payload = {
+        "commit_id": sha,
+        "event": "COMMENT",
+        "body": summary,
+        "comments": [
+            {"path": f.path, "line": f.line, "side": "RIGHT", "body": f.body(marker)}
+            for f in inline
+        ],
+    }
+    endpoint = f"repos/{REPO}/pulls/{pr}/reviews"
+    out = _gh(["api", endpoint, "--input", "-", "-q", ".html_url"], payload)
+    print(f"{tag} posted {len(inline)} inline thread(s)")
+    return out.strip()

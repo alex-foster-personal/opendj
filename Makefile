@@ -6,13 +6,6 @@ PYTEST := $(VENV)/bin/pytest
 WAVEFORM_CONSUMER_VENV := dist/waveform-consumer
 WAVEFORM_CONSUMER_PY := $(WAVEFORM_CONSUMER_VENV)/bin/python
 FRONTEND_NODE ?= node
-RB_PARITY_PYTEST_PATHS := \
-	tests/reconcile/test_prefix_dead_playlists.py \
-	tests/shared/test_rekordbox_db.py \
-	tests/test_codex_followups_c.py \
-	tests/test_progress.py \
-	tests/test_rb_assets.py \
-	tests/webui
 
 # PYTEST_JOBS feeds `-n`: `auto` lets xdist size itself to the box. Override for
 # a serial run (`make test PYTEST_JOBS=0`), which is what you want when reading
@@ -35,7 +28,7 @@ test:
 # Playwright suite once real DB fixtures are available (tracked in #155).
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
-	$(PYTEST) -q $(RB_PARITY_PYTEST_PATHS)
+	$(PYTEST) -q -m rb_parity
 	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=1 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 

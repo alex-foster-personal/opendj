@@ -4,18 +4,159 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let beatgridFallback;
+let gridFeatures;
 let waveMath;
 
 before(async () => {
 	beatgridFallback = await loadTypeScriptModule('src/lib/rb/beatgrid-fallback.ts');
+	gridFeatures = await loadTypeScriptModule('src/lib/player/grid-features.ts');
 	waveMath = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts');
 });
 
-test('shouldUseBeatgridFallback only fires once /anlz reports ANALYSIS_NOT_FOUND', () => {
-	assert.equal(beatgridFallback.shouldUseBeatgridFallback('ANALYSIS_NOT_FOUND'), true);
-	assert.equal(beatgridFallback.shouldUseBeatgridFallback(null), false);
-	assert.equal(beatgridFallback.shouldUseBeatgridFallback('SOME_OTHER_ERROR'), false);
-	assert.equal(beatgridFallback.shouldUseBeatgridFallback('STATE_DB_UNAVAILABLE'), false);
+/** /anlz 200 payload with the grid the caller cares about. Only `beatgrid`
+ * is read by the gate; the rest is the real empty-payload shape the daemon
+ * serves for a track with no rekordbox analysis (rb_vendor.empty_anlz_payload). */
+function anlzWithBeats(beats) {
+	const emptyBands = { length: 0, low: [], mid: [], high: [] };
+	return {
+		stable_id: 'abc123',
+		points: 38400,
+		waveform: { kind: 'mono', preview: emptyBands, detail: emptyBands },
+		beatgrid: { beat_count: beats.length, beats },
+		cues: [],
+		phrases: []
+	};
+}
+
+const REAL_GRID = [
+	{ n: 1, bpm: 127, t: 0.135 },
+	{ n: 2, bpm: 127, t: 0.608 }
+];
+
+test('shouldUseBeatgridFallback fires once /anlz reports the ANLZ file is gone', () => {
+	// A rekordbox-MAPPED track whose ANLZ file is missing: no payload to read.
+	const gate = { anlzErrorCode: 'ANALYSIS_NOT_FOUND', anlz: null, vendor: null };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
+});
+
+test('any other /anlz error stays out of this lane', () => {
+	for (const code of ['SOME_OTHER_ERROR', 'STATE_DB_UNAVAILABLE']) {
+		const gate = { anlzErrorCode: code, anlz: null, vendor: null };
+		assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+	}
+});
+
+test('an unmapped local track with an empty /anlz grid reaches the fallback', () => {
+	// The parity gap: /anlz answers 200 with an empty grid for a locally
+	// imported file, so the ANALYSIS_NOT_FOUND-only gate never fired.
+	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: 'local' };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
+});
+
+test('a rekordbox-mapped track with an empty grid never reaches the fallback', () => {
+	// rekordbox owns this track's grid; an absent PQTZ is rekordbox's answer,
+	// not an invitation to substitute our own measurement.
+	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: 'rekordbox' };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+});
+
+test('an unknown vendor mapping is never guessed at', () => {
+	// vendor null = /rb-meta has not answered yet. Guessing here would race a
+	// real rekordbox grid.
+	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: null };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+});
+
+test('a real ANLZ grid is always preferred, local track or not', () => {
+	for (const vendor of ['local', 'rekordbox', null]) {
+		const gate = { anlzErrorCode: null, anlz: anlzWithBeats(REAL_GRID), vendor };
+		assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+	}
+});
+
+test('no /anlz answer yet is not an empty grid', () => {
+	const gate = { anlzErrorCode: null, anlz: null, vendor: 'local' };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+});
+
+test('a beat_count that disagrees with an empty beats[] still counts as no grid', () => {
+	// beats[] is what every consumer paints and quantizes against, so it is
+	// the emptiness that matters - a stale count must not lock out the fallback.
+	const anlz = anlzWithBeats([]);
+	anlz.beatgrid.beat_count = 412;
+	const gate = { anlzErrorCode: null, anlz, vendor: 'local' };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
+});
+
+test('"has a grid" means the same here as it does to quantize and Beat Sync', () => {
+	// grid-features.hasRealBeatGrid is what effectiveQuantize / effectiveBeatSync
+	// gate on. A one-beat grid fails it (the beat math needs an interval), so
+	// the deck treats that track as gridless - and so must this lane, or a
+	// local track would be refused the fallback while still having no quantize.
+	const oneBeat = anlzWithBeats([{ n: 1, bpm: 127, t: 0.135 }]);
+	assert.equal(gridFeatures.hasRealBeatGrid(oneBeat.beatgrid.beats), false);
+	assert.equal(beatgridFallback.hasAnlzBeatgrid(oneBeat), false);
+	assert.equal(
+		beatgridFallback.shouldUseBeatgridFallback({
+			anlzErrorCode: null,
+			anlz: oneBeat,
+			vendor: 'local'
+		}),
+		true
+	);
+	// ... and a grid the beat math DOES accept is preferred, as always.
+	const real = anlzWithBeats(REAL_GRID);
+	assert.equal(gridFeatures.hasRealBeatGrid(real.beatgrid.beats), true);
+	assert.equal(beatgridFallback.hasAnlzBeatgrid(real), true);
+});
+
+test('withFallbackBeatgrid swaps ONLY the grid and returns a new object', () => {
+	const anlz = anlzWithBeats([]);
+	anlz.cues = [{ kind: 'memory', slot: null, in_ms: 900, out_ms: null, is_loop: false, active_loop: false, beat_loop_size: null, color_table_index: null, comment: null }];
+	anlz.vocals = { status: 'demucs', segments: [] };
+	const fallback = {
+		stable_id: 'abc123',
+		source: 'apps.analysis',
+		backend: 'librosa+madmom',
+		backend_version: 'librosa==0.10.0',
+		bpm: 127,
+		bpm_confidence: 0.8,
+		anlz_available: false,
+		beatgrid: { beat_count: 2, beats: REAL_GRID }
+	};
+
+	const merged = beatgridFallback.withFallbackBeatgrid(anlz, fallback);
+
+	assert.deepEqual(merged.beatgrid, fallback.beatgrid);
+	// Everything the real payload DID carry survives untouched - the fallback
+	// pipeline proposes no cues, no waveform and no vocals.
+	assert.deepEqual(merged.cues, anlz.cues);
+	assert.deepEqual(merged.waveform, anlz.waveform);
+	assert.deepEqual(merged.vocals, { status: 'demucs', segments: [] });
+	assert.equal(merged.stable_id, 'abc123');
+	assert.equal(merged.points, 38400);
+	// New object identity: the deck-snapshot beatgrid memo is keyed on it, so
+	// mutating in place would serve a stale grid to every IPC consumer.
+	assert.notEqual(merged, anlz);
+	assert.deepEqual(anlz.beatgrid, { beat_count: 0, beats: [] });
+});
+
+test('withFallbackBeatgrid refuses to overwrite a real ANLZ grid', () => {
+	const anlz = anlzWithBeats(REAL_GRID);
+	const fallback = {
+		stable_id: 'abc123',
+		source: 'apps.analysis',
+		backend: 'librosa+madmom',
+		backend_version: 'librosa==0.10.0',
+		bpm: 90,
+		bpm_confidence: 0.4,
+		anlz_available: true,
+		beatgrid: { beat_count: 1, beats: [{ n: 1, bpm: 90, t: 5 }] }
+	};
+	assert.throws(
+		() => beatgridFallback.withFallbackBeatgrid(anlz, fallback),
+		/real ANLZ beatgrid/
+	);
 });
 
 test('toSyntheticAnlzData carries the real beatgrid through, invents nothing else', () => {
@@ -76,8 +217,10 @@ test('a synthetic payload drives the same bars-to-grid-end countdown as a real o
 
 	// No cues/phrases in the fallback payload, so the countdown target is
 	// the end of the measured grid (wave-math.ts priority tier 3): 7 beats
-	// from t=0 to the last beat at t=3.5 -> 1 full bar + 3 beats.
-	assert.equal(waveMath.barsToNextCueLabel(synth, 0), '1.3Bars');
+	// from t=0 to the last beat at t=3.5 -> 1 full bar, and the 3 leftover
+	// beats are floored away. The label is whole bars as of pin d56d98cd9c53
+	// (Wed 2 Sep 2026); see tests/unit/bars-to-next-cue-label.test.mjs for why.
+	assert.equal(waveMath.barsToNextCueLabel(synth, 0), '1Bars');
 	// Past the end of the grid: nothing left to count down to.
 	assert.equal(waveMath.barsToNextCueLabel(synth, 4000), null);
 });

@@ -145,7 +145,23 @@ test('dynamic imports are budget boundaries, so the shell does not pull every ro
   const library = Number(out.match(/library\s+(\d+) \//)[1]);
   const performance = Number(out.match(/performance\s+(\d+) \//)[1]);
   assert.ok(library < 5000, `library should stay small, got ${library}`);
-  assert.ok(performance > 39000, `performance should carry the weight, got ${performance}`);
+	assert.ok(performance > 39000, `performance should carry the weight, got ${performance}`);
+});
+
+test('a dynamic import from performance is charged to other-lazy, not the route entry', () => {
+	const { code, out } = _run(
+		_fixture({
+			extras: {
+				files: { 'chunks/perf-deferred.js': _pad(10000, 11) },
+				perfBody: 'import("../chunks/perf-deferred.js");'
+			}
+		})
+	);
+	assert.equal(code, 0, out);
+	const performance = Number(out.match(/performance\s+(\d+) \//)[1]);
+	const otherLazy = Number(out.match(/other-lazy\s+(\d+) \//)[1]);
+	assert.ok(performance < 5000, `performance must not pay for its deferred chunk, got ${performance}`);
+	assert.ok(otherLazy > 9000, `other-lazy must pay for the deferred chunk, got ${otherLazy}`);
 });
 
 for (const surface of ['library', 'performance', 'other-lazy']) {

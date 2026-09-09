@@ -3,7 +3,7 @@
  * master bus" are two different claims, and nothing compared them.
  *
  * On Wed 2 Sep 2026 audio stopped at 12:58 CEST and the decks went on
- * reporting themselves as playing for ~24 minutes. `peekDeckMeter()` reads a
+ * reporting themselves as playing for ~24 minutes. `peekDeckMeterReading()` reads a
  * real per-deck AnalyserNode RMS, but it feeds a cosmetic VFader pulse and
  * nothing else. The sibling ledger item `deck-fully-silent-while-playing`
  * recorded the same symptom from the other direction (gain reaching zero) in

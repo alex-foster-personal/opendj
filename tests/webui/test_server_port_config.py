@@ -117,3 +117,5 @@ def test_missing_worktree_backend_port_requires_explicit_cli_port(
 
     assert exc_info.value.code == 2
     assert calls == []
+
+pytestmark = pytest.mark.rb_parity

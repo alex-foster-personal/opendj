@@ -8,8 +8,16 @@ import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
-import type { DeckId } from '$lib/rb/deck-slots';
+import { mostRecentPendingLoadPlay, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
+import { armPinPlacement } from './feedback-store.svelte';
+
+// Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
+// can take DeckId from here instead of a fresh direct import of deck-slots.ts,
+// which sits at its frontend.max_fan_in allowance (same pairing as DECK_IDS
+// alongside DeckId in $lib/player/constants).
+export type { DeckId };
 
 const HOVER_ARM_MS = 250;
 const MIN_BEATS = 1;
@@ -44,12 +52,6 @@ export function clearLoopHover(deck: DeckId): void {
 	}
 }
 
-function _typingTarget(t: EventTarget | null): boolean {
-	if (!(t instanceof HTMLElement)) return false;
-	const tag = t.tagName;
-	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
-}
-
 function _resolveTransportDeck(): DeckId | null {
 	const recent = getRecentDeck();
 	if (recent !== null && getDeckState(recent).stable_id !== null) return recent;
@@ -69,6 +71,16 @@ function _resolveTransportDeck(): DeckId | null {
 }
 
 async function _toggleRecentPlay(): Promise<void> {
+	const pending = mostRecentPendingLoadPlay();
+	if (pending !== null) {
+		await runPerformanceCommandFromUi({
+			type: 'load_play_intent',
+			deck: pending.deck,
+			generation: pending.generation,
+			desired_play: !pending.desiredPlay
+		});
+		return;
+	}
 	const deck = _resolveTransportDeck();
 	if (deck === null) return;
 	const st = getDeckState(deck);
@@ -106,7 +118,7 @@ async function _exitLast(): Promise<void> {
 export function installPerformanceHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
 		if (isSettingsOpen()) return;
-		if (_typingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.code === 'Space' || e.key === ' ') {
 			e.preventDefault();
 			void _toggleRecentPlay();
@@ -122,6 +134,13 @@ export function installPerformanceHotkeys(): () => void {
 		} else if (e.key === ')') {
 			e.preventDefault();
 			void _exitLast();
+		} else if (e.key === 'm' || e.key === 'M') {
+			// Drop a comment pin without reaching for the topbar icon. The
+			// guard above already answers the other half of pin 919d65b350b1:
+			// nothing here fires while a text field has focus, and a modifier
+			// held (Cmd+Enter to submit) returns early too.
+			e.preventDefault();
+			armPinPlacement();
 		}
 	};
 	window.addEventListener('keydown', onKey);

@@ -289,3 +289,5 @@ def test_index_stored_separately_from_state_db(fixture_db: Path) -> None:
         conn.close()
     assert "tracks_fts" not in names
     assert "search_meta" not in names
+
+pytestmark = pytest.mark.rb_parity

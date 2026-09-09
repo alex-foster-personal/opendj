@@ -24,6 +24,7 @@ import { pushToast } from '$lib/stores.svelte';
 
 let _state: SilenceState | undefined;
 let _scratch: Float32Array | null = null;
+let _lastMasterRms: number | null = null;
 
 /** Instantaneous RMS 0..1 of whatever is leaving the master gain. */
 function _masterRms(analyser: AnalyserNode): number {
@@ -52,6 +53,7 @@ export function noteMasterSilence(
 ): void {
 	const playing = anyDeckPlaying && analyser !== null;
 	const masterRms = analyser === null ? 1 : _masterRms(analyser);
+	_lastMasterRms = masterRms;
 	_state = foldSilenceSample(_state, { playing, masterRms, tMs });
 	if (_state.verdict !== 'silent-while-playing') return;
 	recordPerfEvent(
@@ -67,4 +69,10 @@ export function noteMasterSilence(
 /** Drop the run across a graph rebuild, so a teardown is not a dropout. */
 export function resetMasterSilenceWatch(): void {
 	_state = undefined;
+	_lastMasterRms = null;
+}
+
+/** Real master-bus reading and watchdog verdict for the agent UI mirror. */
+export function masterSilenceState(): { rms: number | null; verdict: SilenceState['verdict'] } {
+	return { rms: _lastMasterRms, verdict: _state?.verdict ?? 'ok' };
 }

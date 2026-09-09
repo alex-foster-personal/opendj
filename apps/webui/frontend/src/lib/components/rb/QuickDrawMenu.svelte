@@ -202,7 +202,7 @@
 	function onMenuPointerLeave(e: PointerEvent): void {
 		if (!open || !leaveArmed) return;
 		const next = e.relatedTarget;
-		if (menuEl !== undefined && next instanceof Node && menuEl.contains(next)) return;
+		if (next instanceof Node && menuEl?.contains(next)) return;
 		_close();
 	}
 
@@ -229,7 +229,7 @@
 	onMount(() => {
 		const onPointerDown = (e: PointerEvent): void => {
 			if (!open) return;
-			if (menuEl !== undefined && e.target instanceof Node && menuEl.contains(e.target)) return;
+			if (e.target instanceof Node && menuEl?.contains(e.target)) return;
 			_close();
 		};
 		window.addEventListener('pointerdown', onPointerDown, true);
@@ -461,6 +461,6 @@
 	}
 	.qd-empty {
 		padding: 8px 10px;
-		color: var(--rb-text-dim, #7a8088);
+		color: var(--rb-text-dim, #838990);
 	}
 </style>

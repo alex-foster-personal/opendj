@@ -54,11 +54,38 @@ def _verified_bytes(name: str) -> bytes:
     return raw
 
 
+def _captured_nodes(name: str) -> list[dict]:
+    """Every raw GraphQL thread node in a verified capture, for a caller that
+    needs to pass its OWN ledger into `build_thread` rather than the default
+    empty one -- see `_captured` below, which is the common case that doesn't.
+    """
+    payload = json.loads(_verified_bytes(name))
+    return payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+
+
 def _captured(pr: int) -> list:
     """Every bot thread in a verified capture, through the production path."""
-    payload = json.loads(_verified_bytes(f"pr-{pr}.json"))
-    nodes = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+    nodes = _captured_nodes(f"pr-{pr}.json")
     return [t for t in (build_thread(n) for n in nodes) if t is not None]
+
+
+def _captured_pr_header(name: str) -> dict:
+    """The real `number`/`title`/`state`/`merged`/`url` for a verified capture's
+    PR, read from the same GraphQL response `_captured_nodes` draws threads
+    from. `headRefOid` is not part of this query shape and so is never in the
+    capture; callers building a `PullRequest` still supply `head_sha`
+    explicitly, same as `fetch_pull_request` reads it from a separate ref
+    query rather than the thread page (`review_thread_triage.py:202`).
+    """
+    payload = json.loads(_verified_bytes(name))
+    pr = payload["data"]["repository"]["pullRequest"]
+    return {
+        "number": pr["number"],
+        "title": pr["title"],
+        "state": pr["state"],
+        "merged": pr["merged"],
+        "url": pr["url"],
+    }
 
 
 # A real Codex finding from PR #492, trimmed to the shape that matters.

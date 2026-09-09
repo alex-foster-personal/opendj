@@ -23,6 +23,13 @@
    "bytes": 4334,
    "source_pr": 576,
    "threads": 3
+  },
+  "pr-525-debtlog.json": {
+   "sha256": "74b097bbc2109192d8edff6c67a91de8edca43665098c9fde7eaf06b3a3e8c0c",
+   "bytes": 2455,
+   "source_pr": 525,
+   "threads": 1,
+   "note": "Captured Wed 2 Sep 2026, separately from the Mon 31 Aug 2026 batch above -- the one real, RESOLVED, non-blocking DEBT-LOGGED thread (discussion_r3897291255) needed as the #792/#805 render-level control, replacing a synthetic _thread_node() (#805 round 10-continued-2, Codex, discussion_r3919026031)."
   }
  }
 }

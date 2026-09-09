@@ -266,6 +266,11 @@ describe('auto-play track pick', () => {
 			}),
 			'd'
 		);
+		// Pin 0e5fa1 (playlist switch) deliberately supersedes the previous
+		// "unknown current id => null" contract. The deck's playing track is
+		// NOT a member of the playlist the user just switched to, and stopping
+		// there is exactly the stall that left the old playlist's queue in
+		// charge. Enforced order now resumes at the head of the new playlist.
 		assert.equal(
 			pickNextStableId({
 				playlist,
@@ -278,7 +283,23 @@ describe('auto-play track pick', () => {
 				min_tempo_ratio: 0.84,
 				max_tempo_ratio: 1.16
 			}),
-			null
+			'a',
+			'when the source is absent after a playlist switch, ordered mode begins at the new feed start'
+		);
+		assert.equal(
+			pickNextStableId({
+				playlist: [row('first', '8A', 120), row('last', '8A', 122)],
+				current_stable_id: 'last',
+				current_key: '8A',
+				current_bpm: 122,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			null,
+			'ordered playback never wraps after the true final membership row'
 		);
 	});
 
@@ -369,6 +390,59 @@ describe('auto-play track pick', () => {
 		);
 	});
 
+	it('pin 0a047b: smart mode continues from the loaded track\'s own position, never the list top', () => {
+		// the maintainer, pin 0a047b8a4e4d: a double-clicked (instant-loaded) track must
+		// have its successor computed from ITS position in the current view,
+		// not from row 0 onward. Every row here is mutually compatible (same
+		// key, same BPM), so the ONLY thing that can decide the pick is
+		// position - if 'early' (unplayed, sits before 'mid') is ever picked
+		// over 'late' (sits after 'mid'), AutoPlay just walked back to the top
+		// of the list instead of continuing from the loaded track.
+		const { pickNextStableId } = mod;
+		const viewOrder = [row('early', '8A', 120), row('mid', '8A', 120), row('late', '8A', 120)];
+		for (const maximize_reach of [false, true]) {
+			assert.equal(
+				pickNextStableId({
+					playlist: viewOrder,
+					current_stable_id: 'mid',
+					current_key: '8A',
+					current_bpm: 120,
+					exclude_ids: new Set(),
+					played_ids: new Set(),
+					enforce_play_order: false,
+					maximize_reach,
+					min_tempo_ratio: 0.84,
+					max_tempo_ratio: 1.16
+				}),
+				'late',
+				`maximize_reach=${maximize_reach}: must continue forward from 'mid', not back to 'early'`
+			);
+		}
+	});
+
+	it('pin 0a047b: smart mode wraps to a row before the loaded track only when nothing compatible follows it', () => {
+		// The forward-first rule must not turn into a dead end: if nothing
+		// after the loaded track is compatible, AutoPlay still has to keep
+		// playing rather than stall, so it falls back to a compatible row
+		// before it.
+		const { pickNextStableId } = mod;
+		const viewOrder = [row('before', '8A', 120), row('mid', '8A', 120), row('after', '1A', 120)];
+		assert.equal(
+			pickNextStableId({
+				playlist: viewOrder,
+				current_stable_id: 'mid',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'before'
+		);
+	});
+
 	it('bpmWithinPhaseLockRange rejects half/double folds', () => {
 		const { bpmWithinPhaseLockRange } = mod;
 		assert.equal(bpmWithinPhaseLockRange(120, 120, 0.84, 1.16), true);
@@ -376,7 +450,7 @@ describe('auto-play track pick', () => {
 		assert.equal(bpmWithinPhaseLockRange(60, 120, 0.84, 1.16), false);
 	});
 
-	it('publishes browser feed getters; epoch only on membership identity change', () => {
+	it('publishes browser feed getters; epoch follows playlist scope and membership identity', () => {
 		const {
 			setAutoPlayTrackFeed,
 			getAutoPlayPlaylist,
@@ -384,17 +458,26 @@ describe('auto-play track pick', () => {
 			getAutoPlayFeedEpoch
 		} = mod;
 		const before = getAutoPlayFeedEpoch();
-		setAutoPlayTrackFeed([
+		setAutoPlayTrackFeed('playlist-a', [
 			{ stable_id: 'p1', key: '1A', bpm: 120, file_exists: true },
 			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: false }
 		]);
 		const afterId = getAutoPlayFeedEpoch();
 		assert.equal(afterId > before, true);
-		setAutoPlayTrackFeed([
+		setAutoPlayTrackFeed('playlist-a', [
 			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
 			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
 		]);
 		assert.equal(getAutoPlayFeedEpoch(), afterId);
+		setAutoPlayTrackFeed('playlist-b', [
+			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
+			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
+		]);
+		assert.equal(
+			getAutoPlayFeedEpoch() > afterId,
+			true,
+			'a different playlist with identical ordered members must advance the feed epoch'
+		);
 		assert.deepEqual(
 			[...getAutoPlayPlaylist()],
 			[
@@ -502,6 +585,28 @@ describe('auto-play maximize reach (slack path)', () => {
 		})], ['a', 'b']);
 		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, max_chain_length: 3 })], ['a', 'b', 'c']);
 		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, enforce_play_order: true })], ['a', 'b', 'c', 'd']);
+	});
+
+	it('charts a switched playlist from the external source metadata', () => {
+		const result = chain.simulateAutoPlayChain({
+			playlist: [row('b', '8A', 120), row('c', '8A', 120)],
+			start_stable_id: 'external', start_key: '8A', start_bpm: 120,
+			enforce_play_order: false, maximize_reach: false,
+			min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+		});
+		assert.deepEqual([...result], ['external', 'b', 'c']);
+	});
+
+	it('never substitutes external-source metadata for an existing unknown row', () => {
+		for (const [key, bpm] of [[null, 120], ['8A', null]]) {
+			const result = chain.simulateAutoPlayChain({
+				playlist: [row('source', key, bpm), row('b', '8A', 120)],
+				start_stable_id: 'source', start_key: '8A', start_bpm: 120,
+				enforce_play_order: false, maximize_reach: false,
+				min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+			});
+			assert.deepEqual([...result], ['source']);
+		}
 	});
 
 	it('no-stranding fixture: greedy and slack produce identical order', () => {
@@ -824,6 +929,7 @@ describe('auto-play live-set replay (bugs 1 and 2, Mon 31 Aug 2026)', () => {
 			max_tempo_ratio: 1.16
 		});
 		if (next === null) {
+			if (state.playlist.length === 0) return null;
 			state.triggeredFor = source.stable_id;
 			return null;
 		}

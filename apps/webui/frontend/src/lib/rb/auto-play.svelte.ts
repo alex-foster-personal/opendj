@@ -28,7 +28,6 @@ import {
 } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
-	autoPlayExcludedIds,
 	decideAutoPlayBeatSync,
 	decideMasterPromotion,
 	effectiveAutoPlayThresholdMs,
@@ -36,6 +35,8 @@ import {
 	formatAutoPlaySyncSkipToast,
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
+	getAutoPlayPlaylistRevision,
+	registerAutoPlayRankProvider,
 	pickFollowerDeck,
 	pickNextStableId,
 	pickSourceDeck,
@@ -56,7 +57,16 @@ import {
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
+import {
+	activateAutoPlayQueue,
+	autoPlayOrder,
+	clearAutoPlayOrder,
+	clearAutoPlayQueue,
+	publishAutoPlayOrder
+} from '$lib/rb/autoplay-queue.svelte';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
+import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
+import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
@@ -79,6 +89,8 @@ let _inFlight = false;
 let _triggeredFor: string | null = null;
 let _playedIds = new Set<string>();
 let _playedFeedEpoch = -1;
+/** Epoch whose non-empty feed exhausted this source without committing a load. */
+let _exhaustedFeedEpoch: number | null = null;
 /** Inputs of the last charted-order simulation; equal key = skip the tick's simulate. */
 let _chartedOrderKey: string | null = null;
 /** Candidates that failed load/play; cleared when playlist membership changes. */
@@ -86,68 +98,56 @@ let _unplayableIds = new Set<string>();
 let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
-/**
- * Every stable_id AutoPlay has DECIDED to load this session (matrix row 14).
- * Recorded before dispatch, never rolled back, and deliberately NOT cleared by
- * _syncPlayedSet: this is the guarantee that AutoPlay cannot put one track on
- * two decks. The deck scan alone cannot provide it - it only sees where a
- * track is right now, so it misses one that was loaded and then unloaded, or
- * one whose load has not published its stable_id yet.
- */
+/** Empty-feed toast epoch during playlist hydration, without consuming the source arm. */
+let _waitingEmptyFeedEpoch: number | null = null;
+/** IDs claimed before dispatch, never retired by a feed epoch, prevent duplicate loads. */
 let _claimedIds = new Set<string>();
 /** Deferred master promotion, retried until the follower is audible (row 18). */
 let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;
 let _promoting = false;
 
-/** Carries how far a handoff got, so the caller knows if a retry is legal. */
-class AutoPlayHandoffError extends Error {
-	readonly phase: AutoPlayHandoffPhase;
-	constructor(phase: AutoPlayHandoffPhase, cause: unknown) {
-		super(cause instanceof Error ? cause.message : String(cause), { cause });
-		this.name = 'AutoPlayHandoffError';
-		this.phase = phase;
-	}
-}
+export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
-/** Read-only charted AutoPlay order for the open playlist (library column). */
-export const autoPlayOrder = $state<{
-	chain: readonly string[];
-	rankOf: ReadonlyMap<string, number>;
-}>({ chain: [], rankOf: new Map() });
-
-function _publishOrder(chain: readonly string[]): void {
-	if (
-		chain.length === autoPlayOrder.chain.length &&
-		chain.every((id, i) => id === autoPlayOrder.chain[i])
-	) {
-		return;
-	}
-	autoPlayOrder.chain = chain;
-	autoPlayOrder.rankOf = new Map(chain.map((id, i) => [id, i + 1]));
+/** Clear a published chart and its memo together, so recovery always re-plans. */
+function _clearChartedOrder(): void {
+	_chartedOrderKey = null;
+	publishAutoPlayOrder([]);
 }
 
 function _refreshChartedOrder(
 	source: AutoPlayDeckSnap | null,
+	snaps: readonly AutoPlayDeckSnap[],
 	excludeIds: ReadonlySet<string>
 ): void {
 	if (!uiPrefs.auto_play_enabled || source === null || source.stable_id === null) {
-		_publishOrder([]);
+		_clearChartedOrder();
 		return;
 	}
 	_syncPlayedSet();
-	const bounds = tempoBoundsFromPitchRange(pitchRanges[source.id] ?? 16);
+	const follower = pickFollowerDeck(snaps, source.id);
+	if (follower === null) {
+		_clearChartedOrder();
+		return;
+	}
+	const followerPitchRange = pitchRanges[follower];
+	const bounds = tempoBoundsFromPitchRange(followerPitchRange);
 	// The poll fires every 250 ms; simulating the chain over the open playlist
 	// is O(rows^2) (1.5 s on 8558 rows). Nothing about the order can change
 	// unless one of these inputs did, so an unchanged key is a no-op tick.
 	const key = chartedOrderKey({
 		feed_epoch: _playedFeedEpoch,
+		playlist_revision: getAutoPlayPlaylistRevision(),
 		source_stable_id: source.stable_id,
+		source_key: deckStates[source.id].key,
+		source_bpm: deckStates[source.id].bpm,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
 		min_tempo_ratio: bounds.min,
 		max_tempo_ratio: bounds.max,
 		exclude_ids: excludeIds,
-		played_ids: _playedIds
+		played_ids: _playedIds,
+		follower_deck: follower,
+		follower_pitch_range: followerPitchRange
 	});
 	if (key === _chartedOrderKey) return;
 	_chartedOrderKey = key;
@@ -155,6 +155,8 @@ function _refreshChartedOrder(
 		select_next: pickNextStableId,
 		playlist: getAutoPlayPlaylist(),
 		start_stable_id: source.stable_id,
+		start_key: deckStates[source.id].key,
+		start_bpm: deckStates[source.id].bpm,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
 		min_tempo_ratio: bounds.min,
@@ -164,38 +166,11 @@ function _refreshChartedOrder(
 		max_chain_length: CHARTED_ORDER_HORIZON + 1
 	});
 	// Upcoming only - source is already playing, not "next".
-	_publishOrder(full.slice(1));
+	publishAutoPlayOrder(full.slice(1));
 }
 
 function _snaps(): AutoPlayDeckSnap[] {
-	return DECK_IDS.map((id) => {
-		const d = deckStates[id];
-		return {
-			id,
-			stable_id: d.stable_id,
-			playing: d.playing,
-			// Audio clock, NOT d.position_ms: that mirror is published from
-			// requestAnimationFrame, which the browser stops in a background tab,
-			// and a frozen position never reaches AUTO_PLAY_THRESHOLD_MS. Reading
-			// the clock is what lets a set keep mixing while the user is on
-			// another tab. This poll is a setInterval, which a tab playing audio
-			// keeps running (throttled to ~1s), leaving ~16 chances inside the
-			// 16s window.
-			position_ms: deckAudioClockPositionMs(id),
-			duration_ms: d.duration_ms,
-			is_master: d.is_master,
-			beat_sync_enabled: d.beat_sync_enabled
-		};
-	});
-}
-
-function _excludeIds(sourceId: DeckId, snaps: readonly AutoPlayDeckSnap[]): Set<string> {
-	return autoPlayExcludedIds({
-		decks: snaps,
-		source_deck: sourceId,
-		claimed_ids: _claimedIds,
-		unplayable_ids: _unplayableIds
-	});
+	return autoPlayDeckSnaps(DECK_IDS, (id) => deckStates[id], deckAudioClockPositionMs);
 }
 
 function _syncPlayedSet(): void {
@@ -207,6 +182,10 @@ function _syncPlayedSet(): void {
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_playedFeedEpoch = epoch;
+		if (_exhaustedFeedEpoch !== null) {
+			_triggeredFor = null;
+			_exhaustedFeedEpoch = null;
+		}
 	}
 }
 
@@ -365,7 +344,7 @@ async function _promoteMaster(): Promise<void> {
 
 async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) {
-		_publishOrder([]);
+		_clearChartedOrder();
 		_pendingMaster = null;
 		return;
 	}
@@ -383,15 +362,17 @@ async function _tick(): Promise<void> {
 		// again. Only a genuine idle state clears the arm.
 		if (_pendingMaster === null) {
 			_triggeredFor = null;
+			_exhaustedFeedEpoch = null;
 			_waitingFollowerFor = null;
+			_waitingEmptyFeedEpoch = null;
 		}
-		_publishOrder([]);
+		_clearChartedOrder();
 		return;
 	}
 
 	_syncPlayedSet();
-	const excludeIds = _excludeIds(source.id, snaps);
-	_refreshChartedOrder(source, excludeIds);
+	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
+	_refreshChartedOrder(source, snaps, excludeIds);
 
 	const rem = remainingMs(source.position_ms, source.duration_ms);
 	// min(constant, duration/2): a track shorter than the constant window must
@@ -400,7 +381,9 @@ async function _tick(): Promise<void> {
 	if (rem !== null && windowMs !== null && rem > windowMs) {
 		// Seek back out of the window: allow a later re-arm for same track.
 		if (_triggeredFor === source.stable_id) _triggeredFor = null;
+		if (_triggeredFor === null) _exhaustedFeedEpoch = null;
 		if (_waitingFollowerFor === source.stable_id) _waitingFollowerFor = null;
+		_waitingEmptyFeedEpoch = null;
 		return;
 	}
 
@@ -455,10 +438,20 @@ async function _tick(): Promise<void> {
 		// key/BPM dead end: on Tue 1 Sep 2026 that message sent the maintainer reading
 		// key wheels while the real fault was a feed frozen before the pane
 		// had any rows. Name the actual failure so the log carries it.
+		if (feed.length === 0) {
+			const feedEpoch = getAutoPlayFeedEpoch();
+			if (_waitingEmptyFeedEpoch !== feedEpoch) {
+				pushToast('auto-play: candidate feed is empty - waiting for playlist rows', 'info');
+				_waitingEmptyFeedEpoch = feedEpoch;
+			}
+			// This is not a committed handoff. BrowserPanel deliberately publishes
+			// [] while a playlist switch hydrates, then publishes the new rows with
+			// a new epoch. Keep the source unarmed so that later feed can proceed.
+			return;
+		}
+		_waitingEmptyFeedEpoch = null;
 		pushToast(
-			feed.length === 0
-				? 'auto-play: candidate feed is empty - the playlist view had no rows'
-				: allMissing
+			allMissing
 					? 'auto-play: remaining playlist tracks are missing/stub audio'
 					: uiPrefs.auto_play_enforce_order
 						? 'auto-play: no next unplayed track in playlist order'
@@ -466,6 +459,7 @@ async function _tick(): Promise<void> {
 			'error'
 		);
 		_triggeredFor = source.stable_id;
+		_exhaustedFeedEpoch = _playedFeedEpoch;
 		return;
 	}
 
@@ -474,6 +468,8 @@ async function _tick(): Promise<void> {
 	// a late failure roll the trigger back and load a second track.
 	_inFlight = true;
 	_triggeredFor = source.stable_id;
+	_exhaustedFeedEpoch = null;
+	_waitingEmptyFeedEpoch = null;
 	_claimedIds.add(nextId);
 	_playedIds.add(source.stable_id);
 	_playedIds.add(nextId);
@@ -552,19 +548,34 @@ export function installAutoPlay(): () => void {
 	if (_stopArmWatcher !== null) {
 		throw new Error('auto-play already installed');
 	}
+	const unregisterRankProvider = registerAutoPlayRankProvider(() => autoPlayOrder.rankOf);
 	_stopArmWatcher = $effect.root(() => {
 		$effect(() => {
-			if (uiPrefs.auto_play_enabled) _startPoll();
-			else _stopPoll();
+			if (uiPrefs.auto_play_enabled) {
+				// PLAY-05: activation creates the inspectable queue before the
+				// first poll has a master track from which to calculate handoffs.
+				activateAutoPlayQueue();
+				_chartedOrderKey = null;
+				clearAutoPlayOrder();
+				_startPoll();
+			} else {
+				_stopPoll();
+				_chartedOrderKey = null;
+				clearAutoPlayOrder();
+				clearAutoPlayQueue();
+			}
 		});
 	});
 	return () => {
+		unregisterRankProvider();
 		_stopArmWatcher?.();
 		_stopArmWatcher = null;
 		_stopPoll();
 		_inFlight = false;
 		_triggeredFor = null;
+		_exhaustedFeedEpoch = null;
 		_waitingFollowerFor = null;
+		_waitingEmptyFeedEpoch = null;
 		_pendingMaster = null;
 		_promoting = false;
 		_claimedIds = new Set();
@@ -572,6 +583,7 @@ export function installAutoPlay(): () => void {
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', count: 0 };
 		_playedFeedEpoch = -1;
-		_publishOrder([]);
+		_clearChartedOrder();
+		clearAutoPlayQueue();
 	};
 }

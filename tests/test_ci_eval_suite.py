@@ -3,13 +3,12 @@ from pathlib import Path
 
 import pytest
 
+from scripts.ci_eval_collection import collect_campaign, render_campaign_report
 from scripts.ci_eval_suite import (
     CASE_COUNT,
     CampaignError,
     CommandResult,
     build_campaign,
-    collect_campaign,
-    render_campaign_report,
     validate_target,
 )
 

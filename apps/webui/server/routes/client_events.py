@@ -79,7 +79,7 @@ def capture_client_event(payload: ClientEventIn, request: Request) -> ClientEven
     log_dir = Path(
         getattr(request.app.state, "client_event_log_dir", DEFAULT_LOG_DIR)
     )
-    path = daily_log_path(log_dir, "webui-visitors", time.localtime())
+    path = daily_log_path(log_dir, "webui-visitors", time.gmtime())
     stored = append_json_record(path, record)
     if stored:
         log.info(

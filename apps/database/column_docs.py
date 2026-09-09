@@ -14,7 +14,10 @@ Two dicts:
 
 ``TABLE_DOCS`` moved to its own module in round 2 hardening so this file
 stays under the 600-line review threshold; the split is purely mechanical,
-``from apps.database.column_docs import TABLE_DOCS`` still works.
+``from apps.database.column_docs import TABLE_DOCS`` still works. The four
+analysis-retention tables' entries (PR #383) moved the same way into
+:mod:`apps.database.column_docs_analysis_retention` and are merged into
+``COLUMN_DOCS`` below, for the same reason.
 
 Coverage: every table :mod:`apps.shared.state.schema` knows about --
 ``TABLES`` (the fourteen this module actually creates), the seven real
@@ -38,6 +41,8 @@ guards against drift; this file only supplies the meaning.
 
 from __future__ import annotations
 
+from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
+from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
 __all__ = ["COLUMN_DOCS", "TABLE_DOCS"]
@@ -556,6 +561,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "last_dragged_at": "Unix-epoch timestamp of the last drag, or NULL.",
     },
+    **ANALYSIS_RETENTION_COLUMN_DOCS,
+    **NATIVE_ANALYSIS_COLUMN_DOCS,
 }
 
 

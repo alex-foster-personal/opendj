@@ -4,7 +4,7 @@
  * agent-side PUTs".
  *
  * Before this, the component's only call to loadAnalysisSource() was a
- * one-shot onMount hook: an agent driving PUT /api/v1/analysis-source
+ * one-shot onMount hook: an agent driving PUT /api/v1/analysis/source
  * directly after the page had mounted left analysisSourceState (and the
  * visible RBX/OWN control) stuck at the pre-agent value indefinitely.
  *

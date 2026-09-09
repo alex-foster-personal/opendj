@@ -4,12 +4,13 @@ import { test } from 'node:test';
 
 import { compile } from 'svelte/compiler';
 
-// MIXUX-03: "Trim dial should be 30% smaller circumference than EQ dials."
+// Pin 8cabf5b1df1e: TRIM now sits halfway between its previous 21px and the
+// 30px EQ dials; FILTER is 10% smaller than its former 39px presentation.
 // Knob.svelte renders every dial at one fixed SIZE, so TRIM cannot differ
 // from HI/MID/LOW today. A `size` prop lets a caller scale one instance; the
 // viewBox stays fixed at "0 0 30 30" so width/height scale the whole ring,
 // cap and indicator geometry together. The caption-inclusive wrapper is the
-// hit target, so a resize cannot leave a caption-shaped dead zone.
+// hit target, while its caption stays ordinary 8px text at every dial size.
 //
 // Regression lines:
 // - if Knob.svelte hardcodes svg width/height to a literal instead of the
@@ -18,21 +19,22 @@ import { compile } from 'svelte/compiler';
 //   same 30px default as HI/MID/LOW, i.e. the whole point of MIXUX-03
 // - if an EQ knob (HI/MID/LOW) is ever given a `size` prop then EQ dials stop
 //   being the fixed reference the requirement is measured against
-// - if TRIM_SIZE drifts off 70% of the EQ default then the ratio is not
-//   actually "30% smaller circumference"
+// - if a resized dial scales its caption then FILTER text becomes larger and
+//   less crisp than the EQ labels
 
 const EQ_DEFAULT_SIZE = 30;
-const EXPECTED_TRIM_SIZE = EQ_DEFAULT_SIZE * 0.7; // 30% smaller circumference
-const EXPECTED_FILTER_SIZE = EQ_DEFAULT_SIZE * 1.3; // 30% larger diameter/circumference
+const EXPECTED_TRIM_SIZE = (21 + EQ_DEFAULT_SIZE) / 2;
+const EXPECTED_FILTER_SIZE = 39 * 0.9;
 
-// Pin 4eebbc65a699 / #939:
-// [if] a knob is resized [then] its dial, caption, and pointer target scale together [else ⛔️]
-test('Knob compiles with one scaled, caption-inclusive interactive wrapper', async () => {
+// Pin 8cabf5b1df1e:
+// [if] a knob is resized [then] its dial and pointer target resize but its caption remains legible 8px text [else ⛔️]
+test('Knob compiles with one caption-inclusive interactive wrapper whose text stays unscaled', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/Knob.svelte', 'utf8');
 	assert.doesNotThrow(() => compile(src, { filename: 'Knob.svelte', generate: 'server' }));
-	assert.match(src, /const scale = size \/ KNOB_BASE_SIZE/);
-	assert.match(src, /--knob-caption-size: \$\{8 \* scale\}px/);
-	assert.match(src, /--knob-caption-gap: \$\{scale\}px/);
+	assert.match(src, /--knob-caption-size: 8px/);
+	assert.match(src, /--knob-caption-gap: 1px/);
+	assert.doesNotMatch(src, /const scale = size \/ KNOB_BASE_SIZE/);
+	assert.doesNotMatch(src, /--knob-caption-size: \$\{8 \* scale\}px/);
 	assert.match(src, /width: max-content;/);
 	assert.match(src, /min-width: var\(--knob-dial-size\);/);
 	assert.match(src, /<div[\s\S]*?role="slider"[\s\S]*?onpointerdown=\{handlePointerDown\}/);
@@ -69,7 +71,7 @@ test('Knob.svelte exposes a size prop that drives the visual SVG and makes the w
 	);
 });
 
-test('ChannelStrip TRIM dial is 70% of the EQ dial size (MIXUX-03: 30% smaller circumference)', async () => {
+test('ChannelStrip places TRIM halfway between its old size and the EQ dials', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 
 	const constMatch = src.match(/const TRIM_SIZE = (\d+(?:\.\d+)?);/);
@@ -77,7 +79,9 @@ test('ChannelStrip TRIM dial is 70% of the EQ dial size (MIXUX-03: 30% smaller c
 	assert.equal(
 		Number(constMatch[1]),
 		EXPECTED_TRIM_SIZE,
-		'TRIM diameter must be exactly 70% of the 30px EQ dial diameter'
+		'TRIM diameter must be halfway between its old 21px size and the 30px EQ dial - pin 246b0f5 ' +
+			'LESS mode uses a separate, smaller LESS_TRIM_SIZE (asserted below), so this MORE-mode ' +
+			'constant and value must stay exactly as MIXUX-03 shipped it'
 	);
 
 	// Each knob's own attribute span: content up to '/>' must never cross a
@@ -86,24 +90,72 @@ test('ChannelStrip TRIM dial is 70% of the EQ dial size (MIXUX-03: 30% smaller c
 	// which is why this can't just be [^>]*.
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 
+	// Pin 246b0f5: LESS mode has to shrink TRIM/EQ to fit the shrunk deck-area
+	// row (see +page.svelte and CHANNEL_STRIP-LESS-FLOOR.test.mjs), so both
+	// now pass a `less`-derived variable instead of the bare MORE constant.
+	// The MORE-mode guarantee above (TRIM stays exactly halfway between 21
+	// and the 30px EQ dial, EQ dials stay the fixed default) is preserved
+	// BEHAVIORALLY, not textually: both derived variables fall back to the
+	// unchanged MORE constants (TRIM_SIZE, Knob's own 30px default) whenever
+	// `less` is false - asserted below by reading the `$derived(...)`
+	// definitions themselves, not just their names.
 	const trimKnobLine = src.match(knobTag('TRIM'));
 	assert.ok(trimKnobLine, 'TRIM Knob element not found');
-	assert.match(trimKnobLine[0], /size=\{TRIM_SIZE\}/, 'TRIM Knob must pass size={TRIM_SIZE}');
+	assert.match(trimKnobLine[0], /size=\{trimSize\}/, 'TRIM Knob must pass size={trimSize}');
+
+	const trimSizeDerived = src.match(/const trimSize = \$derived\(less \? LESS_TRIM_SIZE : TRIM_SIZE\);/);
+	assert.ok(
+		trimSizeDerived,
+		'trimSize must fall back to the unchanged MORE-mode TRIM_SIZE whenever less is false'
+	);
+	const lessTrimSizeMatch = src.match(/const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessTrimSizeMatch, 'expected a named LESS_TRIM_SIZE constant for pin 246b0f5 LESS mode');
+	assert.ok(
+		Number(lessTrimSizeMatch[1]) < EXPECTED_TRIM_SIZE,
+		'LESS_TRIM_SIZE must actually be smaller than MORE mode TRIM_SIZE, or LESS saves no height'
+	);
 
 	for (const label of ['HI', 'MID', 'LOW']) {
 		const knobLine = src.match(knobTag(label));
 		assert.ok(knobLine, `${label} Knob element not found`);
-		assert.doesNotMatch(
+		assert.match(
 			knobLine[0],
-			/size=\{/,
-			`${label} must stay at the Knob default size - it is the fixed reference EQ dial`
+			/size=\{eqSize\}/,
+			`${label} must pass size={eqSize} (pin 246b0f5) so LESS mode can shrink it`
 		);
 	}
+	// Was `$derived(less ? LESS_EQ_SIZE : undefined)` (falling through to
+	// Knob's own `size = 30` default) until Sol's CI type-check finding: with
+	// `exactOptionalPropertyTypes: true`, an explicit `size={undefined}` is
+	// not assignable to Knob's `size?: number` Props (undefined-the-value is
+	// distinct from the prop being absent) - see ChannelStrip.svelte's
+	// EQ_SIZE comment. EQ_SIZE is spelled out as the same 30px Knob already
+	// defaulted to, so this is a type-correctness fix, not a behavior change
+	// - asserted below by requiring EQ_SIZE to actually equal 30.
+	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : EQ_SIZE\);/);
+	assert.ok(
+		eqSizeDerived,
+		'eqSize must fall back to EQ_SIZE whenever less is false, so HI/MID/LOW render at the ' +
+			"unchanged Knob default (30px) - the fixed reference EQ dial MIXUX-03's MORE-mode behavior depends on"
+	);
+	const eqSizeConstMatch = src.match(/const EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(eqSizeConstMatch, 'expected a named EQ_SIZE constant spelling out Knob\'s own default');
+	assert.equal(
+		Number(eqSizeConstMatch[1]),
+		30,
+		'EQ_SIZE must equal Knob.svelte\'s own default size (30), or MORE mode\'s EQ dials silently resize'
+	);
+	const lessEqSizeMatch = src.match(/const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessEqSizeMatch, 'expected a named LESS_EQ_SIZE constant for pin 246b0f5 LESS mode');
+	assert.ok(
+		Number(lessEqSizeMatch[1]) < 30,
+		'LESS_EQ_SIZE must actually be smaller than the 30px EQ default, or LESS saves no height'
+	);
 });
 
-// Pin 4eebbc65a699 / #939:
-// [if] the strip renders its main-owned inert FILTER slot [then] it is 30% larger without claiming #492's Color-FX ownership [else ⛔️]
-test('ChannelStrip enlarges only the current-main inert FILTER slot and leaves Color-FX ownership explicit', async () => {
+// Pin 8cabf5b1df1e:
+// [if] the strip renders its main-owned inert FILTER slot [then] it is 10% smaller than its 39px predecessor without claiming #492's Color-FX ownership [else ⛔️]
+test('ChannelStrip reduces only the current-main inert FILTER slot and leaves Color-FX ownership explicit', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 	const constMatch = src.match(/const FILTER_SLOT_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(constMatch, 'FILTER slot needs a named size rather than a magic number');
