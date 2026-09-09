@@ -105,6 +105,11 @@ import {
 } from '$lib/rb/audio-context-instrumentation';
 import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
 import {
+	latencyFloorLabels,
+	scheduleRowKind,
+	unavailableLatencyTerms
+} from '$lib/player/transport/press-audible';
+import {
 	ConflictError,
 	fetchAnlz,
 	fetchAnlzBypassingHttpCache,
@@ -1323,6 +1328,17 @@ async function _scheduleDeckSerial(
 		active,
 		...(pressToScheduleMs === undefined ? {} : { pressToScheduleMs })
 	});
+	// Q1: read beside the clock above, from the SAME context, so the row's
+	// device-floor labels describe the schedule the row reports and not a
+	// context state that moved while the worklet was being acknowledged.
+	const scheduleLabels = latencyFloorLabels({
+		unavailable: unavailableLatencyTerms({
+			baseLatencySec: _ctx.baseLatency,
+			outputLatencySec: _ctx.outputLatency
+		}),
+		contextState: _ctx.state
+	});
+	const scheduleKind = scheduleRowKind(pressToScheduleMs);
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =
 		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;
@@ -1359,7 +1375,7 @@ async function _scheduleDeckSerial(
 	if (rt.processor !== processor) {
 		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
-	recordPerfTiming('transport-schedule', scheduleStages, deck);
+	recordPerfTiming(scheduleKind, scheduleStages, deck, scheduleLabels);
 	// LATENCY-03: rt.latencySec is a snapshot taken once at load, but Signalsmith
 	// re-reads both latency terms from WASM at the end of every configure() and
 	// latency() returns their live sum - so the library self-tracks and our copy

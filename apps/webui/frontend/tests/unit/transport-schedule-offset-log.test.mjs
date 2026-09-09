@@ -251,8 +251,17 @@ test('the log write stays off the click-to-audio path it measures', () => {
 	pressT0Ms: number | undefined
 ): Promise<number> {`);
 	const scheduleAt = body.indexOf('await processor.schedule(');
-	const recordAt = body.indexOf("recordPerfTiming('transport-schedule'");
+	// Q1 made the kind a value rather than a literal, because a pressed
+	// schedule now files under `transport-schedule-press` so a pitch-fader drag
+	// cannot evict it. The write itself is what this test guards, so it matches
+	// the call and asserts the kind is the press-aware one separately.
+	const recordAt = body.indexOf('recordPerfTiming(scheduleKind,');
 	assert.ok(recordAt !== -1, 'if the row is never recorded then nothing is measured at all');
+	assert.ok(
+		body.includes('const scheduleKind = scheduleRowKind(pressToScheduleMs);'),
+		'the kind must be derived from the press stamp; hardcoding it back to one literal ' +
+			'returns press rows to the fader-flooded bucket that used to evict them'
+	);
 	assert.ok(
 		scheduleAt < recordAt,
 		'recordPerfTiming does a JSON stringify and a localStorage write; running it BEFORE ' +
