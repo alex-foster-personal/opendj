@@ -47,10 +47,21 @@ _HAS_FFMPEG: bool = shutil.which("ffmpeg") is not None
 
 def _ffmpeg_can_resample() -> bool:
     """True when this host's ffmpeg can actually run the pinned soxr chain."""
-    from apps.analysis.pcm_fingerprint import (
-        FingerprintUnavailable,
-        require_resampler,
-    )
+    try:
+        from apps.analysis.pcm_fingerprint import (
+            FingerprintUnavailable,
+            require_resampler,
+        )
+    except ImportError:
+        # apps.analysis.pcm_fingerprint pulls in numpy through
+        # apps.analysis_waveform.decode. Some CI lanes (e.g. the frontend
+        # typing gate) run pytest against a deliberately minimal, isolated
+        # env with none of that installed, and this conftest is the root one
+        # every pytest invocation in the repo collects. A host missing the
+        # stack this probe needs genuinely cannot run the canonical soxr
+        # decode either, so that is the correct, honest answer here -- not a
+        # collection-time crash for suites nowhere near this lane.
+        return False
 
     try:
         require_resampler()
