@@ -78,6 +78,23 @@ function _consumeInvalidation(reportError: (message: string) => void, context: s
 	};
 }
 
+/** Merge every source-dependent field of an authoritative /anlz payload onto
+ * `base`, not just `beatgrid`: `tempo_changes`/`performance_hints` are
+ * own-analyzer-only keys a rekordbox payload never carries, so overwriting
+ * `beatgrid` alone either strands stale own markers on a deck that reverted
+ * to rekordbox, or installs a new own grid without the markers it came with
+ * (Codex P2 BLOCKING, PR #1587). Absent keys are deleted, not set to
+ * `undefined`, to match `data`'s own absence exactly under
+ * `exactOptionalPropertyTypes`. */
+function _withSourceDependentAnlzFields(base: AnlzData, data: AnlzData): AnlzData {
+	const merged: AnlzData = { ...base, beatgrid: data.beatgrid };
+	if (data.tempo_changes === undefined) delete merged.tempo_changes;
+	else merged.tempo_changes = data.tempo_changes;
+	if (data.performance_hints === undefined) delete merged.performance_hints;
+	else merged.performance_hints = data.performance_hints;
+	return merged;
+}
+
 export interface BeatgridResyncGuards {
 	/** PARITY-10: fires after load() released [deck]; reclaims it (or wider, see resyncSettlementNeedsFullBarrier) and publishes inside that reclaimed scope - retry/pending/abandon logic lives in beatgrid-resync.ts. isStale is re-asked here, not just inside publish(), so a stale settlement skips reconciliation entirely rather than acting on a replacement track. Full widen/[deck]-occupancy rationale: performance-ipc.svelte.ts's installScopedSyncRunner (r3913492572 / r3913693383 / r3914267990).
 	 *
@@ -280,7 +297,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 					deckRuntime(deck) !== runtime ||
 					deckLoadToken(deck) !== token ||
 					deckStableId(deck) !== stableId;
-				const next: AnlzData = { ...current, beatgrid: data.beatgrid };
+				const next: AnlzData = _withSourceDependentAnlzFields(current, data);
 				// `landed` is whether the deck ENDS UP with a grid, not whether
 				// an update happened. The cache now also delivers an
 				// authoritative ABSENCE (a settled own answer of missing or
@@ -300,7 +317,10 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 						// whatever payload is live at publish time, not the one read
 						// when the cache fired.
 						const latest = deckAnlz(deck);
-						publishDeckAnlz(deck, latest === null ? next : { ...latest, beatgrid: data.beatgrid });
+						publishDeckAnlz(
+							deck,
+							latest === null ? next : _withSourceDependentAnlzFields(latest, data)
+						);
 					},
 					isStale
 				).catch(

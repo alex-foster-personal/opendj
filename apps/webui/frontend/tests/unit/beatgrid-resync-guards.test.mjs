@@ -14,6 +14,10 @@
  *   - adoptAuthoritativeGrid: dropping the sameBeatgrid short-circuit makes
  *     "an identical grid is not republished" fail; dropping the whole method
  *     makes the two adoption tests fail.
+ *   - adoptAuthoritativeGrid source-dependent fields: reverting to spreading
+ *     only `beatgrid` makes "adopts tempo_changes and performance_hints
+ *     alongside beatgrid, and drops them on a switch back" fail in both
+ *     directions (Codex P2 BLOCKING, PR #1587).
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -245,6 +249,39 @@ test('adoptAuthoritativeGrid replaces a deck fallback grid with the authoritativ
 		'the beat math reads deck.anlz - adopting only in the WaveRow paint leaves quantize and Beat Sync on ' +
 			'the stale fallback (discussion_r3919779323)'
 	);
+});
+
+test('adoptAuthoritativeGrid carries tempo_changes and performance_hints alongside beatgrid, both ways', async () => {
+	// Own-to-own: an own dynamic grid must land WITH its markers, not a bare
+	// beatgrid stranding the deck's stale (or absent) tempo_changes.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = { ..._anlz('sid-a', _beats(8, 128)), tempo_changes: [{ t: 0, bpm: 128 }] };
+	const ownGrid = {
+		..._anlz('sid-a', _beats(16, 124)),
+		tempo_changes: [{ t: 0, bpm: 124 }, { t: 10, bpm: 126 }],
+		performance_hints: { dynamic_tempo: true }
+	};
+	h.guards.adoptAuthoritativeGrid('sid-a', ownGrid);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(
+		h.anlz[1].tempo_changes,
+		ownGrid.tempo_changes,
+		'an own dynamic grid must not be installed without the tempo markers it came with'
+	);
+	assert.deepEqual(h.anlz[1].performance_hints, { dynamic_tempo: true });
+
+	// Own-to-rekordbox: switching sources back must not retain the stale
+	// own-only markers a rekordbox payload never carries.
+	const rekordboxGrid = _anlz('sid-a', _beats(8, 128));
+	h.guards.adoptAuthoritativeGrid('sid-a', rekordboxGrid);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		h.anlz[1].tempo_changes,
+		undefined,
+		'a deck switched back to rekordbox must not retain stale own-only dynamic tempo metadata'
+	);
+	assert.equal(h.anlz[1].performance_hints, undefined);
 });
 
 test('adoptAuthoritativeGrid does not republish a grid the deck already holds', async () => {
