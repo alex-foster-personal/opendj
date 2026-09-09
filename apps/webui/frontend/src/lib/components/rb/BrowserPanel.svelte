@@ -766,12 +766,24 @@
 				: 'no playlists found';
 		// Until the reconcile summary lands there is no honest playable total,
 		// so the dot says the count is still settling rather than quoting the
-		// raw row count in the meantime - quoting it is the bug.
+		// raw row count in the meantime - quoting it is the bug. But if the
+		// reconcile summary FAILED (backend error, timeout, contract break),
+		// allTracksPlayableCount never settles - it stays null forever - so
+		// this branch must not be a permanent home for it. Surface the
+		// reconcile error and go red instead of freezing on "counting
+		// playable tracks" indefinitely.
 		if (allTracksPlayableCount === null) {
+			if (allTracksReconcileError !== null) {
+				return { label, state: 'error', detail: allTracksReconcileError };
+			}
 			return {
 				label,
 				state: allTracksCount > 0 ? 'incomplete' : 'unavailable',
-				detail: `${playlistPart}, counting playable tracks`
+				// "counting" implies pending work, which is wrong when the
+				// library is already known to be empty (allTracksCount === 0) -
+				// there is nothing left to count.
+				detail:
+					allTracksCount > 0 ? `${playlistPart}, counting playable tracks` : `${playlistPart}, library empty`
 			};
 		}
 		const broken = allTracksBrokenCount ?? 0;
@@ -3122,6 +3134,7 @@
 		right: 0;
 		bottom: 16px;
 		min-width: 180px;
+		max-width: 320px;
 		padding: 6px 8px;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
@@ -3129,7 +3142,7 @@
 		font: inherit;
 		font-size: var(--rb-fs-label);
 		text-align: left;
-		white-space: nowrap;
+		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
 	.health-dot:hover .health-popover,
