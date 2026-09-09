@@ -215,8 +215,11 @@ def test_a_file_replaced_while_the_runner_ran_is_refused(
     from apps.analysis.backends.base import TrackVanished
 
     track = _synthesize(tmp_path / "track.wav", hz=440, rate=44100)
+    # `weights` is imported inside `analyze`, not at module scope, so the
+    # patch has to land on the source module.
     monkeypatch.setattr(
-        own_beatgrid.weights, "resolve_checkpoint", lambda: ("/checkpoint", "0" * 64)
+        "apps.analysis_beatgrid.weights.resolve_checkpoint",
+        lambda: ("/checkpoint", "0" * 64),
     )
 
     def _replace_the_file_mid_run(*args: object, **kwargs: object) -> dict[str, object]:
@@ -244,8 +247,11 @@ def test_an_untouched_file_gets_past_the_provenance_guard(
     from apps.analysis.backends.base import TrackVanished
 
     track = _synthesize(tmp_path / "track.wav", hz=440, rate=44100)
+    # `weights` is imported inside `analyze`, not at module scope, so the
+    # patch has to land on the source module.
     monkeypatch.setattr(
-        own_beatgrid.weights, "resolve_checkpoint", lambda: ("/checkpoint", "0" * 64)
+        "apps.analysis_beatgrid.weights.resolve_checkpoint",
+        lambda: ("/checkpoint", "0" * 64),
     )
     monkeypatch.setattr(
         own_beatgrid, "run_runner", lambda *a, **k: {"results": {}}
