@@ -1203,3 +1203,34 @@ test('pins_show_other_users is a registered performance command that refuses not
 		delete globalThis.window;
 	}
 });
+
+// PARITY-02, discussion_r3968214027 P1 BLOCKING: the SOURCE toggle is a real UI
+// control whose whole point is A/B testing rbx-vs-own, and every UI action needs
+// an agent-native counterpart. The WRITE half existed (the `analysis_source`
+// command), but an agent reading queryPerformanceState() saw no field for it, so
+// it could switch the source and never confirm which one was in effect - and
+// could not attribute a beatgrid/BPM readback to a lane at all.
+test('queryPerformanceState reports the analysis source selection, as a snapshot not the live rune', () => {
+	pairing.analysisSourceState.features = { beatgrid: 'own' };
+
+	const state = pairing.queryPerformanceState();
+
+	assert.deepEqual(state.analysis_source, { beatgrid: 'own' });
+	// Real Svelte 5 wraps a $state object in a Proxy and structuredClone throws
+	// DataCloneError on one (see performance-ipc-pairing-clone.test.mjs), so the
+	// field has to be a rebuilt plain object. Identity is the check that bites
+	// under the test loader, where $state is an identity function.
+	assert.notEqual(
+		state.analysis_source,
+		pairing.analysisSourceState.features,
+		'handing back the live rune sends a Proxy across the IPC boundary'
+	);
+	assert.doesNotThrow(() => structuredClone(state.analysis_source));
+
+	state.analysis_source.beatgrid = 'rekordbox';
+	assert.equal(
+		pairing.analysisSourceState.features.beatgrid,
+		'own',
+		'an IPC consumer mutating its own snapshot must not write back into the toggle'
+	);
+});

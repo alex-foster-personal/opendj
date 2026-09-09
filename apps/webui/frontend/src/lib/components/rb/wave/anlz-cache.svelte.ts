@@ -248,7 +248,16 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
  * must not reach into audio-engine.svelte.ts, which imports the other way
  * round already. Install is once-only; a second install is a wiring bug and
  * throws rather than silently replacing the first sink. */
-export type AuthoritativeAnlzGridSink = (stable_id: string, data: AnlzData) => void;
+export type AuthoritativeAnlzGridSink = (
+	stable_id: string,
+	data: AnlzData,
+	/** Whether `data` carries a usable grid. Defaults true because the ambient
+	 * retry above only ever notifies about a REAL grid; the rbx-vs-own switch
+	 * in `refreshAnalysisSourceDecks` passes false when the newly selected
+	 * source has no grid for this track, so the deck settles gridless instead
+	 * of silently dropping Beat Sync. */
+	landed?: boolean
+) => void;
 let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
 
 export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink): void {
@@ -429,36 +438,81 @@ export interface AnalysisSourceRefreshDeck {
  * Lives here, not as its own module, so it can write straight through this
  * cache's own primitives (kept next to `invalidateAllAnlzCacheEntries` above,
  * which it always pairs with) instead of adding a fan-out edge onto a module
- * audio-engine.svelte.ts already imports from for every other cache concern. */
+ * audio-engine.svelte.ts already imports from for every other cache concern.
+ *
+ * FETCH EVERY DECK FIRST, PUBLISH NOTHING UNTIL ALL OF THEM LAND. An earlier
+ * shape wrote each deck inside its own `Promise.all` callback, so one loaded
+ * track whose new-source payload rejects (an invalid own analysis record, a
+ * transient 500) left the decks that had already resolved swapped to the new
+ * source while the rest stayed on the old one - and nothing rolled them back,
+ * because `Promise.all` only rejects, it does not undo. `_adopt`
+ * (analysis-source.svelte.ts) deliberately leaves `analysisSourceState` on the
+ * OLD value when this rejects so the next poll retries, which for a
+ * permanently failing track meant retrying forever against a split fleet of
+ * decks (discussion_r3968214019 P1 BLOCKING). Staging the fetches makes the
+ * publish phase below synchronous and total: either every loaded deck moves to
+ * the new source or none does.
+ *
+ * CACHE FIRST, DECK SECOND, and the two phases are separated for a reason.
+ * `refreshAnlzCacheEntry` notifies the authoritative-grid sink, which is what
+ * routes a grid change through `afterBeatgridUpgrade` ->
+ * `reconcileAfterBeatgridSettled` - the ONLY path that reschedules a playing,
+ * Beat-Synced master/follower pair onto a new grid. That sink compares the new
+ * grid against the deck's CURRENT one (`sameBeatgrid`, beatgrid-resync-
+ * guards.ts), so writing `decks[deck].anlz` first made every switch look like
+ * a no-op: the waveform and the beat numbers moved to the new grid while the
+ * audible transport stayed scheduled against the old one
+ * (discussion_r3968213995 P1 BLOCKING). Publishing every cache entry while
+ * every deck still holds its pre-switch payload also means two decks loaded
+ * with the SAME track are both reconciled by a single sink notification,
+ * rather than the second one scheduling a duplicate settlement. */
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
 	decks: Record<DeckId, AnalysisSourceRefreshDeck>
 ): Promise<void> {
 	bumpAnlzFetchGeneration();
 	invalidateAllAnlzCacheEntries();
-	await Promise.all(
-		deckIds.map(async (deck) => {
-			const stableId = decks[deck].stable_id;
-			if (stableId === null) return;
-			const fresh = await fetchAnlzBypassingHttpCache(stableId).catch((error: unknown) => {
-				invalidateAnlzCacheEntry(stableId);
-				throw error;
-			});
-			if (decks[deck].stable_id !== stableId) return;
-			// Deck state first, cache mirror second: refreshAnlzCacheEntry also
-			// notifies the authoritative-grid sink below, which exists for an
-			// AMBIENT prefetch discovering a better grid for a track a deck
-			// already has loaded, and reconciles followers as if the deck's own
-			// grid were stale. A deliberate rbx-vs-own switch has already
-			// decided and applied the swap on this exact deck by the time the
-			// cache write happens, so the sink must see the deck's grid already
-			// matching `fresh` (sameBeatgrid short-circuits it) instead of
-			// racing its own out-of-band reconciliation against this direct
-			// assignment.
-			decks[deck].anlz = fresh;
-			refreshAnlzCacheEntry(stableId, fresh);
-		})
+	const wanted = new Map<string, DeckId[]>();
+	for (const deck of deckIds) {
+		const stableId = decks[deck].stable_id;
+		if (stableId === null) continue;
+		// One fetch per TRACK, not per deck: two decks loaded with the same
+		// track would otherwise pull the same multi-MB payload twice.
+		const holders = wanted.get(stableId);
+		if (holders === undefined) wanted.set(stableId, [deck]);
+		else holders.push(deck);
+	}
+	const staged = await Promise.all(
+		[...wanted].map(async ([stableId, holders]) => ({
+			stableId,
+			holders,
+			fresh: await fetchAnlzBypassingHttpCache(stableId)
+		}))
 	);
+	for (const { stableId, fresh } of staged) {
+		refreshAnlzCacheEntry(stableId, fresh);
+		// `refreshAnlzCacheEntry` notifies the sink only for a payload that
+		// HAS a grid, because the ambient prefetch it was built for can only
+		// ever discover one. A deliberate switch can also REMOVE one: OWN with
+		// no analysis record for this track serves the real empty grid plus
+		// `beatgrid_own_unavailable_reason` (rb_assets.py). Left unannounced,
+		// a playing Beat-Synced deck would just lose its grid - quantize and
+		// phase-lock going inert mid-set with no `markSettledGridless`, no
+		// follower abandonment and no sync error. `landed: false` is exactly
+		// the settled-gridless case reconcileAfterBeatgridSettled already
+		// handles.
+		if (!hasAnlzBeatgrid(fresh) && _authoritativeGridSink !== null) {
+			_authoritativeGridSink(stableId, fresh, false);
+		}
+	}
+	for (const { stableId, holders, fresh } of staged) {
+		for (const deck of holders) {
+			// A load() that landed mid-request owns this deck now; its own
+			// fetch already ran under the post-switch generation.
+			if (decks[deck].stable_id !== stableId) continue;
+			decks[deck].anlz = fresh;
+		}
+	}
 }
 
 /** Count of ready ANLZ entries for memory tracking. */

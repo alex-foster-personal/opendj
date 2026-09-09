@@ -153,9 +153,14 @@ export interface BeatgridResyncGuards {
 	 * publish inside the reclaimed scope, then reconcile - rather than
 	 * assigning `deck.anlz` directly, so followers pending on this deck are
 	 * re-locked (or abandoned) under the identical widen rules instead of
-	 * observing a grid change nothing reconciled. `landed` is true: a real
-	 * grid is exactly what a landed settlement means. */
-	adoptAuthoritativeGrid(stableId: string, data: AnlzData): void;
+	 * observing a grid change nothing reconciled. `landed` defaults to true: a
+	 * real grid is exactly what a landed settlement means, and the ambient
+	 * retry that drives this can only ever discover one. The PARITY-02
+	 * rbx-vs-own switch passes it explicitly, because selecting a source that
+	 * has no grid for this track REMOVES one, and a removal has to settle
+	 * gridless rather than leave a playing follower phase-locked to a grid the
+	 * deck no longer has (discussion_r3968213995). */
+	adoptAuthoritativeGrid(stableId: string, data: AnlzData, landed?: boolean): void;
 	/** Install the concrete scoped runner both wrappers claim through. The
 	 * runner itself lives here because these two wrappers are its only
 	 * consumers; audio-engine.svelte.ts re-exports this for the route to call.
@@ -269,7 +274,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				)
 			).catch(onFailure);
 		},
-		adoptAuthoritativeGrid(stableId, data) {
+		adoptAuthoritativeGrid(stableId, data, landed = true) {
 			for (const deck of ports.deckIds) {
 				if (deckStableId(deck) !== stableId) continue;
 				const current = deckAnlz(deck);
@@ -283,7 +288,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				const next: AnlzData = { ...current, beatgrid: data.beatgrid };
 				afterBeatgridUpgrade(
 					deck,
-					true,
+					landed,
 					() => {
 						// Re-read rather than trust `current`: the publish thunk runs
 						// inside a scope claim this call had to queue for, and a

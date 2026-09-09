@@ -10,7 +10,8 @@
 		ANALYSIS_SOURCE_FEATURES,
 		type AnalysisSource,
 		analysisSourceState,
-		loadAnalysisSource
+		loadAnalysisSource,
+		subscribeAnalysisRecordChanges
 	} from '$lib/rb/analysis-source.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
@@ -30,20 +31,37 @@
 	let wrapEl: HTMLSpanElement | undefined = $state();
 	let menuStyle = $state('');
 
+	// This control owns the analysis-source lifecycle for the route, so it also
+	// owns the OWN-grid invalidation subscription: a re-analysis replaces the
+	// record `/anlz` derives an own grid from, and nothing else would notice
+	// (see subscribeAnalysisRecordChanges).
 	$effect(() => {
 		void loadAnalysisSource();
 		const id = setInterval(() => void loadAnalysisSource(), POLL_MS);
-		return () => clearInterval(id);
+		const unsubscribe = subscribeAnalysisRecordChanges();
+		return () => {
+			clearInterval(id);
+			unsubscribe();
+		};
 	});
 
 	const anyOwn = $derived(
 		ANALYSIS_SOURCE_FEATURES.some((feature) => analysisSourceState.features[feature] === 'own')
 	);
 
+	// Flush against the wrapper's bottom edge, NOT offset below it. The menu
+	// is position:fixed (the topbar is overflow:hidden), so any gap between
+	// the two boxes is uncovered screen: a pointer crossing it fires the
+	// wrapper's own pointerleave with a relatedTarget that is neither the
+	// wrapper nor the menu, and _hide closes the menu before the pointer can
+	// reach RBX or OWN. Keyboard focus was unaffected, which is why the
+	// source-level positioning looked fine (discussion_r3968534392 P1
+	// BLOCKING). Contiguous boxes make the crossing a wrapper -> menu
+	// transition, which _hide already treats as staying inside.
 	function _show(): void {
 		if (wrapEl !== undefined) {
 			const rect = wrapEl.getBoundingClientRect();
-			menuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 6)}px`;
+			menuStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom)}px`;
 		}
 		menuOpen = true;
 	}

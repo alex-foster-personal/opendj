@@ -51,6 +51,12 @@ SID_NO_OWN_ANALYSIS = "real-track-c-no-own-analysis"
 #: Artificially slow handler, for the mid-request deck-swap race test - a real
 #: coroutine suspension, not a fabricated fetch delay.
 SID_SLOW = "real-track-slow-own-grid"
+#: Seeded in NEITHER table, so the production route raises its real 404, and
+#: delayed by the same real suspension as SID_SLOW. The delay is what makes the
+#: all-or-nothing test bite: with a fast 404 the rejection can beat a
+#: concurrently-succeeding track's own continuation, so a partial-write
+#: implementation passes by luck rather than by being correct.
+SID_SLOW_ABSENT = "slow-absent-track"
 
 _DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
 
@@ -130,7 +136,7 @@ def create_app() -> FastAPI:
         ):
             app.state.delay_next_analysis_source_get = False
             await asyncio.sleep(0.15)
-        elif request.url.path.endswith(f"/{SID_SLOW}/anlz"):
+        elif request.url.path.endswith((f"/{SID_SLOW}/anlz", f"/{SID_SLOW_ABSENT}/anlz")):
             await asyncio.sleep(0.15)
         return response
 

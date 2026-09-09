@@ -42,7 +42,13 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
-import { setAnalysisSource, type AnalysisSource, type AnalysisSourceFeature } from '$lib/rb/analysis-source.svelte';
+import {
+	analysisSourceState,
+	installAnalysisSourceRefreshRunner,
+	setAnalysisSource,
+	type AnalysisSource,
+	type AnalysisSourceFeature
+} from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
@@ -291,6 +297,14 @@ export interface PerformanceState {
 	preset: PerformancePresetLifecycleSnapshot;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
+	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
+	 * same way the `analysis_source` command names it. An agent driving this
+	 * daemon has to be able to READ the state it can write, including a
+	 * selection some other client PUT directly or one that survived a reload -
+	 * the highlighted RBX/OWN control was the only place it appeared
+	 * (discussion_r3968214027 P1 BLOCKING). Empty until the first
+	 * loadAnalysisSource lands, which is "not asked yet", never a default. */
+	analysis_source: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
@@ -632,6 +646,14 @@ installScopedSyncRunner((_deck, run) => {
 			}
 		});
 });
+// PARITY-02: the poll in AnalysisSourceToggle.svelte adopts an agent's direct
+// PUT with no command of its own, so its deck/cache refresh needs the same
+// all-deck-plus-sync claim the `analysis_source` command takes. Same scopes,
+// so a poll-detected switch queues behind PREPARE/START and every deck
+// mutation instead of replacing grids underneath them
+// (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
+// because analysis-source.svelte.ts is imported FROM here.
+installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -1270,6 +1292,9 @@ export function queryPerformanceState(): PerformanceState {
 			next_collapsed: uiPrefs.next_panel_collapsed,
 			recommended_collapsed: uiPrefs.recommended_panel_collapsed
 		},
+		// Spread, not the live rune: this snapshot is structuredClone'd across
+		// the IPC boundary and a $state Proxy is never cloneable.
+		analysis_source: { ...analysisSourceState.features },
 		feedback_marks: performanceFeedbackSummary()
 	};
 }
