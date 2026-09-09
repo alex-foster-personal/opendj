@@ -216,7 +216,12 @@ export function armAudioContextWatchdog(
 		ctx,
 		{
 			pushToast,
-			recordPerfEvent: (kind, message) => recordPerfEvent(kind, message, null, 'info'),
+			// Severity comes FROM the rebind, it is not pinned here: a failed
+			// re-bind records at `error` so `recordPerfEvent` escalates it to the
+			// engine's client-error log. Pinning every row at `info` is why the
+			// Wed 9 Sep 2026 17:44Z cutout left no server-side trace.
+			recordPerfEvent: (kind, message, severity = 'info') =>
+				recordPerfEvent(kind, message, null, severity),
 			now: () => performance.now(),
 			setTimeout: (fn, ms) => setTimeout(fn, ms),
 			clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
