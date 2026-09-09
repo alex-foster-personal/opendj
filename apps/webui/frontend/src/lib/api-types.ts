@@ -3251,6 +3251,11 @@ export interface components {
              */
             default?: string | null;
             /**
+             * Expected Toggle
+             * @description Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.
+             */
+            expected_toggle?: string | null;
+            /**
              * Lane
              * @description beatgrid, key, waveform, loudness or vocal
              */

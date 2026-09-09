@@ -168,6 +168,34 @@ test('loadAnalysisSource GETs the production daemon selection and mirrors it int
 	await analysisSource.loadAnalysisSource();
 
 	assert.deepEqual(analysisSource.analysisSourceState.features, { beatgrid: 'rekordbox' });
+	assert.deepEqual(runnerLog, [], 'nothing is loaded, so a first sighting has nothing stale to refresh');
+});
+
+test('the very first adopt must not rubber-stamp a deck that is ALREADY loaded (discussion_r3973129047)', async () => {
+	await daemonSelect('own');
+	// A deck loaded onto a track BEFORE this module's first GET ever settled:
+	// its /anlz was fetched under whatever source was effective at load time,
+	// which this first-ever adopt has no watermark yet to compare against.
+	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 0, beats: [] } };
+	try {
+		await analysisSource.loadAnalysisSource();
+
+		assert.deepEqual(
+			runnerLog,
+			['enter', 'exit'],
+			'an unknown watermark with a deck already loaded must force a real refresh, not trust ' +
+				"that the loaded deck already matches the daemon's answer"
+		);
+		assert.deepEqual(
+			analysisSource.analysisSourceState.deckFeatures,
+			{ beatgrid: 'own' },
+			'the watermark must come from what /anlz actually served the loaded deck, not the daemon intent'
+		);
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+	}
 });
 
 test('setAnalysisSource PUTs the production endpoint and adopts its validated response', async () => {
@@ -397,6 +425,57 @@ test('a FAILED record-change refresh stays pending and the next poll retries it'
 	unsubscribe();
 });
 
+test('an event-driven refresh records what /anlz actually SERVED, not the stale own intent (discussion_r3973129057)', async () => {
+	// The REAL daemon is rbx, but this module's own `features` mirror is stale
+	// and still says own (exactly what a switch-back an agent made moments ago,
+	// before the next 5s poll, leaves behind). `_anyFeatureIsOwn` reads that
+	// stale mirror, so the event-driven refresh still runs - and /anlz resolves
+	// rbx-vs-own SERVER-side, so it genuinely serves rbx.
+	//
+	// SID_NO_OWN_ANALYSIS (no own record seeded, no rekordbox mapping either):
+	// its bpm provenance never reports `status: 'ok'` for the own lane, which
+	// keeps this test clear of refreshAnalysisSourceDecks's OWN grid/tempo
+	// pairing guard (discussion_r3972264411) - that guard is a real,
+	// independently-tested invariant, not the thing this test is about.
+	await daemonSelect('rbx');
+	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
+	analysisSource.deckStates[1].stable_id = 'real-track-c-no-own-analysis';
+	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-served-watermark.test/events');
+
+	try {
+		_deliverTracksChanged(socket);
+		// A REAL /anlz + /tracks round trip, not the zero-network short-circuit
+		// the other record-change tests exercise (their decks are never
+		// loaded) - a same-tick 0ms wait is not long enough for real loopback
+		// I/O to settle, so this needs actual margin.
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		assert.deepEqual(runnerLog, ['enter', 'exit'], 'the stale own mirror must still trigger the refresh');
+
+		assert.deepEqual(
+			analysisSource.analysisSourceState.deckFeatures,
+			{ beatgrid: 'rekordbox' },
+			'the watermark must record what /anlz actually served, not the stale own intent - ' +
+				'discarding the served source here leaves a false own watermark that a later poll ' +
+				'compares against itself and never corrects'
+		);
+
+		// Control, the opposite direction: the watermark now genuinely agrees
+		// with the daemon, so a poll confirming that must not buy a second,
+		// redundant multi-MB refresh.
+		runnerLog = [];
+		await analysisSource.loadAnalysisSource();
+		assert.deepEqual(
+			runnerLog,
+			[],
+			'a watermark that already matches the daemon must not cost a redundant refresh'
+		);
+	} finally {
+		unsubscribe();
+		analysisSource.deckStates[1].stable_id = null;
+	}
+});
+
 test('an EARLIER refresh completing must not clear a mark a LATER change set while it was in flight (discussion_r3972154604)', async () => {
 	await daemonSelect('own');
 	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
@@ -551,40 +630,39 @@ test('a RETRY after a failed switch rolls back to the original source, not the f
 	}
 });
 
-test('a failed switch never clobbers a concurrent agent-driven HTTP change during rollback (discussion_r3972682728)', async () => {
-	// _latestMutation only orders THIS module's own local PUTs against each
-	// other - an agent driving PUT /analysis/source directly is invisible to
-	// it. Real server, real concurrent request: an agent's PUT lands between
-	// this failed switch's own PUT and its compensating rollback PUT, and the
-	// rollback must see it and stand down rather than overwrite it with the
-	// stale pre-switch value.
+test('a failed switch never clobbers a concurrent agent-driven HTTP change during rollback (discussion_r3972682728, discussion_r3973129053)', async () => {
+	// The rollback is now a single atomic compare-and-set PUT
+	// (`expected_toggle`, apps.analysis.selection.compare_and_set_toggle), not
+	// a client-side GET followed by an unconditional PUT, so there is no
+	// separate GET left to intercept - a monkeypatched `globalThis.fetch` would
+	// no longer even observe the real race this test exists to prove
+	// (discussion_r3973129053 P1 BLOCKING: "coordinate the timing through the
+	// real fixture server instead"). Real server, real concurrent request,
+	// coordinated by the fixture server's own real ~150ms SID_SLOW_ABSENT
+	// coroutine suspension: an agent's PUT is issued 30ms after the failed
+	// switch's own PUT lands (comfortably before its ~150ms-later compensating
+	// PUT fires), and the rollback's CAS must see the daemon has moved and
+	// stand down rather than overwrite it with the stale pre-switch value.
 	await daemonSelect('rbx');
 	await analysisSource.loadAnalysisSource();
 
 	analysisSource.deckStates[1].stable_id = 'slow-absent-track';
 	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
-	const originalFetch = globalThis.fetch;
 	try {
-		let raced = false;
-		globalThis.fetch = async (input, init) => {
-			const url = typeof input === 'string' ? input : input.url;
-			// openapi-fetch calls fetch(request) with a single Request object, not
-			// fetch(url, init) - its method lives on `input.method`, not `init`.
-			const method = init?.method ?? (typeof input === 'string' ? 'GET' : input.method);
-			if (!raced && url === `${apiBase}/api/v1/analysis/source` && method === 'GET') {
-				raced = true;
-				// A distinct third value (neither 'rbx', the displaced toggle, nor
-				// 'own', this failed switch's own attempted toggle) so a rollback
-				// that ignored the race and restored 'rbx' anyway is distinguishable
-				// from one that correctly saw and deferred to this agent's write.
-				await daemonSelect('unset');
-			}
-			return originalFetch(input, init);
-		};
+		const raceWindow = new Promise((resolve) => setTimeout(resolve, 30)).then(() =>
+			// A distinct third value (neither 'rbx', the displaced toggle, nor
+			// 'own', this failed switch's own attempted toggle) so a rollback
+			// that ignored the race and restored 'rbx' anyway is distinguishable
+			// from one that correctly saw and deferred to this agent's write.
+			daemonSelect('unset')
+		);
 
-		await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
+		await Promise.all([
+			assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own')),
+			raceWindow
+		]);
 
-		const daemon = await (await originalFetch(`${apiBase}/api/v1/analysis/source`)).json();
+		const daemon = await (await fetch(`${apiBase}/api/v1/analysis/source`)).json();
 		assert.equal(
 			daemon.lanes.beatgrid.toggle,
 			'unset',
@@ -592,8 +670,8 @@ test('a failed switch never clobbers a concurrent agent-driven HTTP change durin
 				'have restored the stale rbx value instead'
 		);
 	} finally {
-		globalThis.fetch = originalFetch;
 		analysisSource.deckStates[1].stable_id = null;
 		analysisSource.deckStates[1].anlz = null;
 	}
 });
+

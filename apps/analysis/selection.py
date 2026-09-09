@@ -189,6 +189,28 @@ def set_toggle(lane: str, state: str) -> ToggleState:
     return state  # type: ignore[return-value]
 
 
+def compare_and_set_toggle(lane: str, expected: str, new: str) -> bool:
+    """Set `lane`'s toggle to `new` only if it currently holds `expected`.
+
+    The one client of this is a compensating rollback (analysis-source.svelte.ts
+    `_rollBackFailedSwitch`) putting a failed switch's displaced toggle back. A
+    plain read-then-`set_toggle` leaves a window between the client's read and
+    its write for a concurrent agent's own PUT to land, and the rollback would
+    then clobber that newer value with the stale pre-switch one
+    (discussion_r3973129053 P2 BLOCKING). Reading and writing under the SAME
+    lock acquisition is what closes that window server-side, where no client
+    round trip can reopen it. Returns whether the set happened.
+    """
+    _check_lane(lane)
+    check_toggle_state(expected)
+    check_toggle_state(new)
+    with _TOGGLE_LOCK:
+        if _TOGGLE[lane] != expected:
+            return False
+        _TOGGLE[lane] = new  # type: ignore[assignment]
+        return True
+
+
 def all_toggles() -> dict[str, ToggleState]:
     with _TOGGLE_LOCK:
         return dict(_TOGGLE)
@@ -464,6 +486,7 @@ __all__ = [
     "check_lane",
     "check_source",
     "check_toggle_state",
+    "compare_and_set_toggle",
     "effective_fields",
     "effective_source",
     "ensure_tables",

@@ -65,6 +65,16 @@ class AnalysisSourcePut(BaseModel):
         default=None,
         description="unset, rbx or own. In-memory; resets to unset on relaunch.",
     )
+    expected_toggle: str | None = Field(
+        default=None,
+        description=(
+            "Compare-and-set precondition for `toggle`: apply it only if the "
+            "lane's CURRENT toggle equals this value, atomically. 409 on a "
+            "mismatch. Ignored unless `toggle` is also given; a plain "
+            "`toggle` with no `expected_toggle` sets unconditionally, exactly "
+            "as before this field existed."
+        ),
+    )
 
 
 def _db_path(request: Request) -> Path:
@@ -177,6 +187,8 @@ def put_analysis_source(
             sel.check_source(body.default)
         if body.toggle is not None:
             sel.check_toggle_state(body.toggle)
+        if body.expected_toggle is not None:
+            sel.check_toggle_state(body.expected_toggle)
     except sel.SelectionError as exc:
         raise HTTPException(
             status_code=422,
@@ -205,7 +217,24 @@ def put_analysis_source(
             sel.set_default(conn, body.lane, body.default)
             conn.commit()
         if body.toggle is not None:
-            sel.set_toggle(body.lane, body.toggle)
+            if body.expected_toggle is not None:
+                if not sel.compare_and_set_toggle(
+                    body.lane, body.expected_toggle, body.toggle
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "toggle_changed",
+                            "message": (
+                                f"lane {body.lane!r}'s toggle no longer holds "
+                                f"{body.expected_toggle!r}; someone else changed "
+                                "it since, so this compare-and-set was refused "
+                                "rather than overwriting a newer value"
+                            ),
+                        },
+                    )
+            else:
+                sel.set_toggle(body.lane, body.toggle)
         return AnalysisSourceOut(**sel.source_state(conn))
     finally:
         conn.close()

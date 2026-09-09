@@ -21,6 +21,7 @@
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
 import { api, unwrap } from '../api';
+import { ApiError } from '../api/client';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { refreshAnalysisSourceDecks } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { DECK_IDS, deckStates } from './audio-engine.svelte';
@@ -114,9 +115,24 @@ let _recordRefreshGeneration = 0;
 
 /** True when `next` disagrees with the source the decks are actually holding.
  * A feature seen for the FIRST time (a fresh mount's `{}` -> populated) is not
- * a change: nothing was fetched or loaded under the old value yet, so there is
- * nothing stale to refresh -- this keeps the poll in AnalysisSourceToggle.svelte
- * from forcing a multi-MB /anlz refetch on every tick when nothing moved.
+ * a change WHEN NOTHING IS LOADED: nothing was fetched under the old value
+ * yet, so there is nothing stale to refresh -- this keeps the poll in
+ * AnalysisSourceToggle.svelte from forcing a multi-MB /anlz refetch on every
+ * tick when nothing moved.
+ *
+ * But a deck CAN already be loaded the first time this ever runs (a track
+ * finishes loading before the initial GET settles, or before an operator's
+ * very first switch), and its /anlz was fetched under whatever source was
+ * effective at that moment - which this unknown watermark cannot vouch for
+ * either way. Treating "unknown" as "no disagreement" there lets `_adopt`
+ * record the requested source as the watermark without ever refreshing the
+ * deck, so a subsequent poll compares the new answer against that
+ * rubber-stamped watermark, sees no change, and leaves the deck on its
+ * pre-switch grid indefinitely while every readout reports the new source
+ * (discussion_r3973129047 P1 BLOCKING). So an unknown watermark forces a
+ * refresh whenever ANY deck actually holds a track, whatever `next` says -
+ * the refresh is what lets `_recordDeckSources` learn the true watermark from
+ * what /anlz actually serves, instead of guessing it matches.
  *
  * Reads `analysisSourceState.deckFeatures`, NOT `.features`. The mirror is a
  * snapshot of what the daemon said; only `deckFeatures` is a statement about
@@ -124,7 +140,11 @@ let _recordRefreshGeneration = 0;
 function _decksDisagreeWith(next: Record<string, AnalysisSource>): boolean {
 	for (const [feature, source] of Object.entries(next)) {
 		const held = analysisSourceState.deckFeatures[feature];
-		if (held !== undefined && held !== source) return true;
+		if (held !== undefined) {
+			if (held !== source) return true;
+			continue;
+		}
+		if (DECK_IDS.some((deck) => deckStates[deck].stable_id !== null)) return true;
 	}
 	return false;
 }
@@ -287,15 +307,20 @@ export async function setAnalysisSource(
  *
  * `mutation` only orders this against a NEWER local PUT from THIS module -
  * the endpoint is explicitly agent-facing, and an agent driving it directly
- * over HTTP never touches `_latestMutation` at all. So right before writing,
- * this also re-GETs the daemon's CURRENT toggle and compares it against
- * `attemptedToggle` (the value this failed switch itself set, captured from
- * its own PUT response before the failure) - a compare-and-set against the
- * daemon rather than only this browser tab's own counter. If the daemon no
- * longer holds what this switch put there, somebody else's change is now
- * live and owns the daemon; restoring the pre-switch value over it would
- * clobber that newer change with a stale one nobody asked for
- * (discussion_r3972682728 P2 BLOCKING). */
+ * over HTTP never touches `_latestMutation` at all. So this compensating PUT
+ * also carries `expected_toggle: attemptedToggle` (the value this failed
+ * switch itself set, captured from its own PUT response before the failure),
+ * which the SERVER applies as an atomic compare-and-set
+ * (`apps.analysis.selection.compare_and_set_toggle`): it sets the toggle only
+ * if the lane's CURRENT value still equals `attemptedToggle`, checked and
+ * written under one lock acquisition. A separate client-side GET-then-PUT
+ * leaves the exact window this exists to close open on the CLIENT side - an
+ * agent's own PUT can land between this module's GET and its compensating PUT
+ * and still get overwritten, because nothing atomic ties the two together
+ * (discussion_r3973129053 P2 BLOCKING, sharpening discussion_r3972682728). If
+ * the daemon no longer holds what this switch put there, somebody else's
+ * change is now live and owns the daemon; the server refuses with 409 rather
+ * than clobbering that newer change with a stale one nobody asked for. */
 async function _rollBackFailedSwitch(
 	lane: string,
 	displacedToggle: string | undefined,
@@ -312,17 +337,6 @@ async function _rollBackFailedSwitch(
 	}
 	_latestMutation++;
 	try {
-		const current = await unwrap(api.GET('/api/v1/analysis/source'));
-		const currentToggle = current.lanes[lane]?.toggle;
-		if (currentToggle !== attemptedToggle) {
-			console.error(
-				`[analysis-source] switch of ${lane} failed, but the daemon now holds ` +
-					`'${currentToggle}', not the '${attemptedToggle}' this switch itself set - ` +
-					'someone else changed it since, so standing down rather than overwriting ' +
-					'a newer change with the stale pre-switch value'
-			);
-			return;
-		}
 		// The compensating PUT's own answer is ADOPTED, not discarded. The failed
 		// switch's PUT already moved `_lastToggles[lane]` to the toggle it was
 		// attempting, so leaving that in place would make a retry before the next
@@ -332,9 +346,22 @@ async function _rollBackFailedSwitch(
 		// (discussion_r3970967286 P1 BLOCKING). Running the response through
 		// `_featuresOf` is what keeps the capture in step with the daemon.
 		_featuresOf(
-			await unwrap(api.PUT('/api/v1/analysis/source', { body: { lane, toggle: displacedToggle } }))
+			await unwrap(
+				api.PUT('/api/v1/analysis/source', {
+					body: { lane, toggle: displacedToggle, expected_toggle: attemptedToggle }
+				})
+			)
 		);
 	} catch (exc) {
+		if (exc instanceof ApiError && exc.status === 409) {
+			console.error(
+				`[analysis-source] switch of ${lane} failed, but the daemon no longer holds ` +
+					`the '${attemptedToggle}' this switch itself set - someone else changed it ` +
+					'since, so standing down rather than overwriting a newer change with the ' +
+					'stale pre-switch value'
+			);
+			return;
+		}
 		// Reported, never swallowed: the daemon is now genuinely split from the
 		// decks and the operator has to know that reloading is the way back.
 		console.error(
@@ -460,7 +487,19 @@ function _refreshOwnGridsAfterRecordChange(): void {
 async function _drainPendingRecordRefresh(): Promise<void> {
 	if (!_recordRefreshPending) return;
 	try {
-		await _refreshDecks(true);
+		// This refresh never goes through `_adopt`, so nothing else records what
+		// /anlz actually served - and it CAN legitimately differ from `features`:
+		// /anlz resolves rbx-vs-own server-side at fetch time, so an external
+		// client that temporarily flips the daemon to rbx while this event-driven
+		// refresh is in flight makes it publish rbx payloads even though
+		// `features` still says own. Leaving the watermark on the stale 'own'
+		// intent means a later poll that finds the daemon back on 'own' compares
+		// own-against-own, sees no disagreement, and never runs the refresh that
+		// would actually bring the decks back in step (discussion_r3973129057 P2
+		// BLOCKING). `served` is `null` when nothing was loaded, in which case
+		// this falls back to `features` unchanged - a harmless no-op.
+		const served = await _refreshDecks(true);
+		_recordDeckSources(analysisSourceState.features, served);
 	} catch (exc) {
 		console.error(
 			'[analysis-source] own-grid refresh after an analysis record change failed; ' +

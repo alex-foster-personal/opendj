@@ -569,6 +569,18 @@
             "description": "rbx or own. Persisted; survives a relaunch.",
             "title": "Default"
           },
+          "expected_toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.",
+            "title": "Expected Toggle"
+          },
           "lane": {
             "description": "beatgrid, key, waveform, loudness or vocal",
             "title": "Lane",
