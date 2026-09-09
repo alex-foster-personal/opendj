@@ -74,10 +74,28 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _check_lane(lane: str) -> str:
+def check_lane(lane: str) -> str:
     if lane not in LANES:
         raise SelectionError(f"unknown lane {lane!r}; lanes are {LANES}")
     return lane
+
+
+def check_source(source: str) -> str:
+    if source not in SOURCES:
+        raise SelectionError(f"unknown source {source!r}; sources are {SOURCES}")
+    return source
+
+
+def check_toggle_state(state: str) -> str:
+    if state not in TOGGLE_STATES:
+        raise SelectionError(
+            f"unknown toggle state {state!r}; states are {TOGGLE_STATES}"
+        )
+    return state
+
+
+# Kept as the internal spelling used throughout this module.
+_check_lane = check_lane
 
 
 #-----------------------------------------------------------------------------
@@ -122,8 +140,7 @@ def get_default(conn: sqlite3.Connection, lane: str) -> Source:
 
 def set_default(conn: sqlite3.Connection, lane: str, source: str) -> Source:
     _check_lane(lane)
-    if source not in SOURCES:
-        raise SelectionError(f"unknown source {source!r}; sources are {SOURCES}")
+    check_source(source)
     ensure_tables(conn)
     conn.execute(
         """
@@ -160,10 +177,7 @@ def get_toggle(lane: str) -> ToggleState:
 
 def set_toggle(lane: str, state: str) -> ToggleState:
     _check_lane(lane)
-    if state not in TOGGLE_STATES:
-        raise SelectionError(
-            f"unknown toggle state {state!r}; states are {TOGGLE_STATES}"
-        )
+    check_toggle_state(state)
     with _TOGGLE_LOCK:
         _TOGGLE[lane] = state  # type: ignore[assignment]
     return state  # type: ignore[return-value]
@@ -196,17 +210,36 @@ def effective_source(conn: sqlite3.Connection, lane: str) -> Source:
 
 @dataclass(frozen=True)
 class Selection:
-    """One resolved lane -> source mapping, so a read is a pure function of it."""
+    """One resolved read context: lane -> source, plus whether own data can exist.
+
+    ``projection_available`` is part of the context and not a lookup done
+    later, because both readers need the SAME answer. `analysis_projection`
+    is created by :mod:`apps.analysis.store` on its first own write, so a
+    lane can be promoted to own on a database that has never held an own
+    record. When that happens the honest answer is that own has NO rows:
+    the track read model shows `missing`, and a smartlist predicate matches
+    nothing. What must NOT happen is either reader falling back to
+    rekordbox, or a smartlist raising `no such table`, both of which this
+    field's absence caused (Codex P1, PR #1549).
+    """
 
     by_lane: Mapping[str, Source]
+    projection_available: bool = False
 
     def source(self, lane: str) -> Source:
         _check_lane(lane)
         return self.by_lane[lane]
 
+    @property
+    def any_own(self) -> bool:
+        return any(self.by_lane[lane] == "own" for lane in LANES)
+
     @classmethod
     def resolve(cls, conn: sqlite3.Connection) -> Selection:
-        return cls(by_lane={lane: effective_source(conn, lane) for lane in LANES})
+        return cls(
+            by_lane={lane: effective_source(conn, lane) for lane in LANES},
+            projection_available=_table_exists(conn, "analysis_projection"),
+        )
 
     @classmethod
     def all_rbx(cls) -> Selection:
@@ -284,14 +317,6 @@ def _fetch_projection(
     out: dict[str, dict[str, EffectiveField]] = {sid: {} for sid in stable_ids}
     if not fields:
         return out
-    if not _table_exists(conn, "analysis_projection"):
-        # No table means no own records have ever been written. That is
-        # ZERO ROWS, so every own field below resolves to `missing`. It is
-        # NOT a reason to serve the rekordbox value: a lane promoted to own
-        # on a database with no own analysis yet must read missing, which is
-        # true, rather than rekordbox, which is the silent substitution this
-        # milestone exists to remove.
-        return out
     field_placeholders = ",".join("?" * len(fields))
     for i in range(0, len(stable_ids), 500):
         sub = stable_ids[i:i + 500]
@@ -341,7 +366,14 @@ def effective_fields(
     )
 
     out = _fetch_track_fields(conn, ids, rbx_fields)
-    projected = _fetch_projection(conn, ids, own_fields)
+    # No own store means no own records have ever been written. That is ZERO
+    # ROWS, so every own field below resolves to `missing`, which is true.
+    # It is NOT a reason to serve the rekordbox value.
+    projected = (
+        _fetch_projection(conn, ids, own_fields)
+        if selection.projection_available
+        else {sid: {} for sid in ids}
+    )
     for sid in ids:
         for field_name in own_fields:
             found = projected[sid].get(field_name)
@@ -371,6 +403,12 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
     lane = lane_for_field(field_name)
     source = selection.source(lane)
     if source == "own":
+        if not selection.projection_available:
+            # No own store, so no own rows: the predicate matches NOTHING.
+            # Emitting the subquery anyway would raise `no such table` and
+            # take the whole smartlist down; emitting the rekordbox column
+            # would answer a question nobody asked.
+            return "NULL"
         return (
             "(SELECT ap.value FROM analysis_projection ap "
             f"WHERE ap.stable_id = {table}.stable_id "
@@ -416,6 +454,9 @@ __all__ = [
     "ToggleState",
     "all_defaults",
     "all_toggles",
+    "check_lane",
+    "check_source",
+    "check_toggle_state",
     "effective_fields",
     "effective_source",
     "ensure_tables",

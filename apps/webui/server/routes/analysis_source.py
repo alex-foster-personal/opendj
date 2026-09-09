@@ -29,6 +29,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from apps.analysis import selection as sel
+from apps.analysis import store as analysis_store
 from apps.shared.paths import STATE_DB
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -68,9 +69,16 @@ def _db_path(request: Request) -> Path:
 
 
 def _open(request: Request) -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path(request))
-    sel.ensure_tables(conn)
-    return conn
+    """Open with the FULL analysis schema, not just the selection table.
+
+    Promoting a lane to own on a database with no `analysis_projection` was
+    a real defect (Codex P1, PR #1549): the readers are hardened against it
+    now, but the honest fix is that the surface which can say `own` also
+    guarantees the store that word refers to. `store.open_conn` runs the
+    Phase 5 migrations and the analysis DDL, so a PUT can never leave the
+    database in a state its own GET describes wrongly.
+    """
+    return analysis_store.open_conn(_db_path(request))
 
 
 @router.get("/source", response_model=AnalysisSourceOut)
@@ -92,6 +100,21 @@ def put_analysis_source(request: Request, body: AnalysisSourcePut) -> AnalysisSo
                 "message": "PUT /analysis/source needs at least one of default or toggle",
             },
         )
+    # Validate EVERYTHING before mutating ANYTHING. A PUT carrying a valid
+    # default and an invalid toggle used to persist the default and then
+    # return 422, which a client reads as "nothing happened" (Codex P2).
+    try:
+        sel.check_lane(body.lane)
+        if body.default is not None:
+            sel.check_source(body.default)
+        if body.toggle is not None:
+            sel.check_toggle_state(body.toggle)
+    except sel.SelectionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_selection", "message": str(exc)},
+        ) from exc
+
     conn = _open(request)
     try:
         if body.default is not None:
@@ -100,11 +123,6 @@ def put_analysis_source(request: Request, body: AnalysisSourcePut) -> AnalysisSo
         if body.toggle is not None:
             sel.set_toggle(body.lane, body.toggle)
         return AnalysisSourceOut(**sel.source_state(conn))
-    except sel.SelectionError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "invalid_selection", "message": str(exc)},
-        ) from exc
     finally:
         conn.close()
 

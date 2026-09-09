@@ -389,7 +389,7 @@ def _lane_owned_fields(
     tests/webui/test_effective_fields.py.
     """
     selection = analysis_selection.Selection.resolve(conn)
-    if all(selection.source(lane) == "rbx" for lane in analysis_selection.LANES):
+    if not selection.any_own:
         return {}
     return analysis_selection.effective_fields(conn, stable_ids, selection)
 

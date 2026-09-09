@@ -119,6 +119,12 @@ def recompute_canonical(
         return (version_key, _PRODUCER_RANK[parsed.producer])
 
     winner = max(candidates, key=rank)
+    if canonical_pointer(conn, stable_id, lane) == (winner[0], winner[1]):
+        # Identical pointer: leave the row, and its timestamp, alone. That
+        # stamp is folded into the track's public updated_at and therefore
+        # its ETag, so rewriting it on a semantically unchanged re-run would
+        # invalidate every client cache for a track nothing changed about.
+        return (winner[0], winner[1])
     conn.execute(
         """
         INSERT INTO analysis_canonical (stable_id, lane, backend, backend_version, updated_at)
@@ -149,38 +155,65 @@ def canonical_pointer(
 # projection
 #-----------------------------------------------------------------------------
 
-def _project_lane(lane: str, result: LaneResult) -> dict[str, tuple[Any, float | None]]:
-    """Scalars a successful lane contributes, as ``field -> (value, confidence)``."""
+@dataclass(frozen=True)
+class _Projected:
+    """One projected scalar, carrying the status of whatever produced it.
+
+    ``status`` is per FIELD, not per lane, because a lane can partly
+    succeed: the key lane's `segments` block has its own status (it needs
+    own downbeats, which can be absent while the global key succeeded), so
+    `key` can be `ok` while `key_change_count` is `failed` with the segment
+    analysis's OWN reason. Collapsing that to a generic `missing` would
+    make a measured failure indistinguishable from analysis that never ran.
+    """
+
+    value: Any
+    confidence: float | None = None
+    status: str = "ok"
+    reason: str | None = None
+
+
+def _project_lane(lane: str, result: LaneResult) -> dict[str, _Projected]:
+    """Scalars a successful lane contributes."""
     payload = result.payload
     if lane == "beatgrid":
         return {
-            "bpm": (float(payload["bpm"]), float(payload["bpm_confidence"])),
-            "tempo_change_count": (len(payload["tempo_changes"]), result.confidence),
+            "bpm": _Projected(float(payload["bpm"]), float(payload["bpm_confidence"])),
+            "tempo_change_count": _Projected(
+                len(payload["tempo_changes"]), result.confidence
+            ),
         }
     if lane == "key":
         return {
-            "key": (str(payload["camelot"]), float(payload["confidence"])),
-            # A stable key is ONE segment, so the count of CHANGES is one
-            # fewer. Reported only when the segment analysis itself is ok:
-            # key-change analysis needs own downbeats and can be missing
-            # while the global key succeeded, which is why the segments
-            # block carries its own status (spec section 3).
+            "key": _Projected(str(payload["camelot"]), float(payload["confidence"])),
             "key_change_count": _key_change_count(payload),
         }
     if lane == "loudness":
         return {
-            "loudness_lufs": (float(payload["integrated_lufs"]), result.confidence),
-            "loudness_dbtp": (float(payload["true_peak_dbtp"]), result.confidence),
+            "loudness_lufs": _Projected(
+                float(payload["integrated_lufs"]), result.confidence
+            ),
+            "loudness_dbtp": _Projected(
+                float(payload["true_peak_dbtp"]), result.confidence
+            ),
         }
     # waveform and vocal contribute no scalars; they are served through /anlz.
     return {}
 
 
-def _key_change_count(payload: dict[str, Any]) -> tuple[Any, float | None]:
+def _key_change_count(payload: dict[str, Any]) -> _Projected:
+    """A stable key is ONE segment, so the count of CHANGES is one fewer.
+
+    The segments block's own status and reason travel through verbatim.
+    """
     segments_block = payload["segments"]
     if segments_block["status"] != "ok":
-        return (None, None)
-    return (max(len(segments_block["segments"]) - 1, 0), None)
+        return _Projected(
+            value=None, confidence=None,
+            status=segments_block["status"],
+            reason=segments_block.get("reason") or "key_segments_unavailable",
+        )
+    return _Projected(max(len(segments_block["segments"]) - 1, 0))
 
 
 @dataclass(frozen=True)
@@ -202,6 +235,18 @@ def _write_projection_row(
     confidence: float | None,
     pointer: _Pointer,
 ) -> None:
+    existing = conn.execute(
+        "SELECT value, status, reason, confidence, backend, backend_version "
+        "FROM analysis_projection WHERE stable_id = ? AND field = ?",
+        (stable_id, field),
+    ).fetchone()
+    if existing is not None and tuple(existing) == (
+        value, status, reason, confidence, pointer.backend, pointer.backend_version
+    ):
+        # Same in every column that carries meaning, so the row is not
+        # rewritten and `updated_at` does not move. See recompute_canonical:
+        # this stamp reaches the track ETag.
+        return
     conn.execute(
         """
         INSERT INTO analysis_projection (
@@ -279,13 +324,11 @@ def rebuild_projection(conn: sqlite3.Connection, stable_id: str, lane: str) -> N
                 f"{missing_fields}"
             )
         for field_name in FIELDS_BY_LANE[lane]:
-            value, confidence = projected[field_name]
-            status = "ok" if value is not None else "missing"
+            cell = projected[field_name]
             _write_projection_row(
                 conn, stable_id, field_name,
-                value=value, status=status,
-                reason=None if status == "ok" else _sub_lane_reason(lane, field_name),
-                confidence=confidence, pointer=ptr,
+                value=cell.value, status=cell.status, reason=cell.reason,
+                confidence=cell.confidence, pointer=ptr,
             )
         return
 
@@ -299,12 +342,6 @@ def rebuild_projection(conn: sqlite3.Connection, stable_id: str, lane: str) -> N
             value=None, status=result.status, reason=result.reason,
             confidence=None, pointer=ptr,
         )
-
-
-def _sub_lane_reason(lane: str, field_name: str) -> str:
-    if field_name == "key_change_count":
-        return "key_segments_unavailable"
-    return f"{lane}_field_unavailable"
 
 
 #-----------------------------------------------------------------------------
