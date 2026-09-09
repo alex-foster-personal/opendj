@@ -10,6 +10,7 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -26,7 +27,18 @@ router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
 _CACHE_AUDIO = "no-store"  # files can move (apps/reconcile repairs)
 _CACHE_ARTWORK = "public, max-age=86400"
-_CACHE_ANLZ = "public, max-age=3600"
+# REVALIDATE, never serve from cache blind. This payload varies with two
+# things the URL does not name: whether an own record has landed for the track
+# (a background backfill can promote one at any moment) and the PARITY-02
+# source selection, a process-local toggle. Under the previous
+# `public, max-age=3600` a browser replayed the old grid for up to an hour
+# after either changed, and the earlier fix only sent `no-store` once the
+# response had ALREADY resolved to `own`, so a response cached before the
+# promotion never reached the server to be corrected (Codex P1 BLOCKING,
+# PR #1587). `no-cache` still lets the browser HOLD the body; it just has to
+# ask first, and the ETag below turns that ask into a 304 for the common
+# unchanged case rather than 1.2 MB on every deck load.
+_CACHE_ANLZ = "private, no-cache"
 _CACHE_ANLZ_RETRYABLE = "no-store"  # transient decoder saturation, not a fact about the track
 _CACHE_RB_META = "no-store"  # file_exists must reflect disk truth
 
@@ -216,12 +228,39 @@ def get_track_anlz(
     # changes, and no ETag exists on this endpoint to revalidate against
     # (Codex P1 BLOCKING, PR #1587). The rekordbox-sourced path is unchanged: it
     # varies only with the ANLZ files, which the file cache already keys on.
-    beatgrid = payload.get("beatgrid")
-    own_sourced = isinstance(beatgrid, dict) and beatgrid.get("source") == "own"
-    cache_control = (
-        _CACHE_ANLZ_RETRYABLE if (retryable or own_sourced) else _CACHE_ANLZ
-    )
-    return JSONResponse(payload, headers={"Cache-Control": cache_control})
+    if retryable:
+        # A retryable miss is a statement about this MOMENT, not about the
+        # track, so it is not held at all, with or without revalidation.
+        return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ_RETRYABLE})
+
+    # The ETag is the digest of the response itself, so it cannot disagree
+    # with what it labels: any change to the grid, its source, or the waveform
+    # changes the body and therefore the tag. Deriving it from inputs instead
+    # (ANLZ mtimes plus the record digest plus the selection) would be faster
+    # and would be one more thing to keep in sync with the payload.
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str)
+    etag = f'"{hashlib.sha256(body.encode("utf-8")).hexdigest()}"'
+    headers = {"Cache-Control": _CACHE_ANLZ, "ETag": etag}
+    if _if_none_match_hits(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+
+
+def _if_none_match_hits(header: str | None, etag: str) -> bool:
+    """True when the client already holds this exact representation.
+
+    RFC 9110: the header is a comma-separated LIST, may be `*`, and each member
+    may carry the `W/` weak prefix. A bare `header == etag` comparison misses
+    every one of those, and a miss here is not a visible failure - it just
+    quietly sends 1.2 MB that did not need sending, which is why it would
+    never be noticed.
+    """
+    if not header:
+        return False
+    candidates = [part.strip() for part in header.split(",")]
+    if "*" in candidates:
+        return True
+    return any(part.removeprefix("W/") == etag for part in candidates)
 
 
 def _local_rb_meta(stable_id: str) -> RbMetaOut:

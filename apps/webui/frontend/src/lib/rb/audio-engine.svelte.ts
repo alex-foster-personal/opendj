@@ -118,6 +118,7 @@ import {
 	installAuthoritativeAnlzGridSink,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
+	revalidateAnlz,
 	refreshAnlzCacheEntry,
 	upgradeDeckBeatgrid,
 	createBeatgridResyncGuards,
@@ -2835,6 +2836,16 @@ class RbAudioEngine implements AudioEngine {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
 			const anlzCached = isAnlzEntryUsable(cachedAnlz);
+			// The cache hit stays on the critical path (that is the point of the
+			// prefetch), but it is no longer TRUSTED for the session: a source
+			// toggle or a backfill promotion since it was cached would otherwise
+			// keep this deck on the pre-promotion grid until reload (Codex P1
+			// BLOCKING, PR #1587). The revalidation runs beside the load, not in
+			// front of it, and the route answers 304 when nothing changed; if
+			// something did, `_publishAnlzResult` fires the authoritative grid
+			// sink and the deck adopts the new grid the same way it adopts a
+			// late-arriving PQTZ grid today.
+			if (anlzCached) revalidateAnlz(stable_id);
 			// A direct (uncached) fetch never blocks the load out waiting on a
 			// momentarily saturated decoder (Codex finding, issue #735 follow-up,
 			// discussion_r3907610439): `anlz` below must be non-null for this

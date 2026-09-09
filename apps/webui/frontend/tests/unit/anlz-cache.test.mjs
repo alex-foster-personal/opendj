@@ -668,3 +668,78 @@ test('a decoded payload is terminal and never refetches', async () => {
 		globalThis.fetch = originalFetch;
 	}
 });
+
+test('revalidateAnlz replaces a stale entry without blanking it first', async () => {
+	// The session-long-hit defect: a source toggle or a backfill promotion
+	// changes the served grid, and a ready entry cached before it keeps the
+	// deck on the old one for the rest of the session (Codex P1 BLOCKING,
+	// PR #1587). Revalidation has to swap the payload WITHOUT passing through
+	// 'loading', or every deck load blanks a waveform that was painting fine.
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async () =>
+		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		cache.ensureAnlz('promoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(cache.getAnlzEntry('promoted-track').data.local_waveform.preview_b64, 'AAAA');
+
+		let released;
+		const inFlight = new Promise((resolve) => {
+			released = resolve;
+		});
+		globalThis.fetch = async () => {
+			await inFlight;
+			return jsonResponse(
+				anlzPayload({ status: 'decoded', reason: null, preview_b64: 'BBBB', preview_max: 200 })
+			);
+		};
+
+		cache.revalidateAnlz('promoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const during = cache.getAnlzEntry('promoted-track');
+		assert.equal(
+			during.status,
+			'ready',
+			'the entry must stay usable while the revalidation is in flight, or the ' +
+				'deck load that triggered it paints a blank waveform'
+		);
+		assert.equal(during.data.local_waveform.preview_b64, 'AAAA');
+
+		released();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(
+			cache.getAnlzEntry('promoted-track').data.local_waveform.preview_b64,
+			'BBBB',
+			'the revalidated payload must replace the stale one'
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a failed revalidation leaves the good entry in place', async () => {
+	// Never worse than not revalidating at all: this call exists to improve on
+	// a stale-but-working entry, so a network failure must not turn it into an
+	// error entry and cost the deck a grid it already had.
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async () =>
+		jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+	try {
+		cache.ensureAnlz('flaky-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ code: 'ANALYSIS_NOT_FOUND', message: 'gone' }), {
+				status: 404,
+				headers: { 'content-type': 'application/json' }
+			});
+		cache.revalidateAnlz('flaky-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const entry = cache.getAnlzEntry('flaky-track');
+		assert.equal(entry.status, 'ready');
+		assert.equal(entry.data.local_waveform.preview_b64, 'AAAA');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});

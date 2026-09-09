@@ -348,6 +348,43 @@ export function ensureAnlz(stable_id: string): void {
 	_fetchAndPublish(stable_id);
 }
 
+/** Re-fetches /anlz for a track whose cached entry may have gone stale, WITHOUT
+ * dropping the entry it already holds.
+ *
+ * A ready entry is a session-long hit: `isAnlzEntryUsable` asks only whether
+ * the payload is terminal, so once a track is cached the deck reuses it and
+ * never asks the server again. Two things can change underneath it that the
+ * entry cannot see - a `PUT /analysis/source` switch, and a backfill
+ * promoting an own record to canonical - so the deck would keep playing the
+ * pre-promotion grid for the rest of the session (Codex P1 BLOCKING,
+ * PR #1587). The server side of that is closed by revalidation and an ETag on
+ * the route; this is the half no HTTP header can reach, because the stale copy
+ * is in this module's own state.
+ *
+ * Deliberately NOT `_fetchAndPublish`: that writes `{status: 'loading'}`
+ * first, which would blank a waveform that is currently painted fine every
+ * time a deck loads. This keeps the existing entry visible until a real
+ * answer arrives, and `_publishAnlzResult` then fires the authoritative grid
+ * sink, so a loaded deck adopts a grid that actually changed.
+ *
+ * A failed revalidation leaves the good entry in place. It is the same
+ * failure as never having revalidated, which is the state this call is trying
+ * to improve on, so it must not be worse than the status quo. */
+export function revalidateAnlz(stable_id: string): void {
+	const startedAt = performance.now();
+	void fetchAnlz(stable_id).then(
+		(data: AnlzData) => {
+			_publishAnlzResult(stable_id, data);
+			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
+		},
+		(err: unknown) => {
+			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
+			if (err instanceof RbApiError) return; // keep the entry we have
+			throw err; // loud: network/shape failures must not vanish
+		}
+	);
+}
+
 /** Pure read; undefined = never requested for this stable_id. */
 export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
 	return _cache[stable_id];
