@@ -33,15 +33,22 @@
  * would put roughly one POST per pointer sample on the wire, during a set, on
  * the same main thread as the audio the escalation exists to protect.
  *
- * These four are the audio-liveness kinds: each one means "the operator may be
+ * These are the audio-liveness kinds: each one means "the operator may be
  * hearing nothing, or seeing nothing move", and each is worth a round trip.
+ *
+ * `audio-output-rebind-failed` joined them Wed 9 Sep 2026. The output-rebind
+ * path was wired at `info` severity throughout, so the row that says the device
+ * re-bind did NOT work - the operator is hearing nothing and the recovery
+ * failed - stayed inside the browser. The 17:44:43Z Bluetooth flap that killed
+ * audio on the Air left no line at all in `webui-client-errors-2026-09-09.log`.
  */
 const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 	'xrun',
 	'audio-context',
 	'silent-while-playing',
 	'presentation-clock-stalled',
-	'presentation-stalled'
+	'presentation-stalled',
+	'audio-output-rebind-failed'
 ]);
 
 /**

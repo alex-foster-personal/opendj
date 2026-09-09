@@ -20,7 +20,21 @@ SIGNED_IN_AS_ENV: str = "MDT_CLOUDSYNC_SIGNED_IN_AS"
 STATUS_FILENAME: str = "cloudsync-status.json"
 MAX_RECENT_RESULTS: int = 5
 
-ResultStatus = Literal["ok", "error"]
+#: The three verdicts one sync can end on, and the third is not decoration.
+#: ``inconclusive`` means the run COMPLETED but its post-sync digest compare
+#: could not be made: one side held rows out of the comparison (a stored stamp
+#: it cannot order), so the tables that differ differ for a reason nobody
+#: measured. Recording that as ``ok`` is the defect ``.claude/rules/
+#: verification.md`` names -- an unmeasured subject rendered as a clean
+#: result -- and recording it as ``error`` would be the opposite lie, since
+#: rows really did move. A caller that treats non-``ok`` as failure keeps
+#: working; one that treats non-``error`` as success no longer does, which is
+#: the point.
+ResultStatus = Literal["ok", "error", "inconclusive"]
+
+#: Every value :data:`ResultStatus` admits, as data, so the wire validator and
+#: the type cannot drift apart.
+RESULT_STATUSES: tuple[ResultStatus, ...] = ("ok", "error", "inconclusive")
 
 
 class CloudSyncStatusError(RuntimeError):
@@ -46,7 +60,7 @@ class SyncResult:
             raise CloudSyncStatusError(
                 f"{source} result fields are {sorted(payload)}, expected {sorted(expected)}"
             )
-        if payload["status"] not in ("ok", "error"):
+        if payload["status"] not in RESULT_STATUSES:
             raise CloudSyncStatusError(f"{source} result status is invalid")
         text_keys = ("finished_at", "message")
         if not all(isinstance(payload[key], str) and payload[key] for key in text_keys):
@@ -176,6 +190,7 @@ def read_status(data_dir: Path, *, env: Mapping[str, str] | None = None) -> Clou
 
 __all__ = [
     "MAX_RECENT_RESULTS",
+    "RESULT_STATUSES",
     "CloudSyncStatus",
     "CloudSyncStatusError",
     "SyncResult",
