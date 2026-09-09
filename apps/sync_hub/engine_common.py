@@ -11,7 +11,7 @@ instead of on each other, keeping the split acyclic.
 from __future__ import annotations
 
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
-from apps.sync_hub.protocol import SYNC_TABLES, TableSpec
+from apps.sync_hub.protocol import SPEC_BY_TABLE, SYNC_TABLES, TableSpec
 
 HUB_CHANGELOG_TABLE: str = "hub_changelog"
 
@@ -50,6 +50,35 @@ _APPLY_ORDER: dict[str, int] = {
 }
 
 
+def apply_rank(table: str, *, source: str) -> int:
+    """This table's parents-before-children rank, or a loud refusal.
+
+    Every parents-first sort in the engine reads ``_APPLY_ORDER`` through a
+    ``sorted(..., key=...)`` lambda, and ``sorted`` evaluates its key for
+    EVERY element before the loop body runs once. A bare ``_APPLY_ORDER[...]``
+    in that lambda therefore raises ``KeyError`` out of the sort for an
+    out-of-set table name, ahead of any ``spec is None`` guard written beneath
+    the loop -- so the guard that carries the useful message is unreachable
+    for exactly the input it was written for, and callers that translate
+    ``SyncApplyError`` into a 409 answer an unhandled 500 instead.
+
+    ``local_changelog.table_name`` is a bare ``TEXT NOT NULL``, so the input
+    is storable rather than hypothetical: a writer for a table outside the
+    sync set, a hand-repaired row, or a downgrade past a schema that added a
+    table all produce it.
+
+    ``source`` names WHERE the bad name was read, which is what tells an
+    operator which log to go and repair.
+    """
+    try:
+        return _APPLY_ORDER[table]
+    except KeyError:
+        raise SyncApplyError(
+            f"{source} references table {table!r}, which is not in the sync "
+            f"set; the sync set is {sorted(SPEC_BY_TABLE)}"
+        ) from None
+
+
 def _pk_predicate(spec: TableSpec) -> str:
     return " AND ".join(f"{column} = ?" for column in spec.pk)
 
@@ -62,4 +91,5 @@ __all__ = [
     "HUB_CHANGELOG_TABLE",
     "SyncApplyError",
     "SyncSchemaMismatch",
+    "apply_rank",
 ]

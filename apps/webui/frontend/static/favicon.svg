@@ -1,6 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="oDj">
-  <rect width="512" height="512" rx="96" fill="#050505"/>
-  <path d="M97 256a159 159 0 0 1 282-103" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round"/>
-  <path d="M415 256a159 159 0 0 1-282 103" fill="none" stroke="#d97757" stroke-width="30" stroke-linecap="round"/>
-  <text x="256" y="292" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="130" font-weight="800" font-style="italic" text-anchor="middle" letter-spacing="-16">oDj</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<path d="M 367.72,144.28 A 188.00,188.00 0 0,0 101.85,410.15 Z" fill="#9c4b34"/>
+<path d="M 410.15,101.85 A 188.00,188.00 0 0,1 144.28,367.72 Z" fill="#D97757"/>
 </svg>
