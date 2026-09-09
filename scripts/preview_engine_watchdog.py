@@ -188,7 +188,7 @@ def parse_args(argv: list[str] | None = None) -> WatchdogConfig:
 def main(argv: list[str] | None = None) -> int:
     try:
         return run(parse_args(argv))
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"[ERROR] preview engine watchdog: {error}", file=sys.stderr)
         return 4
 
