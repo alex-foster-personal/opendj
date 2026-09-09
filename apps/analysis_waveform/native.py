@@ -4,12 +4,13 @@ Ported from the pre-decomposition ``apps/webui/server/rb_vendor.py`` (commits
 16ccad40 / ee5e6667 on main) into its own module during the af--dmg-installer
 integration: the T3b split landed on that branch while the native backend
 landed on main, and the backend gate is policy, not ANLZ decode, so it gets a
-named home instead of growing ``anlz.py`` past the 600-line gate.
+named home instead of growing ``anlz.py`` past the 600-line gate. It moved down
+to ``apps.analysis_waveform`` with ``bands.py`` (see that module's docstring).
 
 The selection runs ONCE at import. ``MDT_WAVEFORM_BACKEND`` policy values:
 
     auto    (default) use the native extension when importable, else the
-            exact NumPy fallback in ``waveform_bands._bands_payload_python``
+            exact NumPy fallback in ``bands._bands_payload_python``
     python  never import the extension
     native  fail closed at import when the extension is unavailable
 

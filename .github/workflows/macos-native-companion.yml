@@ -11,6 +11,7 @@ on:
       - main
       - release/*
     paths:
+      - apps/analysis_waveform/**
       - apps/webui/server/native/waveform/**
       - apps/webui/server/rb_vendor.py
       - apps/webui/server/rb_vendor_pkg/**
@@ -30,6 +31,7 @@ on:
       - main
       - release/*
     paths:
+      - apps/analysis_waveform/**
       - apps/webui/server/native/waveform/**
       - apps/webui/server/rb_vendor.py
       - apps/webui/server/rb_vendor_pkg/**

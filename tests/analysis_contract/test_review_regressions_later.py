@@ -444,3 +444,88 @@ def test_the_source_get_works_on_a_read_only_database(tmp_path) -> None:
         assert body["lanes"]["loudness"]["effective"] == "own"
     finally:
         os.chmod(path, 0o644)
+
+
+#-----------------------------------------------------------------------------
+# P2 round 8: values that are the right TYPE and the wrong VALUE
+#-----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad_bpm", [0.0, -120.0])
+def test_a_nonpositive_projected_bpm_is_refused(db, bad_bpm: float) -> None:
+    """`_project_lane` publishes this exact value to the track view.
+
+    The beats themselves were validated a round earlier; this is the SEPARATE
+    payload-level bpm, which could be 0 while the beats said 128.
+    """
+    from tests.analysis_contract.conftest import beatgrid_payload
+
+    payload = beatgrid_payload()
+    payload["bpm"] = bad_bpm
+    with pytest.raises(LaneContractError, match="must be > 0"):
+        analysis_store.upsert_record(
+            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
+        )
+
+
+@pytest.mark.parametrize("bad_length", [3.9, -1, True])
+def test_a_waveform_length_that_is_not_a_nonnegative_integer_is_refused(
+    db, bad_length: object,
+) -> None:
+    """int(3.9) is 3, so a block declaring 3.9 with three samples used to pass."""
+    from tests.analysis_contract.conftest import waveform_payload
+
+    payload = waveform_payload()
+    payload["preview"]["length"] = bad_length
+    with pytest.raises(LaneContractError):
+        analysis_store.upsert_record(
+            own_record(lane="waveform", result=LaneResult(status="ok", payload=payload)),
+            conn=db,
+        )
+
+
+@pytest.mark.parametrize("bad", [-0.2, 1.2])
+def test_a_confidence_outside_zero_to_one_is_refused_everywhere(
+    db, bad: float,
+) -> None:
+    """Own values reach the SAME ProvenanceOut.confidence as every other source.
+
+    Checked at THREE sites, because the defect was the missing interval and
+    not one field: the lane result, a payload confidence, and a nested one.
+    """
+    from tests.analysis_contract.conftest import beatgrid_payload, loudness_payload
+
+    with pytest.raises(LaneContractError, match=r"\[0, 1\]"):
+        analysis_store.upsert_record(
+            own_record(
+                lane="loudness",
+                result=LaneResult(status="ok", confidence=bad,
+                                  payload=loudness_payload()),
+            ),
+            conn=db,
+        )
+
+    payload = beatgrid_payload()
+    payload["bpm_confidence"] = bad
+    with pytest.raises(LaneContractError, match=r"\[0, 1\]"):
+        analysis_store.upsert_record(
+            own_record(result=LaneResult(status="ok", payload=payload)), conn=db
+        )
+
+    key = key_payload()
+    key["segments"]["segments"][0]["confidence"] = bad
+    with pytest.raises(LaneContractError, match=r"\[0, 1\]"):
+        analysis_store.upsert_record(
+            own_record(lane="key", result=LaneResult(status="ok", payload=key)),
+            conn=db,
+        )
+
+
+def test_the_interval_boundaries_are_inclusive(db) -> None:
+    """The control: 0.0 and 1.0 are legitimate confidences, not rejected ones."""
+    from apps.analysis.lanes import validate_lane_payload
+    from tests.analysis_contract.conftest import beatgrid_payload
+
+    for edge in (0.0, 1.0):
+        payload = beatgrid_payload()
+        payload["bpm_confidence"] = edge
+        validate_lane_payload("beatgrid", payload)
