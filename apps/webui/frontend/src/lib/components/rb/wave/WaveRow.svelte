@@ -29,6 +29,7 @@
 		withFallbackBeatgrid
 	} from '$lib/rb/beatgrid-fallback';
 	import { localDecodeFailureReason } from '$lib/rb/local-waveform-status';
+	import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
 	import { noteWaveformPaintFrame, resetWaveformPaintCadence } from '$lib/rb/audio-health.svelte';
 	import {
 		foldPresentationSample,
@@ -119,7 +120,8 @@
 	const fallbackGate = $derived({
 		anlzErrorCode,
 		anlz: anlzData,
-		vendor: null
+		vendor: null,
+		effectiveSource: analysisSourceState.features.beatgrid
 	});
 	$effect(() => {
 		const sid = deck.stable_id;

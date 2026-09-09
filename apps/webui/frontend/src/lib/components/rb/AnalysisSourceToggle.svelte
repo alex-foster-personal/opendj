@@ -3,8 +3,12 @@
 	 * PARITY-02: top-left rbx-vs-own source toggle. A per-feature A/B switch
 	 * for testing our own-rolled analysis lanes against rekordbox's, backed
 	 * by GET/PUT /api/v1/analysis/source (analysis-source.svelte.ts), which
-	 * this control drives through the in-memory dev toggle half only. Never
-	 * persisted: every feature starts (and always restarts) on 'rekordbox'.
+	 * this control drives through the in-memory dev toggle half only. That
+	 * toggle itself is never persisted and always resets to 'unset' on
+	 * relaunch, but the EFFECTIVE source it falls back to is the lane's
+	 * persisted default - 'own' if the lane has been promoted, 'rbx'
+	 * otherwise (discussion_r3972682741 P2 NON-BLOCKING) - so a relaunch does
+	 * not always land back on rekordbox.
 	 */
 	import {
 		ANALYSIS_SOURCE_FEATURES,
@@ -106,7 +110,7 @@
 		class:on={anyOwn}
 		aria-haspopup="true"
 		aria-expanded={menuOpen}
-		title="rbx-vs-own source A/B: pick which lane each own-rolled feature reads from. Testing/dev only - resets to rekordbox on relaunch, never persisted."
+		title="rbx-vs-own source A/B: pick which lane each own-rolled feature reads from. Testing/dev only - this toggle itself resets on relaunch, back to the lane's persisted default (own if promoted, rbx otherwise), not always rekordbox."
 	>
 		SOURCE
 		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">

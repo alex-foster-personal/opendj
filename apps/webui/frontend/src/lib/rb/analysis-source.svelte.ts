@@ -248,10 +248,11 @@ export async function setAnalysisSource(
 	// Captured BEFORE the PUT: this is the value the PUT is about to displace,
 	// and the PUT's own response can only report the new one.
 	const displacedToggle = _lastToggles[lane];
+	const attemptedToggle = _TOGGLE_OF_UI_SOURCE[source];
 	const mutation = ++_latestMutation;
 	const body = await unwrap(
 		api.PUT('/api/v1/analysis/source', {
-			body: { lane, toggle: _TOGGLE_OF_UI_SOURCE[source] }
+			body: { lane, toggle: attemptedToggle }
 		})
 	);
 	const features = _featuresOf(body);
@@ -262,7 +263,7 @@ export async function setAnalysisSource(
 		// second time from inside that claim would wait on its own tail forever.
 		await _adopt(features, () => mutation !== _latestMutation, false);
 	} catch (exc) {
-		await _rollBackFailedSwitch(lane, displacedToggle, mutation);
+		await _rollBackFailedSwitch(lane, displacedToggle, attemptedToggle, mutation);
 		throw exc;
 	}
 }
@@ -282,10 +283,23 @@ export async function setAnalysisSource(
  * `effective` instead would pin a toggle that was previously unset, which is a
  * different daemon state that this UI has no button to undo (see the module
  * header). A newer local mutation means someone has since asked for something
- * else and owns the daemon now, so this stands down rather than clobbering it. */
+ * else and owns the daemon now, so this stands down rather than clobbering it.
+ *
+ * `mutation` only orders this against a NEWER local PUT from THIS module -
+ * the endpoint is explicitly agent-facing, and an agent driving it directly
+ * over HTTP never touches `_latestMutation` at all. So right before writing,
+ * this also re-GETs the daemon's CURRENT toggle and compares it against
+ * `attemptedToggle` (the value this failed switch itself set, captured from
+ * its own PUT response before the failure) - a compare-and-set against the
+ * daemon rather than only this browser tab's own counter. If the daemon no
+ * longer holds what this switch put there, somebody else's change is now
+ * live and owns the daemon; restoring the pre-switch value over it would
+ * clobber that newer change with a stale one nobody asked for
+ * (discussion_r3972682728 P2 BLOCKING). */
 async function _rollBackFailedSwitch(
 	lane: string,
 	displacedToggle: string | undefined,
+	attemptedToggle: string,
 	mutation: number
 ): Promise<void> {
 	if (mutation !== _latestMutation) return;
@@ -298,6 +312,17 @@ async function _rollBackFailedSwitch(
 	}
 	_latestMutation++;
 	try {
+		const current = await unwrap(api.GET('/api/v1/analysis/source'));
+		const currentToggle = current.lanes[lane]?.toggle;
+		if (currentToggle !== attemptedToggle) {
+			console.error(
+				`[analysis-source] switch of ${lane} failed, but the daemon now holds ` +
+					`'${currentToggle}', not the '${attemptedToggle}' this switch itself set - ` +
+					'someone else changed it since, so standing down rather than overwriting ' +
+					'a newer change with the stale pre-switch value'
+			);
+			return;
+		}
 		// The compensating PUT's own answer is ADOPTED, not discarded. The failed
 		// switch's PUT already moved `_lastToggles[lane]` to the toggle it was
 		// attempting, so leaving that in place would make a retry before the next

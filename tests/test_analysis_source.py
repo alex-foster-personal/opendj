@@ -54,9 +54,9 @@ from apps.analysis import selection as sel
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
+from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.analysis import router as analysis_router
-from apps.webui.server.routes.rb_assets import router as rb_assets_router
 from tests.analysis_contract.conftest import beatgrid_payload, own_record
 
 DURATION_S = 60.0
@@ -187,22 +187,46 @@ def anlz_state_db(analysis_db: Path) -> Path:
 def anlz_client(
     anlz_state_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[TestClient]:
+    """The PRODUCTION app factory, not a partial hand-built one.
+
+    ``create_app`` is what actually binds ``state_db_path`` onto
+    ``app.state.analysis_db_path`` (apps/webui/server/app.py's own boot path
+    does the same thing for the real daemon), so building the app any other
+    way would let this test pass even if that binding broke in production
+    (discussion_r3972682737 P1 BLOCKING). ``rb_config.STATE_DB`` still needs
+    its own rebind: ``create_app`` never touches it, and the rekordbox
+    adapter's vendor-mapping lookups (apps/adapters/rekordbox/paths.py) read
+    it directly rather than through ``app.state`` -- this is the sanctioned
+    per-test override seam documented on ``apps.adapters.rekordbox.config``
+    itself ("Every constant here is a rebindable module attribute, on
+    purpose"), not the fabricated application state AGENTS.md:L125-L133
+    prohibits.
+    """
     monkeypatch.setattr(rb_config, "STATE_DB", anlz_state_db)
-    app = FastAPI()
-    app.state.backend = InMemoryBackend()
-    app.state.analysis_db_path = anlz_state_db
-    app.include_router(rb_assets_router, prefix="/api/v1")
+    app = create_app(
+        backend=InMemoryBackend(),
+        state_db_path=str(anlz_state_db),
+        mount_frontend=False,
+        port=18712,
+        frontend_port=19414,
+    )
     with TestClient(app) as test_client:
         yield test_client
 
 
 def _set_source(client: TestClient, source: str) -> None:
-    # "own"/"rekordbox" is this test module's own wire vocabulary (matching
-    # /anlz's beatgrid_source field); apps.analysis.selection's dev toggle
-    # speaks "own"/"rbx"/"unset" -- translate at the boundary, same as
-    # rb_assets.py's _current_beatgrid_source does the other direction.
-    del client  # the toggle is process-local, not client-scoped
-    sel.set_toggle("beatgrid", "own" if source == "own" else "rbx")
+    """Drive the real PUT /api/v1/analysis/source endpoint.
+
+    Calling ``sel.set_toggle`` directly exercised the selection module but
+    never the HTTP route wiring in front of it, so a break in that route
+    (bad dependency, wrong lane translation, a broken write guard) could not
+    fail this test even though this module's whole point is the overlay's
+    end-to-end behavior (discussion_r3972682737 P1 BLOCKING). Callers already
+    pass "own" or "rbx", the same vocabulary the endpoint's `toggle` field
+    expects, so no translation is needed here.
+    """
+    r = client.put("/api/v1/analysis/source", json={"lane": "beatgrid", "toggle": source})
+    assert r.status_code == 200, r.text
 
 
 @pytest.mark.requirement("PARITY-02")

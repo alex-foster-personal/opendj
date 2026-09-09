@@ -35,13 +35,13 @@ const REAL_GRID = [
 
 test('shouldUseBeatgridFallback fires once /anlz reports the ANLZ file is gone', () => {
 	// A rekordbox-MAPPED track whose ANLZ file is missing: no payload to read.
-	const gate = { anlzErrorCode: 'ANALYSIS_NOT_FOUND', anlz: null, vendor: null };
+	const gate = { anlzErrorCode: 'ANALYSIS_NOT_FOUND', anlz: null, vendor: null, effectiveSource: 'own' };
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
 });
 
 test('any other /anlz error stays out of this lane', () => {
 	for (const code of ['SOME_OTHER_ERROR', 'STATE_DB_UNAVAILABLE']) {
-		const gate = { anlzErrorCode: code, anlz: null, vendor: null };
+		const gate = { anlzErrorCode: code, anlz: null, vendor: null, effectiveSource: 'own' };
 		assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 	}
 });
@@ -49,33 +49,33 @@ test('any other /anlz error stays out of this lane', () => {
 test('an unmapped local track with an empty /anlz grid reaches the fallback', () => {
 	// The parity gap: /anlz answers 200 with an empty grid for a locally
 	// imported file, so the ANALYSIS_NOT_FOUND-only gate never fired.
-	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: 'local' };
+	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: 'local', effectiveSource: 'own' };
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
 });
 
 test('a rekordbox-mapped track with an empty grid never reaches the fallback', () => {
 	// rekordbox owns this track's grid; an absent PQTZ is rekordbox's answer,
 	// not an invitation to substitute our own measurement.
-	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: 'rekordbox' };
+	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: 'rekordbox', effectiveSource: 'own' };
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
 test('an unknown vendor mapping is never guessed at', () => {
 	// vendor null = /rb-meta has not answered yet. Guessing here would race a
 	// real rekordbox grid.
-	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: null };
+	const gate = { anlzErrorCode: null, anlz: anlzWithBeats([]), vendor: null, effectiveSource: 'own' };
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
 test('a real ANLZ grid is always preferred, local track or not', () => {
 	for (const vendor of ['local', 'rekordbox', null]) {
-		const gate = { anlzErrorCode: null, anlz: anlzWithBeats(REAL_GRID), vendor };
+		const gate = { anlzErrorCode: null, anlz: anlzWithBeats(REAL_GRID), vendor, effectiveSource: 'own' };
 		assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 	}
 });
 
 test('no /anlz answer yet is not an empty grid', () => {
-	const gate = { anlzErrorCode: null, anlz: null, vendor: 'local' };
+	const gate = { anlzErrorCode: null, anlz: null, vendor: 'local', effectiveSource: 'own' };
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
@@ -84,7 +84,7 @@ test('a beat_count that disagrees with an empty beats[] still counts as no grid'
 	// the emptiness that matters - a stale count must not lock out the fallback.
 	const anlz = anlzWithBeats([]);
 	anlz.beatgrid.beat_count = 412;
-	const gate = { anlzErrorCode: null, anlz, vendor: 'local' };
+	const gate = { anlzErrorCode: null, anlz, vendor: 'local', effectiveSource: 'own' };
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), true);
 });
 
@@ -100,7 +100,8 @@ test('"has a grid" means the same here as it does to quantize and Beat Sync', ()
 		beatgridFallback.shouldUseBeatgridFallback({
 			anlzErrorCode: null,
 			anlz: oneBeat,
-			vendor: 'local'
+			vendor: 'local',
+			effectiveSource: 'own'
 		}),
 		true
 	);
@@ -108,6 +109,33 @@ test('"has a grid" means the same here as it does to quantize and Beat Sync', ()
 	const real = anlzWithBeats(REAL_GRID);
 	assert.equal(gridFeatures.hasRealBeatGrid(real.beatgrid.beats), true);
 	assert.equal(beatgridFallback.hasAnlzBeatgrid(real), true);
+});
+
+test('PARITY-02: rekordbox explicitly selected never gets an own-derived grid', () => {
+	// Same two shapes as the two "fires" tests above, but with the daemon on
+	// rekordbox: a DJ who chose rekordbox must not be quietly handed OWN's
+	// grid just because rekordbox's own answer for this track is empty.
+	const mappedGoneAnlz = { anlzErrorCode: 'ANALYSIS_NOT_FOUND', anlz: null, vendor: null, effectiveSource: 'rekordbox' };
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(mappedGoneAnlz), false);
+	const unmappedEmpty = {
+		anlzErrorCode: null,
+		anlz: anlzWithBeats([]),
+		vendor: 'local',
+		effectiveSource: 'rekordbox'
+	};
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(unmappedEmpty), false);
+});
+
+test('PARITY-02: an unconfirmed selection is treated the same as rekordbox, never guessed as own', () => {
+	// undefined = the client has not yet polled the daemon for its current
+	// selection. Mirrors the existing null-vendor "never guessed at" case.
+	const gate = {
+		anlzErrorCode: 'ANALYSIS_NOT_FOUND',
+		anlz: null,
+		vendor: null,
+		effectiveSource: undefined
+	};
+	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
 test('withFallbackBeatgrid swaps ONLY the grid and returns a new object', () => {

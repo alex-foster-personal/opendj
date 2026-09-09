@@ -550,3 +550,50 @@ test('a RETRY after a failed switch rolls back to the original source, not the f
 		analysisSource.deckStates[1].anlz = null;
 	}
 });
+
+test('a failed switch never clobbers a concurrent agent-driven HTTP change during rollback (discussion_r3972682728)', async () => {
+	// _latestMutation only orders THIS module's own local PUTs against each
+	// other - an agent driving PUT /analysis/source directly is invisible to
+	// it. Real server, real concurrent request: an agent's PUT lands between
+	// this failed switch's own PUT and its compensating rollback PUT, and the
+	// rollback must see it and stand down rather than overwrite it with the
+	// stale pre-switch value.
+	await daemonSelect('rbx');
+	await analysisSource.loadAnalysisSource();
+
+	analysisSource.deckStates[1].stable_id = 'slow-absent-track';
+	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+	const originalFetch = globalThis.fetch;
+	try {
+		let raced = false;
+		globalThis.fetch = async (input, init) => {
+			const url = typeof input === 'string' ? input : input.url;
+			// openapi-fetch calls fetch(request) with a single Request object, not
+			// fetch(url, init) - its method lives on `input.method`, not `init`.
+			const method = init?.method ?? (typeof input === 'string' ? 'GET' : input.method);
+			if (!raced && url === `${apiBase}/api/v1/analysis/source` && method === 'GET') {
+				raced = true;
+				// A distinct third value (neither 'rbx', the displaced toggle, nor
+				// 'own', this failed switch's own attempted toggle) so a rollback
+				// that ignored the race and restored 'rbx' anyway is distinguishable
+				// from one that correctly saw and deferred to this agent's write.
+				await daemonSelect('unset');
+			}
+			return originalFetch(input, init);
+		};
+
+		await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
+
+		const daemon = await (await originalFetch(`${apiBase}/api/v1/analysis/source`)).json();
+		assert.equal(
+			daemon.lanes.beatgrid.toggle,
+			'unset',
+			'the concurrent agent write must win; a rollback that raced past it would ' +
+				'have restored the stale rbx value instead'
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+	}
+});

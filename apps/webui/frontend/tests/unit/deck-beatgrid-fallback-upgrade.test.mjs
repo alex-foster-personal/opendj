@@ -151,9 +151,10 @@ const originalFetch = globalThis.fetch;
 before(async () => {
 	source = readFrontendSource(ENGINE);
 	guardsSource = readFrontendSource(GUARDS);
-	upgrade = await loadTypeScriptModule('src/lib/player/beatgrid-upgrade.ts', {
-		viteApiBase: API_BASE
-	});
+	upgrade = await loadTypeScriptModule(
+		'tests/unit/fixtures/beatgrid-upgrade-analysis-source-entry.ts',
+		{ viteApiBase: API_BASE }
+	);
 	// Separate bundle: shares one `toasts` array with the upgrade module it
 	// re-exports (see the fixture's own docstring), so pushToast calls made
 	// from inside upgradeDeckBeatgrid are readable here. The other tests above
@@ -261,6 +262,68 @@ function stubDaemon({
 
 beforeEach(() => {
 	globalThis.fetch = originalFetch;
+	// PARITY-02: shouldUseBeatgridFallback now additionally requires the
+	// effective 'beatgrid' selection to read 'own' (discussion_r3972682719 P1
+	// BLOCKING) - default every test to that baseline so the existing
+	// fallback-lands assertions below keep exercising what they always did;
+	// the PARITY-02 gating tests further down set this to 'rekordbox' or
+	// delete it themselves.
+	upgrade.analysisSourceState.features.beatgrid = 'own';
+	toastHarness.analysisSourceState.features.beatgrid = 'own';
+});
+
+// ----- behaviour: PARITY-02 gates the fallback on the effective source -----
+//
+// MUTATION CHECK (re-measure at your SHA, do not trust this comment's count):
+//   - the effectiveSource check dropped from shouldUseBeatgridFallback -> the
+//     first test below fails
+//   - the pre-publish live re-check dropped from beatgrid-upgrade.ts        -> the
+//     second test below fails
+// Each isolates to exactly the guard written for it.
+
+test('PARITY-02: rekordbox explicitly selected never substitutes an own-derived grid (discussion_r3972682719 P1 BLOCKING)', async () => {
+	upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+	const paths = stubDaemon({ vendor: 'local' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
+
+	assert.deepEqual(
+		st.anlz.beatgrid.beats,
+		[],
+		'no own-derived grid lands while the toggle and IPC report rekordbox'
+	);
+	assert.deepEqual(
+		paths.map((p) => p.split('/').pop()),
+		['rb-meta'],
+		'the fallback grid is never even fetched once rekordbox is confirmed selected'
+	);
+});
+
+test('PARITY-02: a switch back to rekordbox mid-fetch is honored, not overwritten by the already-in-flight own-derived grid (discussion_r3972682719 P1 BLOCKING)', async () => {
+	upgrade.analysisSourceState.features.beatgrid = 'own';
+	stubDaemon({ vendor: 'local' });
+	// Flip the toggle the instant the deferred /beatgrid-fallback request
+	// actually goes out - simulating a DJ clicking back to rekordbox while
+	// this request is in flight, which the fetchRbMeta-time gate check alone
+	// cannot see.
+	const inFlightFetch = globalThis.fetch;
+	globalThis.fetch = async (input) => {
+		const path = new URL(typeof input === 'string' ? input : input.url, API_BASE).pathname;
+		if (path.endsWith('/beatgrid-fallback')) {
+			upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+		}
+		return inFlightFetch(input);
+	};
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
+
+	assert.deepEqual(
+		st.anlz.beatgrid.beats,
+		[],
+		'the switch back to rekordbox must win even though the own-derived fetch already resolved'
+	);
 });
 
 // ----- behaviour: the grid actually lands on the deck ------------------------
@@ -817,9 +880,11 @@ test('the deferred resync call site threads the same load-token check into after
 
 test('the lazy beatgrid upgrade module resolves when a deck first uses it (issue #920)', async () => {
 	stubDaemon();
-	const lazyUpgrade = await loadTypeScriptModule('src/lib/player/beatgrid-lazy.ts', {
-		viteApiBase: API_BASE
-	});
+	const lazyUpgrade = await loadTypeScriptModule(
+		'tests/unit/fixtures/beatgrid-lazy-analysis-source-entry.ts',
+		{ viteApiBase: API_BASE }
+	);
+	lazyUpgrade.analysisSourceState.features.beatgrid = 'own';
 	const st = { anlz: { ...emptyAnlz(), beatgrid: { beat_count: 0, beats: [] } }, anlz_error: null };
 	await lazyUpgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
 	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS, 'the first lazy call runs the unchanged upgrade API');

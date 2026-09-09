@@ -16,6 +16,7 @@
  * pays for the /rb-meta probe, and the merge itself refuses to overwrite one.
  */
 import { fetchAnlz, fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
+import { analysisSourceState } from '$lib/rb/analysis-source.svelte';
 import { fetchBeatgridFallback } from '$lib/rb/beatgrid-fallback-api';
 import {
 	hasAnlzBeatgrid,
@@ -136,7 +137,12 @@ export async function upgradeDeckBeatgrid(
 		// /anlz payload itself does not say, and it must not be guessed at.
 		const meta = await time('fetchRbMeta', fetchRbMeta(stableId));
 		if (isStale()) return;
-		const gate = { anlzErrorCode: st.anlz_error, anlz: st.anlz, vendor: meta.vendor };
+		const gate = {
+			anlzErrorCode: st.anlz_error,
+			anlz: st.anlz,
+			vendor: meta.vendor,
+			effectiveSource: analysisSourceState.features.beatgrid
+		};
 		if (!shouldUseBeatgridFallback(gate)) {
 			// A vendor mapping can land BEFORE this fetchRbMeta() call itself
 			// resolves, not only while /beatgrid-fallback is later in flight (see
@@ -157,6 +163,10 @@ export async function upgradeDeckBeatgrid(
 		const fallback = await time('fetchBeatgridFallback', fetchBeatgridFallback(stableId));
 		if (isStale()) return;
 		if (fallback.anlz_available) return await settleFromAnlzRefetch();
+		// Re-read live, not gate.effectiveSource: a switch back to rekordbox
+		// while this fetch was in flight must not land an own-derived grid
+		// after the fact (discussion_r3972682719 P1 BLOCKING).
+		if (analysisSourceState.features.beatgrid !== 'own') return await settle(false);
 		// Re-read across the awaits: refreshHotCues can have replaced st.anlz,
 		// and withFallbackBeatgrid throws rather than demote a real grid.
 		const current = st.anlz;
