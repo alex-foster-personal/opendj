@@ -129,15 +129,33 @@ def runner_command(
 
 
 def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, Any]:
-    """Run `beat_this_runner.py` over one file and return its parsed payload."""
+    """Run `beat_this_runner.py` over one file and return its parsed payload.
+
+    A nonzero exit is a BACKEND fault, not a per-track one, and so is a
+    timeout. The runner catches every per-track exception itself and records
+    it in `results[...]["error"]` while still exiting 0 (that is deliberate on
+    its side: swallowing a failing track would shrink the benchmark
+    denominator), so the only way to reach a nonzero exit or a hang is a bad
+    invocation, an environment that cannot load the model, or a wedged
+    process. All three meet the next file the same way, which is exactly what
+    :data:`~apps.analysis.run.EXIT_BACKEND_UNAVAILABLE` exists to tell a
+    chunking caller to stop for.
+    """
     timeout = float(os.environ.get(TIMEOUT_ENV) or DEFAULT_TIMEOUT_S)
     with tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch:
         out_path = Path(scratch) / "beats.json"
         command = runner_command(audio_path, out_path, checkpoint, device=device)
         log.info("own_beatgrid: %s", " ".join(command))
-        completed = subprocess.run(
-            command, capture_output=True, text=True, timeout=timeout, check=False
-        )
+        try:
+            completed = subprocess.run(
+                command, capture_output=True, text=True, timeout=timeout, check=False
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise BackendNotAvailable(
+                f"beat_this_runner.py did not finish {audio_path} within "
+                f"{timeout:.0f}s (raise {TIMEOUT_ENV} if this machine is genuinely "
+                "that slow); a runner that hangs will hang on the next file too"
+            ) from exc
         if completed.returncode != 0:
             raise BackendNotAvailable(
                 f"beat_this_runner.py exited {completed.returncode} for "
@@ -173,6 +191,34 @@ def _one_result(payload: dict[str, Any], audio_path: Path) -> dict[str, Any]:
             "which row belongs to it otherwise"
         )
     return next(iter(results.values()))
+
+
+def _duration_s(
+    result: dict[str, Any], *, lane_ok: bool, fps: float, audio_path: Path
+) -> float:
+    """Track duration from the runner's frame count, or 0.0 for a failed track.
+
+    NOT a hidden default in either branch. A run that produced a grid also
+    produced framewise activations, so `n_frames` is present and its absence is
+    a malformed payload rather than a value to guess at. A run that FAILED may
+    never have decoded the file at all -- the runner's own error path records
+    beats, downbeats, an activation peak and the error, and nothing else -- so
+    there is no duration to state and 0.0 is the honest "not measured" for a
+    NOT NULL REAL column whose value no own reader consults (`canonical.py`
+    projects from `lanes`, never from this).
+    """
+    n_frames = result.get("n_frames")
+    if n_frames is None:
+        if lane_ok:
+            raise RunnerPayloadError(
+                f"runner result for {audio_path} produced a grid but records no "
+                "n_frames, so the track duration cannot be derived; a payload "
+                "that measured beats measured frames"
+            )
+        return 0.0
+    if fps <= 0:
+        raise RunnerPayloadError(f"runner payload declares fps {fps!r}, which is not a rate")
+    return float(n_frames) / fps
 
 
 def record_from_payload(
@@ -214,8 +260,7 @@ def record_from_payload(
     result = _one_result(payload, audio_path)
     lane = build_beatgrid_lane(result, threshold=threshold)
     decode_fingerprint = _require(result, "decode_fingerprint")
-    n_frames = result.get("n_frames")
-    duration_s = float(n_frames) / fps if n_frames else 0.0
+    duration_s = _duration_s(result, lane_ok=lane.ok, fps=fps, audio_path=audio_path)
 
     # The pre-v2 scalar columns. This producer measures no key and no energy,
     # so it states nothing rather than a plausible-looking default; the lane
