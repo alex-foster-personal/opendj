@@ -36,7 +36,7 @@
         "input_to_audible_ms_p95",
         "press_to_schedule_ms_p95"
       ],
-      "missing_kpi": "Both KPIs are being instrumented now (branch af--press-to-audible). Until a real capture lands, this scenario is UNMEASURED, and the transport_scheduled_offset_ms figure must NOT be read as a proxy: it starts counting after the press has already been handled, so it cannot see the input queueing that the user feels.",
+      "missing_kpi": "The instrument SHIPPED in PR #1657; what is missing is a capture, not a capability. Until a real p95 lands this scenario stays UNMEASURED, and transport_scheduled_offset_ms must NOT be read as a proxy: it starts counting after the press has already been handled, so it cannot see the input queueing the user feels. Note also that ~18.9ms of the 30ms target is the WebKit device floor (audio_output_device_floor_ms, measured Wed 9 Sep 2026), so about 63% of the target budget is spent before any app code runs; and a row whose floor reads zero is refusing the total rather than understating it, so an UNMEASURED here may mean the context had not rendered yet.",
       "lower_is_better": true,
       "budget": 30,
       "acceptable": 60,
