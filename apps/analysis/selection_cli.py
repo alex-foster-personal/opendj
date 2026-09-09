@@ -46,7 +46,7 @@ def _request(url: str, *, method: str, body: dict | None = None) -> dict:
         data = json.dumps(body).encode()
         headers["content-type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
         return json.loads(resp.read().decode())
 
 
@@ -101,7 +101,10 @@ def main(argv: list[str]) -> int:
             parser.error(f"unhandled command {args.command!r}")
             return EXIT_USAGE
     except urllib.error.HTTPError as exc:
-        print(f"[ERROR] {args.command} refused by {url}: HTTP {exc.code} {exc.read().decode()[:400]}")
+        print(
+            f"[ERROR] {args.command} refused by {url}: "
+            f"HTTP {exc.code} {exc.read().decode()[:400]}"
+        )
         return EXIT_UNREACHABLE
     except (urllib.error.URLError, OSError) as exc:
         print(

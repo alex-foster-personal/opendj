@@ -14,7 +14,7 @@ they live where they actually run.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -23,7 +23,7 @@ from apps.analysis import store as store_mod
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 
-STAMP = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
+STAMP = datetime(2026, 9, 9, 12, 0, 0, tzinfo=UTC)
 
 
 def beatgrid_payload(bpm: float = 128.0, tempo_changes: int = 0) -> dict[str, Any]:

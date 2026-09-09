@@ -30,8 +30,9 @@ anything it cannot order instead of sorting it lexically.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 Lane = Literal["beatgrid", "key", "waveform", "loudness", "vocal"]
 LANES: tuple[Lane, ...] = ("beatgrid", "key", "waveform", "loudness", "vocal")
@@ -78,7 +79,7 @@ class LaneResult:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "LaneResult":
+    def from_dict(cls, data: Mapping[str, Any]) -> LaneResult:
         return cls(
             status=data["status"],
             reason=data.get("reason"),
@@ -418,9 +419,10 @@ def semver_key(version: str) -> tuple[int, int, int, int, tuple[Any, ...]]:
             int(match.group("major")), int(match.group("minor")),
             int(match.group("patch")), 1, (),
         )
-    parts: list[Any] = []
-    for token in pre.split("."):
-        parts.append((0, int(token), "") if token.isdigit() else (1, 0, token))
+    parts: list[Any] = [
+        (0, int(token), "") if token.isdigit() else (1, 0, token)
+        for token in pre.split(".")
+    ]
     return (
         int(match.group("major")), int(match.group("minor")),
         int(match.group("patch")), 0, tuple(parts),

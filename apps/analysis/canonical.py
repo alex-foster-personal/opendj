@@ -28,8 +28,10 @@ no own value can enter ``track_field_history`` or the sync path.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from .lanes import LANES, LaneResult, SemverError, parse_own_backend, semver_key
 from .record import AnalysisRecord
@@ -62,7 +64,7 @@ class CanonicalError(ValueError):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 #-----------------------------------------------------------------------------
@@ -181,6 +183,14 @@ def _key_change_count(payload: dict[str, Any]) -> tuple[Any, float | None]:
     return (max(len(segments_block["segments"]) - 1, 0), None)
 
 
+@dataclass(frozen=True)
+class _Pointer:
+    """The canonical row a projection row was derived from."""
+
+    backend: str
+    backend_version: str
+
+
 def _write_projection_row(
     conn: sqlite3.Connection,
     stable_id: str,
@@ -190,8 +200,7 @@ def _write_projection_row(
     status: str,
     reason: str | None,
     confidence: float | None,
-    backend: str,
-    backend_version: str,
+    pointer: _Pointer,
 ) -> None:
     conn.execute(
         """
@@ -210,7 +219,7 @@ def _write_projection_row(
         """,
         (
             stable_id, field, value, status, reason, confidence,
-            backend, backend_version, _now_iso(),
+            pointer.backend, pointer.backend_version, _now_iso(),
         ),
     )
 
@@ -242,6 +251,7 @@ def rebuild_projection(conn: sqlite3.Connection, stable_id: str, lane: str) -> N
         _delete_lane_projection(conn, stable_id, lane)
         return
     backend, backend_version = pointer
+    ptr = _Pointer(backend=backend, backend_version=backend_version)
     row = conn.execute(
         "SELECT record_json FROM analysis "
         "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
@@ -275,8 +285,7 @@ def rebuild_projection(conn: sqlite3.Connection, stable_id: str, lane: str) -> N
                 conn, stable_id, field_name,
                 value=value, status=status,
                 reason=None if status == "ok" else _sub_lane_reason(lane, field_name),
-                confidence=confidence,
-                backend=backend, backend_version=backend_version,
+                confidence=confidence, pointer=ptr,
             )
         return
 
@@ -288,7 +297,7 @@ def rebuild_projection(conn: sqlite3.Connection, stable_id: str, lane: str) -> N
         _write_projection_row(
             conn, stable_id, field_name,
             value=None, status=result.status, reason=result.reason,
-            confidence=None, backend=backend, backend_version=backend_version,
+            confidence=None, pointer=ptr,
         )
 
 

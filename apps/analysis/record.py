@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from .lanes import (
@@ -114,7 +114,7 @@ class AnalysisRecord:
         return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
     @classmethod
-    def from_json(cls, raw: str | bytes) -> "AnalysisRecord":
+    def from_json(cls, raw: str | bytes) -> AnalysisRecord:
         data = json.loads(raw)
         data["analyzed_at"] = _iso_to_dt(data["analyzed_at"])
         for k in ("onsets_s", "downbeats_s", "rms_peaks_s"):
@@ -202,8 +202,8 @@ def validate_record_contract(record: AnalysisRecord) -> None:
 
 def _dt_to_iso(dt: datetime) -> str:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    dt = dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    dt = dt.astimezone(UTC)
     return dt.isoformat().replace("+00:00", "Z")
 
 
@@ -212,8 +212,8 @@ def _iso_to_dt(s: str) -> datetime:
         s = s[:-1] + "+00:00"
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 __all__ = [

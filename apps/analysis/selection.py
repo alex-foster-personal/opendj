@@ -33,9 +33,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterable, Literal, Mapping
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from .canonical import PROJECTION_FIELDS
 from .lanes import LANES, Lane
@@ -70,7 +71,7 @@ class SelectionError(ValueError):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _check_lane(lane: str) -> str:
@@ -204,11 +205,11 @@ class Selection:
         return self.by_lane[lane]
 
     @classmethod
-    def resolve(cls, conn: sqlite3.Connection) -> "Selection":
+    def resolve(cls, conn: sqlite3.Connection) -> Selection:
         return cls(by_lane={lane: effective_source(conn, lane) for lane in LANES})
 
     @classmethod
-    def all_rbx(cls) -> "Selection":
+    def all_rbx(cls) -> Selection:
         return cls(by_lane={lane: "rbx" for lane in LANES})
 
 
@@ -282,6 +283,14 @@ def _fetch_projection(
 ) -> dict[str, dict[str, EffectiveField]]:
     out: dict[str, dict[str, EffectiveField]] = {sid: {} for sid in stable_ids}
     if not fields:
+        return out
+    if not _table_exists(conn, "analysis_projection"):
+        # No table means no own records have ever been written. That is
+        # ZERO ROWS, so every own field below resolves to `missing`. It is
+        # NOT a reason to serve the rekordbox value: a lane promoted to own
+        # on a database with no own analysis yet must read missing, which is
+        # true, rather than rekordbox, which is the silent substitution this
+        # milestone exists to remove.
         return out
     field_placeholders = ",".join("?" * len(fields))
     for i in range(0, len(stable_ids), 500):
@@ -396,6 +405,7 @@ def lane_for_field(field_name: str) -> Lane:
 
 __all__ = [
     "DEFAULT_SOURCE",
+    "LANES",
     "PROJECTION_FIELDS",
     "SOURCES",
     "TOGGLE_STATES",
@@ -408,8 +418,8 @@ __all__ = [
     "all_toggles",
     "effective_fields",
     "effective_source",
-    "field_column_sql",
     "ensure_tables",
+    "field_column_sql",
     "get_default",
     "get_toggle",
     "lane_for_field",

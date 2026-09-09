@@ -36,7 +36,6 @@ from apps.analysis.record import (
     RecordContractError,
     validate_record_contract,
 )
-
 from tests.analysis_contract.conftest import (
     beatgrid_payload,
     key_payload,
@@ -182,7 +181,7 @@ def test_failed_lane_carrying_a_payload_is_refused() -> None:
 def test_key_segments_block_carries_its_own_status() -> None:
     payload = key_payload()
     del payload["segments"]["status"]
-    with pytest.raises(LaneContractError, match="key.segments"):
+    with pytest.raises(LaneContractError, match=r"key\.segments"):
         validate_lane_payload("key", payload)
 
 

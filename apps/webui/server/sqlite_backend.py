@@ -371,31 +371,27 @@ def _fetch_fields(
 def _lane_owned_fields(
     conn: sqlite3.Connection, stable_ids: list[str],
 ) -> dict[str, dict[str, EffectiveField]]:
-    """The lane-owned half, or nothing at all on a pre-migration database.
+    """The lane-owned half, skipped only when every lane is on rbx.
 
-    ``analysis_projection`` and ``analysis_source_default`` are created by
-    :mod:`apps.analysis.store` / :mod:`apps.analysis.selection` on their
-    first write. A read-only backend pointed at a state.db that has never
-    seen an own record therefore has neither table, and every lane is on
-    ``rbx`` by definition: the EAV pass above already produced the right
-    answer, so there is nothing to overlay.
+    The skip is gated on the SELECTION, never on whether
+    ``analysis_projection`` exists. An earlier draft gated on the table and
+    was wrong in a way a live run caught and the unit tests did not: the
+    promoted default lives in a DIFFERENT table
+    (``analysis_source_default``), so a lane could be on own while the
+    projection table was still absent, and the EAV pass then served the
+    rekordbox value under an `own` selection. That is the exact silent
+    substitution this milestone removes.
 
-    This is NOT a fallback that hides a failure. It is scoped to the one
-    condition where the own half provably cannot exist, and it is checked
-    by asking sqlite_master rather than by catching an error, so a table
-    that exists and is broken still raises.
+    Under all-rbx, :func:`effective_fields` returns the same ``track_fields``
+    rows the EAV pass above already produced for ``bpm`` and ``key`` and
+    nothing else, so skipping it is an optimization on the library-listing
+    hot path rather than a behavior change. It is asserted as such in
+    tests/webui/test_effective_fields.py.
     """
-    if not _table_exists_by_name(conn, "analysis_projection"):
-        return {}
     selection = analysis_selection.Selection.resolve(conn)
+    if all(selection.source(lane) == "rbx" for lane in analysis_selection.LANES):
+        return {}
     return analysis_selection.effective_fields(conn, stable_ids, selection)
-
-
-def _table_exists_by_name(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone()
-    return row is not None
 
 
 def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:
