@@ -384,16 +384,18 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 
 	// MORE's wavestack is unchanged from before the pin (full 4-row).
 	assert.equal(moreWavestackRows, 4, 'MORE mode must reserve all 4 wavestack rows');
-	// Sol P1 finding (comment 3963232872, BLOCKING): MORE's deck-area floor
-	// used to equal columnPx exactly, because the deck column was the only
-	// thing sharing this grid row with a real height requirement. It no
-	// longer is - `<Mixer />` shares the SAME row, and MORE mode's
-	// un-collapsed mixer content (30px EQs + FILTER, `flex-shrink: 0`) needs
-	// MORE than the deck's own 497px. So the floor is now >= columnPx (the
-	// deck's own requirement is still respected) rather than exactly
-	// columnPx; the precise mixer-driven number (524) is pinned and derived
-	// from the real component CSS in channel-strip-less-floor.test.mjs's
-	// "MORE floor" test, not duplicated here.
+	// Sol P1 finding (comment 3963232872, BLOCKING), round 1: MORE's
+	// deck-area floor used to equal columnPx exactly, because the deck
+	// column was the only thing sharing this grid row with a real height
+	// requirement. Round 1 grew it to 524px because MORE mode's
+	// un-collapsed mixer content (30px EQs + FILTER, `flex-shrink: 0`)
+	// needed more than the deck's own 497px. Round 3 then compacted the
+	// strip's own margins (see channel-strip-less-floor.test.mjs's "MORE
+	// floor" test) so that content fits back inside 497px, and restored the
+	// floor to exactly 497px - so `>= columnPx` now holds with the two
+	// equal, not because a mixer-driven number still exceeds it. The
+	// assertion is kept as `>=` rather than `==` so a future mixer-driven
+	// requirement can grow the floor again without failing this test.
 	assert.ok(
 		moreDeckFloor >= columnPx,
 		`MORE deck-area floor (${moreDeckFloor}) must be at least the two-deck-column height (${columnPx})`
@@ -439,13 +441,15 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	// this test - it exists to catch a future change that shrinks LESS's
 	// library benefit back toward nothing. The achievable gain today is
 	// `(moreWavestackRows - lessWavestackRows) * waverowPx + (moreDeckFloor -
-	// lessDeckFloor)` = (4 - 2) * 43 + (524 - 400) = 210px (all four terms
-	// read from source above, not hand-typed; 524/400 are the Sol-P1-fixed
-	// MORE/LESS mixer floors, up from the pre-fix 497/388). MIN_LESS_LIBRARY
-	// _GAIN is pinned well under that (150px), leaving 60px of real headroom
-	// for a future legitimate shrink (e.g. a further mixer-height
-	// adjustment) while still catching a regression toward a token few-px
-	// "gain".
+	// lessDeckFloor)` = (4 - 2) * 43 + (497 - 400) = 183px (all four terms
+	// read from source above, not hand-typed; round 3 restored MORE's floor
+	// to the original 497px - see +page.svelte's LIBUX-01 comment - while
+	// keeping LESS's Sol-P1-fixed 400px floor, so this is neither the
+	// round-1 524/210 figures nor the original pre-pin 497/388 pair).
+	// MIN_LESS_LIBRARY_GAIN is pinned well under that (150px), leaving 33px
+	// of real headroom for a future legitimate shrink (e.g. a further
+	// mixer-height adjustment) while still catching a regression toward a
+	// token few-px "gain".
 	const MIN_LESS_LIBRARY_GAIN = 150;
 	assert.ok(
 		libraryGainPx >= MIN_LESS_LIBRARY_GAIN,

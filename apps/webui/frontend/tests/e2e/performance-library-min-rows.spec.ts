@@ -195,7 +195,7 @@ test('performance: the track list never paints over the browser bottom bar at 12
 // whole point is that the freed vertical space actually reaches the library
 // row (library-min-5-rows.test.mjs proves the CSS source says so; this is
 // the render-level proof). At the standard 1280x800 viewport MORE mode
-// cannot satisfy both floors at once (see the 996px arithmetic above), but
+// cannot satisfy both floors at once (see the 969px arithmetic above), but
 // LESS mode's own floors are smaller - topbar 28 + wavestack (2 rows) 86 +
 // deck-area floor 400 (pin 246b0f5, Sol-P1-fixed - see below) = 514px, well
 // under 800 - so LESS should still get more real library height than MORE
