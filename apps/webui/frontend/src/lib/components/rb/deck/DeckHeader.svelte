@@ -523,13 +523,33 @@
 		gap: 5px;
 		font-size: var(--rb-fs-label);
 	}
+	/* Pin 54c59dd3f564: "color dot should be vertically center aligned with
+	 * star icons and be 20% smaller." 9px -> 7.2px is the 20%.
+	 *
+	 * The centring is NOT what `align-items: center` above already does. That
+	 * aligns LAYOUT BOXES, and those were already flush (both centred on
+	 * 249.5 in a 1280x800 deck). What the maintainer can see is the INK: `.rb-star`
+	 * carries `line-height: 1`, and the ☆ glyph paints low inside that line
+	 * box, so the stars' ink centre sat 0.67px below the dot's. `top` here is
+	 * that optical correction, in em of the STAR's font size rather than the
+	 * row's, written as the SAME expression theme.css gives `.rb-star` so the
+	 * two cannot drift apart. In this subtree it always resolves to the
+	 * `--rb-fs-browser` fallback: `--rb-star-size` is a local custom property
+	 * on TrackTable's `.c-rating` cell, and a deck header is never a
+	 * descendant of one, so the narrowed-rating-column case cannot reach here.
+	 * 0.045em is the measured 0.5px at that 11px default; residual 0.17px.
+	 * Measured, not assumed -- performance-deck-color-dot.spec.ts reads the
+	 * composited pixels back and fails if this is reverted. */
 	.color-dot {
 		display: inline-block;
-		width: 9px;
-		height: 9px;
+		width: 7.2px;
+		height: 7.2px;
 		border-radius: 50%;
 		border: 1px solid var(--rb-text-dim);
 		background: transparent;
+		font-size: var(--rb-star-size, var(--rb-fs-browser));
+		position: relative;
+		top: 0.045em;
 	}
 	.readout {
 		display: flex;
