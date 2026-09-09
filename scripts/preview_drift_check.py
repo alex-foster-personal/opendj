@@ -174,9 +174,36 @@ def _diff_paths(cwd: Path, left: str, right: str) -> set[str]:
     return set(_git(cwd, "diff", "--name-only", left, right).splitlines())
 
 
+_NULL_BLOB = "0" * 40
+
+
 def _blob_at(cwd: Path, tree: str, path: str) -> str:
-    """The blob sha ``path`` has in ``tree``."""
-    return _git(cwd, "rev-parse", f"{tree}:{path}").strip()
+    """The blob sha ``path`` has in ``tree``, or the all-zero null sha when
+    ``path`` does not exist there at all.
+
+    A merge resolution can DELETE a path that existed in both parents, so
+    ``path`` is a real member of ``touched`` with nothing to resolve at
+    ``merge_tree``. ``rev-parse`` on an absent path is a plain miss, not a
+    broken measurement (``--verify --quiet`` exits 1 for it, never anything
+    else), so it must not raise. The all-zero sha is git's own convention
+    for "no blob" in ``--raw`` diff output, reused here so a deletion
+    recorded by ``_blob_ever_on`` below compares equal to one recorded here.
+    """
+    proc = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{tree}:{path}"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode == 0:
+        return proc.stdout.strip()
+    if proc.returncode == 1:
+        return _NULL_BLOB
+    raise MeasurementError(
+        f"git rev-parse --verify --quiet {tree}:{path} failed in {cwd} "
+        f"(exit {proc.returncode}): {proc.stderr.strip()}"
+    )
 
 
 def _blob_ever_on(cwd: Path, ref: str, path: str) -> set[str]:
@@ -360,6 +387,7 @@ class PreviewOnlyCommit:
     sha: str
     committed_at: datetime
     subject: str
+    superseded: bool = False
 
     @property
     def age_hours(self) -> float:
@@ -399,11 +427,20 @@ class Report:
         that main landed as one squash is reported as several unmatched
         commits even though the served tree is exactly main's. Nothing
         preview-only is being served, so there is nothing for a human to
-        merge. ``preview_only`` keeps the raw rows either way.
+        merge. A commit marked ``superseded`` is excluded for the same
+        reason at finer grain: its own later history already undid it (an
+        explicit revert, or any edit that happens to land back there), so
+        nothing of ITS content is being served either, even though the tips
+        as a whole still differ. ``preview_only`` keeps the raw rows either
+        way.
         """
         if self.serves_main_tree:
             return []
-        return [c for c in self.preview_only if c.age_hours > self.max_age_hours]
+        return [
+            c
+            for c in self.preview_only
+            if c.age_hours > self.max_age_hours and not c.superseded
+        ]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -439,6 +476,21 @@ def _promote_to_fossil(report: Report, dirty_forces_drift: bool) -> None:
     """
     if not dirty_forces_drift:
         report.verdict = "FOSSIL"
+
+
+def _mark_superseded_commits(
+    cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]
+) -> None:
+    """Flag a preview-only commit as ``superseded`` when its net effect is
+    already gone from the served tree -- an explicit revert, or any later
+    edit that happens to land back where it started. Scoped to exactly the
+    paths that commit changed: if the preview's CURRENT tree already matches
+    what came right before that commit at those paths, nothing of it remains.
+    """
+    for commit in commits:
+        paths = _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
+        if paths and _trees_identical(cwd, f"{commit.sha}~1", preview_ref, *paths):
+            commit.superseded = True
 
 
 # ----- the check ----------------------------------------------------------
@@ -487,6 +539,14 @@ def evaluate(
     # blind spots below are blind spots of per-commit patch-id comparison, and
     # neither can be closed by looking at commits harder.
     report.serves_main_tree = _trees_identical(cwd, main_ref, preview_ref)
+
+    # A second blind spot patch-id comparison cannot see on its own: a
+    # preview-only commit can be followed by its own revert while main
+    # independently advances, so the whole-tree check above cannot
+    # short-circuit, yet none of that commit's content is still being
+    # served.
+    if not report.serves_main_tree:
+        _mark_superseded_commits(cwd, preview_ref, report.preview_only)
 
     # A third blind spot neither commit nor tree comparison can see: in
     # --worktree mode, `cwd` IS the served directory, and a staged, unstaged,
