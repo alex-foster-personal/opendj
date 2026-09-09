@@ -420,21 +420,28 @@ def render_table(report: dict[str, Any]) -> str:
         "| arm | role | n_omitted | n_failed (of attempted) | "
         "vs rekordbox (n) | MIREX% (all/successful-only) | KSEA% | mode% | "
         "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
-        "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) | "
+        "DISAGREE-NO-ANSWER (n: stable_ids) | NO-REFERENCE-PAIR (n) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, arm in order:
         rb, mikr, buckets = arm["vs_rekordbox"], arm["vs_mik"], arm["buckets"]
         rb_succ, mikr_succ = arm["vs_rekordbox_successful_only"], arm["vs_mik_successful_only"]
-        agree, related, unrelated = (
-            buckets["agree"], buckets["disagree_related"], buckets["disagree_unrelated"]
+        agree, related, unrelated, no_answer = (
+            buckets["agree"], buckets["disagree_related"],
+            buckets["disagree_unrelated"], buckets["disagree_no_answer"],
         )
         # The enumerated ids, not just the count, because rounds.append_round
         # persists only this rendered table -- the raw JSON's stable_ids list
         # is never written to the spec log (Codex P2 BLOCKING, PR #1620), and
         # spec section 5 asks to "enumerate, listen, prime key-change
-        # candidates" for exactly this bucket.
+        # candidates" for exactly this bucket. disagree_no_answer and
+        # n_no_reference_pair are rendered too (Codex P2 BLOCKING, PR #1620:
+        # the persisted table previously dropped both, so a reader could not
+        # reconcile the displayed bucket counts against the bundle
+        # denominator).
         unrelated_ids = ", ".join(unrelated["stable_ids"]) or "-"
+        no_answer_ids = ", ".join(no_answer["stable_ids"]) or "-"
         lines.append(
             f"| {name} | {arm['role']} | {arm['n_omitted']} | "
             f"{arm['n_failed']} of {arm['failure_rate'].split('/')[1]} | "
@@ -444,6 +451,8 @@ def render_table(report: dict[str, Any]) -> str:
             f"{mikr['ksea_pct']} | {mikr['mode_accuracy_pct']} | "
             f"{agree['n']}, {agree['mirex_mean_pct']} | "
             f"{related['sides_with_rekordbox']}/{related['sides_with_mik']} | "
-            f"{unrelated['n']}: {unrelated_ids} |"
+            f"{unrelated['n']}: {unrelated_ids} | "
+            f"{no_answer['n']}: {no_answer_ids} | "
+            f"{buckets['n_no_reference_pair']} |"
         )
     return "\n".join(lines)
