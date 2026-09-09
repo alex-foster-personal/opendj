@@ -55,7 +55,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, NoReturn
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from apps.analysis import backlog
@@ -77,9 +77,21 @@ from apps.webui.server.routes.ingest_job import (
     missing_by_step,
     tracks_on_disk,
 )
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR
+from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+
+def _stem_roots(app: FastAPI) -> tuple[Path, ...]:
+    """The app's configured stem roots (remote library mode), else the local
+    default farm/RoFormer roots. Coverage, refresh targeting and the deck all
+    have to resolve roots through this one path, or a mode where the app
+    configures crate-backed roots sees a different set than it was told."""
+    configured = getattr(app.state, "stem_roots", None)
+    if configured is not None:
+        return tuple(Path(root) for root in configured)
+    return stem_roots(DEFAULT_STEMS_DIR)
+
 
 # ----- CFG -------------------------------------------------------------------
 CONFIG_PATH: Path = STATE_DB.parent / "ingest-config.json"
@@ -199,10 +211,10 @@ class CoverageOut(BaseModel):
 
 
 @router.get("/coverage", response_model=CoverageOut)
-def get_coverage() -> CoverageOut:
+def get_coverage(request: Request) -> CoverageOut:
     on_disk, unreachable = tracks_on_disk(open_ro)
     missing, corrupt = missing_by_step(
-        on_disk, open_ro, DEFAULT_STEMS_DIR, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
+        on_disk, open_ro, _stem_roots(request.app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
     )
     conn = open_ro()
     try:
@@ -359,7 +371,9 @@ def _log_id_keyed_skips(job: _RefreshJob, steps: list[str], scope: str) -> None:
                   "Rekordbox import first (id-keyed)")
 
 
-def _batch_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _batch_targets(
+    job: _RefreshJob, _roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """Freshly staged files with no state.db rows yet, so no ids either."""
     assert job.batch_dir is not None
     staged = sorted(
@@ -372,7 +386,9 @@ def _batch_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     return {"analysis": [("", f) for f in staged], "stems": [], "vocals": []}
 
 
-def _unmapped_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _unmapped_targets(
+    job: _RefreshJob, _roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """Locally imported tracks: a tracks row, no live rekordbox twin."""
     queue = unmapped_backlog()
     job.queue_signature = queue.signature
@@ -387,7 +403,9 @@ def _unmapped_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     }
 
 
-def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _library_targets(
+    job: _RefreshJob, roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     on_disk, unreachable = tracks_on_disk(open_ro)
     _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
     # Refresh targets stay unified with coverage's "missing" semantics: a
@@ -395,7 +413,7 @@ def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     # stale one, so it is a target here too. Only the coverage ROUTE splits
     # corrupt out as an additional, distinguishing signal for the UI.
     missing, _corrupt = missing_by_step(
-        on_disk, open_ro, DEFAULT_STEMS_DIR, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
+        on_disk, open_ro, roots, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
     )
     return missing
 
@@ -408,18 +426,20 @@ _SCOPE_TARGETS = {
 }
 
 
-def _targets_for(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
+def _targets_for(
+    job: _RefreshJob, roots: tuple[Path, ...]
+) -> dict[str, list[tuple[str, str]]]:
     """Per-scope work list. An unknown scope is a programming error, not a run."""
     build = _SCOPE_TARGETS.get(job.scope)
     if build is None:  # pragma: no cover - start_refresh validates the scope
         raise RuntimeError(f"unhandled refresh scope {job.scope!r}")
-    return build(job)
+    return build(job, roots)
 
 
-def _refresh_worker(job: _RefreshJob) -> None:
+def _refresh_worker(job: _RefreshJob, roots: tuple[Path, ...]) -> None:
     try:
         job.phase = "running"
-        missing = _targets_for(job)
+        missing = _targets_for(job, roots)
 
         for step in job.steps:
             job.current_step = step
@@ -477,7 +497,9 @@ def _resolve_scope(body: RefreshIn | None) -> tuple[str, Path | None]:
 
 
 def _start_refresh_job(
-    body: RefreshIn | None, guard: Callable[[], None] | None = None
+    body: RefreshIn | None,
+    roots: tuple[Path, ...],
+    guard: Callable[[], None] | None = None,
 ) -> _RefreshJob:
     """Claim the one slot and hand back THE job created, not the slot.
 
@@ -507,13 +529,15 @@ def _start_refresh_job(
         _JOBS.current = job
         if scope == UNMAPPED_SCOPE:
             _JOBS.last_unmapped = job
-        threading.Thread(target=_refresh_worker, args=(job,), daemon=True).start()
+        threading.Thread(
+            target=_refresh_worker, args=(job, roots), daemon=True
+        ).start()
     return job
 
 
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
-def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
-    return _status_of(_start_refresh_job(body))
+def start_refresh(request: Request, body: RefreshIn | None = None) -> RefreshStatusOut:
+    return _status_of(_start_refresh_job(body, _stem_roots(request.app)))
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)
