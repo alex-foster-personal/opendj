@@ -114,7 +114,8 @@ def run(config: WatchdogConfig, *, now: float | None = None) -> int:
     state = _load_state(config.state_file)
     error = _probe_health(config.health_url, config.timeout_s)
     if error is None:
-        _write_state(config.state_file, {"consecutive_failures": 0})
+        state["consecutive_failures"] = 0
+        _write_state(config.state_file, state)
         _emit("healthy", health_url=config.health_url)
         return 0
 
