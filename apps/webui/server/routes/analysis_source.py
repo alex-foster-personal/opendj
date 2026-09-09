@@ -71,6 +71,25 @@ def _db_path(request: Request) -> Path:
     return Path(getattr(request.app.state, "analysis_db_path", STATE_DB))
 
 
+def _open_ro(request: Request) -> sqlite3.Connection:
+    """Read-only. A GET must not migrate, and must not need the writer lock.
+
+    `store.open_conn` opens READ-WRITE and runs the shared-state migrations
+    plus the analysis DDL, so using it for a GET made a nominal read mutate
+    `state.db` -- from a host that may not hold the writer lock, and during a
+    lock-probe outage, both of which `deps.py` exists to exclude (Codex P1,
+    PR #1549). `get_default` already answers correctly when the table is
+    absent, so the read needs no schema work at all.
+
+    `query_only` on top of `mode=ro` so a write is refused by the connection
+    rather than by the filesystem: a `state.db` on a writable volume would
+    otherwise still accept one.
+    """
+    conn = sqlite3.connect(f"file:{_db_path(request)}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
 def _open(request: Request) -> sqlite3.Connection:
     """Open with the FULL analysis schema, not just the selection table.
 
@@ -111,7 +130,7 @@ def _require_persistent_backend(request: Request) -> None:
 
 @router.get("/source", response_model=AnalysisSourceOut)
 def get_analysis_source(request: Request) -> AnalysisSourceOut:
-    conn = _open(request)
+    conn = _open_ro(request)
     try:
         return AnalysisSourceOut(**sel.source_state(conn))
     finally:

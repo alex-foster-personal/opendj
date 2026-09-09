@@ -422,3 +422,49 @@ def test_an_all_rbx_track_keeps_a_byte_identical_etag(state) -> None:
     assert compute_etag(
         track.stable_id, track.updated_at, track.selection_tag
     ) == compute_etag(track.stable_id, track.updated_at)
+
+
+def test_a_producer_version_bump_changes_the_etag_even_with_a_future_base_stamp(
+    state,
+) -> None:
+    """The etag must move when the own VALUE moves, not only when the SOURCE does.
+
+    `_effective_updated_at` takes the MAXIMUM, so a `tracks.updated_at` from a
+    host with a fast clock sits above every projection stamp and a
+    producer-version bump could rewrite the own key while the selected maximum
+    never budged. The variant carries the projection's own timestamp for that
+    reason (Codex P2, PR #1549).
+    """
+    from apps.webui.server.etag import compute_etag
+
+    path, conn = state
+    conn.execute("UPDATE tracks SET updated_at = '2099-01-01T00:00:00Z'")
+    analysis_store.upsert_record(
+        _own_key_record("t1", LaneResult(status="ok", payload=_key_payload("8A"))),
+        conn=conn,
+    )
+    conn.commit()
+    selection.set_toggle("key", "own")
+
+    first = sb.SqliteBackend(path).get_track("t1")
+    etag_first = compute_etag(first.stable_id, first.updated_at, first.selection_tag)
+    assert first.key == "8A"
+
+    # Same producer, same source, NEW version and a new value.
+    import dataclasses
+
+    bumped = dataclasses.replace(
+        _own_key_record("t1", LaneResult(status="ok", payload=_key_payload("9A"))),
+        backend_version="2.0.0", producer_version="2.0.0",
+    )
+    analysis_store.upsert_record(bumped, conn=conn)
+    conn.commit()
+
+    second = sb.SqliteBackend(path).get_track("t1")
+    assert second.key == "9A"
+    assert second.updated_at == first.updated_at, (
+        "precondition: the future base stamp must still win the maximum"
+    )
+    assert compute_etag(
+        second.stable_id, second.updated_at, second.selection_tag
+    ) != etag_first

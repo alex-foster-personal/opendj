@@ -55,12 +55,20 @@ def selection_tag(fields: dict[str, EffectiveField]) -> str:
     genuinely different representations share one strong validator, so a
     stale `If-Match` still passes (Codex P2, PR #1549).
 
-    Only the SOURCE goes in, not the value: a value change already moves a
-    timestamp. Empty when no lane-owned field is on own, so an all-rbx
-    library keeps byte-identical etags to before this existed.
+    Source AND the producer's timestamp go in, not just the source. "A value
+    change already moves a timestamp" is only true when that timestamp is the
+    one the etag actually selects, and `_effective_updated_at` takes the
+    MAXIMUM: a `tracks.updated_at` from a host with a fast clock sits above
+    every projection stamp, so a producer-version bump could rewrite an own
+    BPM while the selected maximum never budged (Codex P2, PR #1549). The
+    projection's own `modified_at` is included so a rewrite of the value
+    moves the validator even when it does not move the maximum.
+
+    Empty when no lane-owned field is on own, so an all-rbx library keeps
+    byte-identical etags to before this existed.
     """
     own = sorted(
-        f"{name}={view.source}"
+        f"{name}={view.source}@{view.modified_at}"
         for name, view in fields.items()
         if name in analysis_selection.PROJECTION_FIELDS
         and view.source != "rekordbox"

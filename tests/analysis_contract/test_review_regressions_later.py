@@ -340,3 +340,107 @@ def test_a_grid_the_deck_accepts_is_still_stored(db) -> None:
     assert db.execute(
         "SELECT value FROM analysis_projection WHERE field='bpm'"
     ).fetchone()[0] == 128.0
+
+
+#-----------------------------------------------------------------------------
+# P2 round 7: a version the ranking cannot tell apart defeats order independence
+#-----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", ["1.0.0-01", "1.0.0-alpha..1", "1.0.0-", "1.0.0-1."])
+def test_a_malformed_semver_prerelease_is_refused(bad: str) -> None:
+    """`1.0.0-01` ranked IDENTICALLY to `1.0.0-1`, so two distinct versions
+
+    could not be ordered and the write-order independence this store promises
+    became order-DEPENDENT for those rows.
+    """
+    from apps.analysis.lanes import SemverError, semver_key
+
+    with pytest.raises(SemverError):
+        semver_key(bad)
+
+
+def test_valid_prereleases_still_rank_correctly() -> None:
+    """The control: strictness must reject malformed input, not semver itself."""
+    from apps.analysis.lanes import semver_key
+
+    assert semver_key("1.0.0") > semver_key("1.0.0-rc1")
+    assert semver_key("1.0.0-alpha.2") > semver_key("1.0.0-alpha.1")
+    # Semver 2.0.0 rule 11: a NUMERIC identifier has LOWER precedence than an
+    # alphanumeric one. I asserted this backwards first and the test caught it.
+    assert semver_key("1.0.0-1") < semver_key("1.0.0-alpha")
+    for good in ("1.0.0-1", "1.0.0-alpha.1", "1.0.0-rc1", "1.0.0-0", "1.0.0"):
+        semver_key(good)
+
+
+def test_the_store_refuses_a_record_whose_version_cannot_be_ranked(db) -> None:
+    """The hole was only dangerous because such rows could become canonical."""
+    with pytest.raises(RecordContractError, match="semver"):
+        analysis_store.upsert_record(own_record(version="1.0.0-01"), conn=db)
+    assert db.execute("SELECT count(*) FROM analysis").fetchone()[0] == 0
+
+
+#-----------------------------------------------------------------------------
+# P1 round 7: a GET must not migrate the database
+#-----------------------------------------------------------------------------
+
+def test_the_source_get_does_not_create_or_migrate_anything(tmp_path) -> None:
+    """Reproduced by shape: `_open` used `store.open_conn`, which is READ-WRITE.
+
+    A nominal read was applying the shared-state migrations and the analysis
+    DDL, from a host that may not hold the writer lock and during a lock-probe
+    outage -- both states `deps.py` exists to exclude.
+    """
+    from fastapi.testclient import TestClient
+
+    from apps.shared.state import db as state_db
+    from apps.webui.server.app import create_app
+
+    path = tmp_path / "state.db"
+    state_db.open_rw(path).close()
+    probe = sqlite3.connect(path)
+    before = sorted(
+        r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    )
+    assert "analysis_projection" not in before, "precondition: not yet provisioned"
+    probe.close()
+
+    app = create_app()
+    app.state.analysis_db_path = path
+    with TestClient(app) as client:
+        body = client.get("/api/v1/analysis/source")
+    assert body.status_code == 200
+    assert body.json()["lanes"]["key"]["effective"] == "rbx"
+
+    probe = sqlite3.connect(path)
+    after = sorted(
+        r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    )
+    probe.close()
+    assert after == before, f"the GET created {sorted(set(after) - set(before))}"
+
+
+def test_the_source_get_works_on_a_read_only_database(tmp_path) -> None:
+    """The control: read-only must still ANSWER, not just refrain from writing."""
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from apps.analysis import store as analysis_store
+    from apps.webui.server.app import create_app
+
+    path = tmp_path / "state.db"
+    conn = analysis_store.open_conn(path)
+    conn.execute(
+        "INSERT INTO analysis_source_default VALUES ('loudness', 'own', ?)", (STAMP,)
+    )
+    conn.commit()
+    conn.close()
+    os.chmod(path, 0o444)
+    try:
+        app = create_app()
+        app.state.analysis_db_path = path
+        with TestClient(app) as client:
+            body = client.get("/api/v1/analysis/source").json()
+        assert body["lanes"]["loudness"]["effective"] == "own"
+    finally:
+        os.chmod(path, 0o644)

@@ -513,6 +513,15 @@ def parse_own_backend(backend: str) -> OwnBackend | None:
 # semver
 #-----------------------------------------------------------------------------
 
+# Semver 2.0.0 grammar for the prerelease: dot-separated identifiers, each
+# either alphanumeric-with-hyphens or a NUMERIC identifier with no leading
+# zero, and none of them empty. The loose `[0-9a-zA-Z.-]+` this replaced
+# accepted `1.0.0-01` and `1.0.0-alpha..1`, and worse, `semver_key("1.0.0-01")`
+# EQUALLED the key for `1.0.0-1` -- two distinct version strings ranking
+# identically, which defeats the write-order independence the canonical
+# pointer promises (Codex P2, PR #1549).
+_PRERELEASE_IDENT_RE = re.compile(r"^(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)$")
+
 _SEMVER_RE = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
     r"(?:-(?P<pre>[0-9a-zA-Z.-]+))?$"
@@ -544,9 +553,17 @@ def semver_key(version: str) -> tuple[int, int, int, int, tuple[Any, ...]]:
             int(match.group("major")), int(match.group("minor")),
             int(match.group("patch")), 1, (),
         )
+    tokens = pre.split(".")
+    bad = [t for t in tokens if not _PRERELEASE_IDENT_RE.match(t)]
+    if bad:
+        raise SemverError(
+            f"own backend_version {version!r} has invalid semver prerelease "
+            f"identifier(s) {bad}; each must be non-empty, and a numeric one "
+            "must have no leading zero"
+        )
     parts: list[Any] = [
         (0, int(token), "") if token.isdigit() else (1, 0, token)
-        for token in pre.split(".")
+        for token in tokens
     ]
     return (
         int(match.group("major")), int(match.group("minor")),
