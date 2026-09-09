@@ -82,13 +82,27 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
     resolution bundled with any unrelated change in the SAME commit, which
     changes that commit's whole-tree hash even though every path the
     resolution touched is byte-identical on main, so a %T membership test
-    keeps flagging it forever. Instead, isolate the paths where merge_tree
-    differs from BOTH parents -- content the human actually authored during
-    the merge, not simply inherited from one side -- and check only those
-    against main. That works whether the merge resolved cleanly on top of a
-    trivial auto-merge or was a real conflict with no auto-merge to diff
-    against, because it never needs one: parents and the recorded merge_tree
-    are always available.
+    keeps flagging it forever. Instead, isolate the paths that could carry
+    content the human actually authored during the merge -- every path where
+    merge_tree differs from EITHER parent, the UNION of the two per-parent
+    diffs, not their intersection -- and check only those against main.
+
+    The union matters, not just the intersection: a resolution can pick
+    parent 0's content at one path and parent 1's content at ANOTHER path,
+    so each individual path's diff against ONE parent is empty (it matches
+    that parent verbatim) while the diff against the OTHER parent is not.
+    The intersection of the two diff sets is then empty regardless of
+    whether the resolution picked one parent WHOLESALE (genuinely safe) or
+    picked different parents at different paths (a genuinely novel
+    combination neither parent, and possibly no main commit, ever held
+    together) -- an empty intersection cannot tell those two shapes apart.
+    Skip only when merge_tree matches ONE parent's content across the
+    ENTIRE union of touched paths: that is the one condition under which
+    the resolution introduces no combination absent from a single existing
+    tree. That works whether the merge resolved cleanly on top of a trivial
+    auto-merge or was a real conflict with no auto-merge to diff against,
+    because it never needs one: parents and the recorded merge_tree are
+    always available.
 
     "Against main" means main's whole HISTORY at the touched paths, not its
     current tip: if main lands the resolution and later edits one of those
@@ -136,15 +150,23 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
         if not is_carrying:
             continue
         if len(parents) == 2:
-            touched = _diff_paths(cwd, parents[0], merge_tree) & _diff_paths(
+            touched = _diff_paths(cwd, parents[0], merge_tree) | _diff_paths(
                 cwd, parents[1], merge_tree
             )
-            # Empty touched means every path in the merge tree matches at
-            # least one parent verbatim: the resolution picked a side, path
-            # by path, and introduced no content that is not already in one
-            # of the parents. That is NOT evidence of preview-only content,
-            # so it must not fall through to `carrying.append(sha)` below.
-            if not touched:
+            # Safe only when merge_tree matches ONE parent across the WHOLE
+            # union: picking parent 0 at some paths and parent 1 at OTHER
+            # paths can leave each path individually matching some parent
+            # (so neither per-parent diff alone reveals it) while the
+            # COMBINATION matches neither parent and may exist nowhere on
+            # main. Not reachable with an empty union: `is_carrying` above
+            # already required merge_tree to differ from a trivial replay
+            # of the parents (or from a single legal parent for a genuine
+            # conflict), so at least one parent's diff is always non-empty
+            # here.
+            picked_one_parent_wholesale = any(
+                _trees_identical(cwd, merge_tree, parent, *touched) for parent in parents
+            )
+            if picked_one_parent_wholesale:
                 continue
             if _paths_ever_together_on_main(cwd, main_ref, merge_tree, touched):
                 continue
@@ -218,6 +240,34 @@ def _revoke_landed_if_combined_state_never_coexisted(
             commit.landed = False
 
 
+def _newest_touch_age_hours(cwd: Path, preview_ref: str, paths: set[str]) -> float:
+    """How long ago the union's CURRENTLY-SERVED combination came into
+    being: the age of whichever commit MOST RECENTLY touched any of
+    ``paths`` on ``preview_ref``, not any specific historical commit's own
+    age.
+
+    A path's original contributor can be entirely superseded by a later
+    edit to that SAME path -- a fresh preview-only commit overwriting what
+    an old, already-''-''-classified commit once set -- and that later edit
+    is what the preview is actually serving; the containment check above
+    already tests against ``preview_ref``'s CURRENT tree for exactly this
+    reason. Gating the age on a stale contributor's own commit date, instead
+    of on the most recent touch, blames a commit that no longer contributes
+    to the current combination and can fire immediately for a state that in
+    fact just formed and has not had its grace period yet.
+    """
+    last_touch_shas = {
+        _git(cwd, "log", "-1", "--format=%H", preview_ref, "--", path).strip() for path in paths
+    }
+    last_touch_shas.discard("")
+    if not last_touch_shas:
+        return 0.0
+    described = _describe(cwd, sorted(last_touch_shas))
+    return min(
+        (_now() - described[sha][0]).total_seconds() / 3600.0 for sha in last_touch_shas
+    )
+
+
 def _patch_equivalent_never_coexisted(
     cwd: Path, main_ref: str, preview_ref: str, landed_shas: list[str], max_age_hours: int
 ) -> str | None:
@@ -232,19 +282,20 @@ def _patch_equivalent_never_coexisted(
     commit ever held (main dropped the first before landing the second) is
     still caught.
 
-    Gated on age like every other preview-only finding: two commits freshly
-    cherry-picked moments ago are the NORMAL state between sync ticks, not a
-    fault, so this must not fire before at least one of them has overstayed
-    the same ``max_age_hours`` grace period ``Report.stale`` grants.
+    Gated on age like every other preview-only finding, but on the age of
+    whichever commit most recently touched the union of paths (see
+    ``_newest_touch_age_hours``), not on ``landed_shas``' own commit dates:
+    an old, long-``-``-classified commit whose path was since overwritten by
+    a fresh preview-only edit is no longer what is being served there, so
+    blaming ITS age would fire on a combination that in fact just formed and
+    has not overstayed the ``max_age_hours`` grace period yet.
     """
     paths: set[str] = set()
     for sha in landed_shas:
         paths |= _diff_paths(cwd, f"{sha}~1", sha)
     if not paths or _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
         return None
-    described = _describe(cwd, landed_shas)
-    ages = [(_now() - described[sha][0]).total_seconds() / 3600.0 for sha in landed_shas]
-    if max(ages) <= max_age_hours:
+    if _newest_touch_age_hours(cwd, preview_ref, paths) <= max_age_hours:
         return None
     return (
         f"{len(landed_shas)} patch-equivalent commit(s) each matched "
