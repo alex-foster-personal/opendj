@@ -23,8 +23,12 @@ concurrency:
 jobs:
   trunk_red:
     name: Alarm a failed push-to-main CI run
+    # `schedule` is included deliberately: the nightly extended e2e tier ran
+    # red for eight nights (Tue 1 to Tue 8 Sep 2026, issue #1504) and nothing
+    # alarmed, because a scheduled run is attached to no PR and this gate
+    # watched pushes only. A scheduled run's head_branch is the default branch.
     if: >-
-      github.event.workflow_run.event == 'push'
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
       && github.event.workflow_run.head_branch == github.event.repository.default_branch
       && github.event.workflow_run.conclusion == 'failure'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
@@ -38,10 +42,11 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -euo pipefail
           short="${HEAD_SHA:0:8}"
-          title="Trunk red: $WORKFLOW_NAME failed on main at $short"
+          title="Trunk red: $WORKFLOW_NAME ($RUN_EVENT) failed on main at $short"
 
           gh label create ci:trunk-red \
             --color B60205 \
@@ -55,7 +60,8 @@ jobs:
           - Commit: \`$HEAD_SHA\`
           - Workflow: \`$WORKFLOW_NAME\`
           - Run: [$RUN_ID]($RUN_URL)
-          - Detection: the push-to-main workflow run measured the actual merge result and failed.
+          - Event: \`$RUN_EVENT\` (push = the merge result; schedule = the nightly extended tier on main)
+          - Detection: the watched workflow run on main failed.
 
           This issue is updated for every failed push-to-main watched workflow run until a human resolves it.
           EOF

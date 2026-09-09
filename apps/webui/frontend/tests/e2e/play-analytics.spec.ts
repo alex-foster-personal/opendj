@@ -20,9 +20,14 @@ test('real event-store analytics render and filter through the HTTP contract', a
 	const initialResponse = page.waitForResponse(
 		(response) => response.url().includes('/api/play-analytics?') && response.status() === 200
 	);
-	const updateCheck = page.waitForResponse((response) => response.url().includes('/api/v1/update/check'), {
-		timeout: 15_000,
-	});
+	// No private 15 s bound: the check is issued from BuildIdentity's onMount,
+	// which under a saturated runner host (nightly 34311277173, Wed 9 Sep 2026,
+	// nine e2e jobs on sixteen threads) landed later than that while the
+	// analytics response itself had already arrived. The test's own timeout
+	// bounds it; a missing check still fails, only not ahead of the page.
+	const updateCheck = page.waitForResponse((response) =>
+		response.url().includes('/api/v1/update/check')
+	);
 	await page.goto('/play-analytics');
 	await initialResponse;
 
