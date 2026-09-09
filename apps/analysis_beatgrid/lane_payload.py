@@ -155,15 +155,23 @@ def _segment_bpm_per_beat(
     return per_beat
 
 
-def build_beatgrid_lane(
-    result: Mapping[str, Any], *, threshold: float
-) -> BeatgridLane:
-    """One `beat_this_runner.py` result into one lane block.
+@dataclass(frozen=True)
+class _PulseCheck:
+    """What survives the guard chain: enough to assemble the `ok` payload."""
 
-    ``threshold`` is the peak-keep probability the run was actually made at and
-    is required: judging a run's activation peak against a different threshold
-    from the one its peak picker used would reject downstream what the producer
-    accepted upstream (the reasoning is `cli.analyze`'s, and it holds here).
+    beats: list[float]
+    tempo: Any
+    phase: Any
+
+
+def _pulse_and_phase(
+    result: Mapping[str, Any], *, threshold: float
+) -> _PulseCheck | BeatgridLane:
+    """The early guard chain, split out so its branches are counted apart from
+    payload assembly (`build_beatgrid_lane` otherwise trips the CC ceiling).
+
+    Returns a `BeatgridLane` the moment any guard fails, else a `_PulseCheck`
+    carrying what `build_beatgrid_lane` needs to finish.
     """
     error = result.get("error")
     if error:
@@ -198,6 +206,24 @@ def build_beatgrid_lane(
             f"cadence from {phase.n_bars_over_length} long and "
             f"{phase.n_bars_under_length} short bar(s)"
         )
+
+    return _PulseCheck(beats=beats, tempo=tempo, phase=phase)
+
+
+def build_beatgrid_lane(
+    result: Mapping[str, Any], *, threshold: float
+) -> BeatgridLane:
+    """One `beat_this_runner.py` result into one lane block.
+
+    ``threshold`` is the peak-keep probability the run was actually made at and
+    is required: judging a run's activation peak against a different threshold
+    from the one its peak picker used would reject downstream what the producer
+    accepted upstream (the reasoning is `cli.analyze`'s, and it holds here).
+    """
+    checked = _pulse_and_phase(result, threshold=threshold)
+    if isinstance(checked, BeatgridLane):
+        return checked
+    beats, tempo, phase = checked.beats, checked.tempo, checked.phase
 
     changes = detect_tempo_changes(beats)
     per_beat_bpm = _segment_bpm_per_beat(
