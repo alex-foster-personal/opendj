@@ -32,6 +32,11 @@
  *   source then broken (discussion_r3968214019)
  * - if two decks holding the SAME track pull the multi-MB payload twice then
  *   broken
+ * - if the refresh does not report the source the server ACTUALLY served then
+ *   broken (discussion_r3970117741): the caller cannot infer it, the awaits
+ *   here are unbounded and the daemon can move under them
+ * - if an evicted cache entry does not cause a REAL second request then broken
+ *   (discussion_r3970117748), proven from the server's own access log
  * - if a deck keeps the BPM it read at load() then broken
  *   (discussion_r3969020988): `bpm` is a lane-owned projection field on the
  *   very lane this control switches, so the track row is as source-dependent
@@ -398,4 +403,81 @@ test('a failed track-row read is as total as a failed grid read', async () => {
 
 	assert.equal(decks[1].bpm, 174, 'the succeeding deck must not have moved its BPM either');
 	assert.equal(decks[1].anlz, null);
+});
+
+// ------------------- the served source, and cache invalidation, for real -----
+
+test('the refresh REPORTS the source the server actually served, not the one asked for', async () => {
+	const decks = resetCacheDecks();
+	decks[1].stable_id = SID_TRACK_A;
+
+	try {
+		await daemonSelect('own');
+		assert.equal(
+			await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks),
+			'own',
+			'read off the real payload\'s beatgrid_source, which the production route stamps'
+		);
+
+		await daemonSelect('rbx');
+		assert.equal(await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks), 'rekordbox');
+	} finally {
+		// A failed assertion above must not leave the shared daemon on rbx and
+		// silently retune every later test in this file.
+		await daemonSelect('own');
+	}
+});
+
+test('no loaded deck reports NULL, which is not the same claim as "rekordbox"', async () => {
+	const decks = resetCacheDecks();
+
+	const before_ = await requestLog();
+	const served = await cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
+	const after_ = (await requestLog()).slice(before_.length);
+
+	assert.equal(after_.length, 0, 'nothing was loaded, so the real server must see no request');
+	assert.equal(served, null, 'nothing was served, so there is no served source to report');
+});
+
+test('invalidateAllAnlzCacheEntries forces a REAL second request, not a fabricated one', async () => {
+	// PARITY-02: an analysis source switch changes what beatgrid a fresh /anlz
+	// carries for EVERY track, not just whichever ones are cached right now --
+	// discussion_r3921666943 (setAnalysisSource never evicted this cache at
+	// all). A per-id invalidateAnlzCacheEntry loop from the caller would still
+	// miss a track reselected later without ever having been cached at switch
+	// time, so this must clear the whole map at once, not one key.
+	//
+	// discussion_r3970117748: this regression previously lived in
+	// anlz-cache.test.mjs behind a `globalThis.fetch` stub, so its
+	// post-invalidation assertion counted calls into a manufactured payload and
+	// could pass with the production request, source selection and parser all
+	// broken. Here `ensureAnlz` reaches the real /anlz route on the real fixture
+	// server, and the proof that it refetched is the SERVER's own access log.
+	resetCacheDecks();
+	const before_ = await requestLog();
+	cache.ensureAnlz(SID_TRACK_A);
+	cache.ensureAnlz(SID_TRACK_B);
+	await new Promise((resolve) => setTimeout(resolve, 200));
+
+	const entryA = cache.getAnlzEntry(SID_TRACK_A);
+	assert.equal(entryA.status, 'ready', 'the real route must have answered before this asserts');
+	assert.ok(
+		entryA.data.beatgrid.beat_count > 0,
+		'a real own grid came back through the real parser, not an empty stand-in'
+	);
+	const firstPass = (await requestLog()).slice(before_.length).filter((url) => url.includes('/anlz?'));
+	assert.equal(firstPass.length, 2, 'two distinct tracks, two real requests');
+
+	cache.invalidateAllAnlzCacheEntries();
+	assert.equal(cache.getAnlzEntry(SID_TRACK_A), undefined, 'an evicted entry reads as never-requested');
+	assert.equal(cache.getAnlzEntry(SID_TRACK_B), undefined, 'evicting one must not leave a sibling stale');
+
+	const midpoint = await requestLog();
+	cache.ensureAnlz(SID_TRACK_A);
+	await new Promise((resolve) => setTimeout(resolve, 200));
+	const secondPass = (await requestLog()).slice(midpoint.length).filter((url) => url.includes('/anlz?'));
+
+	assert.equal(secondPass.length, 1, 'ensureAnlz must treat an evicted entry as a real cache miss');
+	assert.match(secondPass[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?points=`));
+	assert.equal(cache.getAnlzEntry(SID_TRACK_A).status, 'ready');
 });
