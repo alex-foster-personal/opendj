@@ -18445,7 +18445,6 @@
             "name": "capabilities",
             "required": false,
             "schema": {
-              "default": [],
               "description": "protocol features the caller understands",
               "items": {
                 "type": "string"
@@ -18575,7 +18574,6 @@
             "name": "capabilities",
             "required": false,
             "schema": {
-              "default": [],
               "description": "protocol features the caller understands",
               "items": {
                 "type": "string"
