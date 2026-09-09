@@ -63,11 +63,15 @@ def _beatgrid_positive(fixtures_path: Path) -> dict[str, Any]:
     }
 
 
-# Matches the note already declared for this control in lanes.py: "always
-# answers A minor". Camelot 8A, checked against apps.analysis_key.canon in
-# tests/analysis_bench/test_key_lane.py so the literal here cannot drift from
-# what the scorer parses it as.
-KEY_CONSTANT_CAMELOT = "8A"
+# C major, not an arbitrary constant: spec section 5's "Agreement metric"
+# bullet names this exact control by citation -- "Include a constant
+# predictor control (S-KEY's 'always C major' floor was 19.0 MIREX)" -- so
+# the value is the spec's, not this module's choice. Camelot 8B, checked
+# against apps.analysis_key.canon in tests/analysis_bench/test_key_lane.py so
+# the literal here cannot drift from what the scorer parses it as. (A prior
+# cut of this control answered A minor / 8A instead, which matches no cited
+# source -- Codex P2 BLOCKING, PR #1620.)
+KEY_CONSTANT_CAMELOT = "8B"
 
 
 def _key_negative(fixtures_path: Path) -> dict[str, Any]:
@@ -77,7 +81,39 @@ def _key_negative(fixtures_path: Path) -> dict[str, Any]:
     results = {stable_id: {"key_camelot": KEY_CONSTANT_CAMELOT} for stable_id in rekordbox}
     return {
         "candidate": "constant_key",
-        "candidate_version": f"control, always answers Camelot {KEY_CONSTANT_CAMELOT}",
+        "candidate_version": f"control, always answers Camelot {KEY_CONSTANT_CAMELOT} (C major)",
+        "results": results,
+    }
+
+
+def _key_most_common_negative(fixtures_path: Path) -> dict[str, Any]:
+    """The bundle's second named floor (`specs/native-analysis-v1-lanes/
+    nav1-key-r0.md`: "controls: constant 'always C major', constant 'most
+    common key in the set'"). `constant_key` alone only covers the first of
+    those two; a full round needs both (Codex P2 BLOCKING, PR #1620).
+
+    Counted over the REKORDBOX reference (the lane's own `truth` field lists
+    rekordbox first), ties broken by first-seen order in the bundle's fixture
+    list -- `collections.Counter.most_common` is stable, so this is
+    deterministic and reproducible rather than depending on dict-iteration
+    happenstance a reader would have to trust.
+    """
+    from collections import Counter
+
+    from apps.analysis_bench.scorers import key_lane
+
+    _, rekordbox, _mik = key_lane.load_bundle(fixtures_path.parent)
+    present = [key for key in rekordbox.values() if key is not None]
+    if not present:
+        raise ValueError("the most_common control needs at least one rekordbox reference")
+    winner = Counter(present).most_common(1)[0][0]
+    camelot = key_lane.canon.to_camelot(winner)
+    results = {stable_id: {"key_camelot": camelot} for stable_id in rekordbox}
+    return {
+        "candidate": "most_common_key",
+        "candidate_version": (
+            f"control, always answers {camelot}, the most common rekordbox key in this bundle"
+        ),
         "results": results,
     }
 
@@ -130,6 +166,7 @@ _BUILDERS = {
     ("key", "positive"): _key_positive,
     ("key", "positive_mik"): _key_positive_mik,
     ("key", "negative"): _key_negative,
+    ("key", "most_common"): _key_most_common_negative,
 }
 
 
@@ -139,7 +176,13 @@ def main(argv: list[str] | None = None) -> int:
     # "positive_mik" is the key lane's second, MIK-side ceiling: still a
     # positive control, just answering the OTHER reference, so it gets its
     # own kind rather than overloading "positive" (which stays rekordbox's).
-    parser.add_argument("--kind", required=True, choices=("positive", "positive_mik", "negative"))
+    # "most_common" is the key lane's second named floor alongside
+    # "negative" (constant C major): spec section 5 and the round-0 brief
+    # name both baselines, so a full round needs both.
+    parser.add_argument(
+        "--kind", required=True,
+        choices=("positive", "positive_mik", "negative", "most_common"),
+    )
     parser.add_argument("--fixtures", required=True, help="bundle manifest.json")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)

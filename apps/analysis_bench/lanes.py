@@ -120,7 +120,10 @@ LANES: dict[str, Lane] = {
         fixture_builder="apps.analysis_bench fixtures build --lane key",
         truth="rekordbox djmdKey plus Mixed In Key, canonicalized to (pitch class, mode)",
         candidates=(
-            _control("key", "negative", "constant_key", "always answers A minor"),
+            _control("key", "negative", "constant_key",
+                     "always answers C major (Camelot 8B), spec section 5's cited floor"),
+            _control("key", "most_common", "most_common_key",
+                     "always answers the most common rekordbox key in the bundle"),
             _control("key", "positive", "truth_echo", "answers the rekordbox reference key"),
             _control("key", "positive_mik", "truth_echo_mik", "answers the MIK reference key"),
         ),

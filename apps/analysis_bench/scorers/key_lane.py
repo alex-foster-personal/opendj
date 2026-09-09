@@ -74,6 +74,34 @@ candidate did not answer is walked from the BUNDLE's fixture list, not the
 candidate's results, and is scored as `Key | None = None` -- the worst
 possible MIREX/KSEA/mode-accuracy outcome -- so a candidate cannot improve its
 denominator by skipping its hard tracks.
+
+ATTEMPTED-BUT-FAILED IS COUNTED SEPARATELY FROM OMITTED, AND A SUCCESSFUL-ONLY
+SCORE IS REPORTED BESIDE THE ALL-ATTEMPTED ONE. Spec section 5's baseline
+paragraph (the classical-upgrade rung) states the three-number contract a
+posted round has to satisfy: "the primary score over every attempted track
+with each fabricated fallback key ... scored as zero, the successful-only
+score, and the failure rate with its denominator." `n_omitted` alone conflates
+two different things: a fixture the candidate never touched, and one it tried
+and could not answer (an explicit `error`, or a result with no parseable key).
+`score_bundle` tells them apart (`n_failed`, walked from the same per-fixture
+results, plus the candidate's own self-reported `payload["n_failed"]` under
+`n_failed_reported` so that count is never silently dropped either) and
+reports `vs_rekordbox_successful_only`/`vs_mik_successful_only` alongside the
+existing all-attempted `vs_rekordbox`/`vs_mik` (the latter already zero-fills
+every omission and failure, which is what makes it the "primary" figure).
+`failure_rate` is rendered as `n_failed/n_attempted`, never a bare percentage,
+per the house honest-denominators rule (Codex P1 BLOCKING, PR #1620: the first
+cut computed only the all-attempted aggregate).
+
+TWO NAMED FLOORS, NOT ONE. Spec section 5's "Agreement metric" bullet cites a
+specific constant predictor ("S-KEY's 'always C major' floor was 19.0
+MIREX"), and the round-0 brief (`nav1-key-r0.md`) names a second, independent
+one: "constant 'most common key in the set'". `apps/analysis_bench/
+controls.py` builds both (`constant_key` answers C major; `most_common_key`
+answers whichever rekordbox key occurs most often in the bundle, ties broken
+by first-seen order). A prior cut of `constant_key` answered A minor instead,
+which cites no source in this spec, and shipped only that one floor (Codex P2
+BLOCKING, PR #1620).
 """
 
 from __future__ import annotations
@@ -99,7 +127,14 @@ KSEA_DEFINITION = (
 
 # Controls first, same convention as beatgrid_lane.py: a reader should meet
 # the floor and the ceiling before the candidate row whose numbers they read.
-_ROLE_ORDER = {"negative_control": 0, "positive_control": 1, "positive_mik_control": 2}
+# Both floors (constant, most-common) sort ahead of both ceilings
+# (rekordbox-echo, MIK-echo).
+_ROLE_ORDER = {
+    "negative_control": 0,
+    "most_common_control": 1,
+    "positive_control": 2,
+    "positive_mik_control": 3,
+}
 
 _REFERENCES = ("rekordbox", "mik")
 
@@ -274,12 +309,34 @@ def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any
             )
         n_omitted = sum(1 for sid in stable_ids if sid not in results)
         answers = {sid: _parse_candidate(results.get(sid)) for sid in stable_ids}
+        # ATTEMPTED but not SUCCESSFUL: a result entry exists (the candidate
+        # tried) but it carried an explicit error or no scorable key came out
+        # of it -- distinct from n_omitted (no entry at all). successful_ids
+        # feeds the successful-only score spec section 5's baseline
+        # paragraph asks for beside the all-attempted one (Codex P1 BLOCKING,
+        # PR #1620: the first cut computed only the all-attempted score and
+        # dropped the candidate's own self-reported `payload["n_failed"]`).
+        n_attempted = len(stable_ids) - n_omitted
+        n_failed = sum(
+            1 for sid in stable_ids if sid in results and answers[sid] is None
+        )
+        successful_ids = [
+            sid for sid in stable_ids if sid in results and answers[sid] is not None
+        ]
         scored[name] = {
             "role": arm["role"],
             "note": arm.get("note", ""),
             "n_omitted": n_omitted,
+            "n_failed": n_failed,
+            "n_failed_reported": arm["payload"].get("n_failed"),
+            # Named denominator, not a bare percentage (house honest-
+            # denominators rule): a rate with no stated "of what" is the
+            # exact defect that rule exists to catch.
+            "failure_rate": f"{n_failed}/{n_attempted}" if n_attempted else "0/0",
             "vs_rekordbox": _score_against(stable_ids, rekordbox, answers),
+            "vs_rekordbox_successful_only": _score_against(successful_ids, rekordbox, answers),
             "vs_mik": _score_against(stable_ids, mik, answers),
+            "vs_mik_successful_only": _score_against(successful_ids, mik, answers),
             "buckets": _buckets(stable_ids, rekordbox, mik, answers),
         }
     return {
@@ -303,13 +360,15 @@ def render_table(report: dict[str, Any]) -> str:
         "",
         f"n_fixtures (bundle denominator) = {report['n_fixtures']}",
         "",
-        "| arm | role | n_omitted | vs rekordbox (n) | MIREX% | KSEA% | mode% | "
-        "vs MIK (n) | MIREX% | KSEA% | mode% | AGREE (n, MIREX%) | "
+        "| arm | role | n_omitted | n_failed (of attempted) | "
+        "vs rekordbox (n) | MIREX% (all/successful-only) | KSEA% | mode% | "
+        "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
         "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, arm in order:
         rb, mikr, buckets = arm["vs_rekordbox"], arm["vs_mik"], arm["buckets"]
+        rb_succ, mikr_succ = arm["vs_rekordbox_successful_only"], arm["vs_mik_successful_only"]
         agree, related, unrelated = (
             buckets["agree"], buckets["disagree_related"], buckets["disagree_unrelated"]
         )
@@ -321,9 +380,11 @@ def render_table(report: dict[str, Any]) -> str:
         unrelated_ids = ", ".join(unrelated["stable_ids"]) or "-"
         lines.append(
             f"| {name} | {arm['role']} | {arm['n_omitted']} | "
-            f"{rb['n']} | {rb['mirex_mean_pct']} | {rb['ksea_pct']} | {rb['mode_accuracy_pct']} | "
-            f"{mikr['n']} | {mikr['mirex_mean_pct']} | {mikr['ksea_pct']} | "
-            f"{mikr['mode_accuracy_pct']} | "
+            f"{arm['n_failed']} of {arm['failure_rate'].split('/')[1]} | "
+            f"{rb['n']} | {rb['mirex_mean_pct']}/{rb_succ['mirex_mean_pct']} | "
+            f"{rb['ksea_pct']} | {rb['mode_accuracy_pct']} | "
+            f"{mikr['n']} | {mikr['mirex_mean_pct']}/{mikr_succ['mirex_mean_pct']} | "
+            f"{mikr['ksea_pct']} | {mikr['mode_accuracy_pct']} | "
             f"{agree['n']}, {agree['mirex_mean_pct']} | "
             f"{related['sides_with_rekordbox']}/{related['sides_with_mik']} | "
             f"{unrelated['n']}: {unrelated_ids} |"
