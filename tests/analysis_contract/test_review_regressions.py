@@ -466,3 +466,110 @@ def test_a_well_formed_waveform_is_still_accepted(db) -> None:
     assert analysis_store.upsert_record(
         own_record(lane="waveform"), conn=db
     ).inserted is True
+
+
+#-----------------------------------------------------------------------------
+# P2 round 4: the lane-level confidence is a measurement too
+#-----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", ["very", float("nan"), float("inf")])
+def test_a_lane_confidence_that_is_not_a_finite_number_is_refused(
+    db, bad: object,
+) -> None:
+    """It is copied verbatim into ProvenanceOut.confidence: float | None."""
+    from tests.analysis_contract.conftest import loudness_payload
+
+    with pytest.raises(LaneContractError, match="confidence"):
+        analysis_store.upsert_record(
+            own_record(
+                lane="loudness",
+                result=LaneResult(
+                    status="ok", confidence=bad, payload=loudness_payload()
+                ),
+            ),
+            conn=db,
+        )
+
+
+def test_a_real_confidence_and_none_both_still_pass(db) -> None:
+    """The control: `None` is a legitimate value, not a rejected one."""
+    from tests.analysis_contract.conftest import loudness_payload
+
+    for confidence in (0.91, None):
+        analysis_store.upsert_record(
+            own_record(
+                lane="loudness",
+                result=LaneResult(
+                    status="ok", confidence=confidence, payload=loudness_payload()
+                ),
+            ),
+            conn=db,
+        )
+    assert db.execute(
+        "SELECT count(*) FROM analysis_projection WHERE field='loudness_lufs'"
+    ).fetchone()[0] == 1
+
+
+#-----------------------------------------------------------------------------
+# P2 round 4: a failed key-segment block must name its reason
+#-----------------------------------------------------------------------------
+
+def test_failed_key_segments_without_a_reason_are_refused(db) -> None:
+    """The projection surfaces that reason; it cannot invent one."""
+    payload = key_payload()
+    payload["segments"] = {"status": "failed", "reason": None, "segments": []}
+    with pytest.raises(LaneContractError, match="without a reason"):
+        analysis_store.upsert_record(
+            own_record(lane="key", result=LaneResult(status="ok", payload=payload)),
+            conn=db,
+        )
+
+
+def test_failed_key_segments_with_a_reason_still_project_it(db) -> None:
+    """The control, and the round-three fix still holding."""
+    payload = key_payload()
+    payload["segments"] = {
+        "status": "failed", "reason": "no_downbeats_for_bar_sync", "segments": [],
+    }
+    analysis_store.upsert_record(
+        own_record(lane="key", result=LaneResult(status="ok", payload=payload)),
+        conn=db,
+    )
+    assert db.execute(
+        "SELECT status, reason FROM analysis_projection "
+        "WHERE field='key_change_count'"
+    ).fetchone() == ("failed", "no_downbeats_for_bar_sync")
+
+
+#-----------------------------------------------------------------------------
+# P2 round 4: the migration audit must see every rung it creates
+#-----------------------------------------------------------------------------
+
+def test_the_audit_reference_covers_the_v2_tables(tmp_path) -> None:
+    """A malformed v2 table must be REFUSED, not preserved by IF NOT EXISTS.
+
+    Reproduced by shape rather than by claim: the reference the shape audit
+    compares against was built from the v1 rung only, so nothing in v2 was in
+    it and a wrong-shaped table sailed through to a v2 stamp.
+    """
+    from apps.engine_core.store import schema as consolidated
+
+    reference = consolidated._reference_objects()
+    for name in consolidated.TABLES["native_analysis_v1"]:
+        assert name in reference, (
+            f"{name} is created by the ladder but absent from the audit "
+            "reference, so its shape is never checked"
+        )
+
+    path = tmp_path / "engine.db"
+    conn = sqlite3.connect(path, isolation_level=None)
+    try:
+        # A v1-era database carrying a WRONG-SHAPED v2 table.
+        conn.execute(
+            "CREATE TABLE analysis_canonical (stable_id TEXT PRIMARY KEY)"
+        )
+        with pytest.raises(Exception) as excinfo:
+            consolidated.apply_migrations(conn)
+        assert "analysis_canonical" in str(excinfo.value)
+    finally:
+        conn.close()

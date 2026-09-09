@@ -186,6 +186,15 @@ def _validate_key_segments(segments_block: Any) -> None:
         raise LaneContractError(
             f"key.segments.status must be one of {LANE_STATUSES}, got {status!r}"
         )
+    if status == "failed" and not segments_block.get("reason"):
+        # Same rule as a failed LANE, for the same reason: the projection
+        # copies this reason into `key_change_count`, so a failed block with
+        # no reason loses the analyzer's actual failure permanently and the
+        # read model can only show a generic placeholder.
+        raise LaneContractError(
+            "key.segments.status is failed without a reason; the read model "
+            "surfaces that reason and cannot invent one"
+        )
     segments = _require_list("key.segments", segments_block, "segments")
     if status == "ok" and not segments:
         raise LaneContractError(
@@ -326,6 +335,24 @@ def validate_lane_result(lane: str, result: LaneResult) -> None:
         raise LaneContractError(
             f"{lane}.status must be one of {LANE_STATUSES}, got {result.status!r}"
         )
+    if result.confidence is not None:
+        # The lane-level confidence is copied verbatim into
+        # analysis_projection.confidence and from there into
+        # ProvenanceOut.confidence (`float | None`), so a string reaches
+        # pydantic and a non-finite float reaches the JSON encoder. It is a
+        # measurement like any other and is held to the same rule.
+        if isinstance(result.confidence, bool) or not isinstance(
+            result.confidence, (int, float)
+        ):
+            raise LaneContractError(
+                f"{lane}.confidence must be a number or None, got "
+                f"{result.confidence!r}"
+            )
+        if not math.isfinite(result.confidence):
+            raise LaneContractError(
+                f"{lane}.confidence is {result.confidence!r}, which is not a "
+                "finite measurement"
+            )
     if result.status == "failed":
         if not result.reason:
             raise LaneContractError(

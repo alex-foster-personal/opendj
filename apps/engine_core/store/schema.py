@@ -1167,7 +1167,12 @@ def _reference_objects() -> dict[str, tuple[str, str]]:
     """
     reference = sqlite3.connect(":memory:")
     try:
-        for statement in _V1:
+        # ALL_DDL, not _V1. The audit reference has to be built from the SAME
+        # statement set creation runs, or a rung added after v1 is never
+        # audited: `CREATE TABLE IF NOT EXISTS` would preserve a malformed
+        # pre-existing object and the file would still be stamped at the new
+        # version (Codex P2, PR #1549).
+        for statement in ALL_DDL:
             reference.execute(statement)
         shadow_prefixes = tuple(
             f"{row[0]}_"
