@@ -30,6 +30,13 @@ Regression lines:
   - if any ladder declares DEFAULT CURRENT_TIMESTAMP off the allowlist and D-05
     stays silent then broken
   - if a quoted literal merely containing CURRENT_TIMESTAMP makes D-05 fire then broken
+  - if a DEFAULT wrapping CURRENT_TIMESTAMP in a UTC strftime makes D-05 fire
+    then broken: that is the remedy the rule asks for
+  - if a DEFAULT that reformats the stamp WITHOUT a zone designator stops D-05
+    firing then broken
+  - if a DEFAULT naming CURRENT_TIMESTAMP that sqlite cannot evaluate returns a
+    verdict instead of raising then broken
+  - if the tracked-file probe reports nothing for a token the tree contains then broken
   - if the allowlist names a triple that no longer exists then the debt list has
     gone stale, so broken
   - if a file outside NAIVE_DEFAULT_SOURCES declares a naive default and
@@ -42,6 +49,8 @@ from __future__ import annotations
 import copy
 import dataclasses
 import re
+import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -55,9 +64,34 @@ from scripts import sync_drift_rules as rules
 from scripts import sync_drift_subject as subject
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-#: A DEFAULT clause that EVALUATES CURRENT_TIMESTAMP, matching what D-05
-#: looks for in a live schema rather than any mention of the word.
+#: The source-text pattern behind NAIVE_DEFAULT_SOURCES. Deliberately blunt:
+#: its job is to name FILES that need a ladder before D-05 can see them, not
+#: to decide whether any one default is a defect. That decision is D-05's, and
+#: it makes it by evaluating the expression against sqlite.
 _DEFAULT_NOW = re.compile(r"DEFAULT\s+CURRENT_TIMESTAMP", re.IGNORECASE)
+
+def _tracked_files_matching(pattern: re.Pattern[str], *roots: str) -> set[str]:
+    """Tracked files under ``roots`` whose text matches ``pattern``.
+
+    ``git ls-files`` rather than a filesystem walk: it is the tree, not
+    whatever a build left lying in it, and it is what keeps gitignored
+    vendored output (apps/desktop/src-tauri/payload/ and target/) out of a
+    source scan. Undecodable bytes are replaced rather than raising, so a
+    binary blob under a scanned root is a non-match instead of an error
+    wearing the costume of a finding.
+    """
+    listing = subprocess.run(
+        ["git", "ls-files", "-z", *roots],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    ).stdout
+    names = [name for name in listing.split("\0") if name]
+    assert names, f"git ls-files returned nothing for {roots}; the scan root is wrong"
+    return {
+        name
+        for name in names
+        if pattern.search((REPO_ROOT / name).read_text(encoding="utf-8", errors="replace"))
+    }
+
 
 TRIO: tuple[str, ...] = protocol_common.SYNC_COLUMNS
 PAIR: tuple[str, ...] = (protocol_common.UPDATED_AT, protocol_common.ORIGIN_DEVICE_ID)
@@ -360,6 +394,11 @@ def test_d05_allowlist_covers_one_triple_not_a_whole_table(scan: lint.Scan) -> N
         "'see CURRENT_TIMESTAMP notes'",
         "\"CURRENT_TIMESTAMP\"",
         "(strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+        # The correct fix for a naive default, WRAPPING the token rather than
+        # avoiding it: a sortable ISO-8601 UTC stamp. Token matching reported
+        # this, so the check rejected the remedy for the thing it was
+        # complaining about, with no escape hatch short of editing the linter.
+        "(strftime('%Y-%m-%dT%H:%M:%SZ', CURRENT_TIMESTAMP))",
         "NULL",
         "0",
     ],
@@ -377,7 +416,17 @@ def test_d05_ignores_a_default_that_does_not_evaluate_the_token(
 
 
 @pytest.mark.parametrize(
-    "default", ["CURRENT_TIMESTAMP", "current_timestamp", "(CURRENT_TIMESTAMP)"]
+    "default",
+    [
+        "CURRENT_TIMESTAMP",
+        "current_timestamp",
+        "(CURRENT_TIMESTAMP)",
+        # Reformatted, but still not placeable on the UTC line: no zone
+        # designator. The narrowing is on the VALUE minted, not on whether
+        # strftime appears, so a half-done fix is still reported.
+        "(strftime('%Y-%m-%d %H:%M:%S', CURRENT_TIMESTAMP))",
+        "(strftime('%Y-%m-%dT%H:%M:%S', CURRENT_TIMESTAMP))",
+    ],
 )
 def test_d05_still_fires_on_the_real_call(scan: lint.Scan, default: str) -> None:
     """The control for the narrowing above: the defect itself still reports."""
@@ -388,6 +437,24 @@ def test_d05_still_fires_on_the_real_call(scan: lint.Scan, default: str) -> None
     assert _rules(lint.check_naive_stamp_default(scan)) == [
         ("naive_stamp_default", "fake_ladder:gig_notes.made_at")
     ]
+
+
+def test_d05_refuses_a_verdict_on_a_default_it_cannot_evaluate(scan: lint.Scan) -> None:
+    """A failed measurement must not render as a result, in either colour.
+
+    D-05 now decides by EVALUATING the default and inspecting the value. An
+    expression naming CURRENT_TIMESTAMP that sqlite will not evaluate is
+    exactly what this rule is about and exactly what it did not measure, so
+    it raises rather than returning clean (or guessing dirty).
+    """
+    scan.ladders["fake_ladder"] = {
+        "gig_notes": _facts(
+            "gig_notes", ("gig_id", "made_at"), made_at="no_such_fn(CURRENT_TIMESTAMP)"
+        )
+    }
+
+    with pytest.raises(RuntimeError, match="could not evaluate"):
+        lint.check_naive_stamp_default(scan)
 
 
 def test_d05_clean_against_the_real_tree(clean_scan: lint.Scan) -> None:
@@ -413,7 +480,8 @@ def test_d05_allowlist_entries_still_name_a_real_defect(
         "Delete the entry."
     )
     default = clean_scan.ladders[ladder][table].defaults.get(column)
-    assert default is not None and lint.mints_naive_stamp(default), (
+    probe = sqlite3.connect(":memory:")
+    assert default is not None and lint.mints_naive_stamp(probe, default), (
         f"allowlist names {ladder}:{table}.{column}, which no longer defaults "
         "to CURRENT_TIMESTAMP. The debt is paid; delete the entry."
     )
@@ -428,12 +496,17 @@ def test_d05_scans_every_file_that_declares_a_naive_default() -> None:
     both sides are derived, so neither can rot, and a new file that starts
     minting naive stamps fails HERE, by name, instead of silently sitting
     outside the subject.
+
+    Enumerated from ``git ls-files``, and NOT restricted to ``*.py``. An
+    rglob walked apps/desktop/src-tauri/payload/ and target/, which are
+    gitignored but present in any tree that has run a Tauri build and stage
+    the whole installed dependency closure -- sqlalchemy alone puts a
+    ``DEFAULT CURRENT_TIMESTAMP`` in that walk, so this test failed on a
+    vendored third-party file and told the reader to give it a ladder. The
+    ``*.py`` lens was the same blind spot D-08 hit for real: it cannot see a
+    naive default declared in .rs, .sql or .ts.
     """
-    found = {
-        str(path.relative_to(REPO_ROOT))
-        for path in (REPO_ROOT / "apps").rglob("*.py")
-        if _DEFAULT_NOW.search(path.read_text(encoding="utf-8"))
-    }
+    found = _tracked_files_matching(_DEFAULT_NOW, "apps")
 
     assert found, (
         "the source scan found no DEFAULT CURRENT_TIMESTAMP anywhere under "
@@ -449,6 +522,22 @@ def test_d05_scans_every_file_that_declares_a_naive_default() -> None:
     )
 
 
+def test_the_tracked_file_probe_can_find_something_and_can_report_absent() -> None:
+    """The instrument behind the two source scans, validated both ways.
+
+    A scan that finds nothing proves nothing until it has been shown able to
+    find something, and an empty result is also what a broken walk, a bad
+    pattern and a wrong root all return. So: a pattern the tree certainly
+    contains must come back non-empty, and a pattern nothing contains must
+    come back empty rather than raising or matching everything.
+    """
+    present = _tracked_files_matching(re.compile(r"\bSCHEMA_VERSION\b"), "apps")
+    absent = _tracked_files_matching(re.compile(r"af_probe_no_such_token_anywhere"), "apps")
+
+    assert "apps/shared/state/schema.py" in present
+    assert absent == set()
+
+
 def test_d05_allowlist_names_the_live_originals_not_only_the_dormant_copies() -> None:
     """A debt list covering only the dormant twins would read as complete.
 
@@ -457,4 +546,4 @@ def test_d05_allowlist_names_the_live_originals_not_only_the_dormant_copies() ->
     """
     ladders = {ladder for ladder, _, _ in lint.NAIVE_DEFAULT_ALLOWLIST}
 
-    assert {"dedup", "fingerprints"} <= ladders <= set(lint.OTHER_LADDERS)
+    assert {"dedup", "fingerprints"} <= ladders <= set(subject.OTHER_LADDERS)

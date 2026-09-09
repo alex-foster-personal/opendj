@@ -219,6 +219,14 @@ TABLE_DOCS: dict[str, str] = {
         "external-content triggers, so a missed backfill call leaves it "
         "silently stale rather than erroring."
     ),
+    "launcher_meta": (
+        "Tiny key/value store the desktop launcher keeps for cross-run UI "
+        "state that is too small to justify a migration of its own. Created "
+        "by apps/launcher/src-tauri/src/state.rs on first access (idempotent "
+        "CREATE TABLE IF NOT EXISTS), in whichever database get_db_path "
+        "resolves -- the shared state.db whenever it exists. Its only entry "
+        "today is the first-run notification flag read by commands::hotkey."
+    ),
     "tracks_frecency": (
         "Frequency+recency ranking signal for the launcher's quick-open "
         "palette: how often and how recently a track was played or "

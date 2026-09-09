@@ -5,17 +5,32 @@ WHAT WAS MEASURED, and the linter answers WHAT IS WRONG WITH IT. Getting the
 subject wrong is the more dangerous of the two mistakes, because a check over
 the wrong database reports zero violations and reads exactly like a clean tree.
 
-THE SUBJECT IS A PRODUCTION-SHAPED state.db, NOT THE LADDER ALONE. Seven
+THE SUBJECT IS A PRODUCTION-SHAPED state.db, NOT THE LADDER ALONE. EIGHT
 authorities write DDL into that one file; the ladder is one of them. Measured
 Wed 9 Sep 2026 on current main: the ladder alone builds 22 tables, a
-provisioned database holds 45, so a subject built from the ladder would be
-blind to half of itself. Re-derived from scratch on this port rather than
-carried over, and that re-derivation found a SEVENTH authority the Tue 1 Sep
-2026 list did not have: ``apply_pairing_capture_migrations``, which
+provisioned database holds 46, so a subject built from the ladder would be
+blind to half of itself.
+
+The list was re-derived twice, and each pass found an authority the previous
+one had missed, which is the whole argument for :data:`DDL_SOURCE_FILES`
+below. The Tue 1 Sep 2026 list missed ``apply_pairing_capture_migrations``,
+the SECOND ladder inside apps/shared/pairings/schema_sql.py, which
 apps/webui/server/routes/pairing_capture.py runs on the daemon's writable
-state.db the first time a capture is POSTed. Its three tables were declared
-nowhere and documented nowhere, so both D-04 and D-08 fired on them the moment
-the authority was added here.
+state.db the first time a capture is POSTed. The re-derivation that found it
+worked by reading every module under apps/ containing a ``CREATE TABLE`` --
+a PYTHON-ONLY lens, and so structurally unable to see the EIGHTH authority:
+apps/launcher/src-tauri/src/state.rs, which runs ``CREATE TABLE IF NOT
+EXISTS launcher_meta`` against the same data/state/state.db on every launcher
+start. Both omissions were silent in the same way and D-04 and D-08 fired on
+their tables the moment each authority was added.
+
+The lens is now a declaration rather than a method: ``DDL_SOURCE_FILES`` in
+scripts/sync_drift_rules.py names every file in the tree that declares a
+``CREATE TABLE`` in ANY language, with one line saying whether it writes
+state.db, and tests/quality/test_sync_drift_declarations.py compares that
+declaration against a fresh scan of the tracked tree. A new DDL writer fails
+by NAME there, in the direction that can actually catch an omission, rather
+than waiting for someone to re-derive the list a third time.
 
 The inventory a state table must appear in is SPLIT across two modules:
 ``apps/shared/state/schema.py`` names what the ladder and the authorities it
@@ -34,6 +49,7 @@ catch.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import tempfile
 from collections.abc import Callable, Iterator
@@ -55,6 +71,9 @@ from apps.spotify import state_aux as spotify_aux
 
 #: Name of the production-shaped, migrated state DB inside :class:`Scan`.
 STATE_LADDER: str = "shared_state"
+
+#: Repo root, so a non-importable authority can be read from source.
+REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 
 
 # ----- measured facts --------------------------------------------------------
@@ -85,6 +104,11 @@ class Scan:
 
     ladders: dict[str, dict[str, TableFacts]]
     documented: list[generate_agents_md.TableInfo]
+    #: Virtual tables in the state DB, measured from ``sqlite_master``. The
+    #: floors need these to derive which tables the docs introspection is
+    #: ENTITLED to drop, using the generator's own structural detector rather
+    #: than a hardcoded name.
+    virtual_tables: frozenset[str]
 
     @property
     def state(self) -> dict[str, TableFacts]:
@@ -130,14 +154,24 @@ class Authority:
 
 
 def _apply_state_ladder(conn: sqlite3.Connection, _path: Path) -> None:
-    """``open_rw``'s schema work without its documentation side effect.
+    """``open_rw``'s schema work, called directly rather than through it.
 
-    The production entry point regenerates the state dir's AGENTS.md, and that
-    generator RAISES on a docs gap. Building the scan through it would make
-    D-04 structurally unable to report: a docs gap would abort the scan before
-    any check ran, losing six other measurements to a defect one of them
-    exists to name. The pair below is the same schema work, and the backfill
-    no-ops on a fresh DB.
+    The pair below IS what apps/shared/state/db.py open_rw does to a fresh
+    file, plus an assertion that the ladder reached its terminal version; the
+    rest of open_rw is path resolution and pragmas this scan supplies itself.
+
+    RE-CHECKED Wed 9 Sep 2026 rather than carried over, because the Tue 1 Sep
+    2026 note here justified the bypass by saying open_rw regenerates the
+    state dir's AGENTS.md and that generator raises on a docs gap. That is
+    NOT true of open_rw on current main: it runs apply_migrations and the
+    backfill hook and nothing else, and
+    apps.database.regenerate_agents_md_if_writable is still an unwired wiring
+    ask with zero call sites. The hazard is real but PROSPECTIVE -- the day
+    that hook is wired in, a docs gap would abort the scan before any check
+    ran and D-04 would become structurally unable to report the very defect
+    it exists to name -- so the direct call stays, now for a reason that is
+    true today: this is the smallest thing that provisions the ladder, and it
+    cannot acquire a side effect later without someone editing this function.
     """
     version = state_schema.apply_migrations(conn)
     if version != state_schema.SCHEMA_VERSION:
@@ -147,6 +181,76 @@ def _apply_state_ladder(conn: sqlite3.Connection, _path: Path) -> None:
             f"every check would be measuring the wrong database."
         )
     sync_stamp.backfill_local_machine_id(conn)
+
+
+# Rust escapes that survive into a SQL literal. Anything else after a
+# backslash is passed through as itself, which is what Rust does for `\'`.
+_RUST_ESCAPES: dict[str, str] = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
+_RUST_LINE_CONTINUATION = re.compile(r"\\\n[ \t]*")
+_RUST_STRING_LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"', re.DOTALL)
+_CREATE_TABLE = re.compile(r"\bCREATE\s+TABLE\b", re.IGNORECASE)
+
+#: The launcher's Rust module that opens state.db and creates a table in it.
+RUST_STATE_AUTHORITY: Path = REPO_ROOT / "apps/launcher/src-tauri/src/state.rs"
+
+
+def _unescape_rust(literal: str) -> str:
+    return re.sub(r"\\(.)", lambda m: _RUST_ESCAPES.get(m.group(1), m.group(1)), literal)
+
+
+def rust_ddl_statements(source: Path) -> list[str]:
+    """Every ``CREATE TABLE`` literal a Rust module hands to sqlite.
+
+    An authority this scan cannot IMPORT is still an authority. The launcher
+    runs ``CREATE TABLE IF NOT EXISTS launcher_meta`` against
+    ``<repo>/data/state/state.db`` -- ``get_db_path`` prefers that file
+    whenever it exists, and ``commands::hotkey`` reaches it on every start
+    through ``claim_first_run_notification`` -- so the table is really there
+    in the live database of anyone who has opened the app, and every
+    Python-only derivation of the authority list was structurally blind to
+    it.
+
+    The DDL is READ from the source and EXECUTED, so sqlite parses it and
+    this module does not: the facts still come from a database. What is
+    parsed here is only the Rust string literal wrapping it.
+
+    Finding nothing is a hard error, not an empty list. Zero statements is
+    exactly what a reformatted or moved source looks like, and an authority
+    that silently contributes no tables is the failure mode this whole file
+    exists to prevent.
+    """
+    text = _RUST_LINE_CONTINUATION.sub("", source.read_text(encoding="utf-8"))
+    statements = [
+        _unescape_rust(match.group(1))
+        for match in _RUST_STRING_LITERAL.finditer(text)
+        if _CREATE_TABLE.search(match.group(1))
+    ]
+    if not statements:
+        raise RuntimeError(
+            f"found no CREATE TABLE literal in {source}, which is declared a "
+            "schema authority. Either it stopped creating tables (remove it "
+            "from STATE_AUTHORITIES and DDL_SOURCE_FILES) or this extraction "
+            "broke; an empty contribution would leave its tables unmeasured "
+            "while the scan still read clean."
+        )
+    return statements
+
+
+def _apply_rust_launcher_meta(conn: sqlite3.Connection, _path: Path) -> None:
+    """Run the launcher's own DDL, verbatim, on the shared connection."""
+    for statement in rust_ddl_statements(RUST_STATE_AUTHORITY):
+        conn.executescript(statement)
+
+
+def _apply_pairing_capture(conn: sqlite3.Connection, _path: Path) -> None:
+    """Named rather than a lambda: it returns a version this scan discards,
+    and a lambda body cannot say so without failing the type check."""
+    pairings_sql.apply_pairing_capture_migrations(conn)
+
+
+def _apply_play_orders(conn: sqlite3.Connection, _path: Path) -> None:
+    """Named for the same reason as :func:`_apply_pairing_capture`."""
+    play_orders_schema.apply_play_order_migrations(conn)
 
 
 def _apply_launcher(conn: sqlite3.Connection, path: Path) -> None:
@@ -182,17 +286,18 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     # pairing_capture_schema_meta in the live file.
     Authority(
         "apps/shared/pairings/schema_sql.py::apply_pairing_capture_migrations",
-        lambda conn, _path: pairings_sql.apply_pairing_capture_migrations(conn),
+        _apply_pairing_capture,
     ),
-    Authority(
-        "apps/shared/play_orders/schema.py",
-        lambda conn, _path: play_orders_schema.apply_play_order_migrations(conn),
-    ),
+    Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
     Authority(
         "apps/spotify/state_aux.py",
         lambda conn, _path: spotify_aux.ensure_aux_tables(conn),
     ),
     Authority("apps/launcher/scripts/bootstrap_db.py", _apply_launcher),
+    # NOT PYTHON, and that is the point. See rust_ddl_statements above: the
+    # desktop launcher creates launcher_meta in the same state.db on every
+    # start, and no derivation restricted to *.py could ever have seen it.
+    Authority("apps/launcher/src-tauri/src/state.rs", _apply_rust_launcher_meta),
 )
 """Every writer of DDL into ``state.db``, in the order production runs them.
 
@@ -200,26 +305,20 @@ The first is the migration ladder; the rest run additively on the same file.
 A new authority belongs here the day it is written, or every check silently
 stops covering the tables it creates.
 
-NOT here, deliberately: ``apps/sets/state.py``. Its ``SetStore`` defaults to
-its OWN file (apps.sets.paths.SETS_DB) and only writes ``sets`` and
-``set_events`` into a caller-supplied database through the ``backend=`` hook;
-nothing under apps/ constructs one against state.db today (re-checked Wed 9
-Sep 2026: ``SetStore(`` has no call site anywhere in the tree), so it is a
-possible future state.db authority rather than a current one.
-tests/engine_core/test_store_schema.py DOES drive its ``_ensure_schema``,
-because the consolidation target has to cover that future. Both tables are
-undocumented, so the day a caller appears, D-04 will say so.
-
-Also NOT here, and each checked rather than assumed (Wed 9 Sep 2026, by
-reading every module under apps/ that contains a CREATE TABLE):
-apps/engine_core/jobs/store.py, apps/lyrics/search_index_schema.py,
-apps/shared/hashing.py, apps/sync/fingerprint.py, apps/voice/settings.py and
-apps/webui/server/search_index.py each own a SEPARATE sqlite file, and
-search_index.py says so in its first line ("never mutate state.db's own
-schema"); apps/webui/server/routes/copilot.py builds its projection in
-``:memory:``; apps/launcher/scripts/latency_check.py builds a throwaway
-benchmark file; and apps/analysis/selection.py's ``ensure_tables`` delegates
-to apps/analysis/store.py rather than declaring DDL of its own."""
+WHICH FILES ARE AND ARE NOT AUTHORITIES IS DECLARED, NOT NARRATED.
+``DDL_SOURCE_FILES`` in scripts/sync_drift_rules.py holds every file in the
+tracked tree that declares a ``CREATE TABLE``, in any language, each with one
+line saying whether it writes state.db and why. A test compares that
+declaration against a fresh scan, so a new DDL writer of any kind fails by
+name rather than waiting to be noticed. The prose that used to live here
+listed the exclusions instead, and it went wrong in both available
+directions: it omitted a whole language, and it recorded a re-check for
+``SetStore(`` -- a symbol that exists nowhere in the repository, the class
+being ``SetsState`` -- so the zero it read as evidence could never have been
+anything else (.claude/rules/verification.md). Re-derived with the real name:
+every apps/ call site constructs ``SetsState()`` against
+apps.sets.paths.SETS_DB, so apps/sets/state.py is genuinely not a state.db
+authority today. The conclusion survived; the evidence for it did not."""
 
 
 def build_state_db(path: Path) -> sqlite3.Connection:
@@ -295,19 +394,22 @@ def measured_scan() -> Iterator[Scan]:
         try:
             ladders = {STATE_LADDER: introspect_tables(state)}
             documented = generate_agents_md.introspect(state)
+            virtual = frozenset(generate_agents_md._virtual_table_names(state))
             for name in OTHER_LADDERS:
                 other = build_other_ladder(name, root)
                 try:
                     ladders[name] = introspect_tables(other)
                 finally:
                     other.close()
-            yield Scan(ladders=ladders, documented=documented)
+            yield Scan(ladders=ladders, documented=documented, virtual_tables=virtual)
         finally:
             state.close()
 
 
 __all__ = [
     "OTHER_LADDERS",
+    "REPO_ROOT",
+    "RUST_STATE_AUTHORITY",
     "STATE_AUTHORITIES",
     "STATE_LADDER",
     "Authority",
@@ -317,4 +419,5 @@ __all__ = [
     "build_state_db",
     "introspect_tables",
     "measured_scan",
+    "rust_ddl_statements",
 ]

@@ -33,11 +33,13 @@ Regression lines:
 from __future__ import annotations
 
 import copy
+import dataclasses
 import re
 from pathlib import Path
 
 import pytest
 
+from apps.database import generate_agents_md
 from apps.shared.state import schema as state_schema
 from scripts import quality_gate
 from scripts import sync_drift_lint as lint
@@ -132,11 +134,61 @@ def test_d09_tolerates_exactly_the_fts5_shadows_and_nothing_else(
     subtracts exactly those names. Asserting the difference IS the shadow set
     keeps the exception from quietly widening.
     """
-    shadows = {n for n in state_schema.FOREIGN_AUTHORITY_TABLES if n.startswith("tracks_fts_")}
+    shadows = {
+        name
+        for name in clean_scan.state
+        if generate_agents_md._is_fts5_shadow_table(name, set(clean_scan.virtual_tables))
+    }
     missed = set(clean_scan.state) - {t.name for t in clean_scan.documented}
 
     assert missed == shadows
     assert shadows, "the shadow set is derived, so an empty one means the derivation broke"
+
+
+def test_d09_survives_a_second_full_text_index(scan: lint.Scan) -> None:
+    """Adding another fts5 table must not abort all eight checks.
+
+    The floor used to derive its shadow set from a ``tracks_fts_`` name
+    prefix, pinning the one virtual table that existed the day it was
+    written. The generator excludes shadows STRUCTURALLY and says in its own
+    docstring that a future fts5 table needs no code change, so the floor
+    disagreed with the thing it was checking: a second full-text index -- an
+    ordinary change on this repo -- put five shadow tables in `unseen` and
+    aborted the run with a message accusing the SCAN of being broken, when
+    the scan was right and the floor was stale.
+    """
+    lyrics = {
+        "lyrics_fts": _facts("lyrics_fts", ("line",)),
+        **{
+            f"lyrics_fts{suffix}": _facts(f"lyrics_fts{suffix}", ("id", "block"))
+            for suffix in ("_config", "_content", "_data", "_docsize", "_idx")
+        },
+    }
+    scan.state.update(lyrics)
+    scan.documented.append(
+        generate_agents_md.TableInfo(name="lyrics_fts", columns=(), foreign_keys=())
+    )
+    widened = dataclasses.replace(
+        scan, virtual_tables=scan.virtual_tables | {"lyrics_fts"}
+    )
+
+    lint.assert_measurable(widened)
+
+
+def test_d09_still_aborts_on_a_shadow_shaped_name_with_no_virtual_table(
+    scan: lint.Scan,
+) -> None:
+    """The control: the exclusion is the VIRTUAL TABLE, not the suffix.
+
+    A table merely named like a shadow, with no fts5 parent in the database,
+    is an ordinary undocumented table and must still abort. Without this, the
+    widening above could have been done by matching suffixes and would have
+    let any ``*_data`` table through unmeasured.
+    """
+    scan.state["lyrics_fts_data"] = _facts("lyrics_fts_data", ("id", "block"))
+
+    with pytest.raises(SystemExit, match=re.escape("['lyrics_fts_data']")):
+        lint.assert_measurable(scan)
 
 
 def test_d09_floor_tracks_the_declaration_not_a_pinned_number() -> None:
@@ -210,7 +262,7 @@ def test_the_real_tree_is_clean_and_the_control_says_it_was_measured(
 
     assert result.violations == ()
     assert result.checks_run == len(lint.CHECKS)
-    assert result.ladders_scanned == len(lint.OTHER_LADDERS) + 1
+    assert result.ladders_scanned == len(subject.OTHER_LADDERS) + 1
     assert set(state_schema.ALL_KNOWN_TABLES) <= set(clean_scan.state)
     assert result.counts() == dict.fromkeys(lint.RULES, 0)
 
@@ -225,7 +277,7 @@ def test_main_exits_zero_against_the_real_tree(
 def test_list_facts_names_every_ladder(capsys: pytest.CaptureFixture[str]) -> None:
     assert lint.main(["--list-facts"]) == 0
     out = capsys.readouterr().out
-    for ladder in (lint.STATE_LADDER, *lint.OTHER_LADDERS):
+    for ladder in (subject.STATE_LADDER, *subject.OTHER_LADDERS):
         assert ladder in out
 
 
@@ -234,7 +286,7 @@ def test_list_facts_names_every_ladder(capsys: pytest.CaptureFixture[str]) -> No
 
 def test_scan_builds_the_ladders_it_declares(tmp_path: Path) -> None:
     """A ladder builder that silently no-ops would leave D-05 measuring nothing."""
-    for name in lint.OTHER_LADDERS:
+    for name in subject.OTHER_LADDERS:
         conn = subject.build_other_ladder(name, tmp_path)
         try:
             tables = subject.introspect_tables(conn)
@@ -269,6 +321,11 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         "apps/shared/play_orders/schema.py": "play_orders",
         "apps/spotify/state_aux.py": "spotify_playlist_links",
         "apps/launcher/scripts/bootstrap_db.py": "tracks_frecency",
+        # The one authority that is NOT PYTHON. Every derivation of this list
+        # had been done by reading *.py, so launcher_meta was created in the
+        # live state.db on every launcher start while no inventory, no test
+        # and no docs run had heard of it.
+        "apps/launcher/src-tauri/src/state.rs": "launcher_meta",
     }
     assert {a.name for a in subject.STATE_AUTHORITIES} == set(per_authority)
     for authority, table in per_authority.items():
@@ -291,3 +348,49 @@ def test_a_failing_authority_aborts_rather_than_shrinking_the_subject(
 
     with pytest.raises(RuntimeError, match=re.escape("apps/broken.py failed to provision")):
         subject.build_state_db(tmp_path / "state" / "state.db")
+
+
+# ----- the non-Python authority ----------------------------------------------
+
+
+def test_the_rust_authority_contributes_its_real_ddl(clean_scan: lint.Scan) -> None:
+    """Read from source, executed by sqlite, then read back out of the DB.
+
+    The launcher is an authority this scan cannot import. Its DDL is
+    extracted from the Rust literal and EXECUTED, so sqlite parses it and
+    this tool does not, and the columns asserted here come from
+    ``PRAGMA table_info`` on the result rather than from the extraction.
+    """
+    facts = clean_scan.state["launcher_meta"]
+
+    assert facts.columns == ("key", "value")
+    assert facts.defaults == {"key": None, "value": None}
+
+
+def test_the_rust_extraction_aborts_rather_than_contributing_nothing(
+    tmp_path: Path,
+) -> None:
+    """Zero statements is what a reformatted source looks like.
+
+    An authority that silently contributes no tables leaves its tables
+    unmeasured while every check still reports a clean scan, which is the
+    exact failure this file exists to prevent. So finding nothing raises.
+    """
+    empty = tmp_path / "state.rs"
+    empty.write_text("fn nothing() {}\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="found no CREATE TABLE literal"):
+        subject.rust_ddl_statements(empty)
+
+
+def test_the_rust_extraction_finds_what_the_source_declares() -> None:
+    """The control for the floor above: it must find something real.
+
+    A guard that only proves an EMPTY source raises would pass just as well
+    if the extractor were broken for every source.
+    """
+    statements = subject.rust_ddl_statements(subject.RUST_STATE_AUTHORITY)
+
+    assert len(statements) == 1
+    assert statements[0].startswith("CREATE TABLE IF NOT EXISTS launcher_meta")
+    assert "\\n" not in statements[0], "the Rust escape sequences were not decoded"

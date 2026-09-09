@@ -154,6 +154,16 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "tracks_fts_docsize",
     "tracks_fts_idx",
     "tracks_frecency",
+    # apps/launcher/src-tauri/src/state.rs :: ensure_launcher_meta -- the one
+    # authority that is not Python. get_db_path prefers <repo>/data/state/
+    # state.db whenever it exists, and every meta_get/meta_set runs
+    # CREATE TABLE IF NOT EXISTS first, so a single launcher start creates
+    # this table in the live shared file. Undeclared and undocumented until
+    # Wed 9 Sep 2026: every derivation of the authority list had been done by
+    # reading *.py, so no inventory, no test and no docs run had ever heard
+    # of it, and regenerating AGENTS.md against a launcher-touched state.db
+    # raised MissingColumnDocsError.
+    "launcher_meta",
 )
 """Tables this module does NOT create but that legitimately live in the same
 file, written by the other three schema authorities (spec section 1.3 of

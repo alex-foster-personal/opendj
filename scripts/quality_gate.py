@@ -1167,6 +1167,17 @@ def _eval_sync_drift() -> list[Metric]:
     The linter is imported here rather than at module scope on purpose: it
     pulls in the application's schema modules, and a broken app module is
     exactly when someone reaches for ``--only ruff``.
+
+    THIS IS THE ONLY EVALUATOR THAT IMPORTS THE APPLICATION, and that import
+    has to stay inside what this gate's environment can satisfy: CI runs the
+    whole file from a throwaway env holding ops/quality/requirements.txt and
+    NOTHING of the project's own dependencies, deliberately. A module-level
+    ``import yaml`` on the linter's path once killed the entire gate here
+    with a ModuleNotFoundError naming PyYAML rather than drift -- every PR
+    red, no report, no metrics. tests/quality/test_sync_drift_imports.py pins
+    the invariant (the drift gate's import graph reaches no third party) so a
+    reintroduction fails there by name instead of arriving as a red CI job
+    about something else.
     """
     from scripts import sync_drift_lint
 

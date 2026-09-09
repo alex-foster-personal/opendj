@@ -6,6 +6,11 @@ only writer of ``state.db``. :mod:`apps.analysis.store` and
 connection after the migration ladder has finished, so a live database
 carries tables the ladder never declares.
 
+One of these siblings is not even Python: ``apps/launcher/src-tauri/src/
+state.rs`` creates ``launcher_meta`` in the same file on every launcher
+start. It is documented here for the same reason as the rest -- the
+generator documents every LIVE table, whatever language created it.
+
 The generated AGENTS.md documents every LIVE table, so those tables need
 curated descriptions or the generator raises
 :class:`apps.database.generate_agents_md.MissingColumnDocsError`. Measured
@@ -29,6 +34,21 @@ descriptions are in :mod:`apps.database.table_docs`.
 from __future__ import annotations
 
 SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
+    "launcher_meta": {
+        "key": (
+            "Setting name. Primary key. The only key in use today is "
+            "'first_run_notification_shown' "
+            "(apps/launcher/src-tauri/src/state.rs "
+            "FIRST_RUN_NOTIFICATION_KEY), which commands::hotkey sets once "
+            "so the post-install 'press Alt+Space' notification does not "
+            "re-fire on every launch."
+        ),
+        "value": (
+            "The setting's value, as text. NOT NULL. Untyped by design: the "
+            "table exists so a one-off UI bit needs no migration, and each "
+            "reader parses its own key."
+        ),
+    },
     "analysis": {
         "stable_id": (
             "The analyzed track. NOT FK-declared (the DDL carries no "
