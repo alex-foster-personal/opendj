@@ -138,10 +138,15 @@ test('PARITY-02: an unconfirmed selection is treated the same as rekordbox, neve
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
-test('withFallbackBeatgrid swaps ONLY the grid and returns a new object', () => {
+test('withFallbackBeatgrid swaps the grid, restamps the source, and returns a new object', () => {
 	const anlz = anlzWithBeats([]);
 	anlz.cues = [{ kind: 'memory', slot: null, in_ms: 900, out_ms: null, is_loop: false, active_loop: false, beat_loop_size: null, color_table_index: null, comment: null }];
 	anlz.vocals = { status: 'demucs', segments: [] };
+	// A deck's /anlz fetch can have landed while the server's effective source
+	// was still 'rekordbox' - this stamp is what withFallbackBeatgrid must
+	// overwrite, not just spread through, once it installs an own-derived grid.
+	anlz.beatgrid_source = 'rekordbox';
+	anlz.beatgrid_own_unavailable_reason = null;
 	const fallback = {
 		stable_id: 'abc123',
 		source: 'apps.analysis',
@@ -156,6 +161,8 @@ test('withFallbackBeatgrid swaps ONLY the grid and returns a new object', () => 
 	const merged = beatgridFallback.withFallbackBeatgrid(anlz, fallback);
 
 	assert.deepEqual(merged.beatgrid, fallback.beatgrid);
+	assert.equal(merged.beatgrid_source, 'own');
+	assert.equal(merged.beatgrid_own_unavailable_reason, null);
 	// Everything the real payload DID carry survives untouched - the fallback
 	// pipeline proposes no cues, no waveform and no vocals.
 	assert.deepEqual(merged.cues, anlz.cues);
@@ -167,6 +174,7 @@ test('withFallbackBeatgrid swaps ONLY the grid and returns a new object', () => 
 	// mutating in place would serve a stale grid to every IPC consumer.
 	assert.notEqual(merged, anlz);
 	assert.deepEqual(anlz.beatgrid, { beat_count: 0, beats: [] });
+	assert.equal(anlz.beatgrid_source, 'rekordbox');
 });
 
 test('withFallbackBeatgrid refuses to overwrite a real ANLZ grid', () => {

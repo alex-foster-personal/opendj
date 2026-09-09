@@ -97,7 +97,18 @@ export function sameBeatgrid(left: AnlzBeatgrid, right: AnlzBeatgrid): boolean {
  * on ANLZ identity, so mutating in place would serve a stale grid.
  *
  * Throws rather than overwrite a real ANLZ grid - that inversion would
- * silently demote rekordbox's own measurement to ours. */
+ * silently demote rekordbox's own measurement to ours.
+ *
+ * Also overwrites `beatgrid_source`/`beatgrid_own_unavailable_reason`, not
+ * just `beatgrid`: `anlz` can have been fetched while the server's effective
+ * source was still 'rekordbox' (a stale deck load, or a switch to 'own'
+ * that landed after /anlz answered), so its stamp says 'rekordbox' even
+ * though the beats this function is about to install came from apps.analysis.
+ * Spreading `anlz` unmodified would ship that stale stamp downstream -
+ * anlz-cache.svelte.ts's grid/tempo pairing check and StripWaveform's
+ * own-unavailable-reason display both read `beatgrid_source` as the
+ * authority on where the grid came from, not `shouldUseBeatgridFallback`'s
+ * gate (discussion_r3972682719 P1 BLOCKING). */
 export function withFallbackBeatgrid<T extends AnlzData>(
 	anlz: T,
 	fallback: BeatgridFallbackOut
@@ -108,7 +119,12 @@ export function withFallbackBeatgrid<T extends AnlzData>(
 				`beatgrid (${anlz.beatgrid.beats.length} beats); ANLZ is always preferred`
 		);
 	}
-	return { ...anlz, beatgrid: fallback.beatgrid };
+	return {
+		...anlz,
+		beatgrid: fallback.beatgrid,
+		beatgrid_source: 'own',
+		beatgrid_own_unavailable_reason: null
+	};
 }
 
 /** Wrap a beatgrid-fallback response in an AnlzData-shaped payload so
