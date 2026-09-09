@@ -48,12 +48,12 @@ test('valid coverage stays complete while a corrupt cache entry is a visible err
 	assert.deepEqual(dot('Lyrics completion', coverage(0), 'lyrics'), {
 		label: 'Lyrics completion',
 		state: 'complete',
-		detail: '3/3 complete, 0 missing, 0 unreachable'
+		detail: '3/3 playable complete, 0 missing, 0 broken links'
 	});
 	assert.deepEqual(dot('Lyrics completion', coverage(1, 1), 'lyrics'), {
 		label: 'Lyrics completion',
 		state: 'error',
-		detail: '1 corrupt entry - 2/3 complete, 1 missing, 0 unreachable'
+		detail: '1 corrupt entry - 2/3 playable complete, 1 missing, 0 broken links'
 	});
 });
 
