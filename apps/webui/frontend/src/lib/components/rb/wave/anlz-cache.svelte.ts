@@ -227,16 +227,10 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void | Promise<v
 	// that gap; it fires for every real grid this cache learns about,
 	// including the very first, and the engine decides whether any loaded deck
 	// is actually holding a different one.
-	//
-	// The sink's return value is PASSED THROUGH, never awaited here: this
-	// function's other caller (`_fetchAndPublish`, the ambient retry) is
-	// deliberately fire-and-forget and must stay that way. It is
-	// `refreshAnlzCacheEntry`'s caller inside `refreshAnalysisSourceDecks`
-	// that awaits it (discussion_r3970967293).
+	// Passed through, never awaited: only refreshAnalysisSourceDecks awaits
+	// this (discussion_r3970967293); _fetchAndPublish stays fire-and-forget.
 	const sinkSettlement =
-		_authoritativeGridSink !== null && hasAnlzBeatgrid(data)
-			? _authoritativeGridSink(stable_id, data)
-			: undefined;
+		_authoritativeGridSink !== null && hasAnlzBeatgrid(data) ? _authoritativeGridSink(stable_id, data) : undefined;
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
 		return sinkSettlement;
@@ -268,13 +262,8 @@ export type AuthoritativeAnlzGridSink = (
 	 * source has no grid for this track, so the deck settles gridless instead
 	 * of silently dropping Beat Sync. */
 	landed?: boolean
-	/** May return a promise that settles once the adoption's audible
-	 * rescheduling has actually run. The ambient retry path (`_fetchAndPublish`
-	 * below) ignores it and stays fire-and-forget by design; the rbx-vs-own
-	 * switch (`refreshAnalysisSourceDecks`) awaits it, because that caller can
-	 * be running inside the performance command scheduler's claim and must not
-	 * report the switch complete while settlement is still queued
-	 * (discussion_r3970967293 P1 BLOCKING). */
+	/** May return a settlement promise; only refreshAnalysisSourceDecks
+	 * awaits it, so a performance-command claim can't release early (discussion_r3970967293). */
 ) => void | Promise<void>;
 let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
 
@@ -416,14 +405,8 @@ export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
  * stale entry: the hot cue bank (always a live fetch) would show the new
  * cue while the waveform (from the stale cached anlz) would not. Same
  * failure shape as issue #877's reported bug, just triggered by a reload
- * instead of the original paint defect.
- *
- * Returns whatever the authoritative-grid sink returned (see
- * `AuthoritativeAnlzGridSink`): usually nothing, but a caller that needs the
- * grid's audible rescheduling to have actually finished before it reports
- * itself done - `refreshAnalysisSourceDecks` below - awaits it. Every other
- * caller (`refreshHotCues`, audio-engine) is unaffected: `void` absorbs a
- * `Promise<void> | void` return with no change to a fire-and-forget call. */
+ * instead of the original paint defect. Returns the sink's settlement;
+ * only `refreshAnalysisSourceDecks` below awaits it. */
 export function refreshAnlzCacheEntry(stable_id: string, data: AnlzData): void | Promise<void> {
 	return _publishAnlzResult(stable_id, data);
 }
@@ -526,15 +509,9 @@ export interface AnalysisSourceRefreshDeck {
  * split across two sources, so that throws before anything is published and
  * the all-or-nothing guarantee covers it too.
  *
- * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED, not
- * only until the cache and decks are written. The authoritative-grid sink's
- * `adoptAuthoritativeGrid` used to be void-returning, so a playing Beat-Synced
- * deck's audible reschedule (`afterBeatgridUpgrade` -> `runScoped`'s widen)
- * was still queued when this function returned; the caller holding the
- * performance command scheduler's all-deck-plus-sync claim (`setAnalysisSource`
- * / the poll-triggered refresh) would then report the switch complete and
- * release that claim, and a later command's claim could be granted before the
- * reschedule actually ran (discussion_r3970967293 P1 BLOCKING). */
+ * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED,
+ * so a caller holding the scheduler's claim can't release it early
+ * (discussion_r3970967293 P1 BLOCKING). */
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
 	decks: Record<DeckId, AnalysisSourceRefreshDeck>
@@ -567,15 +544,8 @@ export async function refreshAnalysisSourceDecks(
 				'within one batch, so publishing would split the decks across both'
 		);
 	}
-	// Collected, not awaited here: awaiting per-iteration would let one deck's
-	// reconciliation finish (and therefore fire its own re-entrant read of
-	// `decks[deck].anlz`, still pre-switch at this point) before the next
-	// deck's sink call has even been ISSUED, serializing what the cache write
-	// below deliberately does not. Every sink call below still runs
-	// synchronously up to its own first await, exactly as before this fix, so
-	// the CACHE FIRST / DECK SECOND ordering this function's doc block
-	// describes is unchanged; only the RETURN of this function now waits for
-	// every settlement it triggered (discussion_r3970967293 P1 BLOCKING).
+	// Collected, not awaited per-iteration (would serialize what the cache
+	// write below deliberately doesn't); only this function's RETURN waits.
 	const sinkSettlements: Array<void | Promise<void>> = [];
 	for (const { stableId, fresh } of staged) {
 		sinkSettlements.push(refreshAnlzCacheEntry(stableId, fresh));
@@ -606,12 +576,6 @@ export async function refreshAnalysisSourceDecks(
 			decks[deck].key = track.key ?? null;
 		}
 	}
-	// Every sink call above ALREADY ran, synchronously, up to its first await
-	// - `Promise.all` on a mix of promises and `void`s just waits out the ones
-	// that are still pending, never re-triggers anything. This is what makes
-	// the switch's completion (and therefore the performance-command claim it
-	// may be running under) wait for the audible rescheduling rather than
-	// racing it.
 	await Promise.all(sinkSettlements);
 	// `?? null` rather than a default: no loaded deck means nothing was served,
 	// which is not the same claim as "the server served rekordbox".
