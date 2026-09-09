@@ -129,9 +129,9 @@ def get_analysis_queue(
 
 
 @router.post("/run", response_model=ingest.RefreshStatusOut, status_code=202)
-def run_analysis_queue() -> ingest.RefreshStatusOut:
+def run_analysis_queue(request: Request) -> ingest.RefreshStatusOut:
     """Drain the queue now, through the shared one-slot refresh job."""
-    return ingest.start_refresh(ingest.RefreshIn(scope="unmapped"))
+    return ingest.start_refresh(request, ingest.RefreshIn(scope="unmapped"))
 
 
 __all__ = [

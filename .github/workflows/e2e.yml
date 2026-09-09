@@ -283,7 +283,14 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
-          enable-cache: true
+          # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
+          # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
+          # action's cache on, its post step runs `uv cache prune --ci` against that
+          # directory while fifteen sibling jobs hold its lock: trunk E2E red on
+          # 227fb7c86 (Wed 9 Sep 2026, "Timeout (300s) when waiting for lock on
+          # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
+          # archive entry out from under `uv sync` on 34275041870 the day before.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: System deps for pyrekordbox (SQLCipher)
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
@@ -835,7 +842,14 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
-          enable-cache: true
+          # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
+          # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
+          # action's cache on, its post step runs `uv cache prune --ci` against that
+          # directory while fifteen sibling jobs hold its lock: trunk E2E red on
+          # 227fb7c86 (Wed 9 Sep 2026, "Timeout (300s) when waiting for lock on
+          # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
+          # archive entry out from under `uv sync` on 34275041870 the day before.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: System deps (SQLCipher for pyrekordbox, ffmpeg for the stems fixture)
         # tests.stems.seed_e2e_library shells out to ffmpeg to build its

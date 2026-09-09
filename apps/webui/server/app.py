@@ -478,6 +478,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
         """
         started = ingest_routes._start_refresh_job(
             ingest_routes.RefreshIn(scope="unmapped"),
+            ingest_routes._stem_roots(app),
             lambda: guard(last_attempted_queue()),
         )
 

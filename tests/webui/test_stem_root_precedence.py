@@ -1,16 +1,16 @@
-"""H7: a corrupt stem bundle must raise, never fall through to a lesser store.
+"""A corrupt stem bundle must not mask a valid lower-precedence bundle.
 
 A stable_id can legitimately have a bundle in both the Demucs 4-part store and
 the RoFormer 2-part store. They are searched in precedence order and the FIRST
-directory that EXISTS wins outright: a bundle that exists but fails validation
-raises rather than quietly degrading the deck from four controls to two.
+directory that validates wins. A corrupt higher-precedence bundle is reported
+and the reader continues to a lower-precedence valid bundle.
 
 Mini-PRD
 ========
 * [if] a track has both a Demucs and a RoFormer bundle [then] the API serves
   the 4-part one [else -] the deck silently loses DRUMS and BASS.
 * [if] the Demucs bundle directory exists but its manifest is invalid [then]
-  the request errors [else -] a working-but-wrong 2-part deck ships.
+  the request serves a valid lower-precedence bundle [else -] usable stems are masked.
 * [if] a third model store is added [then] only the roots tuple changes [else -]
   "extendable if we add the live-band one" is false.
 """
@@ -30,7 +30,9 @@ from apps.webui.server.routes.stems import router
 STABLE_ID = "track-both-stores"
 
 
-def _write_wav(path: Path, *, frames: int = 12, sample_rate: int = 44_100, channels: int = 2) -> None:
+def _write_wav(
+    path: Path, *, frames: int = 12, sample_rate: int = 44_100, channels: int = 2
+) -> None:
     """A tiny but real PCM WAV so alignment validation runs for real."""
     with wave.open(str(path), "wb") as output:
         output.setnchannels(channels)
@@ -66,7 +68,13 @@ def _manifest(stable_id: str, layout: str) -> dict:
     }
 
 
-def _bundle(root: Path, layout: str, *, stable_id: str = STABLE_ID, manifest_text: str | None = None) -> Path:
+def _bundle(
+    root: Path,
+    layout: str,
+    *,
+    stable_id: str = STABLE_ID,
+    manifest_text: str | None = None,
+) -> Path:
     bundle = root / stable_id
     bundle.mkdir(parents=True)
     for part in stem_artifacts.STEM_LAYOUTS[layout]:
@@ -154,39 +162,41 @@ def test_a_roformer_only_track_still_loads_as_a_first_class_two_part_bundle(
     assert "drums" not in bundle.files
 
 
-# ---------------------------------------------------- raise, never degrade
+# ---------------------------------------------------- corrupt root fallthrough
 
 
-def test_a_corrupt_demucs_bundle_raises_instead_of_degrading_to_two_parts(
+def test_a_corrupt_demucs_bundle_falls_through_to_a_valid_roformer_bundle(
     stores: tuple[Path, Path],
 ) -> None:
-    """The exact silent-degradation failure this precedence rule exists to stop."""
+    """A failed richer bundle must not hide otherwise playable stems."""
     demucs, roformer = stores
     _bundle(demucs, "demucs4", manifest_text="{ this is not json")
     _bundle(roformer, "roformer2")
 
-    with pytest.raises(stem_artifacts.StemArtifactError):
-        stem_artifacts.load_stem_bundle(STABLE_ID, stems_dir=demucs)
+    bundle = stem_artifacts.load_stem_bundle(STABLE_ID, stems_dir=demucs)
+
+    assert bundle.layout == "roformer2"
 
 
-def test_a_demucs_bundle_missing_a_part_raises_rather_than_falling_through(
+def test_a_demucs_bundle_missing_a_part_falls_through_to_roformer(
     stores: tuple[Path, Path],
 ) -> None:
-    """A three-part manifest is corruption, not a licence to use the 2-part store."""
+    """A malformed higher-precedence bundle cannot mask a usable lower one."""
     demucs, roformer = stores
     broken = _manifest(STABLE_ID, "demucs4")
     del broken["files"]["bass"]
     _bundle(demucs, "demucs4", manifest_text=json.dumps(broken))
     _bundle(roformer, "roformer2")
 
-    with pytest.raises(stem_artifacts.StemArtifactError):
-        stem_artifacts.load_stem_bundle(STABLE_ID, stems_dir=demucs)
+    bundle = stem_artifacts.load_stem_bundle(STABLE_ID, stems_dir=demucs)
+
+    assert bundle.layout == "roformer2"
 
 
-def test_the_api_errors_on_a_corrupt_demucs_bundle_shadowing_a_valid_roformer_one(
+def test_the_api_serves_roformer_when_corrupt_demucs_bundle_shadows_it(
     stores: tuple[Path, Path],
 ) -> None:
-    """A working-but-wrong deck is worse than a loud failure."""
+    """The deck must get a valid bundle when any configured root has one."""
     demucs, roformer = stores
     _bundle(demucs, "demucs4", manifest_text="{ this is not json")
     _bundle(roformer, "roformer2")
@@ -194,11 +204,8 @@ def test_the_api_errors_on_a_corrupt_demucs_bundle_shadowing_a_valid_roformer_on
     with _client(demucs) as client:
         response = client.get(f"/api/v1/tracks/{STABLE_ID}/stems")
 
-    assert response.status_code != 200, (
-        "the corrupt Demucs bundle fell through to the RoFormer store and the "
-        f"API published a 2-part deck: {response.text}"
-    )
-    assert response.status_code == 422, response.text
+    assert response.status_code == 200, response.text
+    assert sorted(response.json()["parts"]) == sorted(stem_artifacts.ROFORMER_PARTS)
 
 
 def test_no_bundle_in_any_store_names_every_root_it_searched(stores: tuple[Path, Path]) -> None:

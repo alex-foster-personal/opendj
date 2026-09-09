@@ -21,7 +21,7 @@ import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -243,25 +243,26 @@ def valid_vocal_ids(vocal_dir: Path, audio_paths: dict[str, Path]) -> tuple[set[
     return done, corrupt
 
 
-def valid_stem_bundle_ids(stems_dir: Path) -> set[str]:
-    """stable_ids with a COMPLETE stems bundle under ``stems_dir``.
+def valid_stem_bundle_ids(roots: Sequence[Path]) -> set[str]:
+    """stable_ids with a COMPLETE stems bundle in any configured root.
 
     A directory alone is not done: an interrupted worker can leave it without
     a manifest or with missing/corrupt stem files, and counting it as covered
     would exclude the track from refresh targets forever. Invalid bundles
     count as missing so refresh can repair them.
     """
-    if not stems_dir.is_dir():
-        return set()
     done: set[str] = set()
-    for p in stems_dir.iterdir():
-        if not p.is_dir():
+    for root in roots:
+        if not root.is_dir():
             continue
-        try:
-            load_stem_bundle(p.name, stems_dir=stems_dir)
-        except (StemArtifactError, StemBundleNotFoundError):
-            continue
-        done.add(p.name)
+        for p in root.iterdir():
+            if not p.is_dir():
+                continue
+            try:
+                load_stem_bundle(p.name, roots=roots)
+            except (StemArtifactError, StemBundleNotFoundError):
+                continue
+            done.add(p.name)
     return done
 
 
@@ -298,7 +299,7 @@ def tracks_on_disk(
 def missing_by_step(
     on_disk: list[tuple[str, str]],
     conn_factory: Callable[[], sqlite3.Connection],
-    stems_dir: Path,
+    stem_roots: Sequence[Path],
     vocal_dir: Path,
     lyrics_dir: Path,
 ) -> tuple[dict[str, list[tuple[str, str]]], dict[str, list[tuple[str, str]]]]:
@@ -324,7 +325,7 @@ def missing_by_step(
         )
     finally:
         conn.close()
-    stems_done = valid_stem_bundle_ids(stems_dir)
+    stems_done = valid_stem_bundle_ids(stem_roots)
     # lyrics has no STEPS/refresh runner - this key only feeds the coverage
     # dot on the browser panel.
     audio_paths = {sid: Path(fp) for sid, fp in on_disk}
