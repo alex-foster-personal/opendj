@@ -77,7 +77,7 @@ from apps.webui.server.routes.ingest_job import (
     missing_by_step,
     tracks_on_disk,
 )
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR
+from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR, stem_roots
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -202,7 +202,7 @@ class CoverageOut(BaseModel):
 def get_coverage() -> CoverageOut:
     on_disk, unreachable = tracks_on_disk(open_ro)
     missing, corrupt = missing_by_step(
-        on_disk, open_ro, DEFAULT_STEMS_DIR, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
+        on_disk, open_ro, stem_roots(DEFAULT_STEMS_DIR), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
     )
     conn = open_ro()
     try:
@@ -395,7 +395,7 @@ def _library_targets(job: _RefreshJob) -> dict[str, list[tuple[str, str]]]:
     # stale one, so it is a target here too. Only the coverage ROUTE splits
     # corrupt out as an additional, distinguishing signal for the UI.
     missing, _corrupt = missing_by_step(
-        on_disk, open_ro, DEFAULT_STEMS_DIR, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
+        on_disk, open_ro, stem_roots(DEFAULT_STEMS_DIR), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
     )
     return missing
 

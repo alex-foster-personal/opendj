@@ -20,9 +20,11 @@ Regression lines:
 """
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 import time
+import wave
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,7 @@ from apps.analysis import store as analysis_store
 from apps.lyrics import cache as lyrics_cache
 from apps.shared.state.db import open_rw as open_state_rw
 from apps.vocals import cache as vocals_cache
+from apps.webui.server import stem_artifacts
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import ingest_upload as ingest_upload_mod
 
@@ -98,6 +101,32 @@ def _seed_track(app, sid, path, duration_ms=200_000, analysed=False):
         conn.close()
 
 
+def _write_roformer_bundle(root: Path, stable_id: str) -> None:
+    """Write a real, aligned v3 bundle so coverage uses its production reader."""
+    bundle = root / stable_id
+    bundle.mkdir(parents=True)
+    for part in stem_artifacts.ROFORMER_PARTS:
+        with wave.open(str(bundle / f"{part}.wav"), "wb") as output:
+            output.setnchannels(2)
+            output.setsampwidth(2)
+            output.setframerate(44_100)
+            output.writeframes(b"\x00\x00" * 24)
+    (bundle / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "stable_id": stable_id,
+                "layout": "roformer2",
+                "model": {"name": "roformer", "version": "1"},
+                "source": {"path": "/music/source.wav", "sha256": "a" * 64},
+                "audio": {"sample_rate": 44_100, "frame_count": 12, "channels": 2},
+                "files": {"vocals": "vocals.wav", "instrumental": "instrumental.wav"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _wait_refresh(client, timeout_s=600):
     deadline = time.time() + timeout_s
     status = client.get("/api/v1/ingest/refresh/status").json()
@@ -148,6 +177,27 @@ def test_coverage_excludes_broken_links(client, app, tmp_path):
     assert out["missing"]["vocals"] == 2
     assert out["missing"]["lyrics"] == 2
     assert out["corrupt"] == {"analysis": 0, "stems": 0, "vocals": 0, "lyrics": 0}
+
+
+def test_coverage_counts_a_valid_secondary_roformer_bundle(client, app, tmp_path, monkeypatch):
+    """A RoFormer-only track is covered and never enters the stems refresh queue."""
+    audio = tmp_path / "real.mp3"
+    audio.write_bytes(b"x" * 4096)
+    _seed_track(app, "roformer-only", audio)
+    roformer_root = tmp_path / "stems-roformer-spike"
+    _write_roformer_bundle(roformer_root, "roformer-only")
+    monkeypatch.setattr(
+        ingest_mod,
+        "stem_roots",
+        lambda _primary: (ingest_mod.DEFAULT_STEMS_DIR, roformer_root),
+        raising=False,
+    )
+
+    coverage = client.get("/api/v1/ingest/coverage").json()
+    targets = ingest_mod._library_targets(ingest_mod._RefreshJob(0.0, []))
+
+    assert coverage["missing"]["stems"] == 0
+    assert targets["stems"] == []
 
 
 def _vocal_worker_result(**overrides):
