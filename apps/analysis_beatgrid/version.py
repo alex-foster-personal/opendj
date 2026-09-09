@@ -24,6 +24,8 @@ mandatory rather than remembered.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 #: Semver for the whole `apps/analysis_beatgrid` producer: the model runner,
 #: the octave policy, the changepoint detector, the bar-phase assignment and
 #: the lane payload builder together. 1.1.0 is the version
@@ -33,10 +35,14 @@ PRODUCER_VERSION = "1.1.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record
 #: contract parses the backend name and checks it against the record body, so
-#: this is the value `AnalysisRecord.producer` carries too.
-PRODUCER = "backfill"
+#: this is the value `AnalysisRecord.producer` carries too. Typed as its own
+#: single-value Literal (rather than importing `apps.analysis.lane_enums.
+#: Producer`) so this package keeps zero intra-repo imports, per the module
+#: docstring above; a narrower Literal is still assignable everywhere the
+#: wider `Producer` type is expected.
+PRODUCER: Literal["backfill"] = "backfill"
 
 #: Selection lane this package produces for.
-LANE = "beatgrid"
+LANE: Literal["beatgrid"] = "beatgrid"
 
 __all__ = ["LANE", "PRODUCER", "PRODUCER_VERSION"]

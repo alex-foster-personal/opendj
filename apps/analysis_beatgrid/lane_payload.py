@@ -54,7 +54,7 @@ import itertools
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, assign_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
@@ -88,7 +88,7 @@ class BeatgridLane:
     producer that just ran can report about itself.
     """
 
-    status: str
+    status: Literal["ok", "failed"]
     reason: str | None = None
     confidence: float | None = None
     payload: dict[str, Any] = field(default_factory=dict)
