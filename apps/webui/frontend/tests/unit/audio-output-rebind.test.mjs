@@ -11,8 +11,30 @@
  * [if] two devicechange events land inside the debounce [then] still one cycle
  * [if] the presentation clock stalls [then] the same cycle runs
  * [if] nothing is playing [then] no cycle (a startup-suspended context is not an alarm)
- * [if] a second trigger lands inside the cooldown [then] no second cycle (a
- *   flapping device must not loop the graph)
+ * [if] a second trigger inside the cooldown [then] no SECOND cycle yet (a
+ *   flapping device must not loop the graph) but the request is HELD and runs
+ *   when the cooldown expires - dropping it leaves the graph on the device that
+ *   went away, which is the Wed 9 Sep 2026 17:44:43Z cutout
+ * [if] a device flaps A -> B -> A inside the cooldown [then] the graph ends up
+ *   re-bound for the LAST edge, not stranded on the middle one - broken otherwise
+ * [if] ten changes land inside one cooldown [then] still exactly one extra
+ *   cycle, coalesced (the rate limit the cooldown exists for is intact)
+ * [if] a deferred request is pending when the route unmounts [then] uninstall
+ *   cancels it rather than cycling a closed context
+ * [if] nothing is playing when a request lands inside the cooldown [then] it is
+ *   dropped, not held: there is no audio to save 10s from now
+ * [if] a trigger lands while a suspend/resume is still IN FLIGHT [then] it is
+ *   held and runs once that cycle completes - returning early on `rebinding`
+ *   drops the settling edge exactly like the cooldown used to
+ * [if] the operator pauses after a request was accepted but before the cooldown
+ *   expires [then] the held request still runs - re-gating it on playback
+ *   strands the graph on the vanished device, and resuming cannot repair it
+ *   because _resumeContext() only resumes a SUSPENDED context
+ * [if] the operator pauses during the 400ms DEBOUNCE, after a device change
+ *   arrived while a deck was playing [then] the cycle still runs: playback is
+ *   sampled at the trigger, not after the timer
+ * [if] a rebind throws [then] the perf row is recorded at ERROR severity so it
+ *   escalates to the engine log - at info it never leaves the browser
  * [if] the context is not running [then] resume only, no suspend
  * [if] the stall reporter's edge does not call noteOutputStall [then] the
  *   trigger is wired to nothing - broken
@@ -28,18 +50,35 @@ import { before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-function harness({ playing = true, state = 'running' } = {}) {
+function harness({ playing = true, state = 'running', resumeThrows = false, gateResume = false } = {}) {
 	const calls = [];
+	const perf = [];
+	// A rebind is two awaits, and the device that is going away is the one whose
+	// suspend/resume is slow - so the cycle outliving the 400ms debounce is the
+	// normal case, not an exotic one. `gateResume` parks the cycle inside
+	// `resume()` until the test releases it, which is the only way to exercise
+	// the in-flight branch at all: an ungated harness resolves both awaits on
+	// microtasks and `rebinding` is never observably true.
+	let releaseResume = () => {};
+	const resumeGate = gateResume ? new Promise((r) => { releaseResume = r; }) : null;
 	const ctx = {
 		state,
 		async suspend() { calls.push('suspend'); this.state = 'suspended'; },
-		async resume() { calls.push('resume'); this.state = 'running'; }
+		async resume() {
+			calls.push('resume');
+			if (resumeGate !== null) await resumeGate;
+			if (resumeThrows) throw new Error('device gone');
+			this.state = 'running';
+		}
 	};
 	let now = 0;
 	const timers = [];
 	const effects = {
 		pushToast: (m, k) => calls.push(`toast:${k}`),
-		recordPerfEvent: (kind) => calls.push(`perf:${kind}`),
+		recordPerfEvent: (kind, message, severity) => {
+			calls.push(`perf:${kind}`);
+			perf.push({ kind, message, severity });
+		},
 		now: () => now,
 		setTimeout: (fn, ms) => { const h = { fn, at: now + ms }; timers.push(h); return h; },
 		clearTimeout: (h) => { const i = timers.indexOf(h); if (i >= 0) timers.splice(i, 1); }
@@ -51,11 +90,17 @@ function harness({ playing = true, state = 'running' } = {}) {
 	};
 	async function advance(ms) {
 		now += ms;
-		for (const t of timers.splice(0).filter((t) => t.at <= now)) t.fn();
+		// Keep the not-yet-due timers. `splice(0)` used to remove EVERY timer and
+		// only re-run the due ones, so a cycle armed for later was silently
+		// deleted by the next advance - a harness that can only ever prove
+		// "nothing fired".
+		const due = timers.filter((t) => t.at <= now);
+		for (const t of due) timers.splice(timers.indexOf(t), 1);
+		for (const t of due) t.fn();
 		await new Promise((r) => setImmediate(r));
 		await new Promise((r) => setImmediate(r));
 	}
-	return { ctx, effects, calls, mediaDevices, fireDeviceChange: () => listeners.forEach((h) => h()), advance, isPlaying: () => playing };
+	return { ctx, effects, calls, perf, mediaDevices, fireDeviceChange: () => listeners.forEach((h) => h()), advance, isPlaying: () => playing, releaseResume: () => releaseResume() };
 }
 
 describe('installOutputRebind', () => {
@@ -99,18 +144,146 @@ describe('installOutputRebind', () => {
 		assert.deepEqual(h.calls, [], 'if an idle context is cycled on every device change then startup becomes noisy - broken');
 	});
 
-	it('a second trigger inside the cooldown does not cycle again', async () => {
+	it('a second trigger inside the cooldown does not cycle again YET', async () => {
 		const h = harness();
 		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
 		h.fireDeviceChange();
 		await h.advance(mod.REBIND_DEBOUNCE_MS);
 		h.fireDeviceChange();
 		await h.advance(mod.REBIND_DEBOUNCE_MS);
-		assert.equal(h.calls.filter((c) => c === 'suspend').length, 1, 'if the cooldown does not hold then a flapping device loops the graph - broken');
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 1,
+			'if the cooldown does not hold then a flapping device loops the graph - broken');
+		assert.ok(h.calls.includes('perf:audio-output-rebind-deferred'),
+			'if a suppressed request leaves no row then the cutout is invisible in the log - broken');
 		await h.advance(mod.REBIND_COOLDOWN_MS);
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 2,
+			'if the held request never runs then the graph stays on the device that went away - broken');
+	});
+
+	// THE 17:44:43Z CUTOUT, AS A TEST. On the Air the system default output
+	// flipped BuiltInSpeakerDevice -> Bluetooth and back 1.9s later. Before this
+	// fix the second edge hit the cooldown and was discarded outright, leaving
+	// the graph bound to headphones that had already gone: silent until restart.
+	it('a device that flaps and settles ends up re-bound for the LAST edge', async () => {
+		const h = harness();
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();                        // built-in -> bluetooth
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.equal(h.calls.filter((c) => c === 'resume').length, 1);
+		h.fireDeviceChange();                        // bluetooth -> built-in, 1.9s later
+		await h.advance(1_500);
+		// Nothing further is asked of the app; only the clock moves, exactly as on
+		// the Air. The cycle has to arrive on its own.
+		await h.advance(mod.REBIND_COOLDOWN_MS);
+		assert.equal(h.calls.filter((c) => c === 'resume').length, 2,
+			'if the settled device never gets a cycle then Open DJ stays silent until restart - broken');
+	});
+
+	it('ten changes inside one cooldown coalesce to exactly one extra cycle', async () => {
+		const h = harness();
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
 		h.fireDeviceChange();
 		await h.advance(mod.REBIND_DEBOUNCE_MS);
-		assert.equal(h.calls.filter((c) => c === 'suspend').length, 2, 'after the cooldown a new change must cycle again');
+		for (let i = 0; i < 10; i++) {
+			h.fireDeviceChange();
+			await h.advance(mod.REBIND_DEBOUNCE_MS);
+		}
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 1,
+			'if a flap loops the graph then the rate limit this cooldown exists for is gone - broken');
+		await h.advance(mod.REBIND_COOLDOWN_MS);
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 2,
+			'if ten held requests each fire then the fix traded a dropped cycle for a storm - broken');
+	});
+
+	it('nothing playing = a cooldown-era request is dropped, not held', async () => {
+		const h = harness({ playing: false });
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		await h.advance(mod.REBIND_COOLDOWN_MS * 2);
+		assert.deepEqual(h.calls, [],
+			'if an idle device change is held then a cycle fires 10s after the operator stopped - broken');
+	});
+
+	// SOL P1 (discussion on line 93): `if (rebinding) return` sat ABOVE the
+	// cooldown handling, so a request landing during an in-flight cycle was
+	// discarded outright - the same defect the cooldown branch was just fixed
+	// for, one state earlier and with no perf row either.
+	it('a trigger landing while a rebind is IN FLIGHT is held, not dropped', async () => {
+		const h = harness({ gateResume: true });
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();                          // built-in -> bluetooth
+		await h.advance(mod.REBIND_DEBOUNCE_MS);       // cycle starts, parks in resume()
+		assert.equal(h.calls.filter((c) => c === 'resume').length, 1,
+			'the harness must actually be parked mid-cycle, or this test proves nothing');
+		h.fireDeviceChange();                          // bluetooth -> built-in, still in flight
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.ok(h.calls.includes('perf:audio-output-rebind-deferred'),
+			'if a request landing mid-cycle leaves no row then it was dropped silently - broken');
+		h.releaseResume();
+		await h.advance(0);                            // cycle completes and re-arms the hold
+		await h.advance(mod.REBIND_COOLDOWN_MS);
+		assert.equal(h.calls.filter((c) => c === 'resume').length, 2,
+			'if a request that lands during an in-flight rebind is discarded then the graph stays on the device that went away - broken');
+	});
+
+	// CODEX P1 (discussion_r3972521486): the debounce is the FIRST delay between
+	// a trigger and its cycle, and the playing gate was sampled after it - so a
+	// pause inside the 400ms window discarded a trigger that was live when the
+	// device actually changed. Same defect class as the two below, one state
+	// earlier.
+	it('a trigger accepted while playing survives a pause during the DEBOUNCE', async () => {
+		let playing = true;
+		const h = harness();
+		mod.installOutputRebind(h.ctx, h.effects, () => playing, h.mediaDevices);
+		h.fireDeviceChange();                          // arrives while a deck plays
+		await h.advance(200);                          // still inside the debounce
+		playing = false;                               // operator pauses
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 1,
+			'if playback is sampled after the debounce then pausing within 400ms of a device change strands the graph on the vanished output - broken');
+	});
+
+	// SOL P1 (discussion on line 98): the playing gate ran again when the held
+	// request fired, so pausing anywhere inside the 10s cooldown threw it away.
+	it('a request held by the cooldown survives the operator pausing', async () => {
+		let playing = true;
+		const h = harness();
+		mod.installOutputRebind(h.ctx, h.effects, () => playing, h.mediaDevices);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);       // cycle 1 runs
+		h.fireDeviceChange();                          // lands inside the cooldown, HELD
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		assert.ok(h.calls.includes('perf:audio-output-rebind-deferred'),
+			'the request must actually be held, or the pause below tests nothing');
+		playing = false;                               // operator pauses mid-cooldown
+		await h.advance(mod.REBIND_COOLDOWN_MS);
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 2,
+			'if pausing during the cooldown discards an accepted request then the graph stays on the vanished device, and resuming cannot repair it because _resumeContext() only resumes a SUSPENDED context - broken');
+	});
+
+	it('uninstall cancels a request still held by the cooldown', async () => {
+		const h = harness();
+		const handle = mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		handle.uninstall();
+		await h.advance(mod.REBIND_COOLDOWN_MS);
+		assert.equal(h.calls.filter((c) => c === 'suspend').length, 1,
+			'if a held cycle survives uninstall then a closed context is suspended and the user sees a spurious error toast - broken');
+	});
+
+	it('a failed rebind is recorded at ERROR severity so it leaves the browser', async () => {
+		const h = harness({ resumeThrows: true });
+		mod.installOutputRebind(h.ctx, h.effects, h.isPlaying, h.mediaDevices);
+		h.fireDeviceChange();
+		await h.advance(mod.REBIND_DEBOUNCE_MS);
+		const failed = h.perf.find((row) => row.kind === 'audio-output-rebind-failed');
+		assert.ok(failed, 'a rejected resume must record a failure row');
+		assert.equal(failed.severity, 'error',
+			'if the failure is recorded below error then recordPerfEvent never escalates it and a dead output leaves no server-side trace - broken');
 	});
 
 	it('a non-running context is resumed, not suspended first', async () => {
