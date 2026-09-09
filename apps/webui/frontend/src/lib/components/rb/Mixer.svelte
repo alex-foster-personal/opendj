@@ -64,6 +64,10 @@
 		void runPerformanceCommandFromUi({ type: 'eq', deck, band, value });
 	}
 
+	function handleFilter(deck: DeckId, value: number): void {
+		void runPerformanceCommandFromUi({ type: 'filter', deck, value });
+	}
+
 	function handleFader(deck: DeckId, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'fader', deck, value });
 	}
@@ -142,11 +146,13 @@
 					eqHigh={mixerState.channels[deck].eq_high}
 					eqMid={mixerState.channels[deck].eq_mid}
 					eqLow={mixerState.channels[deck].eq_low}
+					filter={mixerState.channels[deck].filter}
 					fader={mixerState.channels[deck].fader}
 					cueEnabled={mixerState.channels[deck].cue_enabled}
 					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
 					oneq={(band, v) => handleEq(deck, band, v)}
+					onfilter={(v) => handleFilter(deck, v)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
 					onStemMute={(stem) => handleStemMute(deck, stem)}
