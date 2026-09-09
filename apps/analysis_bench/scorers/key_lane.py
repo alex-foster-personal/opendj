@@ -422,7 +422,7 @@ def render_table(report: dict[str, Any]) -> str:
         "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
         "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) | "
         "DISAGREE-NO-ANSWER (n: stable_ids) | NO-REFERENCE-PAIR (n) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, arm in order:
         rb, mikr, buckets = arm["vs_rekordbox"], arm["vs_mik"], arm["buckets"]
