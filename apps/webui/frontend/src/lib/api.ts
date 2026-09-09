@@ -422,6 +422,56 @@ export async function getHealth(): Promise<{ health: HealthOut; bindWarning: str
 	return { health: data, bindWarning: response.headers.get('x-bind-warning') };
 }
 
+/**
+ * `AbortSignal.timeout` equivalent built from `AbortController` + `setTimeout`
+ * (Sol review thread 3966717870 on PR #1560). `AbortSignal.timeout` needs
+ * Safari 16; the desktop app's `minimumSystemVersion` in
+ * `apps/desktop/src-tauri/tauri.conf.json` is "11.0", and macOS 11 Big Sur
+ * tops out at Safari/WebKit 15.x - so on a supported install the static
+ * method is simply absent and calling it throws before any fetch is issued.
+ * No feature-detect-and-fall-back: a second, untested code path is worse
+ * than one path that works everywhere.
+ *
+ * The timer is cleared by the caller (`finally`) on both the success and
+ * throw paths, so a settled probe never leaves a pending timer behind.
+ * Exported because `BrowserPanel.svelte`'s `_pingFrontend` needs the exact
+ * same signal for a plain `fetch()` call outside the OpenAPI client.
+ */
+export function timeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
+	const controller = new AbortController();
+	const timer = setTimeout(
+		() => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+		timeoutMs
+	);
+	return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+/**
+ * Liveness-only health read for the Backend status dot (pin a66ee132a14e).
+ *
+ * Separate from `getHealth` on purpose: this one must not hang, so it carries
+ * its own abort timeout and bypasses any cache, and it wants nothing from the
+ * body. It lives here rather than in the component for the same fan-in reason
+ * documented below - `src/lib/api/client.ts` sits at its recorded floor, so
+ * new direct importers of it are not free.
+ *
+ * Throws on any non-2xx or on timeout; the caller turns that into a red dot
+ * carrying the reason.
+ */
+export async function pingHealth(timeoutMs: number): Promise<void> {
+	const { signal, clear } = timeoutSignal(timeoutMs);
+	try {
+		requireBody(
+			await api.GET('/api/v1/health', {
+				cache: 'no-store',
+				signal
+			})
+		);
+	} finally {
+		clear();
+	}
+}
+
 /** PREFLIGHT-01's boot gate (issue #771) reads `GET /api/v1/preflight`.
  *
  * It lives HERE, beside `getHealth`, rather than in its own

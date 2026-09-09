@@ -61,6 +61,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends import DEFAULT_BACKEND, get_backend
 from .backends.base import BackendNonshippable, TrackVanished
 from .jit_warmup import warm_backend_jit
@@ -297,7 +298,22 @@ def run(
     # behind a flag and not conditional on `workers`: it is the precondition
     # that makes the rest of this function safe to run at all, and the crash
     # reproduces at --workers 1 with no child process in sight.
-    warmup = warm_backend_jit(backend, backend_name=backend_name)
+    #
+    # purge_stale=True: this call, not the CI warm-up CLI, is the one that
+    # actually stands between a corrupted cache and this process loading it
+    # (issue #1572 review). A content mismatch means something wrote to the
+    # cache since the last known-good stamp - a racing or killed writer, a
+    # torn artifact - and must never merely fall through to warm_jit_cache(),
+    # which can still load what just failed to vouch. Scoped to a directory
+    # this process verifiably owns (see ensure_owned_numba_cache_dir): an
+    # unset NUMBA_CACHE_DIR gets a private one provisioned so every
+    # deployment keeps purge protection, and an operator-set one is verified
+    # rather than trusted, so purge never fires against a cache this process
+    # does not own.
+    owned_cache = ensure_owned_numba_cache_dir()
+    warmup = warm_backend_jit(
+        backend, backend_name=backend_name, purge_stale=owned_cache is not None
+    )
     console.print(f"[cyan]{warmup.render()}[/cyan]")
 
     if workers > 1:
