@@ -169,6 +169,11 @@ def _trees_identical(cwd: Path, left: str, right: str, *paths: str) -> bool:
     )
 
 
+def _diff_paths(cwd: Path, left: str, right: str) -> set[str]:
+    """Paths that differ between two treeish refs."""
+    return set(_git(cwd, "diff", "--name-only", left, right).splitlines())
+
+
 def _worktree_dirty(cwd: Path) -> list[str]:
     """Tracked/unstaged/untracked paths that differ from HEAD on disk.
 
@@ -192,7 +197,7 @@ def _merge_commits(cwd: Path, main_ref: str, preview_ref: str) -> list[str]:
 
 def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> list[str]:
     """Merges whose recorded tree is NOT what merging their parents produces,
-    AND whose recorded tree main has not since gained some other way.
+    AND whose resolved content main has not since gained some other way.
 
     A conflict resolution (or a hand edit made during a merge) is content that
     exists on no ordinary commit, so patch-id comparison cannot see it at all:
@@ -203,19 +208,26 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
     is not flagged and this cannot degenerate into flagging every merge.
 
     That first test alone still over-reports once main independently catches
-    up: if main later gains a commit whose tree equals the resolution's, main
-    already HAS that content and the merge is no longer preview-only, even
-    though replaying its two parents still fails to reproduce it (parents are
-    fixed history; whether main separately caught up is not visible from
-    them). ``main_trees`` is computed at most once, lazily, since most calls
-    flag nothing and a full-history walk is not free.
+    up: if main later gains the resolved content, it is no longer preview-only,
+    even though replaying the two parents still fails to reproduce it (parents
+    are fixed history; whether main separately caught up is not visible from
+    them). A whole-tree hash comparison is not that test: main can land the
+    resolution bundled with any unrelated change in the SAME commit, which
+    changes that commit's whole-tree hash even though every path the
+    resolution touched is byte-identical on main, so a %T membership test
+    keeps flagging it forever. Instead, isolate the paths where merge_tree
+    differs from BOTH parents -- content the human actually authored during
+    the merge, not simply inherited from one side -- and check only those
+    against main. That works whether the merge resolved cleanly on top of a
+    trivial auto-merge or was a real conflict with no auto-merge to diff
+    against, because it never needs one: parents and the recorded merge_tree
+    are always available.
     """
     main_trees: set[str] | None = None
     carrying: list[str] = []
     for sha in shas:
         merge_tree = _git(cwd, "rev-parse", f"{sha}^{{tree}}").strip()
         parents = _git(cwd, "rev-parse", f"{sha}^@").split()
-        replayed = ""
         if len(parents) != 2:
             # An octopus merge cannot be replayed pairwise. That is a failed
             # measurement of that commit, not a clean bill of health, so it
@@ -245,18 +257,11 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
                 is_carrying = replayed != merge_tree
         if not is_carrying:
             continue
-        if replayed:
-            # Diff-scoped, not whole-tree: main can land this resolution
-            # bundled with any unrelated change in the SAME commit, which
-            # gives that commit a different whole-tree hash than merge_tree
-            # even though every path the resolution actually touched is
-            # byte-identical on main -- a %T membership test then keeps
-            # flagging it as carrying forever. Comparing only the paths where
-            # the human resolution diverged from the trivial auto-merge is
-            # immune to that, because an unrelated change elsewhere never
-            # appears in this path list.
-            changed = _git(cwd, "diff", "--name-only", replayed, merge_tree).splitlines()
-            if changed and _trees_identical(cwd, main_ref, merge_tree, *changed):
+        if len(parents) == 2:
+            touched = _diff_paths(cwd, parents[0], merge_tree) & _diff_paths(
+                cwd, parents[1], merge_tree
+            )
+            if touched and _trees_identical(cwd, main_ref, merge_tree, *touched):
                 continue
         else:
             if main_trees is None:

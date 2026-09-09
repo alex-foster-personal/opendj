@@ -43,7 +43,7 @@ name: Periodic checks
 # window forever: a slow week with fewer than 50 merges never runs the full
 # suite, the bundle trend, or the perf bench, and a regression sits unmeasured
 # until merge volume happens to pick back up. `elapsed_days` -- wall-clock days
-# since the SAME state-marker comment's own `createdAt`, not a stored counter
+# since the SAME state-marker comment's own `created_at`, not a stored counter
 # -- is a second, independent OR arm: the window also runs once 7 days have
 # passed since the last one, regardless of how few merges landed. Recorded
 # alongside the SHA is `threshold=<N>`, the merge threshold that was ACTUALLY
@@ -147,7 +147,7 @@ jobs:
           # several physical lines rather than one line with escaped
           # newlines -- a shell-side `grep -F ... | tail -1` on that output
           # keeps only the physical line the marker sits on, silently
-          # dropping the createdAt prefix concatenated onto the FIRST line
+          # dropping the created_at prefix concatenated onto the FIRST line
           # of the body, then hands `jq -r '.'` a bare, non-JSON
           # HTML-comment line, which exits under `set -e` on every run after
           # the bootstrap comment exists. Do the marker match AND the
@@ -155,7 +155,7 @@ jobs:
           # comment carrying the marker, `.[-1]` takes the newest -- issue
           # comments come back oldest-first and --paginate preserves that
           # order), and carry the body out through the pipe as base64 so the
-          # combined createdAt+body line can never contain a real newline.
+          # combined created_at+body line can never contain a real newline.
           # `--paginate` alone applies `--jq` to EACH PAGE separately, so once
           # the ledger has more than one page of comments this prints one
           # selected record PER PAGE -- `combined` then holds several lines
@@ -164,15 +164,19 @@ jobs:
           # array of arrays first (`gh help api` -> "Combine "paginated
           # results into a single array"); `.[][]` flattens it back to a
           # single oldest-first stream before `.[-1]` picks the newest.
+          # This is `gh api` reading the REST endpoint directly, not `gh`'s
+          # own `--json` flag: the response mirrors GitHub's REST schema
+          # verbatim, which is snake_case (`created_at`), not the camelCase
+          # `createdAt` GraphQL and gh's `--json` output use.
           combined="$(gh api --paginate --slurp "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
                         --jq '[.[][] | select(.body | contains("<!-- periodic-checks state sha="))]
-                              | if length > 0 then (.[-1].createdAt + " " + (.[-1].body | @base64)) else empty end' \
+                              | if length > 0 then (.[-1].created_at + " " + (.[-1].body | @base64)) else empty end' \
                       || true)"
 
           base=""
           base_at=""
           if [ -n "$combined" ]; then
-            # createdAt is a fixed-width ISO-8601 timestamp with no space in
+            # created_at is a fixed-width ISO-8601 timestamp with no space in
             # it, so splitting on the FIRST space is unambiguous regardless
             # of what the (base64-encoded) body contains.
             base_at="${combined%% *}"
