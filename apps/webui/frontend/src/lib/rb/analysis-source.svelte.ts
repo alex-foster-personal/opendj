@@ -106,6 +106,12 @@ const _lastToggles: Record<string, string> = {};
  * 5s poll rather than by a second timer of its own. */
 let _recordRefreshPending = false;
 
+/** Bumped every time a record-change event marks a refresh pending. Lets
+ * `_refreshDecks` tell "a refresh that started before this change" apart
+ * from "a refresh that can actually have seen it" (discussion_r3972154604
+ * P2 BLOCKING). */
+let _recordRefreshGeneration = 0;
+
 /** True when `next` disagrees with the source the decks are actually holding.
  * A feature seen for the FIRST time (a fresh mount's `{}` -> populated) is not
  * a change: nothing was fetched or loaded under the old value yet, so there is
@@ -336,6 +342,11 @@ export function installAnalysisSourceRefreshRunner(runner: AnalysisSourceRefresh
  * runner is a wiring bug, and silently running the deck swap outside the
  * command queue is exactly the defect the runner exists to close. */
 async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null> {
+	// Captured before the unbounded awaits below: a record-change event that
+	// arrives WHILE this refresh is in flight bumps the generation past this,
+	// so completing must not clear a pending mark it cannot have satisfied
+	// (discussion_r3972154604 P2 BLOCKING).
+	const requestedGeneration = _recordRefreshGeneration;
 	let served: AnalysisSource | null;
 	if (serialize) {
 		if (_refreshRunner === null) {
@@ -354,8 +365,10 @@ async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null>
 		served = await refreshAnalysisSourceDecks(DECK_IDS, deckStates);
 	}
 	// Any successful refresh refetches EVERY loaded deck, so it satisfies a
-	// pending record-change retry whatever triggered it.
-	_recordRefreshPending = false;
+	// pending record-change retry whatever triggered it - unless a NEWER
+	// change arrived after this refresh's fetches were already dispatched,
+	// in which case it is that later refresh's job to clear the flag.
+	if (_recordRefreshGeneration === requestedGeneration) _recordRefreshPending = false;
 	return served;
 }
 
@@ -406,6 +419,7 @@ export function subscribeAnalysisRecordChanges(): () => void {
 function _refreshOwnGridsAfterRecordChange(): void {
 	if (!_anyFeatureIsOwn()) return;
 	_recordRefreshPending = true;
+	_recordRefreshGeneration += 1;
 	void _drainPendingRecordRefresh();
 }
 

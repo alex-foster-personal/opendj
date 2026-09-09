@@ -397,6 +397,59 @@ test('a FAILED record-change refresh stays pending and the next poll retries it'
 	unsubscribe();
 });
 
+test('an EARLIER refresh completing must not clear a mark a LATER change set while it was in flight (discussion_r3972154604)', async () => {
+	await daemonSelect('own');
+	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
+	// A real ~150ms server delay on /anlz (analysis_source_anlz_server.py),
+	// not a fabricated timer: the gap it opens is what lets a SECOND event
+	// land while the first refresh is still in flight.
+	analysisSource.deckStates[1].stable_id = 'real-track-slow-own-grid';
+	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-generation-race.test/events');
+
+	try {
+		_deliverTracksChanged(socket); // refresh A starts, ~150ms in flight
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(runnerLog, ['enter'], 'refresh A must still be in flight');
+
+		// A second, NEWER change arrives while A is still running. Its own
+		// refresh (B) fails immediately, so the only thing that could satisfy
+		// it is a refresh that actually started after this point.
+		runnerFailures = 1;
+		_deliverTracksChanged(socket);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			runnerLog,
+			['enter', 'enter', 'threw'],
+			'the second change must have opened, and failed, its own refresh attempt'
+		);
+
+		// Let A (started before the second change, and so unable to have seen
+		// it) finish on its own.
+		await new Promise((resolve) => setTimeout(resolve, 250));
+		assert.deepEqual(runnerLog, ['enter', 'enter', 'threw', 'exit'], 'refresh A must now have completed');
+
+		// The moment that matters: A succeeded, but B (the refresh that could
+		// have captured the second change) failed. A completing must not have
+		// satisfied a mark it started before and cannot have reflected - a poll
+		// here must still retry. Without the generation guard, A's unconditional
+		// clear on success already cleared the flag when A finished, and this
+		// poll would silently do nothing, leaving the deck on a superseded grid.
+		runnerLog = [];
+		await analysisSource.loadAnalysisSource();
+		assert.deepEqual(
+			runnerLog,
+			['enter', 'exit'],
+			'a change that arrived mid-flight, whose own refresh failed, must still be retried even ' +
+				'though an earlier refresh that could not have seen it completed successfully'
+		);
+	} finally {
+		unsubscribe();
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+	}
+});
+
 test('a mirror that drifted from the decks still refreshes them on the next answer', async () => {
 	await daemonSelect('own');
 	// Exactly the state a daemon switch DURING the scheduler wait leaves behind:
