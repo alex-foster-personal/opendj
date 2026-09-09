@@ -118,6 +118,21 @@ REG  Q-12 Judge a run against its allowance PLUS a small declared slack, so a
           [if --update-baseline runs on a tree whose metric sits inside its
            slack band then the recorded allowance is KEPT, not raised to the
            measurement, so repeated updates cannot walk the ceiling upward]
+REG  Q-13 Enforce sync-schema drift as a hard gate (no ratchet) via
+          scripts/sync_drift_lint.py, over a state DB provisioned by all
+          seven of its schema authorities. Every defect it names is an
+          OMISSION -- a forgotten SCHEMA_VERSION bump, a table never added to
+          SYNC_TABLES, an authority no inventory declares -- and an omission
+          raises nothing, so an allowance for one is an allowance for silence.
+          [if a table carries the sync columns and no registry lists it then
+           sync_drift.unregistered_synced_table is 1 and the run exits 1
+           regardless of baseline]
+          [if a MIGRATIONS step is appended without a SCHEMA_VERSION bump then
+           sync_drift.version_ladder_mismatch is 1 and exits 1]
+          [if the provisioned DB lacks a table ALL_KNOWN_TABLES declares then
+           the run aborts rather than scoring 0 violations]
+          [if a drift check stops being emitted at all then the evaluator
+           raises rather than reporting the remaining zeros]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -240,6 +255,24 @@ HARD_ZERO: frozenset[str] = frozenset({
     "shell.gh_api_arg",
     "shell.zsh_modifier_path",
     "frontend.ts_escape_hatches",
+    # Sync-schema drift. Same reasoning one step further: every one of these
+    # is an OMISSION, and an omission raises nothing at runtime, so "we are
+    # allowed two unregistered synced tables" is an allowance for silence.
+    #
+    # This list is ALSO the independent declaration of which drift rules must
+    # exist: _eval_sync_drift refuses to return unless every key below was
+    # actually emitted. Without that, deleting a check from the linter's own
+    # CHECKS and RULES together would stop emitting its metric, and a
+    # hard-zero key that is never emitted is never compared -- the gate would
+    # pass by having stopped asking the question.
+    "sync_drift.unregistered_synced_table",
+    "sync_drift.registered_table_missing",
+    "sync_drift.version_ladder_mismatch",
+    "sync_drift.undocumented_table_or_column",
+    "sync_drift.naive_stamp_default",
+    "sync_drift.mirror_version_mismatch",
+    "sync_drift.migration_step_changed",
+    "sync_drift.undeclared_state_table",
 })
 
 # Metrics that are measured and printed but never gated, because their value
@@ -275,10 +308,21 @@ HARD_ZERO: frozenset[str] = frozenset({
 # the two apart. Gating it would be wrong both ways (a ratchet fails on every
 # new module; a hard zero is nonsense), so the floor that makes it meaningful
 # is enforced in _eval_mypy, which aborts rather than scoring a collapsed scan.
+#
+# sync_drift.checks_run is the fourth, and the same kind: it reports how many
+# of the drift checks actually ran, so the hard zeros above cannot be read as
+# clean when the truth is that nothing ran. What makes that number mean
+# something is NOT the count itself (counting loop iterations always agrees
+# with itself, and prints "7 of 7" after a check is deleted). It is the pair
+# of declarations either side of it: scripts/sync_drift_lint.
+# assert_checks_wired refuses to run when a check defined there is not
+# dispatched, and _eval_sync_drift below refuses to return unless every
+# hard-zero sync_drift key in this file was emitted.
 REPORT_ONLY: frozenset[str] = frozenset({
     "deps.issues",
     "shell.files_scanned",
     "mypy.files_checked",
+    "sync_drift.checks_run",
 })
 
 
@@ -1097,6 +1141,75 @@ def _eval_shell() -> list[Metric]:
     return metrics
 
 
+# ----- evaluator: sync-schema drift ----------------------------------------
+
+
+def _eval_sync_drift() -> list[Metric]:
+    """Sync-schema omissions, measured against a production-shaped state DB.
+
+    Hard zero, never a ratchet, for the same reason as the shell gate one
+    section up and then some: these defects do not merely return a wrong
+    answer, they return NO answer. A table missing from ``SYNC_TABLES`` does
+    not fail to sync loudly, it simply never appears, and a ``SCHEMA_VERSION``
+    that was not bumped makes ``apply_migrations`` skip the new DDL in silence.
+    Neither has a runtime symptom to notice, so a growing allowance for them is
+    a growing allowance for things nobody will ever find.
+
+    Two floors, in two files, because one of them cannot see its own absence.
+    ``sync_drift_lint.run`` raises rather than returning a clean result over a
+    subject that was not really built or a check that was not dispatched; and
+    the assertion at the end of this function raises when a rule named in
+    HARD_ZERO stopped being emitted at all, which is what deleting a check
+    looks like from out here. Rationale, the measured facts, and the dated
+    allowlist entries live in scripts/sync_drift_lint.py,
+    scripts/sync_drift_rules.py and tests/quality/test_sync_drift_lint.py.
+
+    The linter is imported here rather than at module scope on purpose: it
+    pulls in the application's schema modules, and a broken app module is
+    exactly when someone reaches for ``--only ruff``.
+
+    THIS IS THE ONLY EVALUATOR THAT IMPORTS THE APPLICATION, and that import
+    has to stay inside what this gate's environment can satisfy: CI runs the
+    whole file from a throwaway env holding ops/quality/requirements.txt and
+    NOTHING of the project's own dependencies, deliberately. A module-level
+    ``import yaml`` on the linter's path once killed the entire gate here
+    with a ModuleNotFoundError naming PyYAML rather than drift -- every PR
+    red, no report, no metrics. tests/quality/test_sync_drift_imports.py pins
+    the invariant (the drift gate's import graph reaches no third party) so a
+    reintroduction fails there by name instead of arriving as a red CI job
+    about something else.
+    """
+    from scripts import sync_drift_lint
+
+    with sync_drift_lint.measured_scan() as scan:
+        result = sync_drift_lint.run(scan)
+    counts = result.counts()
+    metrics = [
+        Metric(
+            "sync_drift.checks_run",
+            result.checks_run,
+            f"of {len(sync_drift_lint.CHECKS)} checks completed",
+            f"control: {result.tables_scanned} tables in the provisioned state DB, "
+            f"{result.ladders_scanned} ladders built",
+        )
+    ]
+    for rule in sorted(sync_drift_lint.RULES):
+        offenders = [v.render() for v in result.violations if v.rule == rule]
+        metrics.append(
+            Metric(f"sync_drift.{rule}", counts[rule], "violations", "; ".join(offenders[:3]))
+        )
+    emitted = {m.key for m in metrics}
+    silent = sorted(k for k in HARD_ZERO if k.startswith("sync_drift.") and k not in emitted)
+    if silent:
+        raise RuntimeError(
+            f"the drift linter emitted no metric for {silent}. A hard-zero key "
+            "that is never emitted is never compared, so the gate would pass "
+            "by having stopped asking the question. Restore the check, or "
+            "remove the key from HARD_ZERO deliberately."
+        )
+    return metrics
+
+
 # ----- hotspots (report only) ----------------------------------------------
 
 
@@ -1132,6 +1245,7 @@ EVALUATORS: tuple[Evaluator, ...] = (
     Evaluator("frontend", "Frontend coupling and dead code", _eval_frontend, needs_node=True),
     Evaluator("size", "File bloat and duplication", _eval_size, needs_node=True),
     Evaluator("shell", "Shell constructs that fail silently", _eval_shell),
+    Evaluator("sync-drift", "Sync-schema omissions that never raise", _eval_sync_drift),
 )
 
 

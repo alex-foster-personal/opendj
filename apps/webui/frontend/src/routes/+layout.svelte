@@ -25,7 +25,6 @@
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
-	import OdjWordmark from '$lib/components/OdjWordmark.svelte';
 
 	let { children } = $props();
 
@@ -122,7 +121,7 @@
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
-		<h1><OdjWordmark /></h1>
+		<h1>Open DJ</h1>
 		<nav>
 			<a href="/">Library</a>
 			<a href="/pairings">Pairings</a>

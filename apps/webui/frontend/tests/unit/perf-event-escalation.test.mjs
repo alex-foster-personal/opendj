@@ -42,8 +42,21 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   a transport-schedule row per pointermove) floods /api/v1/client-errors
  */
 
-/** The three kinds this P0 is about. All three must escalate at error severity. */
-const ESCALATING_KINDS = ['xrun', 'audio-context', 'silent-while-playing'];
+/**
+ * The audio-liveness kinds. All of them must escalate at error severity.
+ *
+ * `audio-output-rebind-failed` joined on Wed 9 Sep 2026. The whole output-rebind
+ * path was wired at `info`, so the row that means "the output device changed,
+ * the recovery ran, and it did NOT work" stayed inside the browser - which is
+ * exactly why the 17:44:43Z Bluetooth-flap cutout on the Air left nothing at all
+ * in `webui-client-errors-2026-09-09.log`.
+ */
+const ESCALATING_KINDS = [
+	'xrun',
+	'audio-context',
+	'silent-while-playing',
+	'audio-output-rebind-failed'
+];
 
 let perfLog;
 /** Every row handed to the sink, in order. */
