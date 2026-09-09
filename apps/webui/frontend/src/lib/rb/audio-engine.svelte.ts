@@ -403,7 +403,8 @@ interface _ChannelNodes {
 	filterLp: BiquadFilterNode;
 	filterHp: BiquadFilterNode;
 	filterDry: GainNode;
-	filterWet: GainNode;
+	filterLpWet: GainNode;
+	filterHpWet: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -728,7 +729,7 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz, dryGain, wetGain } = filterParamsFromKnob(ch.filter);
+		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
 		const filterLp = _ctx.createBiquadFilter();
 		filterLp.type = 'lowpass';
 		filterLp.Q.value = FILTER_Q;
@@ -739,8 +740,14 @@ function _ensureGraph(): AudioContext {
 		filterHp.frequency.value = hpHz;
 		const filterDry = _ctx.createGain();
 		filterDry.gain.value = dryGain;
-		const filterWet = _ctx.createGain();
-		filterWet.gain.value = wetGain;
+		// LP and HP each get their own wet gain rather than a shared one after a
+		// series chain: whichever side is inactive is silenced at 0 gain, so it
+		// stops coloring the signal instead of merely parking at its gentlest
+		// cutoff (issue #990 follow-up - both biquads used to stay in series).
+		const filterLpWet = _ctx.createGain();
+		filterLpWet.gain.value = lpWetGain;
+		const filterHpWet = _ctx.createGain();
+		filterHpWet.gain.value = hpWetGain;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -753,13 +760,16 @@ function _ensureGraph(): AudioContext {
 		mid.connect(high);
 		high.connect(filterDry);
 		high.connect(filterLp);
-		filterLp.connect(filterHp);
-		filterHp.connect(filterWet);
+		high.connect(filterHp);
+		filterLp.connect(filterLpWet);
+		filterHp.connect(filterHpWet);
 		filterDry.connect(cue);
-		filterWet.connect(cue);
+		filterLpWet.connect(cue);
+		filterHpWet.connect(cue);
 		cue.connect(headphones.cueSum);
 		filterDry.connect(fader);
-		filterWet.connect(fader);
+		filterLpWet.connect(fader);
+		filterHpWet.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
@@ -780,7 +790,8 @@ function _ensureGraph(): AudioContext {
 			filterLp,
 			filterHp,
 			filterDry,
-			filterWet,
+			filterLpWet,
+			filterHpWet,
 			cue,
 			fader,
 			xf,
@@ -3990,11 +4001,12 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.channels[deck].filter = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) {
-			const { lpHz, hpHz, dryGain, wetGain } = filterParamsFromKnob(value);
+			const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(value);
 			_setParam(nodes.filterLp.frequency, lpHz);
 			_setParam(nodes.filterHp.frequency, hpHz);
 			_setParam(nodes.filterDry.gain, dryGain);
-			_setParam(nodes.filterWet.gain, wetGain);
+			_setParam(nodes.filterLpWet.gain, lpWetGain);
+			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
 	}
 
