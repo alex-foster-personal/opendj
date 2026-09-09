@@ -247,6 +247,40 @@ test('adoptAuthoritativeGrid replaces a deck fallback grid with the authoritativ
 	);
 });
 
+test('adoptAuthoritativeGrid does not resolve until every triggered reconciliation settles', async () => {
+	// discussion_r3970967293 (P1 BLOCKING): the caller relies on the returned
+	// promise to hold a performance-command claim open until the deck's grid
+	// reconciliation has actually landed. A version that returns before
+	// `settlements` has drained would let a later command's claim be granted
+	// while a playing deck's Beat Sync reschedule is still queued.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	let releaseClaim;
+	const claimGate = new Promise((resolve) => {
+		releaseClaim = resolve;
+	});
+	h.guards.installScopedSyncRunner(async (deck, task) => {
+		await claimGate;
+		await task(async (work) => await work());
+	});
+	let settled = false;
+	const adoption = h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124)));
+	adoption.then(() => {
+		settled = true;
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		settled,
+		false,
+		'adoptAuthoritativeGrid must stay pending while the scoped claim it triggered is still queued'
+	);
+	releaseClaim();
+	await adoption;
+	assert.equal(settled, true, 'adoptAuthoritativeGrid must resolve once the reconciliation actually settles');
+	assert.equal(h.anlz[1].beatgrid.beats.length, 16, 'the adoption itself still lands');
+});
+
 test('adoptAuthoritativeGrid does not republish a grid the deck already holds', async () => {
 	const h = _harness();
 	h.stableIds[1] = 'sid-a';

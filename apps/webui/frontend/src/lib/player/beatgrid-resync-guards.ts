@@ -159,8 +159,20 @@ export interface BeatgridResyncGuards {
 	 * rbx-vs-own switch passes it explicitly, because selecting a source that
 	 * has no grid for this track REMOVES one, and a removal has to settle
 	 * gridless rather than leave a playing follower phase-locked to a grid the
-	 * deck no longer has (discussion_r3968213995). */
-	adoptAuthoritativeGrid(stableId: string, data: AnlzData, landed?: boolean): void;
+	 * deck no longer has (discussion_r3968213995).
+	 *
+	 * RETURNS A PROMISE THAT SETTLES ONCE EVERY TRIGGERED RECONCILIATION HAS
+	 * (discussion_r3970967293 P1 BLOCKING). Each `afterBeatgridUpgrade` call
+	 * used to be fire-and-forget here, so a caller inside the performance
+	 * command scheduler's all-deck-plus-sync claim - the rbx-vs-own source
+	 * switch is the only one - could report the switch complete, release the
+	 * claim, and let a LATER command's own claim be granted while this deck's
+	 * audible rescheduling was still queued behind `runScoped`'s widen. The
+	 * promise never rejects: every per-deck failure is already funneled
+	 * through `_consumeInvalidation`/`reportError` exactly as before, so
+	 * awaiting this only postpones "done", it does not turn a swallowed error
+	 * into an unhandled rejection. */
+	adoptAuthoritativeGrid(stableId: string, data: AnlzData, landed?: boolean): Promise<void>;
 	/** Install the concrete scoped runner both wrappers claim through. The
 	 * runner itself lives here because these two wrappers are its only
 	 * consumers; audio-engine.svelte.ts re-exports this for the route to call.
@@ -275,6 +287,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 			).catch(onFailure);
 		},
 		adoptAuthoritativeGrid(stableId, data, landed = true) {
+			const settlements: Promise<void>[] = [];
 			for (const deck of ports.deckIds) {
 				if (deckStableId(deck) !== stableId) continue;
 				const current = deckAnlz(deck);
@@ -286,27 +299,30 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 					deckLoadToken(deck) !== token ||
 					deckStableId(deck) !== stableId;
 				const next: AnlzData = { ...current, beatgrid: data.beatgrid };
-				afterBeatgridUpgrade(
-					deck,
-					landed,
-					() => {
-						// Re-read rather than trust `current`: the publish thunk runs
-						// inside a scope claim this call had to queue for, and a
-						// reload can have replaced the payload in that gap. The grid
-						// is what this adoption is about, so it is merged onto
-						// whatever payload is live at publish time, not the one read
-						// when the cache fired.
-						const latest = deckAnlz(deck);
-						publishDeckAnlz(deck, latest === null ? next : { ...latest, beatgrid: data.beatgrid });
-					},
-					isStale
-				).catch(
-					_consumeInvalidation(
-						reportError,
-						`Deck ${deck}'s beatgrid could not be updated to the analysis grid rekordbox now has`
+				settlements.push(
+					afterBeatgridUpgrade(
+						deck,
+						landed,
+						() => {
+							// Re-read rather than trust `current`: the publish thunk runs
+							// inside a scope claim this call had to queue for, and a
+							// reload can have replaced the payload in that gap. The grid
+							// is what this adoption is about, so it is merged onto
+							// whatever payload is live at publish time, not the one read
+							// when the cache fired.
+							const latest = deckAnlz(deck);
+							publishDeckAnlz(deck, latest === null ? next : { ...latest, beatgrid: data.beatgrid });
+						},
+						isStale
+					).catch(
+						_consumeInvalidation(
+							reportError,
+							`Deck ${deck}'s beatgrid could not be updated to the analysis grid rekordbox now has`
+						)
 					)
 				);
 			}
+			return Promise.all(settlements).then(() => undefined);
 		}
 	};
 }

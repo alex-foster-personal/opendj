@@ -210,7 +210,7 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * due for refetch, so a consumer returning later (`ensureAnlz` via
  * `_dueForEnsureRefetch`) revives it with no special-casing on either
  * side. */
-function _publishAnlzResult(stable_id: string, data: AnlzData): void {
+function _publishAnlzResult(stable_id: string, data: AnlzData): void | Promise<void> {
 	const existingTimer = _retryTimers.get(stable_id);
 	if (existingTimer !== undefined) {
 		clearTimeout(existingTimer);
@@ -227,10 +227,19 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 	// that gap; it fires for every real grid this cache learns about,
 	// including the very first, and the engine decides whether any loaded deck
 	// is actually holding a different one.
-	if (_authoritativeGridSink !== null && hasAnlzBeatgrid(data)) _authoritativeGridSink(stable_id, data);
+	//
+	// The sink's return value is PASSED THROUGH, never awaited here: this
+	// function's other caller (`_fetchAndPublish`, the ambient retry) is
+	// deliberately fire-and-forget and must stay that way. It is
+	// `refreshAnlzCacheEntry`'s caller inside `refreshAnalysisSourceDecks`
+	// that awaits it (discussion_r3970967293).
+	const sinkSettlement =
+		_authoritativeGridSink !== null && hasAnlzBeatgrid(data)
+			? _authoritativeGridSink(stable_id, data)
+			: undefined;
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
-		return;
+		return sinkSettlement;
 	}
 	_cache[stable_id] = { status: 'ready', data, retryAfter: performance.now() + RETRYABLE_COOLDOWN_MS };
 	_retryTimers.set(
@@ -241,6 +250,7 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 			_fetchAndPublish(stable_id);
 		}, RETRYABLE_COOLDOWN_MS)
 	);
+	return sinkSettlement;
 }
 
 /** Notified with every /anlz payload this cache learns that carries a REAL
@@ -258,7 +268,14 @@ export type AuthoritativeAnlzGridSink = (
 	 * source has no grid for this track, so the deck settles gridless instead
 	 * of silently dropping Beat Sync. */
 	landed?: boolean
-) => void;
+	/** May return a promise that settles once the adoption's audible
+	 * rescheduling has actually run. The ambient retry path (`_fetchAndPublish`
+	 * below) ignores it and stays fire-and-forget by design; the rbx-vs-own
+	 * switch (`refreshAnalysisSourceDecks`) awaits it, because that caller can
+	 * be running inside the performance command scheduler's claim and must not
+	 * report the switch complete while settlement is still queued
+	 * (discussion_r3970967293 P1 BLOCKING). */
+) => void | Promise<void>;
 let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
 
 export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink): void {
@@ -399,9 +416,16 @@ export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
  * stale entry: the hot cue bank (always a live fetch) would show the new
  * cue while the waveform (from the stale cached anlz) would not. Same
  * failure shape as issue #877's reported bug, just triggered by a reload
- * instead of the original paint defect. */
-export function refreshAnlzCacheEntry(stable_id: string, data: AnlzData): void {
-	_publishAnlzResult(stable_id, data);
+ * instead of the original paint defect.
+ *
+ * Returns whatever the authoritative-grid sink returned (see
+ * `AuthoritativeAnlzGridSink`): usually nothing, but a caller that needs the
+ * grid's audible rescheduling to have actually finished before it reports
+ * itself done - `refreshAnalysisSourceDecks` below - awaits it. Every other
+ * caller (`refreshHotCues`, audio-engine) is unaffected: `void` absorbs a
+ * `Promise<void> | void` return with no change to a fire-and-forget call. */
+export function refreshAnlzCacheEntry(stable_id: string, data: AnlzData): void | Promise<void> {
+	return _publishAnlzResult(stable_id, data);
 }
 
 /** Evicts a cache entry outright, so it reads back as never-requested
@@ -500,7 +524,17 @@ export interface AnalysisSourceRefreshDeck {
  * move under them (discussion_r3970117741 P1 BLOCKING). Staged payloads that
  * DISAGREE mean the selection changed mid-batch and the fleet would end up
  * split across two sources, so that throws before anything is published and
- * the all-or-nothing guarantee covers it too. */
+ * the all-or-nothing guarantee covers it too.
+ *
+ * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED, not
+ * only until the cache and decks are written. The authoritative-grid sink's
+ * `adoptAuthoritativeGrid` used to be void-returning, so a playing Beat-Synced
+ * deck's audible reschedule (`afterBeatgridUpgrade` -> `runScoped`'s widen)
+ * was still queued when this function returned; the caller holding the
+ * performance command scheduler's all-deck-plus-sync claim (`setAnalysisSource`
+ * / the poll-triggered refresh) would then report the switch complete and
+ * release that claim, and a later command's claim could be granted before the
+ * reschedule actually ran (discussion_r3970967293 P1 BLOCKING). */
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
 	decks: Record<DeckId, AnalysisSourceRefreshDeck>
@@ -533,8 +567,18 @@ export async function refreshAnalysisSourceDecks(
 				'within one batch, so publishing would split the decks across both'
 		);
 	}
+	// Collected, not awaited here: awaiting per-iteration would let one deck's
+	// reconciliation finish (and therefore fire its own re-entrant read of
+	// `decks[deck].anlz`, still pre-switch at this point) before the next
+	// deck's sink call has even been ISSUED, serializing what the cache write
+	// below deliberately does not. Every sink call below still runs
+	// synchronously up to its own first await, exactly as before this fix, so
+	// the CACHE FIRST / DECK SECOND ordering this function's doc block
+	// describes is unchanged; only the RETURN of this function now waits for
+	// every settlement it triggered (discussion_r3970967293 P1 BLOCKING).
+	const sinkSettlements: Array<void | Promise<void>> = [];
 	for (const { stableId, fresh } of staged) {
-		refreshAnlzCacheEntry(stableId, fresh);
+		sinkSettlements.push(refreshAnlzCacheEntry(stableId, fresh));
 		// `refreshAnlzCacheEntry` notifies the sink only for a payload that
 		// HAS a grid, because the ambient prefetch it was built for can only
 		// ever discover one. A deliberate switch can also REMOVE one: OWN with
@@ -546,7 +590,7 @@ export async function refreshAnalysisSourceDecks(
 		// the settled-gridless case reconcileAfterBeatgridSettled already
 		// handles.
 		if (!hasAnlzBeatgrid(fresh) && _authoritativeGridSink !== null) {
-			_authoritativeGridSink(stableId, fresh, false);
+			sinkSettlements.push(_authoritativeGridSink(stableId, fresh, false));
 		}
 	}
 	for (const { stableId, holders, fresh, track } of staged) {
@@ -562,6 +606,13 @@ export async function refreshAnalysisSourceDecks(
 			decks[deck].key = track.key ?? null;
 		}
 	}
+	// Every sink call above ALREADY ran, synchronously, up to its first await
+	// - `Promise.all` on a mix of promises and `void`s just waits out the ones
+	// that are still pending, never re-triggers anything. This is what makes
+	// the switch's completion (and therefore the performance-command claim it
+	// may be running under) wait for the audible rescheduling rather than
+	// racing it.
+	await Promise.all(sinkSettlements);
 	// `?? null` rather than a default: no loaded deck means nothing was served,
 	// which is not the same claim as "the server served rekordbox".
 	return [...served][0] ?? null;

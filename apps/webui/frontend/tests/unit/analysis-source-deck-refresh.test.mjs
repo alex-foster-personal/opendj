@@ -25,6 +25,11 @@
  * - if the shared cache entry is published AFTER the deck's own anlz, so the
  *   authoritative-grid sink compares the new grid against a deck that already
  *   holds it, then broken (discussion_r3968213995)
+ * - if the switch reports itself complete before a triggered grid
+ *   reconciliation has actually settled then broken (discussion_r3970967293):
+ *   a caller holding the performance command scheduler's claim could release
+ *   it, and a later command's claim be granted, while a playing deck's
+ *   audible reschedule was still queued
  * - if a source whose new payload has NO grid for the track fails to tell the
  *   sink so (`landed: false`) then broken - the deck must settle gridless, not
  *   silently keep beat-syncing to a grid that is gone
@@ -131,6 +136,11 @@ before(async () => {
 			// the instant the sink ran, not afterwards.
 			deckAnlzAtNotify: DECKS.map((deck) => deck.anlz)
 		});
+		// discussion_r3970967293: lets a test prove refreshAnalysisSourceDecks
+		// actually AWAITS this settlement rather than firing it and moving on.
+		// `undefined` (the default) reproduces every other test's synchronous
+		// sink exactly as before this hook existed.
+		return sinkSettlementGate ?? undefined;
 	});
 });
 
@@ -138,11 +148,13 @@ before(async () => {
 const DECKS = [];
 const DECK_KEYS = [1, 2, 3, 4];
 let sinkCalls = [];
+let sinkSettlementGate = null;
 
 function resetCacheDecks() {
 	DECKS.length = 0;
 	for (const _ of DECK_KEYS) DECKS.push({ stable_id: null, anlz: null, bpm: null, key: null });
 	sinkCalls = [];
+	sinkSettlementGate = null;
 	return Object.fromEntries(DECK_KEYS.map((key, index) => [key, DECKS[index]]));
 }
 
@@ -252,6 +264,49 @@ test('the grid sink is notified while every deck still holds its PRE-switch anlz
 	assert.ok(sinkCalls[0].beat_count > 0, 'the sink must carry the real own grid, not an empty one');
 	assert.equal(decks[1].anlz.beatgrid_source, 'own', 'the deck still has to end up on the new payload');
 	assert.notEqual(decks[1].anlz, preSwitch);
+});
+
+test('the switch does not resolve until the grid sink settlement it triggered has settled', async () => {
+	// discussion_r3970967293: adoptAuthoritativeGrid's real implementation
+	// starts the audible reschedule (afterBeatgridUpgrade -> runScoped's widen)
+	// and used to be fire-and-forget from here, so a caller holding the
+	// performance command scheduler's claim could report the switch complete,
+	// release the claim, and let a LATER command be granted while that
+	// reschedule was still queued. This proves the opposite: the promise this
+	// function returns stays pending for as long as the sink's own settlement
+	// promise does.
+	const decks = resetCacheDecks();
+	decks[1].stable_id = SID_TRACK_A;
+	decks[1].anlz = { beatgrid: { beat_count: 4, beats: [] } };
+
+	let releaseSink;
+	sinkSettlementGate = new Promise((resolve) => {
+		releaseSink = resolve;
+	});
+
+	let settled = false;
+	const refreshPromise = cache.refreshAnalysisSourceDecks(DECK_KEYS, decks).then(() => {
+		settled = true;
+	});
+
+	// Wait for the sink to actually have been CALLED (real network fetch and
+	// cache write both done) rather than counting microtasks: the fetch below
+	// is a real HTTP round trip against the local fixture server, which takes
+	// far longer than a handful of microtask turns, so a fixed microtask count
+	// would pass this assertion for the trivial reason that the function
+	// hasn't reached the sink yet, mutated or not. Polling on the sink's own
+	// call record is what makes this a control ON the reconciliation-await
+	// specifically.
+	const deadline = Date.now() + 5000;
+	while (sinkCalls.length === 0) {
+		if (Date.now() > deadline) throw new Error('sink was never called; fixture request did not complete');
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	assert.equal(settled, false, 'the switch must not report done while the sink settlement is still pending');
+
+	releaseSink();
+	await refreshPromise;
+	assert.equal(settled, true, 'and it must resolve once the sink settlement actually does');
 });
 
 test('two decks on the SAME track fetch once and reconcile through one sink call', async () => {
