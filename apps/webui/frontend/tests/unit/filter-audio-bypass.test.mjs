@@ -8,7 +8,7 @@ const ENGINE = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
 test('centered FILTER has a real dry route around both BiquadFilterNodes', () => {
 	assert.match(ENGINE, /filterDry: GainNode;/);
 	assert.match(ENGINE, /filterWet: GainNode;/);
-	assert.match(ENGINE, /const \{ lpHz, hpHz, dryGain, wetGain \} = _filterParamsFromKnob\(ch\.filter\);/);
+	assert.match(ENGINE, /const \{ lpHz, hpHz, dryGain, wetGain \} = filterParamsFromKnob\(ch\.filter\);/);
 	assert.match(ENGINE, /high\.connect\(filterDry\);/);
 	assert.match(ENGINE, /filterHp\.connect\(filterWet\);/);
 	assert.match(ENGINE, /filterDry\.connect\(cue\);/);

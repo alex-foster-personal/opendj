@@ -181,11 +181,6 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
-	FILTER_DEADZONE_FRAC,
-	FILTER_HP_CEILING_HZ,
-	FILTER_HP_FLOOR_HZ,
-	FILTER_LP_CEILING_HZ,
-	FILTER_LP_FLOOR_HZ,
 	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
@@ -638,38 +633,6 @@ function _eqDbFromKnob(value: number): number {
 	return EQ_MAX_DB * (value * 2 - 1);
 }
 
-/**
- * FILTER knob -> {lpHz, hpHz} corner frequencies for the two always-in-chain
- * biquads (see FILTER_* constants) plus real dry/wet gains. `colour` is
- * bipolar travel away from the 0.5 detent; below FILTER_DEADZONE_FRAC it is a
- * true dry bypass around both filters. Sweeps are exponential in Hz, i.e.
- * linear in octaves (L2 in docs/research/filter-taper-laws.md), so equal knob
- * motion covers equal perceived distance anywhere in the travel.
- */
-function _filterParamsFromKnob(value: number): {
-	lpHz: number;
-	hpHz: number;
-	dryGain: number;
-	wetGain: number;
-} {
-	const colour = (value - 0.5) * 2; // -1 (full CCW) .. 1 (full CW)
-	if (Math.abs(colour) < FILTER_DEADZONE_FRAC) {
-		return {
-			lpHz: FILTER_LP_CEILING_HZ,
-			hpHz: FILTER_HP_FLOOR_HZ,
-			dryGain: 1,
-			wetGain: 0
-		};
-	}
-	const u = (Math.abs(colour) - FILTER_DEADZONE_FRAC) / (1 - FILTER_DEADZONE_FRAC);
-	if (colour < 0) {
-		const lpHz = FILTER_LP_CEILING_HZ * (FILTER_LP_FLOOR_HZ / FILTER_LP_CEILING_HZ) ** u;
-		return { lpHz, hpHz: FILTER_HP_FLOOR_HZ, dryGain: 0, wetGain: 1 };
-	}
-	const hpHz = FILTER_HP_FLOOR_HZ * (FILTER_HP_CEILING_HZ / FILTER_HP_FLOOR_HZ) ** u;
-	return { lpHz: FILTER_LP_CEILING_HZ, hpHz, dryGain: 0, wetGain: 1 };
-}
-
 function _setParam(param: AudioParam, value: number): void {
 	if (_ctx === null) throw new Error('audio graph not initialised');
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
@@ -765,7 +728,7 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz, dryGain, wetGain } = _filterParamsFromKnob(ch.filter);
+		const { lpHz, hpHz, dryGain, wetGain } = filterParamsFromKnob(ch.filter);
 		const filterLp = _ctx.createBiquadFilter();
 		filterLp.type = 'lowpass';
 		filterLp.Q.value = FILTER_Q;
@@ -1007,6 +970,7 @@ import {
 	assertDeckReplacementAllowed,
 	assertDeckLoadConsistency,
 	loadCandidateCanPublish,
+	filterParamsFromKnob,
 	nextPlayingMaster,
 	pausedMasterSelectionBlockers,
 	assertPausedMasterSelectionAllowed,
@@ -4026,7 +3990,7 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.channels[deck].filter = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) {
-			const { lpHz, hpHz, dryGain, wetGain } = _filterParamsFromKnob(value);
+			const { lpHz, hpHz, dryGain, wetGain } = filterParamsFromKnob(value);
 			_setParam(nodes.filterLp.frequency, lpHz);
 			_setParam(nodes.filterHp.frequency, hpHz);
 			_setParam(nodes.filterDry.gain, dryGain);
