@@ -99,6 +99,31 @@ def test_unknown_lane_source_and_toggle_state_are_refused(db) -> None:
         selection.set_toggle("key", "sometimes")
 
 
+def test_compare_and_set_toggle_applies_only_when_the_current_value_matches() -> None:
+    """discussion_r3973129053: the CAS the rollback relies on to close the
+    read-then-write race window."""
+    assert selection.get_toggle("waveform") == "unset"
+    assert selection.compare_and_set_toggle("waveform", "unset", "own") is True
+    assert selection.get_toggle("waveform") == "own"
+
+
+def test_compare_and_set_toggle_refuses_and_leaves_the_newer_value_when_stale() -> None:
+    """The mismatch branch: someone else already moved the toggle, so the
+    compare-and-set must report failure and must NOT overwrite their value."""
+    selection.set_toggle("waveform", "own")
+    assert selection.compare_and_set_toggle("waveform", "unset", "rbx") is False
+    assert selection.get_toggle("waveform") == "own"
+
+
+def test_compare_and_set_toggle_validates_lane_and_states_before_touching_anything() -> None:
+    with pytest.raises(selection.SelectionError, match="unknown lane"):
+        selection.compare_and_set_toggle("phrases", "unset", "own")
+    with pytest.raises(selection.SelectionError, match="unknown toggle state"):
+        selection.compare_and_set_toggle("waveform", "maybe", "own")
+    with pytest.raises(selection.SelectionError, match="unknown toggle state"):
+        selection.compare_and_set_toggle("waveform", "unset", "sometimes")
+
+
 def test_get_default_works_on_a_connection_that_cannot_write(tmp_path) -> None:
     """The track read path is read-only; creating a table there would 500."""
     db_path = tmp_path / "state.db"
@@ -185,6 +210,29 @@ def test_setting_a_default_over_http_changes_the_effective_source(client) -> Non
     assert body["lanes"]["loudness"] == {
         "default": "own", "toggle": "unset", "effective": "own",
     }
+
+
+def test_put_with_expected_toggle_matching_applies_and_puts_with_none_ignores_it(client) -> None:
+    """discussion_r3973129053, HTTP half: the route's `expected_toggle` field
+    is the client-facing surface over `selection.compare_and_set_toggle`."""
+    put = client.put(
+        "/api/v1/analysis/source",
+        json={"lane": "waveform", "toggle": "own", "expected_toggle": "unset"},
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["lanes"]["waveform"]["toggle"] == "own"
+
+
+def test_put_with_a_stale_expected_toggle_is_refused_with_409_and_does_not_apply(client) -> None:
+    client.put("/api/v1/analysis/source", json={"lane": "waveform", "toggle": "own"})
+    resp = client.put(
+        "/api/v1/analysis/source",
+        json={"lane": "waveform", "toggle": "rbx", "expected_toggle": "unset"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "toggle_changed"
+    # The refused CAS must not have applied: still `own`, the value it raced against.
+    assert client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]["toggle"] == "own"
 
 
 def test_put_with_neither_half_is_refused(client) -> None:
