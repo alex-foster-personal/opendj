@@ -86,8 +86,13 @@
 	 * that test. */
 	const LESS_TRIM_SIZE = 18;
 	const LESS_EQ_SIZE = 18;
+	/** Knob's own default dial size (see Knob.svelte's `size = 30`), spelled out
+	 * explicitly here rather than omitted: `exactOptionalPropertyTypes` treats an
+	 * explicit `size={undefined}` as distinct from the prop being absent, so
+	 * `eqSize` must always resolve to a concrete number, same as `trimSize`. */
+	const EQ_SIZE = 30;
 	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
-	const eqSize = $derived(less ? LESS_EQ_SIZE : undefined);
+	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
 </script>
 
 <div

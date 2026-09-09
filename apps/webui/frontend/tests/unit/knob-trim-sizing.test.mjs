@@ -124,11 +124,26 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 			`${label} must pass size={eqSize} (pin 246b0f5) so LESS mode can shrink it`
 		);
 	}
-	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : undefined\);/);
+	// Was `$derived(less ? LESS_EQ_SIZE : undefined)` (falling through to
+	// Knob's own `size = 30` default) until Sol's CI type-check finding: with
+	// `exactOptionalPropertyTypes: true`, an explicit `size={undefined}` is
+	// not assignable to Knob's `size?: number` Props (undefined-the-value is
+	// distinct from the prop being absent) - see ChannelStrip.svelte's
+	// EQ_SIZE comment. EQ_SIZE is spelled out as the same 30px Knob already
+	// defaulted to, so this is a type-correctness fix, not a behavior change
+	// - asserted below by requiring EQ_SIZE to actually equal 30.
+	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : EQ_SIZE\);/);
 	assert.ok(
 		eqSizeDerived,
-		'eqSize must be undefined whenever less is false, so HI/MID/LOW fall back to the unchanged ' +
-			"Knob default (30px) - the fixed reference EQ dial MIXUX-03's MORE-mode behavior depends on"
+		'eqSize must fall back to EQ_SIZE whenever less is false, so HI/MID/LOW render at the ' +
+			"unchanged Knob default (30px) - the fixed reference EQ dial MIXUX-03's MORE-mode behavior depends on"
+	);
+	const eqSizeConstMatch = src.match(/const EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(eqSizeConstMatch, 'expected a named EQ_SIZE constant spelling out Knob\'s own default');
+	assert.equal(
+		Number(eqSizeConstMatch[1]),
+		30,
+		'EQ_SIZE must equal Knob.svelte\'s own default size (30), or MORE mode\'s EQ dials silently resize'
 	);
 	const lessEqSizeMatch = src.match(/const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(lessEqSizeMatch, 'expected a named LESS_EQ_SIZE constant for pin 246b0f5 LESS mode');

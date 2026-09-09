@@ -13,22 +13,24 @@ import { expect, test } from '@playwright/test';
 //
 // Two floors compete for the same vertical space (see +page.svelte's
 // perf-root comment, PR #1007 discussions r3921198996, r3921321752,
-// r3921443899 and r3923591731): the deck area's documented 497px two-deck-
-// column content-tight floor (protected via `minmax(497px, ...)`, since
-// `.rb-deck` uses overflow: hidden and a shorter box genuinely clips
-// controls), and the library's 272px 5-row floor. Their sum plus topbar/wave
-// (200px) is 969px, taller than the repo's standard 1280x800 viewport, so
-// only ONE floor can be fully satisfied below that height. Decks win the
-// conflict (protecting already-shipped controls), so this file tests each
-// floor at the viewport where it is actually supposed to hold, instead of
-// asserting both at once somewhere neither can be true - and then tests, AT
-// 1280x800, what the losing side does with the shortfall, which is where the
-// real defect was.
+// r3921443899 and r3923591731): the deck area's documented content-tight
+// floor (protected via `minmax(<floor>px, ...)`, since `.rb-deck` uses
+// overflow: hidden and a shorter box genuinely clips controls - pin 246b0f5
+// / Sol P1 findings raised this from 497px to 524px, see below), and the
+// library's 272px 5-row floor. Their sum plus topbar/wave (200px) is 996px,
+// taller than the repo's standard 1280x800 viewport, so only ONE floor can
+// be fully satisfied below that height. Decks/mixer win the conflict
+// (protecting already-shipped controls), so this file tests each floor at
+// the viewport where it is actually supposed to hold, instead of asserting
+// both at once somewhere neither can be true - and then tests, AT 1280x800,
+// what the losing side does with the shortfall, which is where the real
+// defect was.
 
-// 1000px clears the >= 969px threshold at which BOTH floors fit (497 deck +
-// 272 library + 200 topbar/wave), so the 5-row guarantee is actually
-// claimable here. Below it the guarantee does not hold and the tests further
-// down assert what happens instead, rather than pretending it does.
+// 1000px clears the >= 996px threshold at which BOTH floors fit (524
+// deck/mixer + 272 library + 200 topbar/wave), so the 5-row guarantee is
+// actually claimable here. Below it the guarantee does not hold and the
+// tests further down assert what happens instead, rather than pretending it
+// does.
 const TALL_VIEWPORT = { width: 1280, height: 1000 };
 // thead (20px, fixed) + 5 * compact row height (22px, the default density) +
 // a 17px classic-scrollbar-gutter allowance - mirrors TrackTable.svelte's
@@ -39,8 +41,9 @@ const TALL_VIEWPORT = { width: 1280, height: 1000 };
 // sandbox's Chromium happens to render overlay scrollbars, which cost 0
 // layout height, so this assertion cannot itself distinguish "budgeted the
 // 17px and it went unused" from "the budget is wrong" - see NOT-verified in
-// the PR body). 1000px is tall enough that the deck-area floor (497px) is
-// not in the way (969px needed for both floors at once, 1000 > 969).
+// the PR body). 1000px is tall enough that the deck-area floor (524px,
+// Sol-P1-fixed - see the header comment above) is not in the way (996px
+// needed for both floors at once, 1000 > 996).
 const MIN_TABLE_WRAP_HEIGHT = 20 + 5 * 22 + 17;
 
 test('performance: library table-wrap keeps a 5-row floor once the window is tall enough for both floors', async ({
@@ -180,13 +183,13 @@ test('performance: the track list never paints over the browser bottom bar at 12
 // whole point is that the freed vertical space actually reaches the library
 // row (library-min-5-rows.test.mjs proves the CSS source says so; this is
 // the render-level proof). At the standard 1280x800 viewport MORE mode
-// cannot satisfy both floors at once (see the 969px arithmetic above), but
+// cannot satisfy both floors at once (see the 996px arithmetic above), but
 // LESS mode's own floors are smaller - topbar 28 + wavestack (2 rows) 86 +
-// deck-area floor 388 (pin 246b0f5 - see below) = 502px, well under 800 -
-// so LESS should still get more real library height than MORE at the exact
-// same viewport, while decks 1/2 stay unclipped and decks 3/4 stay mounted
-// (just visually collapsed, not removed - they keep receiving IPC/audio per
-// the pin).
+// deck-area floor 400 (pin 246b0f5, Sol-P1-fixed - see below) = 514px, well
+// under 800 - so LESS should still get more real library height than MORE
+// at the exact same viewport, while decks 1/2 stay unclipped and decks 3/4
+// stay mounted (just visually collapsed, not removed - they keep receiving
+// IPC/audio per the pin).
 //
 // Pin 246b0f5 (follow-on to 862cd3, the maintainer: "you ddin't move the 1/2 levels so
 // now can't be seen in LESS"): the deck-area floor above is no longer just
@@ -195,13 +198,15 @@ test('performance: the track list never paints over the browser bottom bar at 12
 // ONE row) and its own LESS-mode content (decks 1/2's fader/level-meter/EQ/
 // STEM, none of which pin 862cd3 ever collapses) needed more height than
 // that to avoid `.rb-mixer`'s `overflow: hidden` clipping them - exactly
-// what the maintainer reported. So the floor grew from 248 to 388
-// (channel-strip-less-floor.test.mjs derives and pins that number), and the
-// library's gain over MORE shrank accordingly - the maintainer's own words authorizing
-// that trade: "probably a little bit more height taken from library ... but
-// optimize it visually." The assertion below is updated to require a real,
-// positive gain rather than the old fixed "one whole collapsed deck column"
-// amount, which this pin's fix can no longer deliver in full.
+// what the maintainer reported. So the floor grew from 248 to 388, then to 400 (Sol P1
+// finding, comment 3963232874: the 388 total omitted the mixer's own 12px
+// padding/border chrome) - channel-strip-less-floor.test.mjs derives and
+// pins that number - and the library's gain over MORE shrank accordingly -
+// the maintainer's own words authorizing that trade: "probably a little bit more
+// height taken from library ... but optimize it visually." The assertion
+// below requires a concrete, meaningful gain (see MIN_LESS_LIBRARY_GAIN_PX
+// below) rather than the old fixed "one whole collapsed deck column" amount,
+// which this pin's fix can no longer deliver in full.
 const LESS_MODE_CHORD = process.platform === 'darwin' ? 'Meta+2' : 'Control+2';
 
 test('performance: switching to LESS frees real height to the library versus MORE, at the same 1280x800 viewport', async ({
@@ -238,12 +243,20 @@ test('performance: switching to LESS frees real height to the library versus MOR
 	const lessBox = await tableWrap.boundingBox();
 	expect(lessBox).not.toBeNull();
 
-	// LESS must still give the library strictly more room than MORE - pin
-	// 246b0f5 shrank the margin (the mixer's real LESS-mode content now sets
-	// the deck-area floor, not just one deck panel - see the header comment
-	// above), so this no longer asserts a full collapsed-deck-column's worth,
-	// only that some real gain survives.
-	expect(lessBox!.height).toBeGreaterThan(moreBox!.height);
+	// LESS must still give the library a MEANINGFUL amount more room than
+	// MORE, not just any-positive-px - pin 246b0f5 shrank the margin (the
+	// mixer's real LESS-mode content now sets the deck-area floor, not just
+	// one deck panel - see the header comment above), so this no longer
+	// asserts a full collapsed-deck-column's worth (the achievable gain
+	// today is 210px: (4-2 wavestack rows)*43px + (524-400 deck floor)px -
+	// 524/400 are the Sol-P1-fixed MORE/LESS mixer floors (up from the
+	// pre-fix 497/388) - see library-min-5-rows.test.mjs's matching
+	// source-derived assertion), but a bare `> 0` would let a future change
+	// shrink the gain to 1px and still pass, exactly the regression this
+	// test exists to catch. 150px is comfortably under the 210px ceiling,
+	// leaving real headroom.
+	const MIN_LESS_LIBRARY_GAIN_PX = 150;
+	expect(lessBox!.height - moreBox!.height).toBeGreaterThanOrEqual(MIN_LESS_LIBRARY_GAIN_PX);
 
 	// Decks 1/2 must stay fully unclipped in LESS, same floor as MORE.
 	const deck1 = page.locator('.rb-deck').first();
