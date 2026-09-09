@@ -7,12 +7,6 @@ const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url)
 const SCREENSHOT_DIR = join(REPOSITORY_ROOT, '.tmp');
 
 test('real event-store analytics render and filter through the HTTP contract', async ({ page }) => {
-	// NAMED QUARANTINE (#1568), not a silent skip: tests/play_analytics/e2e_server.py
-	// never mounts apps.webui.server.routes.preflight, so GET /api/v1/preflight 404s,
-	// +layout.svelte's boot gate never clears, and this page (and the update-check
-	// request below) never renders. 100% reproducible, not flake -- the analytics
-	// contract this test actually cares about is unaffected and unverified either way.
-	test.skip(true, 'quarantined: preflight boot gate never clears in this harness, see #1568');
 	const consoleErrors: string[] = [];
 	const failedResources: { url: string; status: number }[] = [];
 	page.on('console', (message) => {
