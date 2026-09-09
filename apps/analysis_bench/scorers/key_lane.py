@@ -118,7 +118,6 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis_key import canon
-from apps.equivalence.normalisers import NormaliseError
 
 __all__ = ["SCORER_VERSION", "render_table", "score_bundle"]
 
@@ -219,10 +218,15 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
        `key_openkey` (no underscore) is the field name used throughout the
        repo already -- `AnalysisRecord.key_openkey`, `apps/analysis/store.py`,
        `apps/analysis/backends/mik.py`. A value that fails to normalise
-       (`NormaliseError`, e.g. a malformed Camelot/Open Key string) counts
-       as a failed answer rather than crashing the whole round (Codex P1
-       BLOCKING, PR #1620: an uncaught `NormaliseError` here would abort
-       `score_bundle` for every arm over one bad fixture).
+       counts as a failed answer rather than crashing the whole round (Codex
+       P1 BLOCKING, PR #1620: an uncaught `NormaliseError` here would abort
+       `score_bundle` for every arm over one bad fixture). Caught as plain
+       `ValueError`, not just `NormaliseError`: `canon._normalise_or_raise`
+       raises a bare `ValueError` (not its `NormaliseError` subclass) for
+       MIK's own documented missing-key sentinel (e.g. Camelot `"0"`, which
+       `apps.equivalence.normalisers.normalise_key` maps to `MISSING`), a
+       second, distinct case an `except NormaliseError` alone still let
+       through uncaught (Codex P1 BLOCKING, PR #1620).
     4. `AnalysisRecord.key_camelot`/`key_openkey` are BOTH mandatory fields
        (`apps/analysis/record.py`), so a real candidate answer always
        carries both. If both are present and parse to DIFFERENT keys, the
@@ -239,7 +243,7 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
     try:
         parsed_camelot = canon.from_mik_camelot(camelot) if camelot else None
         parsed_open_key = canon.from_mik_open_key(open_key) if open_key else None
-    except NormaliseError:
+    except ValueError:
         return None
     if parsed_camelot and parsed_open_key and parsed_camelot != parsed_open_key:
         return None
