@@ -30,10 +30,15 @@ def test_output_parity_uses_the_existing_calibrated_stem_tier_bar():
 
 
 def test_fixture_provenance_preserves_source_version_and_selected_checksums():
+    # The manifest content is the CANONICAL pinned data (fixtures.py's own
+    # SOURCE_VERSION and an EXPECTED_TRACKS entry), not invented placeholder
+    # strings: an invented manifest would still pass even if the real pinned
+    # data regressed, since nothing here would be touching it.
+    canonical_track = EXPECTED_TRACKS[0]
     manifest = {
         "source": "musdb18-7s-sample",
-        "source_version": "musdb package public test fixture",
-        "tracks": [{"name": "track-a", "sha256": {"mixture.wav": "abc"}}],
+        "source_version": SOURCE_VERSION,
+        "tracks": [{"name": canonical_track["name"], "sha256": canonical_track["sha256"]}],
     }
 
     assert _fixture_provenance(manifest) == manifest
