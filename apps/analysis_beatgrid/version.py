@@ -1,0 +1,42 @@
+"""The lane's producer semver, and the one place it is written down.
+
+`apps/analysis/record.py` makes `producer_version` a required field of every
+own record and `apps/analysis/lanes.py` ranks the canonical pointer by it, so
+this lane needs a version an ordering function can read. `beat_this_runner.py`
+already carried one, but that file is a PEP 723 script that imports torch at
+module scope: the repo venv cannot import it, so a record writer running in the
+repo venv could not read the constant it has to stamp.
+
+Rather than let the two drift, the runner keeps its own literal (it is the
+thing that produced the beats and its payload states which version made them)
+and `tests/analysis_beatgrid/test_version.py` reads that literal out of the
+file as TEXT and asserts it equals this one. A record writer additionally
+compares the version stamped in the payload it is about to convert against
+this constant and refuses a mismatch, so a payload produced by a different
+runner cannot be written under this version's name.
+
+Bump the PATCH for a fix that cannot change any emitted beat, the MINOR for a
+policy change that can, and the MAJOR for a change to the lane payload shape.
+Whatever the bump, change it in BOTH files: the test is what makes that
+mandatory rather than remembered.
+
+-Claude
+"""
+from __future__ import annotations
+
+#: Semver for the whole `apps/analysis_beatgrid` producer: the model runner,
+#: the octave policy, the changepoint detector, the bar-phase assignment and
+#: the lane payload builder together. 1.1.0 is the version
+#: `beat_this_runner.py` shipped in PR #1514 and the round-1 measurements were
+#: taken at; the record-writing half added here changes no emitted beat.
+PRODUCER_VERSION = "1.1.0"
+
+#: The producer half of the `own_<lane>.<producer>` backend name. The record
+#: contract parses the backend name and checks it against the record body, so
+#: this is the value `AnalysisRecord.producer` carries too.
+PRODUCER = "backfill"
+
+#: Selection lane this package produces for.
+LANE = "beatgrid"
+
+__all__ = ["LANE", "PRODUCER", "PRODUCER_VERSION"]
