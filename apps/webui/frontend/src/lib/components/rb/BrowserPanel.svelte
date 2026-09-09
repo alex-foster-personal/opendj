@@ -17,6 +17,7 @@
 		fetchRbMeta,
 		getHealth,
 		pingHealth,
+		timeoutSignal,
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
@@ -764,11 +765,12 @@
 	}
 
 	async function _pingFrontend(): Promise<LibraryHealthDot> {
+		const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
 		try {
 			const response = await fetch(`${window.location.origin}/`, {
 				method: 'GET',
 				cache: 'no-store',
-				signal: AbortSignal.timeout(CONN_PING_TIMEOUT_MS)
+				signal
 			});
 			if (!response.ok) {
 				return {
@@ -781,6 +783,8 @@
 		} catch (error: unknown) {
 			const why = error instanceof Error ? error.message : String(error);
 			return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
+		} finally {
+			clear();
 		}
 	}
 

@@ -422,6 +422,30 @@ export async function getHealth(): Promise<{ health: HealthOut; bindWarning: str
 }
 
 /**
+ * `AbortSignal.timeout` equivalent built from `AbortController` + `setTimeout`
+ * (Sol review thread 3966717870 on PR #1560). `AbortSignal.timeout` needs
+ * Safari 16; the desktop app's `minimumSystemVersion` in
+ * `apps/desktop/src-tauri/tauri.conf.json` is "11.0", and macOS 11 Big Sur
+ * tops out at Safari/WebKit 15.x - so on a supported install the static
+ * method is simply absent and calling it throws before any fetch is issued.
+ * No feature-detect-and-fall-back: a second, untested code path is worse
+ * than one path that works everywhere.
+ *
+ * The timer is cleared by the caller (`finally`) on both the success and
+ * throw paths, so a settled probe never leaves a pending timer behind.
+ * Exported because `BrowserPanel.svelte`'s `_pingFrontend` needs the exact
+ * same signal for a plain `fetch()` call outside the OpenAPI client.
+ */
+export function timeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
+	const controller = new AbortController();
+	const timer = setTimeout(
+		() => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+		timeoutMs
+	);
+	return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+/**
  * Liveness-only health read for the Backend status dot (pin a66ee132a14e).
  *
  * Separate from `getHealth` on purpose: this one must not hang, so it carries
@@ -434,12 +458,17 @@ export async function getHealth(): Promise<{ health: HealthOut; bindWarning: str
  * carrying the reason.
  */
 export async function pingHealth(timeoutMs: number): Promise<void> {
-	requireBody(
-		await api.GET('/api/v1/health', {
-			cache: 'no-store',
-			signal: AbortSignal.timeout(timeoutMs)
-		})
-	);
+	const { signal, clear } = timeoutSignal(timeoutMs);
+	try {
+		requireBody(
+			await api.GET('/api/v1/health', {
+				cache: 'no-store',
+				signal
+			})
+		);
+	} finally {
+		clear();
+	}
 }
 
 /** PREFLIGHT-01's boot gate (issue #771) reads `GET /api/v1/preflight`.
