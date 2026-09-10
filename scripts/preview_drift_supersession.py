@@ -120,6 +120,19 @@ def _commit_deletion_still_absent(cwd: Path, sha: str, preview_ref: str, path: s
     A merge can remove different content relative to each parent, so both
     are checked, matching ``_touched_paths``'s own union-not-intersection
     treatment of merges.
+
+    Gated on a NET line-count decrease relative to the parent being compared
+    (r3975785961): replacing one line with another -- `0` becomes `1` --
+    also drops `0`'s count to zero, which the per-line comparison above
+    cannot tell apart from a genuine, unpaired deletion. But a replacement
+    is this commit's OWN new content taking `0`'s place, and whether THAT
+    survives is `_commit_owns_a_surviving_line`'s question, not this one --
+    if a later commit replaces `1` with `2`, `0`'s permanent absence is not
+    evidence that the ORIGINAL commit's effect lives on, it is just a stale
+    byproduct of a replacement chain someone else now owns. A pure deletion
+    always leaves the path with STRICTLY FEWER total lines than the parent
+    (nothing took the removed line's place); a same-count replacement does
+    not, so requiring a net decrease is exactly the distinguishing test.
     """
     def _line_counts(ref: str) -> Counter[str]:
         content = _file_content_at(cwd, ref, path)
@@ -129,8 +142,11 @@ def _commit_deletion_still_absent(cwd: Path, sha: str, preview_ref: str, path: s
     candidates = parents if len(parents) == 2 else [f"{sha}~1"]
     current_counts = _line_counts(preview_ref)
     commit_counts = _line_counts(sha)
+    commit_total = sum(commit_counts.values())
     for parent in candidates:
         parent_counts = _line_counts(parent)
+        if commit_total >= sum(parent_counts.values()):
+            continue
         for line, parent_count in parent_counts.items():
             if commit_counts[line] < parent_count and current_counts[line] < parent_count:
                 return True
