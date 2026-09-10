@@ -150,6 +150,18 @@ test("resolvePublishedAnlz picks the freshness-checked answer over the pre-reval
 	assert.equal(errored.anlzError, 'source_failed');
 	assert.equal(errored.bpm, null, 'an authoritative error must clear the public bpm, not leave the old candidate tempo');
 
+	// A candidate carrying own-analyzer-only fields must not strand them on
+	// the published error payload: they describe the grid just emptied above
+	// (Codex P2 BLOCKING, PR #1587, fifth round).
+	const candidateWithOwnFields = {
+		...candidateAnlz,
+		tempo_changes: [{ at_s: 0, bpm_before: 120, bpm_after: 128, confidence: 0.9 }],
+		performance_hints: { dynamic_tempo: true }
+	};
+	const erroredWithOwnFields = guards.resolvePublishedAnlz(null, 'source_failed', candidateWithOwnFields, 120);
+	assert.equal(erroredWithOwnFields.anlz.tempo_changes, undefined, 'tempo_changes must not survive the grid it described being emptied');
+	assert.equal(erroredWithOwnFields.anlz.performance_hints, undefined, 'performance_hints must not survive the grid it described being emptied');
+
 	// Neither usable nor errored (still loading, or no entry at all): falls
 	// through to the pre-revalidation candidate exactly as an ordinary
 	// cache-miss load would.

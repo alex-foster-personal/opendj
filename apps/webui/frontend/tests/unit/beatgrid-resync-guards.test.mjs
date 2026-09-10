@@ -508,6 +508,24 @@ test('adoptAuthoritativeError empties the grid, refreshes BPM to null, and surfa
 	assert.equal(h.anlzError[1], 'ANALYSIS_SOURCE_FAILED');
 });
 
+test('adoptAuthoritativeError clears tempo_changes and performance_hints, not just beats', async () => {
+	// The invalidation only overwrote beatgrid, so a deck that had a
+	// successful dynamic own grid kept claiming tempo-change/dynamic-tempo
+	// detail for a beatgrid that no longer exists once the source failed
+	// (Codex P2 BLOCKING, PR #1587, fifth round).
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = {
+		..._anlz('sid-a', _beats(8, 128)),
+		tempo_changes: [_tempoChange(0, 120, 128)],
+		performance_hints: { dynamic_tempo: true }
+	};
+	h.guards.adoptAuthoritativeError('sid-a', 'ANALYSIS_SOURCE_FAILED');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlz[1].tempo_changes, undefined, 'tempo_changes must not survive the grid it described being emptied');
+	assert.equal(h.anlz[1].performance_hints, undefined, 'performance_hints must not survive the grid it described being emptied');
+});
+
 test('adoptAuthoritativeError ignores decks holding a different track', async () => {
 	const h = _harness();
 	h.stableIds[1] = 'sid-a';

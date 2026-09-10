@@ -449,6 +449,13 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 							...base,
 							beatgrid: { source: base.beatgrid.source, beat_count: 0, beats: [] }
 						};
+						// `tempo_changes`/`performance_hints` are own-analyzer-only
+						// fields describing the grid just emptied above; leaving them
+						// on the published error payload would claim tempo-change /
+						// dynamic-tempo detail for a beatgrid that no longer exists
+						// (Codex P2 BLOCKING, PR #1587, fifth round).
+						delete published.tempo_changes;
+						delete published.performance_hints;
 						publishDeckAnlz(deck, published);
 						publishDeckBpm(deck, null);
 						setDeckAnlzError(deck, code);
@@ -546,11 +553,18 @@ export function resolvePublishedAnlz(
 		return { anlz: usableAnlz, anlzError: null, bpm: usableAnlz.beatgrid.bpm ?? fallbackBpm };
 	}
 	if (errorCode !== null) {
+		const anlz: AnlzData = {
+			...candidateAnlz,
+			beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
+		};
+		// Same as `adoptAuthoritativeError`'s invalidation: these two fields
+		// describe the grid just emptied above and must not survive it onto
+		// the published error payload (Codex P2 BLOCKING, PR #1587, fifth
+		// round).
+		delete anlz.tempo_changes;
+		delete anlz.performance_hints;
 		return {
-			anlz: {
-				...candidateAnlz,
-				beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
-			},
+			anlz,
 			anlzError: errorCode,
 			bpm: null
 		};
