@@ -511,12 +511,17 @@ function _anyFeatureIsOwn(): boolean {
  * this deliberately does nothing - a metadata edit must not cost every loaded
  * deck a multi-MB refetch for a field it cannot have changed.
  *
- * `kind: 'tracks'` is the only signal the daemon publishes for a completed
- * ingest refresh (ingest.py `_refresh_worker`), and it carries no ids, so this
- * refreshes every loaded deck rather than a subset. Returns the unsubscribe
+ * `kind: 'tracks'` is published for a completed ingest refresh
+ * (ingest.py `_refresh_worker`, always with an empty `ids`), but the same
+ * kind is ALSO published with concrete stable_ids for ordinary metadata
+ * edits that never touch the analysis record (`routes/tracks.py`,
+ * `bulk_edit.py`, `find_replace.py`). Those must not each cost every loaded
+ * deck a multi-MB all-deck-plus-sync refetch (discussion_r3977115115 P1
+ * BLOCKING) -- `_onTracksChanged` below filters for the genuine signal
+ * before handing off to the shared refresh trigger. Returns the unsubscribe
  * for the caller's effect cleanup. */
 export function subscribeAnalysisRecordChanges(): () => void {
-	const unsubscribeKind = subscribeKind('tracks', _refreshOwnGridsAfterRecordChange);
+	const unsubscribeKind = subscribeKind('tracks', _onTracksChanged);
 	// The bus fires resync on reconnect, a sequence gap, a malformed frame and a
 	// slow-consumer drop, and it replays NOTHING: `_fireResync` walks the resync
 	// listeners only, never the kind listeners (events-bus.ts). Its own header
@@ -525,14 +530,34 @@ export function subscribeAnalysisRecordChanges(): () => void {
 	// bus is least reliable" -- so a missed analysis-completion event left a
 	// loaded OWN deck on the superseded grid indefinitely, while the bus was
 	// explicitly reporting that events had been missed
-	// (discussion_r3969942717 P1 BLOCKING). Same handler, because a resync says
-	// "you missed something, refetch" and that is exactly what a `tracks` change
-	// means here too. Disposed together with the kind subscription.
-	const unsubscribeResync = subscribeResync(_refreshOwnGridsAfterRecordChange);
+	// (discussion_r3969942717 P1 BLOCKING). A resync carries no ids -- it means
+	// "you may have missed anything", so unlike `_onTracksChanged` it always
+	// refreshes unconditionally. Disposed together with the kind subscription.
+	const unsubscribeResync = subscribeResync(() => _refreshOwnGridsAfterRecordChange());
 	return () => {
 		unsubscribeKind();
 		unsubscribeResync();
 	};
+}
+
+/** Filters `kind: 'tracks'` events down to the ones that can actually mean an
+ * analysis record changed: the genuine ingest-completion signal always
+ * carries an empty `ids` (ingest.py `_refresh_worker`), and an ordinary
+ * metadata edit that happens to name a track currently loaded on a deck is
+ * treated the same way as a defensive match rather than assumed inert,
+ * since a loaded deck is exactly what an unnecessary refresh is expensive
+ * for. Any other non-empty-id event is an edit to an unloaded track's
+ * rating/tags/notes and is dropped here rather than triggering a refresh. */
+function _onTracksChanged(ids: string[]): void {
+	if (ids.length !== 0 && !_touchesLoadedDeck(ids)) return;
+	_refreshOwnGridsAfterRecordChange();
+}
+
+function _touchesLoadedDeck(ids: string[]): boolean {
+	return DECK_IDS.some((deck) => {
+		const stable_id = deckStates[deck].stable_id;
+		return stable_id !== null && ids.includes(stable_id);
+	});
 }
 
 function _refreshOwnGridsAfterRecordChange(): void {
@@ -541,6 +566,25 @@ function _refreshOwnGridsAfterRecordChange(): void {
 	_recordRefreshGeneration += 1;
 	void _drainPendingRecordRefresh();
 }
+
+/** The generation-tagged drain currently running, so overlapping callers for
+ * the SAME generation (several 5s polls landing while a slow ANLZ response
+ * is still in flight, or the poll racing the event that just started it)
+ * await that one all-deck-plus-sync refresh instead of each enqueuing their
+ * own. Without this, every poll that reached `_drainPendingRecordRefresh`
+ * before the running refresh cleared `_recordRefreshPending` queued a fresh
+ * refresh behind it, building a backlog that kept invalidating the cache and
+ * blocking live controls well after the original change had already been
+ * served (discussion_r3977115120 P1 BLOCKING).
+ *
+ * Tagged by generation, not a bare flag: a change that lands (and bumps
+ * `_recordRefreshGeneration`) WHILE this drain is in flight cannot be
+ * reflected by it - `_refreshDecks` already declines to clear
+ * `_recordRefreshPending` for a generation newer than the one it started
+ * with (discussion_r3972154604) - so that newer generation must still open
+ * its OWN concurrent drain rather than being coalesced into this one. */
+let _drainInFlight: Promise<void> | null = null;
+let _drainInFlightGeneration: number | null = null;
 
 /** Runs a pending record-change refresh, and LEAVES IT PENDING if it fails.
  *
@@ -553,6 +597,24 @@ function _refreshOwnGridsAfterRecordChange(): void {
  * than adding a second timer with its own lifecycle to leak. */
 async function _drainPendingRecordRefresh(): Promise<void> {
 	if (!_recordRefreshPending) return;
+	if (_drainInFlight !== null && _drainInFlightGeneration === _recordRefreshGeneration) {
+		return _drainInFlight;
+	}
+	const generation = _recordRefreshGeneration;
+	const drain = _runRecordRefreshDrain();
+	_drainInFlight = drain;
+	_drainInFlightGeneration = generation;
+	try {
+		await drain;
+	} finally {
+		if (_drainInFlightGeneration === generation) {
+			_drainInFlight = null;
+			_drainInFlightGeneration = null;
+		}
+	}
+}
+
+async function _runRecordRefreshDrain(): Promise<void> {
 	try {
 		// This refresh never goes through `_adopt`, so nothing else records what
 		// /anlz actually served - and it CAN legitimately differ from `features`:
