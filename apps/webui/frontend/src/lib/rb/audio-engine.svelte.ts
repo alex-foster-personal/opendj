@@ -91,11 +91,7 @@ import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
-import {
-	notePresentationClock,
-	notePresentationTickFailure,
-	readOutputTimestamp as _readOutputTimestamp
-} from '$lib/rb/presentation-clock-report';
+import { notePresentationClock, notePresentationTickFailure, readOutputTimestamp as _readOutputTimestamp } from '$lib/rb/presentation-clock-report';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -2833,7 +2829,8 @@ class RbAudioEngine implements AudioEngine {
 		// rebuilt graph and a silent sample-rate mismatch.
 		let loadCtx: AudioContext | null = null;
 		// Always-on stage timings + load conditions -> DevTools filter `[perf]`.
-		const perfMs = beginDeckLoad(deck);
+		// spanId binds every recordDeckLoad below to THIS load's own span (#1658).
+		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
 		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
 			const t0 = performance.now();
@@ -2910,7 +2907,7 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState);
+			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState, spanId);
 			if (processor !== null) {
 				try {
 					await processor.dispose();
@@ -3029,14 +3026,14 @@ class RbAudioEngine implements AudioEngine {
 			// solo=0 until the 16-deep window evicts it: a contention label that
 			// is wrong while looking exactly like a measurement (#1658 review).
 			stages.total = perfMs();
-			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState);
+			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
 			throw exc;
 		});
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.load_generation += 1;
 		st.last_load_stages = { ...stages };
-		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
+		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
 		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
 		// deck can play; the stem bundle lands afterwards and moves st.stems off
 		// `loading` on its own. Errors are handled inside, so no rejection can
