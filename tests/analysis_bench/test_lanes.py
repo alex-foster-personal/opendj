@@ -27,7 +27,19 @@ def test_every_lane_declares_both_controls() -> None:
 
 def test_beatgrid_continues_its_own_counter() -> None:
     assert lanes.get_lane("beatgrid").round_floor == 2
+    # Key round 0's scored table is still being continued in-place under
+    # `### Key lane round 0`; floor stays 0 until that measurement lands so
+    # a later `--post` cannot skip it.
     assert lanes.get_lane("key").round_floor == 0
+
+
+def test_key_registers_krumhansl_and_skey() -> None:
+    names = [c.name for c in lanes.get_lane("key").candidates]
+    assert names == [
+        "constant_key", "most_common_key", "truth_echo", "truth_echo_mik",
+        "krumhansl", "skey",
+    ]
+    assert lanes.get_lane("key").fixture_builder == "scripts/build_key_bundle.py"
 
 
 def test_loudness_and_waveform_lanes_have_scorers() -> None:
