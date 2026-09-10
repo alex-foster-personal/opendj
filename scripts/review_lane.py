@@ -325,7 +325,7 @@ def parse_findings(output: str, run_id: str, fence: Fence, max_findings: int) ->
     mine = [b for b in blocks if run_id in b] or _bare_replies(output, run_id)
     if not mine:
         raise TriageError(
-            f"no {fence.open} block, and no bare JSON object whose run is {run_id}, carrying "
+            f"no {fence.open} block, and no standalone JSON object whose run is {run_id}, carrying "
             f"run id {run_id} in the model output; the model did not follow the reply "
             f"contract. Tail:\n{output[-800:]}"
         )
@@ -389,20 +389,38 @@ def _bare_replies(output: str, run_id: str) -> list[str]:
     tests, or a mis-fenced reply) is never this lane's answer, and the
     unfenced path must not reopen that. Each candidate is re-serialized so the
     caller parses it exactly as it parses a fenced block.
+
+    The object must also STAND ALONE: it opens a line and nothing but
+    whitespace follows it on its last line, and it is not inside a Markdown
+    code block. Any decodable substring used to count, so a model writing "I
+    would have returned {...}, but could not review" posted a clean review
+    (Codex review, #1746). A candidate too deeply nested to decode is skipped
+    like any other undecodable one, rather than crashing the lane on a diff
+    that carries one (Codex review, #1746).
     """
     for fence in ALL_FENCES:
         fenced = re.escape(fence.open) + r".*?" + re.escape(fence.close)
         output = re.sub(fenced, "", output, flags=re.DOTALL)
+    output = _MARKDOWN_CODE_BLOCK.sub("", output)
     decoder = json.JSONDecoder()
     found: list[str] = []
-    for start in (m.start() for m in re.finditer(r"\{", output)):
+    for match in _LINE_OPENING_BRACE.finditer(output):
         try:
-            value, _ = decoder.raw_decode(output, start)
-        except json.JSONDecodeError:
+            value, end = decoder.raw_decode(output, match.end() - 1)
+        except (json.JSONDecodeError, RecursionError):
             continue
-        if isinstance(value, dict) and value.get("run") == run_id:
+        rest_of_last_line = output[end:].split("\n", 1)[0]
+        if rest_of_last_line.strip() or not isinstance(value, dict):
+            continue
+        if value.get("run") == run_id:
             found.append(json.dumps(value))
     return found
+
+
+#: A brace that opens its line: where a standalone reply object can start.
+_LINE_OPENING_BRACE = re.compile(r"^[ \t]*\{", re.MULTILINE)
+#: A Markdown code block quotes JSON; it is never the reply itself.
+_MARKDOWN_CODE_BLOCK = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.DOTALL | re.MULTILINE)
 
 
 # ----- posting ------------------------------------------------------------

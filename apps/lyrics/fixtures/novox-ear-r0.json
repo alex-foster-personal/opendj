@@ -1,0 +1,344 @@
+{
+ "fixture": "novox-ear-r0",
+ "rated_by": "the maintainer",
+ "rated_on": "2026-08-28",
+ "counter": "novox round 0",
+ "question_asked": "Would a karaoke lyric pane make sense here? Sung or chanted words = has vocals; wordless pads, chops and 'aah' textures = instrumental.",
+ "method": "Blind boundary-band listening in scripts/bench/novox_listen.html: 112 MTG-Jamendo electronic tracks measuring 2-30% stem vocal coverage, hash-ordered so coverage order leaks nothing, with coverage %, the dataset's human label and the fit/held-out split hidden until each row was rated. Seekable waveforms (mix RMS + vocal-stem RMS + detected regions) so a verdict costs seconds, not a full listen.",
+ "corpus": "MTG-Jamendo voice_instrumental, electronic-tagged subset",
+ "coverage_signal": "scripts/vocal_region_worker.py ratio_envelope + regions_payload, hop 0.5s, ON 0.10 / OFF 0.05 hysteresis, over Mel-Band RoFormer stems",
+ "agreement_with_dataset": "31/33",
+ "disagreements_note": "Both disagreements run the SAME direction: the maintainer heard vocals (24.7% and 27.0% coverage) where the dataset annotators said instrumental. His ear is stricter than the corpus, which pushes the safe threshold DOWN - the conservative direction for this product.",
+ "ratings": [
+  {
+   "track_id": "track_0786260",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.0,
+   "vocal_s": 7.0,
+   "duration_s": 344.3,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0391335",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.0,
+   "vocal_s": 6.0,
+   "duration_s": 300.0,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0037230",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.1,
+   "vocal_s": 1.5,
+   "duration_s": 70.1,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0310177",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.1,
+   "vocal_s": 5.5,
+   "duration_s": 257.0,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0075046",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.2,
+   "vocal_s": 7.5,
+   "duration_s": 339.8,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0256864",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.3,
+   "vocal_s": 3.5,
+   "duration_s": 154.5,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0319625",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.4,
+   "vocal_s": 4.5,
+   "duration_s": 190.7,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0726872",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 2.4,
+   "vocal_s": 5.0,
+   "duration_s": 211.6,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1242000",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 3.1,
+   "vocal_s": 7.5,
+   "duration_s": 244.0,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1233765",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 4.2,
+   "vocal_s": 16.5,
+   "duration_s": 391.1,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1394293",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 4.3,
+   "vocal_s": 12.5,
+   "duration_s": 288.0,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1413402",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 4.7,
+   "vocal_s": 21.0,
+   "duration_s": 442.9,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1137232",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 4.8,
+   "vocal_s": 8.5,
+   "duration_s": 177.7,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1075047",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 5.4,
+   "vocal_s": 38.0,
+   "duration_s": 707.0,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0036353",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 5.4,
+   "vocal_s": 28.0,
+   "duration_s": 518.1,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0901995",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 6.1,
+   "vocal_s": 21.0,
+   "duration_s": 342.0,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1399588",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 6.9,
+   "vocal_s": 20.0,
+   "duration_s": 290.2,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1163556",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 6.9,
+   "vocal_s": 16.0,
+   "duration_s": 231.9,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1190842",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 8.4,
+   "vocal_s": 23.0,
+   "duration_s": 272.2,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0462266",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 9.3,
+   "vocal_s": 21.5,
+   "duration_s": 231.2,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1203974",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 9.4,
+   "vocal_s": 7.5,
+   "duration_s": 80.0,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1297930",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 10.1,
+   "vocal_s": 34.5,
+   "duration_s": 343.1,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1301127",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 11.4,
+   "vocal_s": 48.0,
+   "duration_s": 420.0,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0981232",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 12.3,
+   "vocal_s": 22.0,
+   "duration_s": 178.8,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0115135",
+   "ear": "voice",
+   "dataset_label": "voice",
+   "coverage_pct": 13.0,
+   "vocal_s": 36.5,
+   "duration_s": 281.0,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1409401",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 14.2,
+   "vocal_s": 35.5,
+   "duration_s": 250.9,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0505949",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 18.6,
+   "vocal_s": 65.0,
+   "duration_s": 349.7,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1266723",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 22.3,
+   "vocal_s": 95.5,
+   "duration_s": 429.2,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_1159310",
+   "ear": "voice",
+   "dataset_label": "instrumental",
+   "coverage_pct": 24.7,
+   "vocal_s": 102.5,
+   "duration_s": 414.4,
+   "held_out": true,
+   "agrees_with_dataset": false
+  },
+  {
+   "track_id": "track_0075045",
+   "ear": "voice",
+   "dataset_label": "voice",
+   "coverage_pct": 25.0,
+   "vocal_s": 83.0,
+   "duration_s": 331.5,
+   "held_out": false,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0306199",
+   "ear": "voice",
+   "dataset_label": "voice",
+   "coverage_pct": 26.0,
+   "vocal_s": 67.5,
+   "duration_s": 259.8,
+   "held_out": true,
+   "agrees_with_dataset": true
+  },
+  {
+   "track_id": "track_0218724",
+   "ear": "voice",
+   "dataset_label": "instrumental",
+   "coverage_pct": 27.0,
+   "vocal_s": 86.0,
+   "duration_s": 318.5,
+   "held_out": true,
+   "agrees_with_dataset": false
+  },
+  {
+   "track_id": "track_0178481",
+   "ear": "instrumental",
+   "dataset_label": "instrumental",
+   "coverage_pct": 30.0,
+   "vocal_s": 60.5,
+   "duration_s": 201.4,
+   "held_out": true,
+   "agrees_with_dataset": true
+  }
+ ]
+}

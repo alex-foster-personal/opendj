@@ -1,0 +1,38 @@
+# Hand-curated failure-mode tags for JamendoLyrics songs.
+# Schema: <song_name>: list of {tag, words: [start, end], note}.
+#   words = 0-based INCLUSIVE indices into lyrics/<song_name>.words.txt;
+#   omit words to tag the whole song. Loaded by apps/lyrics/annotations.py,
+#   sliced by `python -m apps.lyrics score --pred DIR --by-tag`.
+# Tag vocabulary so far (add freely, keep kebab-case):
+#   non-lexical-run     oh/ah/la vocalization blocks, no dictionary words
+#   bridge-detach       aligner loses lock in an instrumental/bridge and re-attaches wrong
+#   separation-artifact clean on full mix but WORSE on separated stems
+#   very-hard           humans struggle too; do not expect the aligner to win
+
+CHRISTMAS_AVEC_TOI_-_imfreshyourepretty:
+  - tag: non-lexical-run
+    words: [0, 31]
+    note: opening oh/ah block (4 lines); onsets smeared, spotted by the maintainer Thu 27 Aug 2026
+  - tag: non-lexical-run
+    words: [112, 143]
+    note: same oh/ah block, mid-song repeat
+  - tag: non-lexical-run
+    words: [264, 311]
+    note: same oh/ah block, extended final repeat
+
+Rxbyn_-_Bad_Side:
+  - tag: bridge-detach
+    words: [283, 439]
+    note: heavy-reverb bridge from gt 139s; aligner loses lock and never recovers
+      to song end (150 of these 157 words >5s off in rounds 0 AND 1 -- clean
+      vocals do not fix it)
+
+Avercage_-_Embers:
+  - tag: very-hard
+    note: barely human-parseable (the maintainer, by ear); round-0 aligner locked onto a
+      wrong section entirely, AAE 39.6s
+
+Lower_Loveday_-_Is_It_Right_:
+  - tag: separation-artifact
+    note: full-mix round 0 AAE 0.31s but stems round 1 (edges stars) 1.59s --
+      worst of the 7 stem regressions

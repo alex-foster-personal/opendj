@@ -67,7 +67,7 @@ def _anchor_beats(anchor: str | None) -> float:
     return _ANCHOR_BEATS[anchor]
 
 
-def _clock_beat_s(over: dict[str, Any], mirror: Mapping[str, Any]) -> float | None:
+def clock_beat_s(over: dict[str, Any], mirror: Mapping[str, Any]) -> float | None:
     """Wall seconds per beat on the deck this duration times against.
 
     ``None`` when the page will NOT hold the order open for beats, so the
@@ -129,7 +129,7 @@ def ramp_hold_s(over: dict[str, Any], mirror: Mapping[str, Any]) -> float | None
     if unit not in _BEATS_PER:
         raise InvocationError(f"cannot size a request deadline for duration unit {unit!r}")
     beats = n * _BEATS_PER[unit] + _anchor_beats(over.get("anchor"))
-    beat_s = _clock_beat_s(over, mirror)
+    beat_s = clock_beat_s(over, mirror)
     return None if beat_s is None else beats * beat_s
 
 
@@ -259,3 +259,27 @@ __all__ = [
     "sequence",
     "single",
 ]
+
+
+def slowed_since(
+    over: dict[str, Any], beat_s: float | None, mirror: Mapping[str, Any]
+) -> str | None:
+    """Has the ramp clock SLOWED since a deadline was sized at ``beat_s``?
+
+    Returns the sentence to say so, or ``None`` when it has not, which includes
+    the clock speeding up and the mirror no longer being able to answer. Only a
+    slowdown can make a deadline too short; reporting anything else would blame
+    the clock for a page that is simply wedged, and those two demand opposite
+    responses from whoever reads the error.
+    """
+    if beat_s is None:
+        return None
+    now_s = clock_beat_s(over, mirror)
+    if now_s is None or now_s <= beat_s:
+        return None
+    return (
+        f"The ramp clock has SLOWED since that deadline was sized "
+        f"({60.0 / beat_s:.4g} BPM then, {60.0 / now_s:.4g} BPM now), so the page is "
+        "most likely still running this ramp rather than wedged; re-run with a "
+        "larger --timeout"
+    )

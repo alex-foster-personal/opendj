@@ -184,7 +184,14 @@ cmd_verify_dmg_app() {
 # The sibling EXIT trap in cmd_verify_dmg_app does interpolate, and is safe for
 # a different reason: its path comes from `mktemp -d /tmp/...` with a hardcoded
 # prefix, so no part of it is environment-derived.
-NOTARY_APP_ZIP=""
+#
+# A DIRECTORY, not a suffixed file. BSD mktemp randomizes only TRAILING X's,
+# so the old `opendj-notary-app.XXXXXX.zip` template was one fixed literal
+# name, and a failed run that left it behind made every later signed build on
+# that host die with "mkstemp failed ... File exists" (silver, Thu 10 Sep
+# 2026). The EXIT trap is what cleans up after `die`: die exits, and an exit
+# never fires a RETURN trap, which is how that file was left behind at all.
+NOTARY_APP_DIR=""
 
 cmd_notarize_app() {
     local app="${1:-}"
@@ -197,11 +204,12 @@ cmd_notarize_app() {
     [ -d "$app" ] || die "no app bundle at $app"
 
     local out started elapsed
-    NOTARY_APP_ZIP=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")
-    trap 'rm -f "$NOTARY_APP_ZIP"' RETURN
-    ditto -c -k --keepParent "$app" "$NOTARY_APP_ZIP" || die "could not archive app for notarization"
+    NOTARY_APP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX")
+    trap 'rm -rf "$NOTARY_APP_DIR"' RETURN
+    trap 'rm -rf "$NOTARY_APP_DIR"' EXIT
+    ditto -c -k --keepParent "$app" "$NOTARY_APP_DIR/app.zip" || die "could not archive app for notarization"
     started=$(date +%s)
-    out=$(xcrun notarytool submit "$NOTARY_APP_ZIP" \
+    out=$(xcrun notarytool submit "$NOTARY_APP_DIR/app.zip" \
         --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" --wait 2>&1) || {
         printf '%s\n' "$out"
         die "notarytool submit failed for app"
