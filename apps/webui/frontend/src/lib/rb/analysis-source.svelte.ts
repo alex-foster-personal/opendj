@@ -515,24 +515,20 @@ function _anyFeatureIsOwn(): boolean {
  * (ingest.py `_refresh_worker`, always with an empty `ids`), but the same
  * kind is ALSO published with concrete stable_ids for ordinary metadata
  * edits that never touch the analysis record (`routes/tracks.py`,
- * `bulk_edit.py`, `find_replace.py`). Those must not each cost every loaded
- * deck a multi-MB all-deck-plus-sync refetch (discussion_r3977115115 P1
- * BLOCKING) -- `_onTracksChanged` below filters for the genuine signal
- * before handing off to the shared refresh trigger. Returns the unsubscribe
- * for the caller's effect cleanup. */
+ * `bulk_edit.py`, `find_replace.py`); `_onTracksChanged` below filters for
+ * the genuine signal so those do not each cost every loaded deck a
+ * multi-MB all-deck-plus-sync refetch (discussion_r3977115115 P1 BLOCKING).
+ * Returns the unsubscribe for the caller's effect cleanup. */
 export function subscribeAnalysisRecordChanges(): () => void {
 	const unsubscribeKind = subscribeKind('tracks', _onTracksChanged);
 	// The bus fires resync on reconnect, a sequence gap, a malformed frame and a
 	// slow-consumer drop, and it replays NOTHING: `_fireResync` walks the resync
-	// listeners only, never the kind listeners (events-bus.ts). Its own header
-	// states the rule this subscription was breaking -- "a consumer that handles
-	// a kind MUST also handle resync, otherwise it goes stale exactly when the
-	// bus is least reliable" -- so a missed analysis-completion event left a
-	// loaded OWN deck on the superseded grid indefinitely, while the bus was
-	// explicitly reporting that events had been missed
-	// (discussion_r3969942717 P1 BLOCKING). A resync carries no ids -- it means
-	// "you may have missed anything", so unlike `_onTracksChanged` it always
-	// refreshes unconditionally. Disposed together with the kind subscription.
+	// listeners only, never the kind listeners (events-bus.ts) -- "a consumer
+	// that handles a kind MUST also handle resync" (events-bus.ts's own header),
+	// so a missed analysis-completion event left a loaded OWN deck on the
+	// superseded grid indefinitely (discussion_r3969942717 P1 BLOCKING). A
+	// resync carries no ids and means "you may have missed anything", so unlike
+	// `_onTracksChanged` it always refreshes unconditionally.
 	const unsubscribeResync = subscribeResync(() => _refreshOwnGridsAfterRecordChange());
 	return () => {
 		unsubscribeKind();
@@ -540,24 +536,17 @@ export function subscribeAnalysisRecordChanges(): () => void {
 	};
 }
 
-/** Filters `kind: 'tracks'` events down to the ones that can actually mean an
- * analysis record changed: the genuine ingest-completion signal always
- * carries an empty `ids` (ingest.py `_refresh_worker`), and an ordinary
- * metadata edit that happens to name a track currently loaded on a deck is
- * treated the same way as a defensive match rather than assumed inert,
- * since a loaded deck is exactly what an unnecessary refresh is expensive
- * for. Any other non-empty-id event is an edit to an unloaded track's
- * rating/tags/notes and is dropped here rather than triggering a refresh. */
+/** The genuine ingest-completion signal always carries an empty `ids`; an
+ * edit naming a currently loaded deck is matched too, defensively, since a
+ * loaded deck is exactly what an unnecessary refresh is expensive for.
+ * Anything else is an edit to an unloaded track and is dropped. */
 function _onTracksChanged(ids: string[]): void {
-	if (ids.length !== 0 && !_touchesLoadedDeck(ids)) return;
-	_refreshOwnGridsAfterRecordChange();
-}
-
-function _touchesLoadedDeck(ids: string[]): boolean {
-	return DECK_IDS.some((deck) => {
+	const touchesLoadedDeck = DECK_IDS.some((deck) => {
 		const stable_id = deckStates[deck].stable_id;
 		return stable_id !== null && ids.includes(stable_id);
 	});
+	if (ids.length !== 0 && !touchesLoadedDeck) return;
+	_refreshOwnGridsAfterRecordChange();
 }
 
 function _refreshOwnGridsAfterRecordChange(): void {
@@ -567,73 +556,45 @@ function _refreshOwnGridsAfterRecordChange(): void {
 	void _drainPendingRecordRefresh();
 }
 
-/** The generation-tagged drain currently running, so overlapping callers for
- * the SAME generation (several 5s polls landing while a slow ANLZ response
- * is still in flight, or the poll racing the event that just started it)
- * await that one all-deck-plus-sync refresh instead of each enqueuing their
- * own. Without this, every poll that reached `_drainPendingRecordRefresh`
- * before the running refresh cleared `_recordRefreshPending` queued a fresh
- * refresh behind it, building a backlog that kept invalidating the cache and
- * blocking live controls well after the original change had already been
- * served (discussion_r3977115120 P1 BLOCKING).
- *
- * Tagged by generation, not a bare flag: a change that lands (and bumps
- * `_recordRefreshGeneration`) WHILE this drain is in flight cannot be
- * reflected by it - `_refreshDecks` already declines to clear
- * `_recordRefreshPending` for a generation newer than the one it started
- * with (discussion_r3972154604) - so that newer generation must still open
- * its OWN concurrent drain rather than being coalesced into this one. */
+/** The generation-tagged drain currently running, so SAME-generation callers
+ * (overlapping polls, or a poll racing the event that just started it) await
+ * this one refresh instead of each enqueuing their own, which used to build
+ * a backlog behind a slow refresh (discussion_r3977115120 P1 BLOCKING).
+ * Tagged by generation, not a bare flag: a change that bumps
+ * `_recordRefreshGeneration` mid-drain cannot be reflected by it -
+ * `_refreshDecks` already declines to clear `_recordRefreshPending` for a
+ * newer generation than the one it started with (discussion_r3972154604) -
+ * so that newer generation must still open its own concurrent drain rather
+ * than being coalesced into this one. */
 let _drainInFlight: Promise<void> | null = null;
 let _drainInFlightGeneration: number | null = null;
 
-/** Runs a pending record-change refresh, and LEAVES IT PENDING if it fails.
- *
- * Called on every poll as well as on the event itself, which is what makes the
- * retry real: the failure cannot be recovered by the ordinary source-change
- * path, because this refresh does not change the source, so
- * `_decksDisagreeWith` correctly sees nothing to do while the decks sit on a
- * superseded grid with the shared cache already emptied under them
- * (discussion_r3969942725 P1 BLOCKING). Reuses the existing 5s poll rather
- * than adding a second timer with its own lifecycle to leak. */
+/** Runs a pending record-change refresh, and LEAVES IT PENDING if it fails so
+ * the existing 5s poll retries it (discussion_r3969942725 P1 BLOCKING). */
 async function _drainPendingRecordRefresh(): Promise<void> {
 	if (!_recordRefreshPending) return;
 	if (_drainInFlight !== null && _drainInFlightGeneration === _recordRefreshGeneration) {
 		return _drainInFlight;
 	}
 	const generation = _recordRefreshGeneration;
-	const drain = _runRecordRefreshDrain();
-	_drainInFlight = drain;
 	_drainInFlightGeneration = generation;
-	try {
-		await drain;
-	} finally {
-		if (_drainInFlightGeneration === generation) {
-			_drainInFlight = null;
-			_drainInFlightGeneration = null;
-		}
-	}
-}
-
-async function _runRecordRefreshDrain(): Promise<void> {
-	try {
-		// This refresh never goes through `_adopt`, so nothing else records what
-		// /anlz actually served - and it CAN legitimately differ from `features`:
-		// /anlz resolves rbx-vs-own server-side at fetch time, so an external
-		// client that temporarily flips the daemon to rbx while this event-driven
-		// refresh is in flight makes it publish rbx payloads even though
-		// `features` still says own. Leaving the watermark on the stale 'own'
-		// intent means a later poll that finds the daemon back on 'own' compares
-		// own-against-own, sees no disagreement, and never runs the refresh that
-		// would actually bring the decks back in step (discussion_r3973129057 P2
-		// BLOCKING). `served` is `null` when nothing was loaded, in which case
-		// this falls back to `features` unchanged - a harmless no-op.
-		const served = await _refreshDecks(true);
-		_recordDeckSources(analysisSourceState.features, served);
-	} catch (exc) {
-		console.error(
-			'[analysis-source] own-grid refresh after an analysis record change failed; ' +
-				'still pending, retrying on the next poll',
-			exc
-		);
-	}
+	// `_refreshDecks` never goes through `_adopt`, so `served` can legitimately
+	// differ from `features` (an external client flipping the daemon mid-flight);
+	// `_recordDeckSources` records what actually got served, not the stale intent.
+	_drainInFlight = _refreshDecks(true)
+		.then((served) => _recordDeckSources(analysisSourceState.features, served))
+		.catch((exc) => {
+			console.error(
+				'[analysis-source] own-grid refresh after an analysis record change failed; ' +
+					'still pending, retrying on the next poll',
+				exc
+			);
+		})
+		.finally(() => {
+			if (_drainInFlightGeneration === generation) {
+				_drainInFlight = null;
+				_drainInFlightGeneration = null;
+			}
+		});
+	return _drainInFlight;
 }
