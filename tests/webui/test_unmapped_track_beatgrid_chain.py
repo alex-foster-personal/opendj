@@ -180,7 +180,13 @@ def test_anlz_serves_an_empty_grid_rather_than_analysis_not_found(
     # facts (the beatgrid) stay empty regardless of whether OUR waveform decode
     # below can run - see test_anlz_decodes_real_peaks_for_an_unmapped_track
     # for the decoder-dependent half of this same response.
-    assert body["beatgrid"] == {"beat_count": 0, "beats": []}
+    # `source` is REQUIRED on every /anlz beatgrid block, own or rekordbox
+    # (NATIVE-01, PR #1587): a consumer must never infer the producer. An
+    # unmapped file has no rekordbox grid, but this IS the rekordbox branch
+    # and "rekordbox with no beats" is what the empty arrays already say.
+    assert body["beatgrid"] == {
+        "source": "rekordbox", "beat_count": 0, "beats": []
+    }
 
 
 @pytest.mark.requires_ffmpeg

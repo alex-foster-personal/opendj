@@ -188,7 +188,7 @@ for (const surface of ['library', 'performance', 'other-lazy']) {
   // offset from the limit and deriving it would misstate the margin.
   const overflow = {
     library: 260000,
-    performance: 210000,
+    performance: 228000,
     'other-lazy': _limitOf('other-lazy') + 8000
   }[surface];
   test(`budget "${surface}" FAILS when its own weight exceeds the limit`, () => {

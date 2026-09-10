@@ -19,7 +19,7 @@ async function raise(page: Page, message: string, kind = 'info', dismissMs = 60_
 	return page.evaluate(
 		async ([store, msg, k, ms]) => {
 			const mod = await import(/* @vite-ignore */ store as string);
-			mod.pushToast(msg as string, k as 'info' | 'error', ms as number);
+			mod.pushToast(msg as string, k as 'info' | 'warn' | 'error', ms as number);
 			return mod.toasts[mod.toasts.length - 1].logId as string;
 		},
 		[STORE, message, kind, dismissMs] as const
@@ -105,4 +105,45 @@ test('clicking a toast copies a report whose id matches the logged id', async ({
 	const logLine = consoleLines.find((l) => l.includes('[perf-event] toast-error'));
 	expect(logLine, 'every toast writes a ring row').toBeTruthy();
 	expect(logLine).toContain(`id=${id}`);
+});
+
+// pin 9bf12adccb45: "still show toast but make it orange warning instead of red
+// and blocking". A BAR beat sync that folds to half/double tempo now HAPPENS
+// and reports it; it is neither a failure nor a neutral note, and a two-value
+// scale forced it to be one of those.
+//
+// Computed colour in a real browser, because "is it orange" is a question about
+// what the compositor paints: a later rule, an !important or a media query
+// could win it without any visible change to this component's own source.
+//
+// - if warn paints the same border as info the fold is invisible -> broken.
+// - if warn paints the same border as error then a lock that SUCCEEDED still
+//   reads as a failure, which is the thing the pin asked to stop -> broken.
+test('a warn toast paints its own colour, between info and error', async ({ page }) => {
+	const info = await raise(page, 'plain note', 'info');
+	const warn = await raise(page, 'folded lock', 'warn');
+	const error = await raise(page, 'real failure', 'error');
+
+	const border = async (id: string): Promise<string> =>
+		page
+			.locator(`[data-toast-id="${id}"]`)
+			.evaluate((node) => getComputedStyle(node).borderTopColor);
+	const infoBorder = await border(info);
+	const warnBorder = await border(warn);
+	const errorBorder = await border(error);
+
+	expect(warnBorder, 'a warn toast must not look like a neutral note').not.toBe(infoBorder);
+	expect(warnBorder, 'a successful-but-folded lock must not look like a failure').not.toBe(
+		errorBorder
+	);
+	// And it is the declared warning token rather than an arbitrary third value.
+	const declared = await page.evaluate(() => {
+		const probe = document.createElement('span');
+		document.body.appendChild(probe);
+		probe.style.borderTopColor = 'var(--warning)';
+		const resolved = getComputedStyle(probe).borderTopColor;
+		probe.remove();
+		return resolved;
+	});
+	expect(warnBorder).toBe(declared);
 });

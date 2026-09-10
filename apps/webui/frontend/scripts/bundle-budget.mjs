@@ -76,6 +76,18 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              to trip on the next few bytes of ordinary feature work
 //              regardless. With this PR: measured 205,141, +5% ceil-to-KiB
 //              => 216,064 (211 KiB).
+//              RAISED Thu 10 Sep 2026 (PR #1587): CI (`frontend unit + check +
+//              build`, run 34458533006, job 102810569554) measured 216,124 -
+//              over the 216,064 ceiling by 60 bytes. This PR's own changes do
+//              not add that weight: a clean local build of this PR's head
+//              measures 214,843 (1,221 bytes UNDER the old ceiling), and a
+//              clean local build of main's own tip (b21da5f50c) measures
+//              215,390 - already 99.7% of the old ceiling before this PR. The
+//              gap between local and CI gzip output (~1,000+ bytes on
+//              identical source) is a build-environment difference, not a
+//              code regression; main itself was already one ordinary commit
+//              away from tripping this ceiling. Same +5% ceil-to-KiB rule
+//              applied to the CI-measured figure => 227,328 (222 KiB).
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
 //              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
 //              policy matrix, machines, pins, overview + api-cloudsync client)
@@ -95,7 +107,7 @@ const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
-  { name: 'performance', limit: 216064, measured: 205141, note: '/performance and children' },
+  { name: 'performance', limit: 227328, measured: 216124, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
