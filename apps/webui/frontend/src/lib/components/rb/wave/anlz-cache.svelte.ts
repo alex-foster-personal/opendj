@@ -155,12 +155,22 @@ function _fetchAndPublish(stable_id: string): void {
  * fetches under the current generation) instead of stuck forever. Only
  * clears the placeholder THIS call wrote: if a newer fetch for the same
  * stable_id already overwrote it - its own later `loading` marker, or an
- * already-settled `ready`/`error` result - that must survive untouched. */
+ * already-settled `ready`/`error` result - that must survive untouched.
+ *
+ * A discarded fetch is not always a stale one nobody wants: `BrowserPanel`
+ * only issues `ensureAnlz` from `selectRow`, and its reactive cache observer
+ * merely consumes a ready entry rather than restarting a missing one. A
+ * selected-but-unloaded row whose prefetch got superseded by a source switch
+ * therefore never got fetched again until the row was reselected or an
+ * unrelated deck load happened to request it. Restarting here when the
+ * stable_id still has an active consumer closes that gap while the
+ * generation check above still guarantees we only ever restart OUR OWN
+ * stale placeholder, never a newer fetch that already overwrote it. */
 function _discardSuperseded(stable_id: string, generation: number): void {
 	const entry = _cache[stable_id];
-	if (entry !== undefined && entry.status === 'loading' && entry.generation === generation) {
-		delete _cache[stable_id];
-	}
+	if (entry === undefined || entry.status !== 'loading' || entry.generation !== generation) return;
+	delete _cache[stable_id];
+	if (_hasActiveConsumer(stable_id)) _fetchAndPublish(stable_id);
 }
 
 /** One pending ambient-retry timer per stable_id, so a second `_publishAnlzResult`
