@@ -37,6 +37,8 @@ ratchet); the stamp-repair PREMISE assertion stays here because it is this
 tier's own premise, not a quarantine behaviour.
 
 Numbers this module measures are printed. Run with ``-s`` to see them.
+
+[if] production-shaped data cannot round trip [then] fail, [else stop].
 """
 from __future__ import annotations
 

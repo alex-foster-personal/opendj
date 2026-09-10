@@ -20,6 +20,8 @@ Acceptance criteria, one test each:
   one command that unblocks a legacy library does not work -- broken.
 
 Numbers this module measures are printed. Run with ``-s`` to see them.
+
+[if] a real naive stamp costs more than its own rows [then] fail, [else stop].
 """
 from __future__ import annotations
 
