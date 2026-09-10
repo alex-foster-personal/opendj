@@ -58,3 +58,27 @@ export async function getHealthFreshWithRetry(getHealth: GetHealth): ReturnType<
 		return await getHealth({ fresh: true });
 	}
 }
+
+/**
+ * Whether _init()'s boot health+playlist snapshot is still the freshest
+ * data by the time its `Promise.all` resolves.
+ *
+ * That read can take arbitrarily long, and `_refreshLibraryRowsOnce()` -
+ * fired independently by a library-change event or the bus's first-ever
+ * open ('initial-connect', PR #1656 review round 5) - writes fresher
+ * `allTracksCount`/`playlists` directly if it completes first. Applying the
+ * boot snapshot afterward would silently overwrite that fresher data with
+ * older data (PR #1656 review round 9, P2 BLOCKING). `bootEpoch` is a
+ * write-epoch counter snapshotted before the boot read starts; `currentEpoch`
+ * is its value once the read resolves. Unchanged means nothing else wrote in
+ * between, so the boot value applies; changed means something did, so the
+ * value already on screen is the one to keep.
+ */
+export function reconcileBootSnapshot<T>(args: {
+	bootEpoch: number;
+	currentEpoch: number;
+	bootValue: T;
+	currentValue: T;
+}): T {
+	return args.currentEpoch === args.bootEpoch ? args.bootValue : args.currentValue;
+}

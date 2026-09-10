@@ -39,11 +39,52 @@
  * - the same three lines apply to the background repair read
  *   (getHealthFreshWithRetry), whose only chance to run is the bus's
  *   first-ever open: nothing else retries it once that has fired.
+ *
+ * Round 9 (BrowserPanel.svelte:876, chatgpt-codex-connector, P2 BLOCKING)
+ * found a second, unguarded race: _init()'s boot Promise.all can take
+ * arbitrarily long, and _refreshLibraryRowsOnce() (fired independently by a
+ * library-change event or the bus's first-ever open) can write a fresher
+ * allTracksCount/playlists before it resolves. _init() then applied its own
+ * older snapshot unconditionally, clobbering the fresher one. reconcileBootSnapshot
+ * covers that: a write-epoch counter, bumped wherever _refreshLibraryRowsOnce
+ * (or anything else) writes fresher data, tells _init() whether anything beat
+ * it there.
+ *
+ * A later round (chatgpt-codex-connector, P1 BLOCKING on this file, P2
+ * BLOCKING on BrowserPanel.svelte:876) made two further points this file did
+ * not yet answer:
+ *
+ * 1. Testing `getHealthAtBoot`/`getHealthFreshWithRetry`/`reconcileBootSnapshot`
+ *    against hand-fed inputs (above) proves those functions are correct in
+ *    isolation. It says nothing about whether BrowserPanel.svelte still
+ *    calls them, still assigns their results to the right state, or still
+ *    bumps `_libraryWriteEpoch` at both real write sites - node:test cannot
+ *    mount a Svelte component to check that directly (same constraint
+ *    `library-refresh-coalesce.test.mjs`'s "BrowserPanel wiring" section and
+ *    `browser-panel-boot-pane-stale-health-retry.test.mjs`'s round-7 fix
+ *    both document), so this file was silent on it.
+ * 2. The two `reconcileBootSnapshot` epoch tests above only exercise the
+ *    ternary; deleting either `_libraryWriteEpoch` bump in BrowserPanel.svelte
+ *    leaves them green (verification.md: "a mutation that stays green is a
+ *    finding").
+ *
+ * The "BrowserPanel wiring" tests below close both: they assert, against the
+ * real unmodified component source (the same technique
+ * `library-refresh-coalesce.test.mjs` uses for the coalescer gate), that the
+ * real call sites, the state assignments, and both epoch-bump lines are
+ * actually present. Sabotage-verified: deleting any one of the asserted
+ * lines from BrowserPanel.svelte turns exactly one of these tests red.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const BROWSER_PANEL = fileURLToPath(
+	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
+);
 
 async function _loadHealthBootRetry() {
 	return loadTypeScriptModule('src/lib/rb/health-boot-retry.ts');
@@ -127,4 +168,96 @@ test('two consecutive fresh health-repair failures still propagate', async () =>
 	};
 
 	await assert.rejects(mod.getHealthFreshWithRetry(getHealth), /daemon unreachable/);
+});
+
+test('an unchanged write epoch applies the boot snapshot', async () => {
+	const mod = await _loadHealthBootRetry();
+
+	const result = mod.reconcileBootSnapshot({
+		bootEpoch: 3,
+		currentEpoch: 3,
+		bootValue: 'boot-snapshot',
+		currentValue: 'stale-placeholder'
+	});
+
+	assert.equal(result, 'boot-snapshot', 'nothing wrote in between, so the boot read wins');
+});
+
+test('a write epoch that advanced during the boot read keeps the fresher value', async () => {
+	const mod = await _loadHealthBootRetry();
+
+	const result = mod.reconcileBootSnapshot({
+		bootEpoch: 3,
+		currentEpoch: 4,
+		bootValue: 'boot-snapshot',
+		currentValue: 'fresher-background-write'
+	});
+
+	assert.equal(
+		result,
+		'fresher-background-write',
+		'a background write landed while the boot read was in flight, so it must not be clobbered'
+	);
+});
+
+// -------------------------------------------------------- BrowserPanel wiring
+
+test('_init calls the real boot health/playlist read and reconciles both through the epoch', () => {
+	const source = readFileSync(BROWSER_PANEL, 'utf8');
+
+	assert.match(
+		source,
+		/import \{[\s\S]*?getHealthAtBoot[\s\S]*?\} from '\.\/browser\/pane-contract\.svelte'/,
+		'getHealthAtBoot must still be imported from the real module, not reconstructed'
+	);
+	assert.match(
+		source,
+		/import \{[\s\S]*?reconcileBootSnapshot[\s\S]*?\} from '\.\/browser\/pane-contract\.svelte'/,
+		'reconcileBootSnapshot must still be imported from the real module'
+	);
+	assert.match(
+		source,
+		/const bootEpoch = _libraryWriteEpoch;/,
+		'_init must snapshot the write epoch before starting the boot read'
+	);
+	assert.match(
+		source,
+		/const \[healthRes, lists\] = await Promise\.all\(\[\s*getHealthAtBoot\(getHealth\),\s*listPlaylistsHydrated\(\)\s*\]\);/,
+		'the boot read must still call the real getHealthAtBoot, not a stand-in'
+	);
+	assert.match(
+		source,
+		/allTracksCount = reconcileBootSnapshot\(\{\s*bootEpoch,\s*currentEpoch: _libraryWriteEpoch,\s*bootValue: healthRes\.health\.state_db\.tracks,\s*currentValue: allTracksCount\s*\}\);/,
+		'allTracksCount must be assigned through reconcileBootSnapshot, not overwritten unconditionally'
+	);
+	assert.match(
+		source,
+		/playlists = reconcileBootSnapshot\(\{\s*bootEpoch,\s*currentEpoch: _libraryWriteEpoch,\s*bootValue: lists,\s*currentValue: playlists\s*\}\);/,
+		'playlists must be assigned through reconcileBootSnapshot, not overwritten unconditionally'
+	);
+	assert.match(
+		source,
+		/if \(_libraryWriteEpoch === bootEpoch\) \{\s*await _sweepBlankPlaylists\(lists\);\s*\}/,
+		'the sweep of the boot snapshot must be skipped once something fresher has landed'
+	);
+});
+
+test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps the write epoch', () => {
+	const source = readFileSync(BROWSER_PANEL, 'utf8');
+
+	assert.match(
+		source,
+		/import \{[\s\S]*?getHealthFreshWithRetry[\s\S]*?\} from '\.\/browser\/pane-contract\.svelte'/,
+		'getHealthFreshWithRetry must still be imported from the real module'
+	);
+	assert.match(
+		source,
+		/const healthRes = await getHealthFreshWithRetry\(getHealth\);\s*allTracksCount = healthRes\.health\.state_db\.tracks;\s*_libraryWriteEpoch \+= 1;/,
+		'the fresh repair read must assign allTracksCount and bump the write epoch in the same block'
+	);
+	assert.match(
+		source,
+		/playlists = await listPlaylistsHydrated\(\);\s*_libraryWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,
+		'_refreshPlaylists must bump the write epoch and sweep with its own fresh playlists'
+	);
 });

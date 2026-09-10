@@ -134,6 +134,7 @@
 		installBrowserSortIpc,
 		makeClientRowProvider,
 		multiPanePlaylistIds,
+		reconcileBootSnapshot,
 		reorderPanesInPlace,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
@@ -198,6 +199,11 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
+	// Bumped every time something OTHER than _init() writes playlists or
+	// allTracksCount, so _init()'s boot Promise.all can tell whether its own
+	// snapshot is still the freshest once it resolves. See
+	// reconcileBootSnapshot's doc comment for the race this guards.
+	let _libraryWriteEpoch = 0;
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
@@ -870,19 +876,38 @@
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
+		const bootEpoch = _libraryWriteEpoch;
 		try {
 			const [healthRes, lists] = await Promise.all([
 				getHealthAtBoot(getHealth),
 				listPlaylistsHydrated()
 			]);
-			allTracksCount = healthRes.health.state_db.tracks;
 			libraryHealthError = null;
-			playlists = lists;
+			// A concurrent _refreshLibraryRowsOnce call (a library-change event, or
+			// the bus's first-ever open) can write a fresher allTracksCount and
+			// playlists while this Promise.all is still in flight. Applying this
+			// boot snapshot unconditionally would clobber that fresher data with
+			// older data (PR #1656 review round 9, P2 BLOCKING) - see
+			// reconcileBootSnapshot's doc comment.
+			allTracksCount = reconcileBootSnapshot({
+				bootEpoch,
+				currentEpoch: _libraryWriteEpoch,
+				bootValue: healthRes.health.state_db.tracks,
+				currentValue: allTracksCount
+			});
+			playlists = reconcileBootSnapshot({
+				bootEpoch,
+				currentEpoch: _libraryWriteEpoch,
+				bootValue: lists,
+				currentValue: playlists
+			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
-			await _sweepBlankPlaylists(lists);
+			if (_libraryWriteEpoch === bootEpoch) {
+				await _sweepBlankPlaylists(lists);
+			}
 			if (source === 'spotify' && spotifySelectedId !== null) {
-				const selected = lists.find(
+				const selected = playlists.find(
 					(playlist) =>
 						playlist.vendor === 'spotify' && playlist.playlist_id === spotifySelectedId
 				);
@@ -1182,6 +1207,7 @@
 
 	async function _refreshPlaylists(): Promise<void> {
 		playlists = await listPlaylistsHydrated();
+		_libraryWriteEpoch += 1;
 		await _sweepBlankPlaylists(playlists);
 	}
 
@@ -1214,6 +1240,7 @@
 			// `_init` above has no such constraint and shares one.
 			const healthRes = await getHealthFreshWithRetry(getHealth);
 			allTracksCount = healthRes.health.state_db.tracks;
+			_libraryWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}

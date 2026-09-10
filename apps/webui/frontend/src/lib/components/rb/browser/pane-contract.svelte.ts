@@ -465,7 +465,7 @@ export function shouldRetryBootPane(args: {
 // Moved to `$lib/rb/health-boot-retry` (adding these two functions here
 // pushed this file past the 600-line file-size gate); re-exported so
 // BrowserPanel.svelte's import of this barrel file is unaffected.
-export { getHealthAtBoot, getHealthFreshWithRetry } from '$lib/rb/health-boot-retry';
+export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from '$lib/rb/health-boot-retry';
 
 // -------------------------------------------- client search + sort pipeline
 
