@@ -241,7 +241,14 @@ def create_app() -> FastAPI:
         ):
             app.state.delay_next_analysis_source_get = False
             await asyncio.sleep(0.15)
-        elif request.url.path.endswith((f"/{SID_SLOW}/anlz", f"/{SID_SLOW_ABSENT}/anlz")):
+        elif request.url.path.endswith((f"/{SID_SLOW}/anlz", f"/{SID_SLOW_ABSENT}/anlz")) or (
+            f"/tracks/{SID_SLOW_ABSENT}" in request.url.path
+        ):
+            # SID_SLOW_ABSENT 404s on BOTH /anlz AND /tracks/{id} (it is in
+            # neither table). Promise.all in refreshAnalysisSourceDecks rejects
+            # on the first of those, so delaying only /anlz left GET /tracks
+            # failing in a few ms and collapsed the window the rollback-generation
+            # test needs to seed a same-generation cache entry.
             await asyncio.sleep(0.15)
         return response
 

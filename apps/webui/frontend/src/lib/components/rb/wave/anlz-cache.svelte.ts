@@ -366,8 +366,14 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 	// so a settled own-sourced absence (missing/failed) or a genuine
 	// rekordbox-vs-own source transition also reaches the sink (Codex P1
 	// BLOCKING, PR #1587) instead of firing only when a populated grid lands.
+	// alreadyScoped empty grids are the exception: refreshAnalysisSourceDecks
+	// notifies those itself via notifyGridlessSettlement (landed: false).
+	// Firing here as well doubled the sink for own missing/failed and left
+	// the deck-refresh test counting 2.
 	const sinkSettlement =
-		_authoritativeGridSink !== null && _isAuthoritativeGridAnswer(data, previous)
+		_authoritativeGridSink !== null &&
+		_isAuthoritativeGridAnswer(data, previous) &&
+		!(alreadyScoped && !hasAnlzBeatgrid(data))
 			? _authoritativeGridSink(stable_id, data, hasAnlzBeatgrid(data), alreadyScoped)
 			: undefined;
 	if (!isRetryableAnlzData(data)) {
