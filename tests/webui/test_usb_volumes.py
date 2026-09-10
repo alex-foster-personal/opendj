@@ -15,6 +15,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.feature_flags import load_flags
+from apps.feature_flags.profiles import BUILD_PROFILE_ENV, STORE_PROFILE
+from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes import usb_volumes as usb_mod
@@ -46,10 +49,13 @@ def _make_app(*, simulation: bool, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
     data_dir = tmp_path / "data"
     (data_dir / "state").mkdir(parents=True)
     app = _make_app(simulation=True, monkeypatch=monkeypatch)
     app.state.data_dir = data_dir
+    app.state.feature_flags = load_flags(data_dir)
     with TestClient(app) as c:
         yield c
 
@@ -390,5 +396,61 @@ def test_discovery_contract_distinguishes_unsupported_from_no_devices(
         diskutil_command="/usr/bin/diskutil",
     )
     assert usb_mod._scan_volumes(force=True, discovery=discovery) == []
+
+
+def test_a_disabled_flag_refuses_before_the_platform_check() -> None:
+    """SAND-01/Thread-1, at the pure-function level: usb.export off must
+    win over every other branch, so a developer testing the appstore
+    profile on a non-darwin host sees the same refusal a real store build
+    would, not "unsupported platform".
+    """
+    with pytest.raises(usb_mod.UsbDiscoveryUnavailable) as excinfo:
+        usb_mod._resolve_discovery(
+            platform_name="linux",
+            volumes_root=Path("/nonexistent"),
+            diskutil_command=None,
+            usb_export_flag_enabled=False,
+        )
+    assert excinfo.value.reason == "usb_export_disabled_in_this_build"
+    assert excinfo.value.ui_title == STORE_BUILD_REFUSAL_TITLE
+
+
+# ----- SAND-01/Thread-1: the flag actually gates the HTTP route -----------
+def test_appstore_profile_refuses_volume_listing_via_the_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The USB volumes route never read app.state.feature_flags, so the
+    capability `/api/v1/flags` reports disabled stayed callable under the
+    appstore profile. This drives the SAME flag store `/flags` reads.
+    """
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    monkeypatch.setenv(BUILD_PROFILE_ENV, STORE_PROFILE)
+    data_dir = tmp_path / "data"
+    (data_dir / "state").mkdir(parents=True)
+    app = _make_app(simulation=True, monkeypatch=monkeypatch)
+    app.state.data_dir = data_dir
+    app.state.feature_flags = load_flags(data_dir)
+    with TestClient(app) as appstore_client:
+        response = appstore_client.get("/api/v1/usb/volumes")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "usb_volume_discovery_unavailable"
+    assert detail["reason"] == "usb_export_disabled_in_this_build"
+    assert detail["ui_title"] == STORE_BUILD_REFUSAL_TITLE
+
+
+def test_full_profile_volume_listing_is_not_refused_by_the_flag(
+    client: TestClient,
+) -> None:
+    """The control: the default full-profile client (usb.export ON) must
+    never carry this reason, even when discovery is unavailable for an
+    unrelated reason (no darwin host in CI). If the gate keyed on anything
+    but the resolved flag value, this would start failing for every
+    developer running the plain build.
+    """
+    response = client.get("/api/v1/usb/volumes")
+    if response.status_code == 503:
+        assert response.json()["detail"]["reason"] != "usb_export_disabled_in_this_build"
+
 
 pytestmark = pytest.mark.rb_parity

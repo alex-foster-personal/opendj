@@ -30,6 +30,7 @@ from apps.feature_flags.store import (
     FlagStore,
     flags_path,
     load_flags,
+    store_profile_is_source,
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "FlagStore",
     "flags_path",
     "load_flags",
+    "store_profile_is_source",
 ]

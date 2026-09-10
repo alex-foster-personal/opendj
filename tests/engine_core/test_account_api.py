@@ -79,6 +79,7 @@ TEST_DEFS: tuple[FlagDef, ...] = (
         owner="tests",
         note="declared only inside this module",
         retire_by="never - test fixture",
+        sandbox_gated=False,
     ),
 )
 
@@ -372,6 +373,31 @@ def store_build_client(
     yield from _store_build_client(monkeypatch, data_dir, state_db_path)
 
 
+def _full_build_client(
+    data_dir: Path, state_db_path: Path
+) -> Iterator[TestClient]:
+    """The ordinary (non-store) build, with the REAL flag registry.
+
+    Thread-2/SAND-04 is about the real ``usb.export`` flag under a
+    mis-packaged bundle, not the module's synthetic ``TEST_DEFS`` flag, so
+    this reads the same registry ``store_build_client`` does without
+    selecting the store profile.
+    """
+    app = FastAPI()
+    app.include_router(flags_router, prefix="/api/v1")
+    app.state.state_db_path = str(state_db_path)
+    app.state.feature_flags = load_flags(data_dir)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def full_build_client(
+    data_dir: Path, state_db_path: Path
+) -> Iterator[TestClient]:
+    yield from _full_build_client(data_dir, state_db_path)
+
+
 def test_flags_names_the_build_and_the_container(client: TestClient) -> None:
     """SAND-04: the profile is a CONFIG fact, the container a RUNTIME one.
 
@@ -449,6 +475,47 @@ def test_an_explicit_flag_file_is_not_a_store_build(
         "flag values came from an explicit lane file, not the shipped store "
         "profile, so nothing here is Apple's doing"
     )
+
+
+def test_a_mispackaged_full_build_still_refuses_when_actually_sandboxed(
+    full_build_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SAND-04/Thread-2: a mis-packaged bundle can ship the FULL profile
+    while still running inside Apple's sandbox. The flag then resolves
+    "enabled" -- nothing overrode it -- so a refusal derived from
+    flag.enabled alone would tell the panel every capability is available
+    while the daemon's own USB routes 503 underneath it (a real fail-open
+    on the disclosure surface).
+    """
+    import apps.engine_core.account.api as account_api
+
+    monkeypatch.setattr(account_api, "is_sandboxed", lambda: True)
+    body = full_build_client.get("/api/v1/flags").json()
+    assert body["build_profile"] == DEFAULT_PROFILE
+    assert body["sandboxed"] is True
+    usb = next(f for f in body["flags"] if f["flag_id"] == "usb.export")
+    assert usb["enabled"] is True, "the full profile put no override on this flag"
+    assert usb["refusal"] is not None, (
+        "the process is genuinely sandboxed right now, so the capability "
+        "cannot work regardless of what the flag says"
+    )
+    assert usb["refusal"]["code"] == STORE_BUILD_REFUSAL_CODE
+    assert usb["refusal"]["ui_title"] == STORE_BUILD_REFUSAL_TITLE
+    assert "usb.export" in usb["refusal"]["message"]
+
+
+def test_a_full_build_that_is_not_sandboxed_refuses_nothing(
+    full_build_client: TestClient,
+) -> None:
+    """The control for the mutation above: an ordinary, correctly packaged
+    full build (not sandboxed) must not carry the fourth refusal just
+    because it shares a flag store with the store profile's registry.
+    """
+    body = full_build_client.get("/api/v1/flags").json()
+    assert body["sandboxed"] is False
+    usb = next(f for f in body["flags"] if f["flag_id"] == "usb.export")
+    assert usb["enabled"] is True
+    assert usb["refusal"] is None
 
 
 def test_flags_and_entitlements_are_separate_responses(

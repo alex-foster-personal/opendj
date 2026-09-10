@@ -37,7 +37,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.feature_flags.profiles import profile_path, selected_profile
+from apps.feature_flags.profiles import STORE_PROFILE, profile_path, selected_profile
 
 #: Where the file lives inside the data dir, unless the env var overrides it.
 FLAGS_FILENAME: str = "feature-flags.json"
@@ -52,6 +52,12 @@ class FlagDef:
     ``owner`` and ``retire_by`` are required because a flag is TEMPORARY by
     definition.  A flag with no owner and no end date is how a codebase ends
     up with forty of them and two live branches per flag.
+
+    ``sandbox_gated`` is required, not defaulted, for the same reason: it is a
+    claim about the capability ("the macOS App Sandbox actually forbids
+    this"), not a convenience, and a silent False for every future flag would
+    let a genuinely sandbox-broken capability ship with no runtime refusal
+    (SAND-04) merely because nobody remembered to opt it in.
     """
 
     flag_id: str
@@ -59,6 +65,7 @@ class FlagDef:
     owner: str
     note: str
     retire_by: str
+    sandbox_gated: bool
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,7 @@ class FlagState:
     owner: str
     note: str
     retire_by: str
+    sandbox_gated: bool
 
 
 #: Every declared flag. Empty on purpose; see the module docstring.
@@ -91,6 +99,7 @@ FLAGS: tuple[FlagDef, ...] = (
             "specs/appstore-sandbox-remediation.md."
         ),
         retire_by="2027-03-01",
+        sandbox_gated=True,
     ),
 )
 
@@ -179,6 +188,7 @@ class FlagStore:
                 owner=definition.owner,
                 note=definition.note,
                 retire_by=definition.retire_by,
+                sandbox_gated=definition.sandbox_gated,
             )
             for definition in self._defs.values()
         )
@@ -238,6 +248,28 @@ def load_flags(
     )
 
 
+def store_profile_is_source(store: FlagStore) -> bool:
+    """Did the shipped App Store profile supply this process's flag values?
+
+    THREE conditions, and each rules out a way of blaming Apple for something
+    else. The profile must be the store one BY NAME, because the SAND-01
+    sentence names Apple's sandbox and a future non-store profile would make
+    that a fresh lie in the same shape. The resolved file must actually BE
+    that profile's file, because ``MDT_FEATURE_FLAGS_FILE`` beats a named
+    profile (see apps/feature_flags/profiles.py) and a lane pointing at a
+    scratch file is not a store build. And the caller checks ``overridden``
+    per flag, so a flag merely sitting at an off default is not attributed to
+    the profile either.
+
+    Lives here rather than in ``apps.engine_core.account.api`` so any future
+    reader of the flag store can attribute a value to the shipped profile
+    without duplicating this reasoning.
+    """
+    if selected_profile() != STORE_PROFILE:
+        return False
+    return Path(store.path) == profile_path(STORE_PROFILE)
+
+
 __all__ = [
     "FLAGS",
     "FLAGS_FILENAME",
@@ -248,4 +280,5 @@ __all__ = [
     "FlagStore",
     "flags_path",
     "load_flags",
+    "store_profile_is_source",
 ]

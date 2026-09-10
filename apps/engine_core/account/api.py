@@ -53,8 +53,6 @@ Requirements (mini-PRD):
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
@@ -69,12 +67,8 @@ from apps.entitlements import (
     has,
     quota,
 )
-from apps.feature_flags import FlagState, FlagStore
-from apps.feature_flags.profiles import (
-    STORE_PROFILE,
-    profile_path,
-    selected_profile,
-)
+from apps.feature_flags import FlagState, FlagStore, store_profile_is_source
+from apps.feature_flags.profiles import STORE_PROFILE, selected_profile
 from apps.shared.sandbox import (
     STORE_BUILD_REFUSAL_CODE,
     STORE_BUILD_REFUSAL_TITLE,
@@ -255,28 +249,33 @@ def _flag_store(request: Request) -> FlagStore:
     return store
 
 
-def _store_profile_is_the_source(store: FlagStore) -> bool:
-    """Did the shipped App Store profile supply this process's flag values?
-
-    THREE conditions, and each rules out a way of blaming Apple for something
-    else. The profile must be the store one BY NAME, because the sentence
-    names Apple's sandbox and a future non-store profile would make that a
-    fresh lie in the shape SAND-01 exists to stop. The resolved file must
-    actually BE that profile's file, because ``MDT_FEATURE_FLAGS_FILE`` beats
-    a named profile (see apps/feature_flags/profiles.py) and a lane pointing
-    at a scratch file is not a store build. And the caller checks
-    ``overridden`` per flag, so a flag merely sitting at an off default is not
-    attributed to the profile either.
-    """
-    if selected_profile() != STORE_PROFILE:
-        return False
-    return Path(store.path) == profile_path(STORE_PROFILE)
-
-
 def _store_build_refusal(
-    flag: FlagState, *, from_store_profile: bool
+    flag: FlagState, *, from_store_profile: bool, sandboxed: bool
 ) -> RefusalOut | None:
-    """The fourth refusal for a flag the store profile turned off, else None."""
+    """The fourth refusal for a flag the sandbox blocks, else None.
+
+    Two independent paths to the SAME refusal (SAND-04): the shipped App
+    Store profile turned the flag off (a CONFIG fact, checked below), or this
+    process is genuinely inside the sandbox right now regardless of what the
+    flag says (a RUNTIME fact, checked first). The second path exists because
+    a mis-packaged bundle can ship the FULL profile -- so the flag reads
+    "on" -- while still running inside Apple's sandbox, and the capability is
+    exactly as dead either way; deriving the refusal from ``flag.enabled``
+    alone would report the panel as fully available while the daemon's own
+    USB routes 503.
+    """
+    if flag.sandbox_gated and sandboxed:
+        return RefusalOut(
+            code=STORE_BUILD_REFUSAL_CODE,
+            message=store_build_refusal_message(
+                flag.flag_id,
+                because=(
+                    "this process is running inside the macOS App Sandbox, "
+                    "which does not permit it."
+                ),
+            ),
+            ui_title=STORE_BUILD_REFUSAL_TITLE,
+        )
     if flag.enabled or not flag.overridden or not from_store_profile:
         return None
     return RefusalOut(
@@ -513,12 +512,13 @@ def read_flags(request: Request) -> FlagsOut:
     to, and folding them into one response is the first step toward one store.
     """
     store = _flag_store(request)
-    from_store_profile = _store_profile_is_the_source(store)
+    from_store_profile = store_profile_is_source(store)
+    sandboxed = is_sandboxed()
     return FlagsOut(
         path=str(store.path),
         file_present=store.file_present,
         build_profile=selected_profile(),
-        sandboxed=is_sandboxed(),
+        sandboxed=sandboxed,
         flags=[
             FlagOut(
                 flag_id=flag.flag_id,
@@ -529,7 +529,9 @@ def read_flags(request: Request) -> FlagsOut:
                 note=flag.note,
                 retire_by=flag.retire_by,
                 refusal=_store_build_refusal(
-                    flag, from_store_profile=from_store_profile
+                    flag,
+                    from_store_profile=from_store_profile,
+                    sandboxed=sandboxed,
                 ),
             )
             for flag in store.snapshot()

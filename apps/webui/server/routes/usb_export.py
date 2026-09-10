@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from apps.shared.rekordbox_writeback import require_writeback_enabled
+from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE, store_build_refusal_message
 from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
+from apps.webui.server.routes.usb_gate import USB_EXPORT_FLAG, usb_export_enabled
 
 router = APIRouter(prefix="/usb-export", tags=["usb-export"])
 
@@ -95,8 +97,32 @@ def _error(exc: workflow.UsbExportError) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": exc.to_dict()})
 
 
+def _disabled_response() -> JSONResponse:
+    """SAND-01/SAND-02: the same fourth refusal ``/api/v1/flags`` reports.
+
+    A route that never read ``app.state.feature_flags`` stayed callable under
+    the appstore profile even though the flag it exists to gate says off;
+    this is the response that closes that gap.
+    """
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": {
+                "code": "usb_export_disabled_in_this_build",
+                "message": store_build_refusal_message(
+                    USB_EXPORT_FLAG,
+                    because="the macOS App Sandbox does not permit it.",
+                ),
+                "ui_title": STORE_BUILD_REFUSAL_TITLE,
+            }
+        },
+    )
+
+
 @router.post("/plan", response_model=PlanModel)
-def plan_export(body: PlanRequest) -> dict[str, Any] | JSONResponse:
+def plan_export(body: PlanRequest, request: Request) -> dict[str, Any] | JSONResponse:
+    if not usb_export_enabled(request):
+        return _disabled_response()
     try:
         plan = workflow.plan_export(
             template_path=body.template_path,
@@ -119,8 +145,12 @@ def plan_export(body: PlanRequest) -> dict[str, Any] | JSONResponse:
 
 
 @router.post("/apply", response_model=ReceiptModel)
-def apply_export(body: ApplyRequest) -> dict[str, Any] | JSONResponse:
+def apply_export(
+    body: ApplyRequest, request: Request
+) -> dict[str, Any] | JSONResponse:
     require_writeback_enabled("http.usb-export.apply")
+    if not usb_export_enabled(request):
+        return _disabled_response()
     try:
         plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
         receipt = workflow.apply_export(plan, confirmation=body.confirmation)
@@ -130,7 +160,11 @@ def apply_export(body: ApplyRequest) -> dict[str, Any] | JSONResponse:
 
 
 @router.post("/readback", response_model=ReadbackModel)
-def readback_export(body: ReadbackRequest) -> dict[str, Any] | JSONResponse:
+def readback_export(
+    body: ReadbackRequest, request: Request
+) -> dict[str, Any] | JSONResponse:
+    if not usb_export_enabled(request):
+        return _disabled_response()
     try:
         plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
         receipt = workflow.ApplyReceipt.from_dict(body.receipt.model_dump())

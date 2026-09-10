@@ -14,6 +14,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.feature_flags import load_flags
+from apps.feature_flags.profiles import BUILD_PROFILE_ENV, STORE_PROFILE
+from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE
 from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer import writer_rbox
 from apps.webui.server.app import create_app
@@ -85,9 +88,12 @@ def target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
     app = FastAPI()
     app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
     return TestClient(app)
 
 
@@ -176,3 +182,65 @@ def test_standalone_openapi_lists_all_workflow_operations(client: TestClient) ->
     assert "/api/v1/usb-export/plan" in paths
     assert "/api/v1/usb-export/apply" in paths
     assert "/api/v1/usb-export/readback" in paths
+
+
+# ----- SAND-01/Thread-1: the flag actually gates this route ---------------
+def test_appstore_profile_refuses_plan_before_touching_a_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store build's ONLY production read of usb.export used to be the
+    /flags disclosure. This route never consulted app.state.feature_flags,
+    so the "disabled" capability stayed callable under MDT_BUILD_PROFILE
+    =appstore. The refusal must fire before the route ever opens the
+    template path, so a nonexistent template proves nothing was reached
+    downstream of the gate.
+    """
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    monkeypatch.setenv(BUILD_PROFILE_ENV, STORE_PROFILE)
+    app = FastAPI()
+    app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
+    with TestClient(app) as appstore_client:
+        response = appstore_client.post(
+            "/api/v1/usb-export/plan",
+            json={
+                "template_path": str(tmp_path / "does-not-exist.db"),
+                "target_root": str(tmp_path / "target"),
+                "playlists": [],
+                "track_updates": [],
+            },
+        )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "usb_export_disabled_in_this_build"
+    assert detail["ui_title"] == STORE_BUILD_REFUSAL_TITLE
+    assert "usb.export" in detail["message"]
+
+
+def test_full_profile_still_reaches_the_workflow_for_a_bad_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control: an unrelated failure (a template that does not exist)
+    must not be reported as the store-build refusal. If the gate keyed on
+    anything broader than usb.export's resolved value, this would come back
+    503/usb_export_disabled_in_this_build instead of the workflow's own
+    error, hiding a real bug behind the fourth refusal.
+    """
+    monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
+    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
+    app = FastAPI()
+    app.include_router(usb_export.router, prefix="/api/v1")
+    app.state.feature_flags = load_flags(tmp_path / "data")
+    with TestClient(app) as full_client:
+        response = full_client.post(
+            "/api/v1/usb-export/plan",
+            json={
+                "template_path": str(tmp_path / "does-not-exist.db"),
+                "target_root": str(tmp_path / "target"),
+                "playlists": [],
+                "track_updates": [],
+            },
+        )
+    assert response.status_code != 503 or (
+        response.json()["detail"].get("code") != "usb_export_disabled_in_this_build"
+    )

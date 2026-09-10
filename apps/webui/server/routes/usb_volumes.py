@@ -47,6 +47,7 @@ from apps.webui.server.routes.usb_classify import (
     classify_role,
     hide_reason_for,
 )
+from apps.webui.server.routes.usb_gate import usb_export_enabled
 
 log = logging.getLogger(__name__)
 
@@ -132,7 +133,18 @@ def _resolve_discovery(
     volumes_root: Path,
     diskutil_command: str | None,
     sandboxed: bool | None = None,
+    usb_export_flag_enabled: bool = True,
 ) -> UsbDiscovery:
+    # SAND-01. Checked before even the platform, because a build that
+    # declared usb.export off (the shipped appstore profile) is not
+    # available regardless of what host it happens to run on -- a developer
+    # testing that profile on Linux must see the same refusal a real store
+    # build would, not "unsupported platform".
+    if not usb_export_flag_enabled:
+        raise UsbDiscoveryUnavailable(
+            "usb_export_disabled_in_this_build",
+            ui_title=STORE_BUILD_REFUSAL_TITLE,
+        )
     if platform_name != "darwin":
         raise UsbDiscoveryUnavailable(f"unsupported_platform:{platform_name}")
     # SAND-01/SAND-02, and it goes BEFORE the volumes_root probe on purpose.
@@ -156,11 +168,12 @@ def _resolve_discovery(
     )
 
 
-def _system_discovery() -> UsbDiscovery:
+def _system_discovery(*, usb_export_flag_enabled: bool = True) -> UsbDiscovery:
     return _resolve_discovery(
         platform_name=sys.platform,
         volumes_root=_VOLUMES_ROOT,
         diskutil_command=shutil.which("diskutil"),
+        usb_export_flag_enabled=usb_export_flag_enabled,
     )
 
 
@@ -440,7 +453,11 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
 def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
     _touch_client()
     try:
+        discovery = _system_discovery(
+            usb_export_flag_enabled=usb_export_enabled(request)
+        )
         vols = _scan_volumes(
+            discovery=discovery,
             include_simulated=request.app.state.usb_simulation_enabled,
         )
     except UsbDiscoveryUnavailable as exc:
@@ -470,7 +487,9 @@ async def usb_volume_events(request: Request) -> StreamingResponse | JSONRespons
     """SSE: keep the scanner warm while a client is subscribed."""
 
     try:
-        discovery = _system_discovery()
+        discovery = _system_discovery(
+            usb_export_flag_enabled=usb_export_enabled(request)
+        )
         include_simulated = request.app.state.usb_simulation_enabled
         initial_volumes = _scan_volumes(
             discovery=discovery,

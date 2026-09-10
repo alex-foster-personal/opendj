@@ -236,7 +236,11 @@
 					     build states the absence and stops there. -->
 					<section class="ac-section" aria-label="This build">
 						<h3>What this build can do</h3>
-						{#if !buildFlags.loaded}
+						{#if buildFlags.error !== null}
+							<p class="ac-muted" title={buildFlags.error}>
+								Could not read this build's capabilities from the daemon: {buildFlags.error}
+							</p>
+						{:else if !buildFlags.loaded}
 							<p class="ac-muted">Reading this build's capabilities from the daemon...</p>
 						{:else if absentInThisBuild.length === 0}
 							<p
