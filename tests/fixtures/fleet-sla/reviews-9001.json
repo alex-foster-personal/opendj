@@ -8,6 +8,13 @@
   },
   {
     "user": {
+      "login": "coderabbitai[bot]"
+    },
+    "state": "COMMENTED",
+    "submitted_at": "2026-09-09T10:45:00Z"
+  },
+  {
+    "user": {
       "login": "maintainer"
     },
     "state": "COMMENTED",

@@ -47,6 +47,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -62,6 +63,49 @@ SCRIPT = REPO / "ops" / "fleet" / "sla_buckets.py"
 FIXTURE = REPO / "tests" / "fixtures" / "fleet-sla"
 DAY = "2026-09-09"
 
+# Pinned per AGENTS.md "No mocks and locked real fixtures": verify every
+# committed fleet-sla file by checksum before use.
+FIXTURE_SHA256: dict[str, str] = {
+    "checks-1111111111111111111111111111111111111111.json":
+        "d30ef2b6ffcc3d59f4599ab40c876e3c47b80079e2d791e626021e38a1e8bd27",
+    "checks-2222222222222222222222222222222222222222.json":
+        "a7646b77b54568b2d88fcdeccb0bf73f7dfaba04f578c2952bc949aade39d5ad",
+    "checks-3333333333333333333333333333333333333333.json":
+        "a91f74857fa2546cf6d9f71e0c13cc78787ca6a5483e5e15ca8c1aa32a13c510",
+    "commits-9001.json":
+        "d76471f47f991a380f85354cb13886a7fdc9ccf9f4bf2826f1bb479f7f338778",
+    "commits-9002.json":
+        "b9a9c62a3d1c4d034669e46cfa95c87258e1167b53f1c4cb86bd64e9276fa077",
+    "jobs-9001001.json":
+        "681aae5314f24293ace82ec7248794115b332a78e274e4bb9efd31e8e5e5df79",
+    "jobs-9002001.json":
+        "849cb1b29af250ee4bc3f835b0004a0c8b3a42f53ae6c5eadac40d6a06ab772c",
+    "merged.json":
+        "5043a6dba9d69cf308a507572deb8b693f75cef36fffdb976ec43ddbfeac6454",
+    "reviews-9001.json":
+        "c5c3f1e79e526374921bd09abaf5d31fadc09da48bf3a753aa2304e0d2ee803d",
+    "reviews-9002.json":
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "runs-2222222222222222222222222222222222222222.json":
+        "b541a545e4c1997dd156a4bd45cd3f7e92e6e62b93f36a867900df521f11e50c",
+    "runs-3333333333333333333333333333333333333333.json":
+        "14ec463994ce6ea2853ab183a77ebbddf3510cabf606cfc45312dc424bc9a18f",
+    "timeline-9001.json":
+        "d7dde1094f537326a2b98a6fca33c762d92930ab74c7bec7584dd678f249a8a6",
+    "timeline-9002.json":
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+}
+
+
+def _verify_fixture_checksums(fixture: Path = FIXTURE) -> None:
+    for name, expected in FIXTURE_SHA256.items():
+        path = fixture / name
+        assert path.is_file(), f"checked-in fixture missing: {path}"
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert actual == expected, (
+            f"fixture {path} checksum mismatch (expected {expected}, got {actual})"
+        )
+
 # Fixture anchors in hours from midnight, so the expectations read as the
 # timeline they encode. Written as clock arithmetic, never as rounded decimals:
 # 0.33 is not 20 minutes and an assertion against it is wrong in the third
@@ -74,6 +118,8 @@ MERGED = 14.5  # 14:30Z
 
 
 def _run(fixture: Path, *args: str) -> subprocess.CompletedProcess:
+    if fixture.resolve() == FIXTURE.resolve():
+        _verify_fixture_checksums(fixture)
     env = {k: v for k, v in os.environ.items() if not k.startswith("SLA_")}
     env["SLA_GH_FIXTURES_DIR"] = str(fixture)
     return subprocess.run(
@@ -142,16 +188,69 @@ def test_review_latency_skips_reviews_with_no_push_after_them() -> None:
 
 def test_only_bot_reviews_count_toward_review_latency() -> None:
     row = _rows(FIXTURE)[9001]
-    # The bot reviewed at 10:30Z and the next push was 13:00Z. The human review
-    # at 11:00Z would have made this 1.0 h.
+    # Two bots reviewed at 10:30Z and 10:45Z before one push at 13:00Z. The human
+    # review at 11:00Z is ignored. The burst counts as one round from 10:45Z.
     assert row["first_bot_review"] == pytest.approx(0.5, abs=1e-6)
-    assert row["review_latencies"] == [pytest.approx(2.5, abs=1e-6)]
+    assert row["review_latencies"] == [pytest.approx(2.25, abs=1e-6)]
+
+
+def test_review_burst_before_one_push_counts_once() -> None:
+    row = _rows(FIXTURE)[9001]
+    assert len(row["review_latencies"]) == 1
+
+
+def test_failed_head_gate_is_not_green(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    shutil.copytree(FIXTURE, fixture)
+    head_checks = fixture / "checks-2222222222222222222222222222222222222222.json"
+    checks = json.loads(head_checks.read_text())
+    checks["check_runs"][-1]["conclusion"] = "failure"
+    head_checks.write_text(json.dumps(checks) + "\n")
+    row = _rows(fixture)[9001]
+    assert row["push_to_head_green"] is None
+    assert row["green_to_merge"] is None
+    assert "not pull_request green" in row["note"]
+
+
+def test_dispatch_only_check_does_not_set_head_green(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    shutil.copytree(FIXTURE, fixture)
+    head_checks = fixture / "checks-2222222222222222222222222222222222222222.json"
+    checks = json.loads(head_checks.read_text())
+    checks["check_runs"].append({
+        "name": "recovery dispatch",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/maintainer/music-dj-tools/actions/runs/9999001/job/9",
+        "started_at": "2026-09-09T14:00:00Z",
+        "completed_at": "2026-09-09T15:00:00Z",
+    })
+    head_checks.write_text(json.dumps(checks) + "\n")
+    head_runs = fixture / "runs-2222222222222222222222222222222222222222.json"
+    runs = json.loads(head_runs.read_text())
+    runs["workflow_runs"].append({
+        "id": 9999001,
+        "name": "CI",
+        "event": "workflow_dispatch",
+        "created_at": "2026-09-09T14:00:00Z",
+        "conclusion": "success",
+    })
+    (fixture / "runs-2222222222222222222222222222222222222222222.json").write_text(
+        json.dumps(runs) + "\n"
+    )
+    (fixture / "jobs-9999001.json").write_text(json.dumps({"jobs": []}) + "\n")
+    row = _rows(fixture)[9001]
+    assert row["green_to_merge"] == pytest.approx(MERGED - HEAD_GREEN, abs=1e-6)
 
 
 def test_ci_queue_wait_is_measured_at_the_head() -> None:
     row = _rows(FIXTURE)[9001]
     assert row["ci_queue_wait"] == pytest.approx(50.0 / 3600.0, abs=1e-6)
     assert row["ci_queue_wait"] > 0
+
+
+def test_committed_fixture_checksums_match() -> None:
+    _verify_fixture_checksums(FIXTURE)
 
 
 def test_a_missing_fixture_is_a_loud_failure(tmp_path: Path) -> None:
