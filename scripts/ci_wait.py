@@ -36,6 +36,20 @@ all (a brand-new branch's first push) has no PR-branch history to read, and
 is reported the same way rather than guessing from an event-mismatched
 source.
 
+`expected` is a LOWER BOUND on the current head's real check-run set, not a
+claim of completeness: it is read from a PAST push, so a head whose changed
+paths trigger MORE workflows than that past push did can have every expected
+name present and terminal while a newly triggered run has not registered yet
+(found in review, PR #1685 thread r3976054719). `poll_until_terminal` closes
+that gap by requiring the observed name set to be IDENTICAL across two
+consecutive polls before SUCCESS, not just requiring `expected` to be
+satisfied -- a late-registering run changes the observed set and costs one
+more poll interval instead of being invisible to it. Residual gaps in the
+baseline itself -- a force-push that rewrites away the real previous head
+(thread r3976054716), or a brand-new branch's first push -- surface as
+NO_BASELINE or as an older-but-real surviving baseline, never as a
+fabricated one; both are fail-closed, never a false SUCCESS.
+
 `total_count` from the `check-runs` endpoint is asserted against what this
 module actually collected (see `_check_runs_at_sha`): on a genuinely
 multi-page result, `gh api --paginate` prints each page as its OWN
@@ -181,18 +195,36 @@ def poll_until_terminal(
     missing an expected name, however quickly that snapshot arrived -- the
     exact defect this primitive replaces let a same-second read of zero
     runs satisfy it.
+
+    `expected` is a LOWER BOUND read from a prior push, not a guarantee of
+    completeness: a head whose changed paths trigger MORE workflows than the
+    baseline push (found in review, PR #1685 thread r3976054719) can have
+    every `expected` name present and terminal while a newly triggered run
+    has not registered yet under a name `expected` never knew to look for.
+    `_all_terminal` already inspects every OBSERVED run, not just the
+    expected ones, so a late run that HAS registered already blocks success;
+    the gap is the window before it registers at all. Closing that gap needs
+    no knowledge of what name to expect -- only proof that the observed name
+    set has stopped growing: SUCCESS requires the same set of observed names
+    on two consecutive polls, so a run that registers between polls delays
+    success by exactly one more interval instead of being invisible to it.
     """
     start = clock()
     latest: dict[str, dict] = {}
+    previous_names: frozenset[str] | None = None
     while True:
         latest = _latest_by_name(fetch_check_runs())
         missing = _missing(expected, latest)
-        if not missing and _all_terminal(latest):
+        observed_names = frozenset(latest.keys())
+        stable = observed_names == previous_names
+        if not missing and _all_terminal(latest) and stable:
             return (
                 WaitStatus.SUCCESS,
                 latest,
-                f"all {len(expected)} expected check(s) present and terminal",
+                f"all {len(expected)} expected check(s) present and terminal, "
+                "and no new check appeared on the following poll",
             )
+        previous_names = observed_names
         elapsed = clock() - start
         if elapsed >= timeout_s:
             if missing:
@@ -205,10 +237,17 @@ def poll_until_terminal(
                 pending = sorted(
                     name for name, run in latest.items() if run["status"] != "completed"
                 )
-                message = (
-                    f"timed out after {elapsed:.0f}s: {len(pending)} check(s) "
-                    f"still not terminal: {pending}"
-                )
+                if pending:
+                    message = (
+                        f"timed out after {elapsed:.0f}s: {len(pending)} check(s) "
+                        f"still not terminal: {pending}"
+                    )
+                else:
+                    message = (
+                        f"timed out after {elapsed:.0f}s: all {len(expected)} expected "
+                        "check(s) were terminal but a new check name appeared on the "
+                        "final poll and never stabilized"
+                    )
             return WaitStatus.TIMEOUT, latest, message
         sleep(poll_interval_s)
 
