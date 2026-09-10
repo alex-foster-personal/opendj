@@ -36,30 +36,38 @@
  *
  *   REAL, NOT MODELLED (#1642, corrected after a P1 BLOCKING review on PR
  *   #1693): `foldDeviceLivenessSample`'s sole device-loss input,
- *   `outputLatencyDead`, is read through the same `ctx.outputLatency === 0`
- *   check `audio-output-liveness.ts` makes. An earlier version of this
- *   harness fed the fold a `deviceClockStalled` signal too, fabricated by
- *   freezing `getOutputTimestamp()` from the SAME `deviceGate`/`stranded`/
- *   `deviceGone` variables that model the output device, so its assertions
- *   could only prove the fabricated clock agreed with the fabricated gate -
- *   never that a real stall correlates with a real device loss. The shipped
- *   fold no longer takes that input at all (`output-device-watchdog.ts`'s
- *   docstring: the clock-stall requirement was found to miss the real
- *   Wed 2 Sep 2026 incident, where the HAL clock kept advancing while
- *   `outputLatency` read dead), so this harness no longer computes it either
- *   (`.claude/rules/verification.md`: a control that shares the defect
- *   under test is not a control; AGENTS.md "No mocks and locked real
- *   fixtures" bans fabricated application state in tests outright).
+ *   `outputLatencyDead`, is read from the shipped `installOutputLiveness`
+ *   module (`audio-output-liveness.ts`) - the SAME third REAL module
+ *   `audio-context-instrumentation.ts` installs in production, wired here
+ *   exactly like `installOutputRebind` and `installAudioContextWatchdog`
+ *   above, not a hand-rolled `ctx.outputLatency === 0` check. That
+ *   distinction is load-bearing: an earlier revision of this harness read
+ *   `outputLatency` raw, once per 100ms sample, bypassing
+ *   `installOutputLiveness`'s own debounce (`LIVENESS_DEAD_POLLS`
+ *   consecutive real `LIVENESS_POLL_MS` polls, 5s) entirely - and a raw
+ *   read false-positived on the transient `outputLatency === 0` reading
+ *   Chromium gives for a fraction of a second after `resume()`
+ *   (`audio-output-liveness.ts`'s own docstring), the exact thing the
+ *   debounce exists to absorb. Installing the real module rather than
+ *   re-deriving its output is also why this harness no longer fabricates a
+ *   `deviceClockStalled` signal from the SAME `deviceGate`/`stranded`/
+ *   `deviceGone` variables that model the output device (a control that
+ *   shares the defect under test is not a control -
+ *   `.claude/rules/verification.md`); that fold input was dropped from
+ *   `output-device-watchdog.ts` outright (see its docstring: the
+ *   clock-stall requirement missed the real Wed 2 Sep 2026 incident, where
+ *   the HAL clock kept advancing while `outputLatency` read dead).
  *
  *   THE CONSEQUENCE: this harness's real `AudioContext` never actually loses
  *   ITS device - Playwright cannot unpair a Bluetooth headset here any more
- *   than it can for `deviceGate` - so `ctx.outputLatency` never reads 0
- *   either. `outputLatencyDead` is therefore UNAVAILABLE in this
- *   environment: `deviceUnreachableVerdicts` and `longestDeviceUnreachableMs`
- *   stay at 0 for the whole run, asserted as such rather than left to look
- *   like an unexercised gap. The fold's DECISION logic is proven in
- *   `output-device-watchdog.test.mjs` against real inputs a live browser
- *   cannot supply here. What THIS harness proves instead: real telemetry
+ *   than it can for `deviceGate` - so `outputLatency` never stays at 0 for a
+ *   full debounce window. `outputLatencyDead` is therefore UNAVAILABLE in
+ *   this environment: `deviceUnreachableVerdicts` and
+ *   `longestDeviceUnreachableMs` stay at 0 for the whole run, asserted as
+ *   such rather than left to look like an unexercised gap. The fold's
+ *   DECISION logic is proven in `output-device-watchdog.test.mjs` against
+ *   real inputs a live browser cannot supply here. What THIS harness proves
+ *   instead: real telemetry, through the real debounced liveness module,
  *   reaches the shipped fold end-to-end, and it never false-positives
  *   `device-unreachable` while a genuinely healthy `outputLatency` runs
  *   through the same hostile schedule that flaps `deviceGate`.
@@ -88,6 +96,7 @@ import {
 	REBIND_COOLDOWN_MS,
 	REBIND_DEBOUNCE_MS
 } from '$lib/rb/audio-output-rebind';
+import { installOutputLiveness, type LivenessVerdict } from '$lib/rb/audio-output-liveness';
 import { SILENCE_RMS_FLOOR } from '$lib/rb/silence-watchdog';
 import { foldDeviceLivenessSample } from '$lib/rb/output-device-watchdog';
 import {
@@ -128,7 +137,7 @@ export interface SoakProgress {
 	 * went quiet during a flap.
 	 */
 	peakUpstreamRms: number;
-	/** Longest run where the mixer had signal but the modelled device's HAL clock had stalled. */
+	/** Longest run where the mixer had signal but the debounced liveness verdict read the output dead. */
 	longestDeviceUnreachableMs: number;
 	deviceUnreachableStartedAtMs: number;
 	deviceUnreachableSinceMs: number | null;
@@ -385,6 +394,30 @@ function install(): void {
 			media
 		);
 
+		// The third REAL module (production wiring: `audio-context-instrumentation.ts`),
+		// on the real `ctx` rather than the resume/suspend `shim`: it only reads
+		// `outputLatency`/`getOutputTimestamp()`, never resumes anything, so the
+		// real AudioContext is the right object. Its own debounce
+		// (`LIVENESS_DEAD_POLLS` consecutive real `LIVENESS_POLL_MS` polls) is
+		// what a transient post-resume `outputLatency === 0` reading needs to be
+		// absorbed by; a raw per-sample check has no such protection and false
+		// positives on exactly that transient (found running this harness against
+		// this PR's redesign).
+		let outputLivenessVerdict: LivenessVerdict = 'idle';
+		const liveness = installOutputLiveness(
+			ctx,
+			{
+				pushToast: (message, kind) => progress.toasts.push({ message, kind }),
+				recordPerfEvent: (kind, message, severity) => progress.perf.push({ kind, message, severity }),
+				setInterval: (fn, ms) => setInterval(fn, ms),
+				clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
+				onSnapshot: (snapshot) => {
+					outputLivenessVerdict = snapshot.verdict;
+				}
+			},
+			isAnyDeckPlaying
+		);
+
 		// The production master meter, so the worklet-error injection lands on a
 		// real shipped node rather than a stand-in.
 		//
@@ -625,11 +658,14 @@ function install(): void {
 			const masterRmsRaw = Math.sqrt(masterSum / masterScratch.length);
 			const masterRms = Number.isFinite(masterRmsRaw) ? masterRmsRaw : 0;
 			if (masterRms > progress.peakUpstreamRms) progress.peakUpstreamRms = masterRms;
-			// REAL, not modelled (see module docstring): the same `outputLatency`
-			// figure `audio-output-liveness.ts` reads. Playwright cannot make the
-			// browser's actual output device report 0, so this stays a live,
-			// non-triggering reading for the whole run.
-			const outputLatencyDead = ctx.outputLatency === 0;
+			// REAL, not modelled (see module docstring): the shipped, DEBOUNCED
+			// `installOutputLiveness` verdict, the same one
+			// `master-silence-report.ts` reads via `audioOutputHealth.snapshot` in
+			// production. Playwright cannot make the browser's actual output
+			// device report 0 for the debounce's full window, so this stays a
+			// live, non-triggering reading for the whole run.
+			const outputLatencyDead =
+				outputLivenessVerdict === 'dead' || outputLivenessVerdict === 'dead-escalated';
 			deviceLivenessState = foldDeviceLivenessSample(deviceLivenessState, {
 				playing,
 				masterRms,
@@ -653,6 +689,7 @@ function install(): void {
 		teardown = async (): Promise<void> => {
 			clearInterval(sampler);
 			rebind.uninstall();
+			liveness.uninstall();
 			detachWatchdog();
 			releaseMasterMeterTap();
 			teardownMeterTaps();
