@@ -63,11 +63,16 @@ def _migrate_to(conn: sqlite3.Connection, version: int) -> None:
 def _seed_library(conn: sqlite3.Connection) -> None:
     """A few real rows in the synced tables, so the digest has something to say."""
     stamp = sync_stamp.canonical_now()
+    # The stable_id is a BOUND PARAMETER, computed in Python. Written as
+    # `'a' * 40` inside the SQL it was SQLite doing the arithmetic: 'a'
+    # coerces to 0, 0 * 40 is 0, and TEXT affinity stored the one character
+    # "0" -- so the fixture row was not shaped like a real track at all
+    # (Claude review, PR #1648 P3).
     conn.execute(
         "INSERT INTO tracks(stable_id, stable_id_tier, title, artists_json, "
         "created_at, updated_at, origin_device_id) "
-        "VALUES ('a' * 40, 'inferred', 'Digest Fixture', '[\"Someone\"]', ?, ?, 'dev')",
-        (stamp, stamp),
+        "VALUES (?, 'inferred', 'Digest Fixture', '[\"Someone\"]', ?, ?, 'dev')",
+        ("a" * 40, stamp, stamp),
     )
     conn.execute(
         "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "

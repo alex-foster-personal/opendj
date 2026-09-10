@@ -79,6 +79,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cache
 
+from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
@@ -314,8 +316,24 @@ _SYNC_INFRA: tuple[str, ...] = (
 # domain, one answer to "does this cross machines".
 # ==========================================================================
 
+#: The provenance vocabulary, read from the legacy rung rather than retyped.
+#: Claude review, PR #1648 (P3): migrations_v9 builds its CHECK from this
+#: tuple explicitly "so the provenance list has one home rather than a copy
+#: that can drift from the constraint", and enrollment_table_docs repeats
+#: that claim to readers -- while this mirror wrote the three values out as a
+#: literal, which is the copy the docs deny exists. A fourth provenance would
+#: have left a consolidated database rejecting those rows with an
+#: IntegrityError naming nothing.
+#:
+#: The one import this module takes from a legacy bootstrap, and deliberately
+#: narrow: a VOCABULARY, not DDL. The table text stays a verbatim lift like
+#: every other domain here, because tests/engine_core/test_store_schema.py
+#: compares it against the legacy ladder's real output object by object, and
+#: importing the statements would make that gate compare a thing with itself.
+_ENROLLED_VIA_SQL: str = ",".join(f"'{value}'" for value in ENROLLED_VIA_VALUES)
+
 _ENROLLMENT: tuple[str, ...] = (
-    """
+    f"""
     CREATE TABLE IF NOT EXISTS machine_owners (
         machine_id      TEXT PRIMARY KEY
                           REFERENCES machines(machine_id) ON DELETE CASCADE,
@@ -324,7 +342,7 @@ _ENROLLMENT: tuple[str, ...] = (
         hub_machine_id  TEXT NOT NULL,
         enrolled_at     TEXT NOT NULL,
         enrolled_via    TEXT NOT NULL CHECK
-                          (enrolled_via IN ('grant','google_id_token','adopt')),
+                          (enrolled_via IN ({_ENROLLED_VIA_SQL})),
         revoked_at      TEXT
     )
     """,

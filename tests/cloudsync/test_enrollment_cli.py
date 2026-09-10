@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,7 @@ from apps.sync_hub import (
     maintenance,
     maintenance_enroll,
 )
+from apps.sync_hub.transport import HttpTransport
 from tests.cloudsync.conftest import HELLO_PATH, free_port
 from tests.cloudsync.enrollment_helpers import (
     http_enroll,
@@ -216,7 +218,8 @@ def test_the_grant_can_be_read_from_stdin_instead_of_argv(
     On nucbox-wsl -- the machine this command exists for -- that is the
     joining host itself.
     """
-    monkeypatch.setattr("sys.stdin", io.StringIO(mint_grant(enroll_hub_dir) + "\n"))
+    token = mint_grant(enroll_hub_dir)
+    monkeypatch.setattr("sys.stdin", io.StringIO(token + "\n"))
     argv = [
         "enroll",
         "--data-dir",
@@ -235,9 +238,17 @@ def test_the_grant_can_be_read_from_stdin_instead_of_argv(
     assert rows[0]["machine_id"] == machine_identity.get_or_create_machine_id(
         enroll_spoke_dir
     )
+    # What the process really saw, not the list this test built three lines
+    # up: that list holds --grant-file and -, so a scan of it could never
+    # fail and said nothing about /proc (Claude review, PR #1648 P3).
     assert not any(
-        arg.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX) for arg in argv
-    ), "the token must not be in the argument vector"
+        arg.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX) for arg in sys.argv
+    ), "the token must not be in this process's argument vector"
+    assert token.startswith(enrollment_credentials.GRANT_TOKEN_PREFIX), (
+        "control: the token really does carry the prefix being scanned for, "
+        "so an absent match is a token that stayed off the argv rather than "
+        "a scan looking for the wrong string"
+    )
 
 
 def test_an_empty_stdin_grant_fails_loudly_rather_than_enrolling(
@@ -357,9 +368,15 @@ def test_the_cli_enrolls_end_to_end_over_a_real_socket(
     unreachable URL must fail, or this test would pass without the server
     doing anything.
     """
-    assert not hasattr(maintenance_enroll._transport_for, "__wrapped__"), (
-        "control: this test must drive the real transport factory, so it "
-        "fails loudly if a fixture ever patches it out from under us"
+    assert isinstance(
+        maintenance_enroll._transport_for(enroll_live_hub), HttpTransport
+    ), (
+        "control: this test must drive the REAL transport factory, so it "
+        "fails loudly if a fixture ever patches it out from under us. "
+        "Asserted by calling the factory and typing what comes back: an "
+        "earlier version checked for a __wrapped__ attribute, which "
+        "monkeypatch.setattr never sets, so the control could not fire for "
+        "the one case it exists to catch (Claude review, PR #1648 P2)"
     )
 
     token = mint_grant(enroll_hub_dir)
