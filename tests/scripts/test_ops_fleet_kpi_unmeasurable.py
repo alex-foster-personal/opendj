@@ -30,9 +30,11 @@ import shutil
 import pytest
 
 from tests.scripts.test_ops_fleet_kpi import (
+    NOW,
     _copy_fixture,
     _env,
     _fatal_label,
+    _iso,
     _health,
     _home,
     _run,
@@ -185,3 +187,49 @@ def test_an_unenumerable_logs_directory_is_unmeasurable(tmp_path):
         assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
     finally:
         logs.chmod(0o755)
+
+
+def test_a_real_fatal_in_watchdog_log_is_seen_when_no_other_log_exists(tmp_path):
+    """[if] an in-window FATAL in watchdog.log is missed when logs/ holds no *.log [then] fail, [else stop].
+
+    Fourth P1 on PR #1662, and the one that named the real defect: the guard validated an
+    input set while `_fatal_lines` re-derived it with its own glob. With no `*.log` present
+    the guard passed on a readable watchdog.log and then restored nullglob, so `_fatal_lines`
+    handed awk the literal unmatched `logs/*.log`, awk stopped on that read error, and a
+    genuine FATAL went unreported as PASS.
+
+    This is the only test here that asserts FAIL rather than UNMEASURABLE, and it is the
+    most important one: the whole module guards against a green tick that means nothing, and
+    a probe silently missing a REAL fault is that failure in its worst form.
+    """
+    fixture = _copy_fixture(tmp_path)
+    for log in (fixture / "jobs" / "logs").glob("*.log"):
+        if log.name != "tick-gate.log":
+            log.unlink()
+    (fixture / "jobs" / "logs" / "tick-gate.log").rename(
+        fixture / "jobs" / "logs" / "tick-gate.keep"
+    )
+    stamp = _iso(NOW - 60)
+    (fixture / "jobs" / "watchdog.log").write_text(f"{stamp} FATAL: a real one\n")
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+    assert verdicts[_fatal_label(0)] == "FAIL"
+
+
+def test_a_clean_watchdog_log_alone_still_passes(tmp_path):
+    """[if] a clean watchdog.log with no other log stops passing [then] fail, [else stop].
+
+    The control for the case above. A guard that reported FAIL for every watchdog-only
+    fixture would satisfy that test perfectly while making the line useless.
+    """
+    fixture = _copy_fixture(tmp_path)
+    for log in (fixture / "jobs" / "logs").glob("*.log"):
+        if log.name != "tick-gate.log":
+            log.unlink()
+    (fixture / "jobs" / "logs" / "tick-gate.log").rename(
+        fixture / "jobs" / "logs" / "tick-gate.keep"
+    )
+    (fixture / "jobs" / "watchdog.log").write_text("nothing of interest here\n")
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+    assert verdicts[_fatal_label(0)] == "PASS"
