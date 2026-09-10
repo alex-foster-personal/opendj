@@ -559,7 +559,10 @@ describe('a reservation is only released by the call that owns it', () => {
 			panel.indexOf('function loadSuggest('),
 			panel.indexOf('\n\tconst playlistMemberIds')
 		);
-		assert.match(fn, /loadRow\(row, picked\.deck, \{ play: true, reservation: picked\.reservation \}\);/);
+		assert.match(
+			fn,
+			/loadRow\(row, picked\.deck, \{\s*play: true,\s*reservation: picked\.reservation,\s*\.\.\.\(opts\.pressT0Ms === undefined \? \{\} : \{ pressT0Ms: opts\.pressT0Ms \}\)\s*\}\);/
+		);
 	});
 });
 

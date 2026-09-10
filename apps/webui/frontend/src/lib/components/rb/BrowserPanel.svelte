@@ -1676,14 +1676,18 @@
 		void _loadOntoDeck(row, deck, opts);
 	}
 
-	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
+	function loadSuggest(sid: string, opts: { play?: boolean; pressT0Ms?: number } = {}): void {
 		const row = { stable_id: sid, file_exists: true, is_streaming: false };
 		if (opts.play) {
 			const picked = pickDoubleDeck(row);
 			if (picked === null) return;
 			// pickDoubleDeck already reserved this deck - see _loadOntoDeck's
 			// reservation gate.
-			loadRow(row, picked.deck, { play: true, reservation: picked.reservation });
+			loadRow(row, picked.deck, {
+				play: true,
+				reservation: picked.reservation,
+				...(opts.pressT0Ms === undefined ? {} : { pressT0Ms: opts.pressT0Ms })
+			});
 			return;
 		}
 		loadRow(row, null);
@@ -2654,7 +2658,7 @@
 						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
 						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 						oncandidates={(cands) => (suggestCandidates = cands)}
 					/>
@@ -2668,7 +2672,7 @@
 						referenceKey={masterRef?.key ?? null}
 						stableId={decks[1].stable_id}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 					/>
 				{/if}

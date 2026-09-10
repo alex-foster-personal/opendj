@@ -602,3 +602,107 @@ test('a direct Load+Play (TrackTable double-click) threads its own click stamp',
 			'the same command setPendingLoadPlayIntent already reads a stamp from'
 	);
 });
+
+test('the suggestion-panel Load+Play chevrons thread their own click stamp', () => {
+	// A second, distinct opts.play === true entry path beside TrackTable's:
+	// SuggestNextStrip's chevron and RecommendedSection's paired-row
+	// double-click called loadSuggest(sid, { play: true }) with no timestamp
+	// at all, so this pair of gestures filed as unmeasured plain schedules
+	// exactly like the TrackTable gap above, before either was stamped.
+	const strip = readSource('src/lib/components/rb/SuggestNextStrip.svelte');
+	assert.ok(
+		strip.includes('onplay?: (stableId: string, pressT0Ms: number) => void;'),
+		'the strip must declare its onplay callback wide enough to carry a stamp'
+	);
+	assert.ok(
+		strip.includes('onclick={(e) => onplay?.(cand.stable_id, e.timeStamp)}'),
+		'and the play button must hand on its own click event stamp'
+	);
+
+	const recommended = readSource('src/lib/components/rb/RecommendedSection.svelte');
+	assert.ok(
+		recommended.includes('onplay?: (stableId: string, pressT0Ms: number) => void;'),
+		'RecommendedSection must declare the same widened onplay callback'
+	);
+	assert.ok(
+		recommended.includes("ondblclick={(e) => onplay?.(p.partnerId, e.timeStamp)}"),
+		'and the paired-row double-click must hand on its own event stamp'
+	);
+
+	const panel = readSource('src/lib/components/rb/BrowserPanel.svelte');
+	assert.ok(
+		panel.includes(
+			'function loadSuggest(sid: string, opts: { play?: boolean; pressT0Ms?: number } = {}): void {'
+		),
+		'loadSuggest must accept a stamp rather than dropping it on the floor'
+	);
+	assert.ok(
+		/loadRow\(row, picked\.deck, \{\s*play: true,\s*reservation: picked\.reservation,\s*\.\.\.\(opts\.pressT0Ms === undefined \? \{\} : \{ pressT0Ms: opts\.pressT0Ms \}\)\s*\}\);/.test(
+			panel
+		),
+		'and forward it into loadRow, or the parameter is decorative'
+	);
+	const onplayCallSites = panel.match(
+		/onplay=\{\(sid, pressT0Ms\) => loadSuggest\(sid, \{ play: true, pressT0Ms \}\)\}/g
+	);
+	assert.equal(
+		onplayCallSites?.length,
+		2,
+		'both SuggestNextStrip and RecommendedSection must be wired with the stamp, not just one'
+	);
+});
+
+test('QuickDrawMenu Play/Pause and its contextual actions thread their own click stamp', () => {
+	// The gap the "every P0 press path" test above does not reach: QuickDrawMenu
+	// is a THIRD dispatcher onto runPerformanceCommandFromUi, separate from
+	// TransportCluster/Deck/hotkeys, and its click handlers discarded the
+	// click event entirely, so _togglePlay/_runAction fell back to
+	// runPerformanceCommandFromUi's own performance.now() default - a stamp
+	// taken downstream of the browser input queue and of handler dispatch,
+	// silently understating the wait under any main-thread backlog.
+	const menu = readSource('src/lib/components/rb/QuickDrawMenu.svelte');
+	assert.ok(
+		menu.includes(
+			'async function _togglePlay(deck: DeckId, pressT0Ms?: number): Promise<void> {'
+		),
+		'_togglePlay must accept a stamp rather than dropping it on the floor'
+	);
+	assert.ok(
+		menu.includes(
+			"await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing }, pressT0Ms);"
+		),
+		'and forward it into the play command, or the parameter is decorative'
+	);
+	assert.ok(
+		menu.includes('onclick={(e) => void _togglePlay(deck, e.timeStamp)}'),
+		'the Play/Pause quick-draw button must hand on its own click event stamp'
+	);
+
+	assert.ok(
+		menu.includes(
+			'async function _runAction(id: QuickDrawActionId, deck: DeckId, pressT0Ms?: number): Promise<void> {'
+		),
+		'_runAction must accept a stamp rather than dropping it on the floor'
+	);
+	assert.ok(
+		menu.includes('await runPerformanceCommandFromUi(quickDrawCommand(id, deck), pressT0Ms);'),
+		'and forward it into the built command, or the parameter is decorative'
+	);
+	assert.ok(
+		menu.includes("onclick={(e) => void _runAction('unload', deck, e.timeStamp)}"),
+		'the tall Unload button must hand on its own click event stamp'
+	);
+	assert.ok(
+		menu.includes('onclick={(e) => void _runAction(leaf, deck, e.timeStamp)}'),
+		'the loop-leaf buttons must hand on their own click event stamp'
+	);
+
+	assert.ok(
+		menu.includes('run: (pressT0Ms?: number) => Promise<void>;'),
+		'the generic contextual-action item must widen its run() to carry a stamp'
+	);
+	assert.ok(
+		menu.includes('void item.run(e.timeStamp);'),
+		'and the generic contextual-action button must hand on its own click event stamp'
+	);
+});
