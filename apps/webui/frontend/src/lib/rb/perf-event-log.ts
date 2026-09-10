@@ -46,16 +46,26 @@
  * `error` severity that is absent from this set, so this drift is CHECKED,
  * not just corrected.
  */
-const ESCALATED_KINDS: ReadonlySet<string> = new Set([
-	'xrun',
-	'audio-context',
-	'silent-while-playing',
-	'presentation-clock-stalled',
-	'presentation-stalled',
-	'audio-output-rebind-failed',
-	'audio-output-dead',
-	'audio-output-dead-persistent'
-]);
+// ESCALATED_KINDS was here until Thu 10 Sep 2026, an eight-name allowlist that
+// _escalate consulted AFTER recordPerfEvent had already gated on
+// `severity === 'error'`. It could therefore only ever SUBTRACT: its whole
+// effect was to drop error-severity rows before they left the browser.
+//
+// It was removed rather than extended. An allowlist of values must be
+// maintained forever and rots silently between maintenances, and this one had
+// already rotted in both directions: `presentation-tick-failed` was recorded
+// at `error` by presentation-clock-report.ts, with a message saying the
+// waveform would have frozen over live audio, and was silently discarded here;
+// while `presentation-stalled` sat in the set and is emitted by nothing.
+//
+// The comment that used to live here claimed escalated-kinds-superset.test.mjs
+// "reds if any module records a kind at error severity that is absent from
+// this set". That test read exactly two files. A guard whose docstring says
+// "any module" and whose code says "these two" cannot fail for the case it
+// claims to cover, which is why a live escapee went unnoticed.
+//
+// The invariant now stands on its own: recorded at `error` means escalated.
+// There is no list to drift.
 
 /**
  * At most one escalation per kind per window.
@@ -92,6 +102,8 @@ const _lastEscalationAtMs = new Map<string, number>();
  */
 let _escalator: ((event: PerfEvent) => void) | null = null;
 let _warnedNoEscalator = false;
+/** One warning per session when the escalator itself throws. */
+let _warnedEscalatorThrew = false;
 
 /**
  * Point escalated rows at a sink. Called once, at client boot.
@@ -383,7 +395,6 @@ function _stageSummary(stages: Record<string, number>): string {
  * is retried on the next report or page load rather than lost.
  */
 function _escalate(entry: PerfEvent): void {
-	if (!ESCALATED_KINDS.has(entry.kind)) return;
 	if (_escalator === null) {
 		// Once per session, not per row: a sustained dropout would otherwise turn
 		// a missing sink into its own console flood. The row is already in the
@@ -402,7 +413,26 @@ function _escalate(entry: PerfEvent): void {
 	const lastMs = _lastEscalationAtMs.get(entry.kind);
 	if (lastMs !== undefined && nowMs - lastMs < ESCALATION_WINDOW_MS) return;
 	_lastEscalationAtMs.set(entry.kind, nowMs);
-	_escalator(entry);
+	// The escalate path is the ERROR-REPORTING path. A throw here would
+	// propagate out of recordPerfEvent and into whichever module was in the
+	// middle of reporting a fault, turning a reportable problem into a crash at
+	// exactly the moment things are already going wrong. The row is already in
+	// the ring and on the console, so the local record survives either way.
+	//
+	// This is NOT a fallback that masks a failure: the reason is surfaced, once
+	// per session, on the same console the row itself went to. What is refused
+	// is letting the reporter take down the reported.
+	try {
+		_escalator(entry);
+	} catch (cause) {
+		if (!_warnedEscalatorThrew) {
+			_warnedEscalatorThrew = true;
+			console.warn(
+				`[perf-event] escalator threw for kind ${entry.kind}; rows stay in this browser. ` +
+					`The ring and the console still hold them. Cause: ${String(cause)}`
+			);
+		}
+	}
 }
 
 export function recordPerfEvent(
