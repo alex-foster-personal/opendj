@@ -55,6 +55,9 @@ Requirements (mini-PRD):
     [if] a review's own `commit_id`, or a summary comment's own embedded SHA,
     predates the PR's current head and still counts toward coverage
     [then broken]
+  / A gate older than main's own gate code renders no verdict (PR #1720).
+    [if] a branch cut before a gate fix on main prints PASS [then broken]
+    -- see scripts/review_gate_freshness.py
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -106,6 +109,7 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
+from scripts.review_gate_freshness import require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
 REPO = "maintainer/music-dj-tools"
@@ -494,6 +498,7 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
 
 
 def triage(pr: str) -> int:
+    gate_commit = require_gate_current_with_main()
     checks = _checks(pr)
     head_sha = _head_sha(pr)
     evidence = _evidence(pr, head_sha)
@@ -503,7 +508,7 @@ def triage(pr: str) -> int:
         EXPECTED_REVIEWERS,
     )
 
-    print(f"[review-coverage] PR #{pr} @ head {head_sha}")
+    print(f"[review-coverage] PR #{pr} @ head {head_sha} (gate code has main's {gate_commit[:9]})")
     print()
     print("  reviewer coverage")
     for verdict in verdicts:
