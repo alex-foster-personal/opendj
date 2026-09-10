@@ -1316,7 +1316,7 @@ async function _scheduleDeckSerial(
 		active,
 		...(pressToScheduleMs === undefined ? {} : { pressToScheduleMs })
 	});
-	const row = scheduleRowFacts(scheduleStages, _ctx.state);
+	const row = scheduleRowFacts(scheduleStages, _ctx.state, pressT0Ms);
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =
 		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;

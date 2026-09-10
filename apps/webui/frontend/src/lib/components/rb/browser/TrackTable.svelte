@@ -303,7 +303,7 @@
 		onloadrow: (
 			row: BrowserRow,
 			deck: DeckId | null,
-			opts?: { play?: boolean; reservation?: number }
+			opts?: { play?: boolean; reservation?: number; pressT0Ms?: number }
 		) => void;
 		/**
 		 * Preferred deck for double-click load+play. Shift -> CH3/CH4 when
@@ -461,7 +461,13 @@
 		const reservation = picked != null ? picked.reservation : null;
 		// Missing key = ask; false = skip (remembered "do this every time").
 		if (uiPrefs.confirm.dblclick_load_play === false) {
-			onloadrow(row, deck, reservation !== null ? { play: true, reservation } : { play: true });
+			onloadrow(
+				row,
+				deck,
+				reservation !== null
+					? { play: true, reservation, pressT0Ms: event.timeStamp }
+					: { play: true, pressT0Ms: event.timeStamp }
+			);
 			return;
 		}
 		// A second double-click before the first confirm is answered
@@ -1526,19 +1532,22 @@
 		<button
 			type="button"
 			class="load-confirm-yes"
-			onclick={() => {
+			onclick={(e) => {
 				const pending = loadConfirm;
 				const remember = loadConfirmEveryTime;
 				loadConfirm = null;
 				loadConfirmEveryTime = false;
 				if (pending === null) return;
 				if (remember) setConfirmPref('dblclick_load_play', false);
+				// The dialog paused for a human decision of unknown length, so
+				// the felt wait for THIS gesture starts at the Yes click, not
+				// at the double-click that only opened it (r3974057968).
 				onloadrow(
 					pending.row,
 					pending.deck,
 					pending.reservation !== null
-						? { play: true, reservation: pending.reservation }
-						: { play: true }
+						? { play: true, reservation: pending.reservation, pressT0Ms: e.timeStamp }
+						: { play: true, pressT0Ms: e.timeStamp }
 				);
 			}}>Yes</button
 		>

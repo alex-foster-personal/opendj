@@ -537,14 +537,14 @@ describe('a reservation is only released by the call that owns it', () => {
 		assert.match(fn, /const reservation = picked != null \? picked\.reservation : null;/);
 		assert.match(
 			fn,
-			/onloadrow\(row, deck, reservation !== null \? \{ play: true, reservation \} : \{ play: true \}\);/
+			/reservation !== null\s*\? \{ play: true, reservation, pressT0Ms: event\.timeStamp \}\s*: \{ play: true, pressT0Ms: event\.timeStamp \}/
 		);
 	});
 
 	it('the confirm dialog carries the reservation generation through to both Yes and the overwrite-release guard', () => {
 		assert.match(
 			table,
-			/pending\.reservation !== null\s*\? \{ play: true, reservation: pending\.reservation \}\s*: \{ play: true \}/,
+			/pending\.reservation !== null\s*\? \{ play: true, reservation: pending\.reservation, pressT0Ms: e\.timeStamp \}\s*: \{ play: true, pressT0Ms: e\.timeStamp \}/,
 			'Yes button does not forward it'
 		);
 		assert.match(
@@ -794,5 +794,39 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 			/command\.type === 'master'[\s\S]*?return \[deck, 'sync'\];/,
 			"master's scope no longer includes the plain deck scope 'load'/'unload' fall through to"
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// P1 BLOCKING r3974057968: load-spanning press classification registry
+// ---------------------------------------------------------------------------
+describe('a marked press stamp is claimable exactly once', () => {
+	it('an unmarked stamp claims false', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimLoadSpanningPress(111.1), false);
+	});
+
+	it('claim is undefined-safe, so callers need not guard a missing stamp', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimLoadSpanningPress(undefined), false);
+	});
+
+	it('a marked stamp claims true once, then false - the mark does not leak to a later press', async () => {
+		const slots = await _mod();
+		slots.markLoadSpanningPress(222.2);
+		assert.equal(slots.claimLoadSpanningPress(222.2), true);
+		assert.equal(
+			slots.claimLoadSpanningPress(222.2),
+			false,
+			'a second schedule reusing the same float must not inherit the first one\'s classification'
+		);
+	});
+
+	it('marking one stamp does not classify a different one', async () => {
+		const slots = await _mod();
+		slots.markLoadSpanningPress(333.3);
+		assert.equal(slots.claimLoadSpanningPress(444.4), false);
+		// The original mark is still there, unaffected by the miss above.
+		assert.equal(slots.claimLoadSpanningPress(333.3), true);
 	});
 });

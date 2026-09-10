@@ -215,16 +215,19 @@ export interface PendingLoadPlay {
 	/**
 	 * Q1: the operator's press, carried ACROSS the load it is waiting on.
 	 *
-	 * Space on a still-decoding track is a supported gesture, and the wait the
-	 * operator feels starts at that keydown, not at the play command the load
-	 * completion eventually dispatches. Without this the row starts timing
-	 * after the load and understates the felt latency by the whole decode.
+	 * Space on a still-decoding track, and a direct Load+Play on one (e.g. a
+	 * TrackTable double-click), are both supported gestures, and the wait the
+	 * operator feels starts at that keydown or click, not at the play command
+	 * the load completion eventually dispatches. Without this the row starts
+	 * timing after the load and understates the felt latency by the whole
+	 * decode.
 	 *
 	 * The resulting `press_to_schedule_ms` therefore legitimately spans a deck
 	 * load and can be seconds. That is the honest number for THIS gesture and
-	 * a wrong one for S2's 30ms budget, so the S2 p95 must exclude rows that
-	 * span a load - see `docs/perf/kpi-map.json` S2, which says so where the
-	 * KPI is defined rather than leaving it to be rediscovered.
+	 * a wrong one for S2's 30ms budget (`specs/perf-latency-program.md` S2), so
+	 * the row must say so itself rather than leaving an S2 consumer to guess
+	 * from duration - see `markLoadSpanningPress` below, spent by
+	 * `press-stamp.ts` into the row's own `kind`.
 	 */
 	pressT0Ms?: number;
 }
@@ -293,4 +296,31 @@ export function pendingLoadPlayState(): Record<DeckId, PendingLoadPlay | null> {
 		3: pendingByDeck[3] === null ? null : { ...pendingByDeck[3] },
 		4: pendingByDeck[4] === null ? null : { ...pendingByDeck[4] }
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Load-spanning press classification (P1 BLOCKING, r3974057968 follow-up)
+//
+// A press stamp handed to `dispatchPerformanceCommand` after riding through
+// `PendingLoadPlay.pressT0Ms` always spans this deck's load: the deferred
+// play is dispatched only once the awaited `load` command settles, so the
+// eventual schedule's `press_to_schedule_ms` covers the decode, not just the
+// scheduler queue. Marked here, at press-stamp.ts's request, so the ring row
+// can say so in its own `kind` (see press-audible.ts's
+// PRESS_SCHEDULE_LOAD_SPAN_KIND) instead of an aggregator guessing from
+// duration. A plain Map keyed by the stamp itself, not by deck/generation:
+// press-stamp.ts never sees either, only the same `pressT0Ms` number that
+// already threads all the way to `_scheduleDeckSerial`.
+// ---------------------------------------------------------------------------
+const loadSpanningPressStamps = new Set<number>();
+
+/** Call once, right before spending a `PendingLoadPlay.pressT0Ms`. */
+export function markLoadSpanningPress(pressT0Ms: number): void {
+	loadSpanningPressStamps.add(pressT0Ms);
+}
+
+/** Consume-once: a stamp answers `true` for its one schedule, never again. */
+export function claimLoadSpanningPress(pressT0Ms: number | undefined): boolean {
+	if (pressT0Ms === undefined) return false;
+	return loadSpanningPressStamps.delete(pressT0Ms);
 }

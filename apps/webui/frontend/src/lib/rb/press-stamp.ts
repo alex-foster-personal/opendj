@@ -15,6 +15,7 @@ import {
 	scheduleRowKind,
 	unavailableLatencyTerms
 } from '$lib/player/transport/press-audible';
+import { claimLoadSpanningPress } from '$lib/rb/deck-slots';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 
 /**
@@ -84,13 +85,21 @@ export function measurePressToScheduleMs(
  * neither a fourth import for these three functions nor the lines of
  * composition. This module is already one of its imports and is already the
  * press instrument.
+ *
+ * `pressT0Ms` rides along for exactly one more lookup: `claimLoadSpanningPress`
+ * (deck-slots.ts) answers whether THIS stamp was marked by a deferred
+ * load-play before it reached here. That import is the one exception to this
+ * module's usual deck-slots avoidance (see `PerfDeck` above) - this is real
+ * correlation data the ring needs, not a type this module could derive some
+ * cheaper way.
  */
 export function scheduleRowFacts(
 	stages: Readonly<Record<string, number>>,
-	contextState: string
+	contextState: string,
+	pressT0Ms?: number
 ): { kind: string; labels: Record<string, string> } {
 	return {
-		kind: scheduleRowKind(stages.press_to_schedule_ms),
+		kind: scheduleRowKind(stages.press_to_schedule_ms, claimLoadSpanningPress(pressT0Ms)),
 		labels: latencyFloorLabels({
 			unavailable: unavailableLatencyTerms({
 				base: stages.base_latency_ms,

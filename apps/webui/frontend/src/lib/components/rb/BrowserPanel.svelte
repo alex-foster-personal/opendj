@@ -114,6 +114,7 @@
 		beginPendingLoadPlay,
 		clearPendingLoadPlay,
 		consumePendingLoadPlay,
+		markLoadSpanningPress,
 		pickDoubleClickDeck,
 		type DeckSlotState
 	} from '$lib/rb/deck-slots';
@@ -1670,7 +1671,7 @@
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): void {
 		void _loadOntoDeck(row, deck, opts);
 	}
@@ -1902,7 +1903,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -1943,12 +1944,15 @@
 			}
 			try {
 				loadIntent = beginPendingLoadPlay(target, opts.play === true);
-				await dispatchPerformanceCommand({
-					type: 'load_play_intent',
-					deck: target,
-					generation: loadIntent.generation,
-					desired_play: loadIntent.desiredPlay
-				});
+				await dispatchPerformanceCommand(
+					{
+						type: 'load_play_intent',
+						deck: target,
+						generation: loadIntent.generation,
+						desired_play: loadIntent.desiredPlay
+					},
+					opts.pressT0Ms
+				);
 				// Explicit CH load (incl. confirmed double-click): replace if occupied.
 				// refuseIfMaster: true on both - this is a destructive REPLACE, not
 				// a standalone eject, so it must stay refused if `target` raced to
@@ -1972,6 +1976,12 @@
 					// Q1: timed from the operator's ORIGINAL keydown, which is
 					// what they felt, not from this dispatch downstream of the
 					// load they were waiting on.
+					// This dispatch only ever fires after `load` above has
+					// resolved, so a stamp reaching it always spans this
+					// deck's load - mark it before it is spent (r3974057968).
+					if (pendingPlay.pressT0Ms !== undefined) {
+						markLoadSpanningPress(pendingPlay.pressT0Ms);
+					}
 					await dispatchPerformanceCommand(
 						{ type: 'play', deck: target, playing: true },
 						pendingPlay.pressT0Ms

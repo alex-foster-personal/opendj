@@ -258,12 +258,30 @@ test('an undefined floor no longer throws the transport path over', () => {
 //-----------------------------------------------------------------------------
 
 test('a pressed schedule files under its OWN kind, a suffix of the plain one', () => {
-	assert.equal(floor.scheduleRowKind(undefined), 'transport-schedule');
-	assert.equal(floor.scheduleRowKind(0), 'transport-schedule-press');
-	assert.equal(floor.scheduleRowKind(12.5), 'transport-schedule-press');
+	assert.equal(floor.scheduleRowKind(undefined, false), 'transport-schedule');
+	assert.equal(floor.scheduleRowKind(0, false), 'transport-schedule-press');
+	assert.equal(floor.scheduleRowKind(12.5, false), 'transport-schedule-press');
 	// The suffix shape is what keeps every existing prefix-matching consumer
 	// (the probe mirror, the e2e console grep) working unchanged.
 	assert.ok(floor.PRESS_SCHEDULE_KIND.startsWith(floor.SCHEDULE_KIND));
+});
+
+//-----------------------------------------------------------------------------
+// P1 BLOCKING r3974057968: the load-spanning classification
+//-----------------------------------------------------------------------------
+
+test('a load-spanning press files under its OWN kind, a suffix of the press one', () => {
+	// No press behind the schedule: loadSpanning can never override that,
+	// or a pitch-fader drag with a stale flag set would masquerade as a
+	// press measurement.
+	assert.equal(floor.scheduleRowKind(undefined, true), 'transport-schedule');
+	assert.equal(floor.scheduleRowKind(12.5, true), 'transport-schedule-press-load-span');
+	assert.equal(floor.scheduleRowKind(12.5, false), 'transport-schedule-press');
+	// The suffix chain is what keeps _bucketOf's startsWith('transport-schedule-press')
+	// check routing these into the SAME ring budget as an ordinary press row,
+	// while still being the longest kind an S2 p95 consumer can match first.
+	assert.ok(floor.PRESS_SCHEDULE_LOAD_SPAN_KIND.startsWith(floor.PRESS_SCHEDULE_KIND));
+	assert.ok(floor.PRESS_SCHEDULE_LOAD_SPAN_KIND.startsWith(floor.SCHEDULE_KIND));
 });
 
 test('SABOTAGE: one pitch-fader drag can no longer evict the press row', async () => {
@@ -313,7 +331,7 @@ test('the engine labels the row from the SAME context it read the clock from', (
 	// call absent are the same ones the row itself omits. A second read of the
 	// context could disagree with the row printed beside it.
 	assert.ok(
-		body.includes('const row = scheduleRowFacts(scheduleStages, _ctx.state);'),
+		body.includes('const row = scheduleRowFacts(scheduleStages, _ctx.state, pressT0Ms);'),
 		'the labels must come from the row being filed, and carry the context state ' +
 			'read at that same point; without it a reader cannot tell a pre-render ' +
 			'zero from a dead output device'
@@ -421,6 +439,41 @@ test('scheduleRowFacts reads the row it labels, not a second opinion of the cont
 	assert.equal(chromiumFresh.labels.audio_context_state, 'running');
 });
 
+test('scheduleRowFacts classifies an UNMARKED stamp as plain-press, and tolerates no stamp at all', async () => {
+	const press = await loadTypeScriptModule('src/lib/rb/press-stamp.ts');
+
+	// A stamp nobody marked (the ordinary DOM/MIDI press path) stays on the
+	// plain press kind - claimLoadSpanningPress must answer false for it.
+	const ordinary = press.scheduleRowFacts({ press_to_schedule_ms: 8.2 }, 'running', 98765.4);
+	assert.equal(ordinary.kind, 'transport-schedule-press');
+
+	// No pressT0Ms at all (e.g. the two-arg call sites earlier in this file)
+	// must not throw and must behave exactly as before this fix.
+	const noStamp = press.scheduleRowFacts({ press_to_schedule_ms: 8.2 }, 'running');
+	assert.equal(noStamp.kind, 'transport-schedule-press');
+});
+
+test('press-stamp.ts actually spends claimLoadSpanningPress into the row kind', () => {
+	// scheduleRowFacts and deck-slots.ts's registry are exercised separately
+	// above (each `loadTypeScriptModule` call is its own esbuild bundle, so a
+	// mark made through a directly-loaded deck-slots.ts instance is invisible
+	// to a SEPARATELY bundled press-stamp.ts - only the real Vite module graph
+	// shares one instance). The wiring between them is source-verified here,
+	// the same way this file already verifies audio-engine.svelte.ts's call
+	// shape above.
+	const src = readSource('src/lib/rb/press-stamp.ts');
+	assert.ok(
+		src.includes("import { claimLoadSpanningPress } from '$lib/rb/deck-slots';"),
+		'the classification must come from the registry deck-slots.ts owns'
+	);
+	assert.ok(
+		src.includes(
+			'kind: scheduleRowKind(stages.press_to_schedule_ms, claimLoadSpanningPress(pressT0Ms)),'
+		),
+		'the claim result must actually reach scheduleRowKind, not merely be computed'
+	);
+});
+
 //-----------------------------------------------------------------------------
 // the three press paths review found unstamped (#1657 r3973957845/49, r3974057968)
 //-----------------------------------------------------------------------------
@@ -476,4 +529,76 @@ test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
 		'a physical play must spend it'
 	);
 	assert.ok(glue.includes('_cmdPressCue(action.deck, pressT0Ms)'), 'and so must a physical cue');
+});
+
+//-----------------------------------------------------------------------------
+// P1 BLOCKING r3974057968: mark the load-spanning row before aggregation
+//-----------------------------------------------------------------------------
+
+test('the deferred play marks its stamp as load-spanning before spending it', () => {
+	// This dispatch fires only after `load` above it has been awaited, so a
+	// stamp reaching it always spans this deck's load - mark it, or an S2
+	// consumer has no way to exclude it short of guessing from duration.
+	const panel = readSource('src/lib/components/rb/BrowserPanel.svelte');
+	const fn = panel.slice(
+		panel.indexOf('async function _loadOntoDeck('),
+		panel.indexOf('\n\tfunction ', panel.indexOf('async function _loadOntoDeck('))
+	);
+	const markAt = fn.indexOf('markLoadSpanningPress(pendingPlay.pressT0Ms)');
+	const dispatchAt = fn.indexOf("{ type: 'play', deck: target, playing: true }");
+	assert.ok(markAt !== -1, 'the deferred play must mark its stamp load-spanning');
+	assert.ok(
+		markAt < dispatchAt,
+		'marking after the dispatch races scheduleRowFacts reading the classification'
+	);
+	// And the marker is imported from the module that owns the registry.
+	assert.ok(
+		panel.includes('markLoadSpanningPress') &&
+			/import\s*\{[^}]*markLoadSpanningPress[^}]*\}\s*from\s*'\$lib\/rb\/deck-slots'/.test(panel),
+		'the marker must come from deck-slots, not be reinvented locally'
+	);
+});
+
+//-----------------------------------------------------------------------------
+// P2 BLOCKING r3974057968: capture the initiating load-and-play press
+//-----------------------------------------------------------------------------
+
+test('a direct Load+Play (TrackTable double-click) threads its own click stamp', () => {
+	// The preexisting opts.play === true entry path distinct from Space: a
+	// TrackTable row double-click never supplied a timestamp at all, so
+	// pendingPlay.pressT0Ms stayed undefined and the eventual play filed as
+	// an unmeasured plain schedule.
+	const table = readSource('src/lib/components/rb/browser/TrackTable.svelte');
+	const dblclick = table.slice(
+		table.indexOf('function onRowDblClick('),
+		table.indexOf('function hl(')
+	);
+	assert.ok(
+		dblclick.includes('pressT0Ms: event.timeStamp'),
+		'the no-confirm fast path must forward the double-click\'s own stamp'
+	);
+	// The confirm-before-load dialog pauses for a human decision of unknown
+	// length; the felt wait for this gesture starts at the Yes click actually
+	// requesting play, not at the earlier double-click that only opened it.
+	const yesButtonAt = table.indexOf('class="load-confirm-yes"');
+	const yesButtonBody = table.slice(yesButtonAt, table.indexOf('>Yes</button', yesButtonAt));
+	assert.ok(
+		yesButtonBody.includes('onclick={(e) =>'),
+		'the Yes button must take its own click event to stamp from'
+	);
+	assert.ok(
+		yesButtonBody.includes('pressT0Ms: e.timeStamp'),
+		'and forward that stamp into onloadrow, or the parameter is decorative'
+	);
+
+	const panel = readSource('src/lib/components/rb/BrowserPanel.svelte');
+	const fn = panel.slice(
+		panel.indexOf('async function _loadOntoDeck('),
+		panel.indexOf('\n\tfunction ', panel.indexOf('async function _loadOntoDeck('))
+	);
+	assert.ok(
+		/dispatchPerformanceCommand\(\s*\{\s*type: 'load_play_intent',[\s\S]*?\},\s*opts\.pressT0Ms\s*\);/.test(fn),
+		'_loadOntoDeck must forward the caller-supplied stamp into load_play_intent, ' +
+			'the same command setPendingLoadPlayIntent already reads a stamp from'
+	);
 });

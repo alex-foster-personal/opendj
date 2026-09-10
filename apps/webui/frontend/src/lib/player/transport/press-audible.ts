@@ -70,9 +70,27 @@ export const SCHEDULE_KIND = 'transport-schedule';
  */
 export const PRESS_SCHEDULE_KIND = 'transport-schedule-press';
 
+/**
+ * The ring kind for a press-behind schedule whose wait spans a deck load.
+ *
+ * A SUFFIX of `PRESS_SCHEDULE_KIND` (itself a suffix of `SCHEDULE_KIND`), for
+ * the same reason: `_bucketOf` matches `startsWith('transport-schedule-press')`
+ * before the shorter prefix, so a load-spanning row still spends the press
+ * ring's budget rather than the noisy plain one, while an S2 p95 consumer can
+ * test this longest kind FIRST to exclude exactly these rows - see
+ * `specs/perf-latency-program.md` S2. Deferred load-play (Space or a direct
+ * Load+Play on a still-decoding track) only ever dispatches its play AFTER
+ * the load it waited on resolves, so `press_to_schedule_ms` on this kind is
+ * never the ordinary schedule-queue wait S2 budgets - it is honestly, and by
+ * construction, a number that can run to seconds. Recorded here on the row
+ * itself so a reader never has to guess load-spanning from duration.
+ */
+export const PRESS_SCHEDULE_LOAD_SPAN_KIND = 'transport-schedule-press-load-span';
+
 /** Which ring kind this schedule's row belongs under. */
-export function scheduleRowKind(pressToScheduleMs: number | undefined): string {
+export function scheduleRowKind(pressToScheduleMs: number | undefined, loadSpanning: boolean): string {
 	if (pressToScheduleMs === undefined) return SCHEDULE_KIND;
+	if (loadSpanning) return PRESS_SCHEDULE_LOAD_SPAN_KIND;
 	return PRESS_SCHEDULE_KIND;
 }
 

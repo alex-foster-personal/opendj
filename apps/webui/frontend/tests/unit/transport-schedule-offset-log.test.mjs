@@ -258,7 +258,7 @@ test('the log write stays off the click-to-audio path it measures', () => {
 	const recordAt = body.indexOf('recordPerfTiming(row.kind,');
 	assert.ok(recordAt !== -1, 'if the row is never recorded then nothing is measured at all');
 	assert.ok(
-		body.includes('const row = scheduleRowFacts(scheduleStages, _ctx.state);'),
+		body.includes('const row = scheduleRowFacts(scheduleStages, _ctx.state, pressT0Ms);'),
 		'the kind must be derived from the row being filed (scheduleRowFacts reads the ' +
 			'press stamp out of the stages); hardcoding it back to one literal returns ' +
 			'press rows to the fader-flooded bucket that used to evict them'
