@@ -30,6 +30,7 @@ Regression one-liners:
   - if the probe reports an invented flag as known then broken
   - if the probe reads a flag mentioned only in another option's help prose as known then broken
   - if the installed cli no longer documents dontAsk as deny-by-default then broken
+  - if an enum documented as a bare `(a, b)` list reads as unchecked then broken
 """
 
 from __future__ import annotations
@@ -60,6 +61,14 @@ _LONG_FLAG_RE = re.compile(r"--[a-zA-Z][a-zA-Z0-9-]*")
 _PLACEHOLDER_RE = re.compile(r"<[^>]+>|\[[^\]]+\]")
 _CHOICES_RE = re.compile(r"\(choices:\s*(.*?)\)", re.DOTALL)
 _CHOICE_VALUE_RE = re.compile(r'"([^"]*)"')
+#: The cli documents enums in two forms on the same --help page:
+#: `--output-format` uses `(choices: "a", "b")` (matched above), `--effort`
+#: and `--setting-sources` use a bare `(low, medium, high)` parenthetical
+#: instead. Requiring every comma-separated item to be a single bare token
+#: (no spaces) is what keeps this from also matching a prose parenthetical
+#: like "(cwd, env info, memory paths, git status)", where "env info" is
+#: two words -- that block fails this pattern and correctly yields no match.
+_BARE_ENUM_RE = re.compile(r"\(([a-zA-Z][\w-]*(?:,\s*[a-zA-Z][\w-]*)+)\)")
 
 
 @dataclass(frozen=True)
@@ -113,7 +122,14 @@ def _help_options(help_text: str) -> dict[str, _OptionSpec]:
         end = line_matches[i + 1].start() if i + 1 < len(line_matches) else len(help_text)
         block = help_text[m.start() : end]
         choices_match = _CHOICES_RE.search(block)
-        choices = set(_CHOICE_VALUE_RE.findall(choices_match.group(1))) if choices_match else None
+        choices: set[str] | None
+        if choices_match:
+            choices = set(_CHOICE_VALUE_RE.findall(choices_match.group(1)))
+        else:
+            bare_match = _BARE_ENUM_RE.search(block)
+            choices = (
+                {item.strip() for item in bare_match.group(1).split(",")} if bare_match else None
+            )
         spec = _OptionSpec(
             takes_value=bool(_PLACEHOLDER_RE.search(m.group(0))),
             choices=choices,
@@ -214,16 +230,18 @@ def test_every_flag_and_value_the_review_lane_emits_is_accepted() -> None:
 
     # The loop above is satisfied as soon as ANY flag's value gets checked,
     # e.g. --output-format alone keeps it green while --permission-mode goes
-    # unchecked if the cli ever stops publishing its choices in the
-    # `(choices: "a", "b")` form this probe parses (--effort already uses a
-    # bare `(a, b)` form on this cli, so the alternate format is live in the
-    # same help text). Pin the safety-critical flag directly.
+    # unchecked. `_help_options` already parses both documented enum forms
+    # (`(choices: "a", "b")` and the bare `(a, b)` --effort/--setting-sources
+    # use), but a THIRD future format would silently fall through both and
+    # this generic loop would not notice. Pin the safety-critical flag
+    # directly so that failure mode cannot hide behind --output-format or
+    # --effort still being parseable.
     permission_mode = options.get("--permission-mode")
     assert permission_mode is not None and permission_mode.choices is not None, (
         "control: --permission-mode no longer publishes a parseable "
-        "'(choices: ...)' list, so the generic loop above skipped it and "
-        "dontAsk went unchecked. Update _CHOICES_RE or _help_options to "
-        "parse the new format."
+        "choices list in either documented form, so the generic loop above "
+        "skipped it and dontAsk went unchecked. Update _CHOICES_RE, "
+        "_BARE_ENUM_RE, or _help_options to parse the new format."
     )
     assert "dontAsk" in permission_mode.choices, (
         f"the installed cli's --permission-mode no longer documents "
