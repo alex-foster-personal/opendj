@@ -1709,6 +1709,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlist-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Playlist History */
+        get: operations["get_playlist_history_api_v1_playlist_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history/redo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redo Playlist Edit */
+        post: operations["redo_playlist_edit_api_v1_playlist_history_redo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-history/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Playlist Edit */
+        post: operations["undo_playlist_edit_api_v1_playlist_history_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists": {
         parameters: {
             query?: never;
@@ -4851,6 +4902,50 @@ export interface components {
             schema_version: number;
             /** Seq */
             seq: number;
+        };
+        /** HistoryApplyOut */
+        HistoryApplyOut: {
+            /** Action */
+            action: string;
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Command Id */
+            command_id: string;
+            current?: components["schemas"]["PlaylistWriteOut"] | null;
+            /** Etag */
+            etag?: string | null;
+            /** Op */
+            op: string;
+            /** Playlist Id */
+            playlist_id: string;
+        };
+        /** HistoryEntryOut */
+        HistoryEntryOut: {
+            /** Command Id */
+            command_id: string;
+            /** Label */
+            label: string;
+            /** Op */
+            op: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Ts */
+            ts: string;
+        };
+        /** HistoryGetOut */
+        HistoryGetOut: {
+            /** Can Redo */
+            can_redo: boolean;
+            /** Can Undo */
+            can_undo: boolean;
+            /** Cursor */
+            cursor: number;
+            /** Entries */
+            entries: components["schemas"]["HistoryEntryOut"][];
+            /** Limit */
+            limit: number;
         };
         /** HotCueMutationOut */
         HotCueMutationOut: {
@@ -11149,6 +11244,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_playlist_history_api_v1_playlist_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryGetOut"];
+                };
+            };
+        };
+    };
+    redo_playlist_edit_api_v1_playlist_history_redo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryApplyOut"];
+                };
+            };
+        };
+    };
+    undo_playlist_edit_api_v1_playlist_history_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryApplyOut"];
                 };
             };
         };

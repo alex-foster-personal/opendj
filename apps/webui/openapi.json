@@ -4361,6 +4361,134 @@
         "title": "HelloResponse",
         "type": "object"
       },
+      "HistoryApplyOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistWriteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "op",
+          "action",
+          "playlist_id",
+          "can_undo",
+          "can_redo"
+        ],
+        "title": "HistoryApplyOut",
+        "type": "object"
+      },
+      "HistoryEntryOut": {
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "op",
+          "playlist_id",
+          "ts",
+          "label"
+        ],
+        "title": "HistoryEntryOut",
+        "type": "object"
+      },
+      "HistoryGetOut": {
+        "properties": {
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cursor",
+          "limit",
+          "can_undo",
+          "can_redo",
+          "entries"
+        ],
+        "title": "HistoryGetOut",
+        "type": "object"
+      },
       "HotCueMutationOut": {
         "properties": {
           "cue": {
@@ -17193,6 +17321,69 @@
         "summary": "Solve Play It",
         "tags": [
           "play-it"
+        ]
+      }
+    },
+    "/api/v1/playlist-history": {
+      "get": {
+        "operationId": "get_playlist_history_api_v1_playlist_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryGetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Playlist History",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlist-history/redo": {
+      "post": {
+        "operationId": "redo_playlist_edit_api_v1_playlist_history_redo_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Redo Playlist Edit",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlist-history/undo": {
+      "post": {
+        "operationId": "undo_playlist_edit_api_v1_playlist_history_undo_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Undo Playlist Edit",
+        "tags": [
+          "playlists-write"
         ]
       }
     },

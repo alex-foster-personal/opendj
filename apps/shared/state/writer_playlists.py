@@ -225,5 +225,23 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
+    def append_playlist_history(self, kind: str, payload: dict) -> object:
+        """Append a playlist.edit / undo / redo row on the events log.
+
+        Does not change insert / memberships.set / delete payloads. Callers
+        must already be inside the mutation's playlist_transaction (or accept
+        a nested SAVEPOINT that commits on its own).
+        """
+        now = self._now_iso()
+        with self._tx():
+            ev = self._append_event(
+                kind=kind,
+                stable_id=None,
+                payload=payload,
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return ev
+
 
 __all__ = ["_PlaylistWriterMixin"]
