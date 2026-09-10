@@ -13,11 +13,13 @@ reason. Silence is the only thing that fails.
 
 What would satisfy this check without satisfying its intent, and why it
 doesn't: a bare `reqs: no-flip <ID>` with no reason text still fails --
-the regex requires trailing non-whitespace, so a rubber-stamped marker
-cannot silence the gate for free. A PR citing zero ids passes with an
-explicit "(no citations)" line, never conflated with a checked-and-clear
-result. `gh pr view` failing prints UNKNOWN and exits 2, never a silent
-pass -- a failed read is not the same as a PR with nothing to say.
+the regex requires a reason on the SAME LINE as the marker (horizontal
+whitespace only), so neither a rubber-stamped marker nor the next section
+heading of an ordinary multiline body can silence the gate for free. A PR
+citing zero ids passes with an explicit "(no citations)" line, never
+conflated with a checked-and-clear result. `gh pr view` failing prints
+UNKNOWN and exits 2, never a silent pass -- a failed read is not the same as
+a PR with nothing to say.
 """
 
 from __future__ import annotations
@@ -50,9 +52,21 @@ def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
 
 
 def _no_flip_marker(req_id: str, body: str) -> bool:
-    # Requires trailing non-whitespace on the same line: a bare marker with
-    # no reason must not silence the gate.
-    pat = re.compile(r"reqs:\s*no-flip\s+" + re.escape(req_id) + r"\s+\S", re.IGNORECASE)
+    """True when `body` carries `reqs: no-flip <req_id> <reason>` on ONE line.
+
+    Every separator is horizontal whitespace, never `\\s`. `\\s` matches a
+    newline, so `\\s+\\S` let the reason be satisfied by the FIRST non-blank
+    character anywhere later in the body: a marker on its own line followed by
+    an ordinary `## Tests` heading read as a justified no-flip in exactly the
+    multiline PR bodies this repository writes, which is every one of them.
+    `[ \\t]` cannot cross a line, so the reason has to sit beside the id.
+    `\\r` is not in the class either, so a CRLF body behaves the same as an LF
+    one rather than accepting the carriage return as the separator.
+    """
+    pat = re.compile(
+        r"reqs:[ \t]*no-flip[ \t]+" + re.escape(req_id) + r"[ \t]+\S",
+        re.IGNORECASE,
+    )
     return bool(pat.search(body))
 
 
