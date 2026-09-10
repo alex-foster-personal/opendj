@@ -111,7 +111,7 @@ class BeatgridFallbackOut(BaseModel):
 # ----- helpers ----------------------------------------------------------------
 
 def _analysis_db_path(request: Request) -> Path:
-    override: Optional[Path] = getattr(request.app.state, "analysis_db_path", None)
+    override: Path | None = getattr(request.app.state, "analysis_db_path", None)
     return Path(override) if override is not None else STATE_DB
 
 
@@ -130,8 +130,8 @@ def _open_analysis_ro(path: Path) -> sqlite3.Connection:
 
 
 def _load_latest_record(
-    db_path: Path, stable_id: str, backend: Optional[str]
-) -> Optional[AnalysisRecord]:
+    db_path: Path, stable_id: str, backend: str | None
+) -> AnalysisRecord | None:
     """Newest analysis row for ``stable_id`` (deterministic tie-break).
 
     Returns None when the track has no analysis row (or the ``analysis``
@@ -221,7 +221,7 @@ def _default_anlz_available(stable_id: str) -> bool:
 
 
 def _anlz_available(request: Request, stable_id: str) -> bool:
-    fn: Optional[Callable[[str], bool]] = getattr(
+    fn: Callable[[str], bool] | None = getattr(
         request.app.state, "anlz_available_fn", None
     )
     if fn is not None:
@@ -239,7 +239,7 @@ def _invalid_record(stable_id: str, message: str) -> HTTPException:
     )
 
 
-def synthesize_fallback_beats(record: AnalysisRecord) -> Optional[list[FallbackBeatOut]]:
+def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] | None:
     """Derive an ANLZ-shaped beat list from measured analysis data.
 
     Anchored on ``downbeats_s`` (n=1 on every detected downbeat, beats
@@ -308,7 +308,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> Optional[list[FallbackB
 def get_auto_cues(
     stable_id: str,
     request: Request,
-    backend: Optional[str] = Query(
+    backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
     _backend: StateBackend = Depends(get_read_state),
@@ -342,7 +342,7 @@ def get_auto_cues(
 def get_beatgrid_fallback(
     stable_id: str,
     request: Request,
-    backend: Optional[str] = Query(
+    backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
     _backend: StateBackend = Depends(get_read_state),

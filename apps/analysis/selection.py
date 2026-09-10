@@ -274,7 +274,8 @@ def compare_and_set_toggle(
     own prior `write_toggle` landed at can pass it here to require that
     nothing wrote the toggle at all since. Returns whether the set happened.
     """
-    return write_toggle(lane, new, expected=expected, expected_revision=expected_revision) is not None
+    result = write_toggle(lane, new, expected=expected, expected_revision=expected_revision)
+    return result is not None
 
 
 def all_toggles() -> dict[str, ToggleState]:

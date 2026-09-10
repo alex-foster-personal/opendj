@@ -454,7 +454,9 @@ def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             monkeypatch.setattr(
-                analysis_source_route.sel, "set_default", _fail_once_then_let_a_concurrent_write_land
+                analysis_source_route.sel,
+                "set_default",
+                _fail_once_then_let_a_concurrent_write_land,
             )
             resp = client.put(
                 "/api/v1/analysis/source",

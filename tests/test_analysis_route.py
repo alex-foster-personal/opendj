@@ -21,7 +21,7 @@ Regression one-liners:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Iterator
 
@@ -67,7 +67,7 @@ def _record(
     *,
     backend: str = "librosa+madmom",
     backend_version: str = "test-1.0",
-    analyzed_at: datetime = datetime(2026, 4, 17, tzinfo=timezone.utc),
+    analyzed_at: datetime = datetime(2026, 4, 17, tzinfo=UTC),
     downbeats: list[float] | None = None,
     bpm: float = BPM,
 ) -> AnalysisRecord:
@@ -102,7 +102,7 @@ def _own_beatgrid_record(sid: str, *, status: str, reason: str | None) -> Analys
         stable_id=sid,
         backend="own_beatgrid.inapp",
         backend_version="1.0.0",
-        analyzed_at=datetime(2026, 9, 9, tzinfo=timezone.utc),
+        analyzed_at=datetime(2026, 9, 9, tzinfo=UTC),
         duration_s=DURATION_S,
         sample_rate=44100,
         bpm=0.0, bpm_confidence=0.0,
@@ -137,7 +137,7 @@ def client(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
             SID_FULL,
             backend="mik",
             backend_version="old-0.1",
-            analyzed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            analyzed_at=datetime(2026, 1, 1, tzinfo=UTC),
             bpm=119.0,
         ),
         db_path=db,
