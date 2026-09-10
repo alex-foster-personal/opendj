@@ -119,8 +119,21 @@ GUARD_MODULE: str = "apps.mik.reference_guard"
 CORPUS_HANDLE_NAMES: frozenset[str] = frozenset({"corpus_segments", "MIK_REFERENCE_ROOT"})
 
 PATH_FACTORY_NAMES: frozenset[str] = frozenset(
-    {"Path", "PurePath", "PosixPath", "PurePosixPath", "WindowsPath", "PureWindowsPath", "join"}
+    {
+        "Path",
+        "PurePath",
+        "PosixPath",
+        "PurePosixPath",
+        "WindowsPath",
+        "PureWindowsPath",
+        "join",
+        "joinpath",
+    }
 )
+
+# Extensionless files that are executable sources, so the walk cannot skip them
+# on the "no suffix" test a source file always fails.
+TEXT_FILENAMES: frozenset[str] = frozenset({"justfile", "Justfile", "Makefile", "makefile"})
 
 
 TEXT_TOKEN_SEPARATORS = re.compile(r"[^A-Za-z0-9_.\-]+")
@@ -163,17 +176,38 @@ def docstring_constants(tree: ast.Module) -> set[int]:
     return found
 
 
+def literal_string(node: ast.AST) -> str | None:
+    """Raw string value of a ``+``-concatenation of literals, or None.
+
+    Kept separate from :func:`literal_parts`: concatenation joins characters,
+    not path segments, so ``"data/reference/" + "mik"`` must be glued into one
+    string BEFORE it is split on ``/`` -- splitting each side first and
+    rejoining the segment lists would lose the seam between "reference/" and
+    "mik" and never produce the adjacent pair the tail check looks for.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = literal_string(node.left), literal_string(node.right)
+        return None if left is None or right is None else left + right
+    return None
+
+
 def literal_parts(node: ast.AST, bindings: dict[str, list[str]] | None = None) -> list[str] | None:
     """Ordered literal segments of a path expression built from strings, or None.
 
-    Handles ``Path("a", "b")``, ``os.path.join("a", "b")``, the ``/`` operator
-    chained over literals and over a variable base, and a NAME that was assigned
-    a path expression earlier in the file. A non-literal operand contributes
-    nothing rather than making the whole expression opaque: the corpus tail only
-    has to appear somewhere in the literal run for the read to be classified,
-    and ``DATA_DIR / "reference" / "mik"`` is exactly that shape.
+    Handles ``Path("a", "b")``, ``os.path.join("a", "b")``, ``Path("a").joinpath("b")``,
+    ``"a/" + "b"``, the ``/`` operator chained over literals and over a variable
+    base, and a NAME that was assigned a path expression earlier in the file. A
+    non-literal operand contributes nothing rather than making the whole
+    expression opaque: the corpus tail only has to appear somewhere in the
+    literal run for the read to be classified, and ``DATA_DIR / "reference" / "mik"``
+    is exactly that shape.
     """
     known = bindings or {}
+    concatenated = literal_string(node)
+    if concatenated is not None:
+        return split_segments(concatenated)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return split_segments(node.value)
     if isinstance(node, ast.Name):
@@ -186,6 +220,8 @@ def literal_parts(node: ast.AST, bindings: dict[str, list[str]] | None = None) -
         if name not in PATH_FACTORY_NAMES:
             return None
         parts: list[str] = []
+        if isinstance(func, ast.Attribute):
+            parts += literal_parts(func.value, known) or []
         for arg in node.args:
             parts += literal_parts(arg, known) or []
         return parts
@@ -312,7 +348,7 @@ def scanned_files(root: Path) -> list[Path]:
                 if entry.name in SKIPPED_DIR_NAMES or entry.name.startswith(SKIPPED_DIR_PREFIXES):
                     continue
                 stack.append(entry)
-            elif entry.suffix in {".py", *TEXT_SUFFIXES}:
+            elif entry.suffix in {".py", *TEXT_SUFFIXES} or entry.name in TEXT_FILENAMES:
                 files.append(entry)
     return sorted(files)
 
