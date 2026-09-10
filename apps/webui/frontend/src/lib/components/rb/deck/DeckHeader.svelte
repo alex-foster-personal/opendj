@@ -66,11 +66,11 @@
 		gridless
 			? GRID_FEATURE_TIP
 			: deck.beat_sync_enabled
-				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (strict BAR 1-4)'
+				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (BAR phase, folding if it must)'
 				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
 	);
 	const beatSyncBullets: readonly string[] = $derived([
-		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4).',
+		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4 whenever the two tempos match outright).',
 		`Needs a real PQTZ grid on both decks. BAR tempo must land in pitch range [${syncBounds.min}, ${syncBounds.max}] (default +-16%).`,
 		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
 		'No grid on this track: the button is inert and transport runs unsynced.',
