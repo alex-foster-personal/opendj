@@ -1,16 +1,17 @@
 {
   "_doc": "Binds the UX scenarios S1-S11 in specs/perf-latency-program.md to the KPI names recorded in kpi-ledger.json, and to the budget each must meet. Read by scripts/perf/kpi_scorecard.py (`just perf-kpis`). The scenario set here must match the spec exactly; the scorecard fails loudly when they drift, because a scorecard that silently drops a scenario reports a clean board by having no checks. A scenario with an empty `kpis` list is NOT a pass: it is a scenario nobody can score, which is the state the scorecard exists to make visible.",
-  "schema_version": 1,
-  "direction_note": "`lower_is_better` false means a bigger number is better (frames per second, throughput). `budget` is the spec's Target, `acceptable` its Acceptable, `breaking` its Breaking. Units follow the ledger entry's own unit.",
+  "schema_version": 2,
+  "direction_note": "`lower_is_better` false means a bigger number is better (frames per second, throughput). `budget` is the spec's Target, `acceptable` its Acceptable, `breaking` its Breaking. Units follow the ledger entry's own unit. `required` entries are normally a plain KPI name, which inherits the scenario's own budget/acceptable/breaking/unit (schema_version 1 shape). A scenario whose required KPIs do NOT share one threshold - S2's 16ms visual feedback next to its 30ms audible budget, S4's ms frame delta next to its % dropped-frame budget, S7's ms p95 next to its 0-tolerance dropped-keystroke count - uses a dict entry instead, carrying its own kpi/unit/budget/acceptable/breaking/lower_is_better (schema_version 2 addition, `_resolve_required` in the scorer normalizes both shapes).",
   "scenarios": {
     "S1": {
       "title": "Audible integrity while playing (no dropout, xrun or glitch)",
       "class": "P0",
       "kpis": [
         "xrun_sentinel_false_positive_rate_idle",
-        "xruns_per_playing_hour"
+        "xruns_per_playing_hour",
+        "silent_while_playing_events_per_hour"
       ],
-      "missing_kpi": "xruns_per_playing_hour, and silent_while_playing_events_per_hour now that PR #856 detects both a silent output and a stalled presentation clock. The sentinel proves the INSTRUMENT is quiet at idle; it does not yet report the RATE during a real set, which is the number S1 is about.",
+      "missing_kpi": "xruns_per_playing_hour, and silent_while_playing_events_per_hour now that PR #856 detects both a silent output and a stalled presentation clock. The sentinel proves the INSTRUMENT is quiet at idle; it does not yet report the RATE during a real set, which is the number S1 is about. Both are required: xruns alone lets a silent-but-not-xrunning glitch report PASS, which is the audible-integrity gap PR #856 exists to close.",
       "lower_is_better": true,
       "budget": 0,
       "acceptable": 0,
@@ -22,7 +23,8 @@
         "breaking": "any audible glitch during a set"
       },
       "required": [
-        "xruns_per_playing_hour"
+        "xruns_per_playing_hour",
+        "silent_while_playing_events_per_hour"
       ],
       "context_kpis": [
         "xrun_sentinel_false_positive_rate_idle"
@@ -34,9 +36,10 @@
       "class": "P0",
       "kpis": [
         "input_to_audible_ms_p95",
-        "press_to_schedule_ms_p95"
+        "press_to_schedule_ms_p95",
+        "visual_feedback_ms_p95"
       ],
-      "missing_kpi": "The instrument SHIPPED in PR #1657; what is missing is a capture, not a capability. Until a real p95 lands this scenario stays UNMEASURED, and transport_scheduled_offset_ms must NOT be read as a proxy: it starts counting after the press has already been handled, so it cannot see the input queueing the user feels. Note also that ~18.9ms of the 30ms target is the WebKit device floor (audio_output_device_floor_ms, measured Wed 9 Sep 2026), so about 63% of the target budget is spent before any app code runs; and a row whose floor reads zero is refusing the total rather than understating it, so an UNMEASURED here may mean the context had not rendered yet.",
+      "missing_kpi": "The audible instrument SHIPPED in PR #1657; what is missing is a capture, not a capability. Until a real p95 lands this scenario stays UNMEASURED, and transport_scheduled_offset_ms must NOT be read as a proxy: it starts counting after the press has already been handled, so it cannot see the input queueing the user feels. Note also that ~18.9ms of the 30ms target is the WebKit device floor (audio_output_device_floor_ms, measured Wed 9 Sep 2026), so about 63% of the target budget is spent before any app code runs; and a row whose floor reads zero is refusing the total rather than understating it, so an UNMEASURED here may mean the context had not rendered yet. The 16ms visual-feedback half of this P0 scenario has no instrument at all yet: visual_feedback_ms_p95 is required alongside the audible KPI so the full scenario cannot PASS on audible alone.",
       "lower_is_better": true,
       "budget": 30,
       "acceptable": 60,
@@ -48,7 +51,22 @@
         "breaking": ">60ms (current e2e ceiling)"
       },
       "required": [
-        "input_to_audible_ms_p95"
+        {
+          "kpi": "input_to_audible_ms_p95",
+          "unit": "ms",
+          "lower_is_better": true,
+          "budget": 30,
+          "acceptable": 60,
+          "breaking": 60
+        },
+        {
+          "kpi": "visual_feedback_ms_p95",
+          "unit": "ms",
+          "lower_is_better": true,
+          "budget": 16,
+          "acceptable": 16,
+          "breaking": null
+        }
       ],
       "context_kpis": [
         "press_to_schedule_ms_p95"
@@ -76,13 +94,14 @@
       "title": "Waveform smoothness while playing",
       "class": "P1",
       "kpis": [
-        "waveform_frame_delta_ms_p95"
+        "waveform_frame_delta_ms_p95",
+        "waveform_dropped_frame_pct_10s"
       ],
-      "missing_kpi": "p95 rAF frame delta and dropped-frame percentage per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green.",
+      "missing_kpi": "p95 rAF frame delta and dropped-frame percentage per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames.",
       "lower_is_better": true,
       "budget": 16.7,
       "acceptable": 33.3,
-      "breaking": 50,
+      "breaking": null,
       "unit": "ms p95 frame delta",
       "spec_cells": {
         "target": "p95 frame delta <= display refresh interval",
@@ -90,7 +109,22 @@
         "breaking": "visible stutter / freeze while audible"
       },
       "required": [
-        "waveform_frame_delta_ms_p95"
+        {
+          "kpi": "waveform_frame_delta_ms_p95",
+          "unit": "ms p95 frame delta",
+          "lower_is_better": true,
+          "budget": 16.7,
+          "acceptable": 16.7,
+          "breaking": null
+        },
+        {
+          "kpi": "waveform_dropped_frame_pct_10s",
+          "unit": "% dropped frames per 10s window",
+          "lower_is_better": true,
+          "budget": 0,
+          "acceptable": 5,
+          "breaking": null
+        }
       ],
       "context_kpis": []
     },
@@ -131,11 +165,11 @@
         "deck_load_to_stems_ready_s",
         "stemmed_deck_load_total_s"
       ],
-      "missing_kpi": "The measured 14.8s figure is a load where stems sit ON the critical path, so it scores the CURRENT design, not this scenario. This scenario only becomes scoreable once mix-first loading lands and playability is separable from stems-ready.",
+      "missing_kpi": "The measured 14.8s figure is a load where stems sit ON the critical path, so it scores the CURRENT design, not this scenario. This scenario only becomes scoreable once mix-first loading lands and playability is separable from stems-ready. Breaking has no numeric threshold here: the spec's own breaking cell is 'blocks playability at all', not a duration, so a slow-but-still-playable load past 25s reads OVER, never an invented BREAKING.",
       "lower_is_better": true,
       "budget": 15,
       "acceptable": 25,
-      "breaking": 25,
+      "breaking": null,
       "unit": "s",
       "spec_cells": {
         "target": "<=15s background, deck already playable",
@@ -155,9 +189,10 @@
       "class": "P1",
       "kpis": [
         "library_filter_keystroke_ms_p95",
-        "local_filter_settle_ms"
+        "local_filter_settle_ms",
+        "library_filter_dropped_keystrokes_per_session"
       ],
-      "missing_kpi": "p95 over a real typing session. The recorded 80ms is a settle time from a controlled run, not a keystroke distribution, and the spec's budget is explicitly a p95.",
+      "missing_kpi": "p95 over a real typing session. The recorded 80ms is a settle time from a controlled run, not a keystroke distribution, and the spec's budget is explicitly a p95. The spec's own breaking cell is '>250ms or dropped keystrokes': a fast p95 on the keystrokes that survived says nothing about the ones that never rendered, so library_filter_dropped_keystrokes_per_session is required alongside the latency KPI.",
       "lower_is_better": true,
       "budget": 50,
       "acceptable": 100,
@@ -169,7 +204,22 @@
         "breaking": ">250ms or dropped keystrokes"
       },
       "required": [
-        "library_filter_keystroke_ms_p95"
+        {
+          "kpi": "library_filter_keystroke_ms_p95",
+          "unit": "ms p95",
+          "lower_is_better": true,
+          "budget": 50,
+          "acceptable": 100,
+          "breaking": 250
+        },
+        {
+          "kpi": "library_filter_dropped_keystrokes_per_session",
+          "unit": "dropped keystrokes per session",
+          "lower_is_better": true,
+          "budget": 0,
+          "acceptable": 0,
+          "breaking": 0
+        }
       ],
       "context_kpis": [
         "local_filter_settle_ms"

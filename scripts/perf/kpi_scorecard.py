@@ -186,6 +186,34 @@ def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
     return (today - measured).days
 
 
+def _resolve_required(cfg: dict) -> list[dict]:
+    """Normalize each required KPI into its own name/unit/threshold set.
+
+    A plain KPI name (the common shape: one required KPI) inherits the
+    scenario's single budget/acceptable/breaking/unit. A dict entry carries
+    its own, for a scenario whose required KPIs do not share one threshold -
+    S2's visual-feedback KPI budgets at 16ms while its audible KPI budgets at
+    30ms, and scoring the visual reading against the audible band is the same
+    invented-threshold defect as picking a threshold out of thin air.
+    """
+    resolved = []
+    for entry in cfg.get("required", []):
+        if isinstance(entry, str):
+            resolved.append(
+                {
+                    "kpi": entry,
+                    "unit": cfg.get("unit", ""),
+                    "budget": cfg.get("budget"),
+                    "acceptable": cfg.get("acceptable"),
+                    "breaking": cfg.get("breaking"),
+                    "lower_is_better": cfg.get("lower_is_better", True),
+                }
+            )
+        else:
+            resolved.append(entry)
+    return resolved
+
+
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
     """Score each scenario on its REQUIRED KPIs alone.
 
@@ -194,28 +222,65 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
     reported PASS the moment press-to-schedule was recorded, while
     press-to-AUDIBLE, the number the scenario exists for, was still missing.
     That recreates the partial pass this tool exists to prevent.
+
+    A required reading that cannot be trusted scores nothing, per
+    .claude/rules/verification.md: refuse rather than assume. Two ways a
+    reading fails that trust without ever being absent: it is recorded in a
+    unit the map does not expect, or its date is missing, malformed, or in the
+    future. Either one used to fall through to verdict_for anyway - a wrong
+    unit produced a false verdict outright, and a bad date produced a real
+    verdict with no age, which let `--max-stale-days` exit 0 on evidence it
+    never actually checked.
     """
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
-        required = list(cfg.get("required", []))
+        required = _resolve_required(cfg)
         readings = tuple(newest_reading(entries, name) for name in cfg.get("kpis", []))
         by_name = {r.kpi: r for r in readings}
-        required_readings = [by_name[name] for name in required if name in by_name]
-        missing = [name for name in required if name not in by_name or not by_name[name].measured]
-        if not required or missing:
+
+        missing: list[str] = []
+        rejected: list[str] = []
+        scoreable: list[tuple[dict, float, int]] = []
+        for req in required:
+            name = req["kpi"]
+            reading = by_name.get(name)
+            if reading is None or not reading.measured or reading.value is None:
+                missing.append(name)
+                continue
+            if reading.unit != req["unit"]:
+                rejected.append(
+                    f"{name} recorded in {reading.unit!r}, map expects {req['unit']!r}"
+                )
+                continue
+            age = age_in_days(reading.date, today)
+            if age is None or age < 0:
+                rejected.append(
+                    f"{name} has a missing, malformed, or future-dated reading "
+                    f"({reading.date!r})"
+                )
+                continue
+            scoreable.append((req, reading.value, age))
+
+        if not required or missing or rejected:
             note = str(cfg.get("missing_kpi", "")) or "no KPI is bound to this scenario"
+            reasons = []
             if missing:
-                note = f"required KPI not recorded: {', '.join(missing)}. " + note
+                reasons.append(f"required KPI not recorded: {', '.join(missing)}")
+            if rejected:
+                reasons.append(f"required KPI rejected: {'; '.join(rejected)}")
+            if reasons:
+                note = ". ".join(reasons) + ". " + note
             scores.append(
                 Score(sid, cfg["title"], cfg.get("class", "?"), UNMEASURED, readings, None, note)
             )
             continue
-        verdicts = [verdict_for(r.value, cfg) for r in required_readings if r.value is not None]
+
+        verdicts = [verdict_for(value, req) for req, value, _ in scoreable]
         worst = next(
             (level for level in ("BREAKING", "OVER", "ACCEPTABLE") if level in verdicts),
             "PASS",
         )
-        ages = [a for a in (age_in_days(r.date, today) for r in required_readings) if a is not None]
+        ages = [age for _, _, age in scoreable]
         scores.append(
             Score(
                 sid,
@@ -365,12 +430,14 @@ def main(argv: list[str] | None = None) -> int:
                         "verdict": s.verdict,
                         "age_days": s.age_days,
                         "title": s.title,
+                        "note": s.note,
                         "readings": [
                             {
                                 "kpi": r.kpi,
                                 "value": r.value,
                                 "unit": r.unit,
                                 "date": r.date,
+                                "source": r.source,
                                 "superseded": r.superseded,
                             }
                             for r in s.readings
