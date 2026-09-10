@@ -17,11 +17,13 @@
  * BrowserPanel.svelte and reconstructed them with `Function`: that harness
  * never executes the compiled component and can stay green with its real
  * call sites, imports, or wiring broken. The fix moved both functions out of
- * the component into `src/lib/rb/health-boot-retry.ts` as real, exported,
- * pure functions parameterized over `getHealth` - the same injection point
- * `resolveBootPlaylist` (pane-contract.svelte.ts) already uses for the
- * sibling boot-pane decision. This file now loads that real module directly
- * through `loadTypeScriptModule`, no source-slicing, no `Function`
+ * the component into `pane-contract.svelte.ts` as real, exported, pure
+ * functions parameterized over `getHealth` - the same injection point
+ * `resolveBootPlaylist` and `shouldRetryBootPane` in that same file already
+ * use for the sibling boot-pane decisions (kept there rather than a new
+ * module so BrowserPanel's import fan-out, a measured hotspot, does not grow
+ * for two functions this small). This file now loads that real module
+ * directly through `loadTypeScriptModule`, no source-slicing, no `Function`
  * reconstruction.
  *
  * Regression lines:
@@ -42,7 +44,7 @@ import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 async function _loadHealthBootRetry() {
-	return loadTypeScriptModule('src/lib/rb/health-boot-retry.ts');
+	return loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
 }
 
 test('a single getHealth() failure at boot is retried once with fresh:true', async () => {

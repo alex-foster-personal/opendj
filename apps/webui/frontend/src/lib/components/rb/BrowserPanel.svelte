@@ -47,7 +47,6 @@
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
 	import { resolveRowVocals } from '$lib/rb/row-vocals';
 	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
-	import { getHealthAtBoot, getHealthFreshWithRetry } from '$lib/rb/health-boot-retry';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -130,6 +129,8 @@
 		derivePlaylistDeckMembership,
 		derivePlaylistPaneOpenCounts,
 		filterRows,
+		getHealthAtBoot,
+		getHealthFreshWithRetry,
 		installBrowserSortIpc,
 		makeClientRowProvider,
 		multiPanePlaylistIds,
