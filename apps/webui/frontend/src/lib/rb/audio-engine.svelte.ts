@@ -2488,10 +2488,6 @@ async function _synchronizeFollowers(
 		// a pure function; the engine only performs the effects it returns.
 		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
 			pushToast(notice.message, notice.kind, undefined, undefined, {}, notice.groupKey);
-			// Severity passed EXPLICITLY. recordPerfEvent defaults to 'warn', so
-			// the pre-existing 3-arg call filed a beat-sync SKIP - a red toast,
-			// a follower that did not lock - into the ring as a warning, and it
-			// could never reach _escalate() (which only fires on 'error').
 			for (const event of notice.events) {
 				recordPerfEvent(event.kind, event.detail, event.deck, notice.kind);
 			}

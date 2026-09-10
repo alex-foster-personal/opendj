@@ -876,6 +876,14 @@ export interface BeatSyncNoticeEvent<D extends number> {
 /** One toast a notice wants raised, plus the rows that accompany it. */
 export interface BeatSyncNotice<D extends number> {
 	message: string;
+	/**
+	 * One severity for BOTH the toast and its perf rows, deliberately.
+	 * `recordPerfEvent`'s severity argument DEFAULTS to 'warn', so the
+	 * engine's old three-argument call filed a beat-sync SKIP - a red toast,
+	 * a follower that never locked - into the ring as a warning that could
+	 * never reach `_escalate()`. Carrying it here is what stops the colour
+	 * the DJ sees and the severity the ring records from drifting apart.
+	 */
 	kind: 'warn' | 'error';
 	/** Repeat presses against the same master coalesce onto one toast. */
 	groupKey: string;
