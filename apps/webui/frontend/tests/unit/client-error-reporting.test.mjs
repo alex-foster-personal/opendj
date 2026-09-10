@@ -3,6 +3,7 @@
  * 2xx drains; non-2xx leaves the head item queued for the next report.
  */
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { after, afterEach, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -162,7 +163,7 @@ test('a 2xx response drains the queued item', async () => {
  * `flushQueue` used to take ONE snapshot of the queue before its first await
  * and write that snapshot back after each POST. `reportClientError` is
  * synchronous and appends straight to storage, so a second report landing
- * during the POST was written to storage and then ERASED by the stale snapshot
+ * during the POST was written and then ERASED by the stale snapshot
  * overwriting it.
  *
  * That is the ordinary case, not a rare interleaving: an error toast writes its
@@ -170,40 +171,95 @@ test('a 2xx response drains the queued item', async () => {
  * The richer report is the one that arrives second, so the one lost was the one
  * worth having.
  *
+ * NO PATCHED `fetch`. Unlike the three tests above, this one leaves
+ * `globalThis.fetch` alone and stands up a REAL `node:http` server on
+ * localhost, pointed at by the same `viteApiBase` the generated client reads.
+ * The whole production request lifecycle therefore runs for real: the real
+ * `api.POST`, a real fetch, a real socket, real headers, a real status and the
+ * real response parse. Nothing about the client under test is substituted.
+ *
+ * That also makes the interleaving REAL rather than staged: the server accepts
+ * the first request and does not answer it until the second report has been
+ * written to storage, so the window under test is an actual in-flight HTTP
+ * request rather than a promise a test held open.
+ *
+ * The server is a transport, not a stand-in implementation: it records what
+ * arrived and returns the endpoint's real 200 shape. The client-error endpoint
+ * itself is FastAPI and belongs to the python and e2e tiers; what is being
+ * measured here is the browser-side durable queue's bookkeeping across an
+ * await, which no server-side test can observe.
+ *
  * [if] a report queued during an in-flight POST is dropped [then] fail, [else stop].
  */
 test('a report raised during an in-flight POST is not erased by the flush', async () => {
 	const posted = [];
 	let releaseFirst;
-	const firstInFlight = new Promise((resolve) => {
+	const firstHeld = new Promise((resolve) => {
 		releaseFirst = resolve;
 	});
-	let started = 0;
-	globalThis.fetch = async (input) => {
-		started += 1;
-		const body = await input.clone().json();
-		if (started === 1) {
-			// Hold the first POST open so the second report lands mid-flight,
-			// which is the whole interleaving under test.
-			await firstInFlight;
-		}
-		posted.push(body.message);
-		return new Response(JSON.stringify({ event_id: 'e', stored: true }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
+	let received = 0;
+
+	// The tests above replace `globalThis.fetch` and leave it replaced until
+	// the `after` hook. Put the REAL one back, because a real server is only
+	// worth standing up if a real request can reach it.
+	const patchedFetch = globalThis.fetch;
+	globalThis.fetch = originalFetch;
+
+	const server = createServer((req, res) => {
+		let body = '';
+		req.on('data', (chunk) => {
+			body += chunk;
 		});
-	};
+		req.on('end', async () => {
+			received += 1;
+			const isFirst = received === 1;
+			// Hold the FIRST request open, unanswered, until the second report
+			// has been written to storage. This is a genuinely in-flight HTTP
+			// request, which is the state the defect lived in.
+			if (isFirst) await firstHeld;
+			posted.push({ url: req.url, method: req.method, message: JSON.parse(body).message });
+			res.writeHead(200, { 'content-type': 'application/json' });
+			res.end(JSON.stringify({ event_id: 'e-real', stored: true }));
+		});
+	});
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+	const base = `http://127.0.0.1:${server.address().port}`;
 
-	reporting.reportClientError(new Error('first-report'), { source: 'race-a' }, 'ui-error');
-	await waitFor(() => started === 1, 'first POST started');
-	// Synchronous, straight into storage, exactly as a toast's own report is.
-	reporting.reportClientError(new Error('second-report'), { source: 'race-b' }, 'ui-error');
-	releaseFirst();
+	try {
+		// A SECOND module instance, bound to the real server's origin. The one
+		// loaded in `before` points at a host nothing listens on.
+		const live = await loadTypeScriptModule('src/lib/client-error-reporting.ts', {
+			viteApiBase: base
+		});
+		live.reportClientError(new Error('first-report'), { source: 'race-a' }, 'ui-error');
+		await waitFor(() => received === 1, 'the first POST reaching the server', 400);
+		// Synchronous, straight into storage, exactly as a toast's own report is.
+		live.reportClientError(new Error('second-report'), { source: 'race-b' }, 'ui-error');
+		releaseFirst();
 
-	await waitFor(() => posted.includes('second-report'), 'the second report reaching the server');
-	assert.deepEqual(posted, ['first-report', 'second-report']);
-	await waitFor(() => {
-		const raw = store.getItem(QUEUE_KEY);
-		return raw === null || JSON.parse(raw).length === 0;
-	}, 'drain');
+		await waitFor(
+			() => posted.some((p) => p.message === 'second-report'),
+			'the second report reaching the server',
+			400
+		);
+		assert.deepEqual(
+			posted.map((p) => p.message),
+			['first-report', 'second-report']
+		);
+		assert.deepEqual(
+			posted.map((p) => `${p.method} ${p.url}`),
+			['POST /api/v1/client-errors', 'POST /api/v1/client-errors']
+		);
+		await waitFor(
+			() => {
+				const raw = store.getItem(QUEUE_KEY);
+				return raw === null || JSON.parse(raw).length === 0;
+			},
+			'drain',
+			400
+		);
+	} finally {
+		globalThis.fetch = patchedFetch;
+		await new Promise((resolve) => server.close(resolve));
+	}
 });
