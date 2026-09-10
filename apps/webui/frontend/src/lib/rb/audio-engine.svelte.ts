@@ -130,6 +130,7 @@ import {
 	upgradeDeckBeatgrid,
 	createBeatgridResyncGuards,
 	createBeatgridResyncTracking,
+	analysisSourceState,
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
@@ -2508,7 +2509,8 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	deckStableId: (deck) => deckStates[deck].stable_id,
 	deckAnlz: (deck) => deckStates[deck].anlz,
 	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
-	reportError: (message) => pushToast(message, 'error')
+	reportError: (message) => pushToast(message, 'error'),
+	desiredBeatgridSource: () => analysisSourceState.features.beatgrid
 });
 installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);
 export const installScopedSyncRunner = _beatgridGuards.installScopedSyncRunner; // rationale for [deck]-then-widen: performance-ipc.svelte.ts's installScopedSyncRunner

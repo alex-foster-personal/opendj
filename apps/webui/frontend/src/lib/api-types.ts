@@ -3290,6 +3290,11 @@ export interface components {
              */
             expected_toggle?: string | null;
             /**
+             * Expected Toggle Revision
+             * @description Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.
+             */
+            expected_toggle_revision?: number | null;
+            /**
              * Lane
              * @description beatgrid, key, waveform, loudness or vocal
              */
@@ -4741,6 +4746,11 @@ export interface components {
              * @description In-memory dev toggle: unset, rbx or own. Launches unset.
              */
             toggle: string;
+            /**
+             * Toggle Revision
+             * @description Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.
+             */
+            toggle_revision: number;
         };
         /**
          * LastImportOut

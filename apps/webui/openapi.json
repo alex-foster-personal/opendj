@@ -593,6 +593,18 @@
             "description": "Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.",
             "title": "Expected Toggle"
           },
+          "expected_toggle_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.",
+            "title": "Expected Toggle Revision"
+          },
           "lane": {
             "description": "beatgrid, key, waveform, loudness or vocal",
             "title": "Lane",
@@ -4571,11 +4583,17 @@
             "description": "In-memory dev toggle: unset, rbx or own. Launches unset.",
             "title": "Toggle",
             "type": "string"
+          },
+          "toggle_revision": {
+            "description": "Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.",
+            "title": "Toggle Revision",
+            "type": "integer"
           }
         },
         "required": [
           "default",
           "toggle",
+          "toggle_revision",
           "effective"
         ],
         "title": "LaneSourceOut",

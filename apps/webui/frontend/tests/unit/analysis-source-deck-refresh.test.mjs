@@ -193,6 +193,39 @@ test('refreshes a loaded deck onto a fresh, real own-source anlz payload', async
 	);
 });
 
+test(
+	'a call already superseded at entry triggers no fetch and bumps no generation ' +
+		'(discussion_r3975846958 P1 BLOCKING)',
+	async () => {
+		audio.deckStates[1].stable_id = SID_TRACK_A;
+		audio.deckStates[1].anlz = { beatgrid: { beat_count: 4, beats: [] } };
+		const genBefore = cache.currentAnlzFetchGeneration();
+		const before_ = await requestLog();
+
+		const served = await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates, () => true);
+
+		const after_ = (await requestLog()).slice(before_.length);
+		assert.equal(served, null);
+		assert.equal(
+			after_.length,
+			0,
+			'a call superseded before it starts must not invalidate, bump, or fetch at all - under ' +
+				'sustained contention every batch pays that cost only to discard its answer later, ' +
+				'and if batches consistently outlast the poll interval none can ever settle the watermark'
+		);
+		assert.equal(
+			cache.currentAnlzFetchGeneration(),
+			genBefore,
+			'no generation bump for a call that never gets to do anything with it'
+		);
+		assert.equal(
+			audio.deckStates[1].anlz.beatgrid.beat_count,
+			4,
+			'the deck must keep its pre-call payload untouched'
+		);
+	}
+);
+
 test('an unloaded deck (no stable_id) triggers no fetch and is left untouched', async () => {
 	const before_ = await requestLog();
 	await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);

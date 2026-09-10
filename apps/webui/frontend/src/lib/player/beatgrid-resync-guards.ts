@@ -59,6 +59,14 @@ export interface BeatgridResyncGuardDeps {
 	deckAnlz: (deck: DeckId) => AnlzData | null;
 	publishDeckAnlz: (deck: DeckId, anlz: AnlzData) => void;
 	reportError: (message: string) => void;
+	/** The PARITY-02 rbx-vs-own selection last CONFIRMED by the daemon
+	 * (analysisSourceState.features.beatgrid), for `adoptAuthoritativeGrid`
+	 * alone. `undefined` before any poll has confirmed a selection - nothing
+	 * to disagree with yet. A probe, not a direct import of
+	 * analysis-source-state.svelte.ts, to keep this module's own contract
+	 * ("the engine supplies the identity probes") and to keep it testable with
+	 * a fake, matching every other dependency here. */
+	desiredBeatgridSource: () => 'rekordbox' | 'own' | undefined;
 }
 
 function _message(error: unknown): string {
@@ -199,7 +207,7 @@ export interface BeatgridResyncGuards {
 
 export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): BeatgridResyncGuards {
 	const { ports, deckRuntime, deckLoadToken, reportError } = deps;
-	const { deckStableId, deckAnlz, publishDeckAnlz } = deps;
+	const { deckStableId, deckAnlz, publishDeckAnlz, desiredBeatgridSource } = deps;
 	const scopedSync = createScopedSyncRunner<DeckId>();
 	const runScoped = scopedSync.run;
 	const afterBeatgridUpgrade: BeatgridResyncGuards['afterBeatgridUpgrade'] = (
@@ -317,10 +325,31 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				if (current === null || sameBeatgrid(current.beatgrid, data.beatgrid)) continue;
 				const runtime = deckRuntime(deck);
 				const token = deckLoadToken(deck);
+				// `alreadyScoped` callers (refreshAnalysisSourceDecks's own staged
+				// batch) are trusted outright: THIS call is what will advance the
+				// confirmed selection once it returns, so comparing against it here
+				// would reject the very write that is about to make it current.
+				// Every other caller (the ambient retry timer, a plain deck load, a
+				// hot-cue refresh) is untrusted against a source switch that can run
+				// concurrently with it, so re-check `data`'s own stamped source
+				// against the last CONFIRMED daemon selection at the moment this
+				// grid actually installs, not just when the fetch settled: an
+				// RBX->OWN->RBX round trip inside one poll interval leaves
+				// `currentAnlzFetchGeneration()` looking unchanged to a straggling
+				// fetch issued and settled entirely within that window, so its
+				// generation check alone lets a since-reverted response reach here
+				// and get installed onto a loaded deck with no later poll able to
+				// detect or undo it - `evictAnlzCacheEntriesServingOtherSource` only
+				// cleans the shared cache, never an already-loaded deck's own anlz
+				// (discussion_r3975650988 P1 BLOCKING). `undefined` means no poll has
+				// confirmed a selection yet (cold mount): nothing to disagree with.
 				const isStale = (): boolean =>
 					deckRuntime(deck) !== runtime ||
 					deckLoadToken(deck) !== token ||
-					deckStableId(deck) !== stableId;
+					deckStableId(deck) !== stableId ||
+					(!alreadyScoped &&
+						desiredBeatgridSource() !== undefined &&
+						desiredBeatgridSource() !== data.beatgrid_source);
 				const next: AnlzData = { ...current, beatgrid: data.beatgrid };
 				settlements.push(
 					afterBeatgridUpgrade(

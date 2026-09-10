@@ -306,8 +306,168 @@ def test_a_put_with_both_halves_valid_still_applies_both(tmp_path) -> None:
                 "lane": "waveform", "default": "own", "toggle": "rbx",
             }).json()
         assert body["lanes"]["waveform"] == {
-            "default": "own", "toggle": "rbx", "effective": "rbx",
+            "default": "own", "toggle": "rbx", "toggle_revision": 1, "effective": "rbx",
         }
+    finally:
+        selection.reset_toggles()
+
+
+#-----------------------------------------------------------------------------
+# P1/P2: toggle ABA and a combined write's partial-success failure mode
+#-----------------------------------------------------------------------------
+
+def test_expected_toggle_revision_over_http_closes_the_aba_gap(tmp_path) -> None:
+    """discussion_r3974993963 P1 BLOCKING, HTTP half, reproduced first: a
+    rollback that captured the revision its own switch-set PUT landed at
+    must be refused once the toggle round-trips own -> rbx -> own before the
+    rollback runs, even though the CURRENT value equals what it still names
+    in `expected_toggle`.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    try:
+        with TestClient(app) as client:
+            first = client.put(
+                "/api/v1/analysis/source", json={"lane": "vocal", "toggle": "own"}
+            ).json()
+            revision = first["lanes"]["vocal"]["toggle_revision"]
+            # An external agent's own PUTs, unrelated to the rollback below.
+            client.put("/api/v1/analysis/source", json={"lane": "vocal", "toggle": "rbx"})
+            client.put("/api/v1/analysis/source", json={"lane": "vocal", "toggle": "own"})
+
+            stale = client.put(
+                "/api/v1/analysis/source",
+                json={
+                    "lane": "vocal",
+                    "toggle": "unset",
+                    "expected_toggle": "own",
+                    "expected_toggle_revision": revision,
+                },
+            )
+            assert stale.status_code == 409
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["vocal"]["toggle"] == "own", (
+                "the ABA-stale rollback must not erase the external agent's newer decision"
+            )
+
+            # Mutate-both-directions control: the identical rollback, given
+            # the CURRENT revision instead of the stale one, must succeed.
+            current_revision = after["lanes"]["vocal"]["toggle_revision"]
+            fresh = client.put(
+                "/api/v1/analysis/source",
+                json={
+                    "lane": "vocal",
+                    "toggle": "unset",
+                    "expected_toggle": "own",
+                    "expected_toggle_revision": current_revision,
+                },
+            )
+            assert fresh.status_code == 200
+            assert fresh.json()["lanes"]["vocal"]["toggle"] == "unset"
+    finally:
+        selection.reset_toggles()
+
+
+def test_a_combined_write_that_fails_on_the_default_restores_the_toggle(
+    tmp_path, monkeypatch,
+) -> None:
+    """discussion_r3974993965 P2 BLOCKING, reproduced first: `_apply_toggle`
+    mutates the process-global toggle BEFORE `set_default`/`commit`, so a
+    genuine failure on the durable half used to leave the toggle changed
+    while the whole PUT reported an error.
+
+    The failure is injected at `sel.set_default` as it is imported into the
+    route module: opening the connection itself already runs the analysis
+    DDL (`analysis_store.open_conn`), so a lock held on the file fails THAT
+    step instead of the later `commit()` this fix is actually about, which
+    would make the toggle assertions below pass for the wrong reason (never
+    touched, not compensated) rather than the reason under test.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    from apps.webui.server.routes import analysis_source as analysis_source_route
+
+    def _raise_locked(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            monkeypatch.setattr(analysis_source_route.sel, "set_default", _raise_locked)
+            resp = client.put(
+                "/api/v1/analysis/source",
+                json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+            )
+            assert resp.status_code == 500
+
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["beatgrid"]["toggle"] == "unset", (
+                "the toggle must be restored to what it held before this failed "
+                "combined write, not left at the value the failed durable half "
+                "never actually committed"
+            )
+            assert after["lanes"]["beatgrid"]["default"] == "rbx", (
+                "the durable half must not have taken effect either"
+            )
+            assert after["lanes"]["beatgrid"]["toggle_revision"] == 2, (
+                "one write for the failed switch, one for the compensation - "
+                "both are real writes, not a no-op that merely never touched it"
+            )
+
+            # Control: the SAME shape of PUT, once `set_default` works again,
+            # applies both halves normally - the fix must not refuse every
+            # combined write, only compensate a genuinely failed one.
+            monkeypatch.undo()
+            ok = client.put(
+                "/api/v1/analysis/source",
+                json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+            )
+            assert ok.status_code == 200
+            assert ok.json()["lanes"]["beatgrid"] == {
+                "default": "own", "toggle": "own", "toggle_revision": 3, "effective": "own",
+            }
+    finally:
+        selection.reset_toggles()
+
+
+def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
+    tmp_path, monkeypatch,
+) -> None:
+    """Mutate-both-directions control for discussion_r3974993965: the
+    compensation must ONLY restore what THIS request's own write displaced.
+    An agent's unrelated PUT landing in the failure window must survive.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    from apps.webui.server.routes import analysis_source as analysis_source_route
+
+    real_set_default = analysis_source_route.sel.set_default
+
+    def _fail_once_then_let_a_concurrent_write_land(conn, lane, default):
+        # Simulates an external agent's own PUT landing inside the gap
+        # between this request's toggle write and its failed commit.
+        selection.write_toggle(lane, "rbx")
+        raise sqlite3.OperationalError("database is locked")
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            monkeypatch.setattr(
+                analysis_source_route.sel, "set_default", _fail_once_then_let_a_concurrent_write_land
+            )
+            resp = client.put(
+                "/api/v1/analysis/source",
+                json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+            )
+            assert resp.status_code == 500
+            monkeypatch.setattr(analysis_source_route.sel, "set_default", real_set_default)
+
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["beatgrid"]["toggle"] == "rbx", (
+                "a rollback that fires after a concurrent agent's own write must stand "
+                "down, not clobber their newer value with this request's stale one"
+            )
     finally:
         selection.reset_toggles()
 

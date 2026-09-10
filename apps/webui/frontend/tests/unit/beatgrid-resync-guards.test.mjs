@@ -45,7 +45,7 @@ function _beats(count, bpm = 120) {
 	}));
 }
 
-function _anlz(stableId, beats) {
+function _anlz(stableId, beats, beatgridSource = 'rekordbox') {
 	return {
 		stable_id: stableId,
 		points: 0,
@@ -55,6 +55,7 @@ function _anlz(stableId, beats) {
 			detail: { length: 0, low: [], mid: [], high: [] }
 		},
 		beatgrid: { beat_count: beats.length, beats },
+		beatgrid_source: beatgridSource,
 		cues: [],
 		phrases: [],
 		vocals: { status: 'not_analyzed' }
@@ -86,7 +87,7 @@ function _ports() {
 /** A harness whose runtimes and load tokens the test can move independently,
  * which is the whole point: a reload bumps the token, a dispose REPLACES the
  * runtime and restarts the token from zero. */
-function _harness(overrides = {}) {
+function _harness(overrides = {}, desiredBeatgridSource = () => undefined) {
 	const calls = { setBeatSyncEnabled: [], setSyncError: [], markPending: [], synchronize: [] };
 	const runtimes = Object.fromEntries(DECKS.map((deck) => [deck, { deck }]));
 	const tokens = Object.fromEntries(DECKS.map((deck) => [deck, 0]));
@@ -111,7 +112,8 @@ function _harness(overrides = {}) {
 		deckStableId: (deck) => stableIds[deck],
 		deckAnlz: (deck) => anlz[deck],
 		publishDeckAnlz: (deck, next) => (anlz[deck] = next),
-		reportError: (message) => errors.push(message)
+		reportError: (message) => errors.push(message),
+		desiredBeatgridSource
 	});
 	// The claim is granted a turn LATE on purpose: every finding on this surface
 	// is about what changes in that gap. Scope ORDERING itself is
@@ -222,7 +224,8 @@ test('beforeClear on an empty stranded list claims no scope at all', () => {
 		deckStableId: () => null,
 		deckAnlz: () => null,
 		publishDeckAnlz: () => {},
-		reportError: () => {}
+		reportError: () => {},
+		desiredBeatgridSource: () => undefined
 	});
 	guards.installScopedSyncRunner(() => {
 		claimed += 1;
@@ -352,6 +355,76 @@ test('adoptAuthoritativeGrid ignores decks holding a different track', async () 
 	assert.equal(h.anlz[2].beatgrid.beats.length, 8, 'only the deck holding that stable_id may be touched');
 });
 
+test(
+	'adoptAuthoritativeGrid rejects a payload whose stamped source disagrees with the last ' +
+		'confirmed selection (discussion_r3975650988 P1 BLOCKING)',
+	async () => {
+		// An RBX->OWN->RBX round trip inside one poll interval can leave a
+		// straggling OWN fetch settling after the daemon already reconfirmed
+		// RBX. evictAnlzCacheEntriesServingOtherSource only cleans the shared
+		// cache, never an already-loaded deck's own anlz, so nothing else
+		// catches this - the re-check has to live here, at the point the grid
+		// actually installs.
+		const h = _harness({}, () => 'rekordbox');
+		h.stableIds[1] = 'sid-a';
+		h.anlz[1] = _anlz('sid-a', _beats(8, 128), 'rekordbox');
+		h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124), 'own'));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(
+			h.anlz[1].beatgrid.beats.length,
+			8,
+			'a since-reverted OWN response must not install onto a deck the daemon has confirmed back on RBX'
+		);
+	}
+);
+
+test(
+	'adoptAuthoritativeGrid accepts a payload matching the last confirmed selection',
+	async () => {
+		const h = _harness({}, () => 'own');
+		h.stableIds[1] = 'sid-a';
+		h.anlz[1] = _anlz('sid-a', _beats(8, 128), 'own');
+		h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124), 'own'));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(h.anlz[1].beatgrid.beats.length, 16, 'a payload agreeing with the confirmed selection must land');
+	}
+);
+
+test(
+	'adoptAuthoritativeGrid does not compare source at all before any poll has confirmed a selection',
+	async () => {
+		const h = _harness({}, () => undefined);
+		h.stableIds[1] = 'sid-a';
+		h.anlz[1] = _anlz('sid-a', _beats(8, 128), 'rekordbox');
+		h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124), 'own'));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(
+			h.anlz[1].beatgrid.beats.length,
+			16,
+			'undefined means cold mount - nothing confirmed yet to disagree with, so the grid must still land'
+		);
+	}
+);
+
+test(
+	'adoptAuthoritativeGrid trusts an alreadyScoped call over the confirmed-selection mismatch ' +
+		'(mutate-both-directions control: this is the write the mismatch check must not reject)',
+	async () => {
+		// alreadyScoped is the rbx-vs-own switch's OWN batch: it is what is
+		// about to make desiredBeatgridSource() agree, so comparing against the
+		// not-yet-updated probe here would reject the very write that corrects it.
+		const h = _harness({}, () => 'rekordbox');
+		h.stableIds[1] = 'sid-a';
+		h.anlz[1] = _anlz('sid-a', _beats(8, 128), 'rekordbox');
+		await h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124), 'own'), true, true);
+		assert.equal(
+			h.anlz[1].beatgrid.beats.length,
+			16,
+			'the deliberate switch batch must not be rejected against the selection it is itself confirming'
+		);
+	}
+);
+
 test('adoptAuthoritativeGrid skips a deck that reloaded before the claim was granted', async () => {
 	const h = _harness();
 	h.stableIds[1] = 'sid-a';
@@ -363,7 +436,8 @@ test('adoptAuthoritativeGrid skips a deck that reloaded before the claim was gra
 		deckStableId: (deck) => h.stableIds[deck],
 		deckAnlz: (deck) => h.anlz[deck],
 		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
-		reportError: () => {}
+		reportError: () => {},
+		desiredBeatgridSource: () => undefined
 	});
 	// Reload the deck inside the gap between submission and the claim.
 	guards.installScopedSyncRunner(async (deck, task) => {

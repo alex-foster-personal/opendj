@@ -124,6 +124,67 @@ def test_compare_and_set_toggle_validates_lane_and_states_before_touching_anythi
         selection.compare_and_set_toggle("waveform", "unset", "sometimes")
 
 
+def test_toggle_revision_is_monotonic_and_starts_at_zero() -> None:
+    assert selection.get_toggle_revision("beatgrid") == 0
+    write = selection.write_toggle("beatgrid", "own")
+    assert write == selection.ToggleWrite(previous="unset", revision=1)
+    assert selection.get_toggle_revision("beatgrid") == 1
+    selection.set_toggle("beatgrid", "rbx")
+    assert selection.get_toggle_revision("beatgrid") == 2
+    assert selection.all_toggle_revisions()["beatgrid"] == 2
+
+
+def test_expected_revision_refuses_an_aba_round_trip_the_value_alone_would_miss() -> None:
+    """discussion_r3974993963 P1 BLOCKING, reproduced first: a rollback that
+    captured revision 1 (from the original 'own' write) must not restore a
+    displaced value once 'own' has round-tripped through 'rbx' and back -
+    the CURRENT value equals what it still expects, but the world moved.
+    """
+    first = selection.write_toggle("beatgrid", "own")
+    assert first == selection.ToggleWrite(previous="unset", revision=1)
+    selection.write_toggle("beatgrid", "rbx")  # an external agent, revision 2
+    selection.write_toggle("beatgrid", "own")  # back to "own", revision 3
+    assert selection.get_toggle("beatgrid") == "own"
+
+    # A value-only compare-and-set would still succeed here (control: proves
+    # the ABA gap this test is about is real, not already impossible).
+    assert selection.compare_and_set_toggle("beatgrid", expected="own", new="unset") is True
+    assert selection.get_toggle("beatgrid") == "unset"
+    selection.set_toggle("beatgrid", "own")  # replay for the actual assertion, revision 5
+
+    # The stale rollback, now revision-checked against the FIRST write it
+    # actually observed, must refuse: revision has moved to 5, not 1.
+    assert (
+        selection.compare_and_set_toggle(
+            "beatgrid", expected="own", new="unset", expected_revision=first.revision
+        )
+        is False
+    )
+    assert selection.get_toggle("beatgrid") == "own", (
+        "an ABA-stale rollback must not erase the newer 'own' decision"
+    )
+
+    # Mutate-both-directions control: the identical compensation succeeds
+    # when the revision it names IS still current - this is not a guard that
+    # merely always refuses.
+    current_revision = selection.get_toggle_revision("beatgrid")
+    assert (
+        selection.compare_and_set_toggle(
+            "beatgrid", expected="own", new="unset", expected_revision=current_revision
+        )
+        is True
+    )
+    assert selection.get_toggle("beatgrid") == "unset"
+
+
+def test_expected_revision_is_ignored_without_expected_value() -> None:
+    """An unconditional write must stay unconditional: `expected_revision`
+    only means anything paired with `expected`."""
+    selection.write_toggle("beatgrid", "own")
+    result = selection.write_toggle("beatgrid", "rbx", expected_revision=999)
+    assert result == selection.ToggleWrite(previous="own", revision=2)
+
+
 def test_get_default_works_on_a_connection_that_cannot_write(tmp_path) -> None:
     """The track read path is read-only; creating a table there would 500."""
     db_path = tmp_path / "state.db"
@@ -188,7 +249,7 @@ def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
     assert body["lanes"]["beatgrid"] == {
-        "default": "rbx", "toggle": "unset", "effective": "rbx",
+        "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }
 
 
@@ -208,7 +269,7 @@ def test_setting_a_default_over_http_changes_the_effective_source(client) -> Non
         "/api/v1/analysis/source", json={"lane": "loudness", "default": "own"}
     ).json()
     assert body["lanes"]["loudness"] == {
-        "default": "own", "toggle": "unset", "effective": "own",
+        "default": "own", "toggle": "unset", "toggle_revision": 0, "effective": "own",
     }
 
 

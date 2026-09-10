@@ -33,9 +33,16 @@ export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 // itself (audio-engine.svelte.ts) can read the fetch generation through the
 // same edge, rather than adding a second one to anlz-fetch-generation.ts.
 export { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+// Same reasoning: audio-engine.svelte.ts is pinned at the file_size.max_frontend
+// and frontend.max_fan_out ratchet floors with zero headroom, so this reads
+// the last CONFIRMED rbx-vs-own selection (for createBeatgridResyncGuards's
+// desiredBeatgridSource probe, discussion_r3975650988 P1 BLOCKING) through
+// the edge that already exists here, rather than a new one straight to the
+// leaf module.
+export { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 
 export type AnlzEntry =
-	| { status: 'loading' }
+	| { status: 'loading'; generation: number }
 	| { status: 'ready'; data: AnlzData; retryAfter?: number }
 	| { status: 'error'; code: string };
 
@@ -106,20 +113,32 @@ export function isRetryableAnlzData(data: AnlzData): boolean {
  * (`isAnlzEntryUsable`) then serves that stale payload to a load/prefetch
  * that happens entirely after the switch (discussion_r3921839825 follow-up).
  * A mismatch at settle time means a newer switch superseded this request:
- * discard the write outright rather than publish it. */
+ * discard the write outright rather than publish it. The discard clears the
+ * placeholder this call itself wrote (see `_discardSuperseded` below) rather
+ * than leaving it stuck: without that, a superseded prefetch stranded the
+ * entry at `status: 'loading'` forever, since `_dueForEnsureRefetch` refuses
+ * to retry a loading entry, and the current-source waveform was never
+ * requested again until an unrelated deck load happened to overwrite it
+ * (discussion_r3975650980 P2 BLOCKING). */
 function _fetchAndPublish(stable_id: string): void {
-	_cache[stable_id] = { status: 'loading' };
-	const startedAt = performance.now();
 	const generation = currentAnlzFetchGeneration();
+	_cache[stable_id] = { status: 'loading', generation };
+	const startedAt = performance.now();
 	void fetchAnlz(stable_id).then(
 		(data: AnlzData) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
-			if (generation !== currentAnlzFetchGeneration()) return; // superseded, discard
+			if (generation !== currentAnlzFetchGeneration()) {
+				_discardSuperseded(stable_id, generation);
+				return;
+			}
 			_publishAnlzResult(stable_id, data);
 		},
 		(err: unknown) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
-			if (generation !== currentAnlzFetchGeneration()) return; // superseded, discard
+			if (generation !== currentAnlzFetchGeneration()) {
+				_discardSuperseded(stable_id, generation);
+				return;
+			}
 			if (err instanceof RbApiError) {
 				// Explicit backend state (e.g. ANALYSIS_NOT_FOUND, 0.1% of tracks).
 				_cache[stable_id] = { status: 'error', code: err.code };
@@ -129,6 +148,19 @@ function _fetchAndPublish(stable_id: string): void {
 			throw err; // loud: network/shape failures must not vanish
 		}
 	);
+}
+
+/** Clears a superseded fetch's own `loading` placeholder so the stable_id
+ * reads back as never-requested (`ensureAnlz` then treats it as a miss and
+ * fetches under the current generation) instead of stuck forever. Only
+ * clears the placeholder THIS call wrote: if a newer fetch for the same
+ * stable_id already overwrote it - its own later `loading` marker, or an
+ * already-settled `ready`/`error` result - that must survive untouched. */
+function _discardSuperseded(stable_id: string, generation: number): void {
+	const entry = _cache[stable_id];
+	if (entry !== undefined && entry.status === 'loading' && entry.generation === generation) {
+		delete _cache[stable_id];
+	}
 }
 
 /** One pending ambient-retry timer per stable_id, so a second `_publishAnlzResult`

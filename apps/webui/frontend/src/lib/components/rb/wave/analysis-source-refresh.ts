@@ -125,6 +125,18 @@ export async function refreshAnalysisSourceDecks(
 	// every test that calls this directly.
 	isSuperseded: () => boolean = () => false
 ): Promise<'rekordbox' | 'own' | null> {
+	// Checked here too, before doing any work, not only at line 182: under
+	// sustained scheduler contention a new poll can queue and supersede its
+	// predecessor before that predecessor even starts. Without this, every
+	// batch still pays the full invalidate-generation-bump-and-fetch cost only
+	// to discard its answer at the pre-publication check, and if batches
+	// consistently take at least one more poll interval than they have,
+	// every one of them is already obsolete by the time it would publish -
+	// the watermark can never settle and live controls stay delayed
+	// indefinitely (discussion_r3975846958 P1 BLOCKING). The later check
+	// stays: a call that was NOT superseded when it started can still lose a
+	// race to a newer one while its own fetches are in flight.
+	if (isSuperseded()) return null;
 	bumpAnlzFetchGeneration();
 	ports.invalidateAllAnlzCacheEntries();
 	const wanted = new Map<string, DeckId[]>();

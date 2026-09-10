@@ -45,6 +45,16 @@ class LaneSourceOut(BaseModel):
     toggle: str = Field(
         description="In-memory dev toggle: unset, rbx or own. Launches unset."
     )
+    toggle_revision: int = Field(
+        description=(
+            "Monotonic counter bumped by every toggle write for this lane, "
+            "launches at 0. A VALUE can repeat (own -> rbx -> own reads as "
+            "'own' again); this never does, so a client that captures it "
+            "after a write can pass it back as `expected_toggle_revision` "
+            "to require that nothing has touched the toggle since, not "
+            "merely that the value looks unchanged."
+        )
+    )
     effective: str = Field(
         description="The source actually read: the toggle unless it is unset"
     )
@@ -85,6 +95,20 @@ class AnalysisSourcePut(BaseModel):
             "mismatch. Ignored unless `toggle` is also given; a plain "
             "`toggle` with no `expected_toggle` sets unconditionally, exactly "
             "as before this field existed."
+        ),
+    )
+    expected_toggle_revision: int | None = Field(
+        default=None,
+        description=(
+            "Additional compare-and-set precondition on top of "
+            "`expected_toggle`: apply it only if the lane's CURRENT "
+            "`toggle_revision` also equals this value. Closes an ABA gap "
+            "`expected_toggle` alone cannot: a value-only compare-and-set "
+            "still succeeds after the toggle round-trips own -> rbx -> own, "
+            "because the current value equals `expected_toggle` again even "
+            "though a newer write happened in between "
+            "(discussion_r3974993963 P1 BLOCKING). Ignored unless "
+            "`expected_toggle` is also given."
         ),
     )
 
@@ -160,35 +184,112 @@ def _require_persistent_backend(request: Request) -> None:
         )
 
 
-def _apply_toggle(lane: str, toggle: str, expected_toggle: str | None) -> str:
-    """The `toggle` half of a PUT: a plain set, or a CAS against `expected_toggle`.
+def _apply_toggle(
+    lane: str,
+    toggle: str,
+    expected_toggle: str | None,
+    expected_toggle_revision: int | None,
+) -> sel.ToggleWrite:
+    """The `toggle` half of a PUT: a plain set, or a CAS against
+    `expected_toggle` (and, when given, `expected_toggle_revision`).
 
     Split out of `put_analysis_source` so that function's own branching stays
     under the mccabe ceiling; this is the one place that decides between an
-    unconditional `set_toggle` and the compare-and-set rollback path needs.
+    unconditional write and the compare-and-set rollback path needs.
 
-    Returns the toggle value this call displaced, so the response can report
-    it (`AnalysisSourceOut.previous_toggle`, discussion_r3974235454 P1
-    BLOCKING).
+    Routes through `sel.write_toggle` directly (not the `set_toggle`/
+    `compare_and_set_toggle` wrappers) so the displaced value and the
+    resulting revision are read from ONE locked write, atomically - a caller
+    needing to compensate this exact write later (a failed-switch rollback,
+    or `put_analysis_source`'s own default-commit-failure compensation
+    below) needs the revision THIS write produced, not one re-derived from a
+    later, separately-locked read that a concurrent write could land before
+    (discussion_r3974993963 P1 BLOCKING).
+
+    `expected_toggle_revision` is only applied when `expected_toggle` is
+    also given - a revision check with no value precondition would be an
+    unconditional write, sometimes, keyed on an argument the docstring above
+    already says an unconditional write ignores.
     """
-    if expected_toggle is None:
-        return sel.set_toggle(lane, toggle)
-    if not sel.compare_and_set_toggle(lane, expected_toggle, toggle):
+    result = sel.write_toggle(
+        lane,
+        toggle,
+        expected=expected_toggle,
+        expected_revision=expected_toggle_revision if expected_toggle is not None else None,
+    )
+    if result is None:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "toggle_changed",
                 "message": (
                     f"lane {lane!r}'s toggle no longer holds "
-                    f"{expected_toggle!r}; someone else changed "
-                    "it since, so this compare-and-set was refused "
-                    "rather than overwriting a newer value"
+                    f"{expected_toggle!r}"
+                    + (
+                        f" at revision {expected_toggle_revision!r}"
+                        if expected_toggle_revision is not None
+                        else ""
+                    )
+                    + "; someone else changed it since, so this compare-and-set "
+                    "was refused rather than overwriting a newer value"
                 ),
             },
         )
-    # compare_and_set_toggle only succeeds when the lane's current value WAS
-    # expected_toggle, so that is exactly what it displaced.
-    return expected_toggle
+    return result
+
+
+def _validate_put_body(body: AnalysisSourcePut) -> None:
+    """Validate EVERYTHING before mutating ANYTHING. A PUT carrying a valid
+    default and an invalid toggle used to persist the default and then
+    return 422, which a client reads as "nothing happened" (Codex P2).
+    """
+    try:
+        sel.check_lane(body.lane)
+        if body.default is not None:
+            sel.check_source(body.default)
+        if body.toggle is not None:
+            sel.check_toggle_state(body.toggle)
+        if body.expected_toggle is not None:
+            sel.check_toggle_state(body.expected_toggle)
+    except sel.SelectionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_selection", "message": str(exc)},
+        ) from exc
+
+
+def _commit_default_or_compensate(
+    conn: sqlite3.Connection,
+    lane: str,
+    default: str,
+    toggle: str | None,
+    toggle_write: sel.ToggleWrite | None,
+) -> None:
+    """Commit the persisted default, rolling back a toggle write from the
+    same PUT if the commit fails.
+
+    `_apply_toggle` may already have mutated the process-global toggle
+    before this runs, which is what makes reads that land right now see a
+    source the durable write never actually committed - a combined PUT that
+    fails here must not leave that mutation behind (discussion_r3974993965
+    P2 BLOCKING). Compensate with the SAME ABA-proof compare this route
+    hands its own callers: only restore the toggle if nothing has written
+    it since THIS call's own write landed, so a concurrent agent's PUT
+    racing the failed commit is never clobbered by a rollback for a request
+    that was never about its write.
+    """
+    try:
+        sel.set_default(conn, lane, default)
+        conn.commit()
+    except sqlite3.Error:
+        if toggle_write is not None:
+            sel.write_toggle(
+                lane,
+                toggle_write.previous,
+                expected=toggle,
+                expected_revision=toggle_write.revision,
+            )
+        raise
 
 
 @router.get("/source", response_model=AnalysisSourceOut)
@@ -221,22 +322,7 @@ def put_analysis_source(
                 "message": "PUT /analysis/source needs at least one of default or toggle",
             },
         )
-    # Validate EVERYTHING before mutating ANYTHING. A PUT carrying a valid
-    # default and an invalid toggle used to persist the default and then
-    # return 422, which a client reads as "nothing happened" (Codex P2).
-    try:
-        sel.check_lane(body.lane)
-        if body.default is not None:
-            sel.check_source(body.default)
-        if body.toggle is not None:
-            sel.check_toggle_state(body.toggle)
-        if body.expected_toggle is not None:
-            sel.check_toggle_state(body.expected_toggle)
-    except sel.SelectionError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "invalid_selection", "message": str(exc)},
-        ) from exc
+    _validate_put_body(body)
 
     # A promotion the RUNNING backend cannot serve is a lie, not a setting.
     # The daemon falls back to InMemoryBackend when `state.db` does not exist
@@ -264,16 +350,28 @@ def put_analysis_source(
         # this route's docstring above already fixed once for the
         # validate-everything-before-mutating-anything case (Codex P2,
         # PR #1010, discussion_r3974235466).
-        previous_toggle = (
-            _apply_toggle(body.lane, body.toggle, body.expected_toggle)
+        toggle_write = (
+            _apply_toggle(
+                body.lane, body.toggle, body.expected_toggle, body.expected_toggle_revision
+            )
             if body.toggle is not None
             else None
         )
         if body.default is not None:
-            sel.set_default(conn, body.lane, body.default)
-            conn.commit()
+            _commit_default_or_compensate(
+                conn, body.lane, body.default, body.toggle, toggle_write
+            )
+        state = sel.source_state(conn)
+        if toggle_write is not None:
+            # Report the revision THIS write produced, not one re-read
+            # separately from `state` a moment later - a concurrent write
+            # landing in that gap must not make this response claim a
+            # revision the request never actually saw (same reasoning as
+            # `_apply_toggle`'s docstring).
+            state["lanes"][body.lane]["toggle_revision"] = toggle_write.revision
         return AnalysisSourceOut(
-            previous_toggle=previous_toggle, **sel.source_state(conn)
+            previous_toggle=None if toggle_write is None else toggle_write.previous,
+            **state,
         )
     finally:
         conn.close()
