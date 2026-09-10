@@ -678,13 +678,26 @@ jobs:
           # so at this workflow's 05:40 UTC start `+%F` on "2 days ago" is
           # ~53h40m back and lets a third-night-old run still match. `+%FT%TZ`
           # pins the floor to exactly 48h before this run started.
+          #
+          # `--status completed` is REQUIRED (r3974766506): without it,
+          # `--limit 1` can select the 04:17 run while it is STILL QUEUED OR
+          # RUNNING at this window's start, whose null conclusion rendered as
+          # "in progress" -- and then the NEXT window's `--limit 1` moves on
+          # to a newer scheduled run and never looks at that one again. A run
+          # that later fails after this window already reported "in
+          # progress" on it was then never revisited by any later window,
+          # exactly the silent-failure shape this row exists to catch.
+          # Restricting to completed runs means this row always reports the
+          # last run that actually FINISHED within the floor, so a run is
+          # only ever reported once it has a real conclusion to show, and
+          # nothing in flight gets silently abandoned.
           if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
-                           --event schedule --limit 1 \
+                           --event schedule --status completed --limit 1 \
                            --created ">=$(date -u -d '2 days ago' +%FT%TZ)" \
                            --json conclusion,createdAt,url \
-                           --jq '.[] | "\(.conclusion // "in progress") (\(.createdAt)) \(.url)"' \
+                           --jq '.[] | "\(.conclusion) (\(.createdAt)) \(.url)"' \
                          2>e2e.err)"; then
-            [ -n "$e2e_line" ] || e2e_line="NO SCHEDULED RUNS FOUND (or none within the last 2 days)"
+            [ -n "$e2e_line" ] || e2e_line="NO COMPLETED SCHEDULED RUNS FOUND (or none within the last 2 days)"
           else
             cat e2e.err >&2
             e2e_line="QUERY FAILED - this row was NOT measured (see run log)"

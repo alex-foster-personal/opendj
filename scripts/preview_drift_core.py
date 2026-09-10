@@ -261,13 +261,25 @@ def evaluate(
                 )
                 for sha in carrying
             ]
-            # `_mark_superseded_commits` already ran, above, over the commits
-            # `git cherry` could see -- these carrying merges are invisible
-            # to `git cherry` and only exist from here on, so supersession
-            # must be applied to them separately or a later revert/overwrite
-            # of a merge's own hand-resolved content ages into false DRIFT
-            # forever (r3974660152).
+            # `_mark_superseded_commits` and `_mark_landed_commits` already
+            # ran, above, over the commits `git cherry` could see -- these
+            # carrying merges are invisible to `git cherry` and only exist
+            # from here on, so both checks must be applied to them
+            # separately. Supersession alone is not enough (r3974660152 fixed
+            # that direction, r3974766502 found this one): a merge's own
+            # first-parent diff includes ordinary content legitimately
+            # pulled in from its SECOND parent, which is meant to persist
+            # forever, not revert -- so "has the merge's ENTIRE diff gone
+            # back to its pre-merge state" can never fire for a merge that
+            # keeps serving that legitimate content, even after the only
+            # risky part (the hand resolution itself) is fully gone.
+            # `_mark_landed_commits` is the other half: it asks whether the
+            # merge's touched paths, AS CURRENTLY SERVED, coexist together
+            # on some single main commit right now, which is exactly what
+            # "the resolution is gone and the rest already matches main"
+            # looks like.
             _mark_superseded_commits(cwd, preview_ref, carrying_commits)
+            _mark_landed_commits(cwd, main_ref, preview_ref, carrying_commits)
             report.preview_only.extend(carrying_commits)
             report.reasons.append(
                 f"{len(carrying)} merge commit(s) carry a conflict resolution "

@@ -87,14 +87,37 @@ def _merge_commits(cwd: Path, main_ref: str, preview_ref: str) -> list[str]:
     return _git(cwd, "rev-list", "--merges", f"{main_ref}..{preview_ref}").split()
 
 
+def _touched_paths(cwd: Path, sha: str) -> set[str]:
+    """The full set of paths ``sha`` changed relative to its parent(s).
+
+    An ordinary commit has exactly one parent, so this is just its diff
+    against ``sha~1``. A merge can pick DIFFERENT parents at DIFFERENT
+    paths (r3974766502): a resolution that matches parent 0 verbatim at one
+    path and parent 1 verbatim at another has an EMPTY diff against
+    whichever parent it matched, at that path -- so using only the
+    first-parent diff (equivalent to an ordinary commit's whole diff)
+    silently drops any path where the resolution happened to keep parent
+    0's content. That is the exact union-not-intersection defect
+    ``_resolution_carrying_merges`` already guards against for its own
+    ``touched`` set; every caller that scopes a containment check to "the
+    paths this commit changed" needs the same union, or a
+    supersession/landed check can go blind at a path the merge's own
+    carrying-detection already knows about.
+    """
+    parents = _git(cwd, "rev-parse", f"{sha}^@").split()
+    if len(parents) == 2:
+        return _diff_paths(cwd, parents[0], sha) | _diff_paths(cwd, parents[1], sha)
+    return _diff_paths(cwd, f"{sha}~1", sha)
+
+
 def _union_diff_paths(cwd: Path, shas: list[str]) -> set[str]:
-    """Union of ``_diff_paths(sha~1, sha)`` over every sha in ``shas``: the
-    full set of paths some group of commits touched, shared by every
+    """Union of ``_touched_paths(sha)`` over every sha in ``shas``: the full
+    set of paths some group of commits touched, shared by every
     combined-state check below so each unions its own class the same way.
     """
     paths: set[str] = set()
     for sha in shas:
-        paths |= _diff_paths(cwd, f"{sha}~1", sha)
+        paths |= _touched_paths(cwd, sha)
     return paths
 
 
@@ -243,7 +266,7 @@ def _mark_superseded_commits(
     -- the wrong, much broader question.
     """
     for commit in commits:
-        paths = _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
+        paths = _touched_paths(cwd, commit.sha)
         if not paths or _trees_identical(cwd, f"{commit.sha}~1", preview_ref, *paths):
             commit.superseded = True
 
@@ -263,7 +286,7 @@ def _mark_landed_commits(
     merge resolution share one notion of "landed" rather than two.
     """
     for commit in commits:
-        paths = _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
+        paths = _touched_paths(cwd, commit.sha)
         if paths and _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
             commit.landed = True
     _revoke_landed_if_combined_state_never_coexisted(cwd, main_ref, preview_ref, commits)
