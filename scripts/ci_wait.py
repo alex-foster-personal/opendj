@@ -87,12 +87,35 @@ r3976173912). `poll_until_terminal` only returns SUCCESS when every present
 run's conclusion is in `scripts.trunk_job_verdict_core.PASSING_JOB_
 CONCLUSIONS`; a stable, fully terminal snapshot with any other conclusion
 returns FAILURE, a distinct, equally definite result -- never a false green.
+
+If `head_sha` is not found in the PR's cached `commits` array at all,
+`_previous_shas` treats the WHOLE cached list as baseline candidates rather
+than raising (found in review, PR #1685 thread r3976329043): `_head_sha`
+now reads the live branch ref, but `_pr_commits` still reads the PR
+object's cached `commits` array, which can lag behind it by the same
+documented window (docs/ops/nucbox-fleet.md:200-202). Every commit already
+IN that cached list necessarily happened before the live head the cache
+has not heard about yet, so treating the lag as an error would turn an
+ordinary, brief caching delay into a spurious COULD-NOT-MEASURE right when
+a worker most wants an answer.
+
+A baseline is only built from `pull_request`-triggered check-runs, never
+every check-run attached to a commit (found in review, PR #1685 thread
+r3976329052, and confirmed against this repo's own real data: PR #1681's
+merged head carries two check-runs from `create`-triggered runs, not
+`pull_request` ones). Including a `create`- or `workflow_dispatch`-only
+name in `expected` would make it a permanent, never-satisfiable entry at
+every later push on the same PR, since an ordinary `synchronize` push does
+not retrigger those events. `_pull_request_triggered_names` resolves each
+check-run's Actions run id from its `html_url` and asks that run's own
+`event` field, once per DISTINCT run id.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -188,30 +211,92 @@ def _previous_shas(commits: list[dict], head_sha: str) -> list[str]:
     Empty on a single-commit PR: there is no prior commit on this branch at
     all, which the caller must report as NO_BASELINE rather than inventing
     one from an event-mismatched source.
+
+    If `head_sha` is not found in `commits` at all, the cached PR object's
+    commit history has not caught up to the live branch ref yet (documented
+    lag: docs/ops/nucbox-fleet.md:200-202; found in review, PR #1685 thread
+    r3976329043): `_head_sha` resolves the CURRENT head from a live `git
+    ls-remote`, but `_pr_commits` reads the PR object's cached `commits`
+    array, which can be a beat behind it. Every commit already IN that
+    cached list necessarily happened before the live head the cache has not
+    heard about yet, so the whole cached list -- not none of it -- is a
+    valid set of baseline candidates; treating this as an error would turn
+    an ordinary, brief caching lag into a spurious COULD-NOT-MEASURE right
+    when a worker most wants an answer.
     """
     oids = [commit["oid"] for commit in commits]
     try:
         idx = oids.index(head_sha)
     except ValueError:
-        raise ValueError(
-            f"head {head_sha} is not in its own PR's commit list "
-            f"(most recent: {oids[-1] if oids else '<none>'})"
-        ) from None
+        return list(reversed(oids))
     return list(reversed(oids[:idx]))
 
 
+def _run_id(check_run: dict) -> str:
+    """The Actions run id a check-run belongs to, parsed from its `html_url`
+    (e.g. `.../actions/runs/34446942870/job/102773687609`). The check-run
+    object carries no `event` field of its own -- only `check_suite.id`,
+    which does not resolve to a trigger event without a further lookup
+    either -- so the run id embedded in the URL is what lets `_run_event`
+    ask the run itself what triggered it.
+    """
+    url = check_run.get("html_url") or ""
+    match = re.search(r"/actions/runs/(\d+)/", url)
+    if not match:
+        raise TriageError(
+            f"check-run {check_run.get('id')} has no parseable run id in html_url {url!r}"
+        )
+    return match.group(1)
+
+
+def _pull_request_triggered_names(
+    check_runs: Iterable[dict], run_event: Callable[[str], str]
+) -> frozenset[str]:
+    """Names of check-runs whose Actions run was triggered by a
+    `pull_request` event, dropping anything from `push`, `create`,
+    `workflow_dispatch`, or any other event a normal PR push will not
+    retrigger (found in review, PR #1685 thread r3976329052, and confirmed
+    against this repo's own real data: PR #1681's merged head carries two
+    check-runs -- "macOS native companion wheel" and "payload provenance +
+    artifact verification" -- from `create`-triggered runs, not
+    `pull_request` ones). Including either in a baseline would make it a
+    permanent, never-satisfiable expected name at every later push on the
+    same PR, since an ordinary `synchronize` push never fires a `create` or
+    `workflow_dispatch` event. `run_event` is called once per DISTINCT run
+    id, not once per check-run, since several check-runs (every pytest
+    shard, for example) share one run.
+    """
+    seen: dict[str, str] = {}
+    names: set[str] = set()
+    for run in check_runs:
+        run_id = _run_id(run)
+        event = seen.get(run_id)
+        if event is None:
+            event = run_event(run_id)
+            seen[run_id] = event
+        if event == "pull_request":
+            names.add(run["name"])
+    return frozenset(names)
+
+
 def _first_baseline(
-    candidates: Iterable[str], check_runs_at: Callable[[str], list[dict]]
+    candidates: Iterable[str],
+    check_runs_at: Callable[[str], list[dict]],
+    run_event: Callable[[str], str],
 ) -> frozenset[str] | None:
-    """The check-run names of the FIRST candidate SHA that actually has any.
+    """The pull-request-triggered check-run names of the FIRST candidate SHA
+    that actually has any.
 
     Candidates are prior commits on this PR, nearest first. A commit folded
     into a multi-commit push never got its own `synchronize` event and so
     never has check-runs -- not a baseline of zero, just not a pushed head at
-    all -- so it is skipped rather than read as NO_BASELINE prematurely.
+    all -- so it is skipped rather than read as NO_BASELINE prematurely. A
+    commit whose only check-runs came from a non-`pull_request` event (a
+    manual dispatch, a `create` event) is skipped the same way, for the same
+    reason: neither is a real `pull_request`-triggered baseline either.
     """
     for sha in candidates:
-        names = _check_run_names(check_runs_at(sha))
+        names = _pull_request_triggered_names(check_runs_at(sha), run_event)
         if names:
             return names
     return None
@@ -397,18 +482,29 @@ def _pr_commits(pr: str, repo: str = REPO) -> list[dict]:
     return commits
 
 
+def _run_event(run_id: str, repo: str = REPO) -> str:
+    """The triggering event of Actions run `run_id` (`pull_request`, `push`,
+    `create`, `workflow_dispatch`, ...)."""
+    raw = _gh(["api", f"repos/{repo}/actions/runs/{run_id}", "-q", ".event"]).strip()
+    if not raw:
+        raise TriageError(f"gh returned no event for run {run_id} in {repo}")
+    return raw
+
+
 def expected_from_previous_head(pr: str, head_sha: str, repo: str = REPO) -> frozenset[str] | None:
     """Expected check-run names for `head_sha`, read from the nearest earlier
-    commit on this PR that actually has any. `None` means no baseline could
-    be established (no earlier commit at all, or none of them ever got a
-    check-run) -- the caller must report that explicitly, never treat it as
-    "zero checks expected".
+    commit on this PR that actually has a `pull_request`-triggered baseline.
+    `None` means no baseline could be established (no earlier commit at all,
+    or none of them ever got a `pull_request`-triggered check-run) -- the
+    caller must report that explicitly, never treat it as "zero checks
+    expected".
     """
-    try:
-        candidates = _previous_shas(_pr_commits(pr, repo), head_sha)
-    except ValueError as exc:
-        raise TriageError(f"PR #{pr}: {exc}") from None
-    return _first_baseline(candidates, lambda sha: _check_runs_at_sha(sha, repo))
+    candidates = _previous_shas(_pr_commits(pr, repo), head_sha)
+    return _first_baseline(
+        candidates,
+        lambda sha: _check_runs_at_sha(sha, repo),
+        lambda run_id: _run_event(run_id, repo),
+    )
 
 
 def wait_for_checks(
