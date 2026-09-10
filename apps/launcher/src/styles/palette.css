@@ -88,3 +88,10 @@ html, body, #root {
   opacity: 1;
   color: #ff8080;
 }
+
+/* Rows retained from the previous query while a new one is in flight. They
+   stay draggable on purpose (the user may have been reaching for one), but
+   they must not read as results for what is currently typed. */
+.palette-list-stale .palette-item {
+  opacity: 0.45;
+}

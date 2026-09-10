@@ -17,11 +17,9 @@ import type { TrackHit } from "../types";
  */
 export function emptyMessage(
   frecency: FrecencyState,
-  search: SearchState<TrackHit>,
   query: string,
 ): string {
   const q = query.trim();
-  if (search.status === "searching") return `Searching for "${q}"...`;
   if (q.length < FTS_MIN_QUERY_CHARS) {
     // Short queries never reach FTS5; they filter the recents cache in memory,
     // so the state of THAT cache is what an empty list means here.
@@ -45,15 +43,26 @@ export function emptyMessage(
   return `No tracks match "${q}".`;
 }
 
-/** The sentence shown when `search_tracks` itself failed.
+/** What to say about the SEARCH itself, or null when there is nothing to say.
  *
- * Separate from `emptyMessage` because a search failure must be visible even
- * when the recents-cache fallback has rows to show: a silent fallback is how
- * the failure became indistinguishable from a successful empty answer.
+ * Separate from `emptyMessage`, and rendered independently of whether any rows
+ * are showing, because both non-ready states are invisible exactly when rows
+ * ARE showing. `useSearch` keeps the previous hits while a new query is in
+ * flight and falls back to the recents cache on failure, so an empty-list-only
+ * notice left stale draggable rows reading as current matches (Codex P2
+ * BLOCKING, PR #1633) and left a backend failure silent.
+ *
+ * Returns null for `ready`, which is the only state with nothing to report.
  */
-export function searchFailureMessage(error: string, cachedHits: number): string {
-  if (cachedHits > 0) {
-    return `Track search failed (${error}). Showing matching recent tracks instead.`;
+export function searchNoticeMessage(
+  search: SearchState<TrackHit>,
+  query: string,
+): string | null {
+  if (search.status === "searching") return `Searching for "${query.trim()}"...`;
+  if (search.status === "failed") {
+    return search.hits.length > 0
+      ? `Track search failed (${search.error}). Showing matching recent tracks instead.`
+      : `Track search failed: ${search.error}`;
   }
-  return `Track search failed: ${error}`;
+  return null;
 }

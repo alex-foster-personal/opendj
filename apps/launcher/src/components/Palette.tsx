@@ -2,7 +2,7 @@ import { Command } from "cmdk";
 import { useState } from "react";
 
 import DragToasts from "./DragToasts";
-import { emptyMessage, searchFailureMessage } from "./emptyState";
+import { emptyMessage, searchNoticeMessage } from "./emptyState";
 import TrackRow from "./TrackRow";
 import { useDragEvents } from "../hooks/useDragEvents";
 import { useFrecency } from "../hooks/useFrecency";
@@ -23,6 +23,9 @@ export default function Palette() {
   // of leaving the user guessing (UI-REVIEW-2026-04-17 launcher gap).
   const [toasts, dismissToast] = useDragEvents();
   const failed = search.status === "failed" || frecency.status === "failed";
+  // Null only when the search is settled, which is the one state with nothing
+  // to report about it.
+  const notice = searchNoticeMessage(search, query);
 
   return (
     <div className="palette-shell">
@@ -34,19 +37,27 @@ export default function Palette() {
           autoFocus
           className="palette-input"
         />
-        <Command.List className="palette-list">
-          {search.status === "failed" && (
-            // Rendered whether or not the cache fallback found anything, so a
-            // failed search is never mistaken for a successful empty one.
-            <div className="palette-empty palette-empty-failed" role="status">
-              {searchFailureMessage(search.error, results.length)}
+        <Command.List
+          className={
+            search.status === "searching" ? "palette-list palette-list-stale" : "palette-list"
+          }
+        >
+          {notice !== null && (
+            // Rendered independently of `results.length`. Both non-ready states
+            // retain the previous rows, so an empty-list-only notice is silent
+            // in exactly the case where stale rows look like current matches.
+            <div
+              className={failed ? "palette-empty palette-empty-failed" : "palette-empty"}
+              role="status"
+            >
+              {notice}
             </div>
           )}
-          {results.length === 0 && search.status !== "failed" && (
+          {results.length === 0 && notice === null && (
             <Command.Empty
               className={failed ? "palette-empty palette-empty-failed" : "palette-empty"}
             >
-              {emptyMessage(frecency, search, query)}
+              {emptyMessage(frecency, query)}
             </Command.Empty>
           )}
           {results.map((t) => (
