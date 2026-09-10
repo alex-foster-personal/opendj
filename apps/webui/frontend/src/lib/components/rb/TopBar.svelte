@@ -36,6 +36,7 @@
 	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
@@ -243,7 +244,10 @@
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
->	<!-- left: live audio health + prefetch count, then mode dropdown -->
+>	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
+	     ahead of the live audio health + prefetch count and mode dropdown. -->
+	<AnalysisSourceToggle />
+
 	<PerfMeters />
 
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
@@ -748,8 +752,36 @@
 	   pre-existing crush (free-badge/utility reappearing past the
 	   untouched 1400px boundary) that reproduces identically with this
 	   diff fully reverted - out of scope for this fix, flagged separately
-	   (spawned task investigates it alongside the CI e2e-gate flake). */
-	@media (max-width: 1340px) {
+	   (spawned task investigates it alongside the CI e2e-gate flake).
+
+	   RE-MEASURED Wed 9 Sep 2026 (PARITY-02, issue #1002): the SOURCE toggle
+	   added to this row is a 75px fixed-width control, and this budget had no
+	   slack, so 1340px was no longer the right eviction point. Measured with
+	   Playwright elementFromPoint at 5px granularity across [1340px, 1920px]
+	   on one page, three configurations, same run:
+
+	     A  SOURCE shown, this rule at 1340px (i.e. the state that reds):
+	        .cmd-entry collapses from 130px at 1340px to 8px at 1345px, and the
+	        command INPUT fails its own hit test from 1345px continuously to
+	        1505px. It first passes at 1510px.
+	     B  SOURCE shown, pairing+vibe evicted across the whole sweep:
+	        .cmd-entry is a flat 130px and the input is hittable at EVERY one of
+	        the 117 widths from 1340px to 1920px.
+	     C  SOURCE hidden (the pre-#1002 baseline, this rule at 1340px):
+	        hittable everywhere except 1410-1425px - the pre-existing >1400px
+	        crush already described above, not caused by and not fixed by #1002.
+
+	   So the deficit is real and this eviction window is what pays for it.
+	   1530px = 1505px (the last width measured unstable in A) + the same 25px
+	   margin the 1340px choice used. That is a DELIBERATE WIDENING of the
+	   eviction window, 1340px -> 1530px: pairing and vibe now hide up to
+	   1530px rather than 1340px. It was chosen over hiding SOURCE itself
+	   because pairing and vibe are read-only status chrome while SOURCE and
+	   the command entry are both controls, and this row's existing ranking
+	   already evicts pairing+vibe first. Configuration B is what ships, and it
+	   is strictly healthier than the C baseline: it also closes the 1410-1425
+	   hole. */
+	@media (max-width: 1530px) {
 		.rb-topbar .topbar-slot-pairing,
 		.rb-topbar .topbar-slot-vibe { display: none; }
 	}
@@ -757,7 +789,22 @@
 		.rb-topbar :global(.cmd-input) { width: 86px; }
 		.rb-topbar :global(.cmd-status) { display: none; }
 	}
-	@media (max-width: 1024px) {
+	/* 1024px -> 1210px, re-measured Wed 9 Sep 2026 with SOURCE in the row
+	   (same harness and method as the 1530px note above). Two findings, one
+	   of them pre-existing:
+	     - With SOURCE and this rule still at 1024px, the command input fails
+	       its hit test continuously across [1089px, 1184px]. Attributable:
+	       the same sweep with SOURCE hidden passes at every one of those
+	       widths.
+	     - [1029px, 1084px] fails in BOTH sweeps. That is the >1024px twin of
+	       the >1400px crush noted above and predates #1002.
+	   Evicting this cluster across [1024px, 1340px] clears every width in
+	   both sweeps, so 1210px = 1184px (last width attributable to SOURCE) +
+	   the same 25px margin, and it closes the pre-existing hole as a side
+	   effect. This group is the right thing to drop first: every member is
+	   placeholder chrome - the eight view icons and LINK are `rb-inert` and
+	   `disabled`, PAD is a dim label - so nothing operable leaves the row. */
+	@media (max-width: 1210px) {
 		.rb-topbar .icon-cluster,
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
@@ -768,7 +815,26 @@
 		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
 		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
 	}
-	@media (max-width: 820px) {
+	/* 820px -> 825px, re-measured Wed 9 Sep 2026 with SOURCE in the row (same
+	   harness and method as the two notes above, but swept at 1px rather than
+	   5px granularity because the band in question turned out to be 5px wide).
+	   This rule EVICTS the command entry outright, so every width it covers
+	   reads as "input not hittable" by design, and the sweep numbers have to
+	   be read against that:
+	     - pre-#1002 baseline (SOURCE hidden): the input is hittable at every
+	       width from 821px to 1920px, and not below, i.e. the eviction
+	       boundary and the crush floor coincide exactly at 820/821.
+	     - with SOURCE and this rule still at 820px: the input is CRUSHED
+	       (present, laid out, not hittable) across [821px, 825px], then
+	       hittable at every width from 826px to 1920px.
+	   So SOURCE costs this row exactly 5px of floor. Moving the boundary to
+	   825px is a DELIBERATE 5px WIDENING of an eviction window that already
+	   drops the command entry: it converts [821px, 825px] from a visible but
+	   unclickable control into the same honest "not shown at this width"
+	   state the four narrower pixels already had. A crushed control is the
+	   worse of the two failure modes, since it looks operable and is not.
+	   Below the 1024px this row is designed for either way. */
+	@media (max-width: 825px) {
 		.rb-topbar .topbar-slot-midi,
 		.rb-topbar .topbar-slot-utility,
 		.rb-topbar .free-badge,

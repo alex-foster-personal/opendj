@@ -99,6 +99,92 @@ def test_unknown_lane_source_and_toggle_state_are_refused(db) -> None:
         selection.set_toggle("key", "sometimes")
 
 
+def test_compare_and_set_toggle_applies_only_when_the_current_value_matches() -> None:
+    """discussion_r3973129053: the CAS the rollback relies on to close the
+    read-then-write race window."""
+    assert selection.get_toggle("waveform") == "unset"
+    assert selection.compare_and_set_toggle("waveform", "unset", "own") is True
+    assert selection.get_toggle("waveform") == "own"
+
+
+def test_compare_and_set_toggle_refuses_and_leaves_the_newer_value_when_stale() -> None:
+    """The mismatch branch: someone else already moved the toggle, so the
+    compare-and-set must report failure and must NOT overwrite their value."""
+    selection.set_toggle("waveform", "own")
+    assert selection.compare_and_set_toggle("waveform", "unset", "rbx") is False
+    assert selection.get_toggle("waveform") == "own"
+
+
+def test_compare_and_set_toggle_validates_lane_and_states_before_touching_anything() -> None:
+    with pytest.raises(selection.SelectionError, match="unknown lane"):
+        selection.compare_and_set_toggle("phrases", "unset", "own")
+    with pytest.raises(selection.SelectionError, match="unknown toggle state"):
+        selection.compare_and_set_toggle("waveform", "maybe", "own")
+    with pytest.raises(selection.SelectionError, match="unknown toggle state"):
+        selection.compare_and_set_toggle("waveform", "unset", "sometimes")
+
+
+def test_toggle_revision_is_monotonic_and_starts_at_zero() -> None:
+    assert selection.get_toggle_revision("beatgrid") == 0
+    write = selection.write_toggle("beatgrid", "own")
+    assert write == selection.ToggleWrite(previous="unset", revision=1)
+    assert selection.get_toggle_revision("beatgrid") == 1
+    selection.set_toggle("beatgrid", "rbx")
+    assert selection.get_toggle_revision("beatgrid") == 2
+    assert selection.all_toggle_revisions()["beatgrid"] == 2
+
+
+def test_expected_revision_refuses_an_aba_round_trip_the_value_alone_would_miss() -> None:
+    """discussion_r3974993963 P1 BLOCKING, reproduced first: a rollback that
+    captured revision 1 (from the original 'own' write) must not restore a
+    displaced value once 'own' has round-tripped through 'rbx' and back -
+    the CURRENT value equals what it still expects, but the world moved.
+    """
+    first = selection.write_toggle("beatgrid", "own")
+    assert first == selection.ToggleWrite(previous="unset", revision=1)
+    selection.write_toggle("beatgrid", "rbx")  # an external agent, revision 2
+    selection.write_toggle("beatgrid", "own")  # back to "own", revision 3
+    assert selection.get_toggle("beatgrid") == "own"
+
+    # A value-only compare-and-set would still succeed here (control: proves
+    # the ABA gap this test is about is real, not already impossible).
+    assert selection.compare_and_set_toggle("beatgrid", expected="own", new="unset") is True
+    assert selection.get_toggle("beatgrid") == "unset"
+    selection.set_toggle("beatgrid", "own")  # replay for the actual assertion, revision 5
+
+    # The stale rollback, now revision-checked against the FIRST write it
+    # actually observed, must refuse: revision has moved to 5, not 1.
+    assert (
+        selection.compare_and_set_toggle(
+            "beatgrid", expected="own", new="unset", expected_revision=first.revision
+        )
+        is False
+    )
+    assert selection.get_toggle("beatgrid") == "own", (
+        "an ABA-stale rollback must not erase the newer 'own' decision"
+    )
+
+    # Mutate-both-directions control: the identical compensation succeeds
+    # when the revision it names IS still current - this is not a guard that
+    # merely always refuses.
+    current_revision = selection.get_toggle_revision("beatgrid")
+    assert (
+        selection.compare_and_set_toggle(
+            "beatgrid", expected="own", new="unset", expected_revision=current_revision
+        )
+        is True
+    )
+    assert selection.get_toggle("beatgrid") == "unset"
+
+
+def test_expected_revision_is_ignored_without_expected_value() -> None:
+    """An unconditional write must stay unconditional: `expected_revision`
+    only means anything paired with `expected`."""
+    selection.write_toggle("beatgrid", "own")
+    result = selection.write_toggle("beatgrid", "rbx", expected_revision=999)
+    assert result == selection.ToggleWrite(previous="own", revision=2)
+
+
 def test_get_default_works_on_a_connection_that_cannot_write(tmp_path) -> None:
     """The track read path is read-only; creating a table there would 500."""
     db_path = tmp_path / "state.db"
@@ -163,7 +249,7 @@ def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
     assert body["lanes"]["beatgrid"] == {
-        "default": "rbx", "toggle": "unset", "effective": "rbx",
+        "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }
 
 
@@ -183,8 +269,51 @@ def test_setting_a_default_over_http_changes_the_effective_source(client) -> Non
         "/api/v1/analysis/source", json={"lane": "loudness", "default": "own"}
     ).json()
     assert body["lanes"]["loudness"] == {
-        "default": "own", "toggle": "unset", "effective": "own",
+        "default": "own", "toggle": "unset", "toggle_revision": 0, "effective": "own",
     }
+
+
+def test_put_with_expected_toggle_matching_applies_and_puts_with_none_ignores_it(client) -> None:
+    """discussion_r3973129053, HTTP half: the route's `expected_toggle` field
+    is the client-facing surface over `selection.compare_and_set_toggle`."""
+    put = client.put(
+        "/api/v1/analysis/source",
+        json={"lane": "waveform", "toggle": "own", "expected_toggle": "unset"},
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["lanes"]["waveform"]["toggle"] == "own"
+
+
+def test_put_with_a_stale_expected_toggle_is_refused_with_409_and_does_not_apply(client) -> None:
+    client.put("/api/v1/analysis/source", json={"lane": "waveform", "toggle": "own"})
+    resp = client.put(
+        "/api/v1/analysis/source",
+        json={"lane": "waveform", "toggle": "rbx", "expected_toggle": "unset"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "toggle_changed"
+    # The refused CAS must not have applied: still `own`, the value it raced against.
+    assert client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]["toggle"] == "own"
+
+
+def test_a_stale_cas_refuses_the_whole_put_and_leaves_the_default_unpersisted(client) -> None:
+    """discussion_r3974235466: a combined default+toggle PUT whose CAS is
+    stale must not commit the default before raising 409, or the durable
+    default takes effect after relaunch while the caller reads a conflict."""
+    client.put("/api/v1/analysis/source", json={"lane": "waveform", "toggle": "own"})
+    resp = client.put(
+        "/api/v1/analysis/source",
+        json={
+            "lane": "waveform",
+            "default": "own",
+            "toggle": "rbx",
+            "expected_toggle": "unset",
+        },
+    )
+    assert resp.status_code == 409, resp.text
+    got = client.get("/api/v1/analysis/source").json()["lanes"]["waveform"]
+    assert got["default"] == "rbx", "the default must not have committed alongside a refused CAS"
+    assert got["toggle"] == "own"
 
 
 def test_put_with_neither_half_is_refused(client) -> None:
