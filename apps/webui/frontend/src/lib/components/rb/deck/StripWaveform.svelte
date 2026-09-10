@@ -26,7 +26,8 @@
 		deck: DeckState;
 		pending: boolean;
 		onSeek: (ms: number) => Promise<void>;
-		onPlay: () => Promise<void>;
+		/** Q1: carries the originating click's own `event.timeStamp`. */
+		onPlay: (pressT0Ms?: number) => Promise<void>;
 	} = $props();
 
 	// Canvas backing resolution (CSS scales to 100% x var(--rb-strip-h)).
@@ -132,7 +133,7 @@
 	async function handlePlayHint(e: MouseEvent): Promise<void> {
 		e.stopPropagation();
 		playHintPct = null;
-		await onPlay();
+		await onPlay(e.timeStamp);
 	}
 </script>
 

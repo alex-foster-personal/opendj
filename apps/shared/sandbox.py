@@ -16,6 +16,29 @@ instead.
 The engine runs as a CHILD of the Tauri shell and is signed with
 ``com.apple.security.inherit``, so it is inside the same container and this
 answers the same for both processes.
+
+THE FOURTH STATE (SAND-01).  A dead control in this app already carries one of
+three sentences, and they mean different things::
+
+    1. not built              "not implemented - see PARITY-TODO"
+    2. this daemon does not offer it   capabilities.svelte.ts refusals
+    3. not on your plan       apps.entitlements.UI_REFUSAL_TITLE
+
+"The App Store build cannot do this" is a FOURTH fact and gets a fourth
+sentence, :data:`STORE_BUILD_REFUSAL_TITLE`, for the same reason the third one
+did: telling a user a feature is "not implemented" when the truth is "Apple's
+sandbox forbids it" is a lie about why the control is dead.  The four are
+pinned apart by
+``apps/webui/frontend/tests/unit/store-build-refusal.test.mjs``.
+
+WHAT A REFUSAL MUST NOT SAY.  It must not send the user to a download outside
+the store.  App Store Review Guideline 3.2.2(vi) bars an app from requiring a
+user to download something else to access functionality, and Apple reads
+"get our other build to unlock this" as circumventing the store, so a helpful
+sounding "use the direct download instead" in a tooltip is a rejection risk
+shipped in a string.  Shipping a store build that simply does not have the
+feature is fine; ADVERTISING the way around it from inside that build is not.
+See section 3, option B of ``specs/appstore-sandbox-remediation.md``.
 """
 
 from __future__ import annotations
@@ -29,6 +52,20 @@ CONTAINER_ENV: str = "APP_SANDBOX_CONTAINER_ID"
 
 #: Where macOS redirects a sandboxed process's home.
 _CONTAINER_MARKER = "/Library/Containers/"
+
+#: The stable code every store-build refusal carries, on the wire and in the
+#: exception. Callers branch on this, never on the prose.
+STORE_BUILD_REFUSAL_CODE: str = "capability_not_in_store_build"
+
+#: The exact tooltip a control carries when the App Store build cannot offer
+#: it. The FOURTH distinct sentence (see the module docstring): not the
+#: PARITY-TODO wording, not a capability refusal, not the plan refusal. It
+#: names the BUILD and the reason, and deliberately points nowhere outside
+#: the store.
+STORE_BUILD_REFUSAL_TITLE: str = (
+    "not available in the App Store build - the macOS App Sandbox does not "
+    "permit it"
+)
 
 
 class SandboxRefusal(RuntimeError):
@@ -66,25 +103,49 @@ def is_sandboxed(
     return _CONTAINER_MARKER in str(Path(env.get("HOME", "")))
 
 
-def refuse_if_sandboxed(capability: str, *, because: str, instead: str) -> None:
-    """Raise :class:`SandboxRefusal` when sandboxed, naming a way forward.
+def store_build_refusal_message(
+    capability: str, *, because: str, instead: str | None = None
+) -> str:
+    """The human sentence a store-build refusal carries.
 
-    ``because`` says what the sandbox blocks and ``instead`` says what the user
-    or caller can actually do, because a refusal with no alternative is just a
-    dead end with better wording.
+    Spelled once here so the exception a caller raises, the HTTP body a route
+    returns and the tooltip a control renders cannot drift into three
+    different explanations of the same fact -- the contract
+    ``apps.entitlements`` holds for the plan refusal.
+
+    ``because`` says what the sandbox blocks.  ``instead`` names a way forward
+    THAT EXISTS INSIDE THIS BUILD, and is None when there is not one: a
+    refusal with no alternative is a dead end, but inventing one that points
+    at a download outside the store is worse than a dead end, because it is
+    the App Store Review Guideline 3.2.2(vi) pattern (see the module
+    docstring). Saying plainly that this build does not have the feature is
+    the honest answer when it is the true one.
     """
+    onward = f"{instead} " if instead else ""
+    return (
+        f"{capability} is not available in the App Store build of Open DJ. "
+        f"{because} {onward}"
+        "See specs/appstore-sandbox-remediation.md."
+    )
+
+
+def refuse_if_sandboxed(
+    capability: str, *, because: str, instead: str | None = None
+) -> None:
+    """Raise :class:`SandboxRefusal` when sandboxed, saying why."""
     if not is_sandboxed():
         return
     raise SandboxRefusal(
-        f"{capability} is not available in the App Store build of Open DJ. "
-        f"{because} {instead} "
-        "See specs/appstore-sandbox-remediation.md."
+        store_build_refusal_message(capability, because=because, instead=instead)
     )
 
 
 __all__ = [
     "CONTAINER_ENV",
+    "STORE_BUILD_REFUSAL_CODE",
+    "STORE_BUILD_REFUSAL_TITLE",
     "SandboxRefusal",
     "is_sandboxed",
     "refuse_if_sandboxed",
+    "store_build_refusal_message",
 ]

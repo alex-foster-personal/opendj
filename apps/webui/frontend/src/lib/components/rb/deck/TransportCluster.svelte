@@ -15,8 +15,15 @@
 	}: {
 		deck: DeckState;
 		pending: boolean;
-		onCue: () => Promise<void>;
-		onPlayPause: () => Promise<void>;
+		/**
+		 * Q1: both take the ORIGINATING event's own `event.timeStamp`, on the
+		 * `performance.now()` epoch, and the parameter exists so that the stamp
+		 * is never re-taken further down. A `performance.now()` read inside the
+		 * handler starts the clock AFTER the browser has already queued the
+		 * input and dispatched to us, and that gap is time the operator felt.
+		 */
+		onCue: (pressT0Ms?: number) => Promise<void>;
+		onPlayPause: (pressT0Ms?: number) => Promise<void>;
 	} = $props();
 
 	const hasTrack: boolean = $derived(deck.stable_id !== null);
@@ -67,7 +74,7 @@
 			aria-label={`cue deck ${deck.deck_id}`}
 			data-testid={`cue-deck-${deck.deck_id}`}
 			data-performance-control="cue"
-			onclick={async () => await onCue()}
+			onclick={async (event) => await onCue(event.timeStamp)}
 		>
 			CUE
 		</button>
@@ -83,7 +90,7 @@
 		data-testid={`play-deck-${deck.deck_id}`}
 		data-performance-control="play"
 		data-state={deck.playing ? 'on' : 'off'}
-		onclick={async () => await onPlayPause()}
+		onclick={async (event) => await onPlayPause(event.timeStamp)}
 	>
 		{#if deck.playing}
 			<svg viewBox="0 0 16 16" class="glyph" aria-hidden="true">

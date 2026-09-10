@@ -34,6 +34,7 @@
 	import { accountStore } from '$lib/account/account-store.svelte';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { entitlements, planRefusal } from '$lib/api/entitlements.svelte';
+	import { buildFlags, storeBuildRefusal } from '$lib/api/store-build.svelte';
 	import {
 		accountOverlay,
 		askAccountDeleteConfirm,
@@ -56,7 +57,21 @@
 		if (!accountOverlay.open) return;
 		void accountStore.load();
 		void entitlements.load();
+		void buildFlags.load();
 	});
+
+	/**
+	 * Every declared flag this BUILD does not have (SAND-01), read off the
+	 * server's per-flag refusal rather than inferred from `enabled` here: a
+	 * flag can be off because a developer switched it off locally, and saying
+	 * "the App Store build removed it" about that would be the fourth state
+	 * telling the same kind of lie the third one was added to stop.
+	 */
+	const absentInThisBuild = $derived(
+		buildFlags.flags
+			.map((flag) => ({ flag, refusal: storeBuildRefusal(flag.flag_id) }))
+			.filter((row) => row.refusal !== null)
+	);
 
 	onMount(() => {
 		// This overlay is mounted at the root but starts closed, so its
@@ -205,6 +220,47 @@
 										{:else}
 											<span class="ac-muted" title={refusal}>Not included</span>
 										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</section>
+
+					<!-- ----------------------------------------- this build -->
+					<!-- SAND-01. The FOURTH reason a control is dead, and it
+					     belongs beside the plan because a user hitting a dead
+					     control has no way to tell "not on my plan" from "not
+					     in this build" without being told which. It names no
+					     download outside the store: guideline 3.2.2(vi) reads
+					     that as circumventing the store, so the honest store
+					     build states the absence and stops there. -->
+					<section class="ac-section" aria-label="This build">
+						<h3>What this build can do</h3>
+						{#if buildFlags.error !== null}
+							<p class="ac-muted" title={buildFlags.error}>
+								Could not read this build's capabilities from the daemon: {buildFlags.error}
+							</p>
+						{:else if !buildFlags.loaded}
+							<p class="ac-muted">Reading this build's capabilities from the daemon...</p>
+						{:else if absentInThisBuild.length === 0}
+							<p
+								class="ac-muted"
+								title="Build profile {buildFlags.profile}, sandboxed: {buildFlags.sandboxed}. No declared capability is switched off for this build."
+							>
+								Every capability openDJ ships is available in this build.
+							</p>
+						{:else}
+							<p class="ac-muted">
+								This build does not include the following. They are not missing from
+								openDJ and they are not withheld from your account; this particular
+								build cannot offer them.
+							</p>
+							<ul class="ac-features">
+								{#each absentInThisBuild as row (row.flag.flag_id)}
+									<li>
+										<span class="ac-store-label ac-mono">{row.flag.flag_id}</span>
+										<span class="ac-muted" title={row.refusal}>Not in this build</span>
+										<span class="ac-muted">{row.flag.note}</span>
 									</li>
 								{/each}
 							</ul>

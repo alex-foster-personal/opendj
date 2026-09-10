@@ -51,13 +51,14 @@
 			<span class:visible={!artworkLoaded} class="wave-art-slate" aria-hidden="true">ART</span>
 		</span>
 	{:else if deck.stable_id === null}
-		<span class="wave-art-slate visible" title="No track loaded">EMPTY</span>
+		<span class="wave-art-slate visible standalone" title="No track loaded">EMPTY</span>
 	{:else}
-		<span class="wave-art-slate visible" title="Artwork unavailable - image could not be loaded">NO ART</span>
+		<span class="wave-art-slate visible standalone" title="Artwork unavailable - image could not be loaded">NO ART</span>
 	{/if}
 	<span
 		bind:this={trackNameEl}
 		class="wave-track-name"
+		class:empty={deck.stable_id === null}
 		class:scrubbing={trackNameScrubbing}
 		style:--track-name-scrub-px={`${trackNameScrubPx}px`}
 		style:animation-duration={`${Math.max(trackNameScrubPx / 30, 0.6)}s`}
@@ -111,20 +112,44 @@
 	.wave-art-slate.visible {
 		display: grid;
 	}
+	/* The EMPTY / NO ART placeholders are not content; they are a named slate
+	   saying why there is no artwork. They keep their label contrast and give
+	   up their raised fill (pin e585d3b67f4d). */
+	.wave-art-slate.standalone {
+		background: transparent;
+	}
 	.wave-art .wave-art-slate {
 		position: absolute;
 		inset: 0;
 		width: auto;
 		height: auto;
 	}
+	/* pin e585d3b67f4d: "the title below it is too loud (full white font) and
+	   too wide". It was --rb-text, the same weight the primary UI text carries,
+	   spanning the whole 132px gutter regardless of how short the title is.
+	   Now it is secondary text, and it shrinks to its own content up to a cap
+	   derived from the gutter rather than always filling it - a short title
+	   reads as short. Hover still scrubs a clipped one, so nothing is lost.
+	   It is NOT dimmed below --rb-text-dim: that token was deliberately
+	   lightened to #838990 on Thu 4 Sep 2026 to clear the 4.5:1 AA floor
+	   (pin 5503680a4e0f), and going quieter than "less loud" asks would put
+	   this text back under it. */
 	.wave-track-name {
 		display: block;
-		width: 100%;
+		max-width: 100%;
+		width: fit-content;
 		overflow: hidden;
-		color: var(--rb-text);
+		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
 		line-height: 12px;
 		white-space: nowrap;
+	}
+	/* "Empty and no track loaded ... should be more dimmed / less visible."
+	   Same AA floor applies to the text, so the emphasis comes off the shape
+	   instead: the placeholder loses its raised fill and reads as an outline. */
+	.wave-track-name.empty {
+		font-style: italic;
+		letter-spacing: 0.02em;
 	}
 	.wave-track-name > span {
 		display: inline-block;

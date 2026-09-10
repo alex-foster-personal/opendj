@@ -38,7 +38,7 @@ export function resolveSearchFilterFallback<Row>(
 	return { rows: filteredRows, ignoredFilters: [] };
 }
 
-/** Recover only a precise search hidden by Next-only, never a broad result set. */
+/** Recover only a precise search hidden by the compatible filter, never a broad result set. */
 export function selectSearchFilterFallback<T>(
 	query: string,
 	filteredRows: readonly T[],
