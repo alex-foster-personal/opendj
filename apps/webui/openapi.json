@@ -3133,6 +3133,127 @@
         "title": "EngineHealthOut",
         "type": "object"
       },
+      "EnrollCredentialModel": {
+        "description": "The credential the joining machine presents. Rides the BODY, not a header.\n\n:class:`apps.sync_hub.transport.HubTransport` is a two-method protocol\nwith no header support, and a grant is not a bearer for ``push`` or\n``pull``. Widening the transport for it would create a credential slot\nthose endpoints would then be expected to fill.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "grant",
+              "google_id_token"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "EnrollCredentialModel",
+        "type": "object"
+      },
+      "EnrollErrorBody": {
+        "description": "The ``detail`` object every refusal below carries.\n\nDeclared as a model rather than left implicit so the generated client can\nbranch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds\nexactly this shape; the codes are enumerated per status in\n:data:`ENROLL_RESPONSES`.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "EnrollErrorBody",
+        "type": "object"
+      },
+      "EnrollErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/EnrollErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "EnrollErrorResponse",
+        "type": "object"
+      },
+      "EnrollRequest": {
+        "description": "No owner field, by construction: a request cannot name whose machine\nit is becoming. The owner is read from the credential's own record.",
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/EnrollCredentialModel"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineModel"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine",
+          "schema_version",
+          "credential"
+        ],
+        "title": "EnrollRequest",
+        "type": "object"
+      },
+      "EnrollResponse": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "enrolled_at": {
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "enrolled_via": {
+            "title": "Enrolled Via",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_google_sub": {
+            "title": "Owner Google Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "owner_google_sub",
+          "owner_email",
+          "hub_machine_id",
+          "enrolled_at",
+          "enrolled_via",
+          "created"
+        ],
+        "title": "EnrollResponse",
+        "type": "object"
+      },
       "EntitlementsOut": {
         "properties": {
           "features": {
@@ -3245,7 +3366,7 @@
         "type": "object"
       },
       "FallbackBeatgridOut": {
-        "description": "Identical shape to the ``beatgrid`` object served by /anlz.",
+        "description": "Identical shape to the ``beatgrid`` object served by /anlz.\n\n``source`` is fixed at ``\"own\"``: every grid this endpoint can serve came\nfrom an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ\nto read), and the ANLZ contract this shape mirrors makes the field\nREQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here\nleft the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a\nreal mismatch: a fail-closed, source-aware reader would reject this grid\noutright (Codex P2 BLOCKING, PR #1587).",
         "properties": {
           "beat_count": {
             "title": "Beat Count",
@@ -3257,9 +3378,15 @@
             },
             "title": "Beats",
             "type": "array"
+          },
+          "source": {
+            "const": "own",
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
+          "source",
           "beat_count",
           "beats"
         ],
@@ -4163,6 +4290,15 @@
             "title": "Machines",
             "type": "array"
           },
+          "ownership": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          },
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
@@ -4177,7 +4313,8 @@
           "schema_version",
           "seq",
           "machines",
-          "hub_generation"
+          "hub_generation",
+          "ownership"
         ],
         "title": "HelloResponse",
         "type": "object"
@@ -18532,6 +18669,78 @@
           }
         },
         "summary": "Digest",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/enroll": {
+      "post": {
+        "description": "Join this hub's fleet under a proved owner. The ONE enrollment door.\n\nBoth ADR 12 paths come through here and neither can reach\n:func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev\nCLI is a thin argparse shell over this exact call, and the user path will\nbe the same call carrying a different credential kind.\n\nDeliberately NOT behind a router-level dependency. It authenticates by\nthe credential in its BODY, which is what lets a headless machine with no\nbrowser and no local Google session enroll at all. One transaction, so a\nrefusal registers nothing. Idempotent: a re-run answers ``created: false``.",
+        "operationId": "enroll_api_v1_sync_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollErrorResponse"
+                }
+              }
+            },
+            "description": "The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollErrorResponse"
+                }
+              }
+            },
+            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollErrorResponse"
+                }
+              }
+            },
+            "description": "The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE."
+          }
+        },
+        "summary": "Enroll",
         "tags": [
           "sync"
         ]
