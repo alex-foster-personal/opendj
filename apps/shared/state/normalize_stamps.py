@@ -111,6 +111,7 @@ STAMP_COLUMNS: tuple[tuple[str, str], ...] = (
 #: two changelogs) is repaired without a changelog entry, which is right: they
 #: are machine-local bookkeeping and never sync.
 SYNCED_PKS: dict[str, tuple[str, ...]] = {
+    "lyric_verdict": ("stable_id",),
     "playlist_memberships": ("playlist_id", "position"),
     "playlist_pins": ("machine_id", "playlist_id"),
     "playlists": ("playlist_id",),

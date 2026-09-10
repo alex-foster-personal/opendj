@@ -39,11 +39,9 @@ from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 
-from apps.lyrics import ingest_state, legacy_words, purge
 from apps.lyrics.annotations import load_annotations, validate_against_songs
-from apps.lyrics.artifacts import asset_clients_for_mode
+from apps.lyrics.cli_storage import STORAGE_COMMANDS, add_storage_commands, cmd_storage
 from apps.lyrics.crosscheck import crosscheck, flagged_indices, witness_verdicts
-from apps.lyrics.ingest_state import MATCH_MODES
 from apps.lyrics.jamendo import DEFAULT_DATASET_DIR, JamendoSong, load_songs
 from apps.lyrics.metrics import OnsetErrorReport, aggregate, format_report, score_onsets
 from apps.lyrics.search_index import index_batch, index_path
@@ -67,37 +65,10 @@ def _add_dataset_dir(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_storage_commands(subcommands: argparse._SubParsersAction) -> None:
-    """The three PR-2 storage subcommands (D13.2). Bodies live in their own
-    modules so this file stays under the 600-line gate and the PR-3 batch
-    driver can import ``ingest_state`` directly."""
-    ingest = subcommands.add_parser("ingest-state", help="load a bench run into state.db")
-    ingest.add_argument("--manifest", type=Path, required=True, help="bench manifest JSON")
-    ingest.add_argument("--coverage", type=Path, help="vocal-presence.json")
-    ingest.add_argument(
-        "--match-by", choices=MATCH_MODES, default="vendor-id", help="how tracks join state.db"
-    )
-    ingest.add_argument("--db-path", type=Path, help="state DB (default: the repo data dir)")
-    ingest.add_argument("--write", action="store_true", help="write; omit for a dry run")
-
-    migrate = subcommands.add_parser(
-        "migrate-legacy-words", help="convert renamed-aside branch-era lyric tables"
-    )
-    migrate.add_argument("--db-path", type=Path, help="state DB (default: the repo data dir)")
-    migrate.add_argument("--dry-run", action="store_true", help="report only, write nothing")
-
-    purge_cmd = subcommands.add_parser(
-        "purge", help="remove one provider's lyrics from row, disk and R2"
-    )
-    purge_cmd.add_argument("--source", required=True, help="source prefix, matched LIKE prefix%%")
-    purge_cmd.add_argument("--db-path", type=Path, help="state DB (default: the repo data dir)")
-    purge_cmd.add_argument("--dry-run", action="store_true", help="report only, write nothing")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.lyrics")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    _add_storage_commands(subcommands)
+    add_storage_commands(subcommands)
 
     fetch = subcommands.add_parser("fetch", help="fetch and cache line-synced lyrics")
     fetch.add_argument("track", help="stable track id")
@@ -569,36 +540,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_witness_eval(
             args.dataset_dir, args.pred, args.asr, args.error_tol, args.local_window
         )
-    elif args.command in _STORAGE_COMMANDS:
-        return _cmd_storage(args)
+    elif args.command in STORAGE_COMMANDS:
+        return cmd_storage(args)
     else:
         raise AssertionError(f"unhandled command {args.command!r}")
-
-
-_STORAGE_COMMANDS: frozenset[str] = frozenset({"ingest-state", "migrate-legacy-words", "purge"})
-
-
-def _cmd_storage(args: argparse.Namespace) -> int:
-    """The three subcommands that write state.db + the karaoke_words artifact."""
-    if args.command == "ingest-state":
-        s3, cfg = asset_clients_for_mode(writing=args.write)
-        return ingest_state.main(
-            manifest=args.manifest, coverage=args.coverage, write=args.write,
-            match_by=args.match_by, db_path=args.db_path, s3=s3, cfg=cfg,
-        )
-    elif args.command == "migrate-legacy-words":  # noqa: RET505 - explicit elif is the house style
-        s3, cfg = asset_clients_for_mode(writing=not args.dry_run)
-        return legacy_words.main(
-            db_path=args.db_path, dry_run=args.dry_run, s3=s3, cfg=cfg
-        )
-    elif args.command == "purge":
-        s3, cfg = asset_clients_for_mode(writing=not args.dry_run)
-        return purge.main(
-            source_prefix=args.source, db_path=args.db_path, dry_run=args.dry_run,
-            s3=s3, cfg=cfg,
-        )
-    else:
-        raise AssertionError(f"unhandled storage command {args.command!r}")
 
 
 if __name__ == "__main__":
