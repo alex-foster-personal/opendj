@@ -122,6 +122,22 @@ async function _waitForGenerationPast(from) {
 	}
 }
 
+async function _waitForRunnerLog(expected, label) {
+	const deadline = Date.now() + 5000;
+	for (;;) {
+		if (
+			runnerLog.length === expected.length &&
+			runnerLog.every((entry, index) => entry === expected[index])
+		) {
+			return;
+		}
+		if (Date.now() > deadline) {
+			throw new Error(`${label}: timed out with runnerLog=${JSON.stringify(runnerLog)}`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
 /** Flip the DAEMON's selection without going through the module under test, so
  * the module sees it exactly as it would see an agent's direct PUT. */
 async function daemonSelect(toggle) {
@@ -472,9 +488,9 @@ test('an event-driven refresh records what /anlz actually SERVED, not the stale 
 		_deliverTracksChanged(socket);
 		// A REAL /anlz + /tracks round trip, not the zero-network short-circuit
 		// the other record-change tests exercise (their decks are never
-		// loaded) - a same-tick 0ms wait is not long enough for real loopback
-		// I/O to settle, so this needs actual margin.
-		await new Promise((resolve) => setTimeout(resolve, 100));
+		// loaded) - poll until the refresh runner finishes rather than a
+		// fixed sleep that races pool load (issue #1820).
+		await _waitForRunnerLog(['enter', 'exit'], 'event-driven refresh');
 		assert.deepEqual(runnerLog, ['enter', 'exit'], 'the stale own mirror must still trigger the refresh');
 
 		assert.deepEqual(
@@ -530,7 +546,10 @@ test('an EARLIER refresh completing must not clear a mark a LATER change set whi
 
 		// Let A (started before the second change, and so unable to have seen
 		// it) finish on its own.
-		await new Promise((resolve) => setTimeout(resolve, 250));
+		await _waitForRunnerLog(
+			['enter', 'enter', 'threw', 'exit'],
+			'refresh A completion after slow /anlz'
+		);
 		assert.deepEqual(runnerLog, ['enter', 'enter', 'threw', 'exit'], 'refresh A must now have completed');
 
 		// The moment that matters: A succeeded, but B (the refresh that could

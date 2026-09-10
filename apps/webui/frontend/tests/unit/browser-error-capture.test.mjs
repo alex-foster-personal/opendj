@@ -98,17 +98,13 @@ after(() => {
 	globalThis.fetch = originalFetch;
 });
 
-function waitFor(predicate, label, attempts = 80) {
-	return new Promise((resolve, reject) => {
-		let left = attempts;
-		const tick = () => {
-			if (predicate()) return resolve();
-			left -= 1;
-			if (left <= 0) return reject(new Error(`timed out waiting for ${label}`));
-			setTimeout(tick, 5);
-		};
-		tick();
-	});
+async function waitFor(predicate, label, timeoutMs = 5000) {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		if (predicate()) return;
+		if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
 }
 
 test('installClientErrorReporting registers capture-phase resource errors', () => {
@@ -199,7 +195,7 @@ test('console.warn respects the sample gate', async () => {
 	reporting.__setConsoleSampleGateForTests(() => 0.99);
 	reporting.installClientErrorReporting();
 	console.warn('ignored warn');
-	await new Promise((resolve) => setTimeout(resolve, 20));
+	await waitFor(() => posted.length === 0, 'sampled-out console.warn stays queued', 50);
 	assert.equal(posted.length, 0);
 	reporting.__setConsoleSampleGateForTests(() => 0);
 	console.warn('sampled warn');
@@ -216,7 +212,7 @@ test('pending shell bridge rows drain through reportClientError', async () => {
 			headers: { 'content-type': 'application/json' }
 		});
 	};
-	globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ = [
+	globalThis.window.__OPENDJ_PENDING_SHELL_ERRORS__ = [
 		{
 			kind: 'webview-navigation',
 			message: 'navigation failed: http://127.0.0.1:1/',
@@ -226,5 +222,5 @@ test('pending shell bridge rows drain through reportClientError', async () => {
 	reporting.installClientErrorReporting();
 	await waitFor(() => posted.length === 1, 'pending shell drain');
 	assert.equal(posted[0].kind, 'webview-navigation');
-	assert.equal(globalThis.__OPENDJ_PENDING_SHELL_ERRORS__.length, 0);
+	assert.equal(globalThis.window.__OPENDJ_PENDING_SHELL_ERRORS__.length, 0);
 });

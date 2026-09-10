@@ -500,6 +500,20 @@ async function daemonSelect(toggle) {
 	assert.equal(res.status, 200, 'fixture server rejected the direct daemon switch');
 }
 
+/** Poll until a real fixture-server /anlz fetch has published `ready`, rather
+ * than sleeping a guessed duration: a fixed sleep races a slow server under
+ * pool load (issue #1820). */
+async function _waitForAnlzReady(stableId, label = stableId) {
+	const deadline = Date.now() + 5000;
+	for (;;) {
+		if (cache.getAnlzEntry(stableId)?.status === 'ready') return;
+		if (Date.now() > deadline) {
+			throw new Error(`anlz entry for ${label} never reached ready`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
 async function rowBpm(stableId) {
 	const res = await fetch(`${apiBase}/api/v1/tracks/${stableId}`);
 	assert.equal(res.status, 200, `the real tracks route did not serve ${stableId}`);
@@ -639,7 +653,8 @@ test('invalidateAllAnlzCacheEntries forces a REAL second request, not a fabricat
 	const before_ = await requestLog();
 	cache.ensureAnlz(SID_TRACK_A);
 	cache.ensureAnlz(SID_TRACK_B);
-	await new Promise((resolve) => setTimeout(resolve, 200));
+	await _waitForAnlzReady(SID_TRACK_A);
+	await _waitForAnlzReady(SID_TRACK_B);
 
 	const entryA = cache.getAnlzEntry(SID_TRACK_A);
 	assert.equal(entryA.status, 'ready', 'the real route must have answered before this asserts');
@@ -656,7 +671,7 @@ test('invalidateAllAnlzCacheEntries forces a REAL second request, not a fabricat
 
 	const midpoint = await requestLog();
 	cache.ensureAnlz(SID_TRACK_A);
-	await new Promise((resolve) => setTimeout(resolve, 200));
+	await _waitForAnlzReady(SID_TRACK_A);
 	const secondPass = (await requestLog()).slice(midpoint.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(secondPass.length, 1, 'ensureAnlz must treat an evicted entry as a real cache miss');
@@ -682,13 +697,11 @@ test('evictAnlzCacheEntriesServingOtherSource evicts only entries whose beatgrid
 	try {
 		await daemonSelect('own');
 		cache.ensureAnlz(SID_TRACK_A);
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready', 'the own-sourced fetch must land first');
+		await _waitForAnlzReady(SID_TRACK_A, 'the own-sourced fetch must land first');
 
 		await daemonSelect('rbx');
 		cache.ensureAnlz(SID_TRACK_B);
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		assert.equal(cache.getAnlzEntry(SID_TRACK_B)?.status, 'ready', 'the rbx-sourced fetch must land too');
+		await _waitForAnlzReady(SID_TRACK_B, 'the rbx-sourced fetch must land too');
 
 		const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
 
@@ -719,8 +732,7 @@ test('evictAnlzCacheEntriesServingOtherSource reports nothing evicted when every
 	try {
 		await daemonSelect('own');
 		cache.ensureAnlz(SID_TRACK_A);
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
+		await _waitForAnlzReady(SID_TRACK_A);
 
 		const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
 
@@ -737,8 +749,7 @@ test('evictAnlzCacheEntriesServingOtherSource reports nothing evicted when every
 		await daemonSelect('rbx');
 		cache.invalidateAnlzCacheEntry(SID_TRACK_B);
 		cache.ensureAnlz(SID_TRACK_B);
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		assert.equal(cache.getAnlzEntry(SID_TRACK_B)?.status, 'ready');
+		await _waitForAnlzReady(SID_TRACK_B);
 		assert.equal(
 			cache.evictAnlzCacheEntriesServingOtherSource('own'),
 			true,
