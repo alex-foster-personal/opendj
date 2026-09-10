@@ -25,6 +25,8 @@ import { pushToast } from '$lib/stores.svelte';
 let _state: SilenceState | undefined;
 let _scratch: Float32Array | null = null;
 let _lastMasterRms: number | null = null;
+/** Wall-clock ms when `_lastMasterRms` was written; null when never written. */
+let _lastMasterRmsAtMs: number | null = null;
 
 /** Instantaneous RMS 0..1 of whatever is leaving the master gain. */
 function _masterRms(analyser: AnalyserNode): number {
@@ -54,6 +56,7 @@ export function noteMasterSilence(
 	const playing = anyDeckPlaying && analyser !== null;
 	const masterRms = analyser === null ? 1 : _masterRms(analyser);
 	_lastMasterRms = masterRms;
+	_lastMasterRmsAtMs = Date.now();
 	_state = foldSilenceSample(_state, { playing, masterRms, tMs });
 	if (_state.verdict !== 'silent-while-playing') return;
 	recordPerfEvent(
@@ -70,9 +73,24 @@ export function noteMasterSilence(
 export function resetMasterSilenceWatch(): void {
 	_state = undefined;
 	_lastMasterRms = null;
+	_lastMasterRmsAtMs = null;
 }
 
-/** Real master-bus reading and watchdog verdict for the agent UI mirror. */
-export function masterSilenceState(): { rms: number | null; verdict: SilenceState['verdict'] } {
-	return { rms: _lastMasterRms, verdict: _state?.verdict ?? 'ok' };
+/**
+ * Real master-bus reading and watchdog verdict for the agent UI mirror.
+ *
+ * `at_ms` is load bearing. The RAF loop that calls `noteMasterSilence` stops
+ * when nothing is transporting (`audio-engine.svelte.ts:1857`) while the mirror
+ * keeps re-publishing the last value every second, so without a stamp a reader
+ * cannot tell a live 0.24 from one frozen at the moment audio died. That
+ * ambiguity cost most of a morning on Thu 10 Sep 2026. Wall clock rather than
+ * the fold's `tMs`, so the mirror can compute an age against `Date.now()`
+ * without knowing which clock base the caller used.
+ */
+export function masterSilenceState(): {
+	rms: number | null;
+	verdict: SilenceState['verdict'];
+	at_ms: number | null;
+} {
+	return { rms: _lastMasterRms, verdict: _state?.verdict ?? 'ok', at_ms: _lastMasterRmsAtMs };
 }
