@@ -4,17 +4,29 @@
 # dependencies = [
 #     "beat-this==1.1.0",
 #     "torch==2.14.0",
+#     "torchaudio==2.11.0",
 #     "numpy==1.26.4",
 #     "soundfile==0.14.0",
 # ]
 # [tool.uv.sources]
 # torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+# torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 # [[tool.uv.index]]
 # name = "pytorch-cpu"
 # url = "https://download.pytorch.org/whl/cpu"
 # explicit = true
 # ///
 """Beat This! 1.1.0 as the backfill beat/downbeat producer for the beatgrid lane.
+
+TORCHAUDIO IS PINNED TO THE CPU INDEX TOO, and that is not redundant. Only
+`torch` was pinned there, so `torchaudio` (pulled in by beat-this) resolved to
+the default PyPI wheel, which links CUDA: on any Linux host without an NVIDIA
+runtime it raised `libcudart.so.13: cannot open shared object file` at
+`import torchaudio` and analyzed nothing. That is every host the lane brief
+actually names -- nucbox-wsl has 32 cores and no NVIDIA GPU, and agentbox has
+none either -- so the producer could not run where it is supposed to run,
+while working fine on this Mac. Measured Wed 9 Sep 2026 on nucbox-wsl: the pin
+resolves torch 2.14.0+cpu with torchaudio 2.11.0+cpu and the runner completes.
 
 A PEP 723 SCRIPT, NOT A REPO MODULE. torch and the model weights never enter
 the repo venv (CLAUDE.md). Everything downstream of the beat times -- the
@@ -111,9 +123,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import resource
+import subprocess
 import sys
 import time
 from typing import Any
@@ -142,6 +156,17 @@ DEFAULT_PEAK_THRESHOLD = 0.5
 # ----- Device -------------------------------------------------------------
 
 
+def _runner_sha256() -> str:
+    """The sha256 of this file's bytes, as the analyzer's code identity.
+
+    Digesting the source rather than reporting a version string is the point:
+    a version constant only moves when someone remembers to move it, and this
+    one did not for the round-3 correction that changed the beats.
+    """
+    with open(__file__, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
 def resolve_checkpoint_sha256(checkpoint: str) -> tuple[str | None, str | None]:
     """`(resolved path, sha256)` of the weights actually loaded, or `(None, None)`.
 
@@ -168,6 +193,56 @@ def resolve_checkpoint_sha256(checkpoint: str) -> tuple[str | None, str | None]:
                     digest.update(block)
             return path, digest.hexdigest()
     return None, None
+
+
+def resolve_accelerator(device: str) -> str | None:
+    """The accelerator MODEL for `device`, or None when there genuinely is none.
+
+    WHY A NAME AND NOT A FLAG. `device` cannot carry this: an L4 and an H100
+    both report `cuda`, so two shards from different cards satisfy every
+    equality in the merge guard while having run on different silicon, and
+    `parity_report._role_refusal` reads this field to decide which artifact is
+    the ACCELERATOR side of a CPU-versus-GPU claim. It used to be hardcoded
+    `None`, which broke both at once: a direct `--device cuda` run was refused
+    as the GPU side, so the equality gate could not run outside Modal at all,
+    and two CUDA shards from different GPUs merged silently (Codex P1 BLOCKING,
+    PR #1660).
+
+    NULL IS RESERVED FOR CPU, so it stays a meaningful answer rather than an
+    "unknown". A non-CPU device this cannot name raises instead of writing
+    None: an unnamed accelerator recorded as no accelerator would be read by
+    every consumer as a CPU run, which is the one reading guaranteed to be
+    wrong. Refusing is also what the P1 asked for as the alternative.
+    """
+    if device == "cpu":
+        return None
+    if device == "cuda":
+        # Index 0 because a run is pinned to one card; a multi-GPU shard would
+        # need this to become a list, and would also need the runner to say
+        # which card each track used, so it is out of scope rather than
+        # papered over.
+        return torch.cuda.get_device_name(0)
+    if device == "mps":
+        # MPS exposes no device name, so the chip is the accelerator identity.
+        # An M2 and an M3 Max are as different as an L4 and an H100.
+        brand = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True, text=True, check=False,
+        ).stdout.strip()
+        if not brand:
+            raise SystemExit(
+                "[beatgrid] --device mps selected but the chip could not be "
+                "named, so this artifact cannot record which accelerator ran "
+                "it. Refusing rather than writing a null that every consumer "
+                "would read as a CPU run."
+            )
+        return brand
+    raise SystemExit(
+        f"[beatgrid] device {device!r} is not CPU and cannot be named. Add it "
+        "to resolve_accelerator or run on a device that can be recorded: an "
+        "unnamed accelerator written as null reads as a CPU run everywhere "
+        "downstream."
+    )
 
 
 def resolve_device(requested: str) -> str:
@@ -440,6 +515,40 @@ def _load_model(checkpoint: str, device: str):
     return model, load_s, path, sha256
 
 
+def _analyze_all(
+    paths: list[str],
+    frames_model: Audio2Frames,
+    threshold: float,
+    activations_dir: str | None,
+) -> tuple[dict[str, Any], float]:
+    """Analyze every path, recording failures as rows. Returns `(results, wall_s)`.
+
+    Lifted out of `main` rather than inlined: `main` was over the mccabe limit
+    the quality ratchet gates on, and the per-track loop is the part of it that
+    has nothing to do with argument parsing or provenance.
+    """
+    results: dict[str, Any] = {}
+    wall_started = time.time()
+    for i, path in enumerate(paths, 1):
+        try:
+            results[path] = analyze_one(path, frames_model, threshold, activations_dir)
+        # A failing track is a RESULT about the analyzer, not an accident to
+        # abort on. Swallowing it silently would shrink the denominator and
+        # quietly improve this candidate's scores, so it is recorded instead.
+        except Exception as exc:  # noqa: BLE001
+            results[path] = {
+                "audio": path,
+                "beats": [],
+                "downbeats": [],
+                "activation_peak": None,
+                "error": f"{type(exc).__name__}: {exc}"[:300],
+            }
+            print(f"[beatgrid] FAILED {path}: {results[path]['error']}", flush=True)
+        if i % 25 == 0:
+            print(f"[beatgrid]   {i}/{len(paths)} in {time.time() - wall_started:.0f}s", flush=True)
+    return results, time.time() - wall_started
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--audio", nargs="*", default=[], help="audio files to analyze")
@@ -482,26 +591,9 @@ def main() -> int:
     if args.verify_postprocessor:
         return verify_every(paths, frames_model)
 
-    results: dict[str, Any] = {}
-    wall_started = time.time()
-    for i, path in enumerate(paths, 1):
-        try:
-            results[path] = analyze_one(path, frames_model, args.threshold, args.activations_dir)
-        # A failing track is a RESULT about the analyzer, not an accident to
-        # abort on. Swallowing it silently would shrink the denominator and
-        # quietly improve this candidate's scores, so it is recorded instead.
-        except Exception as exc:  # noqa: BLE001
-            results[path] = {
-                "audio": path,
-                "beats": [],
-                "downbeats": [],
-                "activation_peak": None,
-                "error": f"{type(exc).__name__}: {exc}"[:300],
-            }
-            print(f"[beatgrid] FAILED {path}: {results[path]['error']}", flush=True)
-        if i % 25 == 0:
-            print(f"[beatgrid]   {i}/{len(paths)} in {time.time() - wall_started:.0f}s", flush=True)
-    wall_s = time.time() - wall_started
+    results, wall_s = _analyze_all(
+        paths, frames_model, args.threshold, args.activations_dir
+    )
 
     peak_rss_mb = _peak_rss_mb() if args.measure_rss else None
     if peak_rss_mb is not None:
@@ -512,14 +604,46 @@ def main() -> int:
         "schema": 2,
         "producer": PRODUCER,
         "producer_version": PRODUCER_VERSION,
-        "beat_this_version": __import__("importlib.metadata", fromlist=["version"]).version(
-            "beat-this"
-        ),
+        "beat_this_version": importlib.metadata.version("beat-this"),
         "torch_version": torch.__version__,
+        # The DECODE and inference dependencies, measured off the environment
+        # that just ran rather than read back off the pins at the top of this
+        # file. A pin is a declaration; only the resolved version can reveal a
+        # host that resolved something else. Recorded because a shard decoded
+        # by a different soundfile, or run against a different numpy, did not
+        # measure the same thing as its siblings, and the merge guard in
+        # `scripts/beatbench/gtzan_corpus.py` now compares them (Codex P1
+        # BLOCKING, PR #1660).
+        "numpy_version": importlib.metadata.version("numpy"),
+        # TORCHAUDIO IS THE DECODER, soundfile is only its fallback, and for a
+        # while this header recorded only the fallback. `beat_this.inference.
+        # load_audio` calls `torchaudio.load` first and drops to soundfile (then
+        # madmom) inside `except Exception`, so on every run that succeeds
+        # normally the version recorded here was of a library that never
+        # touched the audio, while the one that produced every sample was
+        # unrecorded. `decode_fingerprint` is a hash of the decoded samples, so
+        # a torchaudio change is exactly the kind of difference this provenance
+        # exists to attribute, and the CPU and CUDA sides genuinely run
+        # different releases (2.11.0 against 2.5.1) (Codex P1 BLOCKING, PR
+        # #1660, discussion_r3977265421).
+        "torchaudio_version": importlib.metadata.version("torchaudio"),
+        "soundfile_version": importlib.metadata.version("soundfile"),
+        # This file's own bytes. `producer_version` is hand maintained and did
+        # not move when this file changed, so a CPU artifact from one revision
+        # and a GPU artifact from another could still claim to be two sides of
+        # one experiment. `scripts/modal_beat_farm.py` bakes THIS FILE into its
+        # image and digests it the same way, so the two sides agree exactly
+        # when, and only when, the same code ran (Codex P1 BLOCKING, PR #1660).
+        "runner_sha256": _runner_sha256(),
         "checkpoint": args.checkpoint,
         "checkpoint_path": checkpoint_path,
         "model_sha256": checkpoint_sha256,
         "device": device,
+        # The accelerator MODEL, null ONLY when the device is CPU. See
+        # `resolve_accelerator`: this was hardcoded None, which both refused a
+        # direct GPU run as the accelerator side of the parity gate and let two
+        # shards from different cards merge (Codex P1 BLOCKING, PR #1660).
+        "gpu": resolve_accelerator(device),
         "threshold": args.threshold,
         "chunk_size_frames": CHUNK_SIZE_FRAMES,
         "fps": FPS,
@@ -537,6 +661,27 @@ def main() -> int:
         f"[beatgrid] done: {len(ok)}/{len(paths)} in {wall_s:.0f}s -> {args.out}",
         flush=True,
     )
+    if paths and not ok:
+        # A run where EVERY track failed used to exit 0. Found by measurement,
+        # not review: a mis-expanded shell argument sent one bogus path, the
+        # runner reported "done: 0/1" and returned 0, and an artifact with no
+        # results looked like a completed shard. In a sharded backfill that is
+        # a missing shard the merge would accept, which is the exit-code
+        # false-green `.claude/rules/verification.md` names first.
+        #
+        # DELIBERATELY NOT "any failure": GTZAN's corrupt jazz.00054 fails on
+        # every legitimate run of the committed round-2 corpus, so failing on
+        # one bad track would refuse the benchmark this repository is built
+        # around. The overshoot is the plausible error here, so the narrow rule
+        # is the correct one: nothing succeeded at all.
+        print(
+            f"[beatgrid] FAILED: all {len(paths)} track(s) errored, so this "
+            "artifact has no results. Exiting nonzero rather than reporting a "
+            "completed run with nothing in it.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
     return 0
 
 
