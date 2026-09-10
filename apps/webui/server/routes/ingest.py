@@ -211,8 +211,8 @@ class CoverageOut(BaseModel):
     #: ordinary "not yet run" or "stale, needs re-run" verdict (a stale
     #: vocal-cache entry whose audio_signature no longer matches is
     #: legitimately missing, not corrupt) so a malformed write cannot hide
-    #: behind a quiet "incomplete" dot. Only lyrics/vocals populate this;
-    #: analysis/stems report 0 (not yet distinguished for those steps).
+    #: behind a quiet "incomplete" dot. lyrics/vocals/stems populate this;
+    #: analysis reports 0 (not yet distinguished for that step).
     corrupt: dict[str, int]
     generated_at: float
 

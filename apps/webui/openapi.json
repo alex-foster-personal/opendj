@@ -4900,6 +4900,249 @@
         "title": "LevelCalibrationOut",
         "type": "object"
       },
+      "LibraryReadinessCounts": {
+        "description": "Every field is a count over ``present``, never over ``total_tracks``.",
+        "properties": {
+          "beatgrid_invalid": {
+            "title": "Beatgrid Invalid",
+            "type": "integer"
+          },
+          "beatgrid_missing": {
+            "title": "Beatgrid Missing",
+            "type": "integer"
+          },
+          "beatgrid_ok": {
+            "title": "Beatgrid Ok",
+            "type": "integer"
+          },
+          "has_analysis": {
+            "title": "Has Analysis",
+            "type": "integer"
+          },
+          "missing_analysis": {
+            "title": "Missing Analysis",
+            "type": "integer"
+          },
+          "not_ready": {
+            "title": "Not Ready",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          },
+          "stems_corrupt": {
+            "title": "Stems Corrupt",
+            "type": "integer"
+          },
+          "stems_missing": {
+            "title": "Stems Missing",
+            "type": "integer"
+          },
+          "stems_ready": {
+            "title": "Stems Ready",
+            "type": "integer"
+          },
+          "sync_compatible": {
+            "title": "Sync Compatible",
+            "type": "integer"
+          },
+          "sync_incompatible": {
+            "title": "Sync Incompatible",
+            "type": "integer"
+          },
+          "waveform_missing": {
+            "title": "Waveform Missing",
+            "type": "integer"
+          },
+          "waveform_ok": {
+            "title": "Waveform Ok",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ready",
+          "not_ready",
+          "beatgrid_ok",
+          "beatgrid_missing",
+          "beatgrid_invalid",
+          "waveform_ok",
+          "waveform_missing",
+          "stems_ready",
+          "stems_missing",
+          "stems_corrupt",
+          "sync_compatible",
+          "sync_incompatible",
+          "has_analysis",
+          "missing_analysis"
+        ],
+        "title": "LibraryReadinessCounts",
+        "type": "object"
+      },
+      "LibraryReadinessItem": {
+        "description": "One present track's stored-artifact readiness.",
+        "properties": {
+          "analysis_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Backend"
+          },
+          "analysis_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Version"
+          },
+          "beatgrid": {
+            "enum": [
+              "ok",
+              "missing",
+              "invalid"
+            ],
+            "title": "Beatgrid",
+            "type": "string"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "has_analysis": {
+            "title": "Has Analysis",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "stems": {
+            "enum": [
+              "ready",
+              "missing",
+              "corrupt"
+            ],
+            "title": "Stems",
+            "type": "string"
+          },
+          "sync_compatible": {
+            "title": "Sync Compatible",
+            "type": "boolean"
+          },
+          "sync_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_beatgrid",
+                  "invalid_grid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Reason"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "waveform_preview": {
+            "enum": [
+              "ok",
+              "missing"
+            ],
+            "title": "Waveform Preview",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "file_path",
+          "beatgrid",
+          "waveform_preview",
+          "stems",
+          "has_analysis",
+          "analysis_backend",
+          "analysis_version",
+          "sync_compatible",
+          "sync_reason",
+          "gaps"
+        ],
+        "title": "LibraryReadinessItem",
+        "type": "object"
+      },
+      "LibraryReadinessOut": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/LibraryReadinessCounts"
+          },
+          "denominator": {
+            "const": "present",
+            "default": "present",
+            "title": "Denominator",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "number"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryReadinessItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "total_tracks": {
+            "title": "Total Tracks",
+            "type": "integer"
+          },
+          "unreachable": {
+            "title": "Unreachable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generated_at",
+          "present",
+          "total_tracks",
+          "unreachable",
+          "counts",
+          "items"
+        ],
+        "title": "LibraryReadinessOut",
+        "type": "object"
+      },
       "LocalDataOut": {
         "description": "One store on this machine that holds something about the account.",
         "properties": {
@@ -15930,6 +16173,76 @@
         "summary": "Reenqueue Job",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/v1/library/readiness": {
+      "get": {
+        "description": "Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.\n\nRequirements (mini-PRD):\n  READY-01: GET /api/v1/library/readiness reports per-present-track and\n  aggregate readiness. Counts use the present (materialized local audio)\n  denominator, never all tracks rows.\n    [if] a track's file is not materialized [then] it is absent from\n    present, items, and every count\n    [if] a present track has no PQTZ, no own beatgrid lane ok, and no\n    usable downbeats_s [then] counts.beatgrid_missing includes it and an\n    axis=beatgrid item names it\n    [if] a present track has a stems directory that load_stem_bundle\n    rejects and no valid bundle in any configured root [then]\n    stems == corrupt on the item and both counts.stems_corrupt and\n    /ingest/coverage corrupt.stems are >= 1\n    [if] limit is 1 and many present tracks are not ready [then] items\n    has 1 row and counts.not_ready is still the full population\n    [if] a present track has a validateBeatGrid-passing grid [then]\n    sync_compatible is true without anyone engaging Beat Sync",
+        "operationId": "get_library_readiness_api_v1_library_readiness_get",
+        "parameters": [
+          {
+            "description": "Cap on listed items. Never caps the reported counts.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Cap on listed items. Never caps the reported counts.",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Which present tracks appear in items.",
+            "in": "query",
+            "name": "axis",
+            "required": false,
+            "schema": {
+              "default": "not_ready",
+              "description": "Which present tracks appear in items.",
+              "enum": [
+                "not_ready",
+                "beatgrid",
+                "waveform",
+                "stems",
+                "stems_corrupt",
+                "sync",
+                "analysis",
+                "all"
+              ],
+              "title": "Axis",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryReadinessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Library Readiness",
+        "tags": [
+          "library"
         ]
       }
     },
