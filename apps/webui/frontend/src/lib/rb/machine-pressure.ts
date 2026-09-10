@@ -229,7 +229,14 @@ export function startMachinePressurePolling(
 	};
 
 	const runFirstPoll = (): void => {
+		// Set unconditionally: the boot window has closed either way, so a later
+		// visibility change takes the immediate post-boot path below rather than
+		// queuing a second deferral. Whether THIS release actually polls depends
+		// on the page being visible right now -- the scheduler's clock is not the
+		// page's, so by the time it fires the tab may have gone hidden again
+		// (#1658 review).
 		firstPollReleased = true;
+		if (document.visibilityState !== 'visible') return;
 		void _pollOnce();
 		startTimer();
 	};

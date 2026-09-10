@@ -289,3 +289,30 @@ test('toggling visibility while still queued does not fire the poll twice', asyn
 
 	assert.equal(fetched.length, 1, 'exactly one poll, not two');
 });
+
+test('a page that goes hidden while the first poll is still queued does not poll when released', async () => {
+	// The boot window can outlast the tab's visible spell: the release is on
+	// the SCHEDULER's clock, not the page's, so by the time it fires the page
+	// may already be hidden again. Firing anyway would defeat the whole point
+	// of gating on visibility in the first place (#1658 review).
+	const manual = manualBootScheduler();
+	const stop = pressure.startMachinePressurePolling(manual.scheduler);
+	await settle();
+	assert.equal(manual.pending(), 1);
+
+	setVisibility('hidden');
+	assert.equal(fetched.length, 0, 'hiding must not itself trigger a poll');
+
+	manual.release();
+	await settle();
+
+	assert.equal(fetched.length, 0, 'still hidden when released: no poll may go out');
+	assert.equal(intervals.length, 0, 'and no recurring timer may start for a hidden page');
+
+	setVisibility('visible');
+	await settle();
+	stop();
+
+	assert.equal(fetched.length, 1, 'coming back visible afterwards resamples exactly once');
+	assert.equal(intervals.length, 1);
+});
