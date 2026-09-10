@@ -2746,6 +2746,13 @@ export interface paths {
          *     ``anlz_available`` reporting whether the authoritative rekordbox grid
          *     also exists). 404 with an explicit code when no grid can be served -
          *     a beatgrid is never invented.
+         *
+         *     A caller naming ``backend=`` gets exactly what it named. The default
+         *     newest-row lookup instead defers to native-analysis v1 first: when v1
+         *     has already settled a beatgrid determination for this track (a
+         *     canonical own pointer exists, whatever it resolved to), this endpoint
+         *     preserves that gridless/failed state rather than silently substituting
+         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
