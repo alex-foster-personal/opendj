@@ -301,6 +301,18 @@
 									Whatever switched these off can switch them back on.
 								</p>
 								<ul class="ac-features">
+									<!-- NO `flag.note` here, unlike the store group above, and that
+									 is the point rather than an omission. The note is the flag's
+									 BUILD-time description, and usb.export's reads "ON everywhere
+									 except the Mac App Store build" - true of the flag, false of
+									 this row, which exists precisely because something on this
+									 machine turned it off instead. Rendering it beside "Turned off
+									 here" both contradicts the row and re-attributes the decision
+									 to Apple, which is the misattribution this whole group was
+									 added to stop (PR #1720 round-1 P2). The component composes no
+									 replacement sentence for the same reason it composes no
+									 refusal: a description invented here is a second truth free to
+									 drift from the daemon's. -->
 									{#each disabledLocally as flag (flag.flag_id)}
 										<li>
 											<span class="ac-store-label ac-mono">{flag.flag_id}</span>
@@ -309,7 +321,6 @@
 												title="Off in this daemon's flag file ({buildFlags.profile} profile). Nothing about the App Store or your plan is involved."
 												>Turned off here</span
 											>
-											<span class="ac-muted">{flag.note}</span>
 										</li>
 									{/each}
 								</ul>
