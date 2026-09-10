@@ -261,7 +261,8 @@ def _own_beatgrid_beats(db_path: Path, stable_id: str) -> tuple[list[dict] | Non
     """
     record = _canonical_beatgrid_record(db_path, stable_id)
     if record is None:
-        return None, "no own analysis for this track"
+        # Same string apply_own_beatgrid publishes: two paths, one reason.
+        return None, own_beatgrid_overlay.OWN_BEATGRID_MISSING_REASON
     result = record.lanes.get("beatgrid")
     if result is None:
         raise HTTPException(

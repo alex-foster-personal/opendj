@@ -452,7 +452,7 @@ test('a switch that removes the grid tells the sink landed:false rather than sta
 	assert.equal(sinkCalls[0].beat_count, 0, 'the real route serves an explicitly empty own grid here');
 	assert.equal(
 		decks[2].anlz.beatgrid_own_unavailable_reason,
-		'no own analysis for this track',
+		'no own beatgrid record for this track yet',
 		'the honest reason from the real route must survive onto the deck'
 	);
 });
