@@ -249,27 +249,68 @@ def _resolution_carrying_merges(
     return carrying, trusted_paths
 
 
+def _commit_owns_a_surviving_line(cwd: Path, sha: str, preview_ref: str, path: str) -> bool:
+    """True if ``git blame`` attributes at least one line of ``path``, AS
+    CURRENTLY SERVED on ``preview_ref``, to ``sha``.
+
+    ``git blame`` tracks survival at line granularity, which is the level a
+    single commit's own diff actually operates at (r3975092354): a commit
+    touching TWO lines of the SAME file, later followed by a fresh edit to
+    only ONE of them, leaves the other line still blamed on the original
+    commit -- exactly "this line is still exactly what I produced, and has
+    done nothing but age since" -- even though the file as a WHOLE no longer
+    matches the commit's post-state. A whole-file comparison cannot express
+    that; blame already tracks it, because tracking survival through partial
+    edits is blame's own job.
+
+    A missing path (deleted since, or never existing on ``preview_ref``)
+    fails the blame call outright: nothing of a deleted file's content can
+    survive, so a failed measurement here correctly reads as "no surviving
+    line" rather than as a finding to render.
+
+    Deliberately NOT the only check ``_mark_superseded_commits`` runs, only a
+    finer-grained ADDITION to the whole-path identical check: blame's own
+    algorithm follows a pure rename (100% content match, no line actually
+    changed) straight through to the PRE-rename commit, so a commit whose
+    only content is a straight ``git mv`` is blamed on its PARENT, never on
+    itself, even though the rename is entirely its own, un-reverted doing.
+    ``_trees_identical`` catches that case directly (both the pre- and
+    post-rename path compare equal to their own current state, unaffected by
+    which commit blame credits), so the two checks cover each other's blind
+    spot rather than one replacing the other.
+    """
+    proc = subprocess.run(
+        ["git", "blame", "--porcelain", preview_ref, "--", path],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return False
+    prefix = f"{sha} "
+    return any(line.startswith(prefix) for line in proc.stdout.splitlines())
+
+
 def _mark_superseded_commits(
     cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]
 ) -> None:
-    """Flag a preview-only commit as ``superseded`` when its net effect is
-    already gone from the served tree: the preview's CURRENT content, at
-    exactly the paths this commit touched, no longer matches what the
-    commit ITSELF produced -- whether that is an explicit revert back to the
-    pre-commit state, or a later, unrelated edit overwriting those paths
-    with something else entirely (r3974912531).
+    """Flag a preview-only commit as ``superseded`` when none of its own
+    content survives anywhere in the served tree (r3975092354, generalizing
+    r3974912531 and r3975002596): not reverted to its pre-state, not
+    overwritten wholesale by something else, and not even partially
+    overwritten while a sibling line or sibling path it also touched still
+    serves exactly what it produced.
 
-    Comparing against the commit's own PRE-state only catches the first
-    shape: a fresh overwrite to some THIRD value -- neither the commit's own
-    content nor its pre-state -- left the old commit permanently "not
-    reverted" and aging into DRIFT even though none of ITS content survives
-    either. The served state at those paths belongs to whichever commit
-    most recently produced it, exactly the responsibility rule
-    ``_newest_touch_age_hours`` already applies for the combined-state
-    checks; comparing against the commit's own POST-state (does the preview
-    still show what I introduced?) generalizes cleanly to both shapes,
-    because "reverted to my pre-state" is just one way of no longer matching
-    my post-state.
+    A path survives, for this commit, when EITHER the whole path still
+    matches the commit's post-state (``_trees_identical``, needed for a pure
+    rename -- see ``_commit_owns_a_surviving_line``'s docstring) OR ``git
+    blame`` still attributes at least one of the path's CURRENT lines to
+    this commit (needed for a partial, same-file overwrite neither check
+    alone catches on its own). A commit touching multiple lines or multiple
+    paths is superseded only when EVERY one of them fails BOTH checks --
+    never when just one line or one path of several still traces back to it
+    by either measure.
 
     An EMPTY diff (an ``--allow-empty`` commit, or any commit whose net
     effect is a no-op) is the degenerate case of "nothing of it remains": it
@@ -277,21 +318,13 @@ def _mark_superseded_commits(
     ``paths`` being empty must not fall through to the "" pathspec of
     ``_trees_identical``, which compares the ENTIRE tree rather than nothing
     -- the wrong, much broader question.
-
-    A commit touching SEVERAL paths must be checked PATH BY PATH, not as one
-    batched comparison (r3975002596): ``_trees_identical`` over the whole set
-    returns "not identical" the moment ANY single path in it differs, so a
-    fresh commit overwriting only ONE of several paths a stale commit
-    touched was enough to mark the ENTIRE stale commit superseded -- hiding
-    that its OTHER touched paths still serve exactly what it produced and
-    have done nothing but age since. Superseded must mean the commit's
-    effect is entirely gone: true only when EVERY touched path has moved
-    away from its post-state, never when just one of several has.
     """
     for commit in commits:
         paths = _touched_paths(cwd, commit.sha)
         if not paths or not any(
-            _trees_identical(cwd, commit.sha, preview_ref, path) for path in paths
+            _trees_identical(cwd, commit.sha, preview_ref, path)
+            or _commit_owns_a_surviving_line(cwd, commit.sha, preview_ref, path)
+            for path in paths
         ):
             commit.superseded = True
 

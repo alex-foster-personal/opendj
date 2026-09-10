@@ -11,6 +11,14 @@ then moves on to a newer scheduled run and never revisits it. A run that
 later fails after being reported "in progress" was never seen again by any
 later window, exactly the silent-failure shape this row exists to catch.
 
+Also r3975092357: a fixed 48h `--created` floor assumed windows always run
+within 48h of each other, but the `window` job's own weekly-floor OR-arm
+(PR #1494) lets windows go up to 7 days apart, so a fixed 48h floor left
+every night before the last 2 uncovered whenever a quiet week widened that
+gap. The floor now anchors to the previous window's own timestamp
+(`BASE_AT`), falling back to 48h only on a genuine bootstrap window with no
+prior report to anchor to.
+
 The stub `gh` does not re-implement GitHub's own server-side filtering
 (that is GitHub's contract, not this repo's); it logs its argv so a test can
 assert `--status completed` was actually requested, then pipes a
@@ -32,10 +40,14 @@ WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "peri
 
 
 def _extract_e2e_line_script() -> str:
-    """Pull the `if e2e_line="$(gh run list ...)"; then ... fi` block out of
-    the `report` job's `run:` script."""
+    """Pull the `e2e_created_floor=...` / `if e2e_line="$(gh run list ...)";
+    then ... fi` block out of the `report` job's `run:` script."""
     text = WORKFLOW.read_text(encoding="utf-8")
-    match = re.search(r'( *if e2e_line="\$\(gh run list.*?\n *fi\n)', text, re.DOTALL)
+    match = re.search(
+        r'( *e2e_created_floor="\$\(date.*?\n *if e2e_line="\$\(gh run list.*?\n *fi\n)',
+        text,
+        re.DOTALL,
+    )
     assert match, "could not locate the e2e_line selection block in periodic-checks.yml"
     return match.group(1)
 
@@ -57,7 +69,11 @@ printf '%s' "$STUB_JSON" | jq -r "$jq_filter"
 
 
 def _run_with_stub_gh(
-    tmp_path: Path, *, json_payload: list[dict] | None = None, fail: str | None = None
+    tmp_path: Path,
+    *,
+    json_payload: list[dict] | None = None,
+    fail: str | None = None,
+    base_at: str | None = None,
 ) -> tuple[str, str]:
     """Run the extracted script against the stub `gh` above and return
     ``(e2e_line, argv_log)``."""
@@ -71,6 +87,10 @@ def _run_with_stub_gh(
     env["STUB_JSON"] = json.dumps(json_payload if json_payload is not None else [])
     if fail is not None:
         env["STUB_FAIL"] = fail
+    if base_at is not None:
+        env["BASE_AT"] = base_at
+    else:
+        env.pop("BASE_AT", None)
     proc = subprocess.run(
         ["bash", "-c", script],
         cwd=tmp_path,
@@ -101,9 +121,50 @@ def test_the_query_fetches_more_than_the_single_newest_run(tmp_path: Path) -> No
     regardless of `--limit`. Asserting the argv directly is what actually
     guards it: `--limit 1` can only ever see ONE completed run per window,
     so an older failure sitting behind a newer pass would never even be
-    fetched, let alone compared."""
+    fetched, let alone compared. 30, not 10 (r3975092357): once the floor
+    itself can reach back a full 7-day weekly-floor gap instead of a fixed
+    48h, `--limit 10` is no longer generous enough to fetch every nightly
+    run the wider floor can now match."""
     _, argv = _run_with_stub_gh(tmp_path, json_payload=[])
-    assert "--limit 10" in argv, argv
+    assert "--limit 30" in argv, argv
+
+
+def test_the_floor_uses_the_previous_windows_own_timestamp_when_available(
+    tmp_path: Path,
+) -> None:
+    """r3975092357: a fixed 48h floor assumed windows are always <= 48h
+    apart, but this workflow's own cadence can go up to 7 DAYS between
+    windows (the weekly floor OR-arm in the `window` job, PR #1494) -- a
+    nightly failure more than 48h before a window that only fires after a
+    quiet week, followed by a later pass, aged out unseen by every window
+    that ever looked at it. The floor must anchor to the PREVIOUS window's
+    own timestamp (`BASE_AT`), covering the exact gap since the last report
+    with no assumption about how wide that gap can get."""
+    _, argv = _run_with_stub_gh(tmp_path, json_payload=[], base_at="2026-08-30T05:40:00Z")
+    assert "--created >=2026-08-30T05:40:00Z" in argv, argv
+
+
+def test_a_bootstrap_window_with_no_prior_report_falls_back_to_a_48h_floor(
+    tmp_path: Path,
+) -> None:
+    """OPPOSITE DIRECTION: `BASE_AT` is only ever empty together with `BASE`
+    on a genuine bootstrap window (no prior report exists to anchor to), and
+    a 48h floor is a reasonable first measurement with nothing before it to
+    miss. Anchoring on an empty string instead of falling back is not caught
+    by a bare "some --created value is present" check: GNU `date -d ""`
+    does not error, it silently parses empty as TODAY at midnight, a much
+    narrower and wrong floor. Pin the exact expected 48h value, computed the
+    same way the workflow itself computes it, so a bootstrap window's floor
+    is provably the intended fallback and not an accidental byproduct of
+    `date` accepting nonsense input."""
+    expected_floor = subprocess.run(
+        ["date", "-u", "-d", "2 days ago", "+%FT%TZ"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _, argv = _run_with_stub_gh(tmp_path, json_payload=[], base_at=None)
+    assert f"--created >={expected_floor}" in argv, argv
 
 
 def test_a_completed_runs_conclusion_is_reported_verbatim(tmp_path: Path) -> None:

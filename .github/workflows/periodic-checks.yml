@@ -101,6 +101,7 @@ jobs:
       run: ${{ steps.compute.outputs.run }}
       count: ${{ steps.compute.outputs.count }}
       base: ${{ steps.compute.outputs.base }}
+      base_at: ${{ steps.compute.outputs.base_at }}
       head: ${{ steps.compute.outputs.head }}
       threshold: ${{ steps.compute.outputs.threshold }}
       elapsed_days: ${{ steps.compute.outputs.elapsed_days }}
@@ -264,6 +265,7 @@ jobs:
             echo "run=${run}"
             echo "count=${count}"
             echo "base=${base}"
+            echo "base_at=${base_at}"
             echo "head=${head}"
             echo "threshold=${threshold}"
             echo "elapsed_days=${elapsed_days}"
@@ -624,6 +626,7 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BASE: ${{ needs.window.outputs.base }}
+          BASE_AT: ${{ needs.window.outputs.base_at }}
           HEAD: ${{ needs.window.outputs.head }}
           COUNT: ${{ needs.window.outputs.count }}
           THRESHOLD: ${{ needs.window.outputs.threshold }}
@@ -692,20 +695,40 @@ jobs:
           # only ever reported once it has a real conclusion to show, and
           # nothing in flight gets silently abandoned.
           #
-          # `--limit 10`, not `1` (r3974912528): `--status completed` alone
+          # `--limit 30`, not `1` (r3974912528): `--status completed` alone
           # still lets a FAILURE go unreported if two nightly runs complete
           # between two windows -- night N is still running at this window's
           # start (so `--status completed --limit 1` returns night N-1's
           # PASS instead), night N then FAILS, and by the time the NEXT
           # window runs, night N+1 has ALSO completed, so `--limit 1` returns
           # N+1 and N's failure is never seen by any window. Fetching every
-          # completed run within the 48h floor (at most a handful at one
-          # scheduled run a night) and preferring the newest FAILURE over the
-          # newest PASS means a failure inside the floor is always surfaced,
-          # even if a later run already passed again.
+          # completed run within the floor below (at most one a night, so
+          # even a month-long gap stays well under 30) and preferring the
+          # newest FAILURE over the newest PASS means a failure inside the
+          # floor is always surfaced, even if a later run already passed
+          # again.
+          #
+          # The floor itself is the PREVIOUS window's own timestamp
+          # (`BASE_AT`, the state marker comment's `created_at`), not a fixed
+          # 48h (r3975092357): this workflow's own cadence can go up to 7
+          # DAYS between windows (the weekly floor OR-arm above, PR #1494),
+          # so a fixed 48h floor left every night before the last 2 silently
+          # uncovered whenever a quiet week pushed windows further apart than
+          # that -- a failure on night 3 of a 7-night gap, later followed by
+          # a pass, aged out unseen by BOTH the window that missed it and
+          # every later one. Anchoring the floor to the actual last report
+          # closes that gap exactly, with no assumption about how far apart
+          # windows can get. `BASE_AT` is only empty together with `BASE` on
+          # a bootstrap window (no prior report to anchor to), where a 48h
+          # floor is a reasonable first measurement with nothing before it to
+          # miss.
+          e2e_created_floor="$(date -u -d '2 days ago' +%FT%TZ)"
+          if [ -n "${BASE_AT:-}" ]; then
+            e2e_created_floor="$(date -u -d "$BASE_AT" +%FT%TZ)"
+          fi
           if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
-                           --event schedule --status completed --limit 10 \
-                           --created ">=$(date -u -d '2 days ago' +%FT%TZ)" \
+                           --event schedule --status completed --limit 30 \
+                           --created ">=$e2e_created_floor" \
                            --json conclusion,createdAt,url \
                            --jq 'def fails: map(select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"));
                                  if length == 0 then empty else
