@@ -277,10 +277,22 @@ def _mark_superseded_commits(
     ``paths`` being empty must not fall through to the "" pathspec of
     ``_trees_identical``, which compares the ENTIRE tree rather than nothing
     -- the wrong, much broader question.
+
+    A commit touching SEVERAL paths must be checked PATH BY PATH, not as one
+    batched comparison (r3975002596): ``_trees_identical`` over the whole set
+    returns "not identical" the moment ANY single path in it differs, so a
+    fresh commit overwriting only ONE of several paths a stale commit
+    touched was enough to mark the ENTIRE stale commit superseded -- hiding
+    that its OTHER touched paths still serve exactly what it produced and
+    have done nothing but age since. Superseded must mean the commit's
+    effect is entirely gone: true only when EVERY touched path has moved
+    away from its post-state, never when just one of several has.
     """
     for commit in commits:
         paths = _touched_paths(cwd, commit.sha)
-        if not paths or not _trees_identical(cwd, commit.sha, preview_ref, *paths):
+        if not paths or not any(
+            _trees_identical(cwd, commit.sha, preview_ref, path) for path in paths
+        ):
             commit.superseded = True
 
 
