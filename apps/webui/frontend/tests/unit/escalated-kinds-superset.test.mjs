@@ -1,5 +1,5 @@
 /**
- * AUDIOLIVE-06 / issue #1641: the escalation set must not drift below the
+ * AUDIOLIVE-07 / issue #1641: the escalation set must not drift below the
  * severity the audio-output modules chose.
  *
  * `audio-output-dead` is the app's ONLY device-level "no sound is leaving this
