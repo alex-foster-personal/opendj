@@ -11,6 +11,7 @@ file-size ratchet.
 from __future__ import annotations
 
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 from scripts.preview_drift_git import (
@@ -292,10 +293,26 @@ def _commit_owns_a_surviving_line(cwd: Path, sha: str, preview_ref: str, path: s
     return any(line.startswith(prefix) for line in proc.stdout.splitlines())
 
 
+def _file_content_at(cwd: Path, ref: str, path: str) -> str | None:
+    """``path``'s raw content at ``ref``, or ``None`` when it does not exist
+    there (deleted, or not yet added) -- distinct from an existing empty
+    file, which content-count comparisons must not conflate with absence.
+    """
+    proc = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.stdout if proc.returncode == 0 else None
+
+
 def _commit_deletion_still_absent(cwd: Path, sha: str, preview_ref: str, path: str) -> bool:
-    """True if ``sha`` removed line(s) from ``path``, relative to at least one
-    parent, that remain absent from ``path`` as currently served on
-    ``preview_ref`` -- the deletion has not been undone by a later commit.
+    """True if ``sha`` reduced how many times some line appears in ``path``,
+    relative to at least one parent, and ``path`` as currently served on
+    ``preview_ref`` still has FEWER occurrences of that line than the parent
+    did -- the reduction has not been fully undone by a later commit.
 
     Neither of the two checks above can see a surviving DELETION (r3975194227):
     ``_trees_identical`` needs the WHOLE path to still match this commit's
@@ -306,41 +323,77 @@ def _commit_deletion_still_absent(cwd: Path, sha: str, preview_ref: str, path: s
     reintroduced is still this commit's own un-landed effect and must not be
     waved through as superseded just because the file around it kept moving.
 
-    Content-based, not line-position-based: a later edit shifts every line
-    number below it, so a removed line counts as "restored" only if its
-    exact text reappears ANYWHERE in the path's current content, never by
-    comparing line N of the diff to line N of the current file.
+    Counted by MULTISET, not set membership (r3975388110): a plain "is this
+    line's text present anywhere in the current file" check cannot tell a
+    genuine restoration from an unrelated surviving DUPLICATE -- deleting one
+    `x` out of `x, x, y` and then editing `y` elsewhere leaves one `x` behind
+    that a set-membership check reads as "the deleted `x` is back", when it
+    is really the sibling occurrence this commit never touched. Comparing
+    per-line counts against the immediate parent's counts is exact regardless
+    of how many duplicates exist.
 
     A merge can remove different content relative to each parent, so both
     are checked, matching ``_touched_paths``'s own union-not-intersection
     treatment of merges.
     """
+    def _line_counts(ref: str) -> Counter[str]:
+        content = _file_content_at(cwd, ref, path)
+        return Counter(content.splitlines()) if content is not None else Counter()
+
     parents = _git(cwd, "rev-parse", f"{sha}^@").split()
     candidates = parents if len(parents) == 2 else [f"{sha}~1"]
-    current = subprocess.run(
-        ["git", "show", f"{preview_ref}:{path}"],
+    current_counts = _line_counts(preview_ref)
+    commit_counts = _line_counts(sha)
+    for parent in candidates:
+        parent_counts = _line_counts(parent)
+        for line, parent_count in parent_counts.items():
+            if commit_counts[line] < parent_count and current_counts[line] < parent_count:
+                return True
+    return False
+
+
+def _ls_tree_mode(cwd: Path, ref: str, path: str) -> str | None:
+    """``path``'s git file mode at ``ref`` (e.g. ``100644``, ``100755``,
+    ``120000`` for a symlink), or ``None`` when the path does not exist
+    there.
+    """
+    proc = subprocess.run(
+        ["git", "ls-tree", ref, "--", path],
         cwd=cwd,
         capture_output=True,
         text=True,
         check=False,
     )
-    current_lines = set(current.stdout.splitlines()) if current.returncode == 0 else set()
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    return proc.stdout.split()[0]
+
+
+def _commit_mode_change_still_in_effect(cwd: Path, sha: str, preview_ref: str, path: str) -> bool:
+    """True if ``sha`` changed ``path``'s git mode (a ``chmod +x``, or a
+    regular-file/symlink type change) relative to at least one parent, and
+    the mode ``sha`` set is still what ``preview_ref`` currently serves.
+
+    None of the three checks above look at mode at all (r3975388097): they
+    compare CONTENT (blob bytes or line multiplicities), and a mode-only
+    commit has an EMPTY content diff by definition, so every one of them
+    correctly finds nothing to attribute -- while the flipped mode is still
+    being served and never reached main. Scoped to "still exactly the mode
+    this commit set", not "differs from the parent's mode", so a LATER
+    commit changing the mode again correctly stops crediting survival to
+    this one, the same self-limiting shape the content checks already have.
+    """
+    parents = _git(cwd, "rev-parse", f"{sha}^@").split()
+    candidates = parents if len(parents) == 2 else [f"{sha}~1"]
+    current_mode = _ls_tree_mode(cwd, preview_ref, path)
+    if current_mode is None:
+        return False
+    commit_mode = _ls_tree_mode(cwd, sha, path)
+    if commit_mode is None or commit_mode != current_mode:
+        return False
     for parent in candidates:
-        diff = subprocess.run(
-            ["git", "diff", parent, sha, "--", path],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if diff.returncode != 0:
-            continue
-        removed = [
-            line[1:]
-            for line in diff.stdout.splitlines()
-            if line.startswith("-") and not line.startswith("---")
-        ]
-        if any(line not in current_lines for line in removed):
+        parent_mode = _ls_tree_mode(cwd, parent, path)
+        if parent_mode is not None and parent_mode != commit_mode:
             return True
     return False
 
@@ -349,26 +402,31 @@ def _mark_superseded_commits(
     cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]
 ) -> None:
     """Flag a preview-only commit as ``superseded`` when none of its own
-    content survives anywhere in the served tree (r3975194227, generalizing
-    r3975092354, r3974912531 and r3975002596): not reverted to its
-    pre-state, not overwritten wholesale by something else, not partially
-    overwritten while a sibling line or sibling path it also touched still
-    serves exactly what it produced, and not a still-in-effect DELETION
-    whose removed content has not been reintroduced.
+    content survives anywhere in the served tree (r3975388097 and
+    r3975388110, generalizing r3975194227, r3975092354, r3974912531 and
+    r3975002596): not reverted to its pre-state, not overwritten wholesale
+    by something else, not partially overwritten while a sibling line or
+    sibling path it also touched still serves exactly what it produced, not
+    a still-in-effect DELETION whose removed content has not been
+    reintroduced, and not a still-in-effect MODE change.
 
-    A path survives, for this commit, when ANY of three checks holds: the
+    A path survives, for this commit, when ANY of four checks holds: the
     whole path still matches the commit's post-state (``_trees_identical``,
     needed for a pure rename -- see ``_commit_owns_a_surviving_line``'s
     docstring), ``git blame`` still attributes at least one of the path's
     CURRENT lines to this commit (needed for a partial, same-file overwrite
-    the whole-path check alone cannot see), or the commit removed line(s)
-    that remain absent from the path's current content (needed for a
-    deletion, which leaves nothing for either of the first two checks to
-    find -- see ``_commit_deletion_still_absent``'s docstring). A commit
+    the whole-path check alone cannot see), the commit reduced some line's
+    count and the current content still has fewer of it than the commit's
+    own parent did (needed for a deletion, including of a DUPLICATE line --
+    see ``_commit_deletion_still_absent``'s docstring), or the commit
+    changed the path's git mode and the current mode still matches what the
+    commit set (needed for a mode-only change like ``chmod +x``, which has
+    an empty CONTENT diff and so is invisible to the first three checks --
+    see ``_commit_mode_change_still_in_effect``'s docstring). A commit
     touching multiple lines or multiple paths is superseded only when EVERY
-    one of them fails ALL THREE checks -- never when just one line, one
-    deletion, or one path of several still traces back to it by any one
-    measure.
+    one of them fails ALL FOUR checks -- never when just one line, one
+    deletion, one mode change, or one path of several still traces back to
+    it by any one measure.
 
     An EMPTY diff (an ``--allow-empty`` commit, or any commit whose net
     effect is a no-op) is the degenerate case of "nothing of it remains": it
@@ -383,6 +441,7 @@ def _mark_superseded_commits(
             _trees_identical(cwd, commit.sha, preview_ref, path)
             or _commit_owns_a_surviving_line(cwd, commit.sha, preview_ref, path)
             or _commit_deletion_still_absent(cwd, commit.sha, preview_ref, path)
+            or _commit_mode_change_still_in_effect(cwd, commit.sha, preview_ref, path)
             for path in paths
         ):
             commit.superseded = True
