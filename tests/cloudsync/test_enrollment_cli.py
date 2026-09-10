@@ -29,8 +29,13 @@ import pytest
 
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import enrollment_credentials, maintenance
-from tests.cloudsync.conftest import HELLO_PATH
+from apps.sync_hub import (
+    client,
+    enrollment_credentials,
+    maintenance,
+    maintenance_enroll,
+)
+from tests.cloudsync.conftest import HELLO_PATH, free_port
 from tests.cloudsync.enrollment_helpers import (
     http_enroll,
     hub_machine_id,
@@ -325,3 +330,98 @@ def test_the_fleet_readout_counts_an_enrolled_machine_as_owned(
     printed = json.loads(capsys.readouterr().out)
     assert printed["owned"] == 1
     assert printed["unowned"] == 1, "the hub has no owner of its own yet"
+
+
+# ----- the DEV path over a real socket --------------------------------------
+
+
+def test_the_cli_enrolls_end_to_end_over_a_real_socket(
+    enroll_live_hub: str,
+    enroll_hub_dir: Path,
+    enroll_spoke_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] the enroll CLI cannot join a machine over real HTTP then the dev
+    path is not proved end to end, [else stop].
+
+    Codex review, PR #1648, P1 BLOCKING. Every other test in this module
+    monkeypatches ``maintenance_enroll._transport_for`` to the in-process
+    hub, so none of them executes ``HttpTransport``, opens a socket, or
+    exercises real request serialization -- they could all stay green while
+    the deployed CLI was broken at exactly the layer an operator hits first.
+
+    This test deliberately requests NO transport fixture. It runs
+    ``python -m apps.sync_hub enroll`` against a uvicorn server on the
+    loopback, so the CLI builds its own production transport and the bytes
+    are real. The negative control below is what makes that claim safe: an
+    unreachable URL must fail, or this test would pass without the server
+    doing anything.
+    """
+    assert not hasattr(maintenance_enroll._transport_for, "__wrapped__"), (
+        "control: this test must drive the real transport factory, so it "
+        "fails loudly if a fixture ever patches it out from under us"
+    )
+
+    token = mint_grant(enroll_hub_dir)
+    argv = [
+        "enroll",
+        "--data-dir",
+        str(enroll_spoke_dir),
+        "--hub",
+        enroll_live_hub,
+        "--name",
+        "nucbox-wsl",
+        "--grant",
+        token,
+    ]
+    assert maintenance.main(argv) == 0, capsys.readouterr().err
+    capsys.readouterr()
+
+    spoke_id = machine_identity.get_or_create_machine_id(enroll_spoke_dir)
+    owners = {row["machine_id"]: row for row in owner_rows(enroll_hub_dir)}
+    assert spoke_id in owners, (
+        "the machine the CLI enrolled over HTTP is not on the hub, so the "
+        "call reported success without the row it claims to have written"
+    )
+    assert owners[spoke_id]["enrolled_via"] == "grant"
+    assert owners[spoke_id]["hub_machine_id"] == hub_machine_id(enroll_hub_dir)
+
+
+def test_the_cli_reports_a_hub_it_cannot_reach(
+    enroll_hub_dir: Path,
+    enroll_spoke_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] enrolling against a dead hub succeeds then the live test above
+    proves nothing, [else stop].
+
+    The negative control for
+    :func:`test_the_cli_enrolls_end_to_end_over_a_real_socket`: same CLI,
+    same real transport, same valid grant, at a port with nothing behind it.
+    Without this, a live test that silently stopped talking to its server
+    would keep passing.
+
+    It asserts a RAISE, not an exit code, because that is what ``enroll``
+    really does: ``main`` hands ``sync`` and ``status`` their own codes and
+    lets every other subcommand propagate, so an unreachable hub leaves the
+    process on a traceback naming the URL rather than a bare exit line. That
+    is the loud failure the house rules ask for, and pinning the behavior
+    that exists beats asserting one that does not.
+    """
+    dead_port = free_port()
+    argv = [
+        "enroll",
+        "--data-dir",
+        str(enroll_spoke_dir),
+        "--hub",
+        f"http://127.0.0.1:{dead_port}",
+        "--name",
+        "nowhere",
+        "--grant",
+        mint_grant(enroll_hub_dir),
+    ]
+    with pytest.raises(client.SyncTransportError, match=str(dead_port)):
+        maintenance.main(argv)
+    assert not owner_rows(enroll_hub_dir), (
+        "and it must not have written an owner row on the way past"
+    )
