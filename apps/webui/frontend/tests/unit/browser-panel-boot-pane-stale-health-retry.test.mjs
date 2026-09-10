@@ -21,147 +21,96 @@
  * forever even though the fresh count it just read proves the library is not
  * empty.
  *
- * The node:test harness cannot mount a Svelte component, so this evaluates
- * BrowserPanel's real `_refreshLibraryRowsOnce` implementation directly from
- * its source (same technique as browser-panel-superseded-load-toast.test.mjs
- * and browser-panel-health-boot-retry.test.mjs), with its closure-captured
- * helpers supplied as factory arguments.
+ * Round 7 (chatgpt-codex-connector, P1/BLOCKING) rejected the first version
+ * of this test: it extracted `_refreshLibraryRowsOnce` as text via `Function`
+ * with every collaborator replaced, so it never executed the compiled
+ * component and could stay green with the real wiring broken - a materially
+ * different (weaker) technique than the fetch/WebSocket-boundary
+ * substitution this same PR's `health-coalesce-invalidation.test.mjs` was
+ * successfully REBUTTED for, since that file loads the real module graph and
+ * substitutes only at genuine I/O boundaries.
+ *
+ * The fix moves the retry DECISION out of `_refreshLibraryRowsOnce` into
+ * `shouldRetryBootPane` (pane-contract.svelte.ts, alongside the sibling pure
+ * decision `resolveBootPlaylist`, which this same suite's
+ * `boot-playlist.test.mjs` already tests the identical way). This is the
+ * real, unmodified module, loaded through `loadTypeScriptModule` exactly like
+ * `resolveBootPlaylist` - no source-slicing, no `Function` reconstruction, no
+ * replacement of the function under test. `_refreshLibraryRowsOnce` itself
+ * just calls it inline; that one-line call site is covered by
+ * `pnpm check` (svelte-check across the real component) and this PR's e2e
+ * boot-burst bench, neither of which a node:test process can mount.
  *
  * Regression lines:
- * - if a fresh, corrected health count is read but panes[0] is left
- *   unclaimed with no retry, the boot pane is indistinguishable from a truly
+ * - if a still-unclaimed boot pane is not retried once the fresh count
+ *   proves the library is not empty, it is indistinguishable from a truly
  *   empty library until a manual reload -> broken
  * - if the retry fires even while a Spotify deep link is pending
- *   (spotifySelectedId !== null), it clobbers a deliberate
+ *   (spotify_selected_id !== null), it clobbers a deliberate
  *   spotifyPendingError state with an arbitrary local playlist -> broken
- * - if panes[0] is already claimed (a deep link, or a prior successful
- *   restore), the retry must be a no-op -> broken
+ * - if an already-claimed pane (a deep link, or a prior successful restore)
+ *   is retried anyway, a user's manual navigation could be raced -> broken
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-const PANEL = fileURLToPath(
-	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
-);
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
-/** Builds the real `_refreshLibraryRowsOnce`, evaluated straight from
- * BrowserPanel.svelte, with its closure-captured helpers supplied as factory
- * arguments so it can run outside the component. */
-function makeRefreshLibraryRowsOnce({
-	panes,
-	source,
-	spotifySelectedId,
-	getHealth,
-	restoreBootPane,
-	trackCount
-}) {
-	const src = readFileSync(PANEL, 'utf8');
-	const marker = '\tasync function _refreshLibraryRowsOnce(';
-	const start = src.indexOf(marker);
-	assert.ok(start >= 0, 'could not find BrowserPanel._refreshLibraryRowsOnce');
-	const end = src.indexOf('\n\t/**\n\t * The only entry point for a background library refresh', start);
-	assert.ok(end > start, 'could not isolate BrowserPanel._refreshLibraryRowsOnce');
-	const functionSource = src
-		.slice(start, end)
-		.replace(
-			'async function _refreshLibraryRowsOnce(): Promise<void> {',
-			'async function _refreshLibraryRowsOnce() {'
-		);
-	assert.doesNotMatch(functionSource, /: Promise<void>/, 'TypeScript annotation survived stripping');
-	const factory = Function(
-		'panes',
-		'source',
-		'spotifySelectedId',
-		'_loadIngestCoverage',
-		'_loadReconcileSummary',
-		'_refreshPlaylists',
-		'getHealth',
-		'_fetchAllRows',
-		'_fetchPlaylistRows',
-		'_restoreBootPane',
-		`let allTracksCount = ${trackCount};\n${functionSource}\nreturn _refreshLibraryRowsOnce;`
-	);
-	return factory(
-		panes,
-		source,
-		spotifySelectedId,
-		async () => {},
-		async () => {},
-		async () => {},
-		getHealth,
-		async () => ({ rows: [], truncated: false, etag: 'x' }),
-		async () => ({ rows: [], truncated: false, etag: 'x' }),
-		restoreBootPane
-	);
+async function _loadContract() {
+	return loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
 }
 
-function blankPane() {
-	return { playlist_id: null, loading: false, rows: [], selected_ids: [], selected_id: null };
-}
+test('a still-unclaimed boot pane must be retried', async () => {
+	const contract = await _loadContract();
 
-test('a blank boot pane is retried once the fresh count proves the library is not empty', async () => {
-	const panes = [blankPane()];
-	let restoreCalls = 0;
-	const refresh = makeRefreshLibraryRowsOnce({
-		panes,
-		source: 'local',
-		spotifySelectedId: null,
-		getHealth: async () => ({ health: { state_db: { tracks: 5 } } }),
-		restoreBootPane: async () => {
-			restoreCalls += 1;
-		},
-		trackCount: 0
+	const retry = contract.shouldRetryBootPane({
+		boot_pane_playlist_id: null,
+		source: 'collection',
+		spotify_selected_id: null
 	});
 
-	await refresh();
-
-	assert.equal(
-		restoreCalls,
-		1,
-		'a still-unclaimed boot pane must be retried after a fresh health read corrects the count'
-	);
+	assert.equal(retry, true, 'a blank boot pane with no pending Spotify link must be retried');
 });
 
-test('an already-claimed boot pane is never retried', async () => {
-	const panes = [{ playlist_id: 'all', loading: false, rows: [], selected_ids: [], selected_id: null }];
-	let restoreCalls = 0;
-	const refresh = makeRefreshLibraryRowsOnce({
-		panes,
-		source: 'local',
-		spotifySelectedId: null,
-		getHealth: async () => ({ health: { state_db: { tracks: 5 } } }),
-		restoreBootPane: async () => {
-			restoreCalls += 1;
-		},
-		trackCount: 5
+test('an already-claimed boot pane must never be retried', async () => {
+	const contract = await _loadContract();
+
+	const retry = contract.shouldRetryBootPane({
+		boot_pane_playlist_id: 'all',
+		source: 'collection',
+		spotify_selected_id: null
 	});
 
-	await refresh();
-
-	assert.equal(restoreCalls, 0, 'a pane a user (or a deep link) already claimed must not be re-restored');
+	assert.equal(retry, false, 'a pane a user or a deep link already claimed must not be re-restored');
 });
 
-test('a pending Spotify deep link is never overridden by the retry', async () => {
-	const panes = [blankPane()];
-	let restoreCalls = 0;
-	const refresh = makeRefreshLibraryRowsOnce({
-		panes,
+test('a pending Spotify deep link must never be overridden by the retry', async () => {
+	const contract = await _loadContract();
+
+	const retry = contract.shouldRetryBootPane({
+		boot_pane_playlist_id: null,
 		source: 'spotify',
-		spotifySelectedId: 'spotify-playlist-1',
-		getHealth: async () => ({ health: { state_db: { tracks: 5 } } }),
-		restoreBootPane: async () => {
-			restoreCalls += 1;
-		},
-		trackCount: 0
+		spotify_selected_id: 'spotify-playlist-1'
 	});
 
-	await refresh();
-
 	assert.equal(
-		restoreCalls,
-		0,
-		'a pending Spotify selection must not be clobbered by an arbitrary local playlist'
+		retry,
+		false,
+		'a pending Spotify selection (spotifyPendingError) must not be clobbered by an arbitrary local playlist'
 	);
+});
+
+test('a blank pane with source spotify but no selected id is still retried', async () => {
+	const contract = await _loadContract();
+
+	// source can be 'spotify' with nothing selected (e.g. the user switched
+	// tabs without a deep link); only an ACTUAL pending selection must
+	// suppress the retry.
+	const retry = contract.shouldRetryBootPane({
+		boot_pane_playlist_id: null,
+		source: 'spotify',
+		spotify_selected_id: null
+	});
+
+	assert.equal(retry, true, 'spotify source with no pending selection must not block the retry');
 });

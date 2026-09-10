@@ -90,3 +90,71 @@ test('two consecutive getHealth() failures still propagate', async () => {
 
 	await assert.rejects(getHealthAtBoot(), /daemon unreachable/);
 });
+
+/**
+ * PR #1656 review round 7 (BrowserPanel.svelte:1230, chatgpt-codex-connector,
+ * P2/BLOCKING) - `_refreshLibraryRowsOnce`'s boot-pane repair read must not
+ * permanently forfeit its only chance to fire on a single transient failure:
+ * once the bus's first-ever open has happened, nothing else retries it (the
+ * fallback poll stands down while the connection is open, and
+ * 'initial-connect' fires exactly once). `_getHealthFreshWithRetry` gives
+ * this read the same one-retry shape `_getHealthAtBoot` already has above,
+ * for the identical reason.
+ */
+function makeGetHealthFreshWithRetry(getHealth) {
+	const source = readFileSync(PANEL, 'utf8');
+	const marker = '\tasync function _getHealthFreshWithRetry(';
+	const start = source.indexOf(marker);
+	assert.ok(start >= 0, 'could not find BrowserPanel._getHealthFreshWithRetry');
+	const end = source.indexOf('\n\tasync function _refreshLibraryRowsOnce(', start);
+	assert.ok(end > start, 'could not isolate BrowserPanel._getHealthFreshWithRetry');
+	const functionSource = source
+		.slice(start, end)
+		.replace(
+			/async function _getHealthFreshWithRetry\(\)[^{]*\{/,
+			'async function _getHealthFreshWithRetry() {'
+		);
+	assert.doesNotMatch(functionSource, /ReturnType<|: Promise</, 'TypeScript annotation survived stripping');
+	const factory = Function(
+		'getHealth',
+		`${functionSource}\nreturn _getHealthFreshWithRetry;`
+	);
+	return factory(getHealth);
+}
+
+test('a single fresh health-repair failure is retried once with fresh:true', async () => {
+	const calls = [];
+	const getHealthFreshWithRetry = makeGetHealthFreshWithRetry(async (options) => {
+		calls.push(options ?? null);
+		if (calls.length === 1) throw new Error('timed out');
+		return { health: { state_db: { tracks: 5 } } };
+	});
+
+	const result = await getHealthFreshWithRetry();
+
+	assert.equal(calls.length, 2, 'must retry exactly once after the first failure');
+	assert.deepEqual(calls[0], { fresh: true }, 'the first attempt must bypass the coalescer');
+	assert.deepEqual(calls[1], { fresh: true }, 'the retry must bypass it too, not join the failed entry');
+	assert.equal(result.health.state_db.tracks, 5);
+});
+
+test('a fresh health-repair success on the first attempt never retries', async () => {
+	const calls = [];
+	const getHealthFreshWithRetry = makeGetHealthFreshWithRetry(async (options) => {
+		calls.push(options ?? null);
+		return { health: { state_db: { tracks: 8355 } } };
+	});
+
+	const result = await getHealthFreshWithRetry();
+
+	assert.equal(calls.length, 1, 'a first-attempt success must not trigger a second call');
+	assert.equal(result.health.state_db.tracks, 8355);
+});
+
+test('two consecutive fresh health-repair failures still propagate', async () => {
+	const getHealthFreshWithRetry = makeGetHealthFreshWithRetry(async () => {
+		throw new Error('daemon unreachable');
+	});
+
+	await assert.rejects(getHealthFreshWithRetry(), /daemon unreachable/);
+});

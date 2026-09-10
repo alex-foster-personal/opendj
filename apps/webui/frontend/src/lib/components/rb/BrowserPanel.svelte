@@ -135,6 +135,7 @@
 		reorderPanesInPlace,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
+		shouldRetryBootPane,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -1220,6 +1221,24 @@
 	 * which decides when a background refetch may run and coalesces overlapping
 	 * triggers. See the comment on that binding.
 	 */
+	/**
+	 * getHealth({ fresh: true }) for a background library refresh, with one
+	 * retry - the same shape as `_getHealthAtBoot` above, for the same
+	 * reason. Once the bus's first-ever open has fired, nothing else retries
+	 * this read: the fallback poll below stands down while the connection is
+	 * open, and 'initial-connect' fires exactly once. A single transient
+	 * failure here must not permanently forfeit the one chance to repair a
+	 * boot pane a stale coalesced snapshot left blank (PR #1656 review round
+	 * 7, P2 BLOCKING).
+	 */
+	async function _getHealthFreshWithRetry(): ReturnType<typeof getHealth> {
+		try {
+			return await getHealth({ fresh: true });
+		} catch {
+			return await getHealth({ fresh: true });
+		}
+	}
+
 	async function _refreshLibraryRowsOnce(): Promise<void> {
 		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
@@ -1227,7 +1246,7 @@
 			// shared from before that change would paint a stale count and
 			// leave it there until the next event. The mount-time read in
 			// `_init` above has no such constraint and shares one.
-			const healthRes = await getHealth({ fresh: true });
+			const healthRes = await _getHealthFreshWithRetry();
 			allTracksCount = healthRes.health.state_db.tracks;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
@@ -1271,10 +1290,16 @@
 		// library and left panes[0] unclaimed on purpose, and nothing above this
 		// point ever retries it (blank panes are explicitly skipped). The fresh
 		// count just read above may have corrected that, so retry now rather
-		// than stranding the pane blank until a manual reload - the same
-		// reasoning `_getHealthAtBoot`'s own retry already applies to a failed
-		// (rather than merely stale) boot read.
-		if (panes[0].playlist_id === null && !(source === 'spotify' && spotifySelectedId !== null)) {
+		// than stranding the pane blank until a manual reload - see
+		// `shouldRetryBootPane`'s own doc comment for the decision and why it
+		// is a separate, pure, real-module-tested function.
+		if (
+			shouldRetryBootPane({
+				boot_pane_playlist_id: panes[0].playlist_id,
+				source,
+				spotify_selected_id: spotifySelectedId
+			})
+		) {
 			await _restoreBootPane();
 		}
 	}
