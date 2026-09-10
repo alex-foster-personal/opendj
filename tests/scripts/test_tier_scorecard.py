@@ -223,6 +223,30 @@ def test_since_excludes_an_issue_whose_earlier_tier_predates_the_boundary(tmp_pa
         f"only #1201 (clean, entirely post-boundary) belongs to the cohort: {ds}"
 
 
+def test_cohort_line_does_not_mislabel_a_straddling_issues_newer_attempt_as_older(
+    tmp_path: Path,
+) -> None:
+    """Reviewer finding (P2, tier-scorecard.py:246): the excluded-attempts count
+    used to be labeled unconditionally 'older', but a straddling issue's
+    post-boundary retry is excluded because its ISSUE predates the boundary, not
+    because that attempt itself is old. The message must not claim it is."""
+    jobs = tmp_path / "jobs"
+    boundary = "2026-09-09T21:00:00Z"
+    pre = "2026-09-01T10:00:00Z"
+    post = "2026-09-10T02:00:00Z"
+    _write_log(jobs, "2100",
+               f"{_attempt('sonnet', start=pre, sid='sid-a')}\nEXIT=0 ended_by=self turns=30\n"
+               f"{_attempt('deepseek', start=post, sid='sid-b')}\nEXIT=0 ended_by=self turns=10\n")
+    _write_log(jobs, "2101", f"{_attempt('deepseek', start=post)}\nEXIT=0 ended_by=self turns=5\n")
+    prs = _prs(jobs, [
+        _pr(92100, "af--issue-2100--straddles", state="MERGED"),
+        _pr(92101, "af--issue-2101--clean-new", state="MERGED"),
+    ])
+    out = _run(jobs, prs, cli_args=["--since", boundary]).stdout
+    assert "older attempt" not in out, \
+        f"a post-boundary retry excluded via its issue must not be called older: {out}"
+
+
 #---------------------------------------------------------------- PR read cap
 def test_pr_read_at_the_cap_is_fatal_not_a_silent_truncation(tmp_path: Path) -> None:
     """Past the gh pr list read cap, older outcomes vanish into noPR for every
@@ -243,6 +267,46 @@ def test_pr_read_under_the_cap_is_not_flagged(tmp_path: Path) -> None:
     under_cap_prs = [_pr(i, f"af--issue-{9000 + i}--filler", state="OPEN") for i in range(1999)]
     prs = _prs(jobs, under_cap_prs)
     _run(jobs, prs, expect_ok=True)
+
+
+#---------------------------------------------------------------- terminal PR outcomes
+def test_open_prs_are_excluded_from_the_rate_not_scored_as_failures(tmp_path: Path) -> None:
+    """Reviewer finding (PR #1635 new thread, tier-scorecard.py:214): with_pr used
+    to include issues whose PR was still OPEN, so an in-review PR was scored as a
+    non-merge and could depress the rate below the round's stop-rule threshold
+    before that PR ever reached an outcome. Only MERGED/CLOSED (terminal) PRs
+    belong in the rate denominator; an OPEN PR is pending, not a failure."""
+    jobs = tmp_path / "jobs"
+    for n in (2000, 2001, 2002):
+        _write_log(jobs, str(n), f"{_attempt('deepseek')}\nEXIT=0 ended_by=self turns=10\n")
+    prs = _prs(jobs, [
+        _pr(92000, "af--issue-2000--a", state="MERGED"),
+        _pr(92001, "af--issue-2001--b", state="MERGED"),
+        _pr(92002, "af--issue-2002--c", state="OPEN"),
+    ])
+    out = _run(jobs, prs).stdout
+    ds = next(ln for ln in out.splitlines() if ln.startswith("deepseek"))
+    f = ds.split()
+    assert f[3] == "3", f"all three issues have a PR: {ds}"
+    assert f[4] == "2", f"only the two merged PRs count as merges: {ds}"
+    assert "2/2*" in ds, f"rate denominator must be the 2 TERMINAL PRs, not all 3: {ds}"
+    assert f[6] == "0", f"all three have a PR, so noPR must be 0: {ds}"
+    assert f[7] == "1", f"the still-open PR must show under pend, not vanish: {ds}"
+
+
+def test_closed_unmerged_prs_still_count_as_a_terminal_non_merge(tmp_path: Path) -> None:
+    """The opposite direction of the pending fix above: a CLOSED (rejected, not
+    merged) PR is a real outcome and must still count against the rate, not be
+    excused into pend alongside a genuinely open one."""
+    jobs = tmp_path / "jobs"
+    _write_log(jobs, "2200", f"{_attempt('deepseek')}\nEXIT=0 ended_by=self turns=10\n")
+    prs = _prs(jobs, [_pr(92200, "af--issue-2200--rejected", state="CLOSED")])
+    out = _run(jobs, prs).stdout
+    ds = next(ln for ln in out.splitlines() if ln.startswith("deepseek"))
+    f = ds.split()
+    assert f[4] == "0", f"a closed, unmerged PR must not count as a merge: {ds}"
+    assert "0/1*" in ds, f"the closed PR is a terminal outcome, not pending: {ds}"
+    assert f[7] == "0", f"a closed PR is not pending: {ds}"
 
 
 #---------------------------------------------------------------- small-n honesty
