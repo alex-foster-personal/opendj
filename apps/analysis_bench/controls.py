@@ -161,12 +161,116 @@ def _key_positive_mik(fixtures_path: Path) -> dict[str, Any]:
     }
 
 
+# Streaming convention, not EBU -23. lanes.py names this control "always
+# answers -14 LUFS". The paired true-peak is a parseable constant, wrong on
+# any real fixture; we do not echo MIK RMS, which would let a broken gate
+# that compared LUFS to RMS look like a LUFS hit.
+LOUDNESS_CONSTANT_LUFS = -14.0
+LOUDNESS_CONSTANT_DBTP = 0.0
+
+
+def _loudness_negative(fixtures_path: Path) -> dict[str, Any]:
+    from apps.analysis_bench.scorers import loudness_lane
+
+    _manifest, truth = loudness_lane.load_bundle(fixtures_path.parent)
+    results = {
+        stable_id: {
+            "integrated_lufs": LOUDNESS_CONSTANT_LUFS,
+            "true_peak_dbtp": LOUDNESS_CONSTANT_DBTP,
+        }
+        for stable_id in truth
+    }
+    return {
+        "candidate": "constant_lufs",
+        "candidate_version": (
+            f"control, always answers {LOUDNESS_CONSTANT_LUFS} LUFS "
+            "(streaming convention, not EBU -23)"
+        ),
+        "results": results,
+    }
+
+
+def _loudness_positive(fixtures_path: Path) -> dict[str, Any]:
+    """Echo LUFS and dBTP so the ceiling can pass both gates.
+
+    Echoing LUFS alone would fail dBTP and the positive control would not
+    be a ceiling.
+    """
+    from apps.analysis_bench.scorers import loudness_lane
+
+    _manifest, truth = loudness_lane.load_bundle(fixtures_path.parent)
+    results = {
+        stable_id: {
+            "integrated_lufs": row["lufs_pyloudnorm"],
+            "true_peak_dbtp": row["dbtp_4x"],
+        }
+        for stable_id, row in truth.items()
+    }
+    return {
+        "candidate": "truth_echo",
+        "candidate_version": "control, echoes the pyloudnorm LUFS and 4x true-peak references",
+        "results": results,
+    }
+
+
+WAVEFORM_CONSTANT_LEVEL = 0.5
+
+
+def _waveform_negative(fixtures_path: Path) -> dict[str, Any]:
+    """One flat band level everywhere. Variance is zero on purpose; the
+    scorer counts that as r=0.0, not unmeasured.
+    """
+    from apps.analysis_bench.scorers import waveform_lane
+    from apps.analysis_waveform.decode import BAND_NAMES
+
+    bundle = fixtures_path.parent
+    _manifest, tracks = waveform_lane.load_bundle(bundle)
+    results = {}
+    for track in tracks:
+        n = int(waveform_lane.load_truth(bundle, track).shape[0])
+        results[track["stable_id"]] = {
+            "bands": {name: [WAVEFORM_CONSTANT_LEVEL] * n for name in BAND_NAMES}
+        }
+    return {
+        "candidate": "constant_band",
+        "candidate_version": (
+            f"control, one flat band level ({WAVEFORM_CONSTANT_LEVEL}) everywhere"
+        ),
+        "results": results,
+    }
+
+
+def _waveform_positive(fixtures_path: Path) -> dict[str, Any]:
+    from apps.analysis_bench.scorers import waveform_lane
+    from apps.analysis_waveform.decode import BAND_NAMES
+
+    bundle = fixtures_path.parent
+    _manifest, tracks = waveform_lane.load_bundle(bundle)
+    results = {}
+    for track in tracks:
+        truth = waveform_lane.load_truth(bundle, track)
+        results[track["stable_id"]] = {
+            "bands": {
+                name: truth[:, index].tolist() for index, name in enumerate(BAND_NAMES)
+            }
+        }
+    return {
+        "candidate": "truth_echo",
+        "candidate_version": "control, echoes the rekordbox per-band preview columns",
+        "results": results,
+    }
+
+
 _BUILDERS = {
     ("beatgrid", "positive"): _beatgrid_positive,
     ("key", "positive"): _key_positive,
     ("key", "positive_mik"): _key_positive_mik,
     ("key", "negative"): _key_negative,
     ("key", "most_common"): _key_most_common_negative,
+    ("loudness", "positive"): _loudness_positive,
+    ("loudness", "negative"): _loudness_negative,
+    ("waveform", "positive"): _waveform_positive,
+    ("waveform", "negative"): _waveform_negative,
 }
 
 

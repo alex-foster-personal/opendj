@@ -85,12 +85,6 @@ def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) 
     assert log.read_text() == "# spec\n"
 
 
-def test_running_a_scorerless_lane_refuses_by_name(tmp_path: Path, capsys) -> None:
-    assert cli.main(["run", "--lane", "loudness", "--candidate", "constant_lufs",
-                     "--bundle-dir", str(tmp_path)]) == 2
-    assert "#1477" in capsys.readouterr().err
-
-
 def test_scoring_a_tampered_bundle_refuses(bundle: Path, tmp_path: Path, capsys) -> None:
     (bundle / "wav" / "synthetic-0.wav").write_bytes(b"not the audio it was sealed with")
     code = cli.main(["score", "--lane", "beatgrid", "--bundle-dir", str(bundle),
