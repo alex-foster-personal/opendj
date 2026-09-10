@@ -47,8 +47,18 @@ export interface PressureSnapshot {
 	readonly memFreeMb: number | null;
 	/** Swap in use in MB, or null. */
 	readonly swapUsedMb: number | null;
-	/** `Date.now()` when this client received it. */
-	readonly receivedAtMs: number;
+	/**
+	 * `Date.now()` when this client ISSUED the request, not when the body
+	 * finished parsing.
+	 *
+	 * Anchoring to the request is what keeps the age from flattering itself:
+	 * a delayed response would otherwise have its round trip and event-loop
+	 * wait erased, and an old sample would be labelled fresh. Anchored here
+	 * the age can only ever OVERSTATE how stale a reading is, which is the
+	 * safe direction for a number a reader uses to decide whether to trust
+	 * the row beside it (#1658 review).
+	 */
+	readonly requestedAtMs: number;
 	/** How stale the reading already was server-side when it was handed over,
 	 * so `pressure_age_ms` counts from the SAMPLE, not from the response. */
 	readonly serverCacheAgeMs: number;
@@ -61,10 +71,22 @@ export function readMachinePressure(): PressureSnapshot | null {
 	return _snapshot;
 }
 
-/** Overwrite the cache. Exported so the poller and its tests share one door
- * rather than a test reaching into module state. */
-export function storeMachinePressure(snapshot: PressureSnapshot): void {
+/**
+ * Store a reading, unless an EQUAL OR NEWER one is already held.
+ *
+ * Polls can overlap: the 10s timer does not wait for the previous request,
+ * and a slow one completing after a fast one would otherwise overwrite the
+ * newer reading with the older, so the cache would go BACKWARDS in time
+ * while every field still looked valid (#1658 review). Ordering is decided
+ * on the request instant, since that is when each sample was asked for.
+ *
+ * Returns whether the store happened, so a caller (and a test) can tell a
+ * rejected late arrival from an accepted one.
+ */
+export function storeMachinePressure(snapshot: PressureSnapshot): boolean {
+	if (_snapshot !== null && snapshot.requestedAtMs <= _snapshot.requestedAtMs) return false;
 	_snapshot = snapshot;
+	return true;
 }
 
 /** The engine's answer. Absent fields stay absent; this module never fills
@@ -93,7 +115,7 @@ function _finiteOrNull(value: unknown): number | null {
  */
 export function pressureSnapshotFrom(
 	body: PressureResponse,
-	receivedAtMs: number
+	requestedAtMs: number
 ): PressureSnapshot | null {
 	if (body.available !== true) return null;
 	const loadAvg1m = _finiteOrNull(body.load_avg_1m);
@@ -106,7 +128,7 @@ export function pressureSnapshotFrom(
 		loadAvg1m,
 		memFreeMb,
 		swapUsedMb,
-		receivedAtMs,
+		requestedAtMs,
 		serverCacheAgeMs: _finiteOrNull(body.cache_age_ms) ?? 0
 	};
 }
@@ -128,7 +150,7 @@ export function pressureLabels(
 		// client received, so a slow round trip cannot make a stale reading
 		// look fresh.
 		pressure_age_ms: String(
-			Math.max(0, Math.round(nowMs - snapshot.receivedAtMs + snapshot.serverCacheAgeMs))
+			Math.max(0, Math.round(nowMs - snapshot.requestedAtMs + snapshot.serverCacheAgeMs))
 		)
 	};
 	if (snapshot.loadAvg1m !== null) labels.load_avg_1m = String(snapshot.loadAvg1m);
@@ -140,13 +162,17 @@ export function pressureLabels(
 /** One poll. Never throws: an engine that is down is a condition this client
  * reports as unknown, not an exception thrown into a timer. */
 async function _pollOnce(): Promise<void> {
+	// Stamped BEFORE the request, so the age carries the round trip instead of
+	// discarding it, and so two overlapping polls can be ordered by when each
+	// was asked for rather than by which happened to finish first.
+	const requestedAtMs = Date.now();
 	try {
 		const response = await fetch(`${API_BASE}${PRESSURE_PATH}`, {
 			headers: { accept: 'application/json' }
 		});
 		if (!response.ok) return;
 		const body = (await response.json()) as PressureResponse;
-		const snapshot = pressureSnapshotFrom(body, Date.now());
+		const snapshot = pressureSnapshotFrom(body, requestedAtMs);
 		if (snapshot !== null) storeMachinePressure(snapshot);
 	} catch {
 		// The previous snapshot stands, and its age keeps growing, which is the

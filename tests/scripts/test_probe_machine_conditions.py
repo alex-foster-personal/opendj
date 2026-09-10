@@ -13,6 +13,8 @@ must yield NO key. A zero would read as a machine about to die.
 
 from __future__ import annotations
 
+import math
+
 from typing import Any
 
 import pytest
@@ -96,3 +98,44 @@ def test_machine_metrics_carries_the_new_conditions_on_this_machine() -> None:
         if key in metrics:
             assert isinstance(metrics[key], float)
             assert metrics[key] >= 0.0
+
+
+# --------------------------------------------------------------------------
+# REAL PATH. Everything above feeds CAPTURED real `vm_stat` output through the
+# PRODUCTION parser: the fixtures are trimmed from this Mac's actual output and
+# `_vm_stat_free_mb` is the shipped function, so substituting `run_text` is how
+# a captured payload is delivered deterministically, not a stand-in for the
+# parser. What it does not cover is the command itself, and this does: no
+# substitution, the real `vm_stat` and the real `sysctl` on whatever machine
+# runs the suite.
+#
+# Asserted as a CONTRACT, not a value, because the value is whatever the
+# machine is doing. The contract is what a regression breaks: a field is a
+# finite number or it is ABSENT, and never present-and-zero.
+# --------------------------------------------------------------------------
+
+
+def test_the_real_sampler_runs_and_omits_what_it_cannot_read() -> None:
+    metrics = native.machine_metrics()
+
+    assert isinstance(metrics, dict)
+    for key, value in metrics.items():
+        assert value is not None, f"{key} is None; an unreadable field must be ABSENT"
+        if isinstance(value, float):
+            assert math.isfinite(value), f"{key} is {value}, which is not a measurement"
+
+
+def test_the_real_vm_stat_parse_is_a_positive_free_memory_or_no_key() -> None:
+    """Negative control on the parser's own output.
+
+    A zero here would read as a machine with no free memory at all, which is
+    exactly the misreading this parser's docstring exists to prevent. On a
+    machine that cannot answer, the KEY must be missing rather than zeroed.
+    """
+    fields = native._vm_stat_free_mb()
+
+    if "free_memory_mb" not in fields:
+        pytest.skip("vm_stat is not available on this machine")
+    assert fields["free_memory_mb"] > 0.0, (
+        "free memory of exactly zero is the parser failing, not the machine"
+    )

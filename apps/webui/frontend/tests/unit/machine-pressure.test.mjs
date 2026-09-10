@@ -126,7 +126,7 @@ test('a real reading becomes numeric labels with an honest age', async () => {
 	await settle();
 	const snapshot = pressure.readMachinePressure();
 	assert.notEqual(snapshot, null);
-	const labels = pressure.pressureLabels(snapshot, snapshot.receivedAtMs + 1_000);
+	const labels = pressure.pressureLabels(snapshot, snapshot.requestedAtMs + 1_000);
 	assert.equal(labels.load_avg_1m, '5.76');
 	assert.equal(labels.mem_free_mb, '67.7');
 	assert.equal(labels.swap_used_mb, '6535.4');
@@ -160,7 +160,7 @@ test('a partial reading stamps only the fields the engine could read', async () 
 	const stop = pressure.startMachinePressurePolling();
 	await settle();
 	const snapshot = pressure.readMachinePressure();
-	const labels = pressure.pressureLabels(snapshot, snapshot.receivedAtMs);
+	const labels = pressure.pressureLabels(snapshot, snapshot.requestedAtMs);
 	assert.equal(labels.load_avg_1m, '12.5');
 	assert.equal(labels.mem_free_mb, undefined);
 	assert.equal(labels.swap_used_mb, undefined);

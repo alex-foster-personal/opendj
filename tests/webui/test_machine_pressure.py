@@ -10,10 +10,13 @@ exact defect .claude/rules/verification.md forbids.
 
 from __future__ import annotations
 
+import math
+
 from typing import Any
 
 import pytest
 
+from apps.webui.server import machine_pressure
 from apps.webui.server.machine_pressure import (
     CACHE_TTL_SECONDS,
     MachinePressureCache,
@@ -171,3 +174,60 @@ def test_the_process_wide_reader_answers_on_this_machine() -> None:
         assert all(isinstance(body[key], float) for key in readings)
     else:
         assert body["reason"]
+
+
+# --------------------------------------------------------------------------
+# REAL PATH. The suite above drives the cache with injected samplers, which is
+# how the failure branches (a sampler that raises, one that reads nothing, one
+# whose keys the allowlist must drop) are reachable at all -- the real machine
+# cannot be asked to run out of memory on demand. What that leaves untested is
+# the production command, and this closes it: no injection, no patching, the
+# real sampler and the real route.
+#
+# These assert the CONTRACT rather than a value, because the value is whatever
+# the machine happens to be doing and CI is not this Mac. The contract is the
+# part that matters and the part a regression would break: a field is either a
+# finite number or ABSENT, and never present-and-zero standing in for
+# "unmeasured".
+# --------------------------------------------------------------------------
+
+
+def test_the_real_sampler_reports_finite_numbers_or_nothing_at_all() -> None:
+    """The production path, unpatched, on whatever machine is running this."""
+    body = read_machine_pressure()
+
+    assert isinstance(body["available"], bool)
+    if not body["available"]:
+        # The packaged-app branch: `scripts` is not staged, so the sampler is
+        # not importable. It must say so and must not invent numbers.
+        assert isinstance(body["reason"], str) and body["reason"] != ""
+        for name, _ in machine_pressure._EXPOSED_FIELDS:
+            assert name not in body, f"{name} present on an unavailable reading"
+        return
+
+    assert isinstance(body["cache_age_ms"], float)
+    assert body["cache_age_ms"] >= 0.0
+    present = [name for name, _ in machine_pressure._EXPOSED_FIELDS if name in body]
+    assert present, "an available reading that carries no field is not a reading"
+    for name in present:
+        value = body[name]
+        assert isinstance(value, float), f"{name} is {type(value)!r}, not a float"
+        assert math.isfinite(value), f"{name} is {value}, which is not a measurement"
+        assert value >= 0.0, f"{name} is negative"
+
+
+def test_the_real_load_average_is_a_plausible_reading_not_a_placeholder() -> None:
+    """A negative control on the value itself.
+
+    Zero is both a value and an error signature here: a sampler that silently
+    returned nothing would produce 0.0, which reads as an idle machine. A real
+    load average on a machine running this test is strictly positive.
+    """
+    body = read_machine_pressure()
+    if not body["available"] or "load_avg_1m" not in body:
+        pytest.skip("this machine's sampler reports no load average")
+
+    assert body["load_avg_1m"] > 0.0, (
+        "a load average of exactly zero on a machine busy enough to run pytest "
+        "is the sampler failing, not the machine idling"
+    )

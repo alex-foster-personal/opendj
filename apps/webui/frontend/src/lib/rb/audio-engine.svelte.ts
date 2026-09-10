@@ -154,10 +154,7 @@ import {
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
-import {
-	StretchDeckProcessor,
-	type StretchScheduleChange
-} from '$lib/rb/stretch-adapter';
+import { StretchDeckProcessor, type StretchScheduleChange } from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
 	DEMUCS_PARTS,
@@ -206,11 +203,7 @@ import {
 	mixerState,
 	pitchRanges
 } from '$lib/player/state.svelte';
-import {
-	attachMasterMuteNode,
-	isMasterMuted,
-	setMasterMuted
-} from '$lib/player/master-mute.svelte';
+import { attachMasterMuteNode, isMasterMuted, setMasterMuted } from '$lib/player/master-mute.svelte';
 import {
 	acquireHeadphoneOutput as acquireMonitorOutput,
 	applyHeadphoneMix,
@@ -3030,6 +3023,14 @@ class RbAudioEngine implements AudioEngine {
 					pushToast(`Deck ${deck} retired processor cleanup failed - ${message}`, 'error');
 				}
 			}
+		}).catch((exc: unknown) => {
+			// A swap failure is still a load that STARTED. Without this the span
+			// beginDeckLoad opened never closes, so every later row reports
+			// solo=0 until the 16-deep window evicts it: a contention label that
+			// is wrong while looking exactly like a measurement (#1658 review).
+			stages.total = perfMs();
+			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState);
+			throw exc;
 		});
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
