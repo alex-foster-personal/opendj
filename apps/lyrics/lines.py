@@ -37,14 +37,31 @@ from apps.lyrics.crosscheck import WITNESS_RED_CLASSES
 
 @runtime_checkable
 class WordRow(Protocol):
-    """One aligned word, however it was read (artifact cache, DB row, test double)."""
+    """One aligned word, however it was read (artifact cache, DB row, test double).
 
-    idx: int
-    word: str
-    start_s: float | None
-    end_s: float | None
-    witness: str | None
-    line_final: bool
+    Read-only properties rather than bare attributes: a Protocol attribute is
+    settable by contract, so a FROZEN dataclass such as
+    :class:`apps.lyrics.karaoke_cache.KaraokeWord` would not satisfy it under
+    mypy even though it carries every field. Line grouping only ever reads.
+    """
+
+    @property
+    def idx(self) -> int: ...
+
+    @property
+    def word(self) -> str: ...
+
+    @property
+    def start_s(self) -> float | None: ...
+
+    @property
+    def end_s(self) -> float | None: ...
+
+    @property
+    def witness(self) -> str | None: ...
+
+    @property
+    def line_final(self) -> bool: ...
 
 
 PARAGRAPH_GAP_S: float = 2.5
