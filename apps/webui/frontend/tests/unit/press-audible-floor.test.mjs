@@ -420,3 +420,60 @@ test('scheduleRowFacts reads the row it labels, not a second opinion of the cont
 	assert.equal(chromiumFresh.labels.latency_floor, 'partial');
 	assert.equal(chromiumFresh.labels.audio_context_state, 'running');
 });
+
+//-----------------------------------------------------------------------------
+// the three press paths review found unstamped (#1657 r3973957845/49, r3974057968)
+//-----------------------------------------------------------------------------
+
+test('a Beat Sync follower start carries the press that caused it', () => {
+	// The normal two-deck gesture: deck B is started while deck A is master
+	// and Beat Sync is on, so play() routes through _synchronizeFollowers
+	// instead of _schedulePress. That branch supplied no stamp, so the most
+	// common start in a real set produced a PLAIN row and never appeared in
+	// the headline number.
+	const body = readSource('src/lib/rb/audio-engine.svelte.ts');
+	assert.ok(
+		body.includes('await _synchronizeFollowers(activeMaster, [deck], {'),
+		'the sync branch of play() must forward the press it was given'
+	);
+	assert.ok(
+		/return _scheduleDeck\(\s*item\.deck,[\s\S]*?options\.pressT0Ms\s*\);/.test(body),
+		'and the follower schedule must actually spend it, not just receive it'
+	);
+	// NEGATIVE CONTROL: the resync callers must NOT stamp, or a background
+	// re-anchor nobody pressed would file a press row.
+	assert.ok(
+		!body.includes('_synchronizeFollowers(master, followers, { pressT0Ms'),
+		'a background re-anchor must never file a press row'
+	);
+});
+
+test('a play deferred by a load times from the keydown, not from the load', () => {
+	// Space on a still-decoding track is a supported gesture. The stamp has to
+	// survive the load, or the row starts timing after it and understates the
+	// felt wait by the whole decode.
+	const slots = readSource('src/lib/rb/deck-slots.ts');
+	assert.ok(slots.includes('pressT0Ms?: number;'), 'the pending intent must carry the stamp');
+	const panel = readSource('src/lib/components/rb/BrowserPanel.svelte');
+	assert.ok(
+		panel.includes('pendingPlay.pressT0Ms'),
+		'the post-load play must spend the stamp the keydown stored'
+	);
+});
+
+test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
+	// The primary hardware surface. webmidi took the receipt time all along
+	// and then dropped it at the glue layer, so every physical play/cue filed
+	// a plain schedule row.
+	const midi = readSource('src/lib/rb/midi/webmidi.svelte.ts');
+	assert.ok(
+		midi.includes('_actionHandler(binding.action, value, device.input.id, log.ts)'),
+		'the receipt stamp must reach the glue layer'
+	);
+	const glue = readSource('src/lib/rb/midi/action-glue.svelte.ts');
+	assert.ok(
+		glue.includes('_cmdPlayToggle(action.deck, pressT0Ms)'),
+		'a physical play must spend it'
+	);
+	assert.ok(glue.includes('_cmdPressCue(action.deck, pressT0Ms)'), 'and so must a physical cue');
+});

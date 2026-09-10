@@ -212,6 +212,21 @@ export interface PendingLoadPlay {
 	deck: DeckId;
 	generation: number;
 	desiredPlay: boolean;
+	/**
+	 * Q1: the operator's press, carried ACROSS the load it is waiting on.
+	 *
+	 * Space on a still-decoding track is a supported gesture, and the wait the
+	 * operator feels starts at that keydown, not at the play command the load
+	 * completion eventually dispatches. Without this the row starts timing
+	 * after the load and understates the felt latency by the whole decode.
+	 *
+	 * The resulting `press_to_schedule_ms` therefore legitimately spans a deck
+	 * load and can be seconds. That is the honest number for THIS gesture and
+	 * a wrong one for S2's 30ms budget, so the S2 p95 must exclude rows that
+	 * span a load - see `docs/perf/kpi-map.json` S2, which says so where the
+	 * KPI is defined rather than leaving it to be rediscovered.
+	 */
+	pressT0Ms?: number;
 }
 
 let nextGeneration = 0;
@@ -229,10 +244,22 @@ export function beginPendingLoadPlay(deck: DeckId, desiredPlay: boolean): Pendin
 	return pending;
 }
 
-export function setPendingLoadPlayIntent(deck: DeckId, generation: number, desiredPlay: boolean): boolean {
+export function setPendingLoadPlayIntent(
+	deck: DeckId,
+	generation: number,
+	desiredPlay: boolean,
+	pressT0Ms?: number
+): boolean {
 	const pending = pendingByDeck[deck];
 	if (pending === null || pending.generation !== generation) return false;
-	pendingByDeck = { ...pendingByDeck, [deck]: { ...pending, desiredPlay } };
+	pendingByDeck = {
+		...pendingByDeck,
+		[deck]: {
+			...pending,
+			desiredPlay,
+			...(pressT0Ms === undefined ? {} : { pressT0Ms })
+		}
+	};
 	return true;
 }
 

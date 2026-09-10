@@ -109,13 +109,16 @@ function _continuous01(value: MidiInputValue): number {
 // Keep each body a one-liner-per-branch so the rebase diff stays 5 lines.
 
 /** REBASE ADAPTER: play/pause toggle command for one deck. */
-function _cmdPlayToggle(deck: DeckId): void {
-	void dispatchPerformanceCommand({ type: 'play', deck, playing: !deckStates[deck].playing });
+function _cmdPlayToggle(deck: DeckId, pressT0Ms?: number): void {
+	void dispatchPerformanceCommand(
+		{ type: 'play', deck, playing: !deckStates[deck].playing },
+		pressT0Ms
+	);
 }
 
 /** REBASE ADAPTER: physical CUE button command for one deck. */
-function _cmdPressCue(deck: DeckId): void {
-	void dispatchPerformanceCommand({ type: 'cue', deck });
+function _cmdPressCue(deck: DeckId, pressT0Ms?: number): void {
+	void dispatchPerformanceCommand({ type: 'cue', deck }, pressT0Ms);
 }
 
 /** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). Slot-
@@ -139,18 +142,23 @@ function _cmdLoopExit(deck: DeckId): void {
 
 /** The action switch. Exported for unit tests; production wiring goes
  * through attachMidiGlue() -> registerActionHandler. */
-export function handleMidiAction(action: MidiAction, value: MidiInputValue): void {
+export function handleMidiAction(
+	action: MidiAction,
+	value: MidiInputValue,
+	_deviceId?: string,
+	pressT0Ms?: number
+): void {
 	switch (action.type) {
 		case 'deck_play_toggle': {
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'play');
-			_cmdPlayToggle(action.deck);
+			_cmdPlayToggle(action.deck, pressT0Ms);
 			return;
 		}
 		case 'deck_cue': {
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'cueing');
-			_cmdPressCue(action.deck);
+			_cmdPressCue(action.deck, pressT0Ms);
 			return;
 		}
 		case 'deck_hot_cue': {

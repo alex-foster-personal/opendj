@@ -154,10 +154,7 @@ import {
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
-import {
-	StretchDeckProcessor,
-	type StretchScheduleChange
-} from '$lib/rb/stretch-adapter';
+import { StretchDeckProcessor, type StretchScheduleChange } from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
 	DEMUCS_PARTS,
@@ -2028,6 +2025,10 @@ interface _SyncOptions {
 	 * `_scheduleReanchoredFollower` instead of stepping - see that function.
 	 */
 	reanchorDecks?: ReadonlySet<DeckId>;
+	/** Q1: the press behind this sync, when one deck's start caused it. Set
+	 * ONLY by `play`, whose followers are the single pressed deck; the resync
+	 * callers leave it unset so a background re-anchor never files a press row. */
+	pressT0Ms?: number;
 }
 
 /**
@@ -2468,7 +2469,7 @@ async function _synchronizeFollowers(
 					item.masterTempoEnabled,
 					undefined,
 					undefined,
-					undefined
+					options.pressT0Ms
 				);
 			});
 		const outcomes = await Promise.allSettled(scheduleOperations);
@@ -3128,7 +3129,9 @@ class RbAudioEngine implements AudioEngine {
 			// This deck is joining from silence (guarded by the desiredActive
 			// check above) - no audible tempo to protect yet, so no
 			// reanchorDecks here; the initial lock applies immediately.
-			await _synchronizeFollowers(activeMaster, [deck]);
+			await _synchronizeFollowers(activeMaster, [deck], {
+				...(pressT0Ms === undefined ? {} : { pressT0Ms })
+			});
 		}
 	}
 

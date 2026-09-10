@@ -1421,7 +1421,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		hotCueArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
-		if (!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play)) {
+		// Q1: the stamp rides WITH the intent, so the play this eventually
+		// becomes can time from the operator's keydown and not from the load.
+		if (
+			!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play, pressT0Ms)
+		) {
 			throw new Error(`load_play_intent generation ${command.generation} is not pending on CH${command.deck}`);
 		}
 	} else if (command.type === 'unload') {

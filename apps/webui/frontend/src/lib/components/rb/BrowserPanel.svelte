@@ -1967,9 +1967,15 @@
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-				const desiredPlay = consumePendingLoadPlay(target, loadIntent.generation)?.desiredPlay ?? false;
-				if (desiredPlay) {
-					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+				const pendingPlay = consumePendingLoadPlay(target, loadIntent.generation);
+				if (pendingPlay?.desiredPlay === true) {
+					// Q1: timed from the operator's ORIGINAL keydown, which is
+					// what they felt, not from this dispatch downstream of the
+					// load they were waiting on.
+					await dispatchPerformanceCommand(
+						{ type: 'play', deck: target, playing: true },
+						pendingPlay.pressT0Ms
+					);
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
