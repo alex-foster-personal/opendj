@@ -4391,17 +4391,22 @@ export interface components {
             overridden: boolean;
             /** Owner */
             owner: string;
+            refusal?: components["schemas"]["RefusalOut"] | null;
             /** Retire By */
             retire_by: string;
         };
         /** FlagsOut */
         FlagsOut: {
+            /** Build Profile */
+            build_profile: string;
             /** File Present */
             file_present: boolean;
             /** Flags */
             flags: components["schemas"]["FlagOut"][];
             /** Path */
             path: string;
+            /** Sandboxed */
+            sandboxed: boolean;
         };
         /**
          * FolderImportIn
@@ -7303,6 +7308,8 @@ export interface components {
             code: "usb_volume_discovery_unavailable";
             /** Reason */
             reason: string;
+            /** Ui Title */
+            ui_title?: string | null;
         };
         /** UsbCapabilityErrorOut */
         UsbCapabilityErrorOut: {
@@ -13049,7 +13056,7 @@ export interface operations {
                     "application/json": components["schemas"]["UsbVolumesOut"];
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13078,7 +13085,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;

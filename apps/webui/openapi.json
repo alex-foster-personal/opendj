@@ -3617,6 +3617,16 @@
             "title": "Owner",
             "type": "string"
           },
+          "refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefusalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "retire_by": {
             "title": "Retire By",
             "type": "string"
@@ -3636,6 +3646,10 @@
       },
       "FlagsOut": {
         "properties": {
+          "build_profile": {
+            "title": "Build Profile",
+            "type": "string"
+          },
           "file_present": {
             "title": "File Present",
             "type": "boolean"
@@ -3650,11 +3664,17 @@
           "path": {
             "title": "Path",
             "type": "string"
+          },
+          "sandboxed": {
+            "title": "Sandboxed",
+            "type": "boolean"
           }
         },
         "required": [
           "path",
           "file_present",
+          "build_profile",
+          "sandboxed",
           "flags"
         ],
         "title": "FlagsOut",
@@ -11466,6 +11486,17 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
           }
         },
         "required": [
@@ -20029,7 +20060,7 @@
                 }
               }
             },
-            "description": "USB volume discovery is unavailable on this host."
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
           }
         },
         "summary": "Get Usb Volumes",
@@ -20061,7 +20092,7 @@
                 }
               }
             },
-            "description": "USB volume discovery is unavailable on this host."
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
           }
         },
         "summary": "Usb Volume Events",
