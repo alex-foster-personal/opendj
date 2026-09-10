@@ -292,6 +292,14 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/feedback/general', (route) => route.fulfill({ status: 404, json: {} }));
 	await page.route('**/api/v1/telemetry/heartbeat', (route) => route.fulfill({ status: 204, json: {} }));
 	await page.route(/\/api\/v1\/jobs(?:\?.*)?$/, (route) => route.fulfill({ json: [] }));
+	// The machine-pressure poller (machine-pressure.ts): a deck-load row stamps
+	// the conditions it was measured under, so the page polls this while
+	// visible. Answered `available: false` because this gate cares only that
+	// the request is a KNOWN one, and the unavailable branch is also the shape
+	// the packaged app really gets (its payload stages `apps`, not `scripts`).
+	await page.route('**/api/v1/performance/telemetry/pressure', (route) =>
+		route.fulfill({ json: { available: false, reason: 'not measured in the e2e gate' } })
+	);
 
 	await page.goto('/performance');
 	const artworkCell = page.locator('td.c-art').first();
