@@ -91,12 +91,15 @@ def get_backend(name: str) -> type[AnalyzerBackend]:
             from . import mik
         elif name == OWN_BEATGRID_BACKEND:
             from . import own_beatgrid
+        elif name == "own_loudness.backfill":
+            from . import own_loudness
         else:
             from . import (
                 librosa,  # noqa: F401
                 librosa_madmom,  # noqa: F401
                 mik,  # noqa: F401
                 own_beatgrid,  # noqa: F401
+                own_loudness,  # noqa: F401
             )
     try:
         return BACKENDS[name]
