@@ -158,6 +158,7 @@ import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { StretchDeckProcessor, type StretchScheduleChange } from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
+	decodeStemBuffers,
 	DEMUCS_PARTS,
 	loadingStemDeckState,
 	readyStemDeckState,
@@ -2639,17 +2640,10 @@ async function _upgradeDeckStems(
 			fetchStemAudioArrayBuffers(stableId, layout)
 		);
 		if (stale()) return;
-		const decodedEntries = await time(
-			'decodeStems',
-			Promise.all(
-				layoutParts.map(
-					async (part) =>
-						[part, await ctx.decodeAudioData(encodedParts[part] as ArrayBuffer)] as const
-				)
-			)
-		);
+		// Q18: four workers, not four awaits on WebKit's single decode thread.
+		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts));
 		if (stale()) return;
-		const stemBuffers = Object.fromEntries(decodedEntries) as StemBuffers;
+		const stemBuffers = decoded.buffers;
 		const created = await time(
 			'stemProcessorCreate',
 			AlignedStemDeckProcessor.create(ctx, stemBuffers, {
@@ -2704,7 +2698,7 @@ async function _upgradeDeckStems(
 			built = null;
 		});
 		stages.total = Math.round(performance.now() - t0);
-		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck);
+		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, decoded.labels);
 	} catch (error) {
 		if (built !== null) _retireProcessor(built);
 		if (stale()) return;
