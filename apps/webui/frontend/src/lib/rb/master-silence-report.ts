@@ -17,9 +17,9 @@
  * `output-device-watchdog.ts`) is a SEPARATE claim, run as the last step of
  * every `noteMasterSilence` call so it shares one reading of the master bus
  * rather than sampling twice. It fires only when the graph is producing
- * signal (silence's own claim is false) AND the device's HAL clock has
- * stalled, so it is structurally unable to fire on the same sample silence
- * does.
+ * signal (silence's own claim is false) AND `audio-output-liveness.ts`'s
+ * debounced verdict says `outputLatency` has read dead, so it is
+ * structurally unable to fire on the same sample silence does.
  */
 
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
@@ -29,7 +29,6 @@ import {
 	type SilenceState
 } from '$lib/rb/silence-watchdog';
 import { foldDeviceLivenessSample, type DeviceLivenessState } from '$lib/rb/output-device-watchdog';
-import { isAnyPresentationClockStalled } from '$lib/rb/presentation-clock-report';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -90,16 +89,16 @@ export function noteMasterSilence(
 }
 
 /**
- * The room hearing nothing despite a live mixer (issue #1642): the device's
- * HAL clock stalled while the graph kept producing signal on ANY output
- * path - the internal master bus or, in `?extroute=` sessions, the routed
- * fader/merger path `_masterGain` never sees (P1 review thread on PR #1693).
+ * The room hearing nothing despite a live mixer (issue #1642): the device
+ * reads dead while the graph kept producing signal on ANY output path - the
+ * internal master bus or, in `?extroute=` sessions, the routed fader/merger
+ * path `_masterGain` never sees (P1 review thread on PR #1693).
  *
- * The clock stall alone cannot tell a dead device from the Wed 2 Sep 2026
- * CoreAudio timestamp glitch (device alive, rendering); `outputLatencyDead`
- * reads `audio-output-liveness.ts`'s own debounced verdict as the
- * corroborator that makes the two distinguishable (P1 review thread on PR
- * #1693, see `output-device-watchdog.ts`'s docstring).
+ * `outputLatencyDead` reads `audio-output-liveness.ts`'s own debounced
+ * verdict; it is the sole device-loss signal, not a corroborator of a
+ * presentation-clock stall - see `output-device-watchdog.ts`'s docstring for
+ * why the stall was dropped as a required co-signal (it missed the real
+ * Wed 2 Sep 2026 incident, where the HAL clock kept advancing).
  */
 function _noteOutputDeviceLiveness(playing: boolean, masterRms: number, tMs: number): void {
 	const outputLatencyDead =
@@ -107,15 +106,14 @@ function _noteOutputDeviceLiveness(playing: boolean, masterRms: number, tMs: num
 	_deviceLivenessState = foldDeviceLivenessSample(_deviceLivenessState, {
 		playing,
 		masterRms,
-		deviceClockStalled: isAnyPresentationClockStalled(),
 		outputLatencyDead,
 		tMs
 	});
 	if (_deviceLivenessState.verdict !== 'device-unreachable') return;
 	recordPerfEvent(
 		'output-device-unreachable',
-		'a deck is playing and the master bus is producing signal, but the output device\'s HAL ' +
-			'position has stopped advancing: the graph is fine and the ROOM is hearing nothing - ' +
+		'a deck is playing and the master bus is producing signal, but the output device reads ' +
+			'dead (outputLatency stuck at 0): the graph is fine and the ROOM is hearing nothing - ' +
 			'distinct from the mixer being quiet',
 		null,
 		'error'
