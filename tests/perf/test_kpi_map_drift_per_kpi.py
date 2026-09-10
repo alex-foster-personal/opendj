@@ -191,6 +191,7 @@ def test_per_kpi_drift_fires_when_a_required_entrys_own_strictness_disagrees() -
                 "budget": 16.7,
                 "acceptable": 33.3,
                 "breaking": None,
+                "unverifiable_columns": ["target", "acceptable"],
                 "spec_cells": {
                     "target": "p95 frame delta <= display refresh interval",
                     "acceptable": "<5% dropped frames per 10s window",
@@ -257,6 +258,7 @@ def test_per_kpi_drift_stays_silent_on_direction_and_strictness_when_resolved() 
                 "budget": 16.7,
                 "acceptable": 33.3,
                 "breaking": None,
+                "unverifiable_columns": ["target", "acceptable"],
                 "spec_cells": {
                     "target": "p95 frame delta <= display refresh interval",
                     "acceptable": "<5% dropped frames per 10s window",

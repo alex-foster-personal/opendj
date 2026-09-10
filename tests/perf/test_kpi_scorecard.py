@@ -121,6 +121,20 @@ def test_superseded_falls_back_to_the_live_row_beneath_it() -> None:
     assert newest_reading(entries, "k").value == 5
 
 
+def test_a_null_date_does_not_crash_the_sort() -> None:
+    """The reviewer's own reproduction: a ledger row recorded with
+    `"date": null` used to raise `TypeError: '<' not supported between
+    instances of 'NoneType' and 'str'` the moment it sorted against a sibling
+    row with a real date string, crashing the entire scorecard rather than
+    being caught by score_scenarios's own malformed-date rejection - that
+    logic never runs, because the crash happens earlier, during selection."""
+    entries = [
+        {"kpi": "k", "value": 100, "unit": "ms", "date": None},
+        {"kpi": "k", "value": 10, "unit": "ms", "date": "2026-09-01"},
+    ]
+    assert newest_reading(entries, "k").value == 10
+
+
 def test_never_recorded_reads_as_absent_not_zero() -> None:
     reading = newest_reading([], "nothing-here")
     assert reading.value is None
@@ -293,6 +307,32 @@ def test_s6_slow_but_playable_load_is_over_not_breaking() -> None:
     assert _score_one("S6", entries).verdict == "OVER"
 
 
+def test_s6_any_playback_blockage_is_breaking() -> None:
+    """The reviewer's own reproduction: `deck_load_blocks_playback_ms` used to
+    record `breaking: null`, so a 1ms blockage read OVER, never the BREAKING
+    the spec's own breaking cell calls for ('blocks playability at all' - not
+    a duration, any blockage). The KPI's own breaking bound is now 0, so any
+    positive blockage must report BREAKING even with a fast, otherwise-
+    passing load duration alongside it."""
+    entries = [
+        {
+            "kpi": "deck_load_to_stems_ready_s",
+            "value": 10,
+            "unit": "s",
+            "date": "2026-09-09",
+            "source": "manual capture",
+        },
+        {
+            "kpi": "deck_load_blocks_playback_ms",
+            "value": 1,
+            "unit": "ms blocked while stems load",
+            "date": "2026-09-09",
+            "source": "manual capture",
+        },
+    ]
+    assert _score_one("S6", entries).verdict == "BREAKING"
+
+
 def test_s6_stays_unmeasured_on_duration_alone() -> None:
     """The reviewer's reproduction this closes: a duration reading alone used
     to PASS or OVER the whole scenario even though it cannot establish the
@@ -366,6 +406,100 @@ def test_s7_conclusive_breaking_keystroke_drop_survives_missing_latency() -> Non
     score = _score_one("S7", entries)
     assert score.verdict == "BREAKING"
     assert "library_filter_keystroke_ms_p95" in score.note
+
+
+def test_s2_combines_when_both_required_readings_share_one_capture() -> None:
+    """The positive control: two required KPIs whose readings name the SAME
+    `capture_id` are evidence of one real press being measured on both axes
+    at once, so they combine into a real verdict rather than UNMEASURED."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 25,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-1",
+        },
+        {
+            "kpi": "visual_feedback_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-1",
+        },
+    ]
+    assert _score_one("S2", entries).verdict == "PASS"
+
+
+def test_s2_cohort_mismatch_between_required_readings_stays_unmeasured() -> None:
+    """The reviewer's own reproduction: each required KPI is independently
+    replaced by its own newest ledger row, so an audible p99 from one press-
+    testing session used to combine with a visual p95 from an unrelated one
+    and report a joint experience nobody actually measured happening
+    together. Differing `capture_id` values are the disclosed proof of that,
+    so the combination must now refuse to score rather than combine."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 25,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-1",
+        },
+        {
+            "kpi": "visual_feedback_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-2",
+        },
+    ]
+    score = _score_one("S2", entries)
+    assert score.verdict == UNMEASURED
+    assert "evidence cohort" in score.note
+
+
+def test_s2_conclusive_breaking_survives_a_cohort_mismatch() -> None:
+    """A BREAKING reading is unconditionally the floor per the missing-
+    companion-KPI carve-out above, and that must hold even when the other
+    required KPI names a DIFFERENT capture_id: the audible reading broke on
+    its own, real evidence regardless of what else was measured alongside
+    it."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 100,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-1",
+        },
+        {
+            "kpi": "visual_feedback_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-2",
+        },
+    ]
+    assert _score_one("S2", entries).verdict == "BREAKING"
 
 
 def test_a_reading_in_the_wrong_unit_does_not_score() -> None:
