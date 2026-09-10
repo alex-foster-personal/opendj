@@ -726,20 +726,55 @@ jobs:
           if [ -n "${BASE_AT:-}" ]; then
             e2e_created_floor="$(date -u -d "$BASE_AT" +%FT%TZ)"
           fi
-          if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
+
+          # r3975509887: `gh run list` only ever exposes the WHOLE RUN's
+          # conclusion, but e2e.yml's `extended` job runs `needs: gate` /
+          # `if: !cancelled()` -- ordered after `gate`, not gated on its
+          # success, specifically so the nightly full suite still runs (and
+          # can PASS) even when `gate` fails. Reading the run-level
+          # conclusion therefore reports `gate`'s pass/fail, not row 2's own
+          # subject, and can print a clean PASS for a night the extended
+          # suite never even completed, or a FAIL for a night it passed fine.
+          # `gh run list --json` has no per-job field at all (its own field
+          # list omits `jobs` entirely), so each candidate run needs a
+          # separate `gh api .../jobs` call to read the `extended` job's OWN
+          # conclusion. A run whose jobs listing has no `extended` job at all
+          # reads as "MISSING", not a pass -- absence is not success.
+          e2e_job_query_failed=""
+          if e2e_runs="$(gh run list --repo "$REPO" --workflow e2e.yml \
                            --event schedule --status completed --limit 30 \
                            --created ">=$e2e_created_floor" \
-                           --json conclusion,createdAt,url \
-                           --jq 'def fails: map(select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"));
-                                 if length == 0 then empty else
-                                   ((fails | sort_by(.createdAt) | last) // (sort_by(.createdAt) | last))
-                                   | "\(.conclusion) (\(.createdAt)) \(.url)"
-                                 end' \
+                           --json databaseId,createdAt,url \
                          2>e2e.err)"; then
-            [ -n "$e2e_line" ] || e2e_line="NO COMPLETED SCHEDULED RUNS FOUND (or none within the last 2 days)"
+            e2e_candidates="[]"
+            while IFS=$'\t' read -r run_id created url; do
+              [ -n "$run_id" ] || continue
+              if job_conclusion="$(gh api "repos/$REPO/actions/runs/$run_id/jobs" \
+                                     --jq '.jobs[] | select(.name == "e2e extended (nightly)") | .conclusion' \
+                                   2>e2e_job.err)"; then
+                [ -n "$job_conclusion" ] || job_conclusion="MISSING"
+                e2e_candidates="$(jq -c --arg c "$job_conclusion" --arg t "$created" --arg u "$url" \
+                                    '. + [{"conclusion": $c, "createdAt": $t, "url": $u}]' <<<"$e2e_candidates")"
+              else
+                cat e2e_job.err >&2
+                e2e_job_query_failed=1
+                break
+              fi
+            done < <(jq -r '.[] | [(.databaseId|tostring), .createdAt, .url] | @tsv' <<<"$e2e_runs")
           else
             cat e2e.err >&2
+            e2e_job_query_failed=1
+          fi
+
+          if [ -n "$e2e_job_query_failed" ]; then
             e2e_line="QUERY FAILED - this row was NOT measured (see run log)"
+          else
+            e2e_line="$(jq -r 'def fails: map(select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"));
+                                if length == 0 then empty else
+                                  ((fails | sort_by(.createdAt) | last) // (sort_by(.createdAt) | last))
+                                  | "\(.conclusion) (\(.createdAt)) \(.url)"
+                                end' <<<"$e2e_candidates")"
+            [ -n "$e2e_line" ] || e2e_line="NO COMPLETED SCHEDULED RUNS FOUND (or none within the last 2 days)"
           fi
 
           window_desc="${BASE:0:9}..${HEAD:0:9}"
