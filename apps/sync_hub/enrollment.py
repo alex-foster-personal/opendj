@@ -219,7 +219,17 @@ def enroll_machine(
         )
     merge_machines(conn, [machine], caller_id=machine.machine_id)
 
-    stamp = now or sync_stamp.canonical_now()
+    # Round-tripped, not trusted. Sol review, PR #1648 (P1): the public
+    # writer took any non-empty string and put it straight into
+    # machine_owners.enrolled_at, a column documented as canonical UTC, so a
+    # caller could persist a naive or offset stamp into the ownership ledger
+    # -- the same class of defect the sync set's naive-stamp quarantine
+    # exists for. parse_canonical raises on anything it cannot order.
+    stamp = (
+        sync_stamp.canonical_from(sync_stamp.parse_canonical(now))
+        if now
+        else sync_stamp.canonical_now()
+    )
     # No ``revoked_at`` in the UPDATE list, deliberately: this statement must
     # not be able to lift a revocation even if the guard above is ever
     # loosened. Reaching here with a revoked row is impossible today.

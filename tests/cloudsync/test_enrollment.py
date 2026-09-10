@@ -20,13 +20,22 @@ Acceptance criteria, one test each:
 """
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
-from apps.sync_hub import client, enrollment_credentials, service
+from apps.sync_hub import (
+    client,
+    enrollment,
+    enrollment_credentials,
+    maintenance_enroll,
+    protocol,
+    service,
+)
 from tests.cloudsync.conftest import (
     ENROLL_OTHER_EMAIL,
     ENROLL_OTHER_SUB,
@@ -37,6 +46,7 @@ from tests.cloudsync.conftest import (
 from tests.cloudsync.enrollment_helpers import (
     http_enroll,
     hub_machine_id,
+    machine_payload,
     mint_expired_grant,
     mint_grant,
     owner_rows,
@@ -352,3 +362,91 @@ def test_a_repeat_enrollment_does_not_quietly_rename_the_fleet_row(
         "a re-run reported as created=False changed the fleet row: "
         f"{before[machine_id]} -> {after[machine_id]}"
     )
+
+
+def test_a_non_canonical_enrolled_at_is_refused_at_the_writer(
+    enroll_hub_dir: Path, enroll_spoke_dir: Path
+) -> None:
+    """[if] the ownership ledger accepts a naive or offset stamp then it holds
+    a timestamp nothing can order, [else stop].
+
+    Sol review, PR #1648, P1 BLOCKING. ``enroll_machine`` took any non-empty
+    ``now`` and wrote it straight into ``machine_owners.enrolled_at``, a
+    column documented as canonical UTC. Same class of defect as the naive
+    stamps the sync set quarantines rows for.
+    """
+    conn = state_db.open_rw(client.state_db_path(enroll_hub_dir))
+    try:
+        owner = enrollment_credentials.owner_by_email(conn, ENROLL_OWNER_EMAIL)
+        machine = protocol.MachineRow.from_wire(
+            machine_payload(enroll_spoke_dir, name="nucbox-wsl")
+        )
+        def enroll_at(stamp: str) -> enrollment.EnrollmentResult:
+            """The same call twice, with only the stamp differing."""
+            return enrollment.enroll_machine(
+                conn,
+                machine=machine,
+                owner=owner,
+                hub_machine_id=hub_machine_id(enroll_hub_dir),
+                enrolled_via="grant",
+                now=stamp,
+            )
+
+        with pytest.raises(Exception) as excinfo:
+            enroll_at("2026-09-10 11:22:33")
+        assert not isinstance(excinfo.value, sqlite3.Error), (
+            "the refusal must come from the stamp guard, not from sqlite "
+            f"happening to reject the row for some other reason: {excinfo.value}"
+        )
+        assert not owner_rows(enroll_hub_dir), "a refused write leaves no row"
+
+        result = enroll_at("2026-09-10T11:22:33.000000Z")
+        assert result.created, (
+            "control: the SAME call with a canonical stamp is accepted, so "
+            "the refusal above is about the stamp and not about this writer "
+            "being broken"
+        )
+    finally:
+        conn.close()
+
+
+def test_the_cli_refuses_a_hub_answering_off_contract(
+    enroll_hub_dir: Path, enroll_spoke_dir: Path
+) -> None:
+    """[if] the CLI coerces whatever the hub returns then it can print
+    "enrolled" for a machine nobody enrolled, [else stop].
+
+    Sol review, PR #1648, P1 BLOCKING. ``created=bool(body["created"])``
+    turns the STRING "false" into True, and that one field is what decides
+    whether the operator reads "enrolled" or "already enrolled".
+
+    The rogue hub is a transport that answers a well-formed-looking body with
+    the wrong types -- not a monkeypatched parser, so what is under test is
+    the CLI's own handling of a real reply.
+    """
+    import pydantic
+
+    class _OffContractHub:
+        def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "machine_id": None,
+                "owner_google_sub": "sub",
+                "owner_email": "a@example.com",
+                "hub_machine_id": "hub",
+                "enrolled_at": "2026-09-10T00:00:00.000000Z",
+                "enrolled_via": "grant",
+                "created": "false",
+            }
+
+        def get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
+            raise AssertionError("enroll never GETs")
+
+    with pytest.raises(pydantic.ValidationError):
+        maintenance_enroll.enroll(
+            enroll_spoke_dir,
+            "http://hub.invalid",
+            credential_kind="grant",
+            credential_value=mint_grant(enroll_hub_dir),
+            name="nucbox-wsl",
+            transport=_OffContractHub(),  # type: ignore[arg-type]
+        )

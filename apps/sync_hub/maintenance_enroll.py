@@ -34,7 +34,12 @@ from typing import Any
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import enrollment, enrollment_credentials, protocol
+from apps.sync_hub import (
+    enrollment,
+    enrollment_credentials,
+    protocol,
+    service_enroll,
+)
 from apps.sync_hub.client_transport_ops import state_db_path
 from apps.sync_hub.transport import API_PREFIX, HttpTransport, HubTransport
 
@@ -164,14 +169,23 @@ def enroll(
             "credential": {"kind": credential_kind, "value": credential_value},
         },
     )
+    # VALIDATED through the endpoint's own response model, not coerced field
+    # by field. Sol review, PR #1648 (P1): `bool(body["created"])` turns the
+    # string "false" into True, so a hub answering off-contract would have
+    # made the CLI print "enrolled" for a machine it did not enroll -- the
+    # one line an operator actually reads. `str()` on the rest had the
+    # matching flaw, rendering a null as the text "None". One definition,
+    # both sides of the wire; a field the server adds is covered here for
+    # free instead of needing a second edit.
+    reported = service_enroll.EnrollResponse.model_validate(body)
     return EnrollOutcome(
-        machine_id=str(body["machine_id"]),
+        machine_id=reported.machine_id,
         name=machine.name,
-        owner_email=str(body["owner_email"]),
-        hub_machine_id=str(body["hub_machine_id"]),
-        enrolled_at=str(body["enrolled_at"]),
-        enrolled_via=str(body["enrolled_via"]),
-        created=bool(body["created"]),
+        owner_email=reported.owner_email,
+        hub_machine_id=reported.hub_machine_id,
+        enrolled_at=reported.enrolled_at,
+        enrolled_via=reported.enrolled_via,
+        created=reported.created,
     )
 
 
