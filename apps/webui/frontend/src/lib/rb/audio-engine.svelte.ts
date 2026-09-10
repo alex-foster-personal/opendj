@@ -136,7 +136,7 @@ import {
 	beatJumpTargetWithinDurationMs,
 	computeFollowerSyncPlan,
 	displayLoopFrom,
-	planTempoRatioRamp,
+	planPhaseCompensatedReanchor,
 	playbackBpm,
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat
@@ -2118,11 +2118,11 @@ async function _scheduleFollowerBackwardBlend(
  * Re-anchoring an already-playing, already-synced follower can recompute a
  * different followerTempoRatio purely from grid noise near the new anchor
  * (`_windowedIntervalBpm`'s window shifts by a few beats). Landing on it in
- * one step turns that noise into an audible tempo jump. Position and phase
- * still lock exactly at `syncAt` in this same call, unchanged from the
- * non-ramped path - only the RATE eases toward its target afterward, via
- * `planTempoRatioRamp`'s small steps scheduled on the real AudioContext
- * clock (never a JS timer racing the audio graph).
+ * one step turns that noise into an audible tempo jump, so the RATE eases via
+ * `planTempoRatioRamp`'s small steps on the real AudioContext clock (never a
+ * JS timer racing the audio graph). A rate-only ramp leaves phase behind by
+ * its rate shortfall for good (LATENCY-06), so the start is shifted by exactly
+ * that sum (`planPhaseCompensatedReanchor`) and phase lands on the last step.
  *
  * Every step is awaited while the shared `sync` command scope is claimed.
  * A later master update must not observe an intermediate desired revision
@@ -2148,12 +2148,12 @@ async function _scheduleReanchoredFollower(
 		throw new Error(`sync re-anchor: engine session changed before deck ${deck} scheduled`);
 	}
 	const fromTempoRatio = _tempoAt(deck, syncAt);
-	const ramp = planTempoRatioRamp(fromTempoRatio, toTempoRatio);
+	const { startPositionSec, steps: ramp } = planPhaseCompensatedReanchor(inputSec, fromTempoRatio, toTempoRatio);
 	const rt = _rt[deck];
 	rt.reanchorRampActive = true;
 	let scheduledInputSec: number;
 	try {
-		scheduledInputSec = await _scheduleSyncDeck(deck, syncAt, inputSec, ramp[0].tempoRatio, masterTempoEnabled, pressT0Ms);
+		scheduledInputSec = await _scheduleSyncDeck(deck, syncAt, startPositionSec, ramp[0].tempoRatio, masterTempoEnabled, pressT0Ms);
 	} catch (error) {
 		rt.reanchorRampActive = false;
 		throw error;

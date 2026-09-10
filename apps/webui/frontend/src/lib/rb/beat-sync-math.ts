@@ -12,6 +12,8 @@
  *     only when nothing else locks (pin 9bf12adccb45, AGENTS.md).
  *     [if] an exact BAR anchor exists but a fold is returned [then ⛔️]
  *     [if] a fold is the only lock and BAR refuses it [then ⛔️]
+ *   ✔︎ ✅ 🎯 A re-anchor tempo ramp lands phase exactly on the plan (LATENCY-06).
+ *     [if] a ramped re-anchor ends off the one-step re-anchor's phase [then ⛔️]
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
  * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
@@ -801,6 +803,46 @@ export function planTempoRatioRamp(
 				? toTempoRatio
 				: fromTempoRatio + (toTempoRatio - fromTempoRatio) * ((index + 1) / stepCount)
 	}));
+}
+
+export interface PhaseCompensatedReanchor {
+	/** Follower position to schedule at the sync instant, with the first step's rate. */
+	startPositionSec: number;
+	steps: TempoRampStep[];
+}
+
+/**
+ * The re-anchor ramp PLUS the start position that makes it phase-exact.
+ *
+ * `planTempoRatioRamp` eases only the RATE. A follower placed on its planned
+ * anchor at the sync instant and then run short of (or past) its target rate
+ * through the ramp ends it behind (or ahead of) that plan by the ramp's rate
+ * shortfall - 0.1125 s of track time per unit of ratio change for the default
+ * ramp - and nothing afterwards corrects it: every re-anchor since 786cc91a1
+ * (Sun 16 Aug 2026) left the follower off the beat until the next one, ~10 ms
+ * after a 1.00 -> 1.10 master tempo move. Starting ahead by exactly that
+ * shortfall makes phase converge onto the plan at the last step and stay.
+ *
+ * [if] fromTempoRatio equals toTempoRatio [then] startPositionSec is the
+ * anchor itself - an unchanged tempo has nothing to compensate.
+ * [if] the compensated start falls before the track start [then ⛔️] - a
+ * clamp would silently re-introduce the offset this exists to remove.
+ */
+export function planPhaseCompensatedReanchor(
+	anchorPositionSec: number,
+	fromTempoRatio: number,
+	toTempoRatio: number
+): PhaseCompensatedReanchor {
+	_assertFiniteNonNegative('anchorPositionSec', anchorPositionSec);
+	const steps = planTempoRatioRamp(fromTempoRatio, toTempoRatio);
+	let shortfallSec = 0;
+	for (let index = 0; index < steps.length - 1; index++) {
+		const heldSec = steps[index + 1].offsetSec - steps[index].offsetSec;
+		shortfallSec += (toTempoRatio - steps[index].tempoRatio) * heldSec;
+	}
+	const startPositionSec = anchorPositionSec + shortfallSec;
+	_assertFiniteNonNegative('phase-compensated start position', startPositionSec);
+	return { startPositionSec, steps };
 }
 
 /**
