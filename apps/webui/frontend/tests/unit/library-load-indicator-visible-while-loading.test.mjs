@@ -97,6 +97,8 @@ test('LibraryLoadIndicator keeps an honest visible track for determinate and ind
 //   the headers -> broken.
 // - if the overlay is not pointer-events: none then it swallows clicks meant
 //   for the rows underneath it -> broken.
+// - if an unmeasured overlay paints anyway then the first frame of a pane that
+//   is already loading at mount lands it ON the sticky header -> broken.
 test('the library load indicator is pinned inside the table, below the column headers', () => {
 	const panel = stripComments(readFileSync(browserPanelPath, 'utf8'));
 	const table = stripComments(readFileSync(path.join(componentsDir, 'TrackTable.svelte'), 'utf8'));
@@ -106,9 +108,11 @@ test('the library load indicator is pinned inside the table, below the column he
 		/\{#snippet\s+libraryLoadOverlay\(\)\}[\s\S]*?<LibraryLoadIndicator[\s\S]*?\{\/snippet\}/,
 		'the indicator must be rendered through a snippet, not as a sibling above the table'
 	);
+	// Deliberately not anchored to attribute ORDER: a cosmetic reorder of the
+	// props is not a regression in the wiring (blinded review, PR #1672).
 	assert.match(
 		panel,
-		/<TrackTable\s+bodyOverlay=\{libraryLoadOverlay\}/,
+		/<TrackTable[\s\S]*?bodyOverlay=\{libraryLoadOverlay\}/,
 		'that snippet must be handed to TrackTable as its bodyOverlay'
 	);
 	assert.ok(
@@ -120,10 +124,22 @@ test('the library load indicator is pinned inside the table, below the column he
 		/<thead bind:clientHeight=\{theadHeightPx\}>/,
 		'the overlay offset must be the MEASURED header height, not a constant'
 	);
+	// Whitespace/order tolerant for the same reason as the TrackTable match
+	// above: reformatting the attribute list is not a regression.
 	assert.match(
 		table,
-		/class="tt-body-overlay" style=\{`top:\$\{theadHeightPx\}px`\}/,
+		/class="tt-body-overlay"[\s\S]{0,240}?style=\{`top:\$\{theadHeightPx\}px`\}/,
 		'the overlay must be positioned at the measured header height'
+	);
+	assert.match(
+		table,
+		/class:measured=\{theadHeightPx > 0\}/,
+		'the overlay must carry whether the header height has been measured yet'
+	);
+	assert.match(
+		table,
+		/\.tt-body-overlay \{[\s\S]*?visibility: hidden;[\s\S]*?\}\s*\.tt-body-overlay\.measured \{[\s\S]*?visibility: visible;/,
+		'an unmeasured overlay must stay invisible rather than paint over the header'
 	);
 	assert.match(
 		table,

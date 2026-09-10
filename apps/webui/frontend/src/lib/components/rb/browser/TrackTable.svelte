@@ -286,7 +286,7 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
-		/** Honest note when a tiny search result bypasses Next-only only. */
+		/** Honest note when a tiny search result bypasses the compatible filter. */
 		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
 		 * scroll cursor restores when this changes, NOT on row updates. */
@@ -878,7 +878,16 @@
 		</button>
 	{/if}
 	{#if bodyOverlay !== undefined}
-		<div class="tt-body-overlay" style={`top:${theadHeightPx}px`}>
+		<!-- `bind:clientHeight` only lands after the first resize callback, so on
+		     the very first paint theadHeightPx is still 0 and this would sit ON
+		     the sticky header instead of below it (blinded review, PR #1672).
+		     A pane that is already loading at mount is exactly when that
+		     happens. Unmeasured means invisible, not misplaced. -->
+		<div
+			class="tt-body-overlay"
+			class:measured={theadHeightPx > 0}
+			style={`top:${theadHeightPx}px`}
+		>
 			{@render bodyOverlay()}
 		</div>
 	{/if}
@@ -2004,6 +2013,10 @@
 		justify-content: center;
 		/* Never eats a click meant for the row underneath it. */
 		pointer-events: none;
+		visibility: hidden;
+	}
+	.tt-body-overlay.measured {
+		visibility: visible;
 	}
 	.master-fold {
 		position: absolute;

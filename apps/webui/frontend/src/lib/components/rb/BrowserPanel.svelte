@@ -613,9 +613,15 @@
 	);
 	const emptyMessage = $derived.by((): string | null => {
 		if (searchFilterFallback !== null) return null;
+		// The load indicator now paints INSIDE the table, pinned below the
+		// column headers (pin 02717d4ea496), which is exactly where the
+		// empty-state block sits. Both saying "loading..." put two status
+		// surfaces on the same pixels, so the empty state yields: the
+		// indicator is the richer of the two (progress, count, rows/s) and
+		// it is the one this pane deliberately renders. Bot review, PR #1672.
+		if (pane.loading) return null;
 		if (searchMode === 'find') {
-			if (pane.loading) return 'loading...';
-			else if (pane.error !== null) return `load failed: ${pane.error}`;
+			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
@@ -624,8 +630,7 @@
 			if (pane.searching) return 'searching whole collection...';
 			else if (visibleRows.length === 0) return 'no tracks match the search';
 			else return null;
-		} else if (pane.loading) return 'loading...';
-		else if (pane.error !== null) return `load failed: ${pane.error}`;
+		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
@@ -2832,6 +2837,13 @@
 	.header-right {
 		display: flex;
 		align-items: center;
+		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
+		   the 190px AddTrackSearch alongside these controls, and .list-panel
+		   is overflow: hidden, so a non-wrapping row silently clipped its
+		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
+		   running past the edge visibly. Bot review, PR #1672. */
+		flex-wrap: wrap;
+		row-gap: 3px;
 		gap: 4px;
 		padding: 0 6px;
 		flex: none;
