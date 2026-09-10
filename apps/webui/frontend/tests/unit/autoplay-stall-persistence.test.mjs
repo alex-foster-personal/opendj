@@ -470,3 +470,32 @@ test('every raise gets its own revision, so two same-shaped stalls are distingui
 		assert.ok(second > first, 'revisions are monotonic, so later is always distinguishable');
 	});
 });
+
+test('a spent attempt budget names the three files that failed', async () => {
+	await withController(async (mod) => {
+		// Three playable candidates, all of which fail to load (no engine behind
+		// the harness). Each is claimed before its dispatch, so the budget is
+		// spent on three DIFFERENT files - and their ids are the only record of
+		// which ones, because the toasts that carried them expire.
+		mod.setAutoPlayTrackFeed('playlist-a', [
+			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
+			{ stable_id: 'f-1', key: '8A', bpm: 124, file_exists: true, title: 'Fail One', artist: 'Bo' },
+			{ stable_id: 'f-2', key: '8A', bpm: 125, file_exists: true, title: 'Fail Two', artist: 'Cy' },
+			{ stable_id: 'f-3', key: '9A', bpm: 124, file_exists: true, title: 'Fail Three', artist: 'Di' }
+		]);
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		await settle();
+		await settle();
+		await settle();
+
+		const stall = mod.readAutoPlayStall();
+		assert.notEqual(stall, null, 'precondition: AutoPlay reached a terminal branch');
+		assert.ok(
+			stall.blocked_total > 0,
+			`the banner must name the files that failed, not just say some did (reason ${stall.reason})`
+		);
+		for (const track of stall.blocked) {
+			assert.match(track.stable_id, /^f-/, 'only failed candidates belong in this list');
+		}
+	});
+});

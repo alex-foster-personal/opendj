@@ -205,8 +205,13 @@ export function autoPlayStallReason(input: {
 	load_failures: boolean;
 	enforce_order: boolean;
 }): AutoPlayStallReason {
-	if (input.all_missing) return 'missing-audio';
+	// LOAD FAILURES FIRST, including ahead of an all-stub remainder (Codex
+	// r3974657549). Both flags can be true at once - a compatible row failed to
+	// load and everything left unquarantined is a stub - and the load failure is
+	// the more specific fault AND the one whose tracks the operator cannot see
+	// any other way. A stub remainder is already visible in the library.
 	if (input.load_failures) return 'candidates-failed-to-load';
+	if (input.all_missing) return 'missing-audio';
 	return input.enforce_order ? 'no-next-in-order' : 'no-compatible-track';
 }
 

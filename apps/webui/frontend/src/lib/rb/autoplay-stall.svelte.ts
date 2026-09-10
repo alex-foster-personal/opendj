@@ -100,11 +100,22 @@ export function noteAutoPlayHandoffStall(
 	 * leaves a stop banner over a switched-off feature, and, because this state
 	 * is module-level, carries it into the NEXT /performance mount.
 	 */
-	stillArmed: boolean
+	stillArmed: boolean,
+	/**
+	 * The tracks worth naming. Empty for `handoff-incomplete`, whose track is ON
+	 * a deck and so is not one the operator has to go find.
+	 *
+	 * For a spent attempt budget it is the candidates that failed (Codex
+	 * r3974657554): the controller knows all three ids, and dropping them left
+	 * the durable banner saying three files failed while their identities lived
+	 * only in expiring toasts - which is the defect this whole PR is about,
+	 * reproduced one level down.
+	 */
+	blocked: readonly AutoPlayTrackRow[] = []
 ): void {
 	if (!stillArmed) return;
 	raiseAutoPlayStall(
-		describeAutoPlayStall({ reason, source_stable_id: sourceStableId, blocked: [], detail })
+		describeAutoPlayStall({ reason, source_stable_id: sourceStableId, blocked, detail })
 	);
 }
 

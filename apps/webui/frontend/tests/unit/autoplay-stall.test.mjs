@@ -231,6 +231,17 @@ describe('autoPlayStallReason / autoPlayExhaustionToast', () => {
 		);
 	});
 
+	it('a load failure outranks an all-stub remainder', () => {
+		// Both flags true: a compatible row failed to load AND everything left
+		// unquarantined is a stub. The load failure is the more specific fault,
+		// and the only one whose tracks the operator cannot see any other way -
+		// a stub remainder is already visible in the library.
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: true, load_failures: true, enforce_order: false }),
+			'candidates-failed-to-load'
+		);
+	});
+
 	it('CONTROL: without load failures the pre-existing reasons are unchanged', () => {
 		assert.equal(
 			mod.autoPlayStallReason({ all_missing: true, load_failures: false, enforce_order: false }),

@@ -495,7 +495,12 @@ async function _tick(): Promise<void> {
 				`auto-play stopped after ${MAX_HANDOFF_ATTEMPTS} failed handoffs: ${message}`,
 				'error'
 			);
-			noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation));
+			const failed = getAutoPlayPlaylist().filter((row) =>
+				_attemptsFor.failed_ids.includes(row.stable_id)
+			);
+			noteAutoPlayHandoffStall(
+				'handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation), failed
+			);
 		}
 	} finally {
 		_inFlight = false;
