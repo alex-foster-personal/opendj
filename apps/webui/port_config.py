@@ -11,6 +11,14 @@ Requirements:
 - ✔︎ ``MUSIC_DJ_PORT_LANE`` shifts one CI runner's whole pool window clear of
   every other lane's, so independent runner clones on one host cannot select
   an overlapping pair.
+- ✔︎ Fixed-port CI/desktop suites (playwright/vite/wdio configs that bind a
+  compile-time port outside this module's registry) are never handed out by
+  dynamic allocation, in any lane, so an ordinary worktree claim cannot land
+  on one by coincidence (issue #1613).
+- ✔︎ Every dynamic claim leaves a world-readable ownership marker keyed by
+  port, so a process running as a DIFFERENT unix user on the same host (a
+  self-hosted CI runner sharing the box with this fleet's worktrees) can name
+  the claimant instead of reporting an unreadable ``/proc`` entry.
 
 Acceptance tests:
 
@@ -22,6 +30,10 @@ Acceptance tests:
   ports, because those ports belong to the other worktree's ``.env``.
 - [if] two runner clones claim distinct ``MUSIC_DJ_PORT_LANE`` values [then
   ⛔️] their allocated pairs overlap.
+- [if] dynamic allocation, in any lane, returns a port a fixed-port suite
+  binds directly [then ⛔️] the pair is returned or restored.
+- [if] a claimed port has no ownership marker afterward [then ⛔️] a foreign
+  user's process on it can be named.
 """
 
 from __future__ import annotations
@@ -39,6 +51,7 @@ import urllib.request
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 BACKEND_ENV = "MUSIC_DJ_BACKEND_PORT"
@@ -65,6 +78,57 @@ FRONTEND_POOL_START = 9400
 PORT_LANE_STRIDE = (FRONTEND_POOL_START - BACKEND_POOL_START) + POOL_SIZE
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEBUI_ENV_FILE = PROJECT_ROOT / ".env"
+
+# Fixed E2E/desktop suite ports (issue #1613): each is a COMPILE-TIME constant
+# a Playwright/Vite/WDIO config binds directly (e.g.
+# apps/webui/frontend/tests/e2e/playwright.webkit-deckload.config.ts's
+# WEBKIT_DECKLOAD_PORT), never through this module's registry, so the dynamic
+# allocator has no way to see one occupied. Several sit inside a lane's pool
+# window by coincidence (backend 8680-8799, frontend 9400-9519 for lane 0):
+# an ordinary worktree claim with no MUSIC_DJ_PORT_LANE set -- a developer
+# machine, or a dispatcher worker fleet worktree on a host that also runs a
+# self-hosted CI runner -- could legitimately allocate one of these and
+# collide with whichever suite owns it, under a DIFFERENT unix user than the
+# runner, so neither side's /proc can attribute the other's holder. Excluding
+# them here removes the collision by construction. Each per-suite
+# ``RESERVED_PORTS``/``RESERVED`` list documents that value's own provenance;
+# this set is the single place they are all excluded from allocation.
+RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
+    {
+        4455,  # apps/desktop/wdio.conf.ts EMBEDDED_WEBDRIVER_PORT
+        4456,  # apps/desktop/mcp/smoke.ts WEBDRIVER_PORT
+        5214,  # tests/e2e/vite.play-analytics.config.ts frontend port
+        5216,  # tests/e2e/playwright.desktop-setup.config.ts SETUP_PAGE_PORT
+        5273,  # tests/e2e/vite.performance.config.ts DEFAULT_FRONTEND_BASE
+        5311,  # tests/e2e/playwright.stretch-artifact.config.ts STRETCH_ARTIFACT_PORT
+        5320,  # tests/e2e/vite.hotcue-mapping-gate.config.ts frontend port
+        5321,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
+        5322,  # tests/e2e/playwright.meter-artifact.config.ts METER_ARTIFACT_PORT
+        5323,  # tests/e2e/playwright.preflight-gate.config.ts / vite.full-reload-gate.config.ts
+        5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
+        5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
+        8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
+        8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
+        8690,  # tests/e2e/playwright.webkit-deckload.config.ts WEBKIT_DECKLOAD_PORT
+        8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
+        8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
+        8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
+        8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
+        8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
+        8698,  # apps/desktop/mcp/smoke.ts ENGINE_PORT
+        8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts API port
+        9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
+        9414,  # tests/e2e/playwright.play-analytics.config.ts backend port
+        9473,  # tests/e2e/playwright.desktop-setup.config.ts DEAD_ENGINE_PORT
+    }
+)
+
+# World-readable so a process running as a different unix user can read it
+# (issue #1613): a git-common-dir registry lives under a checkout's own home
+# directory, which a different uid's self-hosted CI runner typically cannot
+# even traverse into. /tmp is sticky (mode 1777) on every platform this repo
+# targets, so any uid may create files there and every uid may read them.
+PORT_OWNER_REGISTRY_DIR = Path(tempfile.gettempdir()) / "music-dj-tools-port-owners"
 
 
 class PortConfigError(ValueError):
@@ -236,6 +300,63 @@ def _atomic_write_text(path: Path, content: str) -> None:
     except BaseException:
         temp_path.unlink(missing_ok=True)
         raise
+
+
+def _port_owner_marker_path(port: int) -> Path:
+    # Keyed by uid as well as port: /tmp is sticky, so only a file's owner may
+    # rename or delete it there. Keying this way means every uid always writes
+    # and removes only its OWN marker and never races another uid's, at the
+    # cost of a stale marker (a crashed claimant's) surviving until something
+    # reads and discounts it -- which is fine, since a marker is a lead for a
+    # human to follow, never a live fact to signal on.
+    return PORT_OWNER_REGISTRY_DIR / f"{port}-{os.getuid()}.owner"
+
+
+def _write_port_owner_marker(port: int, worktree: str) -> None:
+    """Record this worktree as the dynamic claimant of ``port`` (issue #1613)."""
+    PORT_OWNER_REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(PORT_OWNER_REGISTRY_DIR, 0o1777)
+    marker_path = _port_owner_marker_path(port)
+    content = (
+        f"worktree={worktree}\n"
+        f"claimed_at={datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+        f"pid={os.getpid()}\n"
+    )
+    _atomic_write_text(marker_path, content)
+    os.chmod(marker_path, 0o644)
+
+
+def _remove_port_owner_marker(port: int) -> None:
+    _port_owner_marker_path(port).unlink(missing_ok=True)
+
+
+def describe_port_owner(port: int) -> str | None:
+    """Best-effort description of the last dynamic claimant of ``port``.
+
+    Read is cross-uid by design (issue #1613): a self-hosted CI runner on the
+    same host as this fleet's worktrees runs as a different unix user, so its
+    ``/proc`` cannot see this worktree's process at all. A stale marker (the
+    claimant's process is long gone) is still returned -- it names a worktree
+    to go check, not a live fact -- so callers must not treat a hit here as
+    proof the port is currently held by that worktree.
+    """
+    if not PORT_OWNER_REGISTRY_DIR.is_dir():
+        return None
+    candidates = sorted(
+        PORT_OWNER_REGISTRY_DIR.glob(f"{port}-*.owner"),
+        key=lambda candidate_path: candidate_path.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate_path in candidates:
+        try:
+            lines = candidate_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        fields = dict(line.split("=", 1) for line in lines if "=" in line)
+        worktree = fields.get("worktree")
+        if worktree:
+            return f"worktree {worktree} (claimed_at={fields.get('claimed_at', 'unknown')})"
+    return None
 
 
 def _git_path(argument: str) -> Path:
@@ -508,9 +629,13 @@ def _port_lane(environ: Mapping[str, str]) -> int:
 
 
 def _allocate_pair(reservations: Mapping[str, WebuiPorts], lane: int) -> WebuiPorts:
+    # RESERVED_FIXED_PORTS is excluded in EVERY lane, not just lane 0: a fixed
+    # suite port is a compile-time constant with no lane of its own, so it can
+    # coincide with any lane's window and must never be handed out regardless
+    # of which lane is asking (issue #1613).
     reserved_ports = {
         port for ports in reservations.values() for port in (ports.backend, ports.frontend)
-    }
+    } | RESERVED_FIXED_PORTS
     backend_pool_start, frontend_pool_start = _lane_pool_starts(lane)
     for slot in range(POOL_SIZE):
         candidate = WebuiPorts(
@@ -539,6 +664,14 @@ def claim_ports(
     effective_environ = os.environ if environ is None else environ
     dotenv_path = resolved_root / ".env"
     configured = requested or _configured_candidate(dotenv_path, effective_environ)
+    if configured is not None:
+        for reserved_candidate in (configured.backend, configured.frontend):
+            if reserved_candidate in RESERVED_FIXED_PORTS:
+                raise PortConfigError(
+                    f"port {reserved_candidate} is reserved for a fixed-port CI/desktop "
+                    "suite (see RESERVED_FIXED_PORTS in apps/webui/port_config.py); "
+                    "choose a different pair"
+                )
     lane = _port_lane(effective_environ)
     root_key = str(resolved_root)
 
@@ -577,6 +710,8 @@ def claim_ports(
         except BaseException:
             _write_registry(registry_path, previous)
             raise
+    _write_port_owner_marker(selected.backend, root_key)
+    _write_port_owner_marker(selected.frontend, root_key)
     return selected
 
 
@@ -644,9 +779,12 @@ def release_ports(
     resolved_common_dir = _common_dir(common_dir)
     with _locked_registry(resolved_common_dir) as registry_path:
         reservations = _prune_missing_worktrees(_load_registry(registry_path))
-        removed = reservations.pop(str(resolved_root), None) is not None
+        released_ports = reservations.pop(str(resolved_root), None)
         _write_registry(registry_path, reservations)
-    return removed
+    if released_ports is not None:
+        _remove_port_owner_marker(released_ports.backend)
+        _remove_port_owner_marker(released_ports.frontend)
+    return released_ports is not None
 
 
 def _print_ports(ports: WebuiPorts) -> None:
@@ -743,10 +881,13 @@ if __name__ == "__main__":
 
 __all__ = [
     "PORT_LANE_ENV",
+    "PORT_OWNER_REGISTRY_DIR",
+    "RESERVED_FIXED_PORTS",
     "PortConfigError",
     "WebuiPorts",
     "check_reservation",
     "claim_ports",
+    "describe_port_owner",
     "main",
     "release_ports",
     "resolve_backend_port",

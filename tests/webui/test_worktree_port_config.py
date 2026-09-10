@@ -11,6 +11,7 @@ from unittest import mock
 
 import pytest
 
+from apps.webui import port_config
 from apps.webui.port_config import (
     BACKEND_POOL_START,
     FRONTEND_POOL_START,
@@ -18,13 +19,17 @@ from apps.webui.port_config import (
     PORT_LANE_ENV,
     PORT_LANE_STRIDE,
     PROJECT_ROOT,
+    RESERVED_FIXED_PORTS,
     PortConfigError,
     WebuiPorts,
+    _allocate_pair,
     _lane_pool_starts,
     assert_source_tree_matches_worktree,
     check_reservation,
     claim_ports,
+    describe_port_owner,
     main,
+    release_ports,
     resolve_ports,
 )
 
@@ -633,3 +638,126 @@ def test_a_reservation_from_another_lane_is_reallocated_not_restored(tmp_path: P
     # single-claim-per-run contract the rest of the suite relies on holds.
     again = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"})
     assert again == relaid
+
+
+# -- issue #1613: fixed CI/desktop suite ports vs. the dynamic allocator -----
+#
+# A self-hosted e2e runner and this fleet's own worktrees share nucbox under
+# different unix users and both allocate from the same ephemeral port range.
+# Several e2e/desktop suites bind a FIXED, compile-time port that this
+# module's registry never sees occupied, so an ordinary lane-0 dynamic claim
+# (a developer machine, or a worker-fleet worktree with no MUSIC_DJ_PORT_LANE
+# set) could legitimately allocate one of those exact ports.
+
+
+def test_allocate_pair_never_returns_a_reserved_fixed_port() -> None:
+    """if the dynamic allocator hands a fixed CI/desktop suite's own port to
+    a caller then broken (issue #1613)"""
+    reserved_port = 8690
+    assert reserved_port in RESERVED_FIXED_PORTS, "test premise: pick a real reserved port"
+    reserved_slot = reserved_port - BACKEND_POOL_START
+
+    # Every OTHER slot in the lane-0 window is already reserved by some other
+    # worktree, so the reserved-fixed-port slot is the only one structurally
+    # free. If it were handed out anyway, the allocator would return it here.
+    reservations = {
+        f"fake-worktree-{slot}": WebuiPorts(
+            backend=BACKEND_POOL_START + slot, frontend=FRONTEND_POOL_START + slot
+        )
+        for slot in range(POOL_SIZE)
+        if slot != reserved_slot
+    }
+
+    with pytest.raises(PortConfigError, match="no free worktree port pair"):
+        _allocate_pair(reservations, lane=0)
+
+
+def test_allocate_pair_falls_through_a_reserved_slot_to_the_next_free_one() -> None:
+    """if excluding a fixed port's slot ALSO excludes the slot after it then
+    broken -- the exclusion must be exact, not an off-by-one that eats
+    capacity the fixed-port suites never claimed."""
+    reserved_port = 8690
+    reserved_slot = reserved_port - BACKEND_POOL_START
+    free_slot = 50  # far from any RESERVED_FIXED_PORTS entry; see that set's own values
+    assert BACKEND_POOL_START + free_slot not in RESERVED_FIXED_PORTS
+    assert FRONTEND_POOL_START + free_slot not in RESERVED_FIXED_PORTS
+
+    reservations = {
+        f"fake-worktree-{slot}": WebuiPorts(
+            backend=BACKEND_POOL_START + slot, frontend=FRONTEND_POOL_START + slot
+        )
+        for slot in range(POOL_SIZE)
+        if slot not in (reserved_slot, free_slot)
+    }
+
+    selected = _allocate_pair(reservations, lane=0)
+
+    assert selected == WebuiPorts(
+        backend=BACKEND_POOL_START + free_slot, frontend=FRONTEND_POOL_START + free_slot
+    )
+
+
+def test_claim_ports_rejects_an_explicit_request_for_a_reserved_fixed_port(
+    tmp_path: Path,
+) -> None:
+    """if an explicit --backend-port/.env request for a fixed suite's own port
+    is honored then broken (issue #1613)"""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    reserved_backend = next(iter(RESERVED_FIXED_PORTS))
+    other_port = _free_port(exclude=(reserved_backend,))
+
+    with pytest.raises(PortConfigError, match="reserved for a fixed-port"):
+        claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=WebuiPorts(backend=reserved_backend, frontend=other_port),
+        )
+
+
+def test_claim_ports_writes_a_cross_uid_readable_ownership_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if a claimed port has no ownership marker then a self-hosted CI runner
+    on the same host, as a different unix user, cannot name the claimant and
+    is back to reporting `<unreadable>` (issue #1613)"""
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", tmp_path / "owners")
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    claimed = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    note = describe_port_owner(claimed.backend)
+    assert note is not None
+    assert str(repo_root.resolve()) in note
+
+    marker = next((tmp_path / "owners").glob(f"{claimed.backend}-*.owner"))
+    # World-readable: a different unix user's process must be able to read
+    # this file even though it cannot read this worktree's /proc entries.
+    assert marker.stat().st_mode & 0o777 == 0o644
+
+
+def test_release_ports_removes_its_ownership_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if a released port keeps naming its old claimant then broken -- a
+    freed port with a stale marker sends the next reader to the wrong place"""
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", tmp_path / "owners")
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    claimed = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert describe_port_owner(claimed.backend) is not None
+
+    released = release_ports(repo_root=repo_root, common_dir=common_dir)
+
+    assert released is True
+    assert describe_port_owner(claimed.backend) is None
+    assert describe_port_owner(claimed.frontend) is None

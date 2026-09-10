@@ -16,6 +16,10 @@ Regression lines:
   - if the trailing command does not run once the ports are clear, or runs
     when they are not, then broken
   - if no port is given then the script must fail rather than reap nothing
+  - if a holder without CI provenance releases during the foreign-holder
+    wait and the step still fails then broken (issue #1613)
+  - if a port-ownership registry marker exists but is never surfaced in the
+    no-CI-provenance message then broken (issue #1613)
 """
 
 from __future__ import annotations
@@ -66,13 +70,21 @@ def _serve(port: int, cwd: Path, *, ignore_term: bool = False) -> subprocess.Pop
     raise AssertionError(f"server never bound {port}")
 
 
-def _run(*args: str, live_re: str, release_wait_s: str = "30") -> subprocess.CompletedProcess:
+def _run(
+    *args: str,
+    live_re: str,
+    release_wait_s: str = "30",
+    foreign_wait_s: str = "1",
+    registry_dir: Path | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(SCRIPT), *args],
         env={
             **os.environ,
             "MDT_CI_LIVE_ANCESTOR_RE": live_re,
             "MDT_CI_REAP_RELEASE_WAIT_S": release_wait_s,
+            "MDT_CI_REAP_FOREIGN_WAIT_S": foreign_wait_s,
+            "MDT_CI_PORT_OWNER_REGISTRY_DIR": str(registry_dir) if registry_dir else "/nonexistent",
         },
         capture_output=True,
         text=True,
@@ -239,6 +251,54 @@ def test_a_holder_that_vanishes_before_its_identity_is_read_does_not_abort(
         result = _run(str(port), "--", "echo", "suite-ran", live_re=ORPHAN, release_wait_s="10")
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_foreign_holder_that_releases_during_the_wait_still_runs_the_command(
+    tmp_path: Path,
+) -> None:
+    """if a holder without CI provenance releases during the foreign-holder
+    wait and the step still fails then broken (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)  # no CI provenance, and no live-job ancestor
+    try:
+        import threading
+
+        threading.Timer(1.0, proc.kill).start()
+        result = _run(
+            str(port), "--", "echo", "suite-ran", live_re=ORPHAN, foreign_wait_s="10"
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+        assert "[ERROR]" not in result.stderr, result.stderr
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
+    tmp_path: Path,
+) -> None:
+    """if a port-ownership registry marker exists but is never surfaced in the
+    no-CI-provenance message then broken (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    registry_dir = tmp_path / "registry"
+    registry_dir.mkdir()
+    marker = registry_dir / f"{port}-{os.getuid()}.owner"
+    marker.write_text(
+        "worktree=/home/dev/code/music-dj-tools-wt-demo-1613\n"
+        "claimed_at=2026-09-10T00:00:00+00:00\n"
+    )
+    try:
+        result = _run(
+            str(port), live_re=ORPHAN, foreign_wait_s="1", registry_dir=registry_dir
+        )
+        assert result.returncode == 1
+        assert "music-dj-tools-wt-demo-1613" in result.stdout, result.stdout
+        assert "music-dj-tools-wt-demo-1613" in result.stderr, result.stderr
     finally:
         proc.kill()
         proc.wait(timeout=10)
