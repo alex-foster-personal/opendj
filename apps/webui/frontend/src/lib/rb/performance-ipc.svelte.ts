@@ -73,7 +73,12 @@ import {
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
-import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
+import {
+	markArmedHotCuePress,
+	pendingLoadPlayState,
+	setPendingLoadPlayIntent,
+	type DeckId
+} from '$lib/rb/deck-slots';
 import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
 import type {
 	DeckAudioSnapshot,
@@ -1592,6 +1597,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			hotCueArmed[command.deck] = null;
 			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
 		} else {
+			// Mark BEFORE the row can file: the eventual schedule reads this same
+			// stamp via press-stamp.ts's claimArmedHotCuePress to distinguish an
+			// armed (deferred-to-downbeat) wait from an immediate press row.
+			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
 			const targetContextTime = await _hotCueDriver.arm(
 				command.deck,
 				cue.in_ms,

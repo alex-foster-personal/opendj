@@ -87,10 +87,26 @@ export const PRESS_SCHEDULE_KIND = 'transport-schedule-press';
  */
 export const PRESS_SCHEDULE_LOAD_SPAN_KIND = 'transport-schedule-press-load-span';
 
+/**
+ * The ring kind for a press behind an ARMED trigger, not an immediate one.
+ *
+ * A SUFFIX of `PRESS_SCHEDULE_KIND`, for the same `_bucketOf`/S2 reason as
+ * `PRESS_SCHEDULE_LOAD_SPAN_KIND` above. BeatSyncMax can defer a hot-cue jump
+ * to the next downbeat instead of firing it immediately (`planHotCueTrigger`'s
+ * `armed` plan); that wait is honestly, by construction, a number an S2 p95/p99
+ * consumer must exclude rather than read as a Class A schedule-latency spike.
+ */
+export const PRESS_SCHEDULE_ARMED_KIND = 'transport-schedule-press-armed';
+
 /** Which ring kind this schedule's row belongs under. */
-export function scheduleRowKind(pressToScheduleMs: number | undefined, loadSpanning: boolean): string {
+export function scheduleRowKind(
+	pressToScheduleMs: number | undefined,
+	loadSpanning: boolean,
+	armed = false
+): string {
 	if (pressToScheduleMs === undefined) return SCHEDULE_KIND;
 	if (loadSpanning) return PRESS_SCHEDULE_LOAD_SPAN_KIND;
+	if (armed) return PRESS_SCHEDULE_ARMED_KIND;
 	return PRESS_SCHEDULE_KIND;
 }
 

@@ -2036,6 +2036,11 @@ interface _SyncOptions {
  * into beat 4 of the target bar so `landingSec` lands softer. Falls back to a
  * plain schedule with no buffer/lead-in, or where the mix buffer bypasses stems/pitch under Master Tempo.
  */
+// `_scheduleDeck` for a sync path: explicit tempo/masterTempo (not `_schedulePress`'s "keep"), no loop/key, active always true.
+function _scheduleSyncDeck(deck: DeckId, when: number, inputSec: number, tempoRatio: number, masterTempoEnabled: boolean, pressT0Ms?: number): Promise<number> {
+	return _scheduleDeck(deck, when, inputSec, true, tempoRatio, masterTempoEnabled, undefined, undefined, pressT0Ms);
+}
+
 async function _scheduleFollowerBackwardBlend(
 	deck: DeckId,
 	syncAt: number,
@@ -2043,7 +2048,8 @@ async function _scheduleFollowerBackwardBlend(
 	tempoRatio: number,
 	masterTempoEnabled: boolean,
 	currentSec: number,
-	isScheduleCurrent?: () => boolean
+	isScheduleCurrent?: () => boolean,
+	pressT0Ms?: number
 ): Promise<number> {
 	if (isScheduleCurrent !== undefined && !isScheduleCurrent()) {
 		throw new Error(`sync seek blend: engine session changed before deck ${deck} scheduled`);
@@ -2061,7 +2067,7 @@ async function _scheduleFollowerBackwardBlend(
 		processor instanceof AlignedStemDeckProcessor || masterTempoEnabled ||
 		landingSec >= currentSec - 0.08
 	) {
-		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
+		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
 	}
 
 	const beats = st.anlz?.beatgrid.beats ?? null;
@@ -2107,17 +2113,10 @@ async function _scheduleFollowerBackwardBlend(
 		} catch {
 			/* ignore */
 		}
-		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
+		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
 	}
 
-	const scheduled = await _scheduleDeck(
-		deck,
-		t0,
-		incomingSec,
-		true,
-		tempoRatio,
-		masterTempoEnabled
-	);
+	const scheduled = await _scheduleSyncDeck(deck, t0, incomingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
 
 	const token = rt.loadToken;
 	const delayMs = Math.max(0, (tEnd - ctx.currentTime) * 1000) + 50;
@@ -2173,7 +2172,8 @@ async function _scheduleReanchoredFollower(
 	inputSec: number,
 	toTempoRatio: number,
 	masterTempoEnabled: boolean,
-	isScheduleCurrent?: () => boolean
+	isScheduleCurrent?: () => boolean,
+	pressT0Ms?: number
 ): Promise<number> {
 	if (isScheduleCurrent !== undefined && !isScheduleCurrent()) {
 		throw new Error(`sync re-anchor: engine session changed before deck ${deck} scheduled`);
@@ -2184,14 +2184,7 @@ async function _scheduleReanchoredFollower(
 	rt.reanchorRampActive = true;
 	let scheduledInputSec: number;
 	try {
-		scheduledInputSec = await _scheduleDeck(
-			deck,
-			syncAt,
-			inputSec,
-			true,
-			ramp[0].tempoRatio,
-			masterTempoEnabled
-		);
+		scheduledInputSec = await _scheduleSyncDeck(deck, syncAt, inputSec, ramp[0].tempoRatio, masterTempoEnabled, pressT0Ms);
 	} catch (error) {
 		rt.reanchorRampActive = false;
 		throw error;
@@ -2444,17 +2437,21 @@ async function _synchronizeFollowers(
 						item.tempoRatio,
 						item.masterTempoEnabled,
 						item.blendFromSec,
-						scheduleSessionIsCurrent
+						scheduleSessionIsCurrent,
+						options.pressT0Ms
 					);
 				}
 				if (options.reanchorDecks?.has(item.deck) === true) {
+					// 'master-max' fills reanchorDecks with the OTHER followers, never
+					// the pressed master, so withhold whenever masterSchedule is set.
 					return _scheduleReanchoredFollower(
 						item.deck,
 						scheduleTimes[index],
 						item.inputSec,
 						item.tempoRatio,
 						item.masterTempoEnabled,
-						scheduleSessionIsCurrent
+						scheduleSessionIsCurrent,
+						options.masterSchedule === undefined ? options.pressT0Ms : undefined
 					);
 				}
 				if (!scheduleSessionIsCurrent()) {
@@ -3215,7 +3212,8 @@ class RbAudioEngine implements AudioEngine {
 				// playing and already beat-synced - a re-anchor, not a join.
 				await _synchronizeFollowers(syncPlan.master, [deck], {
 					followerAnchorSec: { [deck]: targetMs / 1000 },
-					reanchorDecks: new Set([deck])
+					reanchorDecks: new Set([deck]),
+					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
 			} else if (syncPlan.kind === 'master-max') {
 				// beatSyncMaxFollowers only returns already playing,
@@ -3226,7 +3224,8 @@ class RbAudioEngine implements AudioEngine {
 						masterTempoEnabled: st.master_tempo_enabled,
 						positionSec: targetMs / 1000
 					},
-					reanchorDecks: new Set(syncPlan.followers)
+					reanchorDecks: new Set(syncPlan.followers),
+					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
 			} else {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');

@@ -833,3 +833,39 @@ describe('a marked press stamp is claimable exactly once', () => {
 		assert.equal(slots.claimLoadSpanningPress(333.3), true);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// P1 BLOCKING PRRT_kwDOSEvNd86g96Le: armed hot-cue press classification registry
+// ---------------------------------------------------------------------------
+describe('a marked armed-hot-cue stamp is claimable exactly once, independent of the load-span registry', () => {
+	it('an unmarked stamp claims false', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimArmedHotCuePress(555.5), false);
+	});
+
+	it('claim is undefined-safe, so callers need not guard a missing stamp', async () => {
+		const slots = await _mod();
+		assert.equal(slots.claimArmedHotCuePress(undefined), false);
+	});
+
+	it('a marked stamp claims true once, then false - the mark does not leak to a later press', async () => {
+		const slots = await _mod();
+		slots.markArmedHotCuePress(666.6);
+		assert.equal(slots.claimArmedHotCuePress(666.6), true);
+		assert.equal(
+			slots.claimArmedHotCuePress(666.6),
+			false,
+			'a second schedule reusing the same float must not inherit the first one\'s classification'
+		);
+	});
+
+	it('marking an armed stamp does not classify it as load-spanning, or vice versa', async () => {
+		const slots = await _mod();
+		slots.markArmedHotCuePress(777.7);
+		assert.equal(slots.claimLoadSpanningPress(777.7), false);
+		assert.equal(slots.claimArmedHotCuePress(777.7), true);
+		slots.markLoadSpanningPress(888.8);
+		assert.equal(slots.claimArmedHotCuePress(888.8), false);
+		assert.equal(slots.claimLoadSpanningPress(888.8), true);
+	});
+});

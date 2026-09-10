@@ -284,6 +284,27 @@ test('a load-spanning press files under its OWN kind, a suffix of the press one'
 	assert.ok(floor.PRESS_SCHEDULE_LOAD_SPAN_KIND.startsWith(floor.SCHEDULE_KIND));
 });
 
+//-----------------------------------------------------------------------------
+// P1 BLOCKING PRRT_kwDOSEvNd86g96Le: the armed hot-cue classification
+//-----------------------------------------------------------------------------
+
+test('an armed hot-cue press files under its OWN kind, a suffix of the press one', () => {
+	// No press behind the schedule: armed can never override that, same
+	// invariant as loadSpanning above.
+	assert.equal(floor.scheduleRowKind(undefined, false, true), 'transport-schedule');
+	assert.equal(floor.scheduleRowKind(12.5, false, true), 'transport-schedule-press-armed');
+	assert.equal(floor.scheduleRowKind(12.5, false, false), 'transport-schedule-press');
+	// Load-spanning takes priority over armed - the two conditions describe
+	// different presses in this codebase, but if a caller ever passed both,
+	// the wait spanning a whole deck load is the more informative label.
+	assert.equal(floor.scheduleRowKind(12.5, true, true), 'transport-schedule-press-load-span');
+	// The suffix chain keeps _bucketOf's startsWith('transport-schedule-press')
+	// routing these into the press row's own ring budget, while still being a
+	// kind an S2 p95/p99 consumer can exclude before reading Class A latency.
+	assert.ok(floor.PRESS_SCHEDULE_ARMED_KIND.startsWith(floor.PRESS_SCHEDULE_KIND));
+	assert.ok(floor.PRESS_SCHEDULE_ARMED_KIND.startsWith(floor.SCHEDULE_KIND));
+});
+
 test('SABOTAGE: one pitch-fader drag can no longer evict the press row', async () => {
 	// The exact gesture: start a track, then reach for the pitch fader to
 	// beatmatch it. PitchFader drives _scheduleDeck from an unthrottled
@@ -536,14 +557,16 @@ test('press-stamp.ts actually spends claimLoadSpanningPress into the row kind', 
 	// shape above.
 	const src = readSource('src/lib/rb/press-stamp.ts');
 	assert.ok(
-		src.includes("import { claimLoadSpanningPress } from '$lib/rb/deck-slots';"),
+		/import \{[\s\S]*?claimArmedHotCuePress[\s\S]*?claimLoadSpanningPress[\s\S]*?\} from '\$lib\/rb\/deck-slots';/.test(
+			src
+		),
 		'the classification must come from the registry deck-slots.ts owns'
 	);
 	assert.ok(
-		src.includes(
-			'kind: scheduleRowKind(stages.press_to_schedule_ms, claimLoadSpanningPress(pressT0Ms)),'
+		/kind: scheduleRowKind\(\s*stages\.press_to_schedule_ms,\s*claimLoadSpanningPress\(pressT0Ms\),\s*claimArmedHotCuePress\(pressT0Ms\)\s*\),/.test(
+			src
 		),
-		'the claim result must actually reach scheduleRowKind, not merely be computed'
+		'both claim results must actually reach scheduleRowKind, not merely be computed'
 	);
 });
 
@@ -571,6 +594,41 @@ test('a Beat Sync follower start carries the press that caused it', () => {
 	assert.ok(
 		!body.includes('_synchronizeFollowers(master, followers, { pressT0Ms'),
 		'a background re-anchor must never file a press row'
+	);
+});
+
+test('a hot-cue jump against an already-playing synced follower carries the press that caused it', () => {
+	// quantizedSeek's 'follower' and 'master-max' branches are BOTH re-anchor
+	// paths (deck already playing, already beat-synced) - PRRT_kwDOSEvNd86g96Li
+	// found the stamp `quantizedSeek` was newly given getting dropped before
+	// either branch's `_synchronizeFollowers` call.
+	const body = readSource('src/lib/rb/audio-engine.svelte.ts');
+	assert.ok(
+		/await _synchronizeFollowers\(syncPlan\.master, \[deck\], \{\s*followerAnchorSec: \{ \[deck\]: targetMs \/ 1000 \},\s*reanchorDecks: new Set\(\[deck\]\),\s*\.\.\.\(pressT0Ms === undefined \? \{\} : \{ pressT0Ms \}\)/.test(
+			body
+		),
+		"'follower' must forward the press it was given"
+	);
+	assert.ok(
+		/reanchorDecks: new Set\(syncPlan\.followers\),\s*\.\.\.\(pressT0Ms === undefined \? \{\} : \{ pressT0Ms \}\)/.test(
+			body
+		),
+		"'master-max' must forward the press it was given"
+	);
+	// And the re-anchor/blend helpers those branches call must actually SPEND
+	// it, not just receive it - both funnel through the shared _scheduleSyncDeck.
+	assert.ok(
+		/function _scheduleSyncDeck\([^)]*pressT0Ms\?: number\)[^{]*\{\s*return _scheduleDeck\([^)]*pressT0Ms\);/.test(
+			body
+		),
+		'_scheduleSyncDeck must spend the stamp it was given, not just receive it'
+	);
+	// NEGATIVE CONTROL: 'master-max' fills reanchorDecks with the OTHER
+	// followers, never the pressed master - a re-anchored bystander must not
+	// inherit the operator's press just because it shares the same sync call.
+	assert.ok(
+		body.includes('options.masterSchedule === undefined ? options.pressT0Ms : undefined'),
+		'a master-max bystander follower must not file the pressed deck\'s row'
 	);
 });
 
@@ -628,6 +686,40 @@ test('the deferred play marks its stamp as load-spanning before spending it', ()
 	assert.ok(
 		panel.includes('markLoadSpanningPress') &&
 			/import\s*\{[^}]*markLoadSpanningPress[^}]*\}\s*from\s*'\$lib\/rb\/deck-slots'/.test(panel),
+		'the marker must come from deck-slots, not be reinvented locally'
+	);
+});
+
+//-----------------------------------------------------------------------------
+// P1 BLOCKING PRRT_kwDOSEvNd86g96Le: mark the armed hot-cue row before arming
+//-----------------------------------------------------------------------------
+
+test('the armed hot-cue dispatch marks its stamp as armed before arming the trigger', () => {
+	// planHotCueTrigger's 'armed' plan defers to the next downbeat; the mark
+	// must land before _hotCueDriver.arm, the same ordering requirement as
+	// the load-spanning marker above, or a schedule that resolves inside the
+	// same microtask could read the classification before it is set.
+	const ipc = readSource('src/lib/rb/performance-ipc.svelte.ts');
+	const fn = ipc.slice(
+		ipc.indexOf("command.type === 'hot_cue_trigger'"),
+		ipc.indexOf("command.type === 'auto_play_two_track'")
+	);
+	const markAt = fn.indexOf('markArmedHotCuePress(pressT0Ms)');
+	const armAt = fn.indexOf('await _hotCueDriver.arm(');
+	assert.ok(markAt !== -1, 'the armed branch must mark its stamp');
+	assert.ok(armAt !== -1, 'the armed branch must still call _hotCueDriver.arm');
+	assert.ok(markAt < armAt, 'marking after arm races scheduleRowFacts reading the classification');
+	// The immediate branch must NOT mark - an immediate jump is not deferred,
+	// so marking it would misclassify an ordinary Class A press as armed.
+	const immediateAt = fn.indexOf("plan.kind === 'immediate'");
+	const immediateBranch = fn.slice(immediateAt, markAt === -1 ? fn.length : markAt);
+	assert.ok(
+		!immediateBranch.includes('markArmedHotCuePress'),
+		'an immediate hot-cue jump must never be marked armed'
+	);
+	// And the marker is imported from the module that owns the registry.
+	assert.ok(
+		/import\s*\{[^}]*markArmedHotCuePress[^}]*\}\s*from\s*'\$lib\/rb\/deck-slots'/.test(ipc),
 		'the marker must come from deck-slots, not be reinvented locally'
 	);
 });

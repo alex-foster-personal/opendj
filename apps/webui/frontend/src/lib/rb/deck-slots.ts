@@ -324,3 +324,26 @@ export function claimLoadSpanningPress(pressT0Ms: number | undefined): boolean {
 	if (pressT0Ms === undefined) return false;
 	return loadSpanningPressStamps.delete(pressT0Ms);
 }
+
+// ---------------------------------------------------------------------------
+// Armed hot-cue press classification (P1 BLOCKING, PRRT_kwDOSEvNd86g96Le)
+//
+// A BeatSyncMax hot-cue trigger that `planHotCueTrigger` decides to arm waits
+// for the next downbeat before its schedule fires - a multi-beat wait an
+// aggregator must not mistake for an ordinary Class A schedule delay. Marked
+// at `performance-ipc.svelte.ts`'s `hot_cue_trigger` dispatch, right before
+// `_hotCueDriver.arm`, and claimed here by the same stamp so the ring row can
+// say so in its own `kind` (press-audible.ts's PRESS_SCHEDULE_ARMED_KIND).
+// ---------------------------------------------------------------------------
+const armedHotCuePressStamps = new Set<number>();
+
+/** Call once, right before arming a deferred hot-cue trigger. */
+export function markArmedHotCuePress(pressT0Ms: number): void {
+	armedHotCuePressStamps.add(pressT0Ms);
+}
+
+/** Consume-once: a stamp answers `true` for its one schedule, never again. */
+export function claimArmedHotCuePress(pressT0Ms: number | undefined): boolean {
+	if (pressT0Ms === undefined) return false;
+	return armedHotCuePressStamps.delete(pressT0Ms);
+}
