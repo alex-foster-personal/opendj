@@ -45,7 +45,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from . import admission, queue_store
 from .depends_on import declared_dependency, dependency_identity, dependency_matches
@@ -83,13 +83,14 @@ class QueueError(RuntimeError):
     """The queue was asked for something it cannot do."""
 
 
-class TargetResolver:
+class TargetResolver(Protocol):
     """Callable turning stable_ids into admission candidates.
 
-    A protocol-shaped class rather than a bare function type so the queue's
-    version-bump path can be driven with the real state-layer resolver in
-    production and with an explicit list in a test, without either one
-    reaching into the other's world.
+    A Protocol rather than a bare function type so the queue's version-bump
+    path can be driven with the real state-layer resolver in production and
+    with an explicit list in a test, without either one reaching into the
+    other's world. Structural, not nominal: a plain module-level function
+    with this signature satisfies it, which is what both callers pass.
     """
 
     def __call__(

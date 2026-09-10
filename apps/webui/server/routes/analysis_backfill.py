@@ -221,7 +221,12 @@ def enqueue_backfill(
     body: BackfillEnqueueIn,
     # Mutating route: the same cross-host write exclusion every other one
     # answers to. The returned backend is unused; the guard is the point.
-    _write_guard: StateBackend = Depends(get_write_state),
+    # `Depends(...)` in a default is the FastAPI DI idiom and ruff's B008 does
+    # not special-case it. Suppressed per line, as cloudsync.py already does,
+    # rather than by a repo-wide ruff config change: the same pattern sits
+    # unsuppressed in 25 other route modules, so that config decision belongs
+    # to whichever lane owns pyproject.toml's ruff block, not this one.
+    _write_guard: StateBackend = Depends(get_write_state),  # noqa: B008
 ) -> BackfillEnqueueOut:
     """Plan a batch: admission rule, worker count, band, refusals by name."""
     if not body.stable_ids:
@@ -327,7 +332,7 @@ def list_backfill_batches(
 def cancel_backfill(
     request: Request,
     body: BackfillBatchIn,
-    _write_guard: StateBackend = Depends(get_write_state),
+    _write_guard: StateBackend = Depends(get_write_state),  # noqa: B008
 ) -> BackfillCancelOut:
     """Cancel pending AND in-flight items. Terminal ones are left alone."""
     conn = _open(request)
@@ -347,7 +352,7 @@ def cancel_backfill(
 def resume_backfill(
     request: Request,
     body: BackfillBatchIn,
-    _write_guard: StateBackend = Depends(get_write_state),
+    _write_guard: StateBackend = Depends(get_write_state),  # noqa: B008
 ) -> BackfillResumeOut:
     """Put cancelled and abandoned items back; re-plan from what is LEFT."""
     conn = _open(request)
