@@ -1,0 +1,6 @@
+# esbuild's postinstall fetches its platform binary, which vite needs to build.
+# Without an explicit decision here pnpm refuses the install with
+# ERR_PNPM_IGNORED_BUILDS, so the documented `pnpm -C apps/launcher test` was
+# failing before a single test ran (issue #1542).
+allowBuilds:
+  esbuild: true

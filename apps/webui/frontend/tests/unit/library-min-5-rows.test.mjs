@@ -89,10 +89,15 @@ function computeRequiredLibraryPx() {
 	);
 	const cosyRowPx = Number(cosyRowMatch[1]);
 
+	// min-height since PR #1672: the header row wraps to a second line rather
+	// than letting `.list-panel`'s `overflow: hidden` eat its rightmost
+	// controls, so 24px is its FLOOR. The floor is what this reservation needs
+	// - a taller header costs library rows, which is the documented
+	// degradation, not a violated budget.
 	const paneHeaderMatch = firstMatch(
 		browserPanelSource,
-		/\.pane-header\s*{[^}]*height:\s*(\d+)px/,
-		'BrowserPanel .pane-header height'
+		/\.pane-header\s*{[^}]*min-height:\s*(\d+)px/,
+		'BrowserPanel .pane-header min-height floor'
 	);
 	const paneHeaderPx = Number(paneHeaderMatch[1]);
 

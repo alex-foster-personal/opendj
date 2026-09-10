@@ -43,7 +43,7 @@ const API_BASE = 'https://deck-load-failure.example.test';
 let failureContext;
 
 before(async () => {
-	failureContext = await loadTypeScriptModule('src/lib/rb/deck-load-failure-context.ts');
+	failureContext = await loadTypeScriptModule('src/lib/rb/deck-load-context.ts');
 });
 
 //-----------------------------------------------------------------------------
@@ -160,7 +160,7 @@ test('the helper never throws over its input, because it runs inside a catch', (
 //-----------------------------------------------------------------------------
 
 const MODULE_SOURCE = readFileSync(
-	fileURLToPath(new URL('../../src/lib/rb/deck-load-failure-context.ts', import.meta.url)),
+	fileURLToPath(new URL('../../src/lib/rb/deck-load-context.ts', import.meta.url)),
 	'utf8'
 ).replaceAll('\r\n', '\n');
 

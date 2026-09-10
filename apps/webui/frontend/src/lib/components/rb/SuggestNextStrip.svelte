@@ -104,8 +104,9 @@
 		playTargetLabel: string | null;
 		/** Click handling revalidates deck availability at execution time. */
 		onload?: (stableId: string) => void;
-		/** Load a candidate and start it playing. */
-		onplay?: (stableId: string) => void;
+		/** Load a candidate and start it playing. pressT0Ms is the triggering
+		 * click's own event.timeStamp, Q1's operator-felt press stamp. */
+		onplay?: (stableId: string, pressT0Ms: number) => void;
 		/** Pointer entered a candidate, or null when it left. */
 		onhover?: (stableId: string | null) => void;
 		/** Republish the ranked candidates whenever a fetch settles. */
@@ -278,7 +279,7 @@
 							data-stable-id={cand.stable_id}
 							aria-label={_loadControlLabel(cand, true)}
 							disabled={playTargetLabel === null}
-							onclick={() => onplay?.(cand.stable_id)}
+							onclick={(e) => onplay?.(cand.stable_id, e.timeStamp)}
 						>
 							<svg viewBox="0 0 8 10" width="8" height="10" aria-hidden="true">
 								<path d="M1 1 L7 5 L1 9 Z" fill="currentColor" />

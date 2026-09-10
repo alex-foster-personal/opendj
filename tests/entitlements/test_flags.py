@@ -46,6 +46,7 @@ TEST_DEFS: tuple[FlagDef, ...] = (
         owner="tests",
         note="exists only inside this module",
         retire_by="never - test fixture",
+        sandbox_gated=False,
     ),
     FlagDef(
         flag_id="example.on_by_default",
@@ -53,6 +54,7 @@ TEST_DEFS: tuple[FlagDef, ...] = (
         owner="tests",
         note="exists only inside this module",
         retire_by="never - test fixture",
+        sandbox_gated=False,
     ),
 )
 
