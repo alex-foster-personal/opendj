@@ -20,10 +20,12 @@
  * the component into `pane-contract.svelte.ts` as real, exported, pure
  * functions parameterized over `getHealth` - the same injection point
  * `resolveBootPlaylist` and `shouldRetryBootPane` in that same file already
- * use for the sibling boot-pane decisions (kept there rather than a new
- * module so BrowserPanel's import fan-out, a measured hotspot, does not grow
- * for two functions this small). This file now loads that real module
- * directly through `loadTypeScriptModule`, no source-slicing, no `Function`
+ * use for the sibling boot-pane decisions. Adding them there in turn pushed
+ * that file past the 600-line file-size gate, so they now live in their own
+ * small module, `$lib/rb/health-boot-retry.ts`, re-exported through
+ * `pane-contract.svelte.ts` so BrowserPanel's import fan-out, a measured
+ * hotspot, gains no new edge. This file loads that real module directly
+ * through `loadTypeScriptModule`, no source-slicing, no `Function`
  * reconstruction.
  *
  * Regression lines:
@@ -44,7 +46,7 @@ import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 async function _loadHealthBootRetry() {
-	return loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
+	return loadTypeScriptModule('src/lib/rb/health-boot-retry.ts');
 }
 
 test('a single getHealth() failure at boot is retried once with fresh:true', async () => {
