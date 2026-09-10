@@ -140,3 +140,67 @@ test('performance: the MORE/LESS toggle is compact, not oversized chrome pushing
 		18
 	);
 });
+
+// Pin 2917b0eca218 - the maintainer, live on /performance: "in LESS (2 deck) - channel
+// slider and butons just below it should probably go Left and Right (around)
+// the EQs. Cant currently see filter in LESS mode."
+//
+// FILTER used to be unmounted in LESS (`{#if !less}`) because a single flex
+// COLUMN could not afford its height inside the shrunk deck-area row.
+// `.strip.less` is now a three-column grid, so only the dial column has to be
+// tall. Both halves of the ask are asserted from RENDERED geometry rather than
+// from the stylesheet: a `grid-template-areas` string proves intent, a
+// bounding box proves the pixels.
+test('performance LESS mode: FILTER is visible, with the fader left of the EQs and STEM right', async ({
+	page
+}) => {
+	await enterLessMode(page);
+
+	const mixer = page.locator('.rb-mixer');
+	await expect(mixer).toBeVisible();
+	const mixerBox = await mixer.boundingBox();
+	expect(mixerBox).not.toBeNull();
+
+	for (const deck of [1, 2]) {
+		// knobId(deckId, role) (knob-control.svelte.ts) is `${deckId}:${role}`.
+		const filter = page.locator(`[data-knob-id="${deck}:filter"]`);
+		await expect(filter, `channel ${deck} FILTER must exist in LESS mode`).toBeVisible();
+		const filterBox = await filter.boundingBox();
+		expect(filterBox, `channel ${deck} FILTER must have a real box`).not.toBeNull();
+		expect(filterBox!.height, `channel ${deck} FILTER must render at a real size`).toBeGreaterThan(
+			10
+		);
+		// Present is not the same as SEEN: `.rb-mixer { overflow: hidden }`
+		// would clip a FILTER that had been given back its markup but no room,
+		// and getBoundingClientRect reports the clipped element's full box.
+		expect(
+			filterBox!.y + filterBox!.height,
+			`channel ${deck} FILTER (bottom edge ${filterBox!.y + filterBox!.height}) must not ` +
+				`extend past the visible mixer panel (bottom edge ${mixerBox!.y + mixerBox!.height})`
+		).toBeLessThanOrEqual(mixerBox!.y + mixerBox!.height + 1);
+
+		const strip = page.locator(`[data-mixer-channel="${deck}"]`);
+		const boxes = await strip.evaluate((node) => {
+			const pick = (selector: string) => {
+				const el = node.querySelector(selector);
+				if (el === null) return null;
+				const r = el.getBoundingClientRect();
+				return { left: r.left, right: r.right };
+			};
+			return { fader: pick('.fader-slot'), eq: pick('.eq-stack'), stem: pick('.stem-slot') };
+		});
+		expect(boxes.fader, `channel ${deck} fader slot must be present`).not.toBeNull();
+		expect(boxes.eq, `channel ${deck} EQ stack must be present`).not.toBeNull();
+		expect(boxes.stem, `channel ${deck} STEM slot must be present`).not.toBeNull();
+		expect(
+			boxes.fader!.right,
+			`channel ${deck} fader (right edge ${boxes.fader!.right}) must sit entirely LEFT of the ` +
+				`EQ stack (left edge ${boxes.eq!.left}), not stacked above it`
+		).toBeLessThanOrEqual(boxes.eq!.left);
+		expect(
+			boxes.stem!.left,
+			`channel ${deck} STEM controls (left edge ${boxes.stem!.left}) must sit entirely RIGHT ` +
+				`of the EQ stack (right edge ${boxes.eq!.right})`
+		).toBeGreaterThanOrEqual(boxes.eq!.right);
+	}
+});
