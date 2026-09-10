@@ -104,6 +104,7 @@ function _harness(overrides = {}) {
 	const stableIds = Object.fromEntries(DECKS.map((deck) => [deck, null]));
 	const anlz = Object.fromEntries(DECKS.map((deck) => [deck, null]));
 	const bpm = Object.fromEntries(DECKS.map((deck) => [deck, null]));
+	const anlzError = Object.fromEntries(DECKS.map((deck) => [deck, null]));
 	const errors = [];
 	const ports = {
 		..._ports(),
@@ -124,6 +125,7 @@ function _harness(overrides = {}) {
 		deckAnlz: (deck) => anlz[deck],
 		publishDeckAnlz: (deck, next) => (anlz[deck] = next),
 		publishDeckBpm: (deck, next) => (bpm[deck] = next),
+		setDeckAnlzError: (deck, code) => (anlzError[deck] = code),
 		reportError: (message) => errors.push(message)
 	});
 	// The claim is granted a turn LATE on purpose: every finding on this surface
@@ -133,7 +135,7 @@ function _harness(overrides = {}) {
 		await Promise.resolve();
 		await task(async (work) => await work());
 	});
-	return { anlz, bpm, calls, errors, guards, runtimes, stableIds, tokens };
+	return { anlz, anlzError, bpm, calls, errors, guards, runtimes, stableIds, tokens };
 }
 
 test('beforeClear excludes a follower that reloaded before the deferred reconciliation ran', async () => {
@@ -236,6 +238,7 @@ test('beforeClear on an empty stranded list claims no scope at all', () => {
 		deckAnlz: () => null,
 		publishDeckAnlz: () => {},
 		publishDeckBpm: () => {},
+		setDeckAnlzError: () => {},
 		reportError: () => {}
 	});
 	guards.installScopedSyncRunner(() => {
@@ -396,6 +399,7 @@ test('adoptAuthoritativeGrid skips a deck that reloaded before the claim was gra
 		deckAnlz: (deck) => h.anlz[deck],
 		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
 		publishDeckBpm: (deck, next) => (h.bpm[deck] = next),
+		setDeckAnlzError: (deck, code) => (h.anlzError[deck] = code),
 		reportError: () => {}
 	});
 	// Reload the deck inside the gap between submission and the claim.
@@ -429,6 +433,63 @@ test('adoptAuthoritativeGrid skips a published replacement that retained its new
 		8,
 		'a published replacement must not inherit the authoritative grid for the track it replaced'
 	);
+});
+
+test('adoptAuthoritativeError empties the grid, refreshes BPM to null, and surfaces the error on the loaded deck', async () => {
+	// A background revalidateAnlz RbApiError settling AFTER a deck has already
+	// swapped in - the only case with no coverage before this fix, since
+	// _publishAnlzResult's error branch used to bypass the sink entirely
+	// (Codex P1 BLOCKING, PR #1587, third round).
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	h.bpm[1] = 128;
+	h.guards.adoptAuthoritativeError('sid-a', 'ANALYSIS_SOURCE_FAILED');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(h.anlz[1].beatgrid.beats, [], 'a source known to have failed must not keep quantize/Beat Sync running against its stale grid');
+	assert.equal(h.bpm[1], null, 'the previous source BPM must not be stranded on a source now known to have failed');
+	assert.equal(h.anlzError[1], 'ANALYSIS_SOURCE_FAILED');
+});
+
+test('adoptAuthoritativeError ignores decks holding a different track', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.stableIds[2] = 'sid-b';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	h.anlz[2] = _anlz('sid-b', _beats(8, 128));
+	h.guards.adoptAuthoritativeError('sid-a', 'ANALYSIS_SOURCE_FAILED');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlz[2].beatgrid.beats.length, 8, 'only the deck holding that stable_id may be invalidated');
+	assert.equal(h.anlzError[2], null);
+});
+
+test('adoptAuthoritativeError skips a deck that reloaded before the claim was granted', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	const guards = createBeatgridResyncGuards({
+		ports: _ports(),
+		deckRuntime: (deck) => h.runtimes[deck],
+		deckLoadToken: (deck) => h.tokens[deck],
+		deckStableId: (deck) => h.stableIds[deck],
+		deckAnlz: (deck) => h.anlz[deck],
+		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
+		publishDeckBpm: (deck, next) => (h.bpm[deck] = next),
+		setDeckAnlzError: (deck, code) => (h.anlzError[deck] = code),
+		reportError: () => {}
+	});
+	guards.installScopedSyncRunner(async (deck, task) => {
+		h.tokens[deck] += 1; // reload raced the claim
+		await task((work) => work());
+	});
+	guards.adoptAuthoritativeError('sid-a', 'ANALYSIS_SOURCE_FAILED');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		h.anlz[1].beatgrid.beats.length,
+		8,
+		'a replacement track must never inherit the invalidation meant for the track it replaced'
+	);
+	assert.equal(h.anlzError[1], null);
 });
 
 test('sameBeatgrid is exact, not a beat-count heuristic', () => {

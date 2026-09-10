@@ -267,6 +267,33 @@ export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink
 	_authoritativeGridSink = sink;
 }
 
+/** Notified when `revalidateAnlz` learns an explicit `RbApiError` for a
+ * track's SELECTED source - never for a network/shape failure, which is the
+ * absence of new information rather than a real answer (see `revalidateAnlz`'s
+ * own docstring) and must leave an already-loaded deck alone. Mirrors
+ * `AuthoritativeAnlzGridSink`'s install-once contract: this module is a
+ * display-layer cache and must not reach into audio-engine.svelte.ts. */
+export type AuthoritativeAnlzErrorSink = (stable_id: string, code: string) => void;
+let _authoritativeErrorSink: AuthoritativeAnlzErrorSink | null = null;
+
+export function installAuthoritativeAnlzErrorSink(sink: AuthoritativeAnlzErrorSink): void {
+	if (_authoritativeErrorSink !== null) {
+		throw new Error('an authoritative anlz error sink is already installed');
+	}
+	_authoritativeErrorSink = sink;
+}
+
+/** Records an authoritative `RbApiError` for `stable_id` AND notifies any
+ * deck currently loaded with it, so a source failure that settles after a
+ * deck has already swapped in still invalidates that deck's grid instead of
+ * leaving quantize/Beat Sync running against a source now known to have
+ * failed (Codex P1 BLOCKING, PR #1587, third round: "a failure settling
+ * after the swap still never invalidates the loaded deck"). */
+function _publishAnlzError(stable_id: string, code: string): void {
+	_cache[stable_id] = { status: 'error', code };
+	if (_authoritativeErrorSink !== null) _authoritativeErrorSink(stable_id, code);
+}
+
 /** True when a loaded deck's own `$effect` (WaveRow.svelte) should call
  * `ensureAnlz` again for it: no anlz published yet, or the anlz that IS
  * published is still the retryable class. A deck load's own
@@ -416,8 +443,10 @@ export function revalidateAnlz(stable_id: string): void {
 			if (err instanceof RbApiError) {
 				// The selected source explicitly failed to revalidate: the cached
 				// entry's freshness can no longer be established, so it must not
-				// keep being served as if it were still good.
-				_cache[stable_id] = { status: 'error', code: err.code };
+				// keep being served as if it were still good. `_publishAnlzError`
+				// also notifies any deck already loaded with this track, not just
+				// the shared cache entry.
+				_publishAnlzError(stable_id, err.code);
 				return;
 			}
 			throw err; // loud: network/shape failures must not vanish

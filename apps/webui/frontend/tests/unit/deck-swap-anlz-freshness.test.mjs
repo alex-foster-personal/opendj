@@ -13,6 +13,14 @@ import { readFrontendSource } from './engine-source.mjs';
  * stale grid the revalidation just corrected, and nothing re-checks
  * afterward for the rest of the session.
  *
+ * Third round (Codex P1 BLOCKING, PR #1587, discussion_r3974208839): the same
+ * race can ALSO settle with an explicit `RbApiError` - the selected source
+ * failed to revalidate, not merely "no new grid yet". The swap used to read
+ * that as just another non-usable entry and fall through to publishing
+ * `candidateAnlz` unconditionally, clearing `st.anlz_error` in the process, so
+ * the deck completed with a beatgrid known to be untrustworthy and quantize/
+ * Beat Sync kept running against it.
+ *
  * A live `load()` needs Web Audio (same reasoning as
  * deck-beatgrid-fallback-upgrade.test.mjs and deck-lazy-stems.test.mjs), so
  * this guard reads the engine as text instead of executing the race.
@@ -23,6 +31,8 @@ import { readFrontendSource } from './engine-source.mjs';
  *     checked value                                                    -> fails
  *   - the freshness read is moved before `candidateAnlz` is captured (so it
  *     could race the SAME fetch it is meant to be at least as fresh as) -> fails
+ *   - the error branch is dropped, or `st.anlz_error` goes back to an
+ *     unconditional `null`                                              -> fails
  */
 
 const source = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
@@ -37,26 +47,41 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 	const body = source.slice(swapStart, swapEnd);
 
 	const freshnessIndex = body.indexOf('const latestAnlzEntry = getAnlzEntry(stable_id);');
+	const declareIndex = body.indexOf('let publishedAnlz: AnlzData;');
 	const usableIndex = body.indexOf('isAnlzEntryUsable(latestAnlzEntry)');
-	const publishIndex = body.indexOf('const publishedAnlz =');
+	const errorBranchIndex = body.indexOf("latestAnlzEntry?.status === 'error'");
 	const anlzAssignIndex = body.indexOf('st.anlz = publishedAnlz;');
+	const anlzErrorAssignIndex = body.indexOf('st.anlz_error = publishedAnlzError;');
 	const loopAssignIndex = body.indexOf('_displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats)');
 
 	assert.ok(freshnessIndex > 0, 'the swap must re-read the shared anlz cache for this stable_id before publishing');
-	assert.ok(publishIndex > freshnessIndex, 'publishedAnlz must be derived from the freshly re-read cache entry');
-	assert.ok(usableIndex > publishIndex, 'the re-read entry must be checked for usability, not trusted blindly');
+	assert.ok(declareIndex > freshnessIndex, 'publishedAnlz must be derived from the freshly re-read cache entry');
+	assert.ok(usableIndex > declareIndex, 'the re-read entry must be checked for usability, not trusted blindly');
 	assert.ok(
-		anlzAssignIndex > usableIndex,
+		errorBranchIndex > usableIndex,
+		'an authoritative error on the re-read entry must be checked as its own branch, not folded into "not usable yet"'
+	);
+	assert.ok(
+		anlzAssignIndex > errorBranchIndex,
 		'st.anlz must be assigned from the freshness-checked value, not directly from the cache read'
 	);
 	assert.ok(
-		loopAssignIndex > publishIndex,
+		anlzErrorAssignIndex > errorBranchIndex,
+		'st.anlz_error must be assigned from the same branch decision, not hardcoded to null underneath it'
+	);
+	assert.ok(
+		loopAssignIndex > declareIndex,
 		"st.loop must derive from the same freshness-checked value used for st.anlz, or the deck's grid and its " +
 			'displayed loop can disagree about which answer is authoritative'
 	);
 	assert.ok(
 		!/st\.anlz = candidateAnlz;/.test(body),
 		'st.anlz must not fall back to unconditionally publishing the pre-revalidation candidate'
+	);
+	assert.ok(
+		!/st\.anlz_error = null;\n(\s*st\.processor_error)/.test(body),
+		'st.anlz_error must not be unconditionally cleared right after the swap - an authoritative revalidation ' +
+			'failure caught in the same race must survive onto the published deck'
 	);
 
 	// candidateAnlz is captured before load()'s awaits (see the const above rt.processor.dispose()

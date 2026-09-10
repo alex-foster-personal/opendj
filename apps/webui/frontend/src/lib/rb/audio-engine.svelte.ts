@@ -122,6 +122,7 @@ import {
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
+	installAuthoritativeAnlzErrorSink,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
 	revalidateAnlz,
@@ -168,7 +169,7 @@ import {
 	unavailableStemDeckState,
 	type StemBuffers
 } from '$lib/rb/stem-graph';
-import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzCue, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -2531,9 +2532,11 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	deckAnlz: (deck) => deckStates[deck].anlz,
 	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
 	publishDeckBpm: (deck, bpm) => (deckStates[deck].bpm = bpm),
+	setDeckAnlzError: (deck, code) => (deckStates[deck].anlz_error = code),
 	reportError: (message) => pushToast(message, 'error')
 });
 installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);
+installAuthoritativeAnlzErrorSink(_beatgridGuards.adoptAuthoritativeError);
 export const installScopedSyncRunner = _beatgridGuards.installScopedSyncRunner; // rationale for [deck]-then-widen: performance-ipc.svelte.ts's installScopedSyncRunner
 
 async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promise<T> {
@@ -3029,12 +3032,31 @@ class RbAudioEngine implements AudioEngine {
 			// `candidateAnlz` - identical to it on the ordinary cache-miss path
 			// (the fetch that produced `candidateAnlz` is the same call that
 			// just published this entry), newer on the raced path above.
+			// A `revalidateAnlz` RbApiError can ALSO settle in this same race
+			// window: the selected source has explicitly failed, so
+			// `candidateAnlz` predates known-bad information and its beatgrid
+			// must not be trusted as if the revalidation had said nothing
+			// (Codex P1 BLOCKING, PR #1587, third round) - it is refused the
+			// same way `adoptAuthoritativeError` refuses one that lands after
+			// this same swap.
 			const latestAnlzEntry = getAnlzEntry(stable_id);
-			const publishedAnlz = isAnlzEntryUsable(latestAnlzEntry)
-				? (latestAnlzEntry.data as AnlzWithVocals)
-				: candidateAnlz;
+			let publishedAnlz: AnlzData;
+			let publishedAnlzError: string | null;
+			if (isAnlzEntryUsable(latestAnlzEntry)) {
+				publishedAnlz = latestAnlzEntry.data as AnlzWithVocals;
+				publishedAnlzError = null;
+			} else if (latestAnlzEntry?.status === 'error') {
+				publishedAnlz = {
+					...candidateAnlz,
+					beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
+				};
+				publishedAnlzError = latestAnlzEntry.code;
+			} else {
+				publishedAnlz = candidateAnlz;
+				publishedAnlzError = null;
+			}
 			st.anlz = publishedAnlz;
-			st.anlz_error = null;
+			st.anlz_error = publishedAnlzError;
 			st.processor_error = null;
 			st.sync_error = null;
 			st.stems = candidateStemState;

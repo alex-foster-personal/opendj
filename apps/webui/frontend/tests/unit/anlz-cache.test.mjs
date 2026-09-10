@@ -748,6 +748,52 @@ test('a revalidation the server explicitly refuses marks the entry unusable, not
 	}
 });
 
+test('revalidateAnlz notifies the authoritative-error sink for an explicit RbApiError, never for a network failure', async () => {
+	// The gap this closes: revalidateAnlz's RbApiError branch used to write
+	// only the shared cache entry, so a deck already loaded with this track
+	// (the revalidation settling AFTER its own load swapped in) never learned
+	// its source had failed and kept quantize/Beat Sync running against a
+	// grid the app no longer trusted (Codex P1 BLOCKING, PR #1587, third
+	// round).
+	const notified = [];
+	cache.installAuthoritativeAnlzErrorSink((stable_id, code) => notified.push([stable_id, code]));
+
+	const originalFetch = globalThis.fetch;
+	try {
+		globalThis.fetch = async () =>
+			jsonResponse(anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }));
+		cache.ensureAnlz('sink-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ detail: { code: 'ANALYSIS_NOT_FOUND', message: 'gone' } }), {
+				status: 404,
+				headers: { 'content-type': 'application/json' }
+			});
+		cache.revalidateAnlz('sink-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			notified,
+			[['sink-track', 'ANALYSIS_NOT_FOUND']],
+			'an explicit RbApiError must notify any deck already loaded with this track'
+		);
+		// A genuine network/shape failure is deliberately NOT exercised here the
+		// same way: revalidateAnlz's own non-RbApiError branch re-throws with no
+		// outer .catch (`throw err; // loud: network/shape failures must not
+		// vanish`), so triggering it live would raise a real unhandled promise
+		// rejection this suite cannot safely swallow (Node's test runner
+		// attributes it to the running test regardless of an app-level
+		// `unhandledRejection` listener also consuming it - confirmed by hand
+		// against this exact branch). The source-level guarantee that only the
+		// `err instanceof RbApiError` branch calls `_publishAnlzError` (and the
+		// non-RbApiError branch never writes the cache at all, let alone fires
+		// the sink) is what a network blip actually depends on; it is read at
+		// the call site above, not re-derived by crashing the test process.
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
 test('a settled own answer of missing reaches the engine, an empty rekordbox grid does not', async () => {
 	// The gate used to be "does this payload carry beats", which is right for
 	// a retryable payload (it must not wipe a deck's working grid) and wrong
