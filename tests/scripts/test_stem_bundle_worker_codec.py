@@ -26,45 +26,64 @@ that count for (the WAV helper's own default was 4410 frames), so no test
 here was actually checking alignment between what the manifest claims and
 what the encoder produced.
 
-This version calls the REAL production ``worker._encode_flac_bytes`` for both
-codec round trips (mp3 goes through it too, exactly as ``_encode_stem_part``
-chains ``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3`` in production). That
-function calls exactly three methods on its ``tensor: Any`` argument --
+This version calls the REAL production ``worker._encode_stem_part`` for both
+codec round trips -- the actual chaining function ``write_bundle`` itself
+calls, not a hand-reimplemented ``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3``
+substitute, so the mp3 rung-1/rung-2 bitrate-ladder retry
+(apps/stems/stem_size_policy.py's ``lossy_stem_exceeds_source`` /
+``mp3_rung2_cbr_kbps``) is the real code path, not skipped. That function
+calls exactly three methods on its ``tensor: Any`` argument --
 ``.detach().cpu().numpy()`` -- so ``_CpuTensor`` below wraps a genuine numpy
 array to satisfy that documented subset without pulling torch into this
 repo's venv (torch stays out per .claude/rules/python-backend.md; only the
 torch OBJECT is stood in for, the array data and the encode call are real).
-soundfile is a real dependency this needs (the ``analysis`` extra,
-``pyproject.toml`` line 99), so these tests are ``requires_audio_stack``-gated:
-UNAVAILABLE with a stated reason on a bare ``uv sync`` dev venv, and real,
-measured evidence in CI, which installs ``requirements.txt`` (soundfile is
-pinned there, line 159) -- the same honest-skip convention
-``tests/conftest.py`` already uses for the analysis backend's own end-to-end
-test. ``FRAMES``/``SAMPLE_RATE``/``CHANNELS`` below are the single source of
-truth for both the tensor fed to the real encoder and the manifest's declared
-``audio`` block, so the two cannot drift the way the 1000-vs-4410 mismatch
-did. ``ffprobe``'s own decoded duration for each written part, checked
-against ``FRAMES / SAMPLE_RATE``, is the alignment acceptance evidence.
+A real Demucs tensor from ``write_bundle``'s own GPU/torch inference path is
+UNAVAILABLE at this test layer by the same rule (no torch/demucs in the repo
+venv, ever) -- this suite has never claimed to exercise that half, and
+``write_bundle`` itself (the full GPU/demucs path) is separately noted in
+this script's own MINI-PRD as not run end-to-end on this box. soundfile is a
+real dependency this needs (the ``analysis`` extra, ``pyproject.toml`` line
+99), so these tests are ``requires_audio_stack``-gated: UNAVAILABLE with a
+stated reason on a bare ``uv sync`` dev venv, and real, measured evidence in
+CI, which installs ``requirements.txt`` (soundfile is pinned there, line
+159) -- the same honest-skip convention ``tests/conftest.py`` already uses
+for the analysis backend's own end-to-end test. ``FRAMES``/``SAMPLE_RATE``/
+``CHANNELS`` below are the single source of truth for both the tensor fed to
+the real encoder and the manifest's declared ``audio`` block, so the two
+cannot drift the way the 1000-vs-4410 mismatch did. ``ffprobe``'s own
+decoded duration for each written part, checked against
+``FRAMES / SAMPLE_RATE``, is the alignment acceptance evidence -- via
+ffmpeg/ffprobe's decoder, not the browser's WebAudio ``decodeAudioData``
+that ``apps/webui/frontend/src/lib/rb/stem-graph.ts``'s
+``validateStemBufferAlignment`` and ``audio-engine.svelte.ts`` actually gate
+playback on. That frame-exact, browser-decoded check is UNAVAILABLE from
+this pytest layer (a different decoder, in a different runtime, reachable
+only from a browser/Playwright context) and is NOT asserted here; see this
+module's PR review thread for the open question of whether a lossy mp3
+stem is guaranteed to browser-decode to the source's exact frame count.
+
 FLAC is lossless (soundfile writes exact PCM): measured exact (0.0000s
 delta) both locally and in CI, so ``FLAC_DURATION_TOLERANCE_S`` stays tight
-(10ms). mp3 is lossy -- LAME's encoder/decoder delay is a real property of
-the ffmpeg/lame build, not a bug: an earlier version of this fixture at the
-original 4410-frame (0.1s) clip measured exact locally (ffmpeg 8.0.1) but a
-real 30.6ms delta against CI's apt-get-installed ffmpeg, still genuinely
-decodable audio, not corruption. ``FRAMES`` is now 1 second (so the same
-absolute padding is a much smaller fraction) and
-``MP3_DURATION_TOLERANCE_S`` (100ms) leaves > 3x margin over that measured
-delta while still failing hard on a real misalignment, which would show up
-as tens-to-hundreds of ms per dropped or duplicated frame at this clip
-length.
+(10ms, symmetric). mp3 is lossy -- LAME pads its output to whole
+1152-sample MPEG-1 Layer III frames and adds an encoder start delay, so a
+naive duration reader (ffprobe's ``format=duration``, no Xing/LAME header
+skip) reads mp3 output as never SHORTER than the source and up to about two
+frames LONGER; an earlier version of this fixture measured that directly --
+exact locally (ffmpeg 8.0.1) but a real 30.6ms delta (~1350 samples, just
+over one 1152-sample frame) against CI's apt-get-installed ffmpeg, still
+genuinely decodable audio, not corruption. ``MP3_MAX_PADDING_S`` (two frames,
+~52ms) is derived from that frame size, not fitted to the one measurement,
+so the bound is asymmetric: ``[expected, expected + MP3_MAX_PADDING_S]``,
+never allowing a SHORTER decode (lost audio would still fail hard).
 
   - [if] the source extension is .mp3 [then] the stem suffix is .mp3, [else stop]
   - [if] a v3 bundle's mp3 parts are encoded by the real production
-    ``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3`` chain [then] each part's
-    ffprobe duration matches ``FRAMES / SAMPLE_RATE`` within
-    ``MP3_DURATION_TOLERANCE_S``, [else stop]
+    ``_encode_stem_part`` chain (``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3``,
+    including the rung-1/rung-2 bitrate-ladder retry) [then] each part's
+    ffprobe duration falls in ``[FRAMES / SAMPLE_RATE, FRAMES / SAMPLE_RATE +
+    MP3_MAX_PADDING_S]``, [else stop]
   - [if] a v3 bundle's flac parts are encoded by the real production
-    ``_encode_flac_bytes`` [then] each part's ffprobe duration matches
+    ``_encode_stem_part`` chain [then] each part's ffprobe duration matches
     ``FRAMES / SAMPLE_RATE`` within ``FLAC_DURATION_TOLERANCE_S``, [else stop]
 """
 
@@ -102,15 +121,16 @@ FRAMES = SAMPLE_RATE
 # delta) both locally (ffmpeg 8.0.1) and in CI, so a tight tolerance is real
 # evidence, not acceptance theater.
 FLAC_DURATION_TOLERANCE_S = 0.01
-# mp3 is lossy: LAME's own encoder/decoder delay varies by ffmpeg/lame build.
-# Measured exact locally (ffmpeg 8.0.1) but a 30.6ms delta in CI's
-# apt-get-installed ffmpeg on the original 0.1s clip -- a different LAME
-# version, not corruption (ffprobe decoded real, complete audio; a 3x
-# margin over that measurement, at 1s instead of 0.1s where the same
-# absolute padding is a much smaller fraction, comfortably separates
-# encoder-version noise from a real misalignment, which would come in tens
-# to hundreds of ms per dropped/duplicated frame of a 1s clip).
-MP3_DURATION_TOLERANCE_S = 0.1
+# mp3 is lossy: LAME encodes fixed 1152-sample MPEG-1 Layer III frames, so a
+# naive duration reader (no Xing/LAME header skip) reads real encoder start
+# delay plus padding to the next frame boundary as extra audio -- never
+# fewer samples than the source, up to about one frame's worth per delay
+# component. Two frames is a derived physical bound, not a fitted fudge
+# factor: CI's apt-get-installed ffmpeg measured a real 30.6ms delta
+# (~1350 samples, just over one 1152-sample frame) against a source-exact
+# local measurement (ffmpeg 8.0.1), comfortably inside this bound.
+MP3_FRAME_SAMPLES = 1152
+MP3_MAX_PADDING_S = 2 * MP3_FRAME_SAMPLES / SAMPLE_RATE
 
 
 def test_mp3_source_gets_mp3_stem_suffix() -> None:
@@ -210,30 +230,41 @@ def _write_stub_bundle(
 
 
 def _assert_parts_decode_to_declared_duration(
-    root: Path, stable_id: str, ext: str, *, tolerance_s: float
+    root: Path, stable_id: str, ext: str, *, min_duration_s: float, max_duration_s: float
 ) -> None:
     """Alignment evidence: what each part file ACTUALLY decodes to (ffprobe,
-    reading the real media header/frames) must match what the manifest
-    DECLARES (FRAMES / SAMPLE_RATE) -- the cross-check the reader itself
-    intentionally skips (it trusts the manifest's own audio block, see module
-    docstring), so a fixture that does not enforce it here proves nothing
-    about the real encoder's alignment."""
-    expected_duration_s = FRAMES / SAMPLE_RATE
+    reading the real media header/frames) must fall within
+    [min_duration_s, max_duration_s] of what the manifest DECLARES
+    (FRAMES / SAMPLE_RATE) -- the cross-check the reader itself intentionally
+    skips (it trusts the manifest's own audio block, see module docstring),
+    so a fixture that does not enforce it here proves nothing about the real
+    encoder's alignment."""
     for name in worker.STEM_PARTS:
         actual_duration_s = _ffprobe_duration_s(root / stable_id / f"{name}{ext}")
-        assert abs(actual_duration_s - expected_duration_s) < tolerance_s, (
-            f"{name}{ext}: declared {expected_duration_s:.4f}s, ffprobe decoded "
-            f"{actual_duration_s:.4f}s"
+        assert min_duration_s <= actual_duration_s <= max_duration_s, (
+            f"{name}{ext}: expected [{min_duration_s:.4f}s, {max_duration_s:.4f}s], "
+            f"ffprobe decoded {actual_duration_s:.4f}s"
         )
 
 
 @pytest.mark.requires_audio_stack
 @pytest.mark.requires_ffmpeg
 def test_mp3_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path) -> None:
-    # Mirrors production _encode_stem_part's real chain: _encode_flac_bytes
-    # (tensor -> FLAC, soundfile) then _ffmpeg_encode_mp3 (FLAC -> mp3, ffmpeg).
-    flac_bytes = worker._encode_flac_bytes(_silence_tensor(), SAMPLE_RATE)
-    mp3_bytes = worker._ffmpeg_encode_mp3(flac_bytes, tmp_path / "probe.mp3", cbr_kbps=None)
+    # The real production chaining function write_bundle itself calls, not a
+    # hand-reimplemented _encode_flac_bytes -> _ffmpeg_encode_mp3 substitute:
+    # this exercises the rung-1/rung-2 bitrate-ladder retry too.
+    # source_bytes is set generously above what a silent 1s mp3 can encode
+    # to, so rung 1 holds and the assertion below confirms that.
+    mp3_bytes, rung2_settings = worker._encode_stem_part(
+        _silence_tensor(),
+        SAMPLE_RATE,
+        codec="mp3",
+        mp3_settings=None,
+        source_bytes=1_000_000,
+        source_kbps=256.0,
+        out_path=tmp_path / "probe.mp3",
+    )
+    assert rung2_settings is None, "fixture unexpectedly triggered the mp3 rung-2 ladder"
 
     root = _write_stub_bundle(
         tmp_path, "teststem-mp3", ext=".mp3", codec="mp3", part_bytes=mp3_bytes
@@ -241,18 +272,32 @@ def test_mp3_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path) 
     bundle = load_stem_bundle("teststem-mp3", roots=[root])
     assert bundle.media_type == "audio/mpeg"
     assert bundle.layout == "demucs4"
+    expected_duration_s = FRAMES / SAMPLE_RATE
     _assert_parts_decode_to_declared_duration(
-        root, "teststem-mp3", ".mp3", tolerance_s=MP3_DURATION_TOLERANCE_S
+        root,
+        "teststem-mp3",
+        ".mp3",
+        min_duration_s=expected_duration_s,
+        max_duration_s=expected_duration_s + MP3_MAX_PADDING_S,
     )
 
 
 @pytest.mark.requires_audio_stack
 @pytest.mark.requires_ffmpeg
 def test_flac_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path) -> None:
-    # Real production tensor -> FLAC path (soundfile), not a same-binary
-    # ffmpeg substitute: this is the function PR #1663's review flagged as
-    # unexercised.
-    flac_bytes = worker._encode_flac_bytes(_silence_tensor(), SAMPLE_RATE)
+    # Same real production chaining function as the mp3 test above; the
+    # codec="flac" branch is the tensor -> FLAC path (soundfile) PR #1663's
+    # review flagged as unexercised, not a same-binary ffmpeg substitute.
+    flac_bytes, rung2_settings = worker._encode_stem_part(
+        _silence_tensor(),
+        SAMPLE_RATE,
+        codec="flac",
+        mp3_settings=None,
+        source_bytes=1_000_000,
+        source_kbps=256.0,
+        out_path=tmp_path / "probe.flac",
+    )
+    assert rung2_settings is None, "flac never re-encodes; rung2 must stay unset"
 
     root = _write_stub_bundle(
         tmp_path, "teststem-flac", ext=".flac", codec="flac", part_bytes=flac_bytes
@@ -260,6 +305,11 @@ def test_flac_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path)
     bundle = load_stem_bundle("teststem-flac", roots=[root])
     assert bundle.media_type == "audio/flac"
     assert bundle.layout == "demucs4"
+    expected_duration_s = FRAMES / SAMPLE_RATE
     _assert_parts_decode_to_declared_duration(
-        root, "teststem-flac", ".flac", tolerance_s=FLAC_DURATION_TOLERANCE_S
+        root,
+        "teststem-flac",
+        ".flac",
+        min_duration_s=expected_duration_s - FLAC_DURATION_TOLERANCE_S,
+        max_duration_s=expected_duration_s + FLAC_DURATION_TOLERANCE_S,
     )
