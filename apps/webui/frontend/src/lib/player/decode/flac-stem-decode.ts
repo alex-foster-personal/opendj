@@ -30,6 +30,11 @@
  *    regression, not a drift.
  * 3. DECODER UNAVAILABLE -> `decodeAudioData`. No worker support, a blocked
  *    wasm compile, a decode error: the deck still loads.
+ * 4. DECODER REPORTED ERRORS -> `decodeAudioData`. `decodeFile` RESOLVES on a
+ *    damaged stream, handing back the frames it managed plus an `errors`
+ *    array, so a truncated or corrupt part would otherwise be published as
+ *    audio. Nonempty errors are a refusal AND discard the decoder, because a
+ *    wasm decoder that reported a stream error has undefined internal state.
  *
  * Every refusal is REPORTED, never silent - the caller receives which path
  * each part took and why, so a load that quietly lost its 1.7x says so in the
@@ -50,6 +55,20 @@ export interface DecodedStemAudio {
 	channelData: Float32Array<ArrayBufferLike>[];
 	samplesDecoded: number;
 	sampleRate: number;
+	/**
+	 * What the decoder itself reported wrong, if anything.
+	 *
+	 * `decodeFile` RESOLVES on a damaged stream: libFLAC's error and state
+	 * codes are collected into this array and handed back ALONGSIDE whatever
+	 * frames did decode, rather than rejecting. Omitting the field from this
+	 * shape would make a partial decode indistinguishable from a whole one, so
+	 * it is declared here and checked in `stemAudioBuffer`.
+	 *
+	 * Typed as unknown rather than the vendor's `DecodeError`: importing that
+	 * type is the one static reference that would pull the decoder package back
+	 * into the boot bundle, and nothing here reads a field of it.
+	 */
+	errors?: readonly unknown[];
 }
 
 /** One FLAC decoder running in its own worker. */
@@ -67,10 +86,15 @@ export type StemFlacDecoderFactory = () => StemFlacDecoder;
 /**
  * Which lane a part took, and why.
  *
- * Two of these are not refusals at all. `calibrating` is one of the two trial
+ * Three of these are not refusals at all. `calibrating` is one of the two trial
  * loads a session runs to find out which lane is faster on THIS engine;
  * `engine-prefers-main` is every load after that measurement said the workers
- * would be slower here. See `_laneForThisLoad`.
+ * would be slower here; `awaiting-calibration` is a load that ran while the
+ * session had no verdict AND could not be a trial itself - it overlapped
+ * another load, or its bundle was not FLAC. It is distinct from
+ * `engine-prefers-main` because nothing was measured, and a ring row saying an
+ * engine preferred the main thread when no comparison ever ran would be a
+ * verdict invented out of a scheduling accident. See `_claimLane`.
  */
 export type StemDecodeRefusal =
 	| 'not-flac'
@@ -79,6 +103,7 @@ export type StemDecodeRefusal =
 	| 'decode-failed'
 	| 'empty-decode'
 	| 'calibrating'
+	| 'awaiting-calibration'
 	| 'engine-prefers-main';
 
 /** What one part cost and which path produced it. */
@@ -102,11 +127,16 @@ export function isFlacContainer(bytes: ArrayBuffer): boolean {
  *
  * Refuses a rate the context will not honor rather than producing a buffer
  * that is right in samples and wrong in seconds - see refusal 2 above.
+ *
+ * Refuses a decode the decoder itself complained about BEFORE looking at the
+ * samples, because a damaged stream resolves with real-looking channel data at
+ * the right rate and a short frame count. Every check below would pass it.
  */
 export function stemAudioBuffer(
 	ctx: BaseAudioContext,
 	decoded: DecodedStemAudio
 ): AudioBuffer | StemDecodeRefusal {
+	if (decoded.errors !== undefined && decoded.errors.length > 0) return 'decode-failed';
 	if (decoded.samplesDecoded <= 0 || decoded.channelData.length === 0) return 'empty-decode';
 	if (decoded.sampleRate !== ctx.sampleRate) return 'sample-rate-mismatch';
 	const buffer = ctx.createBuffer(
@@ -182,69 +212,87 @@ export async function decodeStemParts<P extends string>(
 		options.decodeFallback ??
 		((bytes: ArrayBuffer): Promise<AudioBuffer> => ctx.decodeAudioData(bytes));
 
-	// Resolved ONCE for the bundle, not once per part: four concurrent dynamic
-	// imports of the same module are four chances to pay the resolve twice.
-	let makeDecoder: StemFlacDecoderFactory | null = options.makeDecoder ?? null;
-	if (
-		makeDecoder === null &&
-		_laneForThisLoad() === 'workers' &&
-		parts.some((part) => _flacBytes(encoded[part]))
-	) {
-		try {
-			makeDecoder = await _defaultDecoderFactory();
-		} catch {
-			makeDecoder = null;
+	// Claimed before the first await, so two loads racing into this function
+	// cannot both become the same lane's trial. Released in the `finally`
+	// below on EVERY exit, including a rejecting fallback: a claim that leaked
+	// would mark the session permanently mid-trial and freeze the lane.
+	const claim = _claimLane(parts.every((part) => _flacBytes(encoded[part])));
+	let claimReleased = false;
+	try {
+		// Resolved ONCE for the bundle, not once per part: four concurrent
+		// dynamic imports of the same module are four chances to pay the
+		// resolve twice.
+		let makeDecoder: StemFlacDecoderFactory | null = options.makeDecoder ?? null;
+		if (makeDecoder === null && claim.lane === 'workers') {
+			try {
+				makeDecoder = await _defaultDecoderFactory();
+			} catch {
+				makeDecoder = null;
+			}
 		}
-	}
 
-	const trialing = _preferredLane === null;
-	const lane = _laneForThisLoad();
-	const loadStarted = now();
-
-	const reports: StemPartDecodeReport[] = [];
-	const decoded = await Promise.all(
-		parts.map(async (part) => {
-			const started = now();
-			const bytes = encoded[part] as ArrayBuffer;
-			const byteLength = bytes === undefined ? 0 : bytes.byteLength;
-			const outcome =
-				lane === 'main-thread'
-					? {
-							buffer: await fallback(bytes),
-							refusal: (trialing ? 'calibrating' : 'engine-prefers-main') as StemDecodeRefusal
-						}
-					: await _decodeOnePart(ctx, bytes, makeDecoder, fallback);
-			reports.push({
-				part,
-				viaWorker: outcome.refusal === null,
-				refusal: outcome.refusal,
-				ms: Math.round(now() - started),
-				bytes: byteLength
-			});
-			return [part, outcome.buffer] as const;
-		})
-	);
-	reports.sort((a, b) => parts.indexOf(a.part as P) - parts.indexOf(b.part as P));
-	if (trialing) {
+		const loadStarted = now();
+		const reports: StemPartDecodeReport[] = [];
+		const decoded = await Promise.all(
+			parts.map(async (part) => {
+				const started = now();
+				const bytes = encoded[part] as ArrayBuffer;
+				const byteLength = bytes === undefined ? 0 : bytes.byteLength;
+				const outcome =
+					claim.lane === 'main-thread'
+						? {
+								buffer: await fallback(bytes),
+								// Sniffed on this lane too. A part that is not FLAC could
+								// never have taken the worker path, and reporting the lane
+								// reason instead would hide the permanent cause behind a
+								// per-session one.
+								refusal: _flacBytes(bytes) ? _mainThreadRefusal(claim) : 'not-flac'
+							}
+						: await _decodeOnePart(ctx, bytes, makeDecoder, fallback);
+				reports.push({
+					part,
+					viaWorker: outcome.refusal === null,
+					refusal: outcome.refusal,
+					ms: Math.round(now() - started),
+					bytes: byteLength
+				});
+				return [part, outcome.buffer] as const;
+			})
+		);
+		reports.sort((a, b) => parts.indexOf(a.part as P) - parts.indexOf(b.part as P));
 		// Only a CLEAN run of the lane counts. A load where some part refused
 		// the worker path for its own reason did not measure that lane.
 		const clean =
-			lane === 'main-thread'
+			claim.lane === 'main-thread'
 				? reports.every((r) => r.refusal === 'calibrating')
 				: reports.every((r) => r.refusal === null);
-		if (clean) {
-			_recordTrial(
-				lane,
-				reports.reduce((sum, r) => sum + r.bytes, 0),
-				now() - loadStarted
-			);
-		}
+		_releaseLane(
+			claim,
+			clean,
+			reports.reduce((sum, r) => sum + r.bytes, 0),
+			now() - loadStarted
+		);
+		claimReleased = true;
+		return { buffers: Object.fromEntries(decoded) as Record<P, AudioBuffer>, reports };
+	} finally {
+		if (!claimReleased) _releaseLane(claim, false, 0, 0);
 	}
-	return { buffers: Object.fromEntries(decoded) as Record<P, AudioBuffer>, reports };
 }
 
 function _flacBytes(bytes: ArrayBuffer | undefined): boolean {
 	return bytes !== undefined && isFlacContainer(bytes);
+}
+
+/**
+ * Why a main-thread load took the main thread - measuring, or measured.
+ *
+ * The third case is the one worth naming: a load that ran the shipping lane
+ * while the session had no verdict at all. Calling that `engine-prefers-main`
+ * would report a comparison that never happened.
+ */
+function _mainThreadRefusal(claim: LaneClaim): StemDecodeRefusal {
+	if (claim.trialing) return 'calibrating';
+	return _preferredLane === null ? 'awaiting-calibration' : 'engine-prefers-main';
 }
 
 // ------------------------------------------------------------- lane choice
@@ -283,12 +331,67 @@ let _preferredLane: DecodeLane | null = null;
 /** How much faster the workers must be to win, so noise cannot flip the choice. */
 const LANE_MARGIN = 1.25;
 
-/** Which lane THIS load should run, whole. */
-function _laneForThisLoad(): DecodeLane {
-	if (_preferredLane !== null) return _preferredLane;
+/** The lane being trialed right now, or null when no trial is in flight. */
+let _trialLane: DecodeLane | null = null;
+/** Set when any other load overlapped the trial in flight. */
+let _trialContended = false;
+/** Loads decoding right now, trial or not. */
+let _loadsInFlight = 0;
+
+/** Which lane a load runs, and whether its wall time is a measurement. */
+interface LaneClaim {
+	lane: DecodeLane;
+	trialing: boolean;
+}
+
+/**
+ * Claim this load's lane, SYNCHRONOUSLY, before the function's first await.
+ *
+ * Deck loads are explicitly allowed to overlap, and the calibration is a
+ * stopwatch, so three things have to hold that a plain "which lane has no
+ * trial yet" read does not give:
+ *
+ * 1. RESERVED, not inferred. Two loads starting in the same tick would both
+ *    read "main-thread has never been trialed" and both become that trial. The
+ *    trial lane is claimed here, in one synchronous step, so the second load
+ *    sees it taken.
+ * 2. CONTENDED trials are discarded. A decode sharing the machine with another
+ *    decode measures the contention, not the lane. The failure this prevents is
+ *    not symmetric noise: two overlapping main-thread loads both measure slow,
+ *    and a later uncontended worker trial then wins by default - which is how
+ *    Chromium, where the workers are 1.7x SLOWER, could pin itself to them for
+ *    the session.
+ * 3. Only COMPARABLE bundles are trialed. Both lanes must have decoded FLAC.
+ *    The worker lane can only ever trial FLAC (anything else refuses per part
+ *    and the trial is discarded as unclean), so a main-thread trial on an
+ *    AAC or OGG v3 bundle would settle a FLAC lane from a different codec.
+ *
+ * A load that cannot be a trial runs the MAIN THREAD, which is what ships
+ * today, rather than guessing at the unmeasured lane.
+ */
+function _claimLane(everyPartIsFlac: boolean): LaneClaim {
+	_loadsInFlight += 1;
+	if (_trialLane !== null) _trialContended = true;
+	if (_preferredLane !== null) return { lane: _preferredLane, trialing: false };
+	if (_trialLane !== null || _loadsInFlight > 1 || !everyPartIsFlac) {
+		return { lane: 'main-thread', trialing: false };
+	}
 	// Main thread first: it is what ships today, so a session that only ever
 	// loads one stemmed deck pays nothing for the trial.
-	return _laneTrials.has('main-thread') ? 'workers' : 'main-thread';
+	const lane: DecodeLane = _laneTrials.has('main-thread') ? 'workers' : 'main-thread';
+	_trialLane = lane;
+	_trialContended = false;
+	return { lane, trialing: true };
+}
+
+/** Give the claim back, recording the trial only if it stayed measurable. */
+function _releaseLane(claim: LaneClaim, clean: boolean, bytes: number, wallMs: number): void {
+	_loadsInFlight -= 1;
+	if (!claim.trialing) return;
+	const contended = _trialContended;
+	_trialLane = null;
+	_trialContended = false;
+	if (clean && !contended) _recordTrial(claim.lane, bytes, wallMs);
 }
 
 function _recordTrial(lane: DecodeLane, bytes: number, wallMs: number): void {
@@ -316,15 +419,55 @@ function _recordTrial(lane: DecodeLane, bytes: number, wallMs: number): void {
 const _pool: StemFlacDecoder[] = [];
 const MAX_POOLED_DECODERS = 4;
 
+/**
+ * Check out a decoder, owning it on EVERY exit.
+ *
+ * Both awaits here can reject - a wasm compile that never finishes ready, a
+ * `reset()` on a decoder whose worker has died - and a rejection that escapes
+ * this function escapes it holding a live worker thread that nothing else has
+ * a reference to. The caller cannot free it: it never received it. So the
+ * cleanup belongs HERE, on the only frame that ever held the object.
+ *
+ * A leak per failed attempt is not a leak per page either: the failure is not
+ * recorded as a lane trial, so every later stem load retries and leaks four
+ * more worker threads and four more wasm heaps.
+ */
 async function _takeDecoder(make: StemFlacDecoderFactory): Promise<StemFlacDecoder> {
 	const pooled = _pool.pop();
 	if (pooled !== undefined) {
-		await pooled.reset();
+		try {
+			await pooled.reset();
+		} catch (exc) {
+			// Not returned to the pool: a decoder that cannot reset is not a
+			// decoder, and reusing it would carry the previous stream's state.
+			await _freeQuietly(pooled);
+			throw exc;
+		}
 		return pooled;
 	}
 	const fresh = make();
-	await fresh.ready;
+	try {
+		await fresh.ready;
+	} catch (exc) {
+		await _freeQuietly(fresh);
+		throw exc;
+	}
 	return fresh;
+}
+
+/**
+ * Release a decoder without letting the release replace the real failure.
+ *
+ * `free()` on a decoder that never became ready can itself throw, and that
+ * throw would propagate in place of the reason we are freeing it - turning a
+ * reported `decode-failed` into an unhandled rejection out of the deck load.
+ */
+async function _freeQuietly(decoder: StemFlacDecoder): Promise<void> {
+	try {
+		await decoder.free();
+	} catch {
+		// The worker is unreachable either way; the caller's error is the news.
+	}
 }
 
 function _returnDecoder(decoder: StemFlacDecoder): void {
@@ -353,7 +496,12 @@ async function _decodeOnePart(
 		const result = await decoder.decodeFile(new Uint8Array(bytes));
 		const built = stemAudioBuffer(ctx, result);
 		if (typeof built === 'string') {
-			_returnDecoder(decoder);
+			// A refusal for the BUNDLE's shape (wrong rate, not FLAC) leaves a
+			// healthy decoder, which is parked. A refusal the DECODER reported
+			// does not: it has processed a damaged stream, so it goes the same
+			// way a thrown decode does.
+			if (built === 'decode-failed') await _freeQuietly(decoder);
+			else _returnDecoder(decoder);
 			decoder = null;
 			return { buffer: await fallback(bytes), refusal: built };
 		}
@@ -362,7 +510,7 @@ async function _decodeOnePart(
 		return { buffer: built, refusal: null };
 	} catch {
 		// Not returned to the pool - see above.
-		if (decoder !== null) await decoder.free();
+		if (decoder !== null) await _freeQuietly(decoder);
 		decoder = null;
 		return { buffer: await fallback(bytes), refusal: 'decode-failed' };
 	}
@@ -405,6 +553,8 @@ export const stemDecodeSession = {
 	forceLane: (lane: DecodeLane): void => {
 		_preferredLane = lane;
 		_laneTrials.clear();
+		_trialLane = null;
+		_trialContended = false;
 	},
 	/** Forget the pool. The workers themselves are dropped, not freed. */
 	resetPool: (): void => {
@@ -414,5 +564,11 @@ export const stemDecodeSession = {
 	resetLane: (): void => {
 		_preferredLane = null;
 		_laneTrials.clear();
-	}
+		// The reservation goes too, or a reset between two loads would leave a
+		// trial claimed forever and every later load pinned to the main thread.
+		_trialLane = null;
+		_trialContended = false;
+	},
+	/** Whether a calibration load is running right now. For tests and probes. */
+	trialing: (): boolean => _trialLane !== null
 };

@@ -243,7 +243,7 @@ test('a decode at the wrong sample rate is refused, not resampled by hope', asyn
 	// other perfectly, so validateStemBufferAlignment passes them, and the
 	// engine's stem/source comparison then fails a load that used to work.
 	const ctx = fakeContext(44100);
-	const { factory } = fakeDecoderFactory({ sampleRate: 48000 });
+	const { factory, state } = fakeDecoderFactory({ sampleRate: 48000 });
 	const fallback = countingFallback();
 
 	const result = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
@@ -254,6 +254,12 @@ test('a decode at the wrong sample rate is refused, not resampled by hope', asyn
 	assert.equal(fallback.calls.length, 4, 'every mismatched part must go the resampling path');
 	assert.ok(result.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
 	assert.equal(ctx.created.length, 0, 'and no buffer at the wrong rate may be built at all');
+	// CONTROL ON THE OVERSHOOT: only a decoder the DECODER complained about is
+	// destroyed. This one is healthy - the bundle's rate is what was wrong - so
+	// discarding it would respawn four workers and a wasm heap on every 48kHz
+	// load, which no report would ever mention.
+	assert.equal(state.freed, 0, 'a decoder refused for the BUNDLE stays healthy');
+	assert.equal(decode.stemDecodeSession.pooled(), 4, 'and is parked for the next load');
 
 	// POSITIVE CONTROL: the identical setup at the matching rate takes the
 	// worker path, so the refusal above is the rate and not the harness.
@@ -555,4 +561,277 @@ test('a load that refused the worker path does not count as a trial of it', asyn
 		now: stepClock(50)
 	});
 	assert.equal(decode.stemDecodeSession.lane(), null, 'a failed lane is unmeasured, not fast');
+});
+
+//------------------------------------------------- lane trials under overlap
+
+/**
+ * A decoder whose ready / reset / free can each be steered.
+ *
+ * Separate from `fakeDecoderFactory` because these cases are about the
+ * CHECKOUT failing, which happens before that one's barrier is reachable.
+ */
+function lifecycleDecoderFactory({ readyRejects = false, resetRejects = false } = {}) {
+	const state = { made: 0, freed: 0, resets: 0 };
+	const factory = () => {
+		state.made += 1;
+		return {
+			ready: readyRejects
+				? Promise.reject(new Error('wasm compile blocked'))
+				: Promise.resolve(),
+			async decodeFile() {
+				return {
+					channelData: [new Float32Array(64), new Float32Array(64)],
+					samplesDecoded: 64,
+					sampleRate: 44100
+				};
+			},
+			async reset() {
+				state.resets += 1;
+				if (resetRejects) throw new Error('worker is gone');
+			},
+			free() {
+				state.freed += 1;
+			}
+		};
+	};
+	return { factory, state };
+}
+
+test('a decoder that never becomes ready is freed, not leaked per load', async () => {
+	// The leak this catches is not one worker: the failed checkout is not
+	// recorded as a lane trial, so every later stem load retries and strands
+	// four more worker threads and four more wasm heaps.
+	const ctx = fakeContext();
+	const { factory, state } = lifecycleDecoderFactory({ readyRejects: true });
+	const fallback = countingFallback();
+
+	const result = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: fallback.fn
+	});
+
+	assert.equal(state.made, 4, 'the checkout got as far as constructing a decoder');
+	assert.equal(state.freed, 4, 'and every one of them is released, not stranded');
+	assert.equal(decode.stemDecodeSession.pooled(), 0, 'nor parked for reuse');
+	assert.equal(fallback.calls.length, 4, 'the deck still loads at yesterday speed');
+	assert.ok(result.reports.every((r) => r.refusal === 'decode-failed'));
+});
+
+test('a pooled decoder that cannot reset is freed, not returned to the pool', async () => {
+	const ctx = fakeContext();
+	// Park four healthy decoders first, then make reset reject on reuse.
+	const healthy = lifecycleDecoderFactory();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: healthy.factory,
+		decodeFallback: countingFallback().fn
+	});
+	assert.equal(decode.stemDecodeSession.pooled(), 4, 'the pool is primed');
+
+	const broken = lifecycleDecoderFactory({ resetRejects: true });
+	// Rebuild the pool out of decoders whose reset rejects.
+	decode.stemDecodeSession.resetPool();
+	const primed = lifecycleDecoderFactory({ resetRejects: true });
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: primed.factory,
+		decodeFallback: countingFallback().fn
+	});
+	assert.equal(decode.stemDecodeSession.pooled(), 4);
+
+	const fallback = countingFallback();
+	const result = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: broken.factory,
+		decodeFallback: fallback.fn
+	});
+
+	assert.equal(primed.state.resets, 4, 'each pooled decoder was asked to reset');
+	assert.equal(primed.state.freed, 4, 'and each one that could not is destroyed');
+	assert.equal(decode.stemDecodeSession.pooled(), 0, 'a decoder that cannot reset is not a decoder');
+	assert.equal(fallback.calls.length, 4);
+	assert.ok(result.reports.every((r) => r.refusal === 'decode-failed'));
+});
+
+test('a decode the decoder complained about is refused, and its worker discarded', async () => {
+	// `decodeFile` RESOLVES on a damaged stream: it hands back the frames it
+	// managed plus an `errors` array. Everything else about that result looks
+	// healthy - right rate, real channel data, a plausible frame count - so
+	// without this check a truncated part is published as audio.
+	const ctx = fakeContext(44100);
+	const withErrors = {
+		channelData: [new Float32Array(64), new Float32Array(64)],
+		samplesDecoded: 64,
+		sampleRate: 44100,
+		errors: [{ message: 'FLAC__STREAM_DECODER_ERROR_STATUS_LOST_SYNC' }]
+	};
+	assert.equal(decode.stemAudioBuffer(ctx, withErrors), 'decode-failed');
+	assert.equal(ctx.created.length, 0, 'no buffer may be built from a complained-about decode');
+
+	// POSITIVE CONTROL from the hypothesis: the claim is that the ERRORS
+	// refused it, so the identical result with an empty array must be built.
+	const clean = decode.stemAudioBuffer(ctx, { ...withErrors, errors: [] });
+	assert.equal(typeof clean, 'object', 'an empty errors array is a healthy decode');
+	assert.equal(clean.length, 64);
+
+	// And the worker that reported it must not go back in the healthy pool.
+	const state = { made: 0, freed: 0 };
+	const result = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: () => {
+			state.made += 1;
+			return {
+				ready: Promise.resolve(),
+				async decodeFile() {
+					return { ...withErrors };
+				},
+				async reset() {},
+				free() {
+					state.freed += 1;
+				}
+			};
+		},
+		decodeFallback: countingFallback().fn
+	});
+	assert.ok(result.reports.every((r) => r.refusal === 'decode-failed'));
+	assert.equal(state.freed, 4, 'a decoder that reported a stream error is destroyed');
+	assert.equal(decode.stemDecodeSession.pooled(), 0, 'never parked for the next load');
+});
+
+test('an overlapping load neither becomes a trial nor contaminates the one running', async () => {
+	// The failure this prevents is NOT symmetric noise. Two overlapping
+	// main-thread loads both measure slow, an uncontended worker trial then
+	// wins by default, and Chromium - where the workers are 1.7x SLOWER -
+	// pins itself to them for the session.
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+
+	let releaseFirst;
+	const held = new Promise((resolve) => (releaseFirst = resolve));
+	const firstFallback = [];
+	const first = decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: async (bytes) => {
+			firstFallback.push(bytes.byteLength);
+			await held;
+			return { numberOfChannels: 2, length: 99, sampleRate: 44100 };
+		},
+		now: stepClock(400)
+	});
+	// The claim is taken synchronously at entry, so by here the trial is live.
+	assert.equal(decode.stemDecodeSession.trialing(), true, 'the first load claimed a trial');
+
+	const overlapFallback = countingFallback();
+	const overlap = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: overlapFallback.fn,
+		now: stepClock(9999)
+	});
+	assert.equal(overlapFallback.calls.length, 4, 'the overlapping load runs the shipping lane');
+	assert.ok(
+		overlap.reports.every((r) => r.refusal === 'awaiting-calibration'),
+		'and says so, rather than claiming an engine preference nothing measured'
+	);
+
+	releaseFirst();
+	await first;
+	assert.equal(decode.stemDecodeSession.trialing(), false, 'the claim is released');
+
+	// The contended main-thread number was DISCARDED, so the next uncontended
+	// load is still the main-thread trial rather than the worker one.
+	decode.stemDecodeSession.resetPool();
+	const after = fakeDecoderFactory();
+	const afterFallback = countingFallback();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: after.factory,
+		decodeFallback: afterFallback.fn,
+		now: stepClock(400)
+	});
+	assert.equal(after.state.made, 0, 'the main-thread lane is still unmeasured, so it runs again');
+	assert.equal(afterFallback.calls.length, 4);
+	assert.equal(decode.stemDecodeSession.lane(), null, 'one lane is still not a comparison');
+});
+
+test('a non-FLAC bundle is never recorded as the main-thread trial', async () => {
+	// The worker lane can only ever trial FLAC - anything else refuses per
+	// part and the trial is discarded as unclean. So a main-thread trial on an
+	// AAC or OGG v3 bundle would settle the FLAC lane from a different codec.
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+	const oggBundle = Object.fromEntries(PARTS.map((part) => [part, OGG()]));
+
+	const ogg = await decode.decodeStemParts(ctx, oggBundle, PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(9999)
+	});
+	assert.ok(
+		ogg.reports.every((r) => r.refusal === 'not-flac'),
+		'the bundle is refused per part, as before'
+	);
+
+	// POSITIVE CONTROL from the hypothesis: the claim is that the CODEC kept
+	// it out of the trial, so the identical run on FLAC must become one.
+	decode.stemDecodeSession.resetPool();
+	const flacRun = fakeDecoderFactory();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: flacRun.factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(400)
+	});
+	assert.equal(flacRun.state.made, 0, 'the FLAC bundle takes the untrialed main-thread lane');
+
+	// Now the worker trial. If the OGG load had been recorded, the main-thread
+	// lane would already be settled at its 9999ms throughput and this load
+	// would be comparing FLAC workers against OGG on the main thread.
+	decode.stemDecodeSession.resetPool();
+	const workers = fakeDecoderFactory();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: workers.factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(100)
+	});
+	assert.equal(workers.state.made, 4, 'the second FLAC load is the worker trial');
+	assert.equal(decode.stemDecodeSession.lane(), 'workers');
+});
+
+test('a non-FLAC bundle never even claims the trial slot', async () => {
+	// The clean-report rule would discard such a trial after the fact anyway,
+	// so this pins the OTHER half: the slot is never taken, which is what stops
+	// a non-FLAC load from forcing a concurrent FLAC load out of being one.
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+
+	let release;
+	const held = new Promise((resolve) => (release = resolve));
+	const heldFallback = async () => {
+		await held;
+		return { numberOfChannels: 2, length: 99, sampleRate: 44100 };
+	};
+
+	const ogg = decode.decodeStemParts(
+		ctx,
+		Object.fromEntries(PARTS.map((part) => [part, OGG()])),
+		PARTS,
+		{ makeDecoder: fakeDecoderFactory().factory, decodeFallback: heldFallback }
+	);
+	assert.equal(
+		decode.stemDecodeSession.trialing(),
+		false,
+		'a bundle the worker lane can never decode must not hold the trial slot'
+	);
+	release();
+	await ogg;
+
+	// POSITIVE CONTROL from the hypothesis: the claim is that the CODEC kept
+	// the slot free, so the identical held load on FLAC must take it.
+	let releaseFlac;
+	const heldFlac = new Promise((resolve) => (releaseFlac = resolve));
+	const flac = decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: async () => {
+			await heldFlac;
+			return { numberOfChannels: 2, length: 99, sampleRate: 44100 };
+		}
+	});
+	assert.equal(decode.stemDecodeSession.trialing(), true, 'a FLAC bundle does take it');
+	releaseFlac();
+	await flac;
 });

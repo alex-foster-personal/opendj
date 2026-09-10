@@ -17,6 +17,17 @@
  * Re-runnable: `pnpm test:live:stem-decode-workers`. Prints the measured
  * numbers so a later round can compare against them rather than against a
  * remembered figure.
+ *
+ * Exit codes, because a run that measured nothing must not read as a pass:
+ *   0  every required engine ran and every check passed
+ *   1  an engine ran and a check FAILED
+ *   2  the real FLAC fixtures are missing (set `Q18_FLAC_DIR`)
+ *   3  UNAVAILABLE - an engine could not launch, so this is not evidence
+ *
+ * 3 is the one worth stating. WebKit is the engine the rung exists for and
+ * Chromium is the reason it is a measurement rather than an assumption, so a
+ * run that launched neither has a failure count of zero for the same reason a
+ * check pointed at nothing does.
  */
 
 import { spawn } from 'node:child_process';
@@ -119,12 +130,20 @@ async function main() {
 		['chromium', chromium]
 	];
 	let failures = 0;
+	/** Engines that actually launched AND completed their checks. */
+	const ran = [];
+	/** Engines that could not launch, with the reason, for the UNAVAILABLE report. */
+	const unavailable = [];
 	for (const [name, engine] of engines) {
 		let browser;
 		try {
 			browser = await engine.launch();
 		} catch (exc) {
-			console.log(`[skip] ${name} not installed: ${String(exc).split('\n')[0]}`);
+			// NOT a skip. A missing browser is a capability this run does not
+			// have, and the run says so at the end rather than letting a zero
+			// failure count read as evidence.
+			unavailable.push(`${name}: ${String(exc).split('\n')[0]}`);
+			console.log(`[unavailable] ${name} did not launch: ${String(exc).split('\n')[0]}`);
 			continue;
 		}
 		const page = await browser.newPage();
@@ -217,6 +236,7 @@ async function main() {
 		if (result.shapeMismatch !== undefined) {
 			console.log(`  FAIL shape mismatch on ${result.shapeMismatch}: ${result.a} vs ${result.b}`);
 			failures++;
+			ran.push(name);
 			continue;
 		}
 		console.log(`  labels:            ${JSON.stringify(result.labels)}`);
@@ -268,11 +288,30 @@ async function main() {
 		if (tookWorkers && result.maxAbsDiff < LSB_16_BIT && result.comparedSamples > 0) {
 			console.log('  PASS worker path taken, output agrees to within one 16-bit LSB');
 		}
+		ran.push(name);
 	}
 	server.close();
+
+	// The claim this script exists to support is about WebKit specifically -
+	// the rung routes around WebKit's single decode thread - and is only a
+	// comparison because Chromium disagrees. So BOTH engines are required, and
+	// a run that could not launch one has not produced acceptance evidence for
+	// it. Reported as UNAVAILABLE and exited nonzero rather than printing OK:
+	// zero failures on zero decodes is the shape of a check that cannot fail.
+	console.log(`\nengines that ran: ${ran.length === 0 ? '(none)' : ran.join(', ')}`);
+	if (unavailable.length > 0) {
+		console.log(`UNAVAILABLE: ${unavailable.join('; ')}`);
+		console.log('install them with: pnpm exec playwright install webkit chromium');
+	}
 	if (failures > 0) {
-		console.log(`\nFAILED: ${failures} check(s)`);
+		console.log(`\nFAILED: ${failures} check(s) across ${ran.length} engine(s)`);
 		process.exit(1);
+	}
+	if (ran.length < engines.length) {
+		console.log(
+			`\nUNAVAILABLE: ${ran.length} of ${engines.length} required engines ran, so this is not acceptance evidence`
+		);
+		process.exit(3);
 	}
 	console.log('\nOK');
 }
