@@ -22,6 +22,7 @@ import json
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -61,7 +62,6 @@ from apps.opendj_cli.orders import (
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
-    Invocation,
     InvocationError,
     describe_verbs,
     parse_duration,
@@ -202,7 +202,6 @@ def _run_script(args: argparse.Namespace, origin: EngineOrigin, items: Sequence[
         args,
         origin,
         orders,
-        [invocation for group in groups for invocation in group.invocations],
     )
 
 
@@ -221,7 +220,7 @@ def _run_invocation(args: argparse.Namespace, origin: EngineOrigin, tokens: Sequ
         # working one.
         timeout_s = ramp_deadline_s(over, args.timeout)
     group = Group(kind=SINGLE, invocations=(invocation,))
-    return _dispatch(args, origin, [(group, order)], [invocation], timeout_s=timeout_s)
+    return _dispatch(args, origin, [(group, order)], timeout_s=timeout_s)
 
 
 def _clock(raw: str | None) -> int | str | None:
@@ -246,17 +245,50 @@ def _refusal(args: argparse.Namespace, error: Exception) -> int:
     return _fail(args, "order_rejected", message, EXIT_FAILED)
 
 
+@dataclass
+class _Run:
+    """What one script run did, and whether the mirror agreed as it went."""
+
+    results: list[dict[str, Any]] = field(default_factory=list)
+    checks: list[Check] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    affirmed: bool = False
+
+    @property
+    def failed(self) -> bool:
+        return any(step.get("status") == "failed" for step in _steps(self.results))
+
+    def verdict(self) -> str:
+        if self.failures:
+            return "unconfirmed"
+        return "confirmed" if self.affirmed else "accepted"
+
+
 def _post_all(
-    client: EngineClient, orders: Sequence[tuple[Group, dict[str, Any]]]
-) -> tuple[list[dict[str, Any]], bool]:
-    """Run the groups in order, stopping at the first failed one."""
-    results: list[dict[str, Any]] = []
+    client: EngineClient,
+    orders: Sequence[tuple[Group, dict[str, Any]]],
+    settle_s: float,
+) -> _Run:
+    """Run the groups in order, confirming EACH against the mirror it left.
+
+    Confirming once at the end cannot work, because a later command's side
+    effects are not confined to the paths an earlier command named. Dropping
+    checks that share a path fixed `do "play 1" then "pause 1"`, but production
+    `unload` replaces the whole slot with `_emptyDeckState`, so
+    `do "play 1" then "unload 1"` still carried `playing == true` into a final
+    mirror that correctly reads false, and a perfect run exited 4.
+
+    Checking each group against the mirror it produced needs no model of what a
+    command touches, which is the point: the alternative is a second copy of
+    production's side effects, and a second copy is exactly what drifts.
+    """
+    run = _Run()
     for group, order in orders:
-        if any(step.get("status") == "failed" for step in _steps(results)):
-            results.append({"kind": group.kind, "skipped": group.label()})
+        if run.failed:
+            run.results.append({"kind": group.kind, "skipped": group.label()})
             continue
         result = client.post_order(order)
-        results.append(
+        run.results.append(
             {
                 "kind": group.kind,
                 "commands": group.label(),
@@ -264,8 +296,18 @@ def _post_all(
                 "mirror_delta": result.get("mirror_delta", {}),
             }
         )
-    steps = _steps(results)
-    return results, any(step.get("status") == "failed" for step in steps)
+        checks = final_checks(
+            [
+                check
+                for invocation in group.invocations
+                for check in checks_for(invocation.verb, invocation.command)
+            ]
+        )
+        run.checks.extend(checks)
+        run.affirmed = run.affirmed or any(check.affirms for check in checks)
+        _, failures = _settle(client, checks, settle_s)
+        run.failures.extend(failures)
+    return run
 
 
 def _steps(entries: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -285,31 +327,27 @@ def _dispatch(
     args: argparse.Namespace,
     origin: EngineOrigin,
     orders: Sequence[tuple[Group, dict[str, Any]]],
-    invocations: Sequence[Invocation],
     timeout_s: float | None = None,
 ) -> int:
-    client = EngineClient(
-        origin=origin, timeout_s=args.timeout if timeout_s is None else timeout_s
-    )
-    checks = final_checks(
-        [
-            check
-            for invocation in invocations
-            for check in checks_for(invocation.verb, invocation.command)
-        ]
-    )
+    deadline_s = args.timeout if timeout_s is None else timeout_s
+    client = EngineClient(origin=origin, timeout_s=deadline_s)
     try:
         client.mirror()
-        results, failed = _post_all(client, orders)
-        state, failures = _settle(client, checks, args.settle)
+        run = _post_all(client, orders, args.settle)
     except _REFUSALS as error:
         return _refusal(args, error)
 
+    state = run.verdict()
+    results, failed, failures = run.results, run.failed, run.failures
     document = {
         "groups": results,
-        "checks": [check.description for check in checks],
+        "checks": [check.description for check in run.checks],
         "verdict": state,
         "unconfirmed": list(failures),
+        # How long the CLI was willing to wait for the page to answer. A ramp
+        # raises it above --timeout, so an agent can see the deadline it
+        # actually got rather than infer it.
+        "request_timeout_s": deadline_s,
     }
     if args.json:
         print(json.dumps(document, indent=2, sort_keys=True))

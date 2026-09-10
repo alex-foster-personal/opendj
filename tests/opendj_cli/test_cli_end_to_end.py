@@ -469,10 +469,13 @@ def test_unload_is_unconfirmed_when_the_title_never_clears(
 def test_a_script_that_writes_one_control_twice_confirms_the_last_write(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``play 1`` then ``pause 1`` asked one mirror for true AND false.
+    """``play 1`` then ``pause 1`` asked ONE mirror for true AND false.
 
-    No final mirror can satisfy both, so a sequence that ran perfectly waited
-    out the settle deadline and exited 4.
+    No single mirror can satisfy both, so a sequence that ran perfectly waited
+    out the settle deadline and exited 4. Each group is now confirmed against
+    the mirror IT left, so both checks hold and both are reported: the deck
+    really was playing after the first order and really was not after the
+    second.
     """
 
     page = engine.page()
@@ -485,9 +488,9 @@ def test_a_script_that_writes_one_control_twice_confirms_the_last_write(
         page.stop()
 
     captured = capsys.readouterr()
-    assert "confirmed" in captured.out
+    assert "verdict: confirmed" in captured.out
+    assert "decks.1.playing == True" in captured.out
     assert "decks.1.playing == False" in captured.out
-    assert "decks.1.playing == True" not in captured.out
 
 
 def test_a_script_whose_last_write_never_lands_is_unconfirmed(
@@ -725,41 +728,42 @@ def test_the_request_deadline_never_undercuts_the_ramp_it_asked_for(
     assert ramp_deadline_s(over, floor) == pytest.approx(expected)
 
 
-def test_a_ramp_hands_the_client_the_deadline_its_duration_requires(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch
+def test_a_ramp_reports_the_deadline_its_duration_required(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The deadline must be DERIVED from the ramp, not merely large.
 
     Found by mutation: replacing the computed deadline with a big constant
     kept every other test green, because nothing asserted where the number
-    came from. Waiting one out in real time would cost the suite ten seconds
-    per case, so the wiring is read off the client instead.
+    came from. The first attempt at this test monkeypatched the client to
+    watch the value go by, which AGENTS.md forbids and which tests the patch
+    rather than the product. The CLI publishes the deadline it used in its own
+    --json document instead, so an agent can read what it got and this test
+    reads the same real output.
     """
-    import apps.opendj_cli.__main__ as cli
-
-    seen: list[float] = []
-    real = cli.EngineClient
-
-    class Recorder:
-        def __init__(self, **kwargs: object) -> None:
-            seen.append(float(kwargs["timeout_s"]))  # type: ignore[arg-type]
-            self._inner = real(**kwargs)  # type: ignore[arg-type]
-
-        def __getattr__(self, name: str) -> object:
-            return getattr(self._inner, name)
-
-    monkeypatch.setattr(cli, "EngineClient", Recorder)
 
     page = engine.page()
     page.start()
     try:
-        argv = _argv(engine, "--timeout", "0.2", "eq", "1", "low", "0.2", "--over", "400ms")
+        argv = _argv(
+            engine, "--json", "--timeout", "0.2", "eq", "1", "low", "0.2", "--over", "400ms"
+        )
         assert main(argv) == EXIT_CONFIRMED
+        document = json.loads(capsys.readouterr().out)
+        assert main(_argv(engine, "--json", "--timeout", "0.2", "eq", "1", "low", "0.3")) == (
+            EXIT_CONFIRMED
+        )
+        unramped = json.loads(capsys.readouterr().out)
     finally:
         page.stop()
 
-    assert seen == [pytest.approx(ramp_deadline_s({"unit": "ms", "n": 400.0}, 0.2))]
-    assert seen[0] == pytest.approx(10.4)
+    assert document["request_timeout_s"] == pytest.approx(
+        ramp_deadline_s({"unit": "ms", "n": 400.0}, 0.2)
+    )
+    assert document["request_timeout_s"] == pytest.approx(10.4)
+    # The control: with no ramp to extend it, --timeout is the deadline. A
+    # constant would report the same number for both.
+    assert unramped["request_timeout_s"] == pytest.approx(0.2)
 
 
 def test_a_duration_unit_with_no_wall_clock_bound_is_refused_not_guessed() -> None:
@@ -798,3 +802,83 @@ def test_an_argparse_refusal_without_json_stays_plain_text(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "opendj:" in captured.err
+
+
+# ----- a later command's side effects are not confined to its own paths ----
+
+def test_play_then_unload_confirms_although_unload_clears_playing(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Production `unload` swaps in `_emptyDeckState`, which also clears playing.
+
+    Dropping same-path checks was not enough: `play` names `decks.1.playing`
+    and `unload` names the title and id, so the `playing == true` check
+    survived into a final mirror that correctly reads false and a perfect run
+    exited 4. Each group is now confirmed against the mirror it left, which
+    needs no model of what a command touches.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "load", "1", "a-track")) == EXIT_CONFIRMED
+        capsys.readouterr()
+        exit_code = main(_argv(engine, "--settle", "0.3", "do", "play 1", "then", "unload 1"))
+        assert exit_code == EXIT_CONFIRMED
+        assert page.mirror["decks"]["1"]["playing"] is False
+        assert page.mirror["decks"]["1"]["stable_id"] is None
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "verdict: confirmed" in captured.out
+    assert "decks.1.playing == True" in captured.out
+
+
+def test_a_group_that_does_not_land_is_still_unconfirmed_mid_script(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: per-group confirmation must not stop confirming anything.
+
+    An implementation that simply dropped every earlier check would pass the
+    test above just as happily.
+    """
+
+    page = engine.page()
+    page.apply_commands = False
+    page.start()
+    try:
+        exit_code = main(_argv(engine, "--settle", "0.3", "do", "play 1", "then", "unload 1"))
+        assert exit_code == EXIT_UNCONFIRMED
+    finally:
+        page.stop()
+
+    assert "decks.1.playing is False, expected True" in capsys.readouterr().out
+
+
+# ----- an anchored ramp waits before it travels ----------------------------
+
+@pytest.mark.parametrize(
+    ("over", "expected"),
+    [
+        ({"unit": "beats", "n": 4}, 60.0),
+        ({"unit": "beats", "n": 4, "anchor": "next_beat"}, 60.0),
+        # Codex's case: a 2s move behind a wait of nearly a whole phrase.
+        ({"unit": "beats", "n": 4, "anchor": "next_phrase"}, 142.0),
+        ({"unit": "ms", "n": 2000.0, "anchor": "next_downbeat"}, 60.0),
+    ],
+)
+def test_the_deadline_covers_the_anchor_wait_not_only_the_travel(
+    over: dict, expected: float
+) -> None:
+    """The page waits for the anchor boundary FIRST, then runs the ramp."""
+    assert ramp_deadline_s(over, 60.0) == pytest.approx(expected)
+
+
+def test_an_anchor_with_no_wall_clock_bound_is_refused_not_guessed() -> None:
+    """The control: an unmapped anchor must fail loud, not silently add zero."""
+    with pytest.raises(InvocationError):
+        ramp_deadline_s({"unit": "beats", "n": 4, "anchor": "next_eclipse"}, 60.0)
+
+
+# ----- a scripted command carries the text values a direct one does --------

@@ -14,12 +14,15 @@
 [if] a verb observes a deck path [then ⛔] ``buildUiMirror`` publishes that key,
      read from the live source, so an observation cannot read a field the
      mirror does not carry.
+[if] a scripted command quotes a text value containing spaces [then ⛔] it
+     reaches the bus whole, exactly as the same value does on the command line.
 """
 from __future__ import annotations
 
 import pytest
 
 from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS, Expectation
+from apps.opendj_cli.orders import parse_script
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
@@ -233,3 +236,42 @@ def test_a_deck_field_the_mirror_withholds_is_reported_absent() -> None:
     published = ts_contract.mirror_deck_keys()
     assert "stable_id" in published, "the reader cannot see a key that is there"
     assert "is_master" not in published, "the reader cannot say a key is absent"
+
+
+# ----- a scripted command carries the text values a direct one does --------
+
+def test_a_do_command_keeps_a_quoted_text_argument_whole() -> None:
+    """``str.split()`` broke a spaced value apart AND kept its quote characters.
+
+    ``hot_cue_save``'s comment is a free-text field, so `do` could not carry a
+    value the identical direct invocation accepts: `my` became the comment and
+    `comment` was rejected as a stray token. Nesting quotes made it worse, not
+    better, because a plain split preserves the quote characters as part of the
+    value.
+    """
+    groups = parse_script(['hot_cue_save 1 A 100 rev-1 "cue for the drop"'])
+
+    assert len(groups) == 1
+    assert groups[0].invocations[0].command == {
+        "type": "hot_cue_save",
+        "deck": 1,
+        "slot": "A",
+        "in_ms": 100.0,
+        "revision": "rev-1",
+        "comment": "cue for the drop",
+    }
+
+
+def test_a_quoted_do_command_matches_the_direct_invocation_exactly() -> None:
+    """The control: quoting-aware reading must not change what an unspaced
+    value builds, only what a spaced one does."""
+    scripted = parse_script(["hot_cue_save 1 A 100 rev-1 drop"])[0].invocations[0]
+    direct = parse_invocation(["hot_cue_save", "1", "A", "100", "rev-1", "drop"])
+
+    assert scripted.command == direct.command
+
+
+def test_an_unbalanced_quote_in_a_do_command_is_refused_not_guessed() -> None:
+    """The control: a quoting-aware reader must still refuse bad quoting."""
+    with pytest.raises(InvocationError):
+        parse_script(['hot_cue_save 1 A 100 rev "unterminated'])

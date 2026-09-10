@@ -11,6 +11,7 @@ error and mark the rest skipped.
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -40,6 +41,16 @@ _SEPARATORS = (SEQUENCE_WORD, PARALLEL_WORD)
 # past reality rather than accurate to it.
 SLOWEST_BEAT_S = 1.0
 _BEATS_PER: dict[str, float] = {"beats": 1.0, "bars": 4.0, "phrases": 128.0}
+# An anchored ramp does not start when the order is claimed: the page waits for
+# the next beat, downbeat or phrase boundary FIRST, and only then runs the
+# ramp. `--over 4beats --anchor next_phrase` is a 2s move behind a wait that
+# can approach a whole phrase, so the wait belongs in the bound too. Each entry
+# is the longest that wait can be, in beats.
+_ANCHOR_BEATS: dict[str, float] = {
+    "next_beat": 1.0,
+    "next_downbeat": 4.0,
+    "next_phrase": 128.0,
+}
 RAMP_MARGIN_S = 10.0
 
 
@@ -51,14 +62,28 @@ def ramp_hold_s(over: dict[str, Any]) -> float:
     rather than guess a tempo this converts at a floor slower than any real
     one. An over-estimate only delays the hang guard; an under-estimate
     reports a working ramp as a timeout.
+
+    Covers the anchor wait as well as the travel: the page holds the order for
+    BOTH.
     """
     unit = over["unit"]
     n = float(over["n"])
     if unit == "ms":
-        return n / 1000.0
-    if unit in _BEATS_PER:
-        return n * _BEATS_PER[unit] * SLOWEST_BEAT_S
-    raise InvocationError(f"cannot size a request deadline for duration unit {unit!r}")
+        travel_s = n / 1000.0
+    elif unit in _BEATS_PER:
+        travel_s = n * _BEATS_PER[unit] * SLOWEST_BEAT_S
+    else:
+        raise InvocationError(f"cannot size a request deadline for duration unit {unit!r}")
+    return travel_s + _anchor_wait_s(over.get("anchor"))
+
+
+def _anchor_wait_s(anchor: str | None) -> float:
+    """The longest the page can wait for an anchor before the ramp starts."""
+    if anchor is None:
+        return 0.0
+    if anchor not in _ANCHOR_BEATS:
+        raise InvocationError(f"cannot size a request deadline for anchor {anchor!r}")
+    return _ANCHOR_BEATS[anchor] * SLOWEST_BEAT_S
 
 
 def ramp_deadline_s(over: dict[str, Any], floor_s: float) -> float:
@@ -117,6 +142,14 @@ def _label(invocation: Invocation) -> str:
     return " ".join(parts)
 
 
+def _tokenize(command: str) -> list[str]:
+    """Split one quoted script command the way a shell would."""
+    try:
+        return shlex.split(command)
+    except ValueError as error:
+        raise InvocationError(f"cannot read {command!r}: {error}") from None
+
+
 def _reject_stray_separators(items: Sequence[str]) -> None:
     """``then``/``and`` are infixes: one at either end joins nothing."""
     for index, item in enumerate(items):
@@ -149,7 +182,14 @@ def parse_script(items: Sequence[str], deck_scope: int | None = None) -> tuple[G
     _reject_stray_separators(items)
     groups = []
     for segment in _segments(items):
-        invocations = tuple(parse_invocation(tokens.split(), deck_scope) for tokens in segment)
+        # shlex, not str.split: a text argument may contain spaces, and
+        # `hot_cue_save 1 A 100 rev "my comment"` has to mean the same thing
+        # inside `do` as it does on the command line. str.split() both breaks
+        # the value apart AND keeps the quote characters, so nesting quotes
+        # could not rescue it.
+        invocations = tuple(
+            parse_invocation(_tokenize(tokens), deck_scope) for tokens in segment
+        )
         kind = SINGLE if len(invocations) == 1 else PARALLEL
         groups.append(Group(kind=kind, invocations=invocations))
     return tuple(groups)
