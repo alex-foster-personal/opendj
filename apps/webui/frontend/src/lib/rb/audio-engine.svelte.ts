@@ -88,14 +88,10 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
-import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
-import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
+import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
-import {
-	notePresentationClock,
-	notePresentationTickFailure,
-	readOutputTimestamp as _readOutputTimestamp
-} from '$lib/rb/presentation-clock-report';
+import { notePresentationClock, notePresentationTickFailure, readOutputTimestamp as _readOutputTimestamp, resetPresentationClockStall } from '$lib/rb/presentation-clock-report';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -122,26 +118,31 @@ import {
 	fetchAnlzForDeckLoad,
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
+	installAuthoritativeAnlzErrorSink,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
+	revalidateAnlz,
 	refreshAnlzCacheEntry,
 	upgradeDeckBeatgrid,
 	createBeatgridResyncGuards,
 	createBeatgridResyncTracking,
+	reconcileLoopForAuthoritativeGrid,
+	requireBeatGrid,
+	resolvePublishedAnlz,
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	beatJumpTargetMs,
 	beatJumpTargetWithinDurationMs,
 	computeFollowerSyncPlan,
+	displayLoopFrom,
 	planTempoRatioRamp,
 	playbackBpm,
-	pqtzLoopBeatCount,
 	quantizeToNearestBeat,
-	quantizeToNearestGridBeat,
-	validateBeatGrid
+	quantizeToNearestGridBeat
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import { deckHasRealBeatGrid, effectiveBeatSync, effectiveQuantize, GRID_FEATURE_TIP, gridFeaturesInert, hasRealBeatGrid } from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
@@ -165,7 +166,7 @@ import {
 	unavailableStemDeckState,
 	type StemBuffers
 } from '$lib/rb/stem-graph';
-import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -517,7 +518,7 @@ let _masterGain: GainNode | null = null;
 let _masterAnalyser: AnalyserNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
-let _externalMerger: ChannelMergerNode | null = null;
+let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 /**
@@ -676,9 +677,8 @@ function _ensureGraph(): AudioContext {
 	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
 	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
 	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
-	_masterAnalyser = _ctx.createAnalyser();
-	_masterGain.connect(_masterAnalyser);
-	resetMasterSilenceWatch();
+	_masterGain.connect((_masterAnalyser = _ctx.createAnalyser()));
+	resetMasterSilenceWatch(); resetPresentationClockStall();
 	// Silence belt for headless test agents (`?muted=1`): the LAST node before
 	// the destination, so a mute is one gain value and every node upstream --
 	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
@@ -710,6 +710,7 @@ function _ensureGraph(): AudioContext {
 		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
 		_externalMerger.channelInterpretation = 'discrete';
 		_externalMerger.connect(_masterMuteGain);
+		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
 	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
@@ -1005,25 +1006,6 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 	st.position_ms = clock.position_ms;
 	rt.startOffsetSec = clock.start_offset_sec;
 	rt.startCtxTime = _ctx?.currentTime ?? 0;
-}
-
-/**
- * The grid a GRID-DEPENDENT operation cannot proceed without.
- *
- * Reserved for operations that are meaningless with no grid: engaging Beat
- * Sync, and beat loops. Transport must never call this - see _quantizeGrid.
- */
-function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
-	const beats = st.anlz?.beatgrid.beats;
-	try {
-		validateBeatGrid(beats ?? []);
-	} catch (error) {
-		throw new Error(
-			`${operation}: deck ${st.deck_id} requires a valid real PQTZ beat grid: ${String(error)}`,
-			{ cause: error }
-		);
-	}
-	return beats ?? [];
 }
 
 /**
@@ -1845,7 +1827,7 @@ function _tick(): void {
 			if (observation?.audible || observation?.transport_pending) anyTransport = true;
 		}
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		noteMasterSilence(_masterAnalyser, anyTransport, Date.now());
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());
 		if (anyTransport) noteAudioPresentationTick();
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
@@ -1860,19 +1842,6 @@ function _tick(): void {
 
 function _ensureRaf(): void {
 	if (_rafId === null) _rafId = requestAnimationFrame(_tick);
-}
-
-/** Display-only stored loop (COMPONENT-MAP 1.3: loop chips are display at
- * v1): the rekordbox active loop when one exists, engaged: false. */
-function _displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopState | null {
-	const active = cues.find((c) => c.active_loop && c.out_ms !== null);
-	if (active === undefined || active.out_ms === null) return null;
-	return {
-		in_ms: active.in_ms,
-		out_ms: active.out_ms,
-		engaged: false,
-		beat_length: pqtzLoopBeatCount(beats, active.in_ms, active.out_ms)
-	};
 }
 
 function _clearLoadedTrackState(st: DeckState): void {
@@ -2269,7 +2238,7 @@ async function _synchronizeFollowers(
 		if (!masterRuntime.desiredActive) {
 			throw new Error(`Beat Sync master deck ${master} is neither audible nor scheduled to play`);
 		}
-		const masterGrid = _requireBeatGrid(masterState, 'Beat Sync');
+		const masterGrid = requireBeatGrid(masterState, 'Beat Sync');
 		// Only clear stale pending-membership once the master's own grid
 		// precondition is confirmed - clearing it BEFORE this point (the
 		// original ordering) discarded a follower's pending record on a
@@ -2363,7 +2332,7 @@ async function _synchronizeFollowers(
 		for (const deck of owned) {
 			try {
 				const { st } = _requireLoaded(deck, 'Beat Sync follower');
-				const followerGrid = _requireBeatGrid(st, 'Beat Sync');
+				const followerGrid = requireBeatGrid(st, 'Beat Sync');
 				const bounds = _tempoBounds(deck);
 				const rawFollowerPositionSec = _currentPosSec(deck);
 				const requestedAnchorSec = options.followerAnchorSec?.[deck];
@@ -2488,14 +2457,12 @@ async function _synchronizeFollowers(
 			});
 		}
 		for (const item of planned) item.st.sync_error = null;
-		if (planFailed.length > 0) {
-			const skipped = planFailed.map((f) => f.deck).join(',');
-			pushToast(
-				`Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
-				'error', undefined, undefined, {}, `beat-sync-followers:${master}`
-			);
-			for (const f of planFailed) {
-				recordPerfEvent('beat-sync-skip', f.message, f.deck);
+		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
+		// a pure function; the engine only performs the effects it returns.
+		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
+			pushToast(notice.message, notice.kind, undefined, undefined, {}, notice.groupKey);
+			for (const event of notice.events) {
+				recordPerfEvent(event.kind, event.detail, event.deck, notice.kind);
 			}
 		}
 	} catch (error) {
@@ -2525,9 +2492,13 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	deckStableId: (deck) => deckStates[deck].stable_id,
 	deckAnlz: (deck) => deckStates[deck].anlz,
 	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
+	publishDeckBpm: (deck, bpm) => (deckStates[deck].bpm = bpm),
+	setDeckAnlzError: (deck, code) => (deckStates[deck].anlz_error = code),
+	reconcileDeckLoop: (deck, anlz) => reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),
 	reportError: (message) => pushToast(message, 'error')
 });
 installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);
+installAuthoritativeAnlzErrorSink(_beatgridGuards.adoptAuthoritativeError);
 export const installScopedSyncRunner = _beatgridGuards.installScopedSyncRunner; // rationale for [deck]-then-widen: performance-ipc.svelte.ts's installScopedSyncRunner
 
 async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promise<T> {
@@ -2795,7 +2766,7 @@ class RbAudioEngine implements AudioEngine {
 		// hand a headless agent its audio back. Only the node is released.
 		attachMasterMuteNode(null);
 		_masterMuteGain = null;
-		_externalMerger = null;
+		_externalMerger = _externalRouteAnalyser = null;
 		_ctx = null;
 		_masterDeck = null;
 		for (const deck of DECK_IDS) {
@@ -2828,9 +2799,8 @@ class RbAudioEngine implements AudioEngine {
 		// mix decoded into; re-resolving it after the swap could hand the stems a
 		// rebuilt graph and a silent sample-rate mismatch.
 		let loadCtx: AudioContext | null = null;
-		// Always-on stage timings -> recordPerfTiming / DevTools filter `[perf]`.
-		const perfT0 = performance.now();
-		const perfMs = (): number => Math.round(performance.now() - perfT0);
+		// Stage timings + load conditions for DevTools `[perf]`; spanId binds every recordDeckLoad below to THIS load's own span (#1658).
+		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
 		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
 			const t0 = performance.now();
@@ -2844,6 +2814,9 @@ class RbAudioEngine implements AudioEngine {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
 			const anlzCached = isAnlzEntryUsable(cachedAnlz);
+			// A cache hit stays on the critical path but is no longer TRUSTED for
+			// the session - see `revalidateAnlz`'s own doc for why.
+			if (anlzCached) revalidateAnlz(stable_id);
 			// A direct (uncached) fetch never blocks the load out waiting on a
 			// momentarily saturated decoder (Codex finding, issue #735 follow-up,
 			// discussion_r3907610439): `anlz` below must be non-null for this
@@ -2907,7 +2880,7 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
+			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState, spanId);
 			if (processor !== null) {
 				try {
 					await processor.dispose();
@@ -2989,20 +2962,27 @@ class RbAudioEngine implements AudioEngine {
 			st.title = candidateTrack.title ?? null;
 			st.artist = candidateTrack.artist ?? null;
 			st.rating = candidateTrack.rating ?? null;
-			st.bpm = candidateTrack.bpm ?? null;
 			st.key = candidateTrack.key ?? null;
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
-			st.anlz = candidateAnlz;
-			st.anlz_error = null;
+			// Re-reads the shared cache rather than trusting `candidateAnlz` -
+			// see `resolvePublishedAnlz`'s own doc for the race this guards.
+			const latestAnlzEntry = getAnlzEntry(stable_id);
+			const usableAnlz = isAnlzEntryUsable(latestAnlzEntry) ? (latestAnlzEntry.data as AnlzWithVocals) : null;
+			const latestAnlzError = latestAnlzEntry?.status === 'error' ? latestAnlzEntry.code : null;
+			const { anlz: publishedAnlz, anlzError: publishedAnlzError, bpm: publishedBpm } = resolvePublishedAnlz(usableAnlz, latestAnlzError, candidateAnlz, candidateTrack.bpm ?? null);
+			st.anlz = publishedAnlz;
+			st.anlz_error = publishedAnlzError;
+			// Kept in lockstep with publishedAnlz - see `resolvePublishedAnlz`'s own doc.
+			st.bpm = publishedBpm;
 			st.processor_error = null;
 			st.sync_error = null;
 			st.stems = candidateStemState;
 			st.hot_cues = _hotCuesFromSlots(hotCueSlots);
 			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
 			st.has_rb_mapping = candidateTrack.has_rb_mapping;
-			st.loop = _displayLoopFrom(candidateAnlz.cues, candidateAnlz.beatgrid.beats);
+			st.loop = displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			if (incumbentProcessor !== null) {
@@ -3020,12 +3000,18 @@ class RbAudioEngine implements AudioEngine {
 					pushToast(`Deck ${deck} retired processor cleanup failed - ${message}`, 'error');
 				}
 			}
+		}).catch((exc: unknown) => {
+			// A swap failure is still a load that STARTED; without this the span
+			// beginDeckLoad opened never closes and later rows report stale solo=0 (#1658 review).
+			stages.total = perfMs();
+			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
+			throw exc;
 		});
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.load_generation += 1;
 		st.last_load_stages = { ...stages };
-		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
+		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
 		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
 		// deck can play; the stem bundle lands afterwards and moves st.stems off
 		// `loading` on its own. Errors are handled inside, so no rejection can
@@ -3056,7 +3042,7 @@ class RbAudioEngine implements AudioEngine {
 		st.anlz = fresh;
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
-		st.loop = _displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
+		st.loop = displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
@@ -3452,7 +3438,7 @@ class RbAudioEngine implements AudioEngine {
 	 */
 	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
-		const grid = _requireBeatGrid(st, 'engageBeatLoop');
+		const grid = requireBeatGrid(st, 'engageBeatLoop');
 		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
 		const anchorMs =
 			beats === 4 && startMs === undefined ? precedingDownbeatMs(grid, currentMs) : startMs;
@@ -3501,7 +3487,7 @@ class RbAudioEngine implements AudioEngine {
 	 * math + duration clamp live in beat-sync-math.ts. */
 	async beatJump(deck: DeckId, beats: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'beatJump');
-		const grid = _requireBeatGrid(st, 'beatJump');
+		const grid = requireBeatGrid(st, 'beatJump');
 		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
 		const rawTargetMs = beatJumpTargetMs(grid, anchorMs, beats);
 		const targetMs = beatJumpTargetWithinDurationMs(grid, rawTargetMs, _durationSec(deck) * 1000);
@@ -3826,7 +3812,7 @@ class RbAudioEngine implements AudioEngine {
 		// masterSwitchFollowers only returns already playing, already
 		// beat-synced decks - re-anchoring them to the new master. A deck whose
 		// BEAT SYNC is lit but inert (no real grid) is not one of them: it never
-		// locked, so there is nothing to re-anchor and _requireBeatGrid would
+		// locked, so there is nothing to re-anchor and requireBeatGrid would
 		// turn one operator's MASTER press into that deck's sync error.
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
 			effectiveBeatSync(deckStates[candidate])

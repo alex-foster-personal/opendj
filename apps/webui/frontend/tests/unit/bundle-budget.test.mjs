@@ -185,14 +185,15 @@ function _limitOf(name) {
 for (const surface of ['library', 'performance', 'other-lazy']) {
   // EVERY surface derives from the gate, none is a literal. A literal goes
   // stale the moment a ceiling is raised and then asserts a failure that can
-  // no longer happen: `performance: 210000` sat under the raised 227,328 limit
-  // and this case passed while proving nothing. It was written literal on the
-  // theory that the fixture's other chunks make the margin unpredictable, but
-  // those chunks only ADD to the surface, so limit + 8000 always overflows -
-  // the theory was true about the exact overage and false about the direction,
-  // which is the half that matters. Same defect fixed for `other-lazy` on this
-  // PR one round earlier; this is its sibling, found only because raising the
-  // performance ceiling made this case go red.
+  // no longer happen: when PR #1587 raised performance to 227,328, the pinned
+  // `performance: 210000` stopped overflowing and this case passed while
+  // proving nothing. That branch re-pinned it to 228000, which is the same
+  // maintenance recurring rather than the defect ending. It was written
+  // literal on the theory that the fixture's other chunks make the margin
+  // unpredictable, but those chunks only ADD to the surface, so limit + 8000
+  // always overflows - the theory was right about the exact overage and wrong
+  // about the direction, which is the half that matters. Same defect fixed
+  // for `other-lazy` one round earlier on this PR; these are its siblings.
   const overflow = _limitOf(surface) + 8000;
   test(`budget "${surface}" FAILS when its own weight exceeds the limit`, () => {
     const { code, out } = _run(_fixture({ sizes: { [surface]: overflow } }));

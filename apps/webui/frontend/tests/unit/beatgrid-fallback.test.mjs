@@ -60,6 +60,22 @@ test('a rekordbox-mapped track with an empty grid never reaches the fallback', (
 	assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
 });
 
+test('an own terminal answer (missing or failed) is never patched over by the legacy fallback', () => {
+	// /beatgrid-fallback reads the LEGACY librosa/MIK analysis row (own_%
+	// rows are explicitly excluded server-side) but always labels its
+	// response source: "own" regardless, so accepting it here would
+	// silently replace an own lane's authoritative terminal answer with a
+	// legacy grid dressed up as if own had produced it (Codex P1 BLOCKING,
+	// PR #1587, second round).
+	for (const status of ['missing', 'failed']) {
+		const anlz = anlzWithBeats([]);
+		anlz.beatgrid.source = 'own';
+		anlz.beatgrid.status = status;
+		const gate = { anlzErrorCode: null, anlz, vendor: 'local' };
+		assert.equal(beatgridFallback.shouldUseBeatgridFallback(gate), false);
+	}
+});
+
 test('an unknown vendor mapping is never guessed at', () => {
 	// vendor null = /rb-meta has not answered yet. Guessing here would race a
 	// real rekordbox grid.

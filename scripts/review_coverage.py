@@ -55,6 +55,9 @@ Requirements (mini-PRD):
     [if] a review's own `commit_id`, or a summary comment's own embedded SHA,
     predates the PR's current head and still counts toward coverage
     [then broken]
+  / A gate older than main's own gate code renders no verdict (PR #1720).
+    [if] a branch cut before a gate fix on main prints PASS [then broken]
+    -- see scripts/review_gate_freshness.py
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -106,6 +109,7 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
+from scripts.review_gate_freshness import require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 
 REPO = "maintainer/music-dj-tools"
@@ -252,9 +256,13 @@ def _collect_evidence(
     directly testable against real captured payload shapes, no network call
     or mock required.
 
-    Submitted reviews and inline review comments both carry `commit_id`, the
-    push each was left against, so those filter on plain equality. Issue
-    comments carry no such field, so they fall back to `_body_is_at_head`.
+    A submitted review's `commit_id` is the push it was left against, so it
+    filters on plain equality. An inline comment's `commit_id` is NOT: GitHub
+    carries it forward to every newer push its diff position still applies
+    to, so it filters on `original_commit_id`, and a comment without one
+    counts for nothing (PR #1717, Thu 10 Sep 2026: three older Codex comments
+    certified head f8f0cad79 while Codex's own review of it had failed).
+    Issue comments carry no SHA field, so they fall back to `_body_is_at_head`.
     """
     def wrote(payload: dict) -> bool:
         """Did `name` write this artifact? Codex is known by its bot login;
@@ -275,7 +283,7 @@ def _collect_evidence(
         submitted += 1
         if review.get("body"):
             bodies.append(review["body"])
-    comments = sum(1 for c in inline if wrote(c) and c.get("commit_id") == head_sha)
+    comments = sum(1 for c in inline if wrote(c) and c.get("original_commit_id") == head_sha)
     for comment in issue_comments:
         if not wrote(comment):
             continue
@@ -490,6 +498,7 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
 
 
 def triage(pr: str) -> int:
+    gate_commit = require_gate_current_with_main()
     checks = _checks(pr)
     head_sha = _head_sha(pr)
     evidence = _evidence(pr, head_sha)
@@ -499,7 +508,7 @@ def triage(pr: str) -> int:
         EXPECTED_REVIEWERS,
     )
 
-    print(f"[review-coverage] PR #{pr} @ head {head_sha}")
+    print(f"[review-coverage] PR #{pr} @ head {head_sha} (gate code has main's {gate_commit[:9]})")
     print()
     print("  reviewer coverage")
     for verdict in verdicts:

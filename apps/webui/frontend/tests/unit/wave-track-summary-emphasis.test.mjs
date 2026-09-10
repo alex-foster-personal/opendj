@@ -5,74 +5,100 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const summaryPath = path.join(
-	__dirname,
-	'../../src/lib/components/rb/wave/WaveTrackSummary.svelte'
-);
+const themePath = path.join(__dirname, '../../src/lib/rb/theme.css');
+const waveRowPath = path.join(__dirname, '../../src/lib/components/rb/wave/WaveRow.svelte');
 
-/** Strip comments so doc prose can never satisfy a rule the CSS does not. */
-function stripComments(src) {
-	return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+/**
+ * pin e585d3b67f4d: "the title below it is too loud (full white font) and too
+ * wide. Empty and no track loaded for state there is too loud".
+ *
+ * This file owns exactly ONE half of that guard: the palette arithmetic. Is
+ * `--rb-text-dim` legible on every surface this title can land on, in every
+ * theme? That is a property of the token values, needs no browser, and covers
+ * surfaces a running app cannot easily be driven to (the light theme, the deck
+ * 3/4 row fill).
+ *
+ * The OTHER half - which colour, width and background actually win the cascade
+ * - lives in `tests/e2e/performance-wave-title-emphasis.spec.ts` and is read
+ * out of `getComputedStyle` in a real browser. It used to live here, as a
+ * hand-written cascade resolver over the component's `<style>` block. A
+ * blinded reviewer of PR #1723 defeated that resolver five different ways
+ * while every test stayed green - a `@media` wrapper, an `!important` at lower
+ * specificity, a `:where()` (zero specificity per spec, counted as 100 here),
+ * a `background-color` longhand beating a `background` shorthand, and a comma
+ * inside `:not()` breaking a naive selector-list split - each verified by
+ * injecting real CSS into the real component and running the real test.
+ *
+ * The lesson is not "patch those five". It is that re-implementing the cascade
+ * is the wrong tool for a question the browser already answers exactly, so the
+ * resolver was deleted rather than hardened.
+ */
+
+/** Token -> hex, read out of one selector block of the real theme file. */
+function paletteFor(themeCss, selector) {
+	// ANCHORED, not indexOf: '.perf-root {' is a trailing substring of
+	// "html[data-theme='light'] .perf-root {", so a bare search would resolve
+	// the dark block only for as long as theme.css keeps the dark section
+	// first. Reordering the file would then check dark-labelled surfaces
+	// against light-theme hex - a silently wrong test rather than a red one.
+	const anchored = new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
+	const match = anchored.exec(themeCss);
+	assert.ok(match, `theme.css must still define ${selector} at the start of a line`);
+	const start = match.index;
+	const block = themeCss.slice(start, themeCss.indexOf('}', start));
+	const palette = {};
+	for (const match of block.matchAll(/(--rb-[\w-]+):\s*(#[0-9a-fA-F]{6})/g)) {
+		palette[match[1]] = match[2];
+	}
+	return palette;
 }
 
-// pin e585d3b67f4d: "the title below it is too loud (full white font) and too
-// wide. Empty and no track loaded for state there is too loud".
-//
-// - if the track name goes back to --rb-text then it carries the same weight as
-//   primary UI text and reads as loud as the pin complains about -> broken.
-// - if it goes BELOW --rb-text-dim then it drops under the 4.5:1 AA floor that
-//   token was deliberately lightened to clear (pin 5503680a4e0f) -> broken.
-// - if it is width: 100% again then a two-word title still spans the whole
-//   132px gutter -> broken.
-// - if the standalone EMPTY / NO ART slates keep the raised fill then the
-//   no-track state is as prominent as a loaded one -> broken.
+function relativeLuminance(hex) {
+	const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+	const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
-test('the waveform track name is secondary text, not primary', () => {
-	const css = stripComments(readFileSync(summaryPath, 'utf8'));
-	const rule = css.slice(css.indexOf('.wave-track-name {'));
-	const body = rule.slice(0, rule.indexOf('}'));
-	assert.match(body, /color:\s*var\(--rb-text-dim\)/, 'must use the dim token');
-	assert.ok(!/color:\s*var\(--rb-text\)/.test(body), 'must not use the primary text token');
-});
+function contrastRatio(fg, bg) {
+	const [light, dark] = [relativeLuminance(fg), relativeLuminance(bg)].sort((a, b) => b - a);
+	return (light + 0.05) / (dark + 0.05);
+}
 
-test('the waveform track name does not go dimmer than the AA-cleared token', () => {
-	const css = stripComments(readFileSync(summaryPath, 'utf8'));
-	assert.ok(
-		!/\.wave-track-name[^}]*opacity:/.test(css),
-		'dimming the name with opacity would put it back under the 4.5:1 AA floor'
+test('the dim token clears the 4.5:1 AA floor on every surface this title renders on', () => {
+	const themeCss = readFileSync(themePath, 'utf8');
+	// The one background in play here that is NOT a token: decks 3/4 paint
+	// their whole row, gutter included, with a literal hex in WaveRow.svelte.
+	const secondaryRow = readFileSync(waveRowPath, 'utf8').match(
+		/\.rb-waverow\.secondary\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/
 	);
-});
+	assert.ok(secondaryRow !== null, 'WaveRow must still declare the secondary-row fill');
 
-test('the waveform track name shrinks to its own content instead of filling the gutter', () => {
-	const css = stripComments(readFileSync(summaryPath, 'utf8'));
-	const rule = css.slice(css.indexOf('.wave-track-name {'));
-	const body = rule.slice(0, rule.indexOf('}'));
-	assert.match(body, /width:\s*fit-content/, 'a short title must render short');
-	assert.match(body, /max-width:\s*100%/, 'a long title must still clip inside the gutter');
-	assert.match(body, /overflow:\s*hidden/, 'clipping is what makes the hover scrub meaningful');
-});
-
-test('the no-track and no-artwork slates give up the raised fill', () => {
-	const src = readFileSync(summaryPath, 'utf8');
-	assert.match(
-		src,
-		/class="wave-art-slate visible standalone" title="No track loaded"/,
-		'the EMPTY slate must be marked standalone'
-	);
-	assert.match(
-		src,
-		/class="wave-art-slate visible standalone" title="Artwork unavailable/,
-		'the NO ART slate must be marked standalone'
-	);
-	const css = stripComments(src);
-	assert.match(
-		css,
-		/\.wave-art-slate\.standalone \{[^}]*background:\s*transparent/,
-		'a standalone slate must not paint the raised chrome fill'
-	);
-	assert.match(
-		css,
-		/\.wave-track-name\.empty \{/,
-		'the empty-state name needs its own quieter treatment'
-	);
+	const dark = paletteFor(themeCss, '.perf-root {');
+	const light = paletteFor(themeCss, "html[data-theme='light'] .perf-root {");
+	const surfaces = [
+		['dark --rb-bg', dark['--rb-text-dim'], dark['--rb-bg']],
+		['dark --rb-panel', dark['--rb-text-dim'], dark['--rb-panel']],
+		['dark --rb-panel-raised', dark['--rb-text-dim'], dark['--rb-panel-raised']],
+		['dark deck 3/4 row', dark['--rb-text-dim'], secondaryRow[1]],
+		['light --rb-bg', light['--rb-text-dim'], light['--rb-bg']],
+		['light --rb-panel', light['--rb-text-dim'], light['--rb-panel']],
+		['light --rb-panel-raised', light['--rb-text-dim'], light['--rb-panel-raised']]
+		// DELIBERATELY NOT LISTED: light theme on the deck 3/4 row. That row's
+		// fill is a hardcoded dark hex with no light-theme override, so this
+		// title measures 2.31:1 there - a real, PRE-EXISTING AA failure that
+		// belongs to WaveRow's palette, not to this title's colour. Listing it
+		// would make this test red for a defect it cannot fix; omitting it
+		// silently would hide it. It is tracked as issue #1722, and the
+		// number is recorded here so nobody has to rediscover it: before the
+		// dim token this same cell measured 1.07:1, so this change improved it
+		// 2.2x without clearing the floor.
+	];
+	for (const [name, fg, bg] of surfaces) {
+		assert.ok(fg !== undefined && bg !== undefined, `missing colours for ${name}`);
+		const ratio = contrastRatio(fg, bg);
+		assert.ok(
+			ratio >= 4.5,
+			`${name}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1, under the 4.5:1 AA body floor`
+		);
+	}
 });

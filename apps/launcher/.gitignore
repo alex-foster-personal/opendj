@@ -6,12 +6,3 @@ src-tauri/gen/
 .DS_Store
 .vite/
 coverage/
-# NOT ignored because a lockfile should not be committed -- it should be,
-# and `--frozen-lockfile` cannot work until it is. It is ignored because
-# the quality ratchet runs jscpd over all of `apps/`, and a 2675-line
-# lockfile is repetitive by construction: committing it moved
-# duplication.percent from 0.29 to 0.35 on its own, which is a CI failure
-# for a metric that is measuring nothing real. The fix is to exclude
-# lockfiles from jscpd, which is a change to the gate and wants its own
-# review. Tracked separately; remove this line when that lands.
-pnpm-lock.yaml
