@@ -864,11 +864,32 @@
 		}
 	}
 
+	/**
+	 * getHealth() at boot, with one retry.
+	 *
+	 * _init() throws on any getHealth() rejection, which skips
+	 * _restoreBootPane() entirely - and _refreshLibraryRowsOnce's background
+	 * refresh loop explicitly skips any pane whose playlist_id is still null,
+	 * so a boot pane that never opened this way is never retried by anything
+	 * else. One retry with fresh:true (bypassing the coalesced entry, which
+	 * may itself be the failed attempt) covers a daemon that is merely slow -
+	 * including the fetch timeout src/lib/api.ts now adds - rather than
+	 * actually down. A second failure still propagates to _init()'s existing
+	 * catch/toast path unchanged.
+	 */
+	async function _getHealthAtBoot(): ReturnType<typeof getHealth> {
+		try {
+			return await getHealth();
+		} catch {
+			return await getHealth({ fresh: true });
+		}
+	}
+
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
 		try {
-			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
+			const [healthRes, lists] = await Promise.all([_getHealthAtBoot(), listPlaylistsHydrated()]);
 			allTracksCount = healthRes.health.state_db.tracks;
 			libraryHealthError = null;
 			playlists = lists;

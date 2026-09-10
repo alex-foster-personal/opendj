@@ -351,6 +351,10 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 	// why ui-prefs is queued rather than forced. Asserting BOTH numbers means a
 	// health regression is caught AND a future ui-prefs change that forgets to
 	// update this claim is caught, instead of only ever checking one direction.
-	expect(report.median.healthCallsAtBoot, 'health@boot must not regress past the coalesced count').toBeLessThanOrEqual(3);
+	// Exact, not <=: measured deterministically at 3 across every one of 6
+	// boots on the negative and positive control alike (see "Instrument fix" in
+	// the PR body), so <=3 let a silent regression to 0 (or any count under 3)
+	// pass unnoticed -- the exact gap review round 3 (thread on this file) named.
+	expect(report.median.healthCallsAtBoot, 'health@boot must be exactly the coalesced count').toBe(3);
 	expect(report.median.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline').toBe(2);
 });
