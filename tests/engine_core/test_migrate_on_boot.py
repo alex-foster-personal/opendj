@@ -14,8 +14,8 @@ Run in a SUBPROCESS, matching test_contract_rev.py / test_data_dir_sandbox.py:
 
 Single-line intent:
   - if a v5-shaped state.db boots through create_app then /api/v1/health
-    serves 200 with the v8 schema applied [broken if migration only runs on
-    a write path, per the #762 incident]
+    serves 200 with the ladder's terminal schema applied [broken if
+    migration only runs on a write path, per the #762 incident]
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.state import schema as state_schema
 from tests.test_schema_time_travel import _verified_v5_sql
 
 pytestmark = pytest.mark.requirement("GUARD-09")
@@ -129,7 +130,14 @@ def test_engine_boots_and_serves_health_against_a_v5_db(probe: dict) -> None:
     assert probe["health_body"]["status"] == "ok"
 
 
-def test_v5_state_db_lands_on_v8_after_boot(probe: dict) -> None:
+def test_v5_state_db_lands_on_the_current_version_after_boot(probe: dict) -> None:
+    """The terminal version, read from the ladder rather than transcribed.
+
+    This assertion was pinned at a literal 8 and went stale the moment v9
+    (lyric_verdict) landed. What #762 is about is that boot migrates AT ALL,
+    not which number the ladder currently ends on, so the ladder is the
+    right source for the expectation.
+    """
     conn = sqlite3.connect(f"file:{probe['state_db']}?mode=ro", uri=True)
     try:
         version = conn.execute(
@@ -137,14 +145,14 @@ def test_v5_state_db_lands_on_v8_after_boot(probe: dict) -> None:
         ).fetchone()[0]
         # v7 first added the ``deleted_at`` column that the live incident's
         # unmigrated db was missing; querying it proves the shape survives
-        # the subsequent v8 migration too, not just the version counter.
+        # every subsequent migration too, not just the version counter.
         row = conn.execute(
             "SELECT deleted_at FROM tracks WHERE stable_id = ?",
             ("v5-boot-fixture",),
         ).fetchone()
     finally:
         conn.close()
-    assert version == 8
+    assert version == state_schema.SCHEMA_VERSION
     assert row == (None,)
 
 

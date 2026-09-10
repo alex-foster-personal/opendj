@@ -15,6 +15,7 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 | `adapters` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | no index, O-10 |
 | `events` | `apps/shared/state/schema.py` | `apply_migrations` (v1) | name collides, O-2 |
 | `track_locations` | `apps/shared/state/schema.py` | `apply_migrations` (v4/v5) | data backfill, O-14 |
+| `lyric_verdict` | `apps/shared/state/schema.py` | `apply_migrations` (v9) | consolidated rung v3, O-16 |
 | `analysis` | `apps/analysis/store.py` | `_ensure_analysis_tables` | |
 | `analysis_events` | `apps/analysis/store.py` | `_ensure_analysis_tables` | index policy differs, O-11 |
 | `pairings` | `apps/shared/pairings/schema_sql.py` | `ensure_phase08_tables` | shape collides, O-6 |
@@ -85,9 +86,19 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 
 **O-15. `apps/shared/state/schema.py` has `_V5 = _V4`.** v5 re-runs v4 verbatim because a live agentbox DB was stamped at v4 out-of-band without the tables existing -- a repair step disguised as a version bump. This is why adoption verifies object existence rather than trusting the counter.
 
+**O-16. Legacy `_V9` mirrors as a table, not as a rebuild (karaoke lyrics, Wed 9 Sep 2026).** Legacy step 8 -> 9 (`apps/shared/state/migrations_v9.py`) does two things: it creates `lyric_verdict` + `idx_lyric_verdict_red`, and it REBUILDS `sync_policies` to widen the `asset_kind` CHECK from four kinds to six (`'lyrics_cache'` and `'karaoke_words'` join `'audio','stem_bundle','anlz_cache','vocal_cache'`). This module mirrors the OUTCOME of both, not the mechanism:
+
+- the new table and its index become the `lyrics` domain (`_LYRICS`) and consolidated rung `_V3`, following the `native_analysis_v1` precedent -- its own rung rather than an append to `_V1`, because an already-stamped database never re-runs a rung it has passed;
+- the widened `asset_kind` CHECK is written straight into `_SYNC_INFRA`'s `sync_policies` DDL. There is no `sync_policies_v9` / `DROP` / `RENAME` dance here: this module declares end shapes, and the parity gate compares the legacy ladder's FINAL stored text against ours.
+
+Two divergences from the legacy text, both deliberate and neither a shape change:
+
+1. legacy writes a bare `CREATE TABLE lyric_verdict` and a bare `CREATE INDEX idx_lyric_verdict_red` so that a stale index left behind on a renamed-aside branch-era table fails the migration loudly (`migrations_v9.py` reading 2). This module cannot: the adoption path replays every statement against already-provisioned databases, so `IF NOT EXISTS` is mandatory here. `normalize_object_sql` strips the flag before comparing, so the gate is unaffected.
+2. `LEGACY_SHARED_STATE_VERSION` moved 7 -> 9 in the same change. It was already stale by one (the legacy ladder reached 8 with the analysis-retention step) and had been harmless, because every legacy step through v8 is `IF NOT EXISTS` and re-running one only wastes work. Legacy `_V9` is different: its `sync_policies` rebuild is a bare `CREATE` / `INSERT SELECT` / `DROP` / `RENAME` and is NOT idempotent, so an under-stamped counter would let the legacy runner re-run it against a database this module already built and drop a populated table.
+
 ## Runner version numbering
 
-Shares `schema_meta` but stamps at `VERSION_OFFSET = 1000`: rows 1..5 are legacy, `1000` is the `ADOPTION_VERSION` marker (this file predates consolidation), `1001` is consolidated v1. Fresh DBs get 1..5 stamped (so the legacy runner no-ops) plus 1001 and no 1000 row. `apply_migrations` refuses below `MIN_ADOPTABLE_LEGACY_VERSION = 3`.
+Shares `schema_meta` but stamps at `VERSION_OFFSET = 1000`: rows below the offset are legacy (1..`LEGACY_SHARED_STATE_VERSION`, today 9), `1000` is the `ADOPTION_VERSION` marker (this file predates consolidation), and `1000 + n` is consolidated `n` -- `1003` at the time of writing. Fresh DBs get the legacy range stamped (so the legacy runner no-ops) plus `1000 + SCHEMA_VERSION` and no 1000 row. `apply_migrations` refuses below `MIN_ADOPTABLE_LEGACY_VERSION = 3`.
 
 ### Known cosmetic readout: `schema version: 1001 (target 5)` (R3 #4)
 

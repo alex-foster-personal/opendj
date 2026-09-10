@@ -86,6 +86,17 @@ TABLE_DOCS: dict[str, str] = {
         "overridden records a human forcing a write past a non-passing "
         "verdict."
     ),
+    # ----- v9 (specs/karaoke-lyrics-operational-plan.md D13.1) ------------
+    "lyric_verdict": (
+        "One row per track holding the karaoke lyrics verdict (vocal, "
+        "sparse, no-lyrics or unknown), the human override that survives a "
+        "recompute, the alignment provenance, and the sha256 of the "
+        "track's karaoke_words artifact. Synced, so a verdict computed on "
+        "one machine is a verdict everywhere; deletes are tombstones only "
+        "(the licensing purge sets deleted_at, it never DELETEs), which is "
+        "also what makes an accidental re-ingest of purged lyrics a "
+        "no-op."
+    ),
     "playlists": (
         "One row per vendor playlist, unique on (vendor, vendor_pl_id): "
         "re-ingesting the same playlist from the same vendor updates in "

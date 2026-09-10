@@ -84,7 +84,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -97,8 +97,17 @@ creating it from scratch. Distinct from the ``VERSION_OFFSET + n`` rows so a
 reader can tell "this file predates consolidation" from "this file was born
 consolidated"."""
 
-LEGACY_SHARED_STATE_VERSION: int = 7
-"""Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
+LEGACY_SHARED_STATE_VERSION: int = 9
+"""Terminal version of ``apps/shared/state/schema.py``'s own ladder.
+
+Under-stamping this is not cosmetic. :func:`_stamp_legacy_counters` writes
+``schema_meta`` rows 1..N, and the legacy runner short-circuits at
+``current >= SCHEMA_VERSION``; leave N behind and the legacy ladder re-runs
+its unapplied steps against a database this module already built. Every legacy
+step through v8 is ``IF NOT EXISTS`` and would merely be wasted work, but
+legacy ``_V9`` REBUILDS ``sync_policies`` (bare CREATE / INSERT SELECT / DROP /
+RENAME) and is not idempotent, so a stale value here is a live failure rather
+than a tidiness issue. It read 7 against a legacy ladder at 8 before v9."""
 
 BUSY_TIMEOUT_MS: int = 5000
 """How long the runner waits for a competing writer before giving up.
@@ -275,13 +284,18 @@ _SYNC_INFRA: tuple[str, ...] = (
     "name TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK (platform IN "
     "('macos','windows','linux')), is_hub INTEGER NOT NULL DEFAULT 0, "
     "data_root TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL )",
+    # The asset_kind CHECK carries the SIX kinds legacy _V9 rebuilds the table
+    # to, not the four v7 created it with: the legacy side of the parity gate
+    # runs the whole ladder, so this text is compared against the rebuilt
+    # shape. Character-for-character with
+    # apps/shared/state/migrations_v9.ASSET_KIND_CHECK_VALUES.
     "CREATE TABLE IF NOT EXISTS sync_policies ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, asset_kind TEXT NOT "
     "NULL CHECK (asset_kind IN ('audio','stem_bundle','anlz_cache',"
-    "'vocal_cache')), mode TEXT NOT NULL CHECK (mode IN ('pinned','cached',"
-    "'stream','excluded')), cache_budget_mb INTEGER, updated_at TEXT, "
-    "origin_device_id TEXT, deleted_at TEXT, PRIMARY KEY (machine_id, "
-    "asset_kind) )",
+    "'vocal_cache','lyrics_cache','karaoke_words')), mode TEXT NOT NULL CHECK "
+    "(mode IN ('pinned','cached','stream','excluded')), cache_budget_mb "
+    "INTEGER, updated_at TEXT, origin_device_id TEXT, deleted_at TEXT, "
+    "PRIMARY KEY (machine_id, asset_kind) )",
     "CREATE TABLE IF NOT EXISTS playlist_pins ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, playlist_id TEXT "
     "NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE, mode "
@@ -517,6 +531,52 @@ _ANALYSIS_RETENTION: tuple[str, ...] = (
     """,
 )
 
+
+# ==========================================================================
+# DOMAIN: karaoke lyrics -- one verdict row per track
+# Legacy source: apps/shared/state/schema.py (_V9, apps/shared/state/
+# migrations_v9.py). Same consolidation rule as everywhere else in this file:
+# the shapes below are the legacy ladder's output, reproduced verbatim.
+#
+# ONE deliberate divergence from the legacy text, and it is a creation-time
+# flag rather than a shape: the legacy ladder writes a BARE ``CREATE TABLE``
+# and a BARE ``CREATE INDEX`` so a stale ``idx_lyric_verdict_red`` left on a
+# renamed-aside branch table fails the migration loudly (migrations_v9.py
+# reading 2). This module cannot do that: every statement here is replayed
+# against ALREADY-provisioned databases by the adoption path, so it must be
+# ``IF NOT EXISTS`` or adoption breaks on every real file. ``normalize_object_
+# sql`` strips the flag before comparing, so the parity gate is unaffected.
+# ==========================================================================
+
+_LYRICS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS lyric_verdict (
+        stable_id          TEXT PRIMARY KEY REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        verdict            TEXT NOT NULL CHECK (verdict IN
+                             ('vocal','sparse','no-lyrics','unknown')),
+        coverage_pct       REAL,
+        source             TEXT,
+        language_iso3      TEXT,
+        n_words            INTEGER,
+        n_lines            INTEGER,
+        pct_witness_red    REAL,
+        override           TEXT CHECK (override IS NULL OR override IN
+                             ('vocal','sparse','no-lyrics')),
+        override_note      TEXT,
+        pipeline_version   TEXT NOT NULL,
+        words_content_hash TEXT CHECK (words_content_hash IS NULL OR
+                             length(words_content_hash) = 64),
+        computed_at        TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        origin_device_id   TEXT,
+        deleted_at         TEXT
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_lyric_verdict_red "
+        "ON lyric_verdict(pct_witness_red DESC)"
+    ),
+)
 
 
 # ==========================================================================
@@ -864,6 +924,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "sync_infra": _SYNC_INFRA,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
+    "lyrics": _LYRICS,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -892,6 +953,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "analysis": "apps/analysis/store.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
+    "lyrics": "apps/shared/state/schema.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -940,6 +1002,7 @@ TABLES: dict[str, tuple[str, ...]] = {
         "track_energy_segments",
         "analysis_field_verification",
     ),
+    "lyrics": ("lyric_verdict",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (
@@ -972,9 +1035,15 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 
 # --- migration ladder -----------------------------------------------------
 
+_LATER_RUNGS: frozenset[str] = frozenset({"native_analysis_v1", "lyrics"})
+"""Domains that arrived AFTER consolidated v1 and therefore own their own rung.
+
+Excluded from :data:`_V1` so the rung a domain belongs to is stated in exactly
+one place. See :data:`_V2` for why an append to ``_V1`` is the wrong move."""
+
 _V1: list[str] = [
     stmt for name, domain in DOMAINS.items()
-    if name != "native_analysis_v1"
+    if name not in _LATER_RUNGS
     for stmt in domain
 ]
 """Consolidated 0 -> 1: create everything that existed at v1. Fresh-DB path."""
@@ -990,7 +1059,17 @@ the two tables from a stamped database and re-running the ladder left them
 absent. Every statement is `IF NOT EXISTS`, so the rung is also safe on a
 database that already has them."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2]
+_V3: list[str] = list(_LYRICS)
+"""2 -> 3: the karaoke lyrics verdict row and its triage index.
+
+Its own rung for the same reason ``_V2`` is: an existing state.db is already
+stamped at the current version, so a statement appended to ``_V1`` would never
+run there. Mirrors legacy ``_V9`` (apps/shared/state/migrations_v9.py); the
+legacy sync_policies rebuild that ships in the same legacy step is NOT
+mirrored as a rebuild, because this module declares the END shape directly --
+its widened ``asset_kind`` CHECK is already in ``_SYNC_INFRA``."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.

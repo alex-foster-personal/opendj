@@ -240,6 +240,44 @@ def _exercise_hydration_writers(
         )
 
 
+def _exercise_lyric_verdict_writes(
+    conn: sqlite3.Connection, machine_id: str
+) -> None:
+    """Drive the ``lyric_verdict`` write shape (schema v9, D13.1).
+
+    Written against ``stamped_transaction`` + ``stamp_and_log`` directly
+    rather than through ``apps.lyrics.store``, for the same reason
+    :func:`_exercise_hydration_writers` calls two module-private writers: it
+    is the CHOKEPOINT that is under test here, and reaching it through the
+    lyrics store would drag that package's validation and its verdict
+    vocabulary into a test about stamping. What this pins is that a v9 row
+    can only be written the stamped way -- an insert AND an update, because
+    the ON CONFLICT branch is where the round 2 finding N1 writers all
+    slipped through.
+
+    ``open_rw`` connections are AUTOCOMMIT, so each write owns its own
+    ``stamped_transaction`` and there is no trailing ``conn.commit()``.
+    """
+    with sync_stamp.stamped_transaction(conn):
+        stamp = sync_stamp.stamp_and_log(conn, "lyric_verdict", (SID,), machine_id)
+        conn.execute(
+            "INSERT INTO lyric_verdict(stable_id, verdict, coverage_pct, "
+            "source, n_words, n_lines, pct_witness_red, pipeline_version, "
+            "words_content_hash, computed_at, updated_at, origin_device_id) "
+            "VALUES (?, 'vocal', 91.5, 'lrclib', 240, 41, 0.012, "
+            "'2026.09.09-round3a', ?, ?, ?, ?)",
+            (SID, "c" * 64, _TS, stamp.updated_at, stamp.origin_device_id),
+        )
+    # The recompute branch: same row, new numbers, second stamp.
+    with sync_stamp.stamped_transaction(conn):
+        stamp = sync_stamp.stamp_and_log(conn, "lyric_verdict", (SID,), machine_id)
+        conn.execute(
+            "UPDATE lyric_verdict SET verdict = 'sparse', coverage_pct = 12.0, "
+            "updated_at = ?, origin_device_id = ? WHERE stable_id = ?",
+            (stamp.updated_at, stamp.origin_device_id, SID),
+        )
+
+
 def _exercise_every_writer_path(
     conn: sqlite3.Connection, tmp_path: Path, db_path: Path
 ) -> None:
@@ -249,6 +287,7 @@ def _exercise_every_writer_path(
     _exercise_cloudsync_routes(db_path)
     _exercise_spotify_importer(conn, tmp_path)
     _exercise_hydration_writers(conn, tmp_path, machine_id)
+    _exercise_lyric_verdict_writes(conn, machine_id)
 
 
 # ----- helpers -------------------------------------------------------------
@@ -363,6 +402,12 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
             "source, modified_at, updated_at, origin_device_id) "
             "VALUES (?, 'raw_field', '1', 'mik', ?, ?, ?)",
             (SID, stamp, stamp, machine_id),
+        ),
+        "lyric_verdict": (
+            "INSERT INTO lyric_verdict(stable_id, verdict, pipeline_version, "
+            "computed_at, updated_at, origin_device_id) "
+            "VALUES (?, 'unknown', 'raw', ?, ?, ?)",
+            (OTHER_SID, stamp, stamp, machine_id),
         ),
         "track_locations": (
             "INSERT INTO track_locations(location_id, stable_id, machine_id, "

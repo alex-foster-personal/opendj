@@ -16,15 +16,21 @@ Two dicts:
 stays under the 600-line review threshold; the split is purely mechanical,
 ``from apps.database.column_docs import TABLE_DOCS`` still works. The four
 analysis-retention tables' entries (PR #383) moved the same way into
-:mod:`apps.database.column_docs_analysis_retention` and are merged into
-``COLUMN_DOCS`` below, for the same reason.
+:mod:`apps.database.column_docs_analysis_retention`, native-analysis v1's
+three into :mod:`apps.database.column_docs_native_analysis` and schema v9's
+``lyric_verdict`` into :mod:`apps.database.column_docs_lyrics`; all three are
+merged into ``COLUMN_DOCS`` below, for the same reason.
 
 Coverage: every table :mod:`apps.shared.state.schema` knows about --
-``TABLES`` (the fourteen this module actually creates), the seven real
+``TABLES`` (the twenty-two this module actually creates), the seven real
 tables it declares in ``FOREIGN_AUTHORITY_TABLES`` but does not create
 (``pairings``, ``smartlists``, ``play_orders``, ``play_order_entries``,
 ``play_orders_schema_meta``, ``tracks_fts``, ``tracks_frecency``), and
-``schema_meta`` from ``INFRASTRUCTURE_TABLES`` -- twenty-two tables in all.
+``schema_meta`` from ``INFRASTRUCTURE_TABLES`` -- thirty tables -- plus
+native-analysis v1's three, which the consolidated engine schema owns:
+thirty-three in all. These counts are hand-transcribed and the set equality
+in ``tests/database/test_agents_md_generator.py`` is what actually enforces
+coverage; re-count them when a table lands.
 The five fts5 shadow tables in ``FOREIGN_AUTHORITY_TABLES``
 (``tracks_fts_config/_content/_data/_docsize/_idx``) are deliberately NOT
 documented here: :mod:`apps.database.generate_agents_md` excludes them
@@ -42,6 +48,7 @@ guards against drift; this file only supplies the meaning.
 from __future__ import annotations
 
 from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
+from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
@@ -346,7 +353,13 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     "sync_policies": {
         "machine_id": "FK -> machines(machine_id), ON DELETE CASCADE.",
-        "asset_kind": ("CHECK IN ('audio', 'stem_bundle', 'anlz_cache', 'vocal_cache')."),
+        "asset_kind": (
+            "CHECK IN ('audio', 'stem_bundle', 'anlz_cache', 'vocal_cache', "
+            "'lyrics_cache', 'karaoke_words') -- widened from four kinds to "
+            "six by the schema v9 table rebuild "
+            "(apps/shared/state/migrations_v9.ASSET_KIND_CHECK_VALUES is the "
+            "one source of that list)."
+        ),
         "mode": (
             "CHECK IN ('pinned', 'cached', 'stream', 'excluded') -- "
             "pinned is always-local, cached is opportunistic with LRU "
@@ -563,6 +576,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     **ANALYSIS_RETENTION_COLUMN_DOCS,
     **NATIVE_ANALYSIS_COLUMN_DOCS,
+    **LYRICS_COLUMN_DOCS,
 }
 
 

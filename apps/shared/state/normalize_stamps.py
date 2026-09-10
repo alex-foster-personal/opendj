@@ -72,6 +72,8 @@ FLOOR_STAMP: str = "0001-01-01T00:00:00.000000+00:00"
 #: on ``apps.sync_hub``); pinned by
 #: ``tests/shared/state/test_normalize_stamps.py``.
 STAMP_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("lyric_verdict", "updated_at"),
+    ("lyric_verdict", "deleted_at"),
     ("playlist_memberships", "updated_at"),
     ("playlist_memberships", "deleted_at"),
     ("playlist_pins", "updated_at"),

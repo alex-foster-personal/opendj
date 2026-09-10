@@ -195,6 +195,29 @@ def test_the_swept_columns_cover_the_whole_digest_set() -> None:
     )
 
 
+def test_the_digest_half_of_the_swept_list_stays_alphabetical() -> None:
+    """The convention the tuple's own layout asserts, made checkable.
+
+    ``STAMP_COLUMNS`` is a hand-maintained mirror of ``DIGEST_TABLES`` x
+    {updated_at, deleted_at}, ordered alphabetically by table so a reader can
+    find an entry and an author can see where a new one goes. Nothing checked
+    that, so the ordering was one careless append away from being decorative
+    -- and a list nobody can scan is a list a table goes missing from. The
+    ``local_changelog`` pair is deliberately excluded: it is appended after
+    the digest set rather than sorted into it.
+    """
+    digest = set(hub_protocol.DIGEST_TABLES)
+    tables = [table for table, _column in normalize_stamps.STAMP_COLUMNS
+              if table in digest]
+    assert tables == sorted(tables), (
+        f"STAMP_COLUMNS' digest half is out of alphabetical order: {tables}"
+    )
+    assert "lyric_verdict" in digest, (
+        "schema v9 put lyric_verdict in the sync set; if it is not in the "
+        "digest set here, the rest of this module's coverage is a lie"
+    )
+
+
 # ----- (4) the CLI ---------------------------------------------------------
 
 
