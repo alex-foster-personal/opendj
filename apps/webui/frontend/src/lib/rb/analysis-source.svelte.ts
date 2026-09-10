@@ -20,8 +20,7 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { api, unwrap } from '../api';
-import { ApiError } from '../api/client';
+import { ApiError, api, unwrap } from '../api';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import {
 	evictAnlzCacheEntriesServingOtherSource,

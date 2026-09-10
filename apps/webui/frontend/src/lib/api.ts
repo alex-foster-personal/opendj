@@ -24,7 +24,7 @@ import { ApiError, api, requireBody, unwrap } from './api/client';
 import type { RuleAst } from './smartlists/rule-form';
 
 export { API_BASE } from './api/client';
-export { api, unwrap } from './api/client';
+export { api, unwrap, ApiError } from './api/client';
 
 /** The documented `/api/v1/tracks` filter set. `listTracks` keeps its open
  * `Record` signature (call sites pass filter bags straight through), so the
