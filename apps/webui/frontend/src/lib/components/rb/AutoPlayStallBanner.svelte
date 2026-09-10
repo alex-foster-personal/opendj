@@ -22,23 +22,25 @@
 	import { describeStallTrack, STALL_TRACK_LIMIT } from '$lib/rb/autoplay-stall';
 
 	let showTracks = $state(false);
-	/** Which stall the open/closed choice above was made about. */
-	let expandedFor = $state<string | null>(null);
+	/** The stall OCCURRENCE the open/closed choice above was made about. */
+	let expandedFor = $state<number | null>(null);
 
 	const stall = $derived(autoPlayStall.current);
 	const hidden = $derived(stall === null || stall.blocked_total <= stall.blocked.length ? 0 : stall.blocked_total - stall.blocked.length);
 	/**
-	 * A LATER stall starts collapsed (Codex r3973913201).
+	 * A LATER stall starts collapsed (Codex r3973913201, r3974381597).
 	 *
 	 * The component stays mounted across stalls, so a bare `showTracks` left
 	 * one operator's expansion armed for the next, unrelated stop - which then
-	 * sprang a list over up to 30vh of the performance surface unasked. Keyed
-	 * on the stall's identity rather than reset in an effect, so the open state
-	 * cannot survive the thing it was about.
+	 * sprang a list over up to 30vh of the performance surface unasked.
+	 *
+	 * Keyed on `revision`, the per-OCCURRENCE id, not on the stall's content:
+	 * a second stop can carry the same reason and the same source track over a
+	 * different playlist, and a content key reads that as a continuation of the
+	 * first. Keyed rather than reset in an effect, so the open state cannot
+	 * outlive the thing it was about no matter what order anything runs in.
 	 */
-	const listOpen = $derived(
-		showTracks && stall !== null && expandedFor === `${stall.reason}:${stall.source_stable_id}`
-	);
+	const listOpen = $derived(showTracks && stall !== null && expandedFor === stall.revision);
 </script>
 
 {#if stall !== null}
@@ -55,7 +57,7 @@
 				aria-expanded={listOpen}
 				title={`${stall.blocked_total} playlist track(s) AutoPlay could not use; the list names the first ${STALL_TRACK_LIMIT}`}
 				onclick={() => {
-					expandedFor = `${stall.reason}:${stall.source_stable_id}`;
+					expandedFor = stall.revision;
 					showTracks = !listOpen;
 				}}
 			>

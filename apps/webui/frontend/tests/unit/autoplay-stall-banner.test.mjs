@@ -27,7 +27,9 @@
  * [if] a repeated missing file reaches the descriptor [then] the rendered list
  *   carries no duplicate key [⛔️ if svelte throws and the banner never draws].
  * [if] a LATER stall arrives [then] its list starts collapsed [⛔️ if a previous
- *   expansion springs 30vh of list over the decks unasked].
+ *   expansion springs 30vh of list over the decks unasked]. Keyed on the
+ *   per-OCCURRENCE revision, because a second stop can carry the same reason
+ *   and the same source track over a different playlist.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -161,17 +163,23 @@ test('a repeated missing file renders once, with no duplicate key', () => {
 
 test('the expanded-list choice is scoped to the stall it was made about', () => {
 	// SSR renders the collapsed state, so this asserts the mechanism rather
-	// than the click: the list is gated on the stall identity the operator
-	// expanded, not on a bare boolean that outlives the stall.
+	// than the click: the list is gated on the OCCURRENCE the operator
+	// expanded, not on a bare boolean that outlives the stall, and not on the
+	// stall's content, which two different stops can share.
 	const source = readFileSync(
 		fileURLToPath(new URL('../../src/lib/components/rb/AutoPlayStallBanner.svelte', import.meta.url)),
 		'utf8'
 	);
-	assert.match(source, /expandedFor === `\$\{stall\.reason\}:\$\{stall\.source_stable_id\}`/);
+	assert.match(source, /expandedFor === stall\.revision/);
 	assert.match(source, /\{#if listOpen && stall\.blocked\.length > 0\}/);
 	assert.equal(
 		/\{#if showTracks &&/.test(source),
 		false,
 		'a bare showTracks would carry one stall expansion into the next'
+	);
+	assert.equal(
+		/expandedFor === `/.test(source),
+		false,
+		'a content key reads a second, unrelated stop with the same shape as a continuation'
 	);
 });

@@ -164,9 +164,20 @@ function _refreshChartedOrder(
 	publishAutoPlayOrder(full.slice(1));
 }
 
-/** Still armed AND still installed: a handoff outlives both (r3973995259). */
-function _armed(): boolean {
-	return uiPrefs.auto_play_enabled && _stopArmWatcher !== null;
+/**
+ * Which arming this is. Bumped on every install, arm and disarm edge.
+ *
+ * A handoff is several awaits long and can reject after the operator toggled
+ * AutoPlay off and on again, or left /performance and came back. "Is AutoPlay
+ * on right now" answers yes for the REPLACEMENT session, which would let a
+ * dead handoff restore its stale stall into it (Codex r3974381587), so a late
+ * failure has to prove it belongs to the arming it started under.
+ */
+let _generation = 0;
+
+/** Same arming, still armed, still installed. */
+function _armedAt(generation: number): boolean {
+	return uiPrefs.auto_play_enabled && _stopArmWatcher !== null && generation === _generation;
 }
 
 function _snaps(): AutoPlayDeckSnap[] {
@@ -425,6 +436,7 @@ async function _tick(): Promise<void> {
 	// Row 4/c: arm and claim BEFORE dispatching anything. Both are one-way for
 	// the life of this source track. Recording them only on success is what let
 	// a late failure roll the trigger back and load a second track.
+	const generation = _generation;
 	_inFlight = true;
 	_triggeredFor = source.stable_id;
 	_exhaustedFeedEpoch = null;
@@ -450,7 +462,7 @@ async function _tick(): Promise<void> {
 					`did not finish: ${message}`,
 				'error'
 			);
-			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message, _armed());
+			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message, _armedAt(generation));
 			return;
 		}
 		// Row 16: nothing landed on the deck; quarantine and try another pick.
@@ -467,7 +479,7 @@ async function _tick(): Promise<void> {
 				`auto-play stopped after ${MAX_HANDOFF_ATTEMPTS} failed handoffs: ${message}`,
 				'error'
 			);
-			noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message, _armed());
+			noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation));
 		}
 	} finally {
 		_inFlight = false;
@@ -512,6 +524,7 @@ export function installAutoPlay(): () => void {
 	const unregisterRankProvider = registerAutoPlayRankProvider(() => autoPlayOrder.rankOf);
 	_stopArmWatcher = $effect.root(() => {
 		$effect(() => {
+			_generation += 1;
 			if (uiPrefs.auto_play_enabled) {
 				// PLAY-05: activation creates the inspectable queue before the
 				// first poll has a master track from which to calculate handoffs.
@@ -529,6 +542,7 @@ export function installAutoPlay(): () => void {
 		});
 	});
 	return () => {
+		_generation += 1;
 		unregisterRankProvider();
 		_stopArmWatcher?.();
 		_stopArmWatcher = null;

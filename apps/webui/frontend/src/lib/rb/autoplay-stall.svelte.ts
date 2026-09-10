@@ -14,11 +14,15 @@
 import {
 	describeAutoPlayStall,
 	type AutoPlayStall,
+	type AutoPlayStallDescription,
 	type AutoPlayStallReason
 } from '$lib/rb/autoplay-stall';
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
 
 export const autoPlayStall = $state<{ current: AutoPlayStall | null }>({ current: null });
+
+/** Monotonic per-occurrence id. Never reset: it is an identity, not a count. */
+let _revision = 0;
 
 /**
  * Record a terminal AutoPlay stop.
@@ -27,8 +31,9 @@ export const autoPlayStall = $state<{ current: AutoPlayStall | null }>({ current
  * information, and silently keeping the first would describe a state that is no
  * longer the one the operator is in.
  */
-export function raiseAutoPlayStall(stall: AutoPlayStall): void {
-	autoPlayStall.current = stall;
+export function raiseAutoPlayStall(stall: AutoPlayStallDescription): void {
+	_revision += 1;
+	autoPlayStall.current = { ...stall, revision: _revision };
 }
 
 /**

@@ -36,7 +36,14 @@ export interface AutoPlayStallTrack {
 	artist: string | null;
 }
 
-export interface AutoPlayStall {
+/**
+ * A described stall, before it is recorded.
+ *
+ * Split from `AutoPlayStall` so the pure module stays pure: the revision that
+ * makes one OCCURRENCE distinguishable from another is minted at raise time,
+ * by the module that owns the state, not by the function that chooses words.
+ */
+export interface AutoPlayStallDescription {
 	reason: AutoPlayStallReason;
 	/**
 	 * The track that was playing when AutoPlay gave up.
@@ -67,6 +74,19 @@ export interface AutoPlayStall {
 	 * operator needs - they relink FILES, not positions.
 	 */
 	blocked_total: number;
+}
+
+/**
+ * A recorded stall. `revision` identifies the OCCURRENCE (Codex r3974381597).
+ *
+ * Two different stops can share every other field - same reason, same source
+ * track, a different playlist underneath - so anything keyed on the CONTENT of
+ * a stall treats the second as a continuation of the first. The banner's
+ * expanded-list state is exactly such a consumer, and getting it wrong springs
+ * a list over the decks that nobody asked for.
+ */
+export interface AutoPlayStall extends AutoPlayStallDescription {
+	revision: number;
 }
 
 /**
@@ -134,7 +154,7 @@ export function describeAutoPlayStall(input: {
 	source_stable_id: string;
 	blocked: readonly AutoPlayTrackRow[];
 	detail?: string | null;
-}): AutoPlayStall {
+}): AutoPlayStallDescription {
 	const distinct = new Map(input.blocked.map((row) => [row.stable_id, row] as const));
 	const blockedTotal = distinct.size;
 	if (input.source_stable_id === '') {

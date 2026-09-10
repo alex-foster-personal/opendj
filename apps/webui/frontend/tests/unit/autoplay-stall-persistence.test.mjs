@@ -30,11 +30,17 @@
  * [if] AutoPlay is switched off while a handoff is still awaiting [then] the
  *   late rejection raises nothing [⛔️ if a stop banner sits over a
  *   switched-off feature, and rides module state into the next mount].
+ * [if] AutoPlay is toggled off and on again before an old handoff rejects
+ *   [then] that rejection still raises nothing [⛔️ if a dead handoff restores
+ *   its stale stall into the REPLACEMENT session, which "is AutoPlay on right
+ *   now" cannot tell apart].
  * [if] the stall is raised [then] the condition reaches `/api/v1/client-errors`
  *   through the REAL reporter, not a stubbed one [⛔️ if the only server-side
  *   trace of a stopped set is a POST nobody checked was sent].
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import { installTimerProbe, loadRuneModule } from './load-rune-module.mjs';
@@ -333,5 +339,82 @@ test('a late handoff rejection raises nothing once AutoPlay is off', async () =>
 			null,
 			'a guard that refuses everything would pass the assertion above and hide every handoff stall'
 		);
+	});
+});
+
+/**
+ * A DECLARED BLIND SPOT, and the reason this one guard is source-shaped.
+ *
+ * Mutating `_armedAt` to ignore the generation left every behavioural test in
+ * this file GREEN. That is a finding, not a relief (.claude/rules/verification
+ * .md): the driven tests reach the stall module's `stillArmed` guard, which
+ * they mutation-prove, but they cannot reach the CONTROLLER's generation
+ * comparison, because doing so needs a handoff dispatch that is still pending
+ * across a disarm and a re-arm, and `dispatchPerformanceCommand` is in-process
+ * with no seam a test can hold open.
+ *
+ * So the comparison is pinned by shape until such a seam exists, and this test
+ * is labelled rather than counted as behavioural coverage. It reds on the
+ * mutation that the driven tests could not see.
+ */
+test('SHAPE GUARD: the late-failure check compares the captured arming generation', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.ok(source.length > 0, 'the controller is empty: this guard would assert nothing');
+	assert.match(
+		source,
+		/generation === _generation/,
+		'without this, "is AutoPlay on right now" answers yes for the REPLACEMENT session'
+	);
+	assert.match(source, /const generation = _generation;/, 'captured BEFORE the await, or it is not a generation');
+	// The counter has to MOVE, or the comparison above is always true. Both
+	// edges: the arm effect (off/on) and uninstall (unmount/remount).
+	assert.equal(
+		(source.match(/_generation \+= 1;/g) ?? []).length,
+		2,
+		'expected one bump in the arm effect and one in uninstall'
+	);
+});
+
+test('a re-armed AutoPlay does not inherit the previous arming late failure', async () => {
+	await withController(async (mod) => {
+		mod.setAutoPlayTrackFeed('playlist-a', spentFeed());
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		await settle();
+		assert.notEqual(mod.readAutoPlayStall(), null, 'precondition: arming N recorded a stall');
+
+		// Toggling off and on is a NEW arming. Teardown cleared the stall; a
+		// handoff dispatched under the old arming must not put it back, and
+		// "is AutoPlay on right now" answers yes for the replacement.
+		mod.setAutoPlayEnabled(false);
+		await settle();
+		assert.equal(mod.readAutoPlayStall(), null, 'precondition: disarm cleared it');
+		mod.setAutoPlayEnabled(true);
+		await settle();
+
+		mod.noteAutoPlayHandoffStall('handoff-incomplete', 'src-1', 'stale rejection', false);
+		assert.equal(
+			mod.readAutoPlayStall(),
+			null,
+			'a dead arming must not restore its stall into the session that replaced it'
+		);
+	});
+});
+
+test('every raise gets its own revision, so two same-shaped stalls are distinguishable', async () => {
+	await withController(async (mod) => {
+		mod.noteAutoPlayHandoffStall('handoff-incomplete', 'src-1', 'first', true);
+		const first = mod.readAutoPlayStall().revision;
+		mod.noteAutoPlayHandoffStall('handoff-incomplete', 'src-1', 'second', true);
+		const second = mod.readAutoPlayStall().revision;
+		assert.notEqual(
+			first,
+			second,
+			'same reason, same source track: only a per-occurrence id tells these apart, ' +
+				'and the banner keys its expanded list on it'
+		);
+		assert.ok(second > first, 'revisions are monotonic, so later is always distinguishable');
 	});
 });
