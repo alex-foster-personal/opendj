@@ -16,6 +16,7 @@
  * pays for the /rb-meta probe, and the merge itself refuses to overwrite one.
  */
 import { fetchAnlz, fetchRbMeta, RbApiError } from '$lib/rb/api-rb';
+import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 import { fetchBeatgridFallback } from '$lib/rb/beatgrid-fallback-api';
 import {
 	hasAnlzBeatgrid,
@@ -118,14 +119,34 @@ export async function upgradeDeckBeatgrid(
 	// reload the track. Shared by both the 200 response's own anlz_available
 	// field and the 404 detail's field of the same name (a mapping can land
 	// with no usable apps.analysis record too - see the catch block below).
-	// bypassCache=true: the backend serves /anlz Cache-Control: public,
-	// max-age=3600, and this deck's own load already fetched this exact URL
-	// with the empty payload minutes earlier - a cached replay would settle
-	// gridless despite the grid now existing.
+	// bypassCache=true: this deck's own load already fetched this exact URL
+	// with the empty payload minutes earlier, and a cached replay would settle
+	// gridless despite the grid now existing. /anlz is `private, no-cache` with
+	// an ETag today, so a replay would have to survive a revalidation; it was
+	// `public, max-age=3600` when this was written, and forcing the read keeps
+	// the guarantee here rather than in the header.
 	const settleFromAnlzRefetch = async (): Promise<void> => {
 		const refreshed = await time('fetchAnlzRefetch', fetchAnlz(stableId, undefined, true));
 		if (isStale()) return;
-		if (hasAnlzBeatgrid(refreshed)) return await settle(true, publishGrid(refreshed));
+		if (hasAnlzBeatgrid(refreshed)) {
+			return await settle(true, () => {
+				// publish itself can run much later than this point (see
+				// publishGrid's own comment above): onSettled queues it behind
+				// whatever else already holds the deck's scoped command slot,
+				// and a source switch can land in that window. /anlz resolves
+				// `beatgrid_source` server-side AT FETCH TIME
+				// (rb_assets.py `_resolve_beatgrid_source`), so `refreshed` is
+				// only a valid answer for the source that was live when this
+				// fetch was issued - re-checking against the LIVE source at
+				// publish time is required here too, the same as the fallback
+				// path below, or a switch that lands in this window merges a
+				// grid stamped under the OLD source into a payload that by
+				// then belongs to the new one (discussion_r3976638762 P1
+				// BLOCKING).
+				if (analysisSourceState.features.beatgrid !== refreshed.beatgrid_source) return;
+				publishGrid(refreshed)();
+			});
+		}
 		return await settle(false);
 	};
 	try {
@@ -134,7 +155,12 @@ export async function upgradeDeckBeatgrid(
 		// /anlz payload itself does not say, and it must not be guessed at.
 		const meta = await time('fetchRbMeta', fetchRbMeta(stableId));
 		if (isStale()) return;
-		const gate = { anlzErrorCode: st.anlz_error, anlz: st.anlz, vendor: meta.vendor };
+		const gate = {
+			anlzErrorCode: st.anlz_error,
+			anlz: st.anlz,
+			vendor: meta.vendor,
+			effectiveSource: analysisSourceState.features.beatgrid
+		};
 		if (!shouldUseBeatgridFallback(gate)) {
 			// A vendor mapping can land BEFORE this fetchRbMeta() call itself
 			// resolves, not only while /beatgrid-fallback is later in flight (see
@@ -155,11 +181,30 @@ export async function upgradeDeckBeatgrid(
 		const fallback = await time('fetchBeatgridFallback', fetchBeatgridFallback(stableId));
 		if (isStale()) return;
 		if (fallback.anlz_available) return await settleFromAnlzRefetch();
+		// Re-read live, not gate.effectiveSource: a switch back to rekordbox
+		// while this fetch was in flight must not land an own-derived grid
+		// after the fact (discussion_r3972682719 P1 BLOCKING).
+		if (analysisSourceState.features.beatgrid !== 'own') return await settle(false);
 		// Re-read across the awaits: refreshHotCues can have replaced st.anlz,
 		// and withFallbackBeatgrid throws rather than demote a real grid.
 		const current = st.anlz;
 		if (current === null || hasAnlzBeatgrid(current)) return;
-		await settle(true, publishGrid(withFallbackBeatgrid(current, fallback)));
+		const fallbackAnlz = withFallbackBeatgrid(current, fallback);
+		// publish itself can run much later than this point (see publishGrid's
+		// own comment above): onSettled queues it behind whatever else already
+		// holds the deck's scoped command slot, and a source switch back to
+		// rekordbox can land in that window too, same as the live check just
+		// above at deferral time - re-check it again at the moment of the
+		// actual write, or a switch that arrives between deferral and
+		// publication still lands the OWN fallback grid it raced against
+		// (discussion_r3973991956 P1 BLOCKING). settleFromAnlzRefetch's own
+		// publish thunk above carries the analogous check against
+		// `refreshed.beatgrid_source`, since /anlz's grid IS source-dependent
+		// even though a vendor mapping landing is not.
+		await settle(true, () => {
+			if (analysisSourceState.features.beatgrid !== 'own') return;
+			publishGrid(fallbackAnlz)();
+		});
 	} catch (error) {
 		if (isStale()) return;
 		if (error instanceof RbApiError && error.code === 'BEATGRID_FALLBACK_NOT_FOUND') {

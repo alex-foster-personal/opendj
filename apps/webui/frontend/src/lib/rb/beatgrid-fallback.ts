@@ -21,6 +21,17 @@ export interface BeatgridFallbackGate {
 	/** RbMetaOut.vendor for this track (apps/webui/server/routes/rb_assets.py);
 	 * null while /rb-meta has not answered - a vendor mapping is never guessed. */
 	vendor: RbMeta['vendor'] | null;
+	/** PARITY-02's effective 'beatgrid' analysis-source selection
+	 * (analysis-source.svelte.ts's `analysisSourceState.features.beatgrid`).
+	 * `undefined` means the client has not yet polled the daemon for it and
+	 * is treated the same as an explicit 'rekordbox' selection - this gate
+	 * never substitutes an own-derived grid the daemon has not confirmed
+	 * selecting (discussion_r3972682719 P1 BLOCKING). Callers with an
+	 * in-flight fetch must re-read this live and re-run the gate right
+	 * before publishing, not trust the value captured when the fetch began:
+	 * a switch back to rekordbox mid-fetch must not land an own grid after
+	 * the fact. */
+	effectiveSource: 'rekordbox' | 'own' | undefined;
 }
 
 /** Whether this track should go looking for an analysis-derived beatgrid.
@@ -51,6 +62,11 @@ export interface BeatgridFallbackGate {
  * against a measurement own already rejected or has not reached (Codex P1
  * BLOCKING, PR #1587). */
 export function shouldUseBeatgridFallback(gate: BeatgridFallbackGate): boolean {
+	// PARITY-02: an empty grid from a rekordbox-selected lane means "no grid
+	// FROM REKORDBOX", not "no grid at all, so show whatever we have" - a DJ
+	// who explicitly selected rekordbox must not be quietly handed an
+	// own-analysis grid while the toggle and IPC still report rekordbox.
+	if (gate.effectiveSource !== 'own') return false;
 	if (gate.anlzErrorCode === 'ANALYSIS_NOT_FOUND') return true;
 	if (gate.anlzErrorCode !== null) return false; // another lane's failure
 	if (gate.anlz === null) return false; // /anlz has not answered yet
@@ -94,7 +110,18 @@ export function sameBeatgrid(left: AnlzBeatgrid, right: AnlzBeatgrid): boolean {
  * on ANLZ identity, so mutating in place would serve a stale grid.
  *
  * Throws rather than overwrite a real ANLZ grid - that inversion would
- * silently demote rekordbox's own measurement to ours. */
+ * silently demote rekordbox's own measurement to ours.
+ *
+ * Also overwrites `beatgrid_source`/`beatgrid_own_unavailable_reason`, not
+ * just `beatgrid`: `anlz` can have been fetched while the server's effective
+ * source was still 'rekordbox' (a stale deck load, or a switch to 'own'
+ * that landed after /anlz answered), so its stamp says 'rekordbox' even
+ * though the beats this function is about to install came from apps.analysis.
+ * Spreading `anlz` unmodified would ship that stale stamp downstream -
+ * anlz-cache.svelte.ts's grid/tempo pairing check and StripWaveform's
+ * own-unavailable-reason display both read `beatgrid_source` as the
+ * authority on where the grid came from, not `shouldUseBeatgridFallback`'s
+ * gate (discussion_r3972682719 P1 BLOCKING). */
 export function withFallbackBeatgrid<T extends AnlzData>(
 	anlz: T,
 	fallback: BeatgridFallbackOut
@@ -105,7 +132,12 @@ export function withFallbackBeatgrid<T extends AnlzData>(
 				`beatgrid (${anlz.beatgrid.beats.length} beats); ANLZ is always preferred`
 		);
 	}
-	return { ...anlz, beatgrid: fallback.beatgrid };
+	return {
+		...anlz,
+		beatgrid: fallback.beatgrid,
+		beatgrid_source: 'own',
+		beatgrid_own_unavailable_reason: null
+	};
 }
 
 /** Wrap a beatgrid-fallback response in an AnlzData-shaped payload so
@@ -131,6 +163,13 @@ export function toSyntheticAnlzData(
 		beatgrid: fallback.beatgrid,
 		cues: [],
 		phrases: [],
-		vocals: { status: 'not_analyzed' }
+		vocals: { status: 'not_analyzed' },
+		// This bridge always carries the apps.analysis grid (that's the whole
+		// point of /beatgrid-fallback). Every caller reaches this only through
+		// shouldUseBeatgridFallback, which now requires effectiveSource ===
+		// 'own' (PARITY-02), so 'own' is always the correct stamp here, never
+		// independent of the selector.
+		beatgrid_source: 'own',
+		beatgrid_own_unavailable_reason: null
 	};
 }

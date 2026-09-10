@@ -165,6 +165,7 @@ jobs:
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
       # #1041: this job calls bare `python` below with no actions/setup-python

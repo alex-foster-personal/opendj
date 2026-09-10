@@ -1,0 +1,78 @@
+site_name: open-dj
+site_description: An open, vendor-neutral format for DJ libraries
+repo_url: https://github.com/alex-foster-personal/opendj
+repo_name: opendj
+docs_dir: open-dj
+
+theme:
+  name: material
+  favicon: assets/favicon.svg
+  logo: assets/favicon.svg
+  palette:
+    - scheme: default
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+
+nav:
+  - Home: README.md
+  - Spec v0.2:
+      - open-dj: spec/v0.2/open-dj.md
+      - Schema: schema/v0.2/README.md
+  - Adapters:
+      - Rekordbox: adapters/rekordbox.md
+      - djay Pro: adapters/djay.md
+      - Serato: adapters/serato.md
+      - Traktor: adapters/traktor.md
+      - Terminology: terminology.md
+  - Conformance:
+      - Overview: conformance/README.md
+      - HOWTO: conformance/HOWTO.md
+      - Corpus v0.2: conformance/corpus-0.2/README.md
+  - Contributing: CONTRIBUTING.md
+  - Licences: LICENCES.md
+  - Licence (spec): LICENSE-SPEC.md
+  - Changelog: CHANGELOG.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+# Existing open-dj/*.md pages link into sibling repo directories
+# (../apps/..., ../tests/...) that are *intentionally* outside docs_dir.
+# Strict mode must still catch nav errors + bad anchors, but those
+# out-of-tree relative links are expected and should stay `info`.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: info
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: info
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: info

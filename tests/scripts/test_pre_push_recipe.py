@@ -32,6 +32,8 @@ Regression lines:
   - if the justfile stops carrying a `pre-push` recipe then broken
   - if any of the four steps (reqs check, openapi dump + diff, api:gen + diff,
     full quality gate) disappears from that recipe then broken
+  - if the `scripts.debt_index --check` PR-head guard disappears then broken
+    (OPS-17 criterion 5; do not require `--require-current`, that is main-side)
   - if step 4 goes back to a `--only` subset (e.g. `--only size`) instead of
     the full gate then broken
   - if the four steps stop appearing in that order then broken
@@ -60,6 +62,10 @@ REQUIRED_STEPS: list[tuple[str, str]] = [
     (
         "requirement ids and reqs.json drift",
         r"scripts\.build_reqs_json\s+--check",
+    ),
+    (
+        "tech debt index PR-head guard",
+        r"scripts\.debt_index\s+--check",
     ),
     (
         "openapi.json regenerated from the engine and diffed",
@@ -123,7 +129,8 @@ def test_pre_push_runs_the_four_contract_checks_in_order() -> None:
         positions.append(match.start())
 
     for (earlier, _), (later, _), a, b in zip(
-        REQUIRED_STEPS, REQUIRED_STEPS[1:], positions, positions[1:]
+        REQUIRED_STEPS, REQUIRED_STEPS[1:], positions, positions[1:],
+        strict=False,
     ):
         assert a < b, (
             f"`just {RECIPE_NAME}` runs '{later}' before '{earlier}'. The order is "
