@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { readFrontendSource } from './engine-source.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
  * Codex P1 BLOCKING (PR #1587, discussion on audio-engine.svelte.ts:2854): the
@@ -23,7 +24,10 @@ import { readFrontendSource } from './engine-source.mjs';
  *
  * A live `load()` needs Web Audio (same reasoning as
  * deck-beatgrid-fallback-upgrade.test.mjs and deck-lazy-stems.test.mjs), so
- * this guard reads the engine as text instead of executing the race.
+ * the wiring half of this guard reads the engine as text instead of executing
+ * the race. The decision itself (`resolvePublishedAnlz`) is a pure function
+ * extracted to beatgrid-resync-guards.ts (quality-ratchet file-size
+ * remediation, PR #1587) and is exercised for real below.
  *
  * Fifth round (Codex P2 BLOCKING, PR #1587, discussion on line 3065): the same
  * freshness check landed `st.anlz`/`st.anlz_error` but left `st.bpm` set from
@@ -48,7 +52,7 @@ import { readFrontendSource } from './engine-source.mjs';
 
 const source = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
 
-test('load() publishes the freshest usable anlz cache entry at swap time, not the pre-revalidation candidate', () => {
+test('load() publishes resolvePublishedAnlz\'s freshness-checked answer at swap time, not the pre-revalidation candidate', () => {
 	const loadStart = source.indexOf('async load(deck: DeckId, stable_id: string): Promise<void> {');
 	assert.ok(loadStart > 0, 'load() not found - this test is reading the wrong file');
 	const swapStart = source.indexOf('await _withDeckSwap(rt, async () => {', loadStart);
@@ -58,34 +62,34 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 	const body = source.slice(swapStart, swapEnd);
 
 	const freshnessIndex = body.indexOf('const latestAnlzEntry = getAnlzEntry(stable_id);');
-	const declareIndex = body.indexOf('let publishedAnlz: AnlzData;');
 	const usableIndex = body.indexOf('isAnlzEntryUsable(latestAnlzEntry)');
 	const errorBranchIndex = body.indexOf("latestAnlzEntry?.status === 'error'");
+	const resolveCallIndex = body.indexOf('resolvePublishedAnlz(usableAnlz, latestAnlzError, candidateAnlz, candidateTrack.bpm ?? null)');
 	const anlzAssignIndex = body.indexOf('st.anlz = publishedAnlz;');
 	const anlzErrorAssignIndex = body.indexOf('st.anlz_error = publishedAnlzError;');
-	const loopAssignIndex = body.indexOf('_displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats)');
-	const bpmDeclareIndex = body.indexOf('let publishedBpm: number | null;');
-	const usableBpmIndex = body.indexOf('publishedBpm = publishedAnlz.beatgrid.bpm ?? candidateTrack.bpm ?? null;');
-	const errorBpmIndex = body.indexOf('publishedBpm = null;');
+	const loopAssignIndex = body.indexOf('displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats)');
 	const bpmAssignIndex = body.indexOf('st.bpm = publishedBpm;');
 
 	assert.ok(freshnessIndex > 0, 'the swap must re-read the shared anlz cache for this stable_id before publishing');
-	assert.ok(declareIndex > freshnessIndex, 'publishedAnlz must be derived from the freshly re-read cache entry');
-	assert.ok(usableIndex > declareIndex, 'the re-read entry must be checked for usability, not trusted blindly');
+	assert.ok(usableIndex > freshnessIndex, 'the re-read entry must be checked for usability, not trusted blindly');
 	assert.ok(
 		errorBranchIndex > usableIndex,
 		'an authoritative error on the re-read entry must be checked as its own branch, not folded into "not usable yet"'
 	);
 	assert.ok(
-		anlzAssignIndex > errorBranchIndex,
+		resolveCallIndex > errorBranchIndex,
+		'st.anlz/st.anlz_error/st.bpm must all be derived from ONE resolvePublishedAnlz call, not three independent branches'
+	);
+	assert.ok(
+		anlzAssignIndex > resolveCallIndex,
 		'st.anlz must be assigned from the freshness-checked value, not directly from the cache read'
 	);
 	assert.ok(
-		anlzErrorAssignIndex > errorBranchIndex,
-		'st.anlz_error must be assigned from the same branch decision, not hardcoded to null underneath it'
+		anlzErrorAssignIndex > resolveCallIndex,
+		'st.anlz_error must be assigned from the same resolved decision, not hardcoded to null underneath it'
 	);
 	assert.ok(
-		loopAssignIndex > declareIndex,
+		loopAssignIndex > resolveCallIndex,
 		"st.loop must derive from the same freshness-checked value used for st.anlz, or the deck's grid and its " +
 			'displayed loop can disagree about which answer is authoritative'
 	);
@@ -99,16 +103,6 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 			'failure caught in the same race must survive onto the published deck'
 	);
 
-	assert.ok(bpmDeclareIndex > declareIndex, 'publishedBpm must be derived alongside publishedAnlz, not separately');
-	assert.ok(
-		usableBpmIndex > usableIndex,
-		"the usable branch must project the deck's public BPM from the freshness-checked grid, falling back to " +
-			'the candidate track only when the grid carries none of its own'
-	);
-	assert.ok(
-		errorBpmIndex > errorBranchIndex,
-		'an authoritative error must clear the public BPM rather than leave the pre-revalidation tempo on display'
-	);
 	assert.ok(
 		bpmAssignIndex > anlzErrorAssignIndex,
 		'st.bpm must be assigned from the same freshness-checked decision as st.anlz/st.anlz_error, not earlier ' +
@@ -126,7 +120,54 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 	assert.ok(captureInLoad > loadStart, 'candidateAnlz capture not found before the swap');
 });
 
-test('_reconcileLoopForAuthoritativeGrid re-derives an idle loop but only re-measures an ENGAGED one, and is wired to the guards', () => {
+test("resolvePublishedAnlz picks the freshness-checked answer over the pre-revalidation candidate", async () => {
+	const guards = await loadTypeScriptModule('src/lib/player/beatgrid-resync-guards.ts');
+	const candidateAnlz = {
+		cues: [],
+		beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }
+	};
+
+	// Usable branch: a freshly re-read ready entry wins over the candidate,
+	// and its own projected bpm wins over the candidate track's.
+	const usableAnlz = {
+		cues: [],
+		beatgrid: { source: 'own', status: 'ok', reason: null, beat_count: 1, bpm: 128, beats: [{ t: 0 }] }
+	};
+	const usable = guards.resolvePublishedAnlz(usableAnlz, null, candidateAnlz, 120);
+	assert.equal(usable.anlz, usableAnlz, 'a usable freshness-checked entry must replace the pre-revalidation candidate');
+	assert.equal(usable.anlzError, null);
+	assert.equal(usable.bpm, 128, "the usable entry's own projected bpm must win over the candidate track's");
+
+	// Usable branch, grid carries no bpm of its own: falls back to the candidate track.
+	const usableNoBpm = { ...usableAnlz, beatgrid: { ...usableAnlz.beatgrid, bpm: undefined } };
+	const usableFallback = guards.resolvePublishedAnlz(usableNoBpm, null, candidateAnlz, 120);
+	assert.equal(usableFallback.bpm, 120, 'a usable entry with no bpm of its own must fall back to the candidate track bpm');
+
+	// Error branch: an authoritative RbApiError must empty the beatgrid, record
+	// the error, and clear bpm rather than leave a stale tempo on display.
+	const errored = guards.resolvePublishedAnlz(null, 'source_failed', candidateAnlz, 120);
+	assert.deepEqual(errored.anlz.beatgrid, { source: 'rekordbox', beat_count: 0, beats: [] });
+	assert.equal(errored.anlzError, 'source_failed');
+	assert.equal(errored.bpm, null, 'an authoritative error must clear the public bpm, not leave the old candidate tempo');
+
+	// Neither usable nor errored (still loading, or no entry at all): falls
+	// through to the pre-revalidation candidate exactly as an ordinary
+	// cache-miss load would.
+	const fallthrough = guards.resolvePublishedAnlz(null, null, candidateAnlz, 120);
+	assert.equal(fallthrough.anlz, candidateAnlz);
+	assert.equal(fallthrough.anlzError, null);
+	assert.equal(fallthrough.bpm, 120, "the candidate's own beatgrid.bpm is undefined here, so this must fall back to the candidate track bpm");
+});
+
+test('reconcileLoopForAuthoritativeGrid re-derives an idle loop but only re-measures an ENGAGED one, and is wired to the guards', () => {
+	const fnStart = source.indexOf('reconcileDeckLoop: (deck, anlz) => reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),');
+	assert.ok(
+		fnStart > 0,
+		'reconcileLoopForAuthoritativeGrid must be wired to the guards as the reconcileDeckLoop dependency'
+	);
+});
+
+test('reconcileLoopForAuthoritativeGrid: idle loop re-derives, engaged loop keeps its bounds and only re-measures beat_length', async () => {
 	// Codex P2 BLOCKING, PR #1587, fourth round: adoptAuthoritativeGrid/
 	// adoptAuthoritativeError can replace an already-loaded deck's beatgrid
 	// long after load() published st.loop from the OLD beats. A saved-but-
@@ -134,34 +175,22 @@ test('_reconcileLoopForAuthoritativeGrid re-derives an idle loop but only re-mea
 	// must keep its own time bounds (re-deriving from cues could silently
 	// move a playing loop's in/out points) and only its beat-count readout
 	// may follow the new grid.
-	const fnStart = source.indexOf(
-		'function _reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData): void {'
-	);
-	assert.ok(fnStart > 0, '_reconcileLoopForAuthoritativeGrid not found');
-	const bodyEnd = source.indexOf('\n}', fnStart);
-	assert.ok(bodyEnd > fnStart, 'could not bound the function body');
-	const body = source.slice(fnStart, bodyEnd);
+	const guards = await loadTypeScriptModule('src/lib/player/beatgrid-resync-guards.ts');
+	const newBeats = [{ t: 0 }, { t: 0.5 }, { t: 1 }, { t: 1.5 }];
+	const newCues = [{ kind: 'loop', active_loop: true, in_ms: 0, out_ms: 1000 }];
+	const newAnlz = { cues: newCues, beatgrid: { source: 'own', status: 'ok', reason: null, beat_count: 4, beats: newBeats } };
 
-	const engagedCheckIndex = body.indexOf('!st.loop.engaged');
-	const rederiveIndex = body.indexOf('st.loop = _displayLoopFrom(anlz.cues, anlz.beatgrid.beats);');
-	const returnIndex = body.indexOf('return;');
-	const beatLengthIndex = body.indexOf(
-		'st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);'
-	);
-
-	assert.ok(engagedCheckIndex > 0, 'must branch on whether the current loop is engaged, not treat every loop alike');
-	assert.ok(
-		rederiveIndex > engagedCheckIndex,
+	const idle = { loop: { in_ms: 5000, out_ms: 6000, engaged: false, beat_length: null } };
+	guards.reconcileLoopForAuthoritativeGrid(idle, newAnlz);
+	assert.deepEqual(
+		idle.loop,
+		{ in_ms: 0, out_ms: 1000, engaged: false, beat_length: 2 },
 		'an idle (or absent) loop must be fully re-derived from the new grid, same as a fresh load()'
 	);
-	assert.ok(returnIndex > rederiveIndex, 'the idle branch must not also fall through into the engaged branch');
-	assert.ok(
-		beatLengthIndex > returnIndex,
-		'an engaged loop must recompute beat_length in place rather than being silently skipped entirely'
-	);
 
-	assert.ok(
-		source.includes('reconcileDeckLoop: (deck, anlz) => _reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),'),
-		'_reconcileLoopForAuthoritativeGrid must be wired to the guards as the reconcileDeckLoop dependency'
-	);
+	const engaged = { loop: { in_ms: 5000, out_ms: 6000, engaged: true, beat_length: null } };
+	guards.reconcileLoopForAuthoritativeGrid(engaged, newAnlz);
+	assert.equal(engaged.loop.in_ms, 5000, 'an ENGAGED live loop must keep its own time bounds untouched');
+	assert.equal(engaged.loop.out_ms, 6000, 'an ENGAGED live loop must keep its own time bounds untouched');
+	assert.equal(engaged.loop.beat_length, null, 'the engaged loop bounds do not land on a beat in the new grid, so beat_length is null');
 });

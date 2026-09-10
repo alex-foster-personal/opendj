@@ -31,9 +31,10 @@ import type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
 import { hasAnlzBeatgrid, sameBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { isScopedCommandInvalidated } from '$lib/rb/performance-command-scheduler';
 import { createScopedSyncRunner, type ScopedSyncRunner } from '$lib/player/scoped-sync-runner';
+import { displayLoopFrom, pqtzLoopBeatCount, validateBeatGrid } from '$lib/rb/beat-sync-math';
 export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracking';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
-import type { AnlzData } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
 type DeckId = DeckState['deck_id'];
@@ -463,4 +464,96 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 			}
 		}
 	};
+}
+
+/**
+ * The grid a GRID-DEPENDENT operation cannot proceed without.
+ *
+ * Reserved for operations that are meaningless with no grid: engaging Beat
+ * Sync, and beat loops. Transport must never call this - see the engine's
+ * own `_quantizeGrid`.
+ */
+export function requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
+	const beats = st.anlz?.beatgrid.beats;
+	try {
+		validateBeatGrid(beats ?? []);
+	} catch (error) {
+		throw new Error(
+			`${operation}: deck ${st.deck_id} requires a valid real PQTZ beat grid: ${String(error)}`,
+			{ cause: error }
+		);
+	}
+	return beats ?? [];
+}
+
+/** Reconciles `st.loop` against a beatgrid `adoptAuthoritativeGrid`/
+ * `adoptAuthoritativeError` just adopted onto an ALREADY-LOADED deck (the
+ * ordinary `load()` swap path derives `st.loop` fresh from `displayLoopFrom`
+ * itself and never calls this). A saved-but-not-currently-looping cue is
+ * simply re-derived, same as a fresh load. An ENGAGED live loop keeps its own
+ * time bounds untouched - re-deriving those from cues would silently move a
+ * playing loop's in/out points - and only its beat-count readout is
+ * recomputed against the new beats, mirroring `engageBeatLoop`'s own
+ * in-place `beat_length` mutation (Codex P2 BLOCKING, PR #1587, fourth
+ * round). */
+export function reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData): void {
+	if (st.loop === null || !st.loop.engaged) {
+		st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
+		return;
+	}
+	st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);
+}
+
+export interface PublishedAnlzResolution {
+	anlz: AnlzData;
+	anlzError: string | null;
+	bpm: number | null;
+}
+
+/**
+ * Decides what a deck's `load()` swap publishes for anlz/anlz_error/bpm once
+ * the buffer is decoded and ready to become the deck's live state.
+ *
+ * The fire-and-forget `revalidateAnlz` the engine kicks off earlier can
+ * settle WHILE the deck is still fetching/decoding, before `st.stable_id`
+ * names this track: `adoptAuthoritativeGrid` finds no deck to update and
+ * drops it, and publishing the pre-revalidation `candidateAnlz` as-is would
+ * then re-plant the exact stale grid the revalidation just corrected (Codex
+ * P1 BLOCKING, PR #1587). The caller re-reads the shared cache at swap time
+ * instead: a ready, non-retryable entry there is at least as fresh as
+ * `candidateAnlz` - identical to it on the ordinary cache-miss path (the
+ * fetch that produced `candidateAnlz` is the same call that just published
+ * that entry), newer on the raced path above.
+ *
+ * A `revalidateAnlz` RbApiError can ALSO settle in this same race window: the
+ * selected source has explicitly failed, so `candidateAnlz` predates
+ * known-bad information and its beatgrid must not be trusted as if the
+ * revalidation had said nothing (Codex P1 BLOCKING, PR #1587, third round) -
+ * it is refused the same way `adoptAuthoritativeError` refuses one that
+ * lands after this same swap.
+ *
+ * `usableAnlz` and `errorCode` are the caller's own `isAnlzEntryUsable`/
+ * cache-entry read, passed in rather than re-derived here so this stays a
+ * pure function with no dependency on the cache module's internals.
+ */
+export function resolvePublishedAnlz(
+	usableAnlz: AnlzData | null,
+	errorCode: string | null,
+	candidateAnlz: AnlzData,
+	fallbackBpm: number | null
+): PublishedAnlzResolution {
+	if (usableAnlz !== null) {
+		return { anlz: usableAnlz, anlzError: null, bpm: usableAnlz.beatgrid.bpm ?? fallbackBpm };
+	}
+	if (errorCode !== null) {
+		return {
+			anlz: {
+				...candidateAnlz,
+				beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
+			},
+			anlzError: errorCode,
+			bpm: null
+		};
+	}
+	return { anlz: candidateAnlz, anlzError: null, bpm: candidateAnlz.beatgrid.bpm ?? fallbackBpm };
 }

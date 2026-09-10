@@ -132,16 +132,16 @@ import {
 	createBeatgridResyncTracking,
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
+import { reconcileLoopForAuthoritativeGrid, requireBeatGrid, resolvePublishedAnlz } from '$lib/player/beatgrid-resync-guards';
 import {
 	beatJumpTargetMs,
 	beatJumpTargetWithinDurationMs,
 	computeFollowerSyncPlan,
+	displayLoopFrom,
 	planTempoRatioRamp,
 	playbackBpm,
-	pqtzLoopBeatCount,
 	quantizeToNearestBeat,
-	quantizeToNearestGridBeat,
-	validateBeatGrid
+	quantizeToNearestGridBeat
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
 import { deckHasRealBeatGrid, effectiveBeatSync, effectiveQuantize, GRID_FEATURE_TIP, gridFeaturesInert, hasRealBeatGrid } from '$lib/player/grid-features';
@@ -169,7 +169,7 @@ import {
 	unavailableStemDeckState,
 	type StemBuffers
 } from '$lib/rb/stem-graph';
-import type { AnlzBeat, AnlzCue, AnlzData } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -1016,25 +1016,6 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 }
 
 /**
- * The grid a GRID-DEPENDENT operation cannot proceed without.
- *
- * Reserved for operations that are meaningless with no grid: engaging Beat
- * Sync, and beat loops. Transport must never call this - see _quantizeGrid.
- */
-function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
-	const beats = st.anlz?.beatgrid.beats;
-	try {
-		validateBeatGrid(beats ?? []);
-	} catch (error) {
-		throw new Error(
-			`${operation}: deck ${st.deck_id} requires a valid real PQTZ beat grid: ${String(error)}`,
-			{ cause: error }
-		);
-	}
-	return beats ?? [];
-}
-
-/**
  * The grid to snap to, or null when quantize is off or this deck has no grid.
  * Never throws.
  *
@@ -1869,37 +1850,6 @@ function _ensureRaf(): void {
 	if (_rafId === null) _rafId = requestAnimationFrame(_tick);
 }
 
-/** Display-only stored loop (COMPONENT-MAP 1.3: loop chips are display at
- * v1): the rekordbox active loop when one exists, engaged: false. */
-function _displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopState | null {
-	const active = cues.find((c) => c.active_loop && c.out_ms !== null);
-	if (active === undefined || active.out_ms === null) return null;
-	return {
-		in_ms: active.in_ms,
-		out_ms: active.out_ms,
-		engaged: false,
-		beat_length: pqtzLoopBeatCount(beats, active.in_ms, active.out_ms)
-	};
-}
-
-/** Reconciles `st.loop` against a beatgrid `adoptAuthoritativeGrid`/
- * `adoptAuthoritativeError` just adopted onto an ALREADY-LOADED deck (the
- * ordinary `load()` swap path derives `st.loop` fresh from `_displayLoopFrom`
- * itself and never calls this). A saved-but-not-currently-looping cue is
- * simply re-derived, same as a fresh load. An ENGAGED live loop keeps its own
- * time bounds untouched - re-deriving those from cues would silently move a
- * playing loop's in/out points - and only its beat-count readout is
- * recomputed against the new beats, mirroring `engageBeatLoop`'s own
- * in-place `beat_length` mutation (Codex P2 BLOCKING, PR #1587, fourth
- * round). */
-function _reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData): void {
-	if (st.loop === null || !st.loop.engaged) {
-		st.loop = _displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
-		return;
-	}
-	st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);
-}
-
 function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
 	// audible flips BEFORE re-election (excludes this deck as its own replacement) and election runs BEFORE reconciling (r3912339497); stranded is captured NOW, before clearForDeck wipes it and before the scoped continuation below starts (r3912339491, second pass).
@@ -2297,7 +2247,7 @@ async function _synchronizeFollowers(
 		if (!masterRuntime.desiredActive) {
 			throw new Error(`Beat Sync master deck ${master} is neither audible nor scheduled to play`);
 		}
-		const masterGrid = _requireBeatGrid(masterState, 'Beat Sync');
+		const masterGrid = requireBeatGrid(masterState, 'Beat Sync');
 		// Only clear stale pending-membership once the master's own grid
 		// precondition is confirmed - clearing it BEFORE this point (the
 		// original ordering) discarded a follower's pending record on a
@@ -2391,7 +2341,7 @@ async function _synchronizeFollowers(
 		for (const deck of owned) {
 			try {
 				const { st } = _requireLoaded(deck, 'Beat Sync follower');
-				const followerGrid = _requireBeatGrid(st, 'Beat Sync');
+				const followerGrid = requireBeatGrid(st, 'Beat Sync');
 				const bounds = _tempoBounds(deck);
 				const rawFollowerPositionSec = _currentPosSec(deck);
 				const requestedAnchorSec = options.followerAnchorSec?.[deck];
@@ -2551,7 +2501,7 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
 	publishDeckBpm: (deck, bpm) => (deckStates[deck].bpm = bpm),
 	setDeckAnlzError: (deck, code) => (deckStates[deck].anlz_error = code),
-	reconcileDeckLoop: (deck, anlz) => _reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),
+	reconcileDeckLoop: (deck, anlz) => reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),
 	reportError: (message) => pushToast(message, 'error')
 });
 installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);
@@ -2879,15 +2829,8 @@ class RbAudioEngine implements AudioEngine {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
 			const anlzCached = isAnlzEntryUsable(cachedAnlz);
-			// The cache hit stays on the critical path (that is the point of the
-			// prefetch), but it is no longer TRUSTED for the session: a source
-			// toggle or a backfill promotion since it was cached would otherwise
-			// keep this deck on the pre-promotion grid until reload (Codex P1
-			// BLOCKING, PR #1587). The revalidation runs beside the load, not in
-			// front of it, and the route answers 304 when nothing changed; if
-			// something did, `_publishAnlzResult` fires the authoritative grid
-			// sink and the deck adopts the new grid the same way it adopts a
-			// late-arriving PQTZ grid today.
+			// A cache hit stays on the critical path but is no longer TRUSTED for
+			// the session - see `revalidateAnlz`'s own doc for why.
 			if (anlzCached) revalidateAnlz(stable_id);
 			// A direct (uncached) fetch never blocks the load out waiting on a
 			// momentarily saturated decoder (Codex finding, issue #735 follow-up,
@@ -3038,53 +2981,15 @@ class RbAudioEngine implements AudioEngine {
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
-			// The fire-and-forget `revalidateAnlz` above can settle WHILE this
-			// deck is still fetching/decoding, before `st.stable_id` names this
-			// track: `adoptAuthoritativeGrid` finds no deck to update and drops
-			// it, and publishing the pre-revalidation `candidateAnlz` here would
-			// then re-plant the exact stale grid the revalidation just corrected
-			// (Codex P1 BLOCKING, PR #1587). `_publishAnlzResult` always leaves
-			// the shared cache at the newest terminal answer it has seen for
-			// this stable_id regardless of whether a deck adopted it, so a
-			// ready, non-retryable entry read HERE is at least as fresh as
-			// `candidateAnlz` - identical to it on the ordinary cache-miss path
-			// (the fetch that produced `candidateAnlz` is the same call that
-			// just published this entry), newer on the raced path above.
-			// A `revalidateAnlz` RbApiError can ALSO settle in this same race
-			// window: the selected source has explicitly failed, so
-			// `candidateAnlz` predates known-bad information and its beatgrid
-			// must not be trusted as if the revalidation had said nothing
-			// (Codex P1 BLOCKING, PR #1587, third round) - it is refused the
-			// same way `adoptAuthoritativeError` refuses one that lands after
-			// this same swap.
+			// Re-reads the shared cache rather than trusting `candidateAnlz` -
+			// see `resolvePublishedAnlz`'s own doc for the race this guards.
 			const latestAnlzEntry = getAnlzEntry(stable_id);
-			let publishedAnlz: AnlzData;
-			let publishedAnlzError: string | null;
-			let publishedBpm: number | null;
-			if (isAnlzEntryUsable(latestAnlzEntry)) {
-				publishedAnlz = latestAnlzEntry.data as AnlzWithVocals;
-				publishedAnlzError = null;
-				publishedBpm = publishedAnlz.beatgrid.bpm ?? candidateTrack.bpm ?? null;
-			} else if (latestAnlzEntry?.status === 'error') {
-				publishedAnlz = {
-					...candidateAnlz,
-					beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
-				};
-				publishedAnlzError = latestAnlzEntry.code;
-				publishedBpm = null;
-			} else {
-				publishedAnlz = candidateAnlz;
-				publishedAnlzError = null;
-				publishedBpm = publishedAnlz.beatgrid.bpm ?? candidateTrack.bpm ?? null;
-			}
+			const usableAnlz = isAnlzEntryUsable(latestAnlzEntry) ? (latestAnlzEntry.data as AnlzWithVocals) : null;
+			const latestAnlzError = latestAnlzEntry?.status === 'error' ? latestAnlzEntry.code : null;
+			const { anlz: publishedAnlz, anlzError: publishedAnlzError, bpm: publishedBpm } = resolvePublishedAnlz(usableAnlz, latestAnlzError, candidateAnlz, candidateTrack.bpm ?? null);
 			st.anlz = publishedAnlz;
 			st.anlz_error = publishedAnlzError;
-			// The deck's separately-tracked public BPM (header, IPC, recommendations,
-			// autoplay) must not disagree with the grid Beat Sync just adopted above:
-			// an own-sourced revalidation that settled in this same swap race carries
-			// its own projected bpm, and an authoritative error must clear the field
-			// rather than leave the pre-revalidation source's tempo on display (Codex
-			// P2 BLOCKING, PR #1587, fifth round).
+			// Kept in lockstep with publishedAnlz - see `resolvePublishedAnlz`'s own doc.
 			st.bpm = publishedBpm;
 			st.processor_error = null;
 			st.sync_error = null;
@@ -3092,7 +2997,7 @@ class RbAudioEngine implements AudioEngine {
 			st.hot_cues = _hotCuesFromSlots(hotCueSlots);
 			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
 			st.has_rb_mapping = candidateTrack.has_rb_mapping;
-			st.loop = _displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats);
+			st.loop = displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			if (incumbentProcessor !== null) {
@@ -3146,7 +3051,7 @@ class RbAudioEngine implements AudioEngine {
 		st.anlz = fresh;
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
-		st.loop = _displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
+		st.loop = displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
@@ -3538,7 +3443,7 @@ class RbAudioEngine implements AudioEngine {
 	 */
 	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
-		const grid = _requireBeatGrid(st, 'engageBeatLoop');
+		const grid = requireBeatGrid(st, 'engageBeatLoop');
 		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
 		const anchorMs =
 			beats === 4 && startMs === undefined ? precedingDownbeatMs(grid, currentMs) : startMs;
@@ -3587,7 +3492,7 @@ class RbAudioEngine implements AudioEngine {
 	 * math + duration clamp live in beat-sync-math.ts. */
 	async beatJump(deck: DeckId, beats: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'beatJump');
-		const grid = _requireBeatGrid(st, 'beatJump');
+		const grid = requireBeatGrid(st, 'beatJump');
 		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
 		const rawTargetMs = beatJumpTargetMs(grid, anchorMs, beats);
 		const targetMs = beatJumpTargetWithinDurationMs(grid, rawTargetMs, _durationSec(deck) * 1000);
@@ -3912,7 +3817,7 @@ class RbAudioEngine implements AudioEngine {
 		// masterSwitchFollowers only returns already playing, already
 		// beat-synced decks - re-anchoring them to the new master. A deck whose
 		// BEAT SYNC is lit but inert (no real grid) is not one of them: it never
-		// locked, so there is nothing to re-anchor and _requireBeatGrid would
+		// locked, so there is nothing to re-anchor and requireBeatGrid would
 		// turn one operator's MASTER press into that deck's sync error.
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
 			effectiveBeatSync(deckStates[candidate])

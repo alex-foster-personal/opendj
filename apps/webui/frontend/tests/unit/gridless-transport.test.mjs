@@ -11,7 +11,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *
  * quantize_enabled and beat_sync_enabled both default to true (rekordbox
  * parity for an analysed library). Before this suite existed those defaults
- * reached _requireBeatGrid from inside play(), pause(), pressCue(),
+ * reached requireBeatGrid from inside play(), pause(), pressCue(),
  * quantizedSeek() and setLoop(), so the first track a new user imported -
  * unanalysed, no PQTZ grid - could not be started, and once started could not
  * be STOPPED: pause() threw "pause cue: deck N requires a valid real PQTZ beat
@@ -25,7 +25,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * requirement.
  *
  * Regression lines:
- * - if play, pause, pressCue, quantizedSeek or setLoop names _requireBeatGrid
+ * - if play, pause, pressCue, quantizedSeek or setLoop names requireBeatGrid
  *   again then an unanalysed deck cannot start, or cannot stop
  * - if effectiveQuantize / effectiveBeatSync stop folding in the grid check
  *   then a lit flag reaches grid math that throws
@@ -33,7 +33,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   control silently does nothing
  * - if setQuantize / setBeatSync stop announcing the inert state then the
  *   IPC and CLI paths engage a no-op in silence
- * - if engageBeatLoop or _synchronizeFollowers drops _requireBeatGrid then a
+ * - if engageBeatLoop or _synchronizeFollowers drops requireBeatGrid then a
  *   genuinely grid-dependent operation runs on no grid
  * - if a gridded deck stops snapping then rekordbox parity regressed
  */
@@ -139,8 +139,8 @@ test('no transport method can refuse a deck for want of a beat grid', () => {
 	for (const anchor of TRANSPORT_ANCHORS) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
-			!body.includes('_requireBeatGrid'),
-			`if ${anchor.trim()} names _requireBeatGrid then a gridless deck is refused there - ` +
+			!body.includes('requireBeatGrid'),
+			`if ${anchor.trim()} names requireBeatGrid then a gridless deck is refused there - ` +
 				'the exact landmine identified in the lane A handover (4a.1)'
 		);
 	}
@@ -215,8 +215,8 @@ test('beat loops and sync engagement still require a real grid', () => {
 	]) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
-			body.includes('_requireBeatGrid('),
-			`if ${anchor.split('(')[0].trim()} drops _requireBeatGrid then a grid-dependent ` +
+			body.includes('requireBeatGrid('),
+			`if ${anchor.split('(')[0].trim()} drops requireBeatGrid then a grid-dependent ` +
 				'operation runs against no grid and produces nonsense instead of an error'
 		);
 	}
