@@ -353,7 +353,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ needs.window.outputs.head }}
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        run: scripts/ci_clean_untracked.sh
 
       # corepack BEFORE setup-node, so a pnpm shim exists when setup-node's
       # `cache: pnpm` resolves the store. Same order as ci.yml's frontend job.
@@ -476,7 +480,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ needs.window.outputs.head }}
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        run: scripts/ci_clean_untracked.sh
 
       - name: Enable pinned pnpm
         run: |

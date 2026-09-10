@@ -170,7 +170,11 @@ jobs:
           ref: ${{ inputs.ref }}
           # Progress-tree provenance validates historical feature commit SHAs.
           fetch-depth: 0
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         # SHA-pinned to the v5 tag commit (resolved 2026-04-17).
@@ -186,8 +190,8 @@ jobs:
         # modal is a CI test-environment tool, not a package dependency;
         # see the fuller note in ci.yml.
         run: |
-          uv venv --python 3.11 .venv
-          uv pip install --python .venv/bin/python -r requirements.txt modal
+          scripts/ci_venv.sh 3.11
+          uv pip install --exact --upgrade --python .venv/bin/python -r requirements.txt modal
 
       - name: System deps for pyrekordbox (SQLCipher)
         # Keep the project interpreter available to any post-failure steps.
@@ -208,7 +212,7 @@ jobs:
 
       - name: Keep the numba JIT cache across jobs on this runner
         # librosa's numba artifacts live beside its source by default, and this
-        # job recreates `.venv` every run, so every job paid a 25-45 s cold
+        # job recreated `.venv` every run, so every job paid a 25-45 s cold
         # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
         # every shard, 0.3 s once the cache survives venv recreation). One
         # directory per RUNNER: a runner runs one job at a time, so the
