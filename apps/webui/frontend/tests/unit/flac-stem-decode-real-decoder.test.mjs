@@ -340,7 +340,7 @@ test('two real loads running at once both complete, and neither becomes a lane t
 		assert.equal(Object.keys(run.buffers).length, PARTS.length, 'both loads complete');
 	}
 	assert.equal(
-		decode.stemDecodeSession.lane(),
+		decode.stemDecodeSession.lane(PARTS.length),
 		null,
 		'two overlapping loads measured contention, not a lane'
 	);

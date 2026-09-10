@@ -182,7 +182,10 @@ export async function decodeStemParts<P extends string>(
 	// cannot both become the same lane's trial. Released in the `finally`
 	// below on EVERY exit, including a rejecting fallback: a claim that leaked
 	// would mark the session permanently mid-trial and freeze the lane.
-	const claim = _claimLane(parts.every((part) => _headerRefusal(ctx, encoded[part]) === null));
+	const claim = _claimLane(
+		parts.length,
+		parts.every((part) => _headerRefusal(ctx, encoded[part]) === null)
+	);
 	let claimReleased = false;
 	try {
 		// Resolved ONCE for the bundle: four concurrent dynamic imports of one
@@ -311,7 +314,7 @@ function _headerRefusal(
  */
 function _mainThreadRefusal(claim: LaneClaim): StemDecodeRefusal {
 	if (claim.trialing) return 'calibrating';
-	return _preferredLane === null ? 'awaiting-calibration' : 'engine-prefers-main';
+	return _settledLane(claim.width) === null ? 'awaiting-calibration' : 'engine-prefers-main';
 }
 
 // ------------------------------------------------------------- lane choice
@@ -340,9 +343,26 @@ function _mainThreadRefusal(claim: LaneClaim): StemDecodeRefusal {
  */
 type DecodeLane = 'workers' | 'main-thread';
 
-/** Encoded bytes per wall millisecond, per lane, until one wins. */
-const _laneTrials = new Map<DecodeLane, number>();
-let _preferredLane: DecodeLane | null = null;
+/**
+ * Encoded bytes per wall millisecond, per lane, until one wins - PER LAYOUT.
+ *
+ * Keyed by part count because worker throughput is a function of how many
+ * decodes overlap: a four-part demucs4 bundle runs four workers at once, a
+ * two-part roformer2 bundle runs two, and bytes-per-ms does not normalize
+ * concurrency width. One module-wide verdict let a mixed library measure the
+ * two arms on different layouts and pin the slower lane for one of them.
+ */
+const _laneTrials = new Map<number, Map<DecodeLane, number>>();
+const _laneVerdicts = new Map<number, DecodeLane>();
+/**
+ * A lane in force for EVERY layout: set by `forceLane`, or by a rate refusal
+ * proving the workers can never serve this context, whatever the layout.
+ */
+let _contextLane: DecodeLane | null = null;
+
+function _settledLane(width: number): DecodeLane | null {
+	return _contextLane ?? _laneVerdicts.get(width) ?? null;
+}
 
 /** How much faster the workers must be to win, so noise cannot flip the choice. */
 const LANE_MARGIN = 1.25;
@@ -358,6 +378,8 @@ let _loadsInFlight = 0;
 interface LaneClaim {
 	lane: DecodeLane;
 	trialing: boolean;
+	/** Part count: the layout whose trials this load reads and feeds. */
+	width: number;
 }
 
 /**
@@ -381,18 +403,19 @@ interface LaneClaim {
  * A load that cannot be a trial runs the MAIN THREAD, which ships today,
  * rather than guessing at the unmeasured lane.
  */
-function _claimLane(everyPartIsEligible: boolean): LaneClaim {
+function _claimLane(width: number, everyPartIsEligible: boolean): LaneClaim {
 	_loadsInFlight += 1;
 	if (_trialLane !== null) _trialContended = true;
-	if (_preferredLane !== null) return { lane: _preferredLane, trialing: false };
+	const settled = _settledLane(width);
+	if (settled !== null) return { lane: settled, trialing: false, width };
 	if (_trialLane !== null || _loadsInFlight > 1 || !everyPartIsEligible) {
-		return { lane: 'main-thread', trialing: false };
+		return { lane: 'main-thread', trialing: false, width };
 	}
 	// Main thread first: a session that loads one stemmed deck pays nothing.
-	const lane: DecodeLane = _laneTrials.has('main-thread') ? 'workers' : 'main-thread';
+	const lane: DecodeLane = _laneTrials.get(width)?.has('main-thread') ? 'workers' : 'main-thread';
 	_trialLane = lane;
 	_trialContended = false;
-	return { lane, trialing: true };
+	return { lane, trialing: true, width };
 }
 
 /** Give the claim back, recording the trial only if it stayed measurable. */
@@ -402,16 +425,18 @@ function _releaseLane(claim: LaneClaim, clean: boolean, bytes: number, wallMs: n
 	const contended = _trialContended;
 	_trialLane = null;
 	_trialContended = false;
-	if (clean && !contended) _recordTrial(claim.lane, bytes, wallMs);
+	if (clean && !contended) _recordTrial(claim.width, claim.lane, bytes, wallMs);
 }
 
-function _recordTrial(lane: DecodeLane, bytes: number, wallMs: number): void {
-	if (_preferredLane !== null || bytes <= 0 || wallMs <= 0) return;
-	_laneTrials.set(lane, bytes / wallMs);
-	const main = _laneTrials.get('main-thread');
-	const workers = _laneTrials.get('workers');
+function _recordTrial(width: number, lane: DecodeLane, bytes: number, wallMs: number): void {
+	if (_settledLane(width) !== null || bytes <= 0 || wallMs <= 0) return;
+	const trials = _laneTrials.get(width) ?? new Map<DecodeLane, number>();
+	_laneTrials.set(width, trials);
+	trials.set(lane, bytes / wallMs);
+	const main = trials.get('main-thread');
+	const workers = trials.get('workers');
 	if (main === undefined || workers === undefined) return;
-	_preferredLane = workers > main * LANE_MARGIN ? 'workers' : 'main-thread';
+	_laneVerdicts.set(width, workers > main * LANE_MARGIN ? 'workers' : 'main-thread');
 }
 
 async function _decodeOnePart(
@@ -449,7 +474,7 @@ async function _decodeOnePart(
 		// is already wasted, and without settling here every later load wastes
 		// one too: the refusal keeps the trial unclean, so nothing ever
 		// settles and the workers are tried again on the next load, forever.
-		if (built === 'sample-rate-mismatch') _preferredLane = 'main-thread';
+		if (built === 'sample-rate-mismatch') _contextLane = 'main-thread';
 		refusal = built;
 	} catch {
 		// Not returned to the pool - see above.
@@ -471,7 +496,7 @@ async function _decodeOnePart(
 export function stemDecodeLabels(reports: readonly StemPartDecodeReport[]): Record<string, string> {
 	const viaWorker = reports.filter((report) => report.viaWorker).length;
 	const refusals = [...new Set(reports.map((r) => r.refusal).filter((r) => r !== null))];
-	const lane = _preferredLane;
+	const lane = _settledLane(reports.length);
 	return {
 		stem_decode: viaWorker === 0 ? 'main-thread' : viaWorker === reports.length ? 'workers' : 'mixed',
 		stem_decode_workers: `${viaWorker}/${reports.length}`,
@@ -489,13 +514,14 @@ export function stemDecodeLabels(reports: readonly StemPartDecodeReport[]): Reco
  * points would each read to the export ratchet as unused public API.
  */
 export const stemDecodeSession = {
-	/** The lane in force, or null while it has never been measured. */
-	lane: (): DecodeLane | null => _preferredLane,
+	/** The lane in force for a layout of `width` parts, or null while unmeasured. */
+	lane: (width: number): DecodeLane | null => _settledLane(width),
 	/** How many decoders are parked right now. */
 	pooled: (): number => pooledCount(),
 	/** Settle the lane without running the two calibration loads. */
 	forceLane: (lane: DecodeLane): void => {
-		_preferredLane = lane;
+		_contextLane = lane;
+		_laneVerdicts.clear();
 		_laneTrials.clear();
 		_trialLane = null;
 		_trialContended = false;
@@ -505,7 +531,8 @@ export const stemDecodeSession = {
 	/** Forget the verdict and both trials, reservation included: a reset that
 	 * left one claimed would pin every later load to the main thread. */
 	resetLane: (): void => {
-		_preferredLane = null;
+		_contextLane = null;
+		_laneVerdicts.clear();
 		_laneTrials.clear();
 		_trialLane = null;
 		_trialContended = false;
