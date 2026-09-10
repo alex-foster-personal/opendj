@@ -36,6 +36,24 @@ export function isPresentationClockStalled(deck: DeckId): boolean {
 	return _stalled[deck];
 }
 
+/** True while any deck's output clock is stalled (aggregated for the UI mirror, which has no per-deck view of its own). */
+export function isAnyPresentationClockStalled(): boolean {
+	return Object.values(_stalled).some(Boolean);
+}
+
+/**
+ * Clear every deck's stall latch, for a fresh audio graph.
+ *
+ * `_stalled` is module-level and outlives any one graph, so a deck slot torn
+ * down mid-stall would otherwise leave a stale `true` for the NEXT session to
+ * inherit before that slot is re-observed (P2 review thread on PR #1693).
+ * Called from `_ensureGraph()` alongside `resetMasterSilenceWatch()`, the
+ * same "new graph, new state" moment.
+ */
+export function resetPresentationClockStall(): void {
+	for (const deck of [1, 2, 3, 4] as const satisfies readonly DeckId[]) _stalled[deck] = false;
+}
+
 /**
  * Record a transition in the output clock's health for one deck.
  *
