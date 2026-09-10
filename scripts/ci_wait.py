@@ -37,10 +37,23 @@ is reported the same way rather than guessing from an event-mismatched
 source.
 
 `total_count` from the `check-runs` endpoint is asserted against what this
-module actually collected (see `_check_runs_at_sha`): `gh api --paginate` on
-this endpoint merges every page into one printed object rather than one
-object per page (verified live, gh 2.98.0), so a naive parse of only the
-first chunk would silently under-count on a SHA with 30+ check-runs.
+module actually collected (see `_check_runs_at_sha`): on a genuinely
+multi-page result, `gh api --paginate` prints each page as its OWN
+concatenated JSON document rather than merging them -- confirmed live by
+forcing pagination (`per_page=5`) against a real 13-run head, which printed
+three back-to-back `{total_count, check_runs}` objects (5+5+3), not one
+merged object. `--slurp` wraps those documents into a single JSON array
+instead, so every page's `check_runs` is combined here and the combined
+length is asserted against `total_count` (identical on every page).
+
+Baseline lookup walks BACKWARD through this PR's commit history rather than
+trusting literal adjacency in `gh pr view --json commits` (found in review,
+PR #1685 thread r3975870260): a worker pushing several local commits in one
+`git push` advances the head past all of them in a single `synchronize`
+event, so the commit immediately before the new head can belong to the SAME
+push and carry no check-run history of its own. `expected_from_previous_head`
+tries each earlier commit, nearest first, until one has a non-empty
+check-run set.
 """
 
 from __future__ import annotations
@@ -53,7 +66,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from scripts.review_gh import TriageError, _gh, _head_sha
+from scripts.review_gh import TriageError, _gh
 
 REPO = "maintainer/music-dj-tools"
 DEFAULT_TIMEOUT_S = 1800.0
@@ -116,12 +129,12 @@ def _all_terminal(latest: dict[str, dict]) -> bool:
     return all(run["status"] == "completed" for run in latest.values())
 
 
-def _previous_head_sha(commits: list[dict], head_sha: str) -> str | None:
-    """The SHA of this PR's own previous push, given `gh pr view --json
-    commits` (oldest first, per gh's own ordering, verified live). `None` on
-    a single-commit PR: there is no prior push on this branch to read a
-    baseline from, which the caller must report as NO_BASELINE rather than
-    inventing one from an event-mismatched source.
+def _previous_shas(commits: list[dict], head_sha: str) -> list[str]:
+    """Every earlier commit on this PR, NEAREST FIRST, given `gh pr view
+    --json commits` (oldest first, per gh's own ordering, verified live).
+    Empty on a single-commit PR: there is no prior commit on this branch at
+    all, which the caller must report as NO_BASELINE rather than inventing
+    one from an event-mismatched source.
     """
     oids = [commit["oid"] for commit in commits]
     try:
@@ -131,7 +144,24 @@ def _previous_head_sha(commits: list[dict], head_sha: str) -> str | None:
             f"head {head_sha} is not in its own PR's commit list "
             f"(most recent: {oids[-1] if oids else '<none>'})"
         ) from None
-    return oids[idx - 1] if idx > 0 else None
+    return list(reversed(oids[:idx]))
+
+
+def _first_baseline(
+    candidates: Iterable[str], check_runs_at: Callable[[str], list[dict]]
+) -> frozenset[str] | None:
+    """The check-run names of the FIRST candidate SHA that actually has any.
+
+    Candidates are prior commits on this PR, nearest first. A commit folded
+    into a multi-commit push never got its own `synchronize` event and so
+    never has check-runs -- not a baseline of zero, just not a pushed head at
+    all -- so it is skipped rather than read as NO_BASELINE prematurely.
+    """
+    for sha in candidates:
+        names = _check_run_names(check_runs_at(sha))
+        if names:
+            return names
+    return None
 
 
 # ----- pure: the bounded poll loop ------------------------------------------
@@ -186,53 +216,74 @@ def poll_until_terminal(
 # ----- I/O: gh wiring --------------------------------------------------------
 
 
-def _check_runs_at_sha(sha: str, repo: str = REPO) -> list[dict]:
-    """All Actions check-runs at `sha`, every page.
+def _merge_check_run_pages(pages: list[dict]) -> list[dict]:
+    """Flatten `gh api --paginate --slurp`'s pages of `{total_count,
+    check_runs}` into one list of check-run objects.
 
-    The `check-runs` endpoint wraps its array in `{total_count, check_runs}`
-    rather than returning a bare list, so `gh api --paginate` merges pages
-    into one printed OBJECT rather than one array per page (confirmed live,
-    gh 2.98.0, against a 13-run head). `total_count` is asserted against what
-    was actually collected so an incomplete merge fails loud instead of
-    silently under-reporting -- the same trap `scripts.review_gh
-    ._paginated_json_list` closes for bare-array endpoints, here for the
-    object-wrapped shape.
+    Kept pure (mirrors `scripts.review_gh._flatten_pages`, issue #1016's own
+    fix for the bare-array shape) so a genuine multi-page response -- proven
+    live by forcing `per_page=5` against a real 13-run head, which back then
+    printed three separate `{total_count, check_runs}` documents (5+5+3), not
+    one merged object -- is directly testable on that recorded 3-page fixture
+    without a network call. The combined length is asserted against
+    `total_count` (identical on every page) so an incomplete merge fails loud
+    instead of silently under-reporting.
     """
-    raw = _gh(["api", f"repos/{repo}/commits/{sha}/check-runs", "--paginate"])
-    payload = json.loads(raw)
-    runs = payload["check_runs"]
-    if len(runs) != payload["total_count"]:
+    runs = [run for page in pages for run in page["check_runs"]]
+    total_count = pages[0]["total_count"] if pages else 0
+    if len(runs) != total_count:
         raise TriageError(
-            f"check-runs at {sha}: total_count={payload['total_count']} but "
-            f"collected {len(runs)} check-run object(s) -- incomplete page "
-            "merge, not a real count"
+            f"check-runs: total_count={total_count} but collected "
+            f"{len(runs)} check-run object(s) across {len(pages)} page(s) -- "
+            "incomplete page merge, not a real count"
         )
     return runs
 
 
-def _pr_commits(pr: str) -> list[dict]:
-    raw = _gh(["pr", "view", pr, "--json", "commits"])
+def _check_runs_at_sha(sha: str, repo: str = REPO) -> list[dict]:
+    """All Actions check-runs at `sha`, every page merged by
+    `_merge_check_run_pages` (see the module docstring for why `--slurp` is
+    required for this object-wrapped endpoint shape)."""
+    raw = _gh(["api", f"repos/{repo}/commits/{sha}/check-runs", "--paginate", "--slurp"])
+    return _merge_check_run_pages(json.loads(raw))
+
+
+def _head_sha(pr: str, repo: str = REPO) -> str:
+    """The PR's CURRENT head SHA, in the EXPLICITLY named `repo` -- never the
+    cwd-inferred repo `scripts.review_gh._head_sha` uses, so a caller naming
+    a non-default `--repo` cannot have this half silently look at the wrong
+    repository while `_check_runs_at_sha` correctly looks at the named one
+    (found in review, PR #1685 thread r3975870266).
+    """
+    raw = _gh(
+        ["pr", "view", pr, "--repo", repo, "--json", "headRefOid", "-q", ".headRefOid"]
+    ).strip()
+    if not raw:
+        raise TriageError(f"gh returned no headRefOid for PR {pr} in {repo}")
+    return raw
+
+
+def _pr_commits(pr: str, repo: str = REPO) -> list[dict]:
+    raw = _gh(["pr", "view", pr, "--repo", repo, "--json", "commits"])
     payload = json.loads(raw)
     commits = payload.get("commits") or []
     if not commits:
-        raise TriageError(f"gh returned no commits for PR {pr}")
+        raise TriageError(f"gh returned no commits for PR {pr} in {repo}")
     return commits
 
 
 def expected_from_previous_head(pr: str, head_sha: str, repo: str = REPO) -> frozenset[str] | None:
-    """Expected check-run names for `head_sha`, read from this PR's own
-    previous push. `None` means no baseline could be established (no prior
-    push, or the prior push itself recorded zero check-runs) -- the caller
-    must report that explicitly, never treat it as "zero checks expected".
+    """Expected check-run names for `head_sha`, read from the nearest earlier
+    commit on this PR that actually has any. `None` means no baseline could
+    be established (no earlier commit at all, or none of them ever got a
+    check-run) -- the caller must report that explicitly, never treat it as
+    "zero checks expected".
     """
     try:
-        prev_sha = _previous_head_sha(_pr_commits(pr), head_sha)
+        candidates = _previous_shas(_pr_commits(pr, repo), head_sha)
     except ValueError as exc:
         raise TriageError(f"PR #{pr}: {exc}") from None
-    if prev_sha is None:
-        return None
-    names = _check_run_names(_check_runs_at_sha(prev_sha, repo))
-    return names or None
+    return _first_baseline(candidates, lambda sha: _check_runs_at_sha(sha, repo))
 
 
 def wait_for_checks(
@@ -245,7 +296,7 @@ def wait_for_checks(
     """Resolve PR#`pr`'s CURRENT head once, bind everything below to it, and
     refuse SUCCESS until every expected Actions check-run at that exact SHA
     exists and is completed."""
-    head_sha = _head_sha(pr)
+    head_sha = _head_sha(pr, repo)
     expected = expected_from_previous_head(pr, head_sha, repo)
     if expected is None:
         return WaitResult(
@@ -254,7 +305,7 @@ def wait_for_checks(
             frozenset(),
             {},
             0.0,
-            "no non-empty check-run baseline on this PR's previous push; "
+            "no earlier commit on this PR has a non-empty check-run baseline; "
             "cannot tell what should run at this head -- this is a measurement "
             "gap, not evidence of success",
         )
