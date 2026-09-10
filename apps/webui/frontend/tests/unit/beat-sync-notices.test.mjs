@@ -106,3 +106,15 @@ test('a refused follower is still an error, and is a SEPARATE notice from a fold
 test('a clean sync says nothing at all', () => {
 	assert.deepEqual(beatSyncOutcomeNotices([], [], 1), []);
 });
+
+test('a notice carries the severity its perf rows must be filed under', () => {
+	// recordPerfEvent's severity argument DEFAULTS to 'warn', so a caller that
+	// omits it files a refusal - a follower that never locked - as a warning
+	// that can never escalate. The engine passes notice.kind, which means the
+	// toast colour and the ring severity cannot drift apart; these two are the
+	// values it passes.
+	const [fold] = beatSyncOutcomeNotices([{ deck: 2, plan: bar(0.5) }], [], 1);
+	assert.equal(fold.kind, 'warn');
+	const [skip] = beatSyncOutcomeNotices([], [{ deck: 3, message: 'no anchor' }], 1);
+	assert.equal(skip.kind, 'error', 'a refused follower must be filed at error severity');
+});
