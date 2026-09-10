@@ -14,7 +14,9 @@ import pytest
 
 from apps.webui import port_config
 from apps.webui.port_config import (
+    BACKEND_ENV,
     BACKEND_POOL_START,
+    FRONTEND_ENV,
     FRONTEND_POOL_START,
     POOL_SIZE,
     PORT_LANE_ENV,
@@ -784,6 +786,28 @@ def test_claim_ports_reallocates_a_pre_existing_now_reserved_env_pair(
 
     assert claimed.backend not in RESERVED_FIXED_PORTS
     assert claimed.frontend not in RESERVED_FIXED_PORTS
+
+
+def test_claim_ports_refuses_a_reserved_port_inherited_from_the_environment(
+    tmp_path: Path,
+) -> None:
+    """if an exported MUSIC_DJ_BACKEND_PORT names a now-reserved fixed port and
+    claim_ports silently reallocates into .env instead of refusing then broken
+    -- the exported value outranks the file just rewritten, so every later
+    read resolves the reserved port again and fails ownership validation"""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    reserved_backend = next(iter(RESERVED_FIXED_PORTS))
+    other_port = _free_port(exclude=(reserved_backend,))
+
+    with pytest.raises(PortConfigError, match=str(reserved_backend)):
+        claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={BACKEND_ENV: str(reserved_backend), FRONTEND_ENV: str(other_port)},
+        )
 
 
 def test_claim_ports_reallocates_a_registry_pair_that_becomes_reserved(

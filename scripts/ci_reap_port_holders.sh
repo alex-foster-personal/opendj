@@ -227,6 +227,20 @@ _terminate() {
 #-----------------------------------------------------------------------------
 
 status=0
+# Ports whose ONE foreign-holder wait has already been spent in the first pass.
+# The final pass must classify such a port again (it may have released during
+# that wait) but must never wait a SECOND full FOREIGN_WAIT_S for the same
+# holder: the verdict is already a failure, so the extra wait only holds the
+# host lock longer to reach the same answer.
+waited_ports=()
+
+_already_waited() { # $1 = port
+    case " ${waited_ports[*]:-} " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 for port in "${ports[@]}"; do
     pids=$(_holder_pids "$port")
     if [ -z "$pids" ]; then
@@ -240,6 +254,7 @@ for port in "${ports[@]}"; do
             echo "[reap] waiting up to ${FOREIGN_WAIT_S}s in case this is a foreign population finishing on its own (issue #1613)"
             if ! _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
                 echo "[ERROR] port $port is held by a process this user cannot see (another uid); nothing to reap, still held after ${FOREIGN_WAIT_S}s${owner_note:+. $owner_note}" >&2
+                waited_ports+=("$port")
                 status=1
             fi
         fi
@@ -273,6 +288,7 @@ for port in "${ports[@]}"; do
                 continue
             fi
             echo "[ERROR] port $port holder pid $pid has no CI provenance (neither cwd nor executable under a runner _work tree; $PROVENANCE_SEEN); not a job leftover, still held after ${FOREIGN_WAIT_S}s, not signalled${owner_note:+. $owner_note}. Free the port by hand." >&2
+            waited_ports+=("$port")
             status=1
             continue
         fi
@@ -291,10 +307,15 @@ for port in "${ports[@]}"; do
     pids=$(_holder_pids "$port")
     if [ -z "$pids" ] && [ "$(_listener_count "$port")" -gt 0 ]; then
         owner_note=$(_describe_registry_owner "$port")
-        echo "[reap] port $port still held by a process this user cannot see${owner_note:+ -- $owner_note}; waiting up to ${FOREIGN_WAIT_S}s more (issue #1613)"
-        if ! _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
-            echo "[ERROR] port $port is still held by a process this user cannot see${owner_note:+. $owner_note}" >&2
+        if _already_waited "$port"; then
+            echo "[ERROR] port $port is still held by a process this user cannot see after the foreign-holder wait${owner_note:+. $owner_note}" >&2
             status=1
+        else
+            echo "[reap] port $port still held by a process this user cannot see${owner_note:+ -- $owner_note}; waiting up to ${FOREIGN_WAIT_S}s more (issue #1613)"
+            if ! _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
+                echo "[ERROR] port $port is still held by a process this user cannot see${owner_note:+. $owner_note}" >&2
+                status=1
+            fi
         fi
     fi
     for pid in $pids; do
@@ -309,6 +330,11 @@ for port in "${ports[@]}"; do
             echo "[reap] port $port holder pid $pid exited during the final pass"
         else
             owner_note=$(_describe_registry_owner "$port")
+            if _already_waited "$port"; then
+                echo "[ERROR] port $port is still held by pid $pid with no CI provenance ($PROVENANCE_SEEN) after the foreign-holder wait${owner_note:+. $owner_note}" >&2
+                status=1
+                continue
+            fi
             echo "[reap] port $port held after the wait by pid $pid with no CI provenance ($PROVENANCE_SEEN)${owner_note:+ -- $owner_note}; waiting up to ${FOREIGN_WAIT_S}s more (issue #1613)"
             if _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
                 continue

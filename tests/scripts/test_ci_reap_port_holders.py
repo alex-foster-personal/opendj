@@ -353,6 +353,85 @@ def test_a_cross_uid_holder_is_waited_for_before_the_step_fails(tmp_path: Path) 
         proc.wait(timeout=10)
 
 
+def test_a_foreign_holder_is_waited_for_only_once(tmp_path: Path) -> None:
+    """if a foreign holder that never releases is waited for in the first pass
+    AND again in the final pass then broken -- the verdict is already a
+    failure, so the second full wait only holds the host lock longer to reach
+    the same answer (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    try:
+        result = _run(
+            str(port),
+            live_re=ORPHAN,
+            foreign_wait_s="1",
+            ss_bin=_invisible_owner_ss(tmp_path),
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert result.stdout.count("waiting up to") == 1, result.stdout
+        assert "after the foreign-holder wait" in result.stderr, result.stderr
+        assert proc.poll() is None
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_the_cross_uid_path_runs_under_a_real_second_uid_when_one_is_available(
+    tmp_path: Path,
+) -> None:
+    """if this box can run the reaper as a second uid, the port must be seen
+    and waited for across the real uid boundary (issue #1613).
+
+    SKIPPED, never passed, where that capability is absent: the collision this
+    exercises needs two uids, and a same-uid substitute is not evidence about
+    the boundary. unprivileged `ss` already omits another uid's pid, and
+    unprivileged /proc and the marker directory's ownership are what the
+    change is for.
+    """
+    if not shutil.which("setpriv"):
+        pytest.skip("capability unavailable: setpriv is not installed")
+    if os.geteuid() != 0:
+        pytest.skip(
+            "capability unavailable: reaching a second uid needs root (this test "
+            f"runs as uid {os.geteuid()}), so the cross-uid boundary is not exercised here"
+        )
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    try:
+        import threading
+
+        threading.Timer(1.0, proc.kill).start()
+        result = subprocess.run(
+            [
+                "setpriv",
+                "--reuid=65534",
+                "--regid=65534",
+                "--clear-groups",
+                str(SCRIPT),
+                str(port),
+                "--",
+                "echo",
+                "suite-ran",
+            ],
+            env={
+                **os.environ,
+                "MDT_CI_LIVE_ANCESTOR_RE": ORPHAN,
+                "MDT_CI_REAP_RELEASE_WAIT_S": "30",
+                "MDT_CI_REAP_FOREIGN_WAIT_S": "10",
+                "MDT_CI_PORT_OWNER_REGISTRY_DIR": str(tmp_path / "owners"),
+            },
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
 def test_a_cross_uid_holder_that_releases_during_the_wait_runs_the_command(
     tmp_path: Path,
 ) -> None:

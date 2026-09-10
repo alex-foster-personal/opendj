@@ -11,11 +11,13 @@ dynamic allocator silently starts treating that port as free again -- exactly
 the class of bug #1613 was filed against, reintroduced one line at a time.
 
 Regression line: if any suite's fixed port here is not in RESERVED_FIXED_PORTS
-then broken.
+then broken, and if a NEWLY ADDED configuration's pinned port is not
+discovered (so it could be added without redding anything) then broken too.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,65 @@ from apps.webui.port_config import RESERVED_FIXED_PORTS
 REPO = Path(__file__).resolve().parents[2]
 E2E_DIR = REPO / "apps/webui/frontend/tests/e2e"
 DESKTOP_DIR = REPO / "apps/desktop"
+
+#: A loopback port pinned as a literal. Same shape tests/scripts/
+#: test_ci_e2e_fixed_port_steps_are_locked.py uses to find a suite's own port.
+FIXED_PORT_LITERAL = re.compile(
+    r"(?:PORT[A-Za-z_]*\s*=\s*|PORT[A-Za-z_]*\s*\?\?\s*|127\.0\.0\.1:|localhost:)(\d{4,5})\b"
+)
+
+
+def discovered_fixed_ports(roots: tuple[Path, ...] = (E2E_DIR, DESKTOP_DIR)) -> dict[int, set[str]]:
+    """Every pinned-port literal the candidate configuration trees declare.
+
+    Derived from the files themselves rather than from ``KNOWN_FIXED_PORTS``,
+    which is the list this module exists to police: a suite that adds a fixed
+    port without editing that table would otherwise generate no test at all
+    and pass by omission.
+    """
+    discovered: dict[int, set[str]] = {}
+    for root in roots:
+        for path in sorted(root.rglob("*.ts")):
+            if "node_modules" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for literal in FIXED_PORT_LITERAL.findall(text):
+                discovered.setdefault(int(literal), set()).add(str(path.relative_to(root)))
+    return discovered
+
+
+def test_every_declared_fixed_port_is_discovered_and_excluded() -> None:
+    """if a configuration gains a pinned port without RESERVED_FIXED_PORTS
+    gaining it -- or stops declaring one the set still excludes -- then broken
+    (issue #1613)"""
+    discovered = discovered_fixed_ports()
+    assert discovered, "the discovery probe found no fixed port at all; the probe is broken"
+
+    unguarded = {
+        port: sorted(paths)
+        for port, paths in discovered.items()
+        if port not in RESERVED_FIXED_PORTS
+    }
+    assert not unguarded, (
+        "these configurations pin a port RESERVED_FIXED_PORTS does not exclude, so the "
+        f"dynamic allocator could still hand it out (issue #1613): {unguarded}"
+    )
+
+    undeclared = sorted(set(RESERVED_FIXED_PORTS) - set(discovered))
+    assert not undeclared, (
+        f"RESERVED_FIXED_PORTS excludes {undeclared}, which no configuration declares any "
+        "more; the reservation is stale and should be removed with the port"
+    )
+
+
+def test_the_discovery_probe_finds_a_port_in_a_new_configuration(tmp_path: Path) -> None:
+    """CONTROL: the probe above passes trivially if it walks nothing, so point
+    it at a tree shaped like a NEWLY ADDED configuration and require it to
+    find the port -- a guard against a config should red."""
+    (tmp_path / "vite.brand-new-gate.config.ts").write_text(
+        "export const BRAND_NEW_GATE_PORT = 5398;\n", encoding="utf-8"
+    )
+    assert discovered_fixed_ports((tmp_path,)) == {5398: {"vite.brand-new-gate.config.ts"}}
 
 #: (relative path, exact literal expected in the source, the port it pins).
 #: The literal is the smallest substring that (a) actually appears verbatim in

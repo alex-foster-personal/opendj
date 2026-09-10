@@ -615,6 +615,27 @@ def _configured_candidate(
     )
 
 
+def _reserved_port_from_process_environment(environ: Mapping[str, str]) -> int | None:
+    """Return a reserved port this call INHERITED from the process environment.
+
+    An exported ``MUSIC_DJ_BACKEND_PORT``/``MUSIC_DJ_FRONTEND_PORT`` outranks
+    the ``.env`` file ``claim_ports`` rewrites, so it cannot be discarded the
+    way a stale file value can: the very next read by ``just webui-ports``, a
+    ``check``, or a service launch resolves the same reserved port again and
+    fails ownership validation. A process-environment value is explicit
+    configuration, exactly like a CLI flag, so it is refused rather than
+    silently reallocated into a file the caller's own environment overrides.
+    """
+    for name in (BACKEND_ENV, FRONTEND_ENV):
+        raw_value = environ.get(name)
+        if raw_value is None or str(raw_value).strip() == "":
+            continue
+        port = _parse_port(name, raw_value)
+        if port in RESERVED_FIXED_PORTS:
+            return port
+    return None
+
+
 def _lane_pool_starts(lane: int) -> tuple[int, int]:
     """Return this lane's (backend, frontend) pool start, shifted by the stride."""
     offset = lane * PORT_LANE_STRIDE
@@ -691,6 +712,14 @@ def claim_ports(
                     "suite (see RESERVED_FIXED_PORTS in apps/webui/port_config.py); "
                     "choose a different pair"
                 )
+    inherited_reserved = _reserved_port_from_process_environment(effective_environ)
+    if inherited_reserved is not None:
+        raise PortConfigError(
+            f"port {inherited_reserved} is reserved for a fixed-port CI/desktop suite and "
+            f"was inherited from the process environment; unset {BACKEND_ENV}/"
+            f"{FRONTEND_ENV} before claiming, since an exported value outranks the .env "
+            "this would rewrite"
+        )
     configured = requested or _configured_candidate(dotenv_path, effective_environ)
     if configured is not None and (
         configured.backend in RESERVED_FIXED_PORTS or configured.frontend in RESERVED_FIXED_PORTS
