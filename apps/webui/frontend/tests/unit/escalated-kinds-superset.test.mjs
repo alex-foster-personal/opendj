@@ -28,8 +28,13 @@
  *   - if a warn-severity row escalates then broken (the severity gate is the
  *     only gate, and it must still gate)
  *   - if an escalator that throws loses the local ring row then broken
- *   - if perf-event-log.ts regains a kind-keyed filter in the escalate path
- *     then broken
+ *   - if perf-event-log.ts regains a kind-keyed VALUE allowlist in the escalate
+ *     path then broken
+ *   - if a `toast-*` row escalates then broken (pushToast already sends a
+ *     richer report for it; two reports of one failure cannot merge and the
+ *     in-flight queue write can erase the better one)
+ *   - if a NON-toast row stops escalating then broken (that is the overshoot
+ *     of the line above, and nothing in the report that produced it objects)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -94,15 +99,70 @@ describe('error-severity perf events escalate', () => {
 		);
 	});
 
-	it('has no kind-keyed filter left in the escalate path', () => {
+	it('has no kind-keyed VALUE allowlist left in the escalate path', () => {
 		const body = readFileSync(PERF_EVENT_LOG, 'utf8');
 		const escalate = body.slice(body.indexOf('function _escalate('));
 		const fnEnd = escalate.indexOf('\n}\n');
 		const source = escalate.slice(0, fnEnd);
 		assert.ok(
 			!/ESCALATED_KINDS|\.has\(entry\.kind\)/.test(source),
-			`_escalate must not filter by kind; an allowlist there can only ever drop ` +
-				`error-severity rows before they leave the browser:\n${source}`
+			`_escalate must not consult a set of kind VALUES; such a list can only ever ` +
+				`drop error-severity rows before they leave the browser:\n${source}`
+		);
+	});
+
+	// ---- exactly once, not zero and not twice ---------------------------
+	//
+	// `pushToast(msg, 'error')` writes the `toast-error` ring row AND sends its
+	// own reportClientError carrying the real cause, the toast id and any
+	// context the caller measured. Escalating the ring row too produces two
+	// reports of one failure that cannot merge (reportClientError fingerprints
+	// on kind:source:message and both halves differ), and the second write can
+	// be erased by the first flush writing back its pre-await snapshot.
+	//
+	// Both directions are asserted, because the overshoot -- suppressing rows
+	// generally -- satisfies the finding perfectly and would silence every
+	// audio fault again.
+
+	it('does NOT escalate a toast row: pushToast already reports it', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('toast-error', 'deck 1 failed to load', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(
+			seen.map((e) => e.kind),
+			[],
+			'an error toast must take ONE trip to the server, the context-rich one pushToast sends'
+		);
+	});
+
+	it('still keeps the toast row in the local ring', () => {
+		mod.recordPerfEvent('toast-error', 'the ring is not the thing being skipped', null, 'error');
+		const kinds = mod.readPerfEvents().map((row) => row.kind);
+		assert.ok(kinds.includes('toast-error'), 'not escalating a row must not stop recording it');
+	});
+
+	it('escalates an audio fault, which has no other reporter', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('audio-output-dead', 'rendering into a dead output', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(
+			seen.map((e) => e.kind),
+			['audio-output-dead'],
+			'suppressing rows generally is the overshoot of the toast rule and re-hides the outage'
+		);
+	});
+
+	it('escalates a kind that merely CONTAINS toast, rather than being one', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('deck-toast-bridge-failed', 'not a toast row', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(
+			seen.map((e) => e.kind),
+			['deck-toast-bridge-failed'],
+			'the rule is a kind PREFIX naming who writes the row, not a substring'
 		);
 	});
 });

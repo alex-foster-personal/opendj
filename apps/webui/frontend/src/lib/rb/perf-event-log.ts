@@ -189,6 +189,18 @@ export interface DeckStateBaseline {
 const DECK_LOAD_BUDGET = 16;
 const TRANSPORT_SCHEDULE_BUDGET = 16;
 const DECK_STATE_BUDGET = 8;
+/**
+ * Audio-health faults, kept out of the shared remainder.
+ *
+ * These are the rows `audio-health-mirror.ts` publishes as `recent_faults`,
+ * and the whole reason that field reads the DURABLE ring rather than the live
+ * toast store is that a fault must stay legible long after its toast is gone.
+ * In the shared `other` bucket it was not: eight rows, shared with toast rows,
+ * device-floor rows and the SUCCESSFUL states `audio-output-alive` and
+ * `audio-output-rebound`, so eight ordinary events after an outage evicted the
+ * outage. A dedicated budget is what makes the durability claim true.
+ */
+const AUDIO_HEALTH_BUDGET = 16;
 const OTHER_BUDGET = 8;
 /**
  * Q1: press rows, kept out of the pitch fader's way. PitchFader drives
@@ -209,6 +221,7 @@ type PerfBucket =
 	| 'transport-schedule'
 	| 'transport-schedule-press'
 	| 'deck-state'
+	| 'audio-health'
 	| 'other';
 
 const BUDGETS: Record<PerfBucket, number> = {
@@ -216,8 +229,30 @@ const BUDGETS: Record<PerfBucket, number> = {
 	'transport-schedule': TRANSPORT_SCHEDULE_BUDGET,
 	'transport-schedule-press': TRANSPORT_PRESS_BUDGET,
 	'deck-state': DECK_STATE_BUDGET,
+	'audio-health': AUDIO_HEALTH_BUDGET,
 	other: OTHER_BUDGET
 };
+
+/**
+ * Kinds that make up the audio-health timeline, and the ONE definition of it.
+ *
+ * Exported because `audio-health-mirror.ts` selects the same rows for
+ * `recent_faults`. Two copies of this predicate would let the retention budget
+ * and the thing it is retaining for drift apart, which is the defect one level
+ * up from the one it exists to fix.
+ *
+ * `xrun` is deliberately excluded despite being audio: it fires continuously
+ * (34 times in one morning) and would crowd out the rare rows that matter. It
+ * has its own counter in the mirror under `xrun_sentinel`.
+ */
+const AUDIO_HEALTH_EXTRA_KINDS: ReadonlySet<string> = new Set([
+	'silent-while-playing',
+	'presentation-clock-stalled'
+]);
+
+export function isAudioHealthKind(kind: string): boolean {
+	return kind.startsWith('audio-') || AUDIO_HEALTH_EXTRA_KINDS.has(kind);
+}
 
 /** Prefix match, because kinds carry a suffix (`deck-load sid=<id>`).
  * `deck-unload` is matched exactly: it shares the deck-state bucket with the
@@ -227,6 +262,7 @@ const BUDGETS: Record<PerfBucket, number> = {
  * testing `transport-schedule` first would swallow every press row back into
  * the fader's bucket. The suffix shape keeps existing prefix consumers whole. */
 function _bucketOf(kind: string): PerfBucket {
+	if (isAudioHealthKind(kind)) return 'audio-health';
 	if (kind.startsWith('deck-load')) return 'deck-load';
 	if (kind.startsWith('transport-schedule-press')) return 'transport-schedule-press';
 	if (kind.startsWith('transport-schedule')) return 'transport-schedule';
@@ -248,6 +284,7 @@ function _withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
 		'transport-schedule': 0,
 		'transport-schedule-press': 0,
 		'deck-state': 0,
+		'audio-health': 0,
 		other: 0
 	};
 	for (let i = events.length - 1; i >= 0; i--) {
@@ -394,7 +431,31 @@ function _stageSummary(stages: Record<string, number>): string {
  * `reportClientError` owns its own durable retry queue, so a POST that fails
  * is retried on the next report or page load rather than lost.
  */
+/**
+ * Whether some OTHER path already owns this row's trip to the server.
+ *
+ * `pushToast` writes the ring row AND, for an error toast, sends its own
+ * `reportClientError` carrying the real `cause`, the toast id and whatever
+ * context the caller measured (deck-load stage timings, say). Escalating the
+ * ring row as well produces TWO reports of one failure, and the two cannot
+ * merge: `reportClientError` fingerprints on `kind:source:message`, and these
+ * differ in both `source` (`perf-event` vs `toast`) and message (the row's
+ * `kind: message` composition vs the cause's own). The richer of the two is
+ * the one a reader needs, and it is the one that arrives second.
+ *
+ * This is not the value-allowlist that used to live at the top of this file.
+ * That list enumerated which FAILURES deserved reporting, which is a judgement
+ * that rots. This is a structural fact about one kind PREFIX: rows named
+ * `toast-*` are written by a reporter that already reports. The invariant
+ * "recorded at error means escalated" is intact; what is refused is escalating
+ * it TWICE.
+ */
+function _hasOwnServerReport(kind: string): boolean {
+	return kind.startsWith('toast-');
+}
+
 function _escalate(entry: PerfEvent): void {
+	if (_hasOwnServerReport(entry.kind)) return;
 	if (_escalator === null) {
 		// Once per session, not per row: a sustained dropout would otherwise turn
 		// a missing sink into its own console flood. The row is already in the

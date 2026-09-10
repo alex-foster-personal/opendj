@@ -29,7 +29,7 @@
  */
 import type { AudioOutputSnapshot } from './audio-output-liveness';
 import { describeAudioOutputHealth, type AudioOutputHealthDisplay } from './audio-output-health-display';
-import type { PerfEvent } from './perf-event-log';
+import { isAudioHealthKind, type PerfEvent } from './perf-event-log';
 import type { SilenceVerdict } from './silence-watchdog';
 
 /**
@@ -46,20 +46,15 @@ export const METER_FRESH_MAX_MS = 2_000;
 export const RECENT_FAULT_LIMIT = 10;
 
 /**
- * Perf-event kinds that belong to audio health.
+ * Which kinds belong to audio health is decided by `isAudioHealthKind` in
+ * `perf-event-log.ts`, and imported rather than restated here.
  *
- * `xrun` is deliberately NOT here despite being audio: it fires continuously
- * (34 times in one morning) and would crowd out the rare rows that matter. It
- * already has its own counter in the mirror under `xrun_sentinel`.
+ * That predicate also owns those kinds' RETENTION BUDGET in the ring. A second
+ * copy of the rule here would let the rows the ring keeps and the rows this
+ * fold looks for drift apart, and a fault that was retained but not selected
+ * (or selected but already evicted) is the same invisible-outage defect this
+ * module exists to close, one level up.
  */
-const EXTRA_FAULT_KINDS: ReadonlySet<string> = new Set([
-	'silent-while-playing',
-	'presentation-clock-stalled'
-]);
-
-function _isAudioFault(kind: string): boolean {
-	return kind.startsWith('audio-') || EXTRA_FAULT_KINDS.has(kind);
-}
 
 export interface AudioHealthFault {
 	t: string;
@@ -92,7 +87,7 @@ export function buildAudioHealthMirror(input: AudioHealthInput): AudioHealthMirr
 
 	const faults: AudioHealthFault[] = [];
 	for (const event of events) {
-		if (!_isAudioFault(event.kind)) continue;
+		if (!isAudioHealthKind(event.kind)) continue;
 		const age = nowMs - Date.parse(event.t);
 		if (Number.isNaN(age)) {
 			throw new RangeError(`perf event ${event.kind} has an unparseable timestamp ${event.t}`);

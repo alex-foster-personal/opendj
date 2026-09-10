@@ -205,9 +205,19 @@ check_signing_config() {
     # not fail for the condition it was there to catch.
     if [ -n "$identity" ] && [ "$ship_unsigned" != "1" ]; then
         if ! command -v security >/dev/null 2>&1; then
-            # Cannot measure. Report that, never a verdict: a pass here would
-            # mean "no security binary" reads the same as "identity present".
-            printf '[WARN]    signing identity UNMEASURED: no `security` binary on this host\n'
+            # CANNOT MEASURE IS AN UNMET PRECONDITION, NOT A WARNING.
+            #
+            # This branch used to print UNMEASURED and fall through to the
+            # `ok "signing as..."` below, so the preflight exited 0 and `just
+            # dmg` proceeded with an unverified identity. A warning that the
+            # exit code does not carry is a warning nothing acts on, and the
+            # summary line then said the same thing it says for a machine that
+            # really does hold the certificate. The whole point of this check
+            # is that those two states must not look alike.
+            fail "signing identity" \
+                 "the signing identity CANNOT BE MEASURED on this host: no \`security\` binary on PATH, so there is no way to tell a present certificate from an absent one before codesign runs" \
+                 "Run the build on a macOS host (\`security\` ships with the OS), or export MDT_SHIP_UNSIGNED=1 to build a deliberately unsigned dev image that testers must clear by hand."
+            return
         else
             # `-v` restricts to identities that are VALID (chain intact), and
             # `-p codesigning` to those usable for signing, so a match means

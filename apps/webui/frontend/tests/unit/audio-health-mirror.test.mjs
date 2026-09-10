@@ -130,3 +130,59 @@ describe('buildAudioHealthMirror', () => {
 		);
 	});
 });
+
+/**
+ * THE DURABILITY CLAIM, TESTED AGAINST THE RING THAT HAS TO HONOUR IT.
+ *
+ * `recent_faults` reads the perf ring precisely so a fault outlives its toast.
+ * That is only true if the ring still HOLDS the row when the mirror asks. Until
+ * Thu 10 Sep 2026 audio faults shared the 8-row `other` bucket with toast rows,
+ * timing rows and the successful states `audio-output-alive` and
+ * `audio-output-rebound` -- so eight ordinary rows after an outage, the outage
+ * row was gone and `recent_faults` published `[]`, which is the same empty
+ * reading the live-toast-store version produced. Fixing where the mirror READS
+ * without fixing what the ring KEEPS would have moved the defect, not closed it.
+ *
+ * [if] an audio fault is evicted by unrelated ring traffic [then] fail, [else stop].
+ */
+describe('audio faults survive unrelated ring traffic', () => {
+	let ring;
+	before(async () => {
+		ring = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts');
+	});
+
+	it('keeps the outage row behind a flood of ordinary events', () => {
+		ring.recordPerfEvent('audio-output-dead', 'rendering into a dead output', null, 'error');
+		// Comfortably past the 8-row shared remainder these used to share.
+		for (let i = 0; i < 40; i++) {
+			ring.recordPerfEvent(`toast-info`, `ordinary event ${i}`, null, 'info');
+			ring.recordPerfEvent(`beat-sync-skip`, `ordinary event ${i}`, null, 'warn');
+		}
+		const kinds = ring.readPerfEvents().map((row) => row.kind);
+		assert.ok(
+			kinds.includes('audio-output-dead'),
+			`the fault the mirror promises to still be showing was evicted; ring holds: ${kinds.join(', ')}`
+		);
+	});
+
+	it('does not give every kind unlimited retention, which would be the overshoot', () => {
+		for (let i = 0; i < 40; i++) {
+			ring.recordPerfEvent('beat-sync-skip', `filler ${i}`, null, 'warn');
+		}
+		const rows = ring.readPerfEvents().filter((row) => row.kind === 'beat-sync-skip');
+		assert.ok(
+			rows.length < 40,
+			`ordinary kinds must still be bounded, got ${rows.length} retained`
+		);
+	});
+
+	it('agrees with the mirror about which kinds are audio health', () => {
+		// One predicate, imported by the mirror. Two copies could let the ring
+		// retain rows the fold ignores, or evict rows it looks for.
+		assert.equal(ring.isAudioHealthKind('audio-output-dead'), true);
+		assert.equal(ring.isAudioHealthKind('silent-while-playing'), true);
+		assert.equal(ring.isAudioHealthKind('presentation-clock-stalled'), true);
+		assert.equal(ring.isAudioHealthKind('xrun'), false, 'xrun has its own counter and would crowd the bucket');
+		assert.equal(ring.isAudioHealthKind('deck-load'), false);
+	});
+});

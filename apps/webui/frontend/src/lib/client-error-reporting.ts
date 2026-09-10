@@ -70,17 +70,38 @@ async function flushQueue(): Promise<void> {
 	if (flushing || typeof window === 'undefined') return;
 	flushing = true;
 	try {
-		const queue = readQueue();
-		while (queue.length > 0) {
+		// RE-READ EVERY ITERATION, AND REMOVE BY ID.
+		//
+		// The previous loop took ONE snapshot before the first await and wrote
+		// that snapshot back after each POST. `reportClientError` is
+		// synchronous and appends straight to storage, so a report raised while
+		// a POST was in flight landed in storage and was then ERASED by the
+		// stale snapshot being written over it. Two reports of one failure in
+		// the same tick is the ordinary case (a toast reports, and something it
+		// called reports), so this was not a rare interleaving.
+		//
+		// Removing the sent row by `client_event_id` rather than shifting a
+		// position also survives a queue that was trimmed to MAX_QUEUE
+		// underneath us, where index 0 is no longer the row that was sent.
+		for (;;) {
+			const queue = readQueue();
+			if (queue.length === 0) break;
+			const sent = queue[0];
 			// Non-2xx becomes ApiError; network failures throw too. Either path
-			// stops the loop without removing the head item so the durable
-			// browser queue can retry on the next report or page load.
+			// leaves the head item in storage so the durable browser queue can
+			// retry on the next report or page load.
 			await api.POST('/api/v1/client-errors', {
-				body: queue[0],
+				body: sent,
 				keepalive: true
 			});
-			queue.shift();
-			writeQueue(queue);
+			// The FIRST match, spliced, not every match filtered out: two rows can
+			// legitimately carry the same id (the `client-<now>-<n>` fallback in a
+			// context without crypto.randomUUID), and dropping both would lose an
+			// unsent report to make bookkeeping tidier.
+			const remaining = readQueue();
+			const at = remaining.findIndex((row) => row.client_event_id === sent.client_event_id);
+			if (at >= 0) remaining.splice(at, 1);
+			writeQueue(remaining);
 		}
 	} catch {
 		// The durable browser queue retries on the next report or page load.

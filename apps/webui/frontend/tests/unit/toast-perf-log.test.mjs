@@ -34,20 +34,18 @@ function _captureConsole() {
 	};
 }
 
-// SCOPE NOTE (Thu 10 Sep 2026). These assert the SEVERITY ROUTING OF THE TOAST
-// LINE, and are deliberately scoped to `[perf-event] toast-` lines rather than
-// to total console counts. Once the escalation allowlist was removed from
-// perf-event-log.ts, `toast-error` began escalating like every other
-// error-severity row -- which is the point, since a screen full of error toasts
-// that never left the browser is what made the Thu 10 Sep audio outage
-// undiagnosable. In a unit test no escalator is wired, so _escalate emits its
-// documented one-per-session "no escalator wired" console.warn. Counting ALL
-// warns made an unrelated subsystem's diagnostic fail a test about toast
-// severity; counting the toast lines tests what the docstring above says.
-function _toastLines(list) {
-	return list.filter((line) => line.includes('[perf-event] toast-'));
-}
-
+// WHY THE TOTAL CONSOLE COUNTS BELOW ARE LEFT UNSCOPED (Thu 10 Sep 2026).
+//
+// They are also, incidentally, the witness that an error toast takes ONE trip
+// to the server rather than two. `pushToast` writes the ring row and then
+// sends its own context-rich `reportClientError`; if the ring row ALSO
+// escalated, `_escalate` would find no escalator wired under a unit test and
+// emit its documented one-per-session "no escalator wired" console.warn, and
+// `capture.calls.warn.length` would be 1 here rather than 0.
+//
+// So do not relax these to a substring filter. A filtered count would pass
+// whether the row escalates or not, which is exactly the double-report the
+// `_hasOwnServerReport` rule in perf-event-log.ts exists to prevent.
 test('an error toast is durably logged at console.error, not merely shown', async () => {
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts');
 	const capture = _captureConsole();
@@ -56,9 +54,9 @@ test('an error toast is durably logged at console.error, not merely shown', asyn
 	} finally {
 		capture.restore();
 	}
-	assert.equal(_toastLines(capture.calls.warn).length, 0);
-	assert.equal(_toastLines(capture.calls.info).length, 0);
-	assert.equal(_toastLines(capture.calls.error).length, 1);
+	assert.equal(capture.calls.warn.length, 0);
+	assert.equal(capture.calls.info.length, 0);
+	assert.equal(capture.calls.error.length, 1);
 	// The id between the kind and the colon is load-bearing, not incidental
 	// formatting: it is the string the toast also prints and copies, and it is
 	// what makes this line findable from a pasted report.
@@ -76,9 +74,9 @@ test('an info toast is durably logged at console.info, not console.error', async
 	} finally {
 		capture.restore();
 	}
-	assert.equal(_toastLines(capture.calls.error).length, 0);
-	assert.equal(_toastLines(capture.calls.warn).length, 0);
-	assert.equal(_toastLines(capture.calls.info).length, 1);
+	assert.equal(capture.calls.error.length, 0);
+	assert.equal(capture.calls.warn.length, 0);
+	assert.equal(capture.calls.info.length, 1);
 	assert.match(
 		capture.calls.info[0],
 		/\[perf-event] toast-info id=t-[a-z0-9]+-\d+:.*Beat Sync skipped/
