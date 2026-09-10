@@ -58,13 +58,25 @@ export function noteAutoPlayExhaustion(input: {
 	source_stable_id: string;
 	all_missing: boolean;
 	enforce_order: boolean;
+	/**
+	 * Whether a compatible candidate for THIS source already failed to load.
+	 *
+	 * Checked before key and tempo (Codex r3973995265). A candidate that fails
+	 * to load is quarantined in `_unplayableIds` and then excluded from
+	 * `remaining`, so the very next poll dead-ends and, without this, reported
+	 * `no-compatible-track` - sending the operator to widen a pitch range when
+	 * compatible tracks existed and the FILES would not open.
+	 */
+	load_failures: boolean;
 	remaining: readonly AutoPlayTrackRow[];
 }): void {
 	const reason: AutoPlayStallReason = input.all_missing
 		? 'missing-audio'
-		: input.enforce_order
-			? 'no-next-in-order'
-			: 'no-compatible-track';
+		: input.load_failures
+			? 'candidates-failed-to-load'
+			: input.enforce_order
+				? 'no-next-in-order'
+				: 'no-compatible-track';
 	raiseAutoPlayStall(
 		describeAutoPlayStall({
 			reason,
@@ -84,8 +96,19 @@ export function noteAutoPlayExhaustion(input: {
 export function noteAutoPlayHandoffStall(
 	reason: 'handoff-attempts-exhausted' | 'handoff-incomplete',
 	sourceStableId: string,
-	detail: string
+	detail: string,
+	/**
+	 * Whether AutoPlay is still armed and installed.
+	 *
+	 * A handoff is several awaits long, so its rejection can resume AFTER the
+	 * operator switched AutoPlay off or left /performance - and teardown has
+	 * already cleared the stall by then (Codex r3973995259). Raising anyway
+	 * leaves a stop banner over a switched-off feature, and, because this state
+	 * is module-level, carries it into the NEXT /performance mount.
+	 */
+	stillArmed: boolean
 ): void {
+	if (!stillArmed) return;
 	raiseAutoPlayStall(
 		describeAutoPlayStall({ reason, source_stable_id: sourceStableId, blocked: [], detail })
 	);

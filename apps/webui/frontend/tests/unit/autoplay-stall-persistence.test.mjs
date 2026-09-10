@@ -24,6 +24,12 @@
  * [if] the master is playing far outside the trigger window [then] no stall is
  *   recorded [⛔️ if a healthy set shows a stop banner - the control that a
  *   raise-everything fix would fail].
+ * [if] a compatible candidate already failed to LOAD for this source [then] the
+ *   stall blames the files, not key and tempo [⛔️ if it tells the operator to
+ *   widen a pitch range when the pitch range was never the problem].
+ * [if] AutoPlay is switched off while a handoff is still awaiting [then] the
+ *   late rejection raises nothing [⛔️ if a stop banner sits over a
+ *   switched-off feature, and rides module state into the next mount].
  * [if] the stall is raised [then] the condition reaches `/api/v1/client-errors`
  *   through the REAL reporter, not a stubbed one [⛔️ if the only server-side
  *   trace of a stopped set is a POST nobody checked was sent].
@@ -41,7 +47,7 @@ const ENTRY = [
 	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
-	"export { readAutoPlayStall } from '$lib/rb/autoplay-stall.svelte';"
+	"export { readAutoPlayStall, noteAutoPlayHandoffStall } from '$lib/rb/autoplay-stall.svelte';"
 ].join('\n');
 
 function settle() {
@@ -274,6 +280,58 @@ test('OVERSHOOT CONTROL: a play requested into a dead output does not retire the
 			null,
 			'an optimistic play flag is not sound: gating on it would delete the ' +
 				'explanation with the room still silent (Codex r3973806301)'
+		);
+	});
+});
+
+test('a candidate that failed to LOAD blames the files, not key and tempo', async () => {
+	await withController(async (mod) => {
+		// One compatible-but-unloadable candidate, then nothing else playable.
+		// It is quarantined in _unplayableIds and drops out of `remaining`, so
+		// the next poll dead-ends with a remainder that looks merely
+		// incompatible. It is not: the files would not open.
+		mod.setAutoPlayTrackFeed('playlist-a', [
+			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
+			{ stable_id: 'ghost-1', key: '8A', bpm: 124, file_exists: true, title: 'Ghost', artist: 'Bo' },
+			{ stable_id: 'far-1', key: '3B', bpm: 175, file_exists: true, title: 'Far', artist: 'Cy' }
+		]);
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		// The load dispatch rejects (no engine behind the harness), which is the
+		// retryable phase, so the candidate is quarantined and AutoPlay re-arms.
+		await settle();
+		await settle();
+
+		const stall = mod.readAutoPlayStall();
+		assert.notEqual(stall, null, 'precondition: AutoPlay reached a terminal branch');
+		assert.equal(
+			stall.reason,
+			'candidates-failed-to-load',
+			`a load failure must not be reported as a key/BPM dead end (got ${stall.reason})`
+		);
+		assert.match(stall.resume, /key and tempo are not the problem/);
+	});
+});
+
+test('a late handoff rejection raises nothing once AutoPlay is off', async () => {
+	await withController(async (mod) => {
+		mod.setAutoPlayEnabled(false);
+		await settle();
+		// Exactly what the awaited catch block does when it resumes after the
+		// operator switched AutoPlay off: the controller passes its own live
+		// state, and a torn-down controller reports false.
+		mod.noteAutoPlayHandoffStall('handoff-incomplete', 'src-1', 'play refused', false);
+		assert.equal(
+			mod.readAutoPlayStall(),
+			null,
+			'a stop banner over a switched-off feature also rides module state into the next mount'
+		);
+
+		// CONTROL: the same call from a live controller still records.
+		mod.noteAutoPlayHandoffStall('handoff-incomplete', 'src-1', 'play refused', true);
+		assert.notEqual(
+			mod.readAutoPlayStall(),
+			null,
+			'a guard that refuses everything would pass the assertion above and hide every handoff stall'
 		);
 	});
 });

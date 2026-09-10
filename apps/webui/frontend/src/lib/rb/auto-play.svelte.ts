@@ -50,11 +50,6 @@ import {
 	type AutoPlayMasterPromotion,
 	chartedOrderKey
 } from '$lib/rb/auto-play';
-import {
-	computeFollowerSyncPlan,
-	quantizeToNearestBeat,
-	validateBeatGrid
-} from '$lib/rb/beat-sync-math';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
@@ -65,8 +60,8 @@ import {
 	clearAutoPlayQueue,
 	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
+import { phaseLockOk } from '$lib/rb/auto-play-phase-lock';
 import { clearAutoPlayStall, noteAutoPlayExhaustion, noteAutoPlayHandoffStall, retireAutoPlayStallIfAudible } from '$lib/rb/autoplay-stall.svelte';
-import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -79,8 +74,6 @@ const POLL_MS = 250;
  * near future and ranks beyond it are simply absent.
  */
 const CHARTED_ORDER_HORIZON = 64;
-/** Synthetic schedule horizon for preflight only (plan needs syncAt > now). */
-const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 /** Failed load/play attempts per source track before stopping. */
 const MAX_HANDOFF_ATTEMPTS = 3;
 
@@ -171,6 +164,11 @@ function _refreshChartedOrder(
 	publishAutoPlayOrder(full.slice(1));
 }
 
+/** Still armed AND still installed: a handoff outlives both (r3973995259). */
+function _armed(): boolean {
+	return uiPrefs.auto_play_enabled && _stopArmWatcher !== null;
+}
+
 function _snaps(): AutoPlayDeckSnap[] {
 	return autoPlayDeckSnaps(DECK_IDS, (id) => deckStates[id], deckAudioClockPositionMs);
 }
@@ -191,58 +189,12 @@ function _syncPlayedSet(): void {
 	}
 }
 
-function _gridOrNull(deck: DeckId): readonly AnlzBeat[] | null {
-	const beats = deckStates[deck].anlz?.beatgrid.beats;
-	try {
-		validateBeatGrid(beats ?? []);
-	} catch {
-		return null;
-	}
-	return beats ?? null;
-}
-
-/** Pure plan probe using live decks; never mutates transport. */
-function _phaseLockOk(sourceId: DeckId, follower: DeckId): { ok: true } | { ok: false; error: string } {
-	const masterGrid = _gridOrNull(sourceId);
-	const followerGrid = _gridOrNull(follower);
-	if (masterGrid === null) {
-		return { ok: false, error: `source deck ${sourceId} has no valid real PQTZ beat grid` };
-	}
-	if (followerGrid === null) {
-		return { ok: false, error: `follower deck ${follower} has no valid real PQTZ beat grid` };
-	}
-	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
-	const masterPosSec = Math.max(0, deckStates[sourceId].position_ms / 1000);
-	const rawFollowerSec = Math.max(0, deckStates[follower].position_ms / 1000);
-	const followerPositionSec = quantizeToNearestBeat(followerGrid, rawFollowerSec);
-	const masterTempoRatio = deckStates[sourceId].pitch;
-	const mode = deckStates[follower].sync_mode;
-	try {
-		computeFollowerSyncPlan({
-			masterGrid,
-			followerGrid,
-			masterPositionAtSyncSec: masterPosSec,
-			masterTempoRatio,
-			followerPositionSec,
-			currentContextTimeSec: 0,
-			syncAtContextTimeSec: PREFLIGHT_SYNC_AHEAD_SEC,
-			minFollowerTempoRatio: bounds.min,
-			maxFollowerTempoRatio: bounds.max,
-			mode
-		});
-		return { ok: true };
-	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { ok: false, error: message };
-	}
-}
-
 async function _applyBeatSyncDecision(
 	source: AutoPlayDeckSnap,
 	follower: DeckId
 ): Promise<void> {
 	const probe = source.beat_sync_enabled
-		? _phaseLockOk(source.id, follower)
+		? phaseLockOk(source.id, follower)
 		: { ok: false as const, error: 'source Beat Sync off' };
 	const decision = decideAutoPlayBeatSync({
 		source_beat_sync_enabled: source.beat_sync_enabled,
@@ -462,7 +414,8 @@ async function _tick(): Promise<void> {
 		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
 		noteAutoPlayExhaustion({
 			source_stable_id: source.stable_id, remaining, all_missing: allMissing,
-			enforce_order: uiPrefs.auto_play_enforce_order
+			enforce_order: uiPrefs.auto_play_enforce_order,
+			load_failures: _attemptsFor.source === source.stable_id && _attemptsFor.count > 0
 		});
 		_triggeredFor = source.stable_id;
 		_exhaustedFeedEpoch = _playedFeedEpoch;
@@ -497,7 +450,7 @@ async function _tick(): Promise<void> {
 					`did not finish: ${message}`,
 				'error'
 			);
-			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message);
+			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message, _armed());
 			return;
 		}
 		// Row 16: nothing landed on the deck; quarantine and try another pick.
@@ -514,7 +467,7 @@ async function _tick(): Promise<void> {
 				`auto-play stopped after ${MAX_HANDOFF_ATTEMPTS} failed handoffs: ${message}`,
 				'error'
 			);
-			noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message);
+			noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message, _armed());
 		}
 	} finally {
 		_inFlight = false;

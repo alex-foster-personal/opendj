@@ -22,9 +22,23 @@
 	import { describeStallTrack, STALL_TRACK_LIMIT } from '$lib/rb/autoplay-stall';
 
 	let showTracks = $state(false);
+	/** Which stall the open/closed choice above was made about. */
+	let expandedFor = $state<string | null>(null);
 
 	const stall = $derived(autoPlayStall.current);
 	const hidden = $derived(stall === null || stall.blocked_total <= stall.blocked.length ? 0 : stall.blocked_total - stall.blocked.length);
+	/**
+	 * A LATER stall starts collapsed (Codex r3973913201).
+	 *
+	 * The component stays mounted across stalls, so a bare `showTracks` left
+	 * one operator's expansion armed for the next, unrelated stop - which then
+	 * sprang a list over up to 30vh of the performance surface unasked. Keyed
+	 * on the stall's identity rather than reset in an effect, so the open state
+	 * cannot survive the thing it was about.
+	 */
+	const listOpen = $derived(
+		showTracks && stall !== null && expandedFor === `${stall.reason}:${stall.source_stable_id}`
+	);
 </script>
 
 {#if stall !== null}
@@ -38,15 +52,18 @@
 			<button
 				type="button"
 				class="ap-stall-toggle"
-				aria-expanded={showTracks}
+				aria-expanded={listOpen}
 				title={`${stall.blocked_total} playlist track(s) AutoPlay could not use; the list names the first ${STALL_TRACK_LIMIT}`}
-				onclick={() => (showTracks = !showTracks)}
+				onclick={() => {
+					expandedFor = `${stall.reason}:${stall.source_stable_id}`;
+					showTracks = !listOpen;
+				}}
 			>
-				{showTracks ? 'Hide' : 'Show'} the {stall.blocked_total} track{stall.blocked_total === 1 ? '' : 's'}
+				{listOpen ? 'Hide' : 'Show'} the {stall.blocked_total} track{stall.blocked_total === 1 ? '' : 's'}
 			</button>
 		{/if}
 	</div>
-	{#if showTracks && stall.blocked.length > 0}
+	{#if listOpen && stall.blocked.length > 0}
 		<ul class="ap-stall-list" data-testid="autoplay-stall-tracks">
 			{#each stall.blocked as track (track.stable_id)}
 				<li title={track.stable_id}>{describeStallTrack(track)}</li>

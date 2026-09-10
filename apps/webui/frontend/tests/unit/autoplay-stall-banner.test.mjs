@@ -24,6 +24,10 @@
  *   total [⛔️ if a capped list reads as the whole remainder].
  * [if] a dismiss control is added [then] this reds - an acknowledgement that
  *   leaves the room quiet and the screen blank is the failure being removed ⛔️
+ * [if] a repeated missing file reaches the descriptor [then] the rendered list
+ *   carries no duplicate key [⛔️ if svelte throws and the banner never draws].
+ * [if] a LATER stall arrives [then] its list starts collapsed [⛔️ if a previous
+ *   expansion springs 30vh of list over the decks unasked].
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -134,4 +138,40 @@ test('the performance route mounts it, and the ui-mirror publishes it', () => {
 		'utf8'
 	);
 	assert.match(mirror, /autoplay_stall: readAutoPlayStall\(\)/);
+});
+
+test('a repeated missing file renders once, with no duplicate key', () => {
+	// Playlist membership is keyed by position, so the SAME file can occupy
+	// several rows and reach the descriptor twice. `{#each ... (stable_id)}`
+	// throws on a duplicate key, which is the banner failing to draw at all.
+	const repeated = mod.describeAutoPlayStall({
+		reason: 'missing-audio',
+		source_stable_id: 'src-1',
+		blocked: [blockedRow(1), blockedRow(1), blockedRow(2)]
+	});
+	assert.equal(repeated.blocked_total, 2, 'precondition: the descriptor de-duplicated');
+	const html = renderFor(repeated);
+	assert.match(html, /Show the 2 tracks/);
+	assert.equal(
+		(html.match(/Gone 1/g) ?? []).length,
+		0,
+		'collapsed by default, so the names are not in the markup yet'
+	);
+});
+
+test('the expanded-list choice is scoped to the stall it was made about', () => {
+	// SSR renders the collapsed state, so this asserts the mechanism rather
+	// than the click: the list is gated on the stall identity the operator
+	// expanded, not on a bare boolean that outlives the stall.
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/AutoPlayStallBanner.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /expandedFor === `\$\{stall\.reason\}:\$\{stall\.source_stable_id\}`/);
+	assert.match(source, /\{#if listOpen && stall\.blocked\.length > 0\}/);
+	assert.equal(
+		/\{#if showTracks &&/.test(source),
+		false,
+		'a bare showTracks would carry one stall expansion into the next'
+	);
 });

@@ -26,6 +26,7 @@ export type AutoPlayStallReason =
 	| 'missing-audio'
 	| 'no-next-in-order'
 	| 'no-compatible-track'
+	| 'candidates-failed-to-load'
 	| 'handoff-attempts-exhausted'
 	| 'handoff-incomplete';
 
@@ -53,9 +54,18 @@ export interface AutoPlayStall {
 	resume: string;
 	/** Extra machine detail (a handoff error message), when the branch has one. */
 	detail: string | null;
-	/** The tracks AutoPlay could not use, capped for display. */
+	/** The DISTINCT tracks AutoPlay could not use, capped for display. */
 	blocked: readonly AutoPlayStallTrack[];
-	/** How many there were in total, so a capped list never reads as the whole set. */
+	/**
+	 * How many distinct tracks there were, so a capped list never reads as the
+	 * whole set.
+	 *
+	 * DISTINCT, not row count (Codex r3973913201): playlist membership is keyed
+	 * by position, so the same missing file can occupy several rows. Rendering
+	 * that list keyed by `stable_id` is a duplicate-key error, i.e. the banner
+	 * fails to draw the one thing it exists to show. It is also the number the
+	 * operator needs - they relink FILES, not positions.
+	 */
 	blocked_total: number;
 }
 
@@ -78,6 +88,8 @@ function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 			return 'AutoPlay stopped: no next unplayed track in playlist order';
 		case 'no-compatible-track':
 			return 'AutoPlay stopped: no unplayed playlist track fits key +-1 and the Beat Sync BPM range';
+		case 'candidates-failed-to-load':
+			return 'AutoPlay stopped: every compatible track it tried failed to load';
 		case 'handoff-attempts-exhausted':
 			return 'AutoPlay stopped: the next track failed to load or play three times';
 		case 'handoff-incomplete':
@@ -100,6 +112,8 @@ function _resume(reason: AutoPlayStallReason): string {
 			// branch while that setting is already OFF, so naming it would send
 			// the operator to a switch that is not the one holding them up.
 			return 'Widen the follower deck pitch range, or open a playlist with tracks in a nearby key and tempo, then press play on a deck.';
+		case 'candidates-failed-to-load':
+			return 'The candidates were compatible and would not load, so key and tempo are not the problem: check those files, then press play on a deck.';
 		case 'handoff-attempts-exhausted':
 			return 'Load the next track by hand and press play; the failures are in the toast log.';
 		case 'handoff-incomplete':
@@ -121,7 +135,8 @@ export function describeAutoPlayStall(input: {
 	blocked: readonly AutoPlayTrackRow[];
 	detail?: string | null;
 }): AutoPlayStall {
-	const blockedTotal = input.blocked.length;
+	const distinct = new Map(input.blocked.map((row) => [row.stable_id, row] as const));
+	const blockedTotal = distinct.size;
 	if (input.source_stable_id === '') {
 		// The clear condition compares against this id. An empty one would
 		// never equal a live source, so the stall could never be retired.
@@ -139,7 +154,7 @@ export function describeAutoPlayStall(input: {
 		headline: _headline(input.reason, blockedTotal),
 		resume: _resume(input.reason),
 		detail: input.detail ?? null,
-		blocked: input.blocked.slice(0, STALL_TRACK_LIMIT).map((row) => ({
+		blocked: [...distinct.values()].slice(0, STALL_TRACK_LIMIT).map((row) => ({
 			stable_id: row.stable_id,
 			title: row.title ?? null,
 			artist: row.artist ?? null

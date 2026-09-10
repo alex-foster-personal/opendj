@@ -16,6 +16,9 @@
  *   as an empty banner].
  * [if] a caller omits the stalled source track [then] describe throws [⛔️ if a
  *   stall is recorded that the clear rule can never retire].
+ * [if] the same missing file occupies several playlist positions [then] it is
+ *   named ONCE and counted once [⛔️ if the keyed render hits duplicate keys and
+ *   the banner fails to draw the one thing it exists to show].
  */
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
@@ -78,6 +81,7 @@ describe('describeAutoPlayStall', () => {
 			'missing-audio',
 			'no-next-in-order',
 			'no-compatible-track',
+			'candidates-failed-to-load',
 			'handoff-attempts-exhausted',
 			'handoff-incomplete'
 		];
@@ -94,6 +98,33 @@ describe('describeAutoPlayStall', () => {
 		}
 		assert.equal(headlines.size, reasons.length, 'two branches sharing a headline is a mis-report');
 		assert.equal(resumes.size, reasons.length, 'the way out differs per cause');
+	});
+
+	it('names a repeated missing file once, and counts distinct tracks', () => {
+		const stall = mod.describeAutoPlayStall({
+			reason: 'missing-audio',
+			source_stable_id: 'src-1',
+			// Playlist membership is keyed by position, so one file can occupy
+			// several rows. Rendering that keyed by stable_id is a duplicate-key
+			// error, i.e. the banner fails to draw at all.
+			blocked: [row('a', 'Alpha', 'Ann'), row('a', 'Alpha', 'Ann'), row('b', 'Beta', 'Ben')]
+		});
+		assert.deepEqual(stall.blocked.map((t) => t.stable_id), ['a', 'b']);
+		assert.equal(stall.blocked_total, 2, 'the operator relinks files, not positions');
+		assert.equal(
+			new Set(stall.blocked.map((t) => t.stable_id)).size,
+			stall.blocked.length,
+			'every rendered key must be unique'
+		);
+	});
+
+	it('CONTROL: distinct tracks are all kept', () => {
+		const stall = mod.describeAutoPlayStall({
+			reason: 'missing-audio',
+			source_stable_id: 'src-1',
+			blocked: [row('a'), row('b'), row('c')]
+		});
+		assert.equal(stall.blocked_total, 3, 'de-duplication must not collapse different tracks');
 	});
 
 	it('refuses a reason it has no words for', () => {
