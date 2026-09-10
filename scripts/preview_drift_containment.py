@@ -62,7 +62,20 @@ def _merge_commits(cwd: Path, main_ref: str, preview_ref: str) -> list[str]:
     return _git(cwd, "rev-list", "--merges", f"{main_ref}..{preview_ref}").split()
 
 
-def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> list[str]:
+def _union_diff_paths(cwd: Path, shas: list[str]) -> set[str]:
+    """Union of ``_diff_paths(sha~1, sha)`` over every sha in ``shas``: the
+    full set of paths some group of commits touched, shared by every
+    combined-state check below so each unions its own class the same way.
+    """
+    paths: set[str] = set()
+    for sha in shas:
+        paths |= _diff_paths(cwd, f"{sha}~1", sha)
+    return paths
+
+
+def _resolution_carrying_merges(
+    cwd: Path, main_ref: str, shas: list[str]
+) -> tuple[list[str], set[str]]:
     """Merges whose recorded tree is NOT what merging their parents produces,
     AND whose resolved content main has not since gained some other way.
 
@@ -114,9 +127,17 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
     independent per-path history search cannot tell apart from genuine
     containment. ``_paths_ever_together_on_main`` is that single shared test;
     the preview-only-commit case below uses the same one.
+
+    Returns the carrying shas AND, separately, the union of touched paths
+    for every merge trusted here via the ``_paths_ever_together_on_main``
+    branch specifically (not the wholesale-parent-match branch, which trusts
+    a merge for a reason unrelated to main containment and so contributes
+    nothing to it). ``evaluate()`` folds that set into the cross-class
+    combined-state check alongside the other two classes' trusted paths.
     """
     main_trees: set[str] | None = None
     carrying: list[str] = []
+    trusted_paths: set[str] = set()
     for sha in shas:
         merge_tree = _git(cwd, "rev-parse", f"{sha}^{{tree}}").strip()
         parents = _git(cwd, "rev-parse", f"{sha}^@").split()
@@ -169,6 +190,7 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
             if picked_one_parent_wholesale:
                 continue
             if _paths_ever_together_on_main(cwd, main_ref, merge_tree, touched):
+                trusted_paths |= touched
                 continue
         else:
             if main_trees is None:
@@ -176,7 +198,7 @@ def _resolution_carrying_merges(cwd: Path, main_ref: str, shas: list[str]) -> li
             if merge_tree in main_trees:
                 continue
         carrying.append(sha)
-    return carrying
+    return carrying, trusted_paths
 
 
 def _mark_superseded_commits(
@@ -232,9 +254,7 @@ def _revoke_landed_if_combined_state_never_coexisted(
     landed = [c for c in commits if c.landed and not c.superseded]
     if not landed:
         return
-    paths: set[str] = set()
-    for commit in landed:
-        paths |= _diff_paths(cwd, f"{commit.sha}~1", commit.sha)
+    paths = _union_diff_paths(cwd, [c.sha for c in landed])
     if paths and not _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
         for commit in landed:
             commit.landed = False
@@ -290,9 +310,7 @@ def _patch_equivalent_never_coexisted(
     blaming ITS age would fire on a combination that in fact just formed and
     has not overstayed the ``max_age_hours`` grace period yet.
     """
-    paths: set[str] = set()
-    for sha in landed_shas:
-        paths |= _diff_paths(cwd, f"{sha}~1", sha)
+    paths = _union_diff_paths(cwd, landed_shas)
     if not paths or _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
         return None
     if _newest_touch_age_hours(cwd, preview_ref, paths) <= max_age_hours:
@@ -303,4 +321,46 @@ def _patch_equivalent_never_coexisted(
         f"touched paths never coexisted on a single {main_ref} commit "
         f"(e.g. one landed and was later reverted): the preview is "
         f"serving content no main commit ever held together"
+    )
+
+
+def _cross_class_never_coexisted(
+    cwd: Path,
+    main_ref: str,
+    preview_ref: str,
+    paths: set[str],
+    max_age_hours: int,
+) -> str | None:
+    """The three checks above each union paths WITHIN one class -- a merge
+    resolution's own touched paths, a group of ``landed`` '+' commits'
+    touched paths, a group of patch-equivalent '-' commits' touched paths --
+    and require THAT union to coexist on one ``main_ref`` commit. None of
+    them unions ACROSS classes. A preview can serve one path whose value is
+    explained by a trusted merge resolution or squashed '+' commit and a
+    DIFFERENT path explained by a trusted '-' patch-equivalent commit, with
+    neither class's own check ever seeing the other's path: main can hold
+    (a=2, b=0) at one commit and (a=0, b=1) at a later one, never both
+    together, while each class's own per-class check independently reports
+    clean because `a` alone coexists somewhere on main and `b` alone
+    coexists somewhere else. ``evaluate()`` calls this once, after every
+    class has finished its own per-class marking and revoking, with the
+    union of every path any class STILL currently trusts, so it is the one
+    place that can see a combination no single main commit ever held
+    together even though every class-level check passed.
+
+    Gated on ``_newest_touch_age_hours`` over this CROSS-CLASS union, not
+    any one class's own union, for the same reason every other finding here
+    is: the combination currently served can be fresher than any single
+    contributing commit's own age.
+    """
+    if not paths or _paths_ever_together_on_main(cwd, main_ref, preview_ref, paths):
+        return None
+    if _newest_touch_age_hours(cwd, preview_ref, paths) <= max_age_hours:
+        return None
+    return (
+        f"{len(paths)} path(s) are each individually trusted as landed by a "
+        f"different mechanism (merge resolution, squashed commit, or "
+        f"patch-equivalent commit), but their combined state never "
+        f"coexisted on a single {main_ref} commit: the preview is serving a "
+        f"combination no main commit ever held together"
     )

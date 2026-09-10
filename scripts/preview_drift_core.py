@@ -14,11 +14,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.preview_drift_containment import (
+    _cross_class_never_coexisted,
     _mark_landed_commits,
     _mark_superseded_commits,
     _merge_commits,
     _patch_equivalent_never_coexisted,
     _resolution_carrying_merges,
+    _union_diff_paths,
 )
 from scripts.preview_drift_git import (
     DEFAULT_MAX_AGE_HOURS,
@@ -58,6 +60,38 @@ def _apply_never_coexisted_check(
         return
     reason = _patch_equivalent_never_coexisted(
         cwd, main_ref, preview_ref, landed_shas, report.max_age_hours
+    )
+    if reason:
+        report.verdict = "DRIFT"
+        report.reasons.append(reason)
+
+
+def _apply_cross_class_never_coexisted_check(
+    cwd: Path,
+    main_ref: str,
+    preview_ref: str,
+    report: Report,
+    landed_shas: list[str],
+    merge_trusted_paths: set[str],
+) -> None:
+    """Union the paths every currently-trusted class still relies on --
+    ``landed`` (and not ``superseded``) '+' commits, patch-equivalent '-'
+    commits, and merges trusted via main containment -- and run ONE
+    cross-class ``_cross_class_never_coexisted`` check over the combination.
+    Each class's own check (called separately, before this) only unions
+    within its own class, so a combination that mixes surviving content from
+    TWO different classes can pass every one of them independently; this is
+    the single check that sees the union across all three.
+    """
+    if report.serves_main_tree:
+        return
+    landed_paths = _union_diff_paths(
+        cwd, [c.sha for c in report.preview_only if c.landed and not c.superseded]
+    )
+    patch_equivalent_paths = _union_diff_paths(cwd, landed_shas)
+    combined = landed_paths | patch_equivalent_paths | merge_trusted_paths
+    reason = _cross_class_never_coexisted(
+        cwd, main_ref, preview_ref, combined, report.max_age_hours
     )
     if reason:
         report.verdict = "DRIFT"
@@ -170,6 +204,7 @@ def evaluate(
             )
     dirty_forces_drift = bool(report.dirty_paths)
 
+    merge_trusted_paths: set[str] = set()
     if report.serves_main_tree:
         if report.preview_only:
             report.reasons.append(
@@ -192,7 +227,7 @@ def evaluate(
                 f"preview work: re-point or delete the ref."
             )
             return report
-        carrying = _resolution_carrying_merges(cwd, main_ref, merges)
+        carrying, merge_trusted_paths = _resolution_carrying_merges(cwd, main_ref, merges)
         if carrying:
             described_merges = _describe(cwd, carrying)
             report.preview_only.extend(
@@ -228,6 +263,19 @@ def evaluate(
         return report
 
     _apply_never_coexisted_check(cwd, main_ref, preview_ref, report, landed_shas)
+
+    # A sixth blind spot: the fourth check above unions '-' rows against
+    # themselves, `_mark_landed_commits` unions '+' rows against themselves,
+    # and the merge-resolution check above unions a merge's own touched
+    # paths against themselves -- three separate unions, each checked for
+    # coexistence only WITHIN its own class. A preview can serve one path
+    # trusted by one class and a different path trusted by another, with
+    # neither class's check ever seeing the other's path, so the combination
+    # can pass every class-level check while no single main commit ever held
+    # it together. This is the one check that unions ACROSS all three.
+    _apply_cross_class_never_coexisted_check(
+        cwd, main_ref, preview_ref, report, landed_shas, merge_trusted_paths
+    )
 
     if stale:
         report.verdict = "DRIFT"
