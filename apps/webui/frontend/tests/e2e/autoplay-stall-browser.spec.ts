@@ -10,14 +10,16 @@ import { expect, test, type Page } from '@playwright/test';
  * layout and runtime facts, and all four were named as gaps by review
  * (r3973806306, r3974734057).
  *
- * WHAT IT DOES NOT PROVE, stated rather than glossed: the stall here is raised
- * by calling the real store, not by starving a real playlist of playable
- * audio. Driving a genuine exhaustion needs a deck loaded, playing and inside
- * its last 16 seconds with a spent feed underneath, which this fixture library
- * cannot arrange without fabricating most of it anyway. That half - controller
- * reaches a terminal branch and records a stall - is driven for real against
- * the real controller in tests/unit/autoplay-stall-persistence.test.mjs. The
- * seam between the two is the store, and both sides touch the real one.
+ * THE LAST TEST DRIVES A REAL EXHAUSTION end to end (Codex r3974819402): a
+ * disposable single-track playlist through the real HTTP API, opened through
+ * the real browser panel, its one track loaded, mastered, played and seeked
+ * into its own trigger window through the real performance IPC, and then the
+ * production controller's own poll reaches its terminal branch and the banner
+ * appears. Nothing about the stall is injected there. The earlier tests raise
+ * the stall through the store instead, because they need shapes a real
+ * exhaustion cannot conveniently produce - fifteen blocked tracks for the cap
+ * and the list geometry - and because a layout assertion should not also be
+ * paying for a real audio decode.
  *
  * Runs under playwright.autoplay-stall-gate.config.ts (real backend, real
  * throwaway fixture library), not the default config.
@@ -25,6 +27,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const BANNER = '[data-testid="autoplay-stall-banner"]';
 const TRACKS = '[data-testid="autoplay-stall-tracks"]';
+const TRACK_ROW = '[data-testid="track-row"]';
 
 /**
  * Raise a stall through the app's OWN module instance.
@@ -142,7 +145,16 @@ test('the track list opens on click, and never covers the control that closes it
 test('the banner does not obscure the deck controls beneath it', async ({ page }) => {
 	const deckControl = page.locator('[data-testid="grid-adjust-deck-1"]').first();
 	const before = await deckControl.boundingBox();
-	test.skip(before === null, 'deck 1 grid control is not on screen at this viewport');
+	// FAIL, never skip (Codex r3974819407). A null box means the one check that
+	// answers "does the banner cover the decks" could not be MEASURED, and
+	// reporting no failure for an unmeasured acceptance condition is the exact
+	// defect .claude/rules/verification.md is about: a filter that promotes
+	// anything unmeasured. If the control moves, this test must be repointed,
+	// not quietly retired.
+	expect(
+		before,
+		'deck 1 grid control has no box at this viewport, so the underlay check could not run'
+	).not.toBeNull();
 
 	await raiseStall(page, 15);
 	await expect(page.locator(BANNER)).toBeVisible();
@@ -161,4 +173,118 @@ test('the banner does not obscure the deck controls beneath it', async ({ page }
 		return element === hit || element.contains(hit);
 	});
 	expect(topmostIsDeckControl, 'the stall list is painted over a deck control').toBe(true);
+});
+
+// ----- real exhaustion, end to end ----------------------------------------
+
+type DisposablePlaylist = { name: string; playlistId: string; etag: string };
+
+async function _dispatch(page: Page, command: unknown): Promise<unknown> {
+	return page.evaluate((message) => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC is not installed');
+		return ipc.dispatch(message as never);
+	}, command);
+}
+
+async function _query(page: Page): Promise<{ decks: Record<number, { duration_ms: number | null }> }> {
+	return page.evaluate(() => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC is not installed');
+		return ipc.query() as never;
+	});
+}
+
+async function _visibleStableIds(page: Page): Promise<string[]> {
+	return page.locator(TRACK_ROW).evaluateAll((rows) =>
+		rows.map((row) => {
+			const stableId = row.getAttribute('data-stable-id');
+			if (stableId === null) throw new Error('visible track row has no stable id');
+			return stableId;
+		})
+	);
+}
+
+async function _createDisposablePlaylist(
+	page: Page,
+	name: string,
+	stableIds: readonly string[]
+): Promise<DisposablePlaylist> {
+	const created = await page.request.post('/api/v1/playlists', { data: { name } });
+	expect(created.ok(), `create playlist failed: ${created.status()}`).toBe(true);
+	const body = (await created.json()) as { playlist_id?: unknown };
+	expect(typeof body.playlist_id).toBe('string');
+	const createEtag = created.headers().etag;
+	expect(createEtag, 'created playlist has no ETag').toBeTruthy();
+	const replaced = await page.request.put(`/api/v1/playlists/${String(body.playlist_id)}/tracks`, {
+		headers: { 'If-Match': createEtag },
+		data: { stable_ids: stableIds }
+	});
+	expect(replaced.ok(), `replace playlist tracks failed: ${replaced.status()}`).toBe(true);
+	const etag = replaced.headers().etag;
+	expect(etag, 'updated playlist has no ETag').toBeTruthy();
+	return { name, playlistId: String(body.playlist_id), etag };
+}
+
+test('a REAL exhaustion, driven end to end, puts the banner on screen', async ({ page }, info) => {
+	test.setTimeout(180_000);
+	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined);
+	await page.getByText('All Tracks', { exact: true }).first().click();
+	await expect(page.locator(TRACK_ROW).first()).toBeVisible({ timeout: 30_000 });
+	const [onlyTrack] = await _visibleStableIds(page);
+	expect(onlyTrack, 'the ingested fixture must expose at least one track').toBeTruthy();
+
+	// ONE track in the playlist, and Enforce play order on, so the production
+	// picker walks strict membership after the playing track and finds nothing.
+	// That is a genuine terminal branch: no missing files, no injected state.
+	const playlist = await _createDisposablePlaylist(
+		page,
+		`AutoPlay stall gate ${info.project.name} ${Date.now()}`,
+		[onlyTrack]
+	);
+	try {
+		await page.reload();
+		await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined);
+		const autoPlay = page.getByRole('button', { name: 'AutoPlay', exact: true });
+		if ((await autoPlay.getAttribute('aria-pressed')) === 'true') await autoPlay.click();
+		await expect(autoPlay).toHaveAttribute('aria-pressed', 'false');
+
+		await autoPlay.hover();
+		const enforce = page
+			.getByRole('dialog', { name: 'AutoPlay options' })
+			.getByRole('checkbox', { name: 'Enforce play order' });
+		await expect(enforce).toBeVisible();
+		if (!(await enforce.isChecked())) await enforce.click();
+		await expect(enforce).toBeChecked();
+
+		const playlistRow = page.getByText(playlist.name, { exact: true });
+		if (!(await playlistRow.isVisible())) {
+			await page.locator('.row.folder').filter({ hasText: 'Playlists' }).click();
+		}
+		await playlistRow.click();
+		await expect.poll(async () => (await _visibleStableIds(page)).join('\0')).toBe(onlyTrack);
+
+		await autoPlay.click();
+		await expect(autoPlay).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.locator(BANNER)).toHaveCount(0);
+
+		// Real load, real master, real transport, real seek into the window.
+		await _dispatch(page, { type: 'load', deck: 1, stable_id: onlyTrack });
+		await _dispatch(page, { type: 'master', deck: 1 });
+		await _dispatch(page, { type: 'play', deck: 1, playing: true });
+		const duration = (await _query(page)).decks[1].duration_ms;
+		expect(duration, 'the fixture track has no decoded duration').not.toBeNull();
+		await _dispatch(page, { type: 'seek', deck: 1, position_ms: (duration as number) - 5_000 });
+
+		// From here the production controller's own 250 ms poll does everything.
+		const banner = page.locator(BANNER);
+		await expect(banner).toBeVisible({ timeout: 60_000 });
+		await expect(banner).toContainText('no next unplayed track in playlist order');
+		await expect(banner).toContainText('Enforce play order');
+	} finally {
+		const deleted = await page.request.delete(`/api/v1/playlists/${playlist.playlistId}`, {
+			headers: { 'If-Match': playlist.etag }
+		});
+		expect(deleted.ok(), `delete playlist failed: ${deleted.status()}`).toBe(true);
+	}
 });

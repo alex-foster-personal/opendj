@@ -98,6 +98,8 @@ export default defineConfig({
 	],
 	use: {
 		baseURL: FRONTEND_ORIGIN,
+		// The real-exhaustion test decodes and plays a real fixture track.
+		launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
 		trace: 'retain-on-failure',
 		screenshot: 'only-on-failure'
 	},
