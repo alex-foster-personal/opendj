@@ -468,7 +468,7 @@
 	class="rb-waverow"
 	class:secondary={deckId === 3 || deckId === 4}
 	class:deck-focus={deckHoverUi.deckId === deckId}
-	data-deck={deckId}
+	data-deck={deckId} data-wave-surface="row"
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,

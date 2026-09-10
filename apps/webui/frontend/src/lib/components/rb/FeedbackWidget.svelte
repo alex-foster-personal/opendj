@@ -12,7 +12,7 @@
 	 * comment icon render inert and name the control plus that this daemon
 	 * does not serve feedback, never a broken panel.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import {
 		describePinStatusSummary,
 		describeAnchor,
@@ -38,6 +38,7 @@
 		hydrateFeedback,
 		startPinWatch,
 		stopPinWatch,
+		takePendingPinDraft,
 		toggleFeedbackPanel,
 		type FeedbackPin
 	} from '$lib/rb/feedback-store.svelte';
@@ -173,6 +174,23 @@
 				{ source: 'feedback-pin-draft-storage' }
 			);
 		});
+	});
+
+	$effect(() => {
+		if (!draftHydrated) return;
+		if (feedbackState.pendingDraft === null) return;
+		const draft = untrack(() => takePendingPinDraft());
+		if (draft === null) return;
+		foreignDraftParked = false;
+		pinDraft = {
+			point: draft.point,
+			anchor: draft.anchor,
+			text: draft.text,
+			page: draft.page,
+			viewport: draft.viewport ?? _currentViewport(),
+			followOn: null
+		};
+		void focusPinDraftTextarea();
 	});
 
 	onMount(() => {
