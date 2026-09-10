@@ -1,5 +1,10 @@
 <script lang="ts">
 	import type { PlaylistSummaryHydrated } from '$lib/rb/api-rb';
+	import { toggleSpotifyPinned, uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		normalizePlaylistQuery,
+		rankSpotifyPlaylists
+	} from '$lib/rb/spotify-playlist-rank';
 	import {
 		SPOTIFY_PURCHASE_SOURCES,
 		type SpotifyPendingTrack
@@ -26,6 +31,20 @@
 		oncollection: () => void;
 		onselect: (playlist: PlaylistSummaryHydrated) => void;
 	} = $props();
+
+	let query = $state('');
+	const normalizedQuery = $derived(normalizePlaylistQuery(query));
+	const pinnedIds = $derived(new Set(uiPrefs.spotify_library.pinned_ids));
+	const visiblePlaylists = $derived(
+		rankSpotifyPlaylists(playlists, {
+			query,
+			pinnedIds: uiPrefs.spotify_library.pinned_ids,
+			recentIds: uiPrefs.spotify_library.recent_ids
+		})
+	);
+	const showFilter = $derived(
+		!playlistsLoading && playlistsError === null && playlists.length > 0
+	);
 </script>
 
 <section class="spotify-source" aria-label="Spotify source">
@@ -33,6 +52,28 @@
 		<button class="collection-back" onclick={oncollection}>Collection</button>
 		<span class="spotify-mark">Spotify</span>
 	</div>
+	{#if showFilter}
+		<div class="playlist-filter">
+			<input
+				type="text"
+				bind:value={query}
+				placeholder="Filter playlists"
+				aria-label="Filter Spotify playlists"
+				autocomplete="off"
+				spellcheck="false"
+				onkeydown={(e) => {
+					if (e.key !== 'Escape') return;
+					e.preventDefault();
+					e.stopPropagation();
+					query = '';
+				}}
+			/>
+			{#if query !== ''}
+				<button type="button" class="filter-clear" aria-label="Clear playlist filter" onclick={() => (query = '')}>×</button>
+			{/if}
+			<span class="filter-count" aria-live="polite">{visiblePlaylists.length} / {playlists.length}</span>
+		</div>
+	{/if}
 	<div class="playlist-list" aria-label="Imported Spotify playlists">
 		{#if playlistsLoading}
 			<p class="source-state">Loading imported Spotify playlists...</p>
@@ -40,16 +81,48 @@
 			<p class="source-state source-error">Spotify playlist load failed: {playlistsError}</p>
 		{:else if playlists.length === 0}
 			<p class="source-state">No imported Spotify playlists.</p>
+		{:else if visiblePlaylists.length === 0}
+			<p class="source-state">No playlists match "{normalizedQuery}"</p>
 		{:else}
-			{#each playlists as playlist (playlist.playlist_id)}
-				<button
-					class="playlist-row"
-					class:selected={selectedId === playlist.playlist_id}
-					onclick={() => onselect(playlist)}
-				>
-					<span class="playlist-name" title={playlist.name}>{playlist.name}</span>
-					<span class="playlist-count">{playlist.track_count}</span>
-				</button>
+			{#each visiblePlaylists as playlist (playlist.playlist_id)}
+				{@const pinned = pinnedIds.has(playlist.playlist_id)}
+				<div class="playlist-row-wrap" class:selected={selectedId === playlist.playlist_id}>
+					<button
+						type="button"
+						class="pin-toggle"
+						class:pinned
+						aria-label={pinned ? `Unpin ${playlist.name}` : `Pin ${playlist.name}`}
+						aria-pressed={pinned}
+						onclick={(e) => {
+							e.stopPropagation();
+							toggleSpotifyPinned(playlist.playlist_id);
+						}}
+					>
+						<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+							{#if pinned}
+								<path
+									fill="currentColor"
+									d="M8 1.6c1.7 0 3.1 1.3 3.1 2.9 0 2.4-3.1 7.3-3.1 7.3S4.9 6.9 4.9 4.5C4.9 2.9 6.3 1.6 8 1.6zm0 1.7a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z"
+								/>
+							{:else}
+								<path
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.25"
+									d="M8 1.6c1.7 0 3.1 1.3 3.1 2.9 0 2.4-3.1 7.3-3.1 7.3S4.9 6.9 4.9 4.5C4.9 2.9 6.3 1.6 8 1.6z"
+								/>
+							{/if}
+						</svg>
+					</button>
+					<button
+						class="playlist-row"
+						type="button"
+						onclick={() => onselect(playlist)}
+					>
+						<span class="playlist-name" title={playlist.name}>{playlist.name}</span>
+						<span class="playlist-count">{playlist.track_count}</span>
+					</button>
+				</div>
 			{/each}
 		{/if}
 	</div>
@@ -93,10 +166,19 @@
 	.source-header, .buy-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; padding: 0 6px; border-bottom: 1px solid var(--rb-border); color: var(--rb-text); font-size: var(--rb-fs-label); }
 	.collection-back { border: 0; padding: 0; background: transparent; color: var(--rb-accent); font: inherit; cursor: pointer; }
 	.spotify-mark { color: #35c04f; font-weight: 600; }
+	.playlist-filter { display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-bottom: 1px solid var(--rb-border); }
+	.playlist-filter input { flex: 1; min-width: 0; height: 18px; padding: 0 4px; border: 1px solid var(--rb-border); background: transparent; color: var(--rb-text); font: inherit; font-size: var(--rb-fs-label); }
+	.playlist-filter input::placeholder { color: var(--rb-text-dim); }
+	.filter-clear { flex: none; width: 14px; height: 14px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--rb-text-dim); font-size: 12px; line-height: 1; cursor: pointer; }
+	.filter-clear:hover { color: var(--rb-text); background: rgba(255, 255, 255, 0.08); }
+	.filter-count { flex: none; color: var(--rb-text-dim); font-size: var(--rb-fs-label); font-variant-numeric: tabular-nums; }
 	.playlist-list { flex: none; max-height: 38%; overflow-y: auto; padding: 2px 0; border-bottom: 1px solid var(--rb-border); }
-	.playlist-row { display: flex; align-items: center; gap: 5px; width: 100%; height: 22px; padding: 0 6px; border: 0; background: transparent; color: var(--rb-text); font: inherit; text-align: left; cursor: pointer; }
-	.playlist-row:hover { background: var(--rb-panel-raised); }
-	.playlist-row.selected { background: var(--rb-select); }
+	.playlist-row-wrap { display: flex; align-items: center; width: 100%; height: 22px; }
+	.playlist-row-wrap:hover { background: var(--rb-panel-raised); }
+	.playlist-row-wrap.selected { background: var(--rb-select); }
+	.pin-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 2px; padding: 0; border: 0; background: transparent; color: var(--rb-text-dim); cursor: pointer; }
+	.pin-toggle.pinned { color: var(--rb-accent); }
+	.playlist-row { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; height: 22px; padding: 0 6px 0 2px; border: 0; background: transparent; color: var(--rb-text); font: inherit; text-align: left; cursor: pointer; }
 	.playlist-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.playlist-count { color: var(--rb-text-dim); font-variant-numeric: tabular-nums; }
 	.buy-list { display: flex; flex: 1; flex-direction: column; min-height: 0; }

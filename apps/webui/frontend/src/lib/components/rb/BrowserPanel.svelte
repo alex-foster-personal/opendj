@@ -79,6 +79,7 @@
 	} from '$lib/rb/playlist-write';
 	import {
 		hydrateConfirmPrefsFromDisk,
+		rememberSpotifyRecent,
 		setConfirmPref,
 		setHideBrokenLinks,
 		setLastPlaylist,
@@ -1009,6 +1010,7 @@
 
 	function _selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated, writeQuery: boolean): void {
 		spotifySelectedId = playlist.playlist_id;
+		rememberSpotifyRecent(playlist.playlist_id);
 		if (writeQuery) _writeSpotifyQuery(playlist.playlist_id);
 		const node: PlaylistNode = {
 			playlist_id: playlist.playlist_id,
