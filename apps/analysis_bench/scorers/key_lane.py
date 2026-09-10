@@ -30,40 +30,51 @@ match the code it names. `scripts/keybench/verify_mirex.py` cross-checks
 against real mir_eval as a control and documents this one expected
 divergence rather than treating it as a bug.
 
-KSEA -- THIS MODULE'S OWN DEFINITION, STATED HERE BECAUSE
-`specs/native-analysis-v1.md` DOES NOT DEFINE IT. "Key Signature Estimation
-Accuracy": the fraction of scored fixtures where the candidate's KEY
-SIGNATURE matches the reference's, where "key signature" means the musical
-equivalence class shared by a major key and its relative minor (e.g. C major
-and A minor both have no sharps or flats). Formally, two keys share a
-signature when `major_pitch_class(candidate) == major_pitch_class(reference)`,
-where `major_pitch_class(k) = k.pitch_class if not k.is_minor else
-(k.pitch_class + 3) % 12`. KSEA is distinct from MODE ACCURACY (mode match,
-ignoring tonic) and from the exact MIREX 1.0 rate (both tonic AND mode): it
-answers "did we find the right key signature", which is also exactly the
-condition MIREX's own 0.3 "relative" credit is testing for.
+KSEA, PER THE S-KEY PAPER, CITED BY
+`docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md
+:614-618` (NOT `specs/native-analysis-v1.md`, which does not define it).
+"Key Signature Estimation Accuracy": the mean, over scored fixtures, of a
+per-fixture score that ignores mode entirely -- 1.0 when the candidate's
+tonic pitch class matches the reference's exactly, 0.5 when it is a fifth
+above or below, 0.0 otherwise. KSEA is distinct from MODE ACCURACY (mode
+match, ignoring tonic) and from the exact MIREX 1.0 rate (both tonic AND
+mode). An earlier cut of this module computed a DIFFERENT metric under this
+name -- boolean key-SIGNATURE equivalence (full credit for a relative major/
+minor pair, zero for a fifth) -- which is not what the cited research doc's
+KSEA means, and gave materially different, incomparable numbers (Codex P1
+BLOCKING, PR #1620).
 
-THREE-BUCKET STRATIFICATION (spec section 5, "Agreement metric"). Every
-fixture whose bundle carries BOTH a rekordbox and a MIK reference is
-classified once, per arm:
+THREE-BUCKET STRATIFICATION (spec section 5, "Agreement metric"; bucket
+definitions per `docs/research/beatgrid-and-segmentation-sota-20260906-d-
+key-detection.md:698-710`). Every fixture whose bundle carries BOTH a
+rekordbox and a MIK reference is classified ONCE, by the relationship
+between those two references ALONE -- never by which key the candidate
+answers, so the same reference pair lands in the same bucket for every arm:
   - AGREE: the two references canonicalize to the same (pitch_class,
     is_minor). The candidate's MIREX score is reported against that
     agreed value -- this is the only bucket with an unambiguous "correct".
-  - DISAGREE-RELATED: the references disagree, and the candidate's answer
-    canonicalizes to exactly one of them. Reported as "sides with rekordbox"
-    or "sides with MIK", NEVER as "correct" -- neither reference is truth
-    (`specs/native-analysis-v1-lanes/nav1-key-r0.md`: rekordbox scored 79.55,
-    MIK 74.60, against GiantSteps, so both are themselves imperfect).
-  - DISAGREE-UNRELATED: the references disagree and the candidate's answer
-    matches neither. Enumerated by stable_id (spec: "enumerate, listen, prime
-    key-change candidates") rather than just counted.
-A disagreement fixture the candidate never answered (omitted, failed, or
-filtered out by `_parse_candidate`) sides with NEITHER reference by taking no
-side at all, so it is counted separately as `disagree_no_answer` rather than
-folded into DISAGREE-UNRELATED's enumerated listening list (Codex P1 BLOCKING,
-PR #1620: a `None` answer previously fell through to DISAGREE-UNRELATED,
-which read as "the candidate actively disagreed with both" when it had
-actually said nothing).
+  - DISAGREE-RELATED: the references disagree but are related (relative,
+    parallel, or a fifth apart -- `weighted_score(rekordbox, mik) > 0.0`).
+    Only WITHIN this bucket does the candidate's answer get reported, as
+    "sides with rekordbox" / "sides with MIK" / "sides with neither", NEVER
+    as "correct" -- neither reference is truth
+    (`specs/native-analysis-v1-lanes/nav1-key-r0.md`: rekordbox scored
+    79.55, MIK 74.60, against GiantSteps, so both are themselves
+    imperfect). A fixture the candidate never answered (omitted, failed, or
+    filtered out by `_parse_candidate`) took no side at all, so it is
+    counted separately as `disagree_no_answer` rather than folded into
+    `sides_with_neither`, which would read as an active third guess when
+    the candidate said nothing (Codex P1 BLOCKING, PR #1620).
+  - DISAGREE-UNRELATED: the references disagree AND are unrelated
+    (`weighted_score(rekordbox, mik) == 0.0`). Enumerated by stable_id
+    (spec: "enumerate, listen, prime key-change candidates") rather than
+    just counted, REGARDLESS of what the candidate answered -- this bucket
+    has no "sides with" concept at all. An earlier cut classified both
+    DISAGREE buckets by which reference the CANDIDATE's answer matched,
+    so the same disagreeing pair could land in either bucket depending on
+    which arm was scored, and a genuinely related pair fell into
+    DISAGREE-UNRELATED whenever a given candidate's answer happened to
+    match neither reference exactly (Codex P1 BLOCKING, PR #1620).
 A fixture missing either reference cannot be classified into any of the three
 buckets (there is no "which reference" to side with); it is counted and named
 separately (`n_no_reference_pair`) rather than silently folded into the
@@ -124,12 +135,15 @@ __all__ = ["SCORER_VERSION", "render_table", "score_bundle"]
 SCORER_VERSION = "1.0.0"
 
 KSEA_DEFINITION = (
-    "KSEA (Key Signature Estimation Accuracy, this module's own definition -- "
-    "not in specs/native-analysis-v1.md): the fraction of scored fixtures "
-    "where the candidate and the reference share a key signature, i.e. "
-    "major_pitch_class(candidate) == major_pitch_class(reference), where "
-    "major_pitch_class(k) = k.pitch_class if major else (k.pitch_class + 3) % 12 "
-    "(a key and its relative share a signature)."
+    "KSEA (Key Signature Estimation Accuracy, per the S-KEY paper, cited in "
+    "docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md"
+    ":614-618): the mean, over scored fixtures, of a per-fixture score that "
+    "ignores mode entirely -- 1.0 when the candidate's tonic pitch class "
+    "matches the reference's exactly, 0.5 when it is a fifth above or "
+    "below, 0.0 otherwise (Codex P1 BLOCKING, PR #1620: an earlier cut "
+    "computed boolean key-signature equivalence instead -- full credit for "
+    "a relative pair, zero for a fifth -- a different metric from the one "
+    "this research doc defines)."
 )
 
 # Controls first, same convention as beatgrid_lane.py: a reader should meet
@@ -147,10 +161,6 @@ _REFERENCES = ("rekordbox", "mik")
 
 
 #-----------------------------------------------------------------------------
-def _major_pitch_class(key: canon.Key) -> int:
-    return (key.pitch_class + 3) % 12 if key.is_minor else key.pitch_class
-
-
 def weighted_score(reference: canon.Key | None, estimated: canon.Key | None) -> float:
     """MIREX weighted score, 1.0 / 0.5 / 0.3 / 0.2 / 0.0, descending fifths allowed.
 
@@ -174,10 +184,26 @@ def weighted_score(reference: canon.Key | None, estimated: canon.Key | None) -> 
     return 0.0
 
 
-def _ksea_match(reference: canon.Key | None, estimated: canon.Key | None) -> bool:
+def _ksea_score(reference: canon.Key | None, estimated: canon.Key | None) -> float:
+    """Per-fixture KSEA score. See `KSEA_DEFINITION` for the citation.
+
+    Deliberately NOT `weighted_score`: KSEA ignores mode entirely (a
+    parallel major/minor pair with the same tonic scores 1.0 here, 0.2
+    there), and credits only the exact tonic or a fifth -- never a
+    relative pair, which `weighted_score` credits at 0.3 (Codex P1
+    BLOCKING, PR #1620: an earlier cut conflated the two, scoring boolean
+    key-signature equivalence -- full credit for a relative pair, zero for
+    a fifth -- which is a different metric from the one this module now
+    documents and computes).
+    """
     if reference is None or estimated is None:
-        return False
-    return _major_pitch_class(reference) == _major_pitch_class(estimated)
+        return 0.0
+    if reference.pitch_class == estimated.pitch_class:
+        return 1.0
+    delta = (estimated.pitch_class - reference.pitch_class) % 12
+    if delta in (5, 7):
+        return 0.5
+    return 0.0
 
 
 def _mode_match(reference: canon.Key | None, estimated: canon.Key | None) -> bool:
@@ -298,7 +324,7 @@ def _score_against(stable_ids: list[str], reference: _ReferenceMap,
     if not scored:
         return {"n": 0, "mirex_mean_pct": None, "ksea_pct": None, "mode_accuracy_pct": None}
     mirex = [weighted_score(reference[sid], answers[sid]) for sid in scored]
-    ksea = [_ksea_match(reference[sid], answers[sid]) for sid in scored]
+    ksea = [_ksea_score(reference[sid], answers[sid]) for sid in scored]
     mode = [_mode_match(reference[sid], answers[sid]) for sid in scored]
     n = len(scored)
     return {
@@ -311,7 +337,23 @@ def _score_against(stable_ids: list[str], reference: _ReferenceMap,
 
 def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
              mik: _ReferenceMap, answers: _ReferenceMap) -> dict[str, Any]:
-    agree_ids, related_rb, related_mik = [], [], []
+    """AGREE/DISAGREE-RELATED/DISAGREE-UNRELATED, classified by the
+    rekordbox/MIK pair's OWN relationship, never by the candidate's answer.
+
+    `docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md
+    :698-710` defines DISAGREE-RELATED as "they differ by relative, parallel,
+    or fifth" and DISAGREE-UNRELATED as "they differ by something MIREX
+    would score 0.0" -- both properties of the rekordbox/MIK pair alone. An
+    earlier cut classified by which reference the CANDIDATE's answer
+    happened to match, so the same disagreeing pair could land in either
+    bucket depending on which arm was being scored, and a genuinely related
+    pair (e.g. a fifth apart) fell into DISAGREE-UNRELATED whenever a given
+    candidate's answer matched neither reference exactly (Codex P1
+    BLOCKING, PR #1620). Here the pair is classified ONCE via
+    `weighted_score(rb_key, mik_key)`, independent of `answers`; only within
+    the related class does the candidate's side get reported at all.
+    """
+    agree_ids, related_ids, related_rb, related_mik, related_neither = [], [], [], [], []
     unrelated_ids, no_answer_ids, no_reference_pair = [], [], []
     agree_scores: list[float] = []
     for sid in stable_ids:
@@ -323,20 +365,22 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
         if rb_key == mik_key:
             agree_ids.append(sid)
             agree_scores.append(weighted_score(rb_key, answer))
-        elif answer is None:
-            # A disagreement fixture the candidate never answered (omitted
+            continue
+        if weighted_score(rb_key, mik_key) == 0.0:
+            unrelated_ids.append(sid)
+            continue
+        related_ids.append(sid)
+        if answer is None:
+            # A related-pair fixture the candidate never answered (omitted
             # or failed): it did not "side with" neither reference, it never
-            # took a side at all. Counting it as DISAGREE-UNRELATED would
-            # misclassify an unanalyzed track into the enumerated "listen to
-            # these, prime key-change candidates" list (Codex P1 BLOCKING,
-            # PR #1620).
+            # took a side at all (Codex P1 BLOCKING, PR #1620).
             no_answer_ids.append(sid)
         elif answer == rb_key:
             related_rb.append(sid)
         elif answer == mik_key:
             related_mik.append(sid)
         else:
-            unrelated_ids.append(sid)
+            related_neither.append(sid)
     return {
         "agree": {
             "n": len(agree_ids),
@@ -344,9 +388,10 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
             if agree_scores else None,
         },
         "disagree_related": {
-            "n": len(related_rb) + len(related_mik),
+            "n": len(related_ids),
             "sides_with_rekordbox": len(related_rb),
             "sides_with_mik": len(related_mik),
+            "sides_with_neither": len(related_neither),
         },
         "disagree_unrelated": {"n": len(unrelated_ids), "stable_ids": sorted(unrelated_ids)},
         "disagree_no_answer": {"n": len(no_answer_ids), "stable_ids": sorted(no_answer_ids)},
@@ -439,7 +484,7 @@ def render_table(report: dict[str, Any]) -> str:
         "n_failed (of attempted) / producer-reported | "
         "vs rekordbox (n) | MIREX% (all/successful-only) | KSEA% | mode% | "
         "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
-        "DISAGREE-RELATED (rb/mik) | DISAGREE-UNRELATED (n: stable_ids) | "
+        "DISAGREE-RELATED (rb/mik/neither) | DISAGREE-UNRELATED (n: stable_ids) | "
         "DISAGREE-NO-ANSWER (n: stable_ids) | NO-REFERENCE-PAIR (n) |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
@@ -491,7 +536,8 @@ def render_table(report: dict[str, Any]) -> str:
             f"{mikr['n']} | {mikr['mirex_mean_pct']}/{mikr_succ['mirex_mean_pct']} | "
             f"{mikr['ksea_pct']} | {mikr['mode_accuracy_pct']} | "
             f"{agree['n']}, {agree['mirex_mean_pct']} | "
-            f"{related['sides_with_rekordbox']}/{related['sides_with_mik']} | "
+            f"{related['sides_with_rekordbox']}/{related['sides_with_mik']}/"
+            f"{related['sides_with_neither']} | "
             f"{unrelated['n']}: {unrelated_ids} | "
             f"{no_answer['n']}: {no_answer_ids} | "
             f"{buckets['n_no_reference_pair']} |"
