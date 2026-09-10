@@ -60,12 +60,15 @@ export interface BeatgridResyncGuardDeps {
 	publishDeckAnlz: (deck: DeckId, anlz: AnlzData) => void;
 	/** The deck's own projected BPM, surfaced to the header, IPC state,
 	 * browser recommendations and autoplay - distinct from `deckAnlz`'s
-	 * `beatgrid.bpm`, which Beat Sync reads directly. Called only when an
-	 * adopted grid carries its own projected BPM (own payloads with `status:
-	 * ok`), so those consumers cannot keep exposing the old source's BPM
-	 * while Beat Sync already settled against the newly adopted beats
-	 * (Codex P2 BLOCKING, PR #1587). */
-	publishDeckBpm: (deck: DeckId, bpm: number) => void;
+	 * `beatgrid.bpm`, which Beat Sync reads directly. Called on EVERY
+	 * authoritative source transition, `null` when the newly adopted block
+	 * carries no projected BPM of its own (own `missing`/`failed`, or a
+	 * demotion back to Rekordbox): only an own `status: ok` block carries
+	 * `beatgrid.bpm`, so leaving those transitions alone would strand the
+	 * PREVIOUS source's BPM on consumers that never settled against the new
+	 * beats (Codex P2 BLOCKING, PR #1587, and a fresh follow-up finding after
+	 * the first fix only covered the own-ok case). */
+	publishDeckBpm: (deck: DeckId, bpm: number | null) => void;
 	reportError: (message: string) => void;
 }
 
@@ -352,11 +355,12 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 						// header, IPC state, browser recommendations and autoplay all
 						// read the deck's separately-tracked BPM, last set from
 						// `candidateTrack.bpm` at load time. Refresh it in the SAME
-						// transaction whenever the adopted grid projects its own BPM
-						// (own payloads with `status: ok`), so those consumers cannot
-						// keep exposing the old source's tempo once Beat Sync has
-						// already settled against the newly adopted beats.
-						if (data.beatgrid.bpm !== undefined) publishDeckBpm(deck, data.beatgrid.bpm);
+						// transaction for every transition, not only the ones that
+						// carry an own projected BPM: an own `missing`/`failed` result
+						// or a demotion back to Rekordbox carries none, and keeping
+						// the previous source's number there would be exactly as
+						// stale as never refreshing it at all.
+						publishDeckBpm(deck, data.beatgrid.bpm ?? null);
 					},
 					isStale
 				).catch(

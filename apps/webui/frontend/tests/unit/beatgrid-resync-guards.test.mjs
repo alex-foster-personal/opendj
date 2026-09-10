@@ -278,17 +278,29 @@ test('adoptAuthoritativeGrid refreshes the deck BPM when the adopted grid projec
 	assert.equal(h.bpm[1], 124.3, 'the deck BPM must adopt the grid\'s projected BPM in the same transaction');
 });
 
-test('adoptAuthoritativeGrid leaves the deck BPM alone when the adopted grid projects none', async () => {
+test('adoptAuthoritativeGrid nulls the deck BPM on a transition to a grid with no projected BPM of its own', async () => {
 	// A rekordbox source (or an own grid that is not status: ok) never
-	// carries beatgrid.bpm; the deck's existing BPM must not be clobbered
-	// with undefined in that case.
+	// carries beatgrid.bpm. Leaving the deck's PREVIOUS-source BPM in place
+	// on this transition would be exactly as stale as never refreshing it at
+	// all - the fresh finding after the first BPM fix only covered the
+	// own-ok case (Codex P2 BLOCKING, PR #1587, second round).
 	const h = _harness();
 	h.stableIds[1] = 'sid-a';
 	h.anlz[1] = { ..._anlz('sid-a', []), beatgrid: { source: 'own', beat_count: 0, beats: [], status: 'missing', reason: null } };
 	h.bpm[1] = 128;
 	h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(8, 132)));
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(h.bpm[1], 128, 'a grid with no projected BPM must not overwrite the deck BPM');
+	assert.equal(h.bpm[1], null, 'a transition to a grid with no projected BPM must not strand the previous source BPM');
+});
+
+test('adoptAuthoritativeGrid nulls the deck BPM when a successful own grid is demoted back to rekordbox', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = { ..._anlz('sid-a', _beats(16, 124)), beatgrid: { ..._anlz('sid-a', _beats(16, 124)).beatgrid, source: 'own', status: 'ok', bpm: 124.3 } };
+	h.bpm[1] = 124.3;
+	h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(8, 128)));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.bpm[1], null, 'a demotion back to rekordbox must not strand the own grid\'s BPM');
 });
 
 test('adoptAuthoritativeGrid carries tempo_changes and performance_hints alongside beatgrid, both ways', async () => {
