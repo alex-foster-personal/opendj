@@ -79,12 +79,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cache
 
+from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -301,6 +303,64 @@ _SYNC_INFRA: tuple[str, ...] = (
     "TEXT NOT NULL )",
     "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
     "ON local_changelog(table_name, row_pk)",
+)
+
+
+# ==========================================================================
+# DOMAIN: machine enrollment (who OWNS a machine, legacy v9)
+# Legacy source: apps/shared/state/migrations_v9.py (_V9, specs/
+# design_decision_12.md). Its own domain rather than more rows in
+# _SYNC_INFRA: those tables carry replication STATE and every one of them
+# rides the sync set, whereas neither table here is ever synced -- the hub
+# that performed the enrollment is the only writer (ADR 12 reading 1). One
+# domain, one answer to "does this cross machines".
+# ==========================================================================
+
+#: The provenance vocabulary, read from the legacy rung rather than retyped.
+#: Claude review, PR #1648 (P3): migrations_v9 builds its CHECK from this
+#: tuple explicitly "so the provenance list has one home rather than a copy
+#: that can drift from the constraint", and enrollment_table_docs repeats
+#: that claim to readers -- while this mirror wrote the three values out as a
+#: literal, which is the copy the docs deny exists. A fourth provenance would
+#: have left a consolidated database rejecting those rows with an
+#: IntegrityError naming nothing.
+#:
+#: The one import this module takes from a legacy bootstrap, and deliberately
+#: narrow: a VOCABULARY, not DDL. The table text stays a verbatim lift like
+#: every other domain here, because tests/engine_core/test_store_schema.py
+#: compares it against the legacy ladder's real output object by object, and
+#: importing the statements would make that gate compare a thing with itself.
+_ENROLLED_VIA_SQL: str = ",".join(f"'{value}'" for value in ENROLLED_VIA_VALUES)
+
+_ENROLLMENT: tuple[str, ...] = (
+    f"""
+    CREATE TABLE IF NOT EXISTS machine_owners (
+        machine_id      TEXT PRIMARY KEY
+                          REFERENCES machines(machine_id) ON DELETE CASCADE,
+        google_sub      TEXT NOT NULL
+                          REFERENCES users(google_sub) ON DELETE CASCADE,
+        hub_machine_id  TEXT NOT NULL,
+        enrolled_at     TEXT NOT NULL,
+        enrolled_via    TEXT NOT NULL CHECK
+                          (enrolled_via IN ({_ENROLLED_VIA_SQL})),
+        revoked_at      TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_machine_owners_sub "
+    "ON machine_owners(google_sub)",
+    """
+    CREATE TABLE IF NOT EXISTS enrollment_grants (
+        grant_token_sha256  TEXT PRIMARY KEY,
+        google_sub          TEXT NOT NULL
+                              REFERENCES users(google_sub) ON DELETE CASCADE,
+        created_at          TEXT NOT NULL,
+        expires_at          TEXT NOT NULL,
+        redeemed_at         TEXT,
+        redeemed_machine_id TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_enrollment_grants_expires "
+    "ON enrollment_grants(expires_at)",
 )
 
 
@@ -862,6 +922,7 @@ _LAUNCHER: tuple[str, ...] = (
 DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
     "sync_infra": _SYNC_INFRA,
+    "enrollment": _ENROLLMENT,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
     "curation": _CURATION,
@@ -889,6 +950,7 @@ wipe. Applied by :func:`apply_cache_migrations`, never by
 LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
+    "enrollment": "apps/shared/state/migrations_v9.py",
     "analysis": "apps/analysis/store.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
@@ -927,6 +989,10 @@ TABLES: dict[str, tuple[str, ...]] = {
         "sync_state",
         "hub_changelog",
         "local_changelog",
+    ),
+    "enrollment": (
+        "machine_owners",
+        "enrollment_grants",
     ),
     "analysis": ("analysis", "analysis_events"),
     "native_analysis_v1": (
@@ -972,9 +1038,14 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 
 # --- migration ladder -----------------------------------------------------
 
+#: Domains that are NOT part of rung 1 because they arrived later, each as
+#: its own rung. Named here rather than inline so the exclusion and the rung
+#: that compensates for it cannot drift apart silently.
+_POST_V1_DOMAINS: frozenset[str] = frozenset({"native_analysis_v1", "enrollment"})
+
 _V1: list[str] = [
     stmt for name, domain in DOMAINS.items()
-    if name != "native_analysis_v1"
+    if name not in _POST_V1_DOMAINS
     for stmt in domain
 ]
 """Consolidated 0 -> 1: create everything that existed at v1. Fresh-DB path."""
@@ -990,7 +1061,15 @@ the two tables from a stamped database and re-running the ladder left them
 absent. Every statement is `IF NOT EXISTS`, so the rung is also safe on a
 database that already has them."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2]
+_V3: list[str] = list(_ENROLLMENT)
+"""2 -> 3: machine ownership and enrollment grants (legacy ladder v9).
+
+A new rung for the reason _V2 spells out: an install already stamped at v2
+never re-runs _V1, so an enrollment table appended there would exist only on
+databases born after this commit -- and the fresh-DB tests would have passed
+anyway. The legacy ladder makes the same move at its own v9."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
