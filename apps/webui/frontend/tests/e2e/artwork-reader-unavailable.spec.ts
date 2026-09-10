@@ -21,11 +21,110 @@
  * burst fires and the gap never shows -- on a loaded CI runner (this repo
  * runs many concurrent e2e-gate jobs on shared self-hosted agentbox
  * runners) the wall-clock race tips the other way often enough to redden
- * trunk. The fix is two-sided: mock every boot-scheduler family explicitly
- * (so the burst is accounted for, not merely raced against) and wait past
- * the scheduler's own release window before the final assertions, so the
- * burst is always inside the observation window instead of sometimes inside
- * it. That turns an intermittent miss into a deterministic pass.
+ * trunk.
+ *
+ * FIX APPLIED, both sides, in #1319 (Sat 5 Sep 2026) -- this is a record of
+ * what IS here, not a prescription for what should be added:
+ *   1. every boot-scheduler family is mocked explicitly below (auth/me,
+ *      build-info, feedback/todos+comments+general, telemetry/heartbeat,
+ *      jobs), so the burst is accounted for rather than merely raced
+ *      against;
+ *   2. `PAST_BOOT_BURST_MS` waits past the scheduler's own release window
+ *      (BOOT_QUIET_MS + BOOT_IDLE_TIMEOUT_MS, imported from the scheduler
+ *      itself rather than re-guessed here) before the final assertions, so
+ *      the burst is always inside the observation window instead of
+ *      sometimes inside it.
+ * Independently re-audited line-by-line Tue 8 Sep 2026 (packet 9kb-2), not
+ * trusting a prior packet's claim that both halves already landed in #1319:
+ * SEVEN call sites pass a task to `bootScheduler.defer(...)` repo-wide
+ * (`grep -rn 'defer(' apps/webui/frontend/src`; boot-scheduler.ts's own
+ * `defer()` definition is not a caller), and all seven are listed here
+ * rather than only the six that reach the network:
+ *   1-2. UserBauble.svelte / AccountOverlay.svelte -> GET /api/v1/auth/me
+ *   3.   BuildIdentity.svelte                      -> GET /api/v1/build-info
+ *   4.   FeedbackWidget.svelte -> GET /api/v1/feedback/todos + comments +
+ *        general (one deferred task, three requests)
+ *   5.   usage-heartbeat.ts    -> POST /api/v1/telemetry/heartbeat
+ *   6.   jobs-store.svelte.ts  -> GET /api/v1/jobs
+ *   7.   deck-observer-install.ts, `deck-observer:flush` -- INERT HERE, and
+ *        therefore deliberately UNMOCKED rather than overlooked. Two
+ *        independent reasons, either of which alone is sufficient. (a) The
+ *        deferred task calls `emitter.flushOnce()`, whose FIRST guard is
+ *        `buffer.length === 0`; the sampling loop only fills that buffer
+ *        while `GET /api/sets/recorder` reports `active: true`, and this
+ *        spec mocks that endpoint `active: false`, so the buffer is empty
+ *        and the task returns without sending. (b) Its POST target is
+ *        `/api/sets/deck-observations`, which is not under `/api/v1/` and so
+ *        is outside this spec's `**\/api/v1/**` catch-all in any case.
+ *        A prior revision of this header claimed every deferred family was
+ *        enumerated while omitting this one; that claim was false and is
+ *        corrected here.
+ * `PAST_BOOT_BURST_MS` correctly covers BOOT_QUIET_MS + BOOT_IDLE_TIMEOUT_MS
+ * with a 1s margin (this route mounts no deck LOAD, so DECK_LOAD_YIELD_MAX_MS
+ * never applies here -- the deck OBSERVER above is a different mechanism),
+ * and the wait runs before the final assertions -- both halves confirmed
+ * present and correct, no gap found.
+ *
+ * WHAT THE EVIDENCE FOR THIS FIX IS, AND WHAT IT IS NOT.
+ * NOT release evidence: a throwaway scratch copy of the pre-#1319 shape
+ * (catch-all only, no explicit boot-scheduler mocks, no wait) was run
+ * against a 4.5s artificial delay injected into the MOCKED `/api/v1/tracks`
+ * response and failed with the deferred families logged as "unexpected",
+ * while this spec under the identical injected delay passed. That run is a
+ * DIAGNOSTIC EXPERIMENT ONLY. It stretched wall-clock time inside a mock
+ * rather than reproducing runner contention through the real runtime path,
+ * and AGENTS.md L145-148 is explicit that a simulated outcome cannot be used
+ * as feature or release evidence. It is recorded here because it usefully
+ * localises the mechanism, and it is NOT counted as proof that the fix is
+ * complete. An earlier revision of this header presented it as "bite proved
+ * directly"; that framing was wrong and is withdrawn (Sol P1 on #1463).
+ * WHAT IS relied on instead, all of it observed rather than simulated:
+ *   - the real failures: 10 e2e-gate failures on trunk Sat 5 Sep 2026, 4 of
+ *     them this spec, which is what identified the race in the first place;
+ *   - a static argument over the scheduler's OWN constants, which needs no
+ *     race to be checked: `PAST_BOOT_BURST_MS` is imported from
+ *     boot-scheduler.ts rather than re-guessed, so it covers the release
+ *     window by construction for any value those constants take, and the
+ *     seven-caller census above accounts for every task the burst can fire;
+ *   - the absence of recurrence on real CI since #1319.
+ * No run of this spec under genuine multi-job runner contention has been
+ * commissioned to demonstrate the bite, so the bite is argued from the code
+ * and from the historical failures, not demonstrated on demand.
+ * #1385 (Sun 6 Sep 2026) is a separate, later change to the same file: it
+ * widened the `td.c-art` visibility timeout 15s -> 45s for a distinct
+ * cold-vite-pipeline symptom on the FIRST spec the rekordbox gate runs, not
+ * this catch-all/deferred-burst race. PR #1357's Sun 6 Sep failure (job
+ * 101479373895, `e2e gate` attempt 1 of run 34030635926) was confirmed from
+ * the raw attempt-1 log to be that separate cold-vite symptom --
+ * `toBeVisible` timing out at exactly 15000ms on `td.c-art`, "element(s) not
+ * found", with zero occurrences of "unexpected" anywhere in the job log.
+ * THE CONFIG ATTRIBUTION IN AN EARLIER REVISION OF THIS HEADER WAS WRONG and
+ * is corrected here (Sol P2 on #1463): that failure came from the `Root
+ * Playwright suite (real engine + Vite)` step, i.e. the ROOT
+ * `playwright.config.ts`, project `[chromium]`, NOT from
+ * `playwright.stretch-quality.config.ts` -- whose `testMatch` is
+ * 'stretch-quality.spec.ts' and which therefore cannot run this file at all.
+ * The `Hermetic gate - stretch quality smoke` step in that same job
+ * SUCCEEDED. NOT FIXED BY #1385 FOR THAT ROOT RUN, AND A LATER REVISION OF
+ * THIS HEADER WAS WRONG TO SAY SO (Sol P2 BLOCKING on #1463, thread
+ * 3961468764): the root config applies a 30-second test-level timeout
+ * (`playwright.config.ts` `timeout: 30_000`), and Playwright counts time
+ * spent inside the test function toward that budget, so #1385's 45-second
+ * `toBeVisible` allowance is inert there -- a render finishing around 25s
+ * can pass the assertion and still blow the overall 30s test timeout during
+ * the unconditional `PAST_BOOT_BURST_MS` wait that follows it. This spec ran
+ * TWICE per e2e-gate job because the root config's `testIgnore` list did not
+ * exclude it: once under `playwright.rekordbox-gate.config.ts` (project
+ * `rekordbox-gate-chromium`, 60s test timeout, where it passed in 13.1s in
+ * that very job) and again under the root config's 30s budget, where it
+ * failed. The actual fix (packet 9n-5) is excluding this spec from the root
+ * config's `testIgnore`, so it now runs only under the rekordbox-gate config
+ * that already gives it the headroom the cold-Vite pipeline needs. No
+ * sibling spec shares this catch-all-plus-assert-on-
+ * log pattern either (re-checked repo-wide Tue 8 Sep 2026:
+ * `rekordbox-writeback-disabled.spec.ts` is the only other spec with a
+ * catch-all `**\/api/v1/**` route, and it fulfils permissively with no
+ * equivalent assertion, so it is not a latent flake of this shape).
  */
 import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
@@ -204,7 +303,12 @@ test('null artwork availability identifies an unavailable reader without request
 	// Sun 6 Sep 2026 17:00 UTC, trace in the e2e-gate-failures artifact), and
 	// a 15 s budget went red on trunk three times that day with the row
 	// arriving one second late. The budget covers the cold pipeline under
-	// that load; the config's 60 s test timeout still bounds the whole test.
+	// that load; this spec is excluded from the root config's testIgnore
+	// (packet 9n-5, Sol P2 BLOCKING on #1463, thread 3961468764) precisely
+	// because the root config's 30s test timeout would make this 45s
+	// allowance inert -- the 60s test timeout that actually bounds the whole
+	// test here is playwright.rekordbox-gate.config.ts's, the only config
+	// this spec now runs under.
 	await expect(artworkCell).toBeVisible({ timeout: 45_000 });
 	await expect(artworkCell).toHaveAttribute('title', READER_UNAVAILABLE);
 	await expect(artworkCell.locator('img')).toHaveCount(0);

@@ -1,15 +1,21 @@
 <script lang="ts">
 	/**
 	 * One mixer channel strip (SCREENSHOT-SPEC 4), top-down:
-	 * channel number, TRIM, HI/MID/LOW, FILTER (visual stub),
+	 * channel number, TRIM, HI/MID/LOW, FILTER,
 	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
-	import { getDeckState } from '$lib/rb/audio-engine.svelte';
+	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
+	import { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
 	import { knobId } from '$lib/rb/knob-control.svelte';
+	import {
+		setLevelCalibrationCapture,
+		setLevelCalibrationDisabled,
+		uiPrefs
+	} from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import StemRow from '../deck/StemRow.svelte';
 	import Knob from './Knob.svelte';
@@ -18,6 +24,17 @@
 	interface Props {
 		/** The deck this strip controls (screen order is 3 1 2 4). */
 		deckId: DeckId;
+		/** Pin 246b0f5: true while the MORE/LESS toggle (deck-layout-prefs.ts)
+		 * is in LESS mode. LESS gives decks 1/2's strip far less height than
+		 * MORE (the mixer shares `.deck-area`'s single grid row with the
+		 * decks, and that row's floor shrinks in LESS - see +page.svelte's
+		 * `.perf-root.deck-layout-less` comment), so the strip compacts:
+		 * smaller TRIM/EQ knobs, tighter margins, and the FILTER dial drops
+		 * out entirely. It is a live dial since issue #990, but it is the one
+		 * control with a neutral resting value (0.5 = bypass) and a state
+		 * that survives the strip not drawing it, so LESS still sheds it
+		 * first. TRIM/EQ/CUE/the fader+level-meter/STEM stay. */
+		less: boolean;
 		/** TRIM knob 0..1; 0.5 = unity. */
 		trim: number;
 		/** HIGH knob 0..1; 0.5 = flat. */
@@ -26,12 +43,15 @@
 		eqMid: number;
 		/** LOW knob 0..1; 0.5 = flat. */
 		eqLow: number;
+		/** FILTER knob 0..1; 0.5 = bypass. */
+		filter: number;
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
 		stemPending: boolean;
 		ontrim: (value: number) => void;
 		oneq: (band: EqBand, value: number) => void;
+		onfilter: (value: number) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 		onStemMute: (stem: StemControl) => Promise<void>;
@@ -40,15 +60,18 @@
 
 	let {
 		deckId,
+		less,
 		trim,
 		eqHigh,
 		eqMid,
 		eqLow,
+		filter,
 		fader,
 		cueEnabled,
 		stemPending,
 		ontrim,
 		oneq,
+		onfilter,
 		onfader,
 		oncue,
 		onStemMute,
@@ -62,15 +85,91 @@
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverUi.deckId === deckId);
 
-	/** Halfway between TRIM's former 21px and the 30px EQ dials. */
+	/** Halfway between TRIM's former 21px and the 30px EQ dials. MORE only -
+	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
 	const TRIM_SIZE = 25.5;
-	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
+	/** FILTER stays visually larger than the EQ stack, matching the mixer
+	 * layout contract. The exact number is main's, not this branch's 39:
+	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
 	const FILTER_SLOT_SIZE = 35.1;
+
+	// ------------------------------------------------------- level calibration (#1475)
+
+	/** Off -> click (re)captures this channel's current tap level and arms it.
+	 * On -> click disarms, keeping the captured number per prefs.svelte's
+	 * `setLevelCalibrationDisabled` contract. */
+	function handleCalibrationClick(kind: 'red' | 'ceiling'): void {
+		const enabled =
+			kind === 'red'
+				? uiPrefs.level_calibration.red_enabled
+				: uiPrefs.level_calibration.ceiling_enabled;
+		if (enabled) {
+			setLevelCalibrationDisabled(kind);
+			return;
+		}
+		// A stopped deck is refused on TRANSPORT STATE, not just on level. The
+		// numeric floor alone was not enough: the meter's PPM ballistics decay
+		// at ~11.8 dB/s, so for several seconds after a pause the tap still
+		// reads a real-looking value on its way down. Capturing mid-decay arms a
+		// ceiling from a number that describes nothing, and a quiet tail arms a
+		// severe master attenuation. `playing` is the only signal that says the
+		// level means something right now.
+		if (!playing) return;
+		const db = peekDeckMeterReading(deckId).db;
+		// Belt and braces: a playing deck can still sit at the floor (silence in
+		// the track, or a graph not yet producing), and a -60 dBFS ceiling is a
+		// 0.001 master multiplier, i.e. one click silences the output.
+		if (db <= METER_FLOOR_DBFS) return;
+		setLevelCalibrationCapture(kind, db);
+	}
+
+	/** Every numeric readout carries a title explaining the number (house rule). */
+	function calibrationTitle(label: string, dbfs: number | null, enabled: boolean): string {
+		if (dbfs === null) {
+			return (
+				`${label}: not captured. Click while a loud passage plays on this channel. ` +
+				`A stopped or silent channel captures nothing: there is no level to calibrate against.`
+			);
+		}
+		const action = enabled ? 'Click to disable (keeps the captured level).' : 'Click to re-capture and enable.';
+		return `${label}: ${dbfs.toFixed(1)} dBFS, captured at this channel's tap, currently ${enabled ? 'ON' : 'OFF'}. ${action}`;
+	}
+
+	const redTitle = $derived(
+		calibrationTitle(
+			'Meter red anchor',
+			uiPrefs.level_calibration.red_dbfs,
+			uiPrefs.level_calibration.red_enabled
+		)
+	);
+	const ceilingTitle = $derived(
+		calibrationTitle(
+			'Master output ceiling',
+			uiPrefs.level_calibration.ceiling_dbfs,
+			uiPrefs.level_calibration.ceiling_enabled
+		)
+	);
+	/** Pin 246b0f5 LESS mode: decks 1/2's strip has to fit inside the
+	 * shrunk LESS deck-area row (see +page.svelte), so TRIM/EQ shrink and
+	 * FILTER (inert stub, `{#if !less}` below) drops out -
+	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
+	 * from these exact numbers, so a change here must stay in step with
+	 * that test. */
+	const LESS_TRIM_SIZE = 18;
+	const LESS_EQ_SIZE = 18;
+	/** Knob's own default dial size (see Knob.svelte's `size = 30`), spelled out
+	 * explicitly here rather than omitted: `exactOptionalPropertyTypes` treats an
+	 * explicit `size={undefined}` as distinct from the prop being absent, so
+	 * `eqSize` must always resolve to a concrete number, same as `trimSize`. */
+	const EQ_SIZE = 30;
+	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
+	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
 </script>
 
 <div
 	class="strip"
 	class:secondary
+	class:less
 	class:deck-focus={focused}
 	data-mixer-channel={deckId}
 	role="group"
@@ -80,7 +179,29 @@
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
 	}}
 >
-	<span class="ch-num">{deckId}</span>
+	<div class="strip-head">
+		<span class="ch-num">{deckId}</span>
+		<div class="cal-controls" role="group" aria-label={`level calibration channel ${deckId}`}>
+			<button
+				type="button"
+				class="cal-btn"
+				class:active={uiPrefs.level_calibration.red_enabled}
+				aria-pressed={uiPrefs.level_calibration.red_enabled}
+				aria-label={`meter red anchor channel ${deckId}`}
+				title={redTitle}
+				onclick={() => handleCalibrationClick('red')}>R</button
+			>
+			<button
+				type="button"
+				class="cal-btn"
+				class:active={uiPrefs.level_calibration.ceiling_enabled}
+				aria-pressed={uiPrefs.level_calibration.ceiling_enabled}
+				aria-label={`master ceiling channel ${deckId}`}
+				title={ceilingTitle}
+				onclick={() => handleCalibrationClick('ceiling')}>M</button
+			>
+		</div>
+	</div>
 	<div class="trim-slot">
 		<Knob
 			knobId={knobId(deckId, 'trim')}
@@ -88,26 +209,27 @@
 			accessibleLabel={`trim deck ${deckId}`}
 			value={trim}
 			tone="white"
-			size={TRIM_SIZE}
+			size={trimSize}
 			onchange={ontrim}
 		/>
 	</div>
 	<div class="eq-stack">
-		<Knob knobId={knobId(deckId, 'high')} label="HI" accessibleLabel={`high EQ deck ${deckId}`} value={eqHigh} onchange={(v) => oneq('high', v)} />
-		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} onchange={(v) => oneq('mid', v)} />
-		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} onchange={(v) => oneq('low', v)} />
+		<Knob knobId={knobId(deckId, 'high')} label="HI" accessibleLabel={`high EQ deck ${deckId}`} value={eqHigh} size={eqSize} onchange={(v) => oneq('high', v)} />
+		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} size={eqSize} onchange={(v) => oneq('mid', v)} />
+		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} size={eqSize} onchange={(v) => oneq('low', v)} />
 	</div>
-	<div class="filter-slot">
-		<Knob
-			knobId={knobId(deckId, 'filter')}
-			label="FILTER"
-			accessibleLabel={`filter deck ${deckId}`}
-			value={0.5}
-			tone="rainbow"
-			size={FILTER_SLOT_SIZE}
-			inert
-		/>
-	</div>
+	{#if !less}
+		<div class="filter-slot">
+			<Knob
+				knobId={knobId(deckId, 'filter')}
+				label="FILTER"
+				accessibleLabel={`filter deck ${deckId}`}
+				value={filter}
+				size={FILTER_SLOT_SIZE}
+				onchange={onfilter}
+			/>
+		</div>
+	{/if}
 	<button
 		class:enabled={cueEnabled}
 		class="cue-btn"
@@ -157,13 +279,70 @@
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.1) 40%, var(--rb-panel-raised, #1a1e25));
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 	}
+	.strip-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		gap: 2px;
+	}
+	/* Every direct child except `.fader-slot` (which owns `flex: 1 1 auto`
+	 * on purpose - it is the one element meant to absorb extra height) is
+	 * fixed-size: explicit `flex-shrink: 0` so a too-short `.strip` overflows
+	 * visibly (caught by `.rb-mixer`'s `overflow: hidden` and this file's
+	 * e2e spec) instead of silently squeezing knobs/captions into an
+	 * overlapping, sub-pixel mess that ships nothing to bite - the whole
+	 * reason pin 246b0f5's fix sizes the deck-area LESS floor to real
+	 * content instead of shrinking to fit whatever height happened to be
+	 * left over. */
+	.strip > :not(.fader-slot) {
+		flex-shrink: 0;
+	}
 	.ch-num {
 		font-size: 10px;
 		color: var(--rb-text);
 		line-height: 1;
 	}
+	/* #1475: R/M by-ear calibration - OTT, takes no space. */
+	.cal-controls {
+		display: flex;
+		gap: 1px;
+	}
+	.cal-btn {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: 7px;
+		line-height: 1;
+		padding: 1px 3px;
+		cursor: pointer;
+	}
+	.cal-btn.active {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
+	}
+	/* Pin 246b0f5 FIX ROUND 3 (Sol P1/P2 BLOCKING, both on +page.svelte:281):
+	 * this margin (and filter-slot's/cue-btn's/fader-slot's/stem-label's
+	 * below) was tightened from its pre-fix value so the un-collapsed MORE
+	 * strip's real content fits back inside the 497px deck-area floor
+	 * LIBUX-01 documents as NOT reclaimable, instead of growing that floor
+	 * to 524px (which broke both the short-window contract at 720px and
+	 * the LIBUX-01 969-995px five-row guarantee - see channel-strip-less
+	 * -floor.test.mjs's "MORE floor" test and +page.svelte's floor comment
+	 * for the full arithmetic). Purely cosmetic spacing, no control removed
+	 * or made smaller. */
 	.trim-slot {
-		margin-bottom: 7px;
+		margin-bottom: 3px;
+	}
+	/* Pin 246b0f5 LESS mode: FILTER (the inert stub below) drops out of the
+	 * layout entirely, so the remaining vertical margins tighten further -
+	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
+	 * from these exact numbers, so a change here must stay in step with
+	 * that test. */
+	.strip.less .trim-slot {
+		margin-bottom: 3px;
 	}
 	.eq-stack {
 		display: flex;
@@ -172,8 +351,8 @@
 		gap: 3px;
 	}
 	.filter-slot {
-		margin-top: 7px;
-		margin-bottom: 10px;
+		margin-top: 1px;
+		margin-bottom: 3px;
 	}
 	.cue-btn {
 		background: var(--rb-panel-raised);
@@ -186,9 +365,12 @@
 		padding: 2px 5px;
 		line-height: 1;
 		margin-top: 0;
-		margin-bottom: 10px;
+		margin-bottom: 3px;
 		flex: none;
 		cursor: pointer;
+	}
+	.strip.less .cue-btn {
+		margin-bottom: 4px;
 	}
 	.cue-btn.enabled {
 		color: var(--rb-accent);
@@ -202,7 +384,10 @@
 		justify-content: center;
 		align-items: stretch;
 		margin-top: 0;
-		margin-bottom: 8px;
+		margin-bottom: 4px;
+	}
+	.strip.less .fader-slot {
+		margin-bottom: 4px;
 	}
 	.stem-label {
 		font-size: 8px;
@@ -211,7 +396,10 @@
 		line-height: 1;
 		flex: none;
 		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
-		margin-top: 5px;
+		margin-top: 2px;
+	}
+	.strip.less .stem-label {
+		margin-top: 2px;
 	}
 	.stem-slot :global(.stems) {
 		flex-direction: column;

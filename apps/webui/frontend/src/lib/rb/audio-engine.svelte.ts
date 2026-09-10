@@ -1,6 +1,12 @@
 import {
-	METER_FLOOR_DBFS,
 	createMeterTap,
+	SILENT_METER_READING,
+	createMasterMeterSource,
+	masterMeterReading,
+	metersUnavailable,
+	onMetersUnavailableChange,
+	meterClockMs,
+	releaseMasterMeterTap,
 	readMeterTap,
 	type MeterReading,
 	type MeterTap,
@@ -181,6 +187,7 @@ import {
 	EQ_MAX_DB,
 	EQ_MID_Q,
 	EQ_MIN_DB,
+	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
 	TRIM_MAX_GAIN
@@ -399,6 +406,8 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
+	filterLp: BiquadFilterNode; filterHp: BiquadFilterNode;
+	filterDry: GainNode; filterLpWet: GainNode; filterHpWet: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -517,6 +526,22 @@ let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
+/**
+ * #1475 M enforcement: a static gain ceiling, not a limiter. `_ceilingDbfs` is
+ * the level captured by the M control at some tap; enabling it attenuates
+ * `_masterGain` by a fixed amount so 0 dBFS (full scale) lands at that
+ * captured level instead. It never boosts, and it never reads the current
+ * signal, so there is no attack/release and nothing here colors the sound -
+ * disabling removes the attenuation exactly. See audio-engine-types.ts for
+ * the rationale against a look-ahead limiter.
+ */
+let _ceilingDbfs: number | null = null;
+let _ceilingEnabled = false;
+
+function _ceilingGainMultiplier(): number {
+	if (!_ceilingEnabled || _ceilingDbfs === null) return 1;
+	return Math.min(1, 10 ** (_ceilingDbfs / 20));
+}
 /** Monotonic engine-session id, bumped by dispose(). Deck loadTokens cannot
  * carry a guard across a route remount: dispose() installs a fresh
  * `_emptyRuntime()` per deck whose loadToken restarts at 0, so a token
@@ -556,26 +581,21 @@ const _meterTaps: Record<DeckId, MeterTap | null> = { 1: null, 2: null, 3: null,
 
 export function peekDeckMeterReading(deck: DeckId): MeterReading {
 	const tap = _meterTaps[deck];
-	if (_rt[deck].nodes === null || tap === null) {
-		return {
-			db: METER_FLOOR_DBFS,
-			peakDb: METER_FLOOR_DBFS,
-			segments: 0,
-			normalized: 0,
-			clipped: false
-		};
-	}
-	return readMeterTap(tap, _meterClockMs());
+	if (_rt[deck].nodes === null || tap === null) return SILENT_METER_READING;
+	return readMeterTap(tap, meterClockMs());
 }
 
-/** Wall clock for meter ballistics. Falls back to Date.now() only where
- * performance.now() is genuinely absent, and both are monotonic enough for a
- * decay measured in hundreds of milliseconds. */
-function _meterClockMs(): number {
-	return typeof performance === 'object' && typeof performance.now === 'function'
-		? performance.now()
-		: Date.now();
+/** Master output level. The tap, the silent fallback and the "what does red
+ * mean here" contract all live in meter-tap.ts; the engine supplies only the
+ * clock, so the barrel stays the one import edge a meter component needs. */
+export function peekMasterMeterReading(): MeterReading {
+	return masterMeterReading(meterClockMs());
 }
+
+/** Re-exported so a meter component can tell a genuinely broken meter
+ * (worklet failed to arm) apart from a genuinely silent bus. See
+ * meter-tap.ts's metersUnavailable/UNAVAILABLE_METER_READING. */
+export { metersUnavailable, onMetersUnavailableChange };
 
 export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	const presentation = _rt[deck].presentation;
@@ -659,7 +679,7 @@ function _ensureGraph(): AudioContext {
 	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
 	armAudioContextWatchdog(_ctx, () => DECK_IDS.some((deck) => deckStates[deck].playing));
 	_masterGain = _ctx.createGain();
-	_masterGain.gain.value = mixerState.master;
+	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
 	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
 	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
 	_masterAnalyser = _ctx.createAnalyser();
@@ -698,9 +718,13 @@ function _ensureGraph(): AudioContext {
 		_externalMerger.connect(_masterMuteGain);
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	// Post-EQ, pre-fader tap points, one per deck. Collected here and armed
-	// after the loop because addModule is async and the graph build is not.
+	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
+	// from `_masterGain` itself (post master gain, so the master volume
+	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
+	// Collected here and armed after the loop because addModule is async and
+	// the graph build is not.
 	const meterSources: MeterTapSource[] = [];
+	meterSources.push(createMasterMeterSource(_masterGain));
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -723,6 +747,15 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
+		const filterLp = _ctx.createBiquadFilter();
+		filterLp.type = 'lowpass'; filterLp.Q.value = FILTER_Q; filterLp.frequency.value = lpHz;
+		const filterHp = _ctx.createBiquadFilter();
+		filterHp.type = 'highpass'; filterHp.Q.value = FILTER_Q; filterHp.frequency.value = hpHz;
+		// Separate wet gains (#990): the inactive side is silenced, not left in series.
+		const filterDry = _ctx.createGain(); filterDry.gain.value = dryGain;
+		const filterLpWet = _ctx.createGain(); filterLpWet.gain.value = lpWetGain;
+		const filterHpWet = _ctx.createGain(); filterHpWet.gain.value = hpWetGain;
 		const cue = _ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
@@ -733,9 +766,11 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
-		high.connect(cue);
+		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
+		filterLp.connect(filterLpWet); filterHp.connect(filterHpWet);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
 		cue.connect(headphones.cueSum);
-		high.connect(fader);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
 		const usbLeft = routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && _externalMerger !== null) {
@@ -747,9 +782,8 @@ function _ensureGraph(): AudioContext {
 			fader.connect(xf);
 			xf.connect(_masterGain);
 		}
-		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
-		// `high` is post-trim and post-EQ but pre-fader: the DJM convention, and
-		// the reason the meter can be trusted for gain staging. See meter-tap.ts.
+		_rt[deck].nodes = { analyser, trim, low, mid, high, filterLp, filterHp, filterDry, filterLpWet, filterHpWet, cue, fader, xf, extsplit };
+		// `high` is post-trim/EQ, pre-filter, pre-fader: the meter reads gain staging INTO the filter (#990).
 		const tap = createMeterTap();
 		_meterTaps[deck] = tap;
 		meterSources.push({ tap, source: high });
@@ -927,6 +961,7 @@ import {
 	assertDeckReplacementAllowed,
 	assertDeckLoadConsistency,
 	loadCandidateCanPublish,
+	filterParamsFromKnob,
 	nextPlayingMaster,
 	pausedMasterSelectionBlockers,
 	assertPausedMasterSelectionAllowed,
@@ -1887,12 +1922,12 @@ function _tempoBounds(deck: DeckId): { min: number; max: number } {
 
 async function _resumeContext(): Promise<AudioContext> {
 	const ctx = _ensureGraph();
-	if (ctx.state === 'suspended') await ctx.resume();
+	// `interrupted` too, not only `suspended`: AUDIOLIVE-06 (P1 3973882771).
+	if (ctx.state === 'suspended' || (ctx.state as string) === 'interrupted') await ctx.resume();
 	if (ctx.state !== 'running') {
 		throw new Error(`AudioContext did not enter running state; current state is ${ctx.state}`);
 	}
-	// Belt for the statechange listener: whichever fires first, the authoritative
-	// device-floor row is emitted exactly once (the helper is idempotent).
+	// Belt for the statechange listener; the device-floor row stays idempotent.
 	stampContextDeviceFloors(ctx);
 	return ctx;
 }
@@ -2766,6 +2801,7 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		releaseMasterMeterTap();
 		// The mute VALUE survives teardown on purpose: a route remount must not
 		// hand a headless agent its audio back. Only the node is released.
 		attachMasterMuteNode(null);
@@ -3941,6 +3977,18 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
+	setFilter(deck: DeckId, value: number): void {
+		_assertUnit('setFilter value', value);
+		mixerState.channels[deck].filter = value;
+		const nodes = _rt[deck].nodes;
+		if (nodes !== null) {
+			const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(value);
+			_setParam(nodes.filterLp.frequency, lpHz); _setParam(nodes.filterHp.frequency, hpHz);
+			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
+			_setParam(nodes.filterHpWet.gain, hpWetGain);
+		}
+	}
+
 	setFader(deck: DeckId, value: number): void {
 		_assertUnit('setFader value', value);
 		mixerState.channels[deck].fader = value;
@@ -4000,7 +4048,20 @@ class RbAudioEngine implements AudioEngine {
 	setMaster(value: number): void {
 		_assertUnit('setMaster value', value);
 		mixerState.master = value;
-		if (_masterGain !== null) _setParam(_masterGain.gain, value);
+		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
+	}
+
+	/** #1475 M enforcement: primitives only, no prefs import here on purpose -
+	 * audio-engine.svelte.ts is a hotspot file already at its fan-out ceiling,
+	 * so the caller (Mixer.svelte, which already imports both this module and
+	 * prefs.svelte) pushes the calibrated value in rather than this module
+	 * pulling it. */
+	setLevelCeiling(dbfs: number | null, enabled: boolean): void {
+		_ceilingDbfs = dbfs;
+		_ceilingEnabled = enabled;
+		if (_masterGain !== null) {
+			_setParam(_masterGain.gain, mixerState.master * _ceilingGainMultiplier());
+		}
 	}
 }
 

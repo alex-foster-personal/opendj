@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -39,6 +40,7 @@ def _mark(recorded_at_ms: int, vote: str = "good") -> dict:
                     "eq_low": 0.0,
                     "eq_mid": 0.0,
                     "eq_high": 0.0,
+                    "filter": 0.5,
                     "fader": 1.0,
                     "assign": "thru",
                 }
@@ -62,6 +64,47 @@ def test_performance_marks_survive_a_new_app_and_return_detached_snapshots(
         assert persisted.status_code == 200
         assert persisted.json()["count"] == 1
         assert persisted.json()["last_mark"]["decks"][0]["stable_id"] == "real-stable-id"
+
+
+def test_performance_marks_preserve_a_non_default_filter_value(tmp_path: Path) -> None:
+    """Issue #990 follow-up (PR #1021, discussion_r3966901255): the frontend
+    started sending FILTER on every mark once the dial became real audio, but
+    MixerChannelMarkOut had no `filter` field, so pydantic silently dropped it
+    on ingest and a mark could no longer reproduce the mix the user judged."""
+    mark = _mark(1)
+    mark["mixer"]["channels"][0]["filter"] = 0.85
+    with _app(tmp_path / "data") as client:
+        created = client.post("/api/v1/feedback/performance-marks", json=mark)
+        assert created.status_code == 201
+        assert created.json()["last_mark"]["mixer"]["channels"][0]["filter"] == 0.85
+
+        persisted = client.get("/api/v1/feedback/performance-marks")
+        assert persisted.json()["last_mark"]["mixer"]["channels"][0]["filter"] == 0.85
+
+
+def test_performance_marks_read_a_pre_990_record_missing_filter(tmp_path: Path) -> None:
+    """Issue #990 follow-up (PR #1021, discussion_r3970221216): MixerChannelMarkOut
+    made `filter` a required field, so a mark written by the previous release (no
+    `filter` key at all) would fail pydantic validation on every future GET and
+    POST, locking a user out of both their old history and recording a new mark.
+    `filter` must default to the neutral 0.5 dead-zone value for such records."""
+    data_dir = tmp_path / "data"
+    feedback_dir = data_dir / "feedback"
+    feedback_dir.mkdir(parents=True)
+    legacy_mark = _mark(1)
+    del legacy_mark["mixer"]["channels"][0]["filter"]
+    (feedback_dir / "performance-marks.json").write_text(
+        json.dumps({"marks": [legacy_mark]}), encoding="utf-8"
+    )
+
+    with _app(data_dir) as client:
+        read_back = client.get("/api/v1/feedback/performance-marks")
+        assert read_back.status_code == 200
+        assert read_back.json()["last_mark"]["mixer"]["channels"][0]["filter"] == 0.5
+
+        created = client.post("/api/v1/feedback/performance-marks", json=_mark(2))
+        assert created.status_code == 201
+        assert created.json()["count"] == 2
 
 
 def test_performance_marks_keep_the_newest_four_hundred(tmp_path: Path) -> None:

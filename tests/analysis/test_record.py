@@ -19,7 +19,7 @@ def _sample() -> AnalysisRecord:
         bpm=128.0,
         bpm_confidence=0.95,
         key_camelot="8A",
-        key_openkey="8m",
+        key_openkey="1m",
         key_confidence=0.88,
         energy=7,
         onsets_s=[0.5, 1.0],
@@ -50,7 +50,7 @@ def test_naive_datetime_coerced_to_utc() -> None:
         analyzed_at=datetime(2026, 1, 1, 0, 0, 0),
         duration_s=1.0, sample_rate=44100,
         bpm=120.0, bpm_confidence=1.0,
-        key_camelot="1A", key_openkey="1m", key_confidence=1.0,
+        key_camelot="1A", key_openkey="6m", key_confidence=1.0,
         energy=5,
     )
     rec2 = AnalysisRecord.from_json(rec.to_json())
@@ -63,7 +63,7 @@ def test_accepts_Z_and_plus00() -> None:
         '{"analyzed_at":$DT,"backend":"b","backend_version":"v","bpm":120.0,'
         '"bpm_confidence":1.0,"downbeats_s":[],"duration_s":1.0,"energy":5,'
         '"energy_source":"inferred","features_blob":{},"key_camelot":"1A",'
-        '"key_confidence":1.0,"key_openkey":"1m","onsets_s":[],'
+        '"key_confidence":1.0,"key_openkey":"6m","onsets_s":[],'
         '"rms_peaks_s":[],"sample_rate":44100,"stable_id":"x"}'
     )
     r1 = AnalysisRecord.from_json(body.replace("$DT", '"2026-04-17T01:23:45Z"'))

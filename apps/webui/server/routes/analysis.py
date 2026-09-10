@@ -139,6 +139,18 @@ def _load_latest_record(
     """
     conn = _open_analysis_ro(db_path)
     try:
+        # EXCLUDE own_* rows. This query takes the newest row across EVERY
+        # backend, and native-analysis v1 puts per-lane own records in the
+        # same `analysis` table, so without this an own KEY or LOUDNESS row
+        # written after a beatgrid run would win here and hand
+        # /beatgrid-fallback and /auto-cues that row's empty `downbeats_s`
+        # (reproduced Wed 9 Sep 2026: a librosa row with 4 downbeats was
+        # shadowed by an own_key.inapp row with none). These two endpoints
+        # are pre-v1 readers of the LEGACY flat record; own records are read
+        # through the canonical pointer instead, and teaching them the own
+        # beatgrid lane belongs to that lane's PR, not this one. The explicit
+        # `backend=` filter is untouched: a caller that names a backend gets
+        # exactly what it named.
         sql = (
             "SELECT record_json FROM analysis WHERE stable_id = ?"
         )
@@ -146,6 +158,8 @@ def _load_latest_record(
         if backend is not None:
             sql += " AND backend = ?"
             params.append(backend)
+        else:
+            sql += " AND backend NOT LIKE 'own\\_%' ESCAPE '\\'"
         sql += " ORDER BY analyzed_at DESC, backend ASC, backend_version DESC LIMIT 1"
         try:
             row = conn.execute(sql, params).fetchone()

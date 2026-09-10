@@ -211,6 +211,11 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 	// Every background trigger goes through request(), never straight to the
 	// refresh: a direct call is the mid-set stall this gate exists to stop.
 	assert.match(source, /subscribeKind\('tracks', \(\) => _libraryRefreshGate\.request\(\)\)/);
+	assert.match(
+		source,
+		/subscribeKind\('playlists', \(\) =>\s*_libraryRefreshGate\.request\(\)\s*\)/,
+		'a playlist create/delete elsewhere must invalidate the health-dot playlist total too'
+	);
 	assert.match(source, /subscribeResync\(\(\) => _libraryRefreshGate\.request\(\)\)/);
 	const requestCallSites = source
 		.split('\n')
@@ -218,8 +223,8 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 		.filter((line) => !/^\s*(\/\/|\*)/.test(line));
 	assert.equal(
 		requestCallSites.length,
-		3,
-		'the two bus subscriptions plus the 60s degraded-path poll, and nothing else'
+		4,
+		'the three bus subscriptions (tracks, playlists, resync) plus the 60s degraded-path poll, and nothing else'
 	);
 });
 

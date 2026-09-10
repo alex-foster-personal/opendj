@@ -349,6 +349,39 @@
 	let _genreClickTimer: ReturnType<typeof setTimeout> | null = null;
 	let _rowGenreTimer: ReturnType<typeof setTimeout> | null = null;
 
+	/** Issue #1558: must clear the platform double-click interval (~400ms)
+	 * with margin, so a real double-click's second click always lands inside
+	 * it, but a deliberate single click on a deck button - which arrives well
+	 * after human reaction time - is unaffected. */
+	const DBLCLICK_GUARD_MS = 500;
+	/** Rows currently within their post-click guard window: the quick-load
+	 * box's buttons stay pointer-events: none for these ids even while the
+	 * row is selected and hovered (see .dblclick-guard-active below). A JS
+	 * timer, not a CSS transition-delay: pointer-events is a discrete
+	 * property, so a browser only honors transition-delay on it with
+	 * `transition-behavior: allow-discrete` (Chrome 117+/Safari 17.4+) -
+	 * verified empirically on PR #1570 (Codex review) - and this app's
+	 * packaged WKWebView targets macOS 11, whose system WebKit predates that
+	 * entirely, so the CSS-only guard silently did nothing there. A plain
+	 * class-gated selector has no such floor. */
+	let dblclickGuardRowIds = $state(new Set<string>());
+	const _dblclickGuardTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function _armDblclickGuard(rowId: string): void {
+		const existing = _dblclickGuardTimers.get(rowId);
+		if (existing !== undefined) clearTimeout(existing);
+		dblclickGuardRowIds = new Set(dblclickGuardRowIds).add(rowId);
+		_dblclickGuardTimers.set(
+			rowId,
+			setTimeout(() => {
+				_dblclickGuardTimers.delete(rowId);
+				const next = new Set(dblclickGuardRowIds);
+				next.delete(rowId);
+				dblclickGuardRowIds = next;
+			}, DBLCLICK_GUARD_MS)
+		);
+	}
+
 	function genreWindowOpen(): boolean {
 		return genreFilterUntil > 0 && Date.now() < genreFilterUntil;
 	}
@@ -390,6 +423,10 @@
 	}
 
 	function onRowPointer(event: MouseEvent, row: BrowserRow): void {
+		// Any click on the row is where its FIRST double-click click would
+		// land, whether the row was already selected or is only selecting
+		// now - both cases must stay guarded (issue #1558).
+		_armDblclickGuard(row.stable_id);
 		onselectrow(row, event);
 		if (!genreWindowOpen() || ongenrefilter === undefined || event.detail < 2) return;
 		if (_rowGenreTimer !== null) clearTimeout(_rowGenreTimer);
@@ -1133,7 +1170,7 @@
 						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
-				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
+				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1144,6 +1181,8 @@
 						tabindex="0"
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
+						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
+						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
@@ -1286,7 +1325,12 @@
 							     strip (.preview-hit) - hovering it must never block the
 							     journey from artwork/title to the mini preview. Revealed by
 							     hovering .c-art or .c-title specifically (CSS below), never
-							     the bare row or the preview cell. -->
+							     the bare row or the preview cell.
+							     Pin fce26c7493b0: it floats ABOVE this row rather than on the
+							     row's own line, so it can never swallow the row's own
+							     double-click. The title text moved into .title-text because
+							     THAT span now owns the ellipsis clip - the cell itself has to
+							     stop clipping for the box to escape upwards. -->
 							<span class="deck-btns">
 								<span class="deck-btns-title">load to deck:</span>
 								{#each DECKS as d (d)}
@@ -1326,9 +1370,11 @@
 									</button>
 								{/if}
 							</span>
-							{#each hl(row.title) as part, i (i)}
-								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-							{/each}
+							<span class="title-text"
+								>{#each hl(row.title) as part, i (i)}{#if part.hit}<mark
+											class="find-hit">{part.text}</mark
+										>{:else}{part.text}{/if}{/each}</span
+							>
 						</td>
 						<td class="c-artist" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.artist ?? ''}>
 							{#each hl(row.artist) as part, i (i)}
@@ -2150,10 +2196,17 @@
 		position: relative;
 	}
 	/* The loader opens only from artwork or title (pin 27f889893790), and is
-	 * anchored inside .c-title so it renders clear of the preview column while
-	 * remaining bounded by that cell. It must never extend below the row: that
-	 * would either be clipped by the cell's title-truncation overflow or cover
-	 * the following row's normal targets. Visible
+	 * anchored inside .c-title so it renders clear of the preview column.
+	 * Pin fce26c7493b0: it sits ABOVE the row (bottom: 100%), never on the
+	 * row's own line - inline it covered the title's right-hand side and its
+	 * buttons stopPropagation on dblclick, so a double-click aimed at the row
+	 * hit a button and the row's own load-and-play never fired. It must never
+	 * extend below the row either: that would cover the following row's normal
+	 * targets. Because a `td` clips (`overflow: hidden`, for title
+	 * truncation), an absolutely positioned box can only escape upwards if the
+	 * cell stops clipping - so .c-title is `overflow: visible` and the
+	 * ellipsis moved onto the inner .title-text span, which clips the text and
+	 * nothing else. Visible
 	 * on hover+selected (mouse), per pin 616aaf77b792: hover-only used to
 	 * block visibility outright. display stays inline-flex always (never
 	 * `none`) so the buttons remain Tab-reachable regardless of
@@ -2165,31 +2218,137 @@
 	 * Tab press. Hiding pointer-events lags 100ms behind losing hover (pin
 	 * 27f889893790's corridor): the pointer can leave .c-art/.c-title,
 	 * cross the short gap, and still land on a deck button before the
-	 * group goes fully inert. Showing has no such delay. */
+	 * group goes fully inert. Showing has no such delay for the corridor-
+	 * travel and keyboard-focus paths - but the row-selection-driven reveal
+	 * DOES delay showing (DBLCLICK_GUARD_MS, issue #1558): that trigger can
+	 * fire on the first click of a double-click aimed at the row, and an
+	 * instantly-clickable box there hijacked the gesture's second click. */
 	.c-title {
 		position: relative;
+		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the
+		 * cell cannot clip. The text keeps its own clip on .title-text. */
+		overflow: visible;
+	}
+	.c-title .title-text {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.deck-btns {
 		display: inline-flex;
 		position: absolute;
-		top: 0;
+		bottom: 100%;
+		top: auto;
 		right: 0;
-		height: 100%;
+		height: auto;
 		max-width: 100%;
 		box-sizing: border-box;
 		gap: 2px;
 		align-items: center;
+		padding: 1px 4px;
+		border: 1px solid var(--rb-line, #2a3140);
+		border-radius: 3px;
+		background: var(--rb-panel-raised, #0a0c0f);
 		opacity: 0;
+		/* The box hangs over the PREVIOUS row (bottom: 100%), so the box
+		 * ITSELF must never take a pointer: its padding, border and
+		 * background would swallow that row's hover and double-click exactly
+		 * the way the on-the-line version swallowed its own row's (Sol P1 on
+		 * pin fce26c7493b0). Only the buttons are hittable, and only while
+		 * revealed - so the pointer travelling up from .c-title to a deck
+		 * button passes THROUGH the box's dead area onto the row above
+		 * instead of latching onto it. Interactivity therefore lives on
+		 * .deck-btns button below, corridor grace and all. */
 		pointer-events: none;
 		z-index: 5;
-		transition:
-			opacity 120ms ease,
-			pointer-events 0s 100ms;
+		transition: opacity 120ms ease;
+	}
+	/* The buttons carry BOTH the interactivity and the footprint, because over
+	 * the row above those are the same thing.
+	 * Hitbox: hiding pointer-events lags 100ms behind losing hover (pin
+	 * 27f889893790's corridor); showing has no such delay.
+	 * Size: the global `button` rule (padding 0.4rem 0.9rem) made a
+	 * single-digit target 37px wide - measured, the whole box came to 220px,
+	 * the ENTIRE width of the title column, and 32px tall against a 22px row,
+	 * so a selected row blanked its neighbour's whole title cell. Sized to the
+	 * row instead, the cluster keeps to that cell's right-hand side, clear of
+	 * its midpoint (the point a click on that row uses), and the box is
+	 * shorter than one row so it cannot reach past its immediate neighbour
+	 * into the header. */
+	.deck-btns button {
+		pointer-events: none;
+		transition: pointer-events 0s 100ms;
+		padding: 0 4px;
+		min-width: 16px;
+		height: 16px;
+		line-height: 1;
+		font-size: 10px;
+		border-radius: 2px;
 	}
 	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns,
 	.deck-btns:hover,
 	.deck-btns:focus-within {
 		opacity: 1;
+		transition-delay: 0s;
+	}
+	/* Issue #1602 round 2 (Sol P1 on pin 8f064eafc, review thread
+	 * PRRT_kwDOSEvNd86gwaHm): a runway spacer row gave row 0's box somewhere
+	 * to hang, but its added layout height was invisible to
+	 * computeVirtualWindow's scrollTop math (virtual-window.ts) - the
+	 * runway vanished the instant startIndex left 0, a real DOM height
+	 * discontinuity the JS offset math never accounted for.
+	 * Raising .deck-btns's OWN z-index cannot fix the header collision
+	 * either - `tbody tr` is `position: relative` with z-index: auto
+	 * (needed to contain every row's absolutely-positioned children, e.g.
+	 * .audio-cache-chevron), which makes EACH row its own stacking context,
+	 * the identical mechanism `.col-resize` documents for sticky `th`
+	 * above. .deck-btns's z-index: 5 is trapped inside its OWN row's
+	 * auto-level context and can never escape to outrank a sibling
+	 * context's explicit z-index (thead th, z-index: 1) - only the ROW's
+	 * own z-index decides that contest. Every row already beats the row
+	 * above it in paint order for free (a later DOM sibling outranks an
+	 * earlier one among z-index: auto contexts), which is why only row 0 -
+	 * the one row with the thead, not another row, ahead of it in DOM order
+	 * - ever needed anything raised. So: bump row 0's own z-index above
+	 * thead's, and ONLY while its box is genuinely revealed (identical
+	 * predicate to the opacity reveal directly above), so row 0 still
+	 * renders behind the sticky header the rest of the time, exactly like
+	 * every other row. Zero added layout height, so
+	 * computeVirtualWindow needs no change and no coupling to the runway's
+	 * failure mode is possible. */
+	tr.rb-row-first.rb-row-selected:has(.c-art:hover, .c-title:hover),
+	tr.rb-row-first:has(.deck-btns:hover),
+	tr.rb-row-first:has(.deck-btns:focus-within) {
+		z-index: 2;
+	}
+	/* Issue #1558: selecting a row makes this :has() match true at the exact
+	 * instant of the FIRST click of a double-click, with the pointer already
+	 * resting on .c-art/.c-title (a click cannot happen anywhere else). An
+	 * instant pointer-events here put a deck button under the gesture's
+	 * SECOND click, which the button's own ondblclick stopPropagation then
+	 * ate before the row's own dblclick handler ever ran - "Load onto deck
+	 * N" fired (no play) instead of the row's smart-load-and-play. The box
+	 * itself stays pointer-events: none throughout (see above), so while the
+	 * guard is active the click passes through to the row beneath, exactly
+	 * like the box was never there.
+	 * `.dblclick-guard-active` is a plain JS-timed class (DBLCLICK_GUARD_MS,
+	 * TrackTable.svelte script - armed on every row click), not a CSS
+	 * transition-delay: pointer-events is a discrete property, so a browser
+	 * only honors transition-delay on it with `transition-behavior:
+	 * allow-discrete` (Chrome 117+/Safari 17.4+ only) - tried first on this
+	 * PR and verified empirically to do nothing on this app's packaged
+	 * WKWebView floor (macOS 11, Codex review PR #1570). A class flip has no
+	 * such requirement.
+	 * `.deck-btns:hover`/`:focus-within` below are the corridor-travel and
+	 * keyboard-focus cases (the box is already open), so those stay instant;
+	 * only the SELECT-driven reveal needs the guard. */
+	tr.rb-row-selected:not(.dblclick-guard-active):has(.c-art:hover, .c-title:hover) .deck-btns button {
+		pointer-events: auto;
+		transition-delay: 0s;
+	}
+	.deck-btns:hover button,
+	.deck-btns:focus-within button {
 		pointer-events: auto;
 		transition-delay: 0s;
 	}
@@ -2200,9 +2359,10 @@
 		 * without the box going inert underfoot. Only the opacity fade is a
 		 * pure animation; disable that alone, never the whole transition. */
 		.deck-btns {
-			transition:
-				opacity 0s,
-				pointer-events 0s 100ms;
+			transition: opacity 0s;
+		}
+		.deck-btns button {
+			transition: pointer-events 0s 100ms;
 		}
 	}
 	.deck-btns-title {

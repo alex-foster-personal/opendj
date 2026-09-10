@@ -11,7 +11,7 @@
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */
-	import { getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
@@ -37,6 +37,18 @@
 	 * deck-layout-hotkeys.ts - same setter, single source of truth). */
 	const deckLayoutLess = $derived(uiPrefs.deck_layout === 'less');
 
+	// #1475 M enforcement: audio-engine.svelte.ts is a hotspot file already at
+	// its frontend.max_fan_out ceiling, so it exposes setLevelCeiling(dbfs,
+	// enabled) over primitives only and this component (already importing
+	// both modules for deck layout) pushes the persisted calibration in,
+	// rather than the engine importing prefs.svelte itself.
+	$effect(() => {
+		engine.setLevelCeiling(
+			uiPrefs.level_calibration.ceiling_dbfs,
+			uiPrefs.level_calibration.ceiling_enabled
+		);
+	});
+
 	const assigns: Record<DeckId, CrossfaderAssign> = $derived({
 		1: mixerState.channels[1].assign,
 		2: mixerState.channels[2].assign,
@@ -50,6 +62,10 @@
 
 	function handleEq(deck: DeckId, band: EqBand, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'eq', deck, band, value });
+	}
+
+	function handleFilter(deck: DeckId, value: number): void {
+		void runPerformanceCommandFromUi({ type: 'filter', deck, value });
 	}
 
 	function handleFader(deck: DeckId, value: number): void {
@@ -125,15 +141,18 @@
 			<div class="strip-slot" class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}>
 				<ChannelStrip
 					deckId={deck}
+					less={deckLayoutLess}
 					trim={mixerState.channels[deck].trim}
 					eqHigh={mixerState.channels[deck].eq_high}
 					eqMid={mixerState.channels[deck].eq_mid}
 					eqLow={mixerState.channels[deck].eq_low}
+					filter={mixerState.channels[deck].filter}
 					fader={mixerState.channels[deck].fader}
 					cueEnabled={mixerState.channels[deck].cue_enabled}
 					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
 					oneq={(band, v) => handleEq(deck, band, v)}
+					onfilter={(v) => handleFilter(deck, v)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
 					onStemMute={(stem) => handleStemMute(deck, stem)}
@@ -170,18 +189,24 @@
 		padding: 6px 6px 4px;
 		overflow: hidden;
 	}
+	/* Pin 246b0f5: "MORE/LESS toggle is too big ... pushing EQs down" -
+	 * shrunk from padding-bottom 4px + 10px/2px-10px buttons (~22px tall)
+	 * to ~14px, unconditionally (both modes - it is the same control in
+	 * both, and MORE mode has no reason to keep the extra height either).
+	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
+	 * from this height too. */
 	.deck-layout-toggle {
 		flex: 0 0 auto;
 		display: flex;
 		justify-content: center;
 		gap: 2px;
-		padding-bottom: 4px;
+		padding-bottom: 2px;
 	}
 	.deck-layout-btn {
-		font-size: 10px;
+		font-size: 9px;
 		font-weight: 600;
 		letter-spacing: 0.04em;
-		padding: 2px 10px;
+		padding: 1px 8px;
 		border: 1px solid var(--rb-border);
 		background: transparent;
 		color: var(--rb-text-dim, #9aa4b2);

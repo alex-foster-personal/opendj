@@ -122,6 +122,28 @@ TABLES: dict[str, str] = {
         "One analysis run's outcome, including failures, so a track that "
         "cannot be analysed is distinguishable from one never attempted."
     ),
+    "analysis_canonical": (
+        "Which analysis row is canonical for one track and one selection lane. "
+        "Recomputed from every row on each write by one rule (highest producer "
+        "semver, tie to in-app over backfill, bench candidates never eligible), "
+        "so the answer depends on what was produced and never on write order. "
+        "Derived: safe to delete and recompute, never hand-edited."
+    ),
+    "analysis_source_default": (
+        "The persisted per-lane source (rbx or own), one row per selection lane, "
+        "absent until that lane is promoted. This is what a PROMOTION writes and "
+        "the only half of the source selection that survives a relaunch; the "
+        "PARITY-02 dev toggle is in-memory and is deliberately not stored."
+    ),
+    "analysis_projection": (
+        "Own-analysis scalars (bpm, key, loudness_lufs, loudness_dbtp, "
+        "key_change_count, tempo_change_count) read at query time when a lane's "
+        "source is `own`, rebuilt whenever that track's canonical pointer moves. "
+        "This is the ONLY place own values live: they are never written into "
+        "track_fields, so nothing here reaches track_field_history or the sync "
+        "path. `value` is deliberately typeless so numbers stay numbers. Read it "
+        "through apps.analysis.selection.effective_fields, never directly."
+    ),
     "track_energy_segments": (
         "One contiguous stretch of one track's timeline carrying an energy "
         "rating of 1 to 10, as a single source heard it, ordered by `seq`. "

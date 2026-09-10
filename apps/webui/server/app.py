@@ -48,6 +48,7 @@ from .errors import (
 from .frontend_build import frontend_build_dir
 from .routes import analysis as analysis_routes
 from .routes import analysis_queue as analysis_queue_routes
+from .routes import analysis_source as analysis_source_routes
 from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
@@ -378,6 +379,7 @@ def create_app(
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(analysis_queue_routes.router, prefix=api_prefix)
+    app.include_router(analysis_source_routes.router, prefix=api_prefix)
     app.include_router(auth_routes.router, prefix=api_prefix)
     app.include_router(ingest_routes.router, prefix=api_prefix)
     app.include_router(ingest_upload_routes.router, prefix=api_prefix)
@@ -476,6 +478,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
         """
         started = ingest_routes._start_refresh_job(
             ingest_routes.RefreshIn(scope="unmapped"),
+            ingest_routes._stem_roots(app),
             lambda: guard(last_attempted_queue()),
         )
 

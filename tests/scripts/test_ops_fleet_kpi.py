@@ -153,14 +153,13 @@ def _health(out: str) -> dict[str, str]:
     return verdicts
 
 
-def _fatal_label(untimestamped: int) -> str:
+def _fatal_label(untimestamped: int | str) -> str:
     """The FATAL health label, which names how many lines the window filter had
     to exclude for carrying no timestamp to window on."""
     return (
         f"no timestamped FATAL in logs last {HOURS}h "
         f"(+{untimestamped} untimestamped, excluded: no time to window on)"
     )
-
 
 GREEN_LABELS = [
     "queue-watchdog unit active",
@@ -233,7 +232,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
     list in the KPI script.
     """
     fixture = _copy_fixture(tmp_path)
-    (fixture / "jobs" / "residents-watchdog.sh").write_text(
+    (fixture / "jobs" / "watchdog.sh").write_text(
         'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
     )
     (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
@@ -250,7 +249,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
 
     assert proc.returncode == 0, out
     assert (
-        "ticks lane=merge-even RETIRED (not driven by residents-watchdog.sh; "
+        "ticks lane=merge-even RETIRED (not driven by watchdog.sh; "
         "last log 2026-09-02T16:29:22Z)"
     ) in out
     assert "ticks lane=merge-odd ran=0 skipped=0 skip_ratio=ALERT" in out
@@ -260,7 +259,7 @@ def test_retired_and_zero_tick_driven_lanes_are_distinct(tmp_path):
 def test_retired_lane_without_timestamp_fails_loudly(tmp_path):
     """If a retired log lacks an exact UTC timestamp but KPI reports it then broken."""
     fixture = _copy_fixture(tmp_path)
-    (fixture / "jobs" / "residents-watchdog.sh").write_text(
+    (fixture / "jobs" / "watchdog.sh").write_text(
         'RESIDENTS="merge-odd:$JOBS/merge-lane-brief.md rc-qa:$JOBS/rc-qa-brief.md"\n'
     )
     (fixture / "jobs" / "logs" / "resident-merge-even.log").write_text(
@@ -339,6 +338,63 @@ def test_untimestamped_fatal_is_counted_but_never_windowed(tmp_path):
     assert verdicts[_fatal_label(1)] == "PASS", out
     # And the excluded line is named rather than swallowed.
     assert _fatal_label(0) not in verdicts, out
+
+
+def test_prose_that_merely_mentions_fatal_is_not_a_fatal_record(tmp_path):
+    """If a log line that only CONTAINS the word FATAL counts as a FATAL then broken.
+
+    These logs are not all structured. `resident-*.log`, `issue-*.log` and
+    `dispatcher.log` are agent transcripts, and agents quote source lines, paste
+    diffs containing `+ log "FATAL: ..."`, and echo this script's own health
+    output back into themselves. Measured on nucbox Wed 9 Sep 2026, the
+    contains-anywhere rule reported 889 untimestamped FATALs of which 862 were
+    prose, so the excluded count carried no information, and a quoted line that
+    happens to lead with its own UTC stamp could redden the window check for a
+    fault that never happened.
+
+    Both directions are pinned here: prose must not count, and a real record must
+    still count, in the same fixture, so a rule that simply stopped matching
+    anything would fail this test rather than pass it.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "logs" / "resident-prose.log").write_text(
+        # An agent quoting a source line, with its own stamp at the front.
+        f'{_iso(NOW - 60)} the fixer patch adds: + log "FATAL: redteam trigger failed"\n'
+        # An agent echoing this script's own output back into its transcript.
+        f"{_iso(NOW - 50)} health FAIL no timestamped FATAL in logs last 6h\n"
+        # Prose with no stamp at all, mentioning the word mid-sentence.
+        "I refused to ship that because a FATAL there would be silent\n"
+    )
+
+    home = _home(tmp_path, token_profile=True)
+    assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "PASS"
+
+    # Same fixture, plus one genuine record: stamp, then FATAL as the next field.
+    (fixture / "jobs" / "logs" / "real-fatal.log").write_text(
+        f"{_iso(NOW - 40)} FATAL: no brief at /home/dev/jobs/briefs/issue-1.md\n"
+    )
+    assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "FAIL"
+
+
+def test_an_unstamped_fatal_record_is_counted_but_prose_is_not(tmp_path):
+    """If the excluded count includes prose then broken.
+
+    The count exists to name scripts that write a FATAL record without a UTC
+    stamp, because such a line can never be windowed and so a recurrence is
+    invisible. It is only actionable while it counts records and nothing else.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "logs" / "mixed.log").write_text(
+        "FATAL: Codex transcript capture failed at exit session_id=missing\n"
+        "the runbook says a FATAL here means the brief was never written\n"
+        '+        echo "FATAL: unknown tier" >> "$LOG"\n'
+    )
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+
+    # One record, two prose lines: the label names 1, and the window stays green.
+    assert verdicts[_fatal_label(1)] == "PASS"
+    assert _fatal_label(3) not in verdicts
 
 
 def test_builder_freeze_switches_on_at_fifteen_actionable(tmp_path):

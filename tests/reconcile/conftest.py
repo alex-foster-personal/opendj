@@ -23,6 +23,7 @@ import sqlite3
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.state import schema as state_schema
 
 
 def real_data_dir() -> Path:
@@ -46,12 +47,41 @@ def _real_track_count(state_db: Path) -> int | None:
     try:
         with sqlite3.connect(f"file:{state_db}?mode=ro", uri=True) as conn:
             (count,) = conn.execute("SELECT count(*) FROM tracks").fetchone()
+            (version,) = conn.execute("SELECT max(version) FROM schema_meta").fetchone()
     except sqlite3.Error as exc:
         raise RuntimeError(
             f"UNAVAILABLE: real library {state_db} exists but is unreadable ({exc}). "
             "Repair it or point MDT_DATA_DIR at a readable library; this is not a skip."
         ) from exc
+    _require_current_schema(state_db, version)
     return count
+
+
+
+def _require_current_schema(state_db: Path, version: int | None) -> None:
+    """Raise unless ``state_db`` is migrated to the schema this code expects.
+
+    The row count above answers "is there a library", not "can these tests
+    read it". A library left at an older ``SCHEMA_VERSION`` answers the first
+    question yes, passes the guard, and then dies deep inside a test on a
+    column its migration never added. Measured Wed 9 Sep 2026: a v5 library
+    against v8 code fails with ``no such column: deleted_at`` from
+    ``apps/reconcile/reacquire.py``, which reads as a broken test rather than
+    a stale fixture.
+
+    That is the defect this module already removed, one level up: a check
+    passing because it asked an easier question than the one that matters.
+    The module docstring promised an "incompatible schema" fails collection
+    loudly; this is what makes that true.
+    """
+    if version == state_schema.SCHEMA_VERSION:
+        return
+    raise RuntimeError(
+        f"UNAVAILABLE: real library {state_db} is at schema v{version}, but this "
+        f"code expects v{state_schema.SCHEMA_VERSION}. Migrate it once by opening "
+        "it with apps.shared.state.db.open_rw, or point MDT_DATA_DIR at a current "
+        "library; this is not a skip."
+    )
 
 
 _REAL_TRACKS: int | None = _real_track_count(REAL_STATE_DB)

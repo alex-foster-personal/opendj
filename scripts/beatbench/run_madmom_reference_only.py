@@ -25,12 +25,17 @@ must never be added to requirements.txt, pyproject.toml, or any shared
 environment. It lives in this file's own PEP 723 block and nowhere else.
 
 THIS ALREADY WENT WRONG ONCE IN THIS REPO, which is why the warning is this
-loud. requirements.txt line 27 currently describes madmom as MIT and pulls it
-into the dev environment, and apps/analysis/backends/librosa_madmom.py is a
-SHIPPED backend calling RNNBeatProcessor and RNNDownBeatProcessor. Both of
-those load CC BY-NC-SA weights. That is a pre-existing exposure this round
-found rather than created, and it is reported upward rather than fixed here,
-because it is a licensing decision and not a benchmark change.
+loud. requirements.txt used to describe madmom as MIT and pull it into the
+dev environment for a SHIPPED backend, apps/analysis/backends/
+librosa_madmom.py, calling RNNBeatProcessor and RNNDownBeatProcessor -- both
+of which load CC BY-NC-SA weights. That exposure is closed (NATIVE-08, issue
+#1480): requirements.txt's wording is corrected, and the registry
+(apps/analysis/backends/__init__.py's NONSHIPPABLE_BACKENDS) now refuses to
+resolve librosa+madmom at all unless the caller sets
+MDT_BENCH_NONSHIPPABLE=1, so it can no longer reach a shipped payload by
+accident. requirements.txt still carries the git-HEAD install because the
+dev/bench venv needs it importable for that gated backend and for this
+script; it is never part of a pyproject extra or a shipped payload.
 
 WHY IT IS STILL WORTH MEASURING. madmom's DBN downbeat tracker was the field
 reference for years, and it is the thing beat_this was built to beat. Without

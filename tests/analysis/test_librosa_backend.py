@@ -8,14 +8,45 @@ does not have. The learned ``librosa+madmom`` backend stays explicit-only.
 from __future__ import annotations
 
 import inspect
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from apps.analysis import auto_cues, detect_bad_beatgrid, run, write_tags
-from apps.analysis.backends import DEFAULT_BACKEND, get_backend
+from apps.analysis.backends import DEFAULT_BACKEND, NONSHIPPABLE_ENV, get_backend
+from apps.analysis.backends import librosa as librosa_backend_module
 from apps.analysis.backends.librosa import LibrosaBackend
 from apps.analysis.record import AnalysisRecord
+from apps.analysis_key.canon import from_camelot, from_open_key
+
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+_GET_MADMOM_BACKEND_PROBE = """
+import json
+from apps.analysis.backends import get_backend
+from apps.analysis.backends.base import BackendNonshippable
+try:
+    backend = get_backend("librosa+madmom")
+    print(json.dumps({"ok": True, "name": backend.name}))
+except BackendNonshippable as exc:
+    print(json.dumps({"ok": False, "message": str(exc)}))
+"""
+
+
+def _resolve_madmom_backend_in_subprocess(env: dict[str, str]) -> dict[str, object]:
+    """Exercise the real registry in its own process -- AGENTS.md's
+    fail-closed test contract bans monkeypatching, so the flag must be a
+    genuine subprocess environment variable, never an in-process patch."""
+    proc = subprocess.run(
+        [sys.executable, "-c", _GET_MADMOM_BACKEND_PROBE],
+        capture_output=True, text=True, cwd=REPO_ROOT, env=env, timeout=60, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
 @pytest.mark.requirement("META-01")
@@ -35,8 +66,19 @@ def test_every_production_default_uses_exported_librosa_constant() -> None:
 @pytest.mark.requirement("META-01")
 def test_registry_exposes_real_librosa_default_and_explicit_combined_backend() -> None:
     assert get_backend(DEFAULT_BACKEND) is LibrosaBackend
-    assert get_backend("librosa+madmom").name == "librosa+madmom"
+    result = _resolve_madmom_backend_in_subprocess({**os.environ, NONSHIPPABLE_ENV: "1"})
+    assert result == {"ok": True, "name": "librosa+madmom"}
     assert get_backend("mik").name == "mik"
+
+
+@pytest.mark.requirement("NATIVE-08")
+def test_registry_refuses_madmom_without_the_nonshippable_flag() -> None:
+    env = {k: v for k, v in os.environ.items() if k != NONSHIPPABLE_ENV}
+    result = _resolve_madmom_backend_in_subprocess(env)
+    assert result["ok"] is False
+    assert "CC BY-NC-SA" in str(result["message"])
+    # control: the portable default is never gated by the same flag.
+    assert get_backend(DEFAULT_BACKEND) is LibrosaBackend
 
 
 @pytest.mark.requirement("META-01")
@@ -69,3 +111,21 @@ def test_downstream_consumers_do_not_claim_absent_downbeat_capability(
     assert all(cue.time_s in record.onsets_s for cue in proposal.cues)
     flag = detect_bad_beatgrid.detect_one(record)
     assert detect_bad_beatgrid.REASON_DOWNBEAT not in flag.reasons
+
+
+@pytest.mark.requirement("META-01")
+@pytest.mark.parametrize("pitch_class", range(12))
+def test_camelot_and_open_key_tables_agree_with_canon_for_every_pitch_class(
+    pitch_class: int,
+) -> None:
+    """Regression for a real bug: the two tables here are hand-maintained
+    separately from apps/analysis_key/canon.py's, so a fix to one (like the
+    Open Key table correction above) can silently leave the other stale for
+    every pitch class, not just whichever one a caller happens to notice."""
+    for camelot_table, openkey_table in (
+        (librosa_backend_module._CAMELOT_MAJOR, librosa_backend_module._OPENKEY_MAJOR),
+        (librosa_backend_module._CAMELOT_MINOR, librosa_backend_module._OPENKEY_MINOR),
+    ):
+        camelot = camelot_table[pitch_class]
+        open_key = openkey_table[pitch_class]
+        assert from_camelot(camelot) == from_open_key(open_key)

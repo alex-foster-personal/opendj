@@ -42,9 +42,6 @@ import {
 
 import meterProcessorModuleUrl from '$lib/rb/meter-processor.js?url';
 
-// Re-exported so a consumer needs one import edge into the metering pair, not
-// two. The metric that notices is frontend.max_fan_out.
-export { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
 
 const CHANNEL_METER_PROCESSOR_NAME = 'mdt-channel-meter';
 
@@ -140,10 +137,218 @@ export function createMeterTap(): MeterTap {
 	return { latest: null, ballistic: _emptyBallistic(), node: null };
 }
 
+/**
+ * Wall clock for meter ballistics. Falls back to Date.now() only where
+ * performance.now() is genuinely absent, and both are monotonic enough for a
+ * decay measured in hundreds of milliseconds.
+ *
+ * Lives here, beside `readMeterTap`'s `nowMs` parameter, because the reason
+ * that parameter exists at all is so the ballistics are testable without
+ * faking a clock: the default clock and the function that consumes it belong
+ * in one module rather than one owning the policy and another the time.
+ */
+export function meterClockMs(): number {
+	return typeof performance === 'object' && typeof performance.now === 'function'
+		? performance.now()
+		: Date.now();
+}
+
+/**
+ * The reading every meter falls back to when its tap does not exist yet:
+ * floored, unlit, unclipped. Shared rather than written out at each call site
+ * so "no graph yet" can never come to mean two slightly different things.
+ */
+export const SILENT_METER_READING: Readonly<MeterReading> = Object.freeze({
+	db: METER_FLOOR_DBFS,
+	peakDb: METER_FLOOR_DBFS,
+	segments: 0,
+	normalized: 0,
+	clipped: false
+});
+
+/**
+ * True once `armDeckMeters`'s `attachMeterTaps` has failed for the CURRENT
+ * context. AGENTS.md L244-L246 forbids masking a terminal processor error,
+ * and returning `SILENT_METER_READING` when the worklet never armed does
+ * exactly that: a broken meter renders identically to a genuinely silent
+ * master bus forever, with nothing but a perf-event row (which nobody is
+ * watching live) telling the two apart.
+ *
+ * Deliberately module-level rather than per-tap: `attachMeterTaps` fails or
+ * succeeds ONCE, for every source in that call's `meterSources` array (they
+ * all share the one `ctx.audioWorklet.addModule` and the one
+ * `AudioWorkletNode` constructor that can reject), so one flag for "did this
+ * context's meters arm" is the honest granularity - not a per-tap guess.
+ */
+let _metersUnavailable = false;
+
+/**
+ * The context whose meters are currently armed (or being armed).
+ *
+ * `armDeckMeters` is fire-and-forget and route cleanup calls `dispose()`
+ * without awaiting it, so a rejection from a context that has since been
+ * torn down can arrive AFTER a remount has armed a healthy new one. Without
+ * this, that stale rejection marks the new session's meters permanently
+ * unavailable and a working meter renders as broken forever. Scoping the
+ * verdict to the context that produced it is the fix: a failure only counts
+ * for the graph it happened in.
+ */
+let _armingContext: AudioContext | null = null;
+
+/**
+ * Set by `armDeckMeters`'s catch. See `_metersUnavailable` above.
+ *
+ * Returns whether the verdict was ACCEPTED: a failure from a context that is
+ * no longer the armed one is dropped, because it says nothing about the graph
+ * now on screen. The boolean is returned rather than swallowed so the caller
+ * can record which of the two actually happened.
+ */
+export function markMetersUnavailable(ctx: AudioContext): boolean {
+	if (ctx !== _armingContext) return false;
+	_setMetersUnavailable(true);
+	return true;
+}
+
+/**
+ * Listeners for a change in the unavailable verdict.
+ *
+ * A meter component cannot POLL this: its poll is the RAF loop, and that loop
+ * is gated on something playing precisely so an idle session costs no
+ * main-thread work. But arming happens on graph build, which can be while
+ * nothing is playing at all, so a terminal worklet failure would otherwise
+ * become visible only once a deck started - exactly the "a broken meter reads
+ * as a silent one" masking AGENTS.md L244-L246 forbids. A notification costs
+ * nothing while idle and arrives whenever the verdict actually changes.
+ */
+const _unavailableListeners = new Set<(unavailable: boolean) => void>();
+
+function _setMetersUnavailable(next: boolean): void {
+	if (_metersUnavailable === next) return;
+	_metersUnavailable = next;
+	for (const listener of _unavailableListeners) listener(next);
+}
+
+/**
+ * Subscribe to CHANGES in the unavailable verdict; returns an unsubscribe.
+ *
+ * Deliberately does not fire on subscription: the current value is what
+ * {@link metersUnavailable} is for, and a subscriber that needs both reads one
+ * and listens for the other rather than depending on a first-call convention.
+ */
+export function onMetersUnavailableChange(
+	listener: (unavailable: boolean) => void
+): () => void {
+	_unavailableListeners.add(listener);
+	return () => {
+		_unavailableListeners.delete(listener);
+	};
+}
+
+/** Read by a meter component (or its reading path) to render an honest
+ * unavailable state instead of a fabricated silent one. */
+export function metersUnavailable(): boolean {
+	return _metersUnavailable;
+}
+
+/**
+ * The reading a meter reports when arming genuinely failed, as opposed to
+ * "no graph built yet" ({@link SILENT_METER_READING}). Same floored, unlit,
+ * unclipped SHAPE (so a numeric consumer needs no new branch), but a
+ * DIFFERENT frozen object identity so a caller that needs to tell the two
+ * apart - the UI - can, via {@link metersUnavailable}.
+ */
+export const UNAVAILABLE_METER_READING: Readonly<MeterReading> = Object.freeze({
+	db: METER_FLOOR_DBFS,
+	peakDb: METER_FLOOR_DBFS,
+	segments: 0,
+	normalized: 0,
+	clipped: false
+});
+
+/**
+ * The master bus's tap. It lives HERE rather than in audio-engine for the
+ * reason audio-context-instrumentation.ts already states for the other
+ * instruments (convention D5): the engine keeps the call sites, and the
+ * measurement keeps its own module.
+ *
+ * It is a SEPARATE observer from the engine's `_masterAnalyser` (the silence
+ * watchdog): that one answers "is anything playing at all", this one answers
+ * "what level is leaving the master bus", and it rides the same
+ * meter-tap/meter-math pathway the deck taps use, so a master meter and a
+ * channel meter can never disagree about what a colour band means.
+ */
+let _masterTap: MeterTap | null = null;
+
+/**
+ * Create the master tap and return its `meterSources` entry, so the engine's
+ * graph build hands it to the ONE existing `attachMeterTaps` call rather than
+ * opening a second pathway.
+ *
+ * `gain` is typed as `AudioNode` rather than `GainNode` so a test can pass a
+ * plain stub with no real Web Audio graph behind it, and it is returned
+ * rather than connected here because attaching is the caller's async step.
+ */
+export function createMasterMeterSource(gain: AudioNode): MeterTapSource {
+	_masterTap = createMeterTap();
+	return { tap: _masterTap, source: gain };
+}
+
+/**
+ * Master output level, taken POST MASTER GAIN through the same meter-math
+ * policy the per-channel meters use.
+ *
+ * Deliberately distinct from a channel reading: the channel taps sit post-EQ,
+ * PRE-fader on purpose (the DJM trim/EQ-staging convention), so by design
+ * they do not move with the master volume control. This one taps downstream
+ * of that control, which is what pin 5a5c3b8033d8 asked for.
+ *
+ * NOT a speaker-damage reading: everything downstream of the master bus (OS
+ * volume, the audio interface, the amplifier, its limiter) is invisible from
+ * here, and a deck on external USB routing bypasses the master bus entirely.
+ * See docs/research/adrian-level-meters-clipping-lights.md.
+ */
+export function masterMeterReading(nowMs: number): MeterReading {
+	if (_metersUnavailable) return UNAVAILABLE_METER_READING;
+	if (_masterTap === null) return SILENT_METER_READING;
+	return readMeterTap(_masterTap, nowMs);
+}
+
+/**
+ * The live master tap's worklet node, or null when no graph is armed.
+ *
+ * Exists for the Chromium suite, which has to reach the REAL node to prove the
+ * `onprocessorerror` wiring: a `processorerror` cannot be provoked from
+ * JavaScript (only the browser raises one, when the processor's own
+ * constructor or `process()` throws), so the test dispatches the real event at
+ * the real handler this module installed. A test that rebuilt its own node
+ * would prove nothing about the shipped one, which is the failure
+ * `master-meter-browser-entry.ts` was written to avoid.
+ */
+export function masterMeterNode(): AudioWorkletNode | null {
+	return _masterTap === null ? null : _masterTap.node;
+}
+
+/**
+ * Drop the master tap reference with the graph that carried it. The tap's own
+ * node is already released by `teardownMeterTaps`; this keeps the
+ * null-means-no-graph contract exact rather than leaving a dead tap readable.
+ */
+export function releaseMasterMeterTap(): void {
+	_masterTap = null;
+}
+
 export async function attachMeterTaps(
 	ctx: AudioContext,
 	sources: ReadonlyArray<MeterTapSource>
 ): Promise<void> {
+	// Optimistic: this attempt may succeed even if a previous context's did
+	// not. armDeckMeters's catch sets the flag back to true if THIS attempt
+	// also fails, so a stale unavailable state never survives a working retry.
+	_setMetersUnavailable(false);
+	// Claim ownership of the verdict BEFORE the first await, so a rejection
+	// raised anywhere below is attributable to this context and a later
+	// context's arm supersedes it. See `_armingContext`.
+	_armingContext = ctx;
 	if (ctx.audioWorklet === undefined) {
 		throw new Error('AudioWorklet is unavailable; channel level meters cannot start');
 	}
@@ -165,6 +370,18 @@ export async function attachMeterTaps(
 			}
 			tap.latest = event.data;
 		};
+		// A processor that crashes AFTER arming leaves this node permanently
+		// silent, and the arming promise has already RESOLVED by then, so its
+		// catch can never see it. Without this the reading decays to an
+		// ordinary silent state and a dead meter renders exactly like a quiet
+		// master bus - the masking AGENTS.md L244-L246 forbids and the whole
+		// reason _metersUnavailable exists. Routed through
+		// markMetersUnavailable so the verdict stays scoped to the context
+		// that produced it: a crash in a torn-down graph must not condemn the
+		// one now on screen.
+		node.onprocessorerror = (): void => {
+			markMetersUnavailable(ctx);
+		};
 		source.connect(node);
 		node.connect(sink);
 		tap.node = node;
@@ -177,6 +394,7 @@ export function teardownMeterTaps(): void {
 	for (const tap of _taps) {
 		if (tap.node !== null) {
 			tap.node.port.onmessage = null;
+			tap.node.onprocessorerror = null;
 			tap.node.disconnect();
 			tap.node = null;
 		}
@@ -188,6 +406,13 @@ export function teardownMeterTaps(): void {
 		_sink.disconnect();
 		_sink = null;
 	}
+	// A torn-down graph has no meters at all, which is SILENT_METER_READING's
+	// case, not "this context's arming failed" - reset so the next graph
+	// starts from a clean, unproven-broken state.
+	_setMetersUnavailable(false);
+	// And nothing is armed any more, so a late rejection from the context just
+	// dropped has no owner and is ignored rather than blamed on the next graph.
+	_armingContext = null;
 }
 
 // --------------------------------------------------------------------------

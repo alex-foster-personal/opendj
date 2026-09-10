@@ -13,6 +13,20 @@ import { expect, test } from '@playwright/test';
 const MENU = '[data-testid="context-menu"]';
 
 test('track, playlist, and folder context menus are pointer and keyboard reachable', async ({ page }) => {
+	// pin 246b0f5 FIX ROUND 2 note (now reverted, FIX ROUND 3): round 2
+	// pinned this spec's viewport to 1280x800 because round 1's MORE
+	// deck-area floor growth (497px -> 524px) collapsed the already-tight
+	// 720px library row until its rows and this route's own .bottom-bar/
+	// deck-area stems overlapped in the hit-test order, blocking the clicks
+	// below. Sol's round-3 review correctly called that a test-side dodge
+	// of a real layout regression rather than a fix. Round 3 restored the
+	// MORE floor to its original 497px by compacting ChannelStrip.svelte's
+	// margins instead (see +page.svelte's perf-root comment), which is
+	// exactly the floor this spec already passed against on `main` before
+	// pin 246b0f5 ever touched it - so the viewport override is removed
+	// and this now runs at the root suite's native (unset -> Chrome's
+	// 1280x720 default) viewport again, the strongest available proof the
+	// regression is actually fixed rather than hidden.
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
 

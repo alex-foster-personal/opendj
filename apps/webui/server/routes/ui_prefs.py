@@ -38,6 +38,101 @@ def _path(request: Request) -> Path:
     return root / "state" / _FILENAME
 
 
+# Level calibration is stored in dBFS, the same unit the meter reads. The
+# bounds are deliberately wide: -60 is the meter's floor and +12 allows for the
+# loudness-war masters that made calibration necessary in the first place
+# (measured median true peak across the library: +1.0 dBTP). ceiling_dbfs gets
+# a tighter upper bound: the ceiling is min(1, 10**(dbfs/20)) applied to the
+# master gain, which is a no-op attenuation for any dbfs above 0 -- accepting
+# one there would let the UI show M as enabled while the gain stays untouched.
+_CAL_MIN_DBFS = -60.0
+_CAL_MAX_DBFS = 12.0
+_CAL_CEILING_MAX_DBFS = 0.0
+_DEFAULT_LEVEL_CALIBRATION: dict[str, Any] = {
+    "red_dbfs": None,
+    "red_enabled": False,
+    "ceiling_dbfs": None,
+    "ceiling_enabled": False,
+}
+
+
+def _parse_cal_dbfs_fields(raw: dict[str, Any], out: dict[str, Any]) -> None:
+    for key in ("red_dbfs", "ceiling_dbfs"):
+        if key not in raw:
+            continue
+        val = raw[key]
+        if val is None:
+            out[key] = None
+            continue
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": f"level_calibration.{key} must be a number or null",
+                },
+            )
+        cal_max = _CAL_CEILING_MAX_DBFS if key == "ceiling_dbfs" else _CAL_MAX_DBFS
+        if not _CAL_MIN_DBFS <= float(val) <= cal_max:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": (
+                        f"level_calibration.{key} must be between {_CAL_MIN_DBFS} "
+                        f"and {cal_max} dBFS, got {val}"
+                    ),
+                },
+            )
+        out[key] = float(val)
+
+
+def _parse_cal_enabled_fields(raw: dict[str, Any], out: dict[str, Any]) -> None:
+    for key in ("red_enabled", "ceiling_enabled"):
+        if key not in raw:
+            continue
+        val = raw[key]
+        if not isinstance(val, bool):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": f"level_calibration.{key} must be a boolean",
+                },
+            )
+        out[key] = val
+
+
+def _assert_cal_enabled_fields_have_a_level(out: dict[str, Any]) -> None:
+    # Enabling a toggle with no captured level would silently do nothing, which
+    # is worse than refusing: the user would think the calibration was applied.
+    for flag, level in (("red_enabled", "red_dbfs"), ("ceiling_enabled", "ceiling_dbfs")):
+        if out[flag] and out[level] is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": f"level_calibration.{flag} requires {level} to be set",
+                },
+            )
+
+
+def _parse_level_calibration(raw: Any) -> dict[str, Any]:
+    """Validate the by-ear level calibration. A null level is 'never set'."""
+    if raw is None:
+        return dict(_DEFAULT_LEVEL_CALIBRATION)
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "level_calibration must be an object"},
+        )
+    out = dict(_DEFAULT_LEVEL_CALIBRATION)
+    _parse_cal_dbfs_fields(raw, out)
+    _parse_cal_enabled_fields(raw, out)
+    _assert_cal_enabled_fields_have_a_level(out)
+    return out
+
+
 def _parse_auto_sync(raw: Any) -> dict[str, bool]:
     if raw is None:
         return dict(_DEFAULT_AUTO_SYNC)
@@ -72,6 +167,7 @@ def _load(path: Path) -> dict[str, Any]:
             "auto_sync": dict(_DEFAULT_AUTO_SYNC),
             "technically_working_animate": _DEFAULT_TECH_WORKING_ANIMATE,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
+            "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -125,6 +221,7 @@ def _load(path: Path) -> dict[str, Any]:
         "auto_sync": _parse_auto_sync(raw.get("auto_sync")),
         "technically_working_animate": animate,
         "show_agent_pins": show_agent_pins,
+        "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
     }
 
 
@@ -136,6 +233,22 @@ class AutoSyncOut(BaseModel):
     open_dj: bool = False
 
 
+class LevelCalibrationOut(BaseModel):
+    """By-ear level calibration, captured from live playback.
+
+    `red_dbfs` anchors the meter's first RED segment; `ceiling_dbfs` is the
+    master output ceiling. They are independent: either can be set and toggled
+    without the other.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    red_dbfs: float | None = None
+    red_enabled: bool = False
+    ceiling_dbfs: float | None = None
+    ceiling_enabled: bool = False
+
+
 class UiPrefsOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -145,6 +258,7 @@ class UiPrefsOut(BaseModel):
     auto_sync: AutoSyncOut = Field(default_factory=AutoSyncOut)
     technically_working_animate: bool = _DEFAULT_TECH_WORKING_ANIMATE
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
+    level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
 
 
 class UiPrefsPatch(BaseModel):
@@ -156,6 +270,7 @@ class UiPrefsPatch(BaseModel):
     auto_sync: AutoSyncOut | None = None
     technically_working_animate: bool | None = None
     show_agent_pins: bool | None = None
+    level_calibration: LevelCalibrationOut | None = None
 
 
 @router.get("", response_model=UiPrefsOut)
@@ -181,6 +296,14 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["technically_working_animate"] = body.technically_working_animate
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
+    if body.level_calibration is not None:
+        # R and M are independent (see LevelCalibrationOut docstring): merge onto
+        # what's stored so a PUT naming only one half cannot silently wipe the
+        # other, the way a bare replace against LevelCalibrationOut's own
+        # per-field defaults would.
+        current["level_calibration"] = _parse_level_calibration(
+            {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
     publish("library.changed", {"kind": "ui_prefs", "ids": []})

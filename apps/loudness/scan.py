@@ -88,6 +88,10 @@ class LoudnessScan:
 _FIELD_PATTERNS: dict[str, re.Pattern[str]] = {
     "integrated_lufs": re.compile(r"^\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS\s*$", re.M),
     "loudness_range_lu": re.compile(r"^\s*LRA:\s*(-?\d+(?:\.\d+)?)\s*LU\s*$", re.M),
+    # With ``ebur128=peak=true`` ffmpeg's "True peak" summary section emits
+    # true peak, despite labelling its numeric unit dBFS. The numeric dBFS
+    # value is the dBTP value for this full-scale reference. Running TPK and
+    # the final summary must agree; tests cover an inter-sample overshoot.
     "true_peak_dbtp": re.compile(r"^\s*Peak:\s*(-?\d+(?:\.\d+)?|-inf)\s*dBFS\s*$", re.M),
 }
 
@@ -118,7 +122,10 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
 # --------------------------------------------------------------------------
 
 
-def _require_ffmpeg() -> str:
+def require_ffmpeg() -> str:
+    """Resolve the ffmpeg binary, or raise. The one resolution path every
+    caller in this lane shares, so executable selection cannot drift between
+    the measurements that need it (specs/native-analysis-v1.md:601)."""
     resolved = shutil.which(FFMPEG_BINARY)
     if resolved is None:
         raise LoudnessError(
@@ -128,11 +135,18 @@ def _require_ffmpeg() -> str:
     return resolved
 
 
-def scan_file(path: Path) -> LoudnessScan:
-    """Measure one file. Raises LoudnessError on any failure."""
+def scan_file(path: Path, binary: str | None = None) -> LoudnessScan:
+    """Measure one file. Raises LoudnessError on any failure.
+
+    ``binary`` lets a caller that needs more than one ffmpeg pass over the
+    same file (e.g. :mod:`apps.analysis_loudness.adapter`) resolve once and
+    share the result, so a PATH change between passes cannot combine
+    measurements from two different ffmpeg binaries. Defaults to resolving
+    here, for every caller that only needs the one pass.
+    """
     if not path.is_file():
         raise LoudnessError(f"not a file: {path}")
-    binary = _require_ffmpeg()
+    binary = binary or require_ffmpeg()
     completed = subprocess.run(
         [
             binary,
