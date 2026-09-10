@@ -141,9 +141,15 @@ export interface DeckState {
 	is_master: boolean;
 }
 
-/** Serializable real post-deck-DSP, pre-mixer/master analyser snapshot. */
+/** Serializable post-deck-DSP, pre-mixer analyser snapshot.
+ *  `time_domain` / `frequency_db` are current render-graph samples.
+ *  `render_context_time_s` is AudioContext.currentTime at that sample.
+ *  `presentation_context_time_s` is the last trusted
+ *  getOutputTimestamp().contextTime (listener clock). Render may lead
+ *  presentation; the two must not be collapsed into one field. */
 export interface DeckAudioSnapshot {
-	context_time_s: number;
+	render_context_time_s: number;
+	presentation_context_time_s: number;
 	sample_rate_hz: number;
 	fft_size: number;
 	frequency_db: number[];

@@ -476,7 +476,7 @@ test('the first two stemmed loads measure one lane each, whole and uncontended',
 	// main-thread decode running beside them, so the main lane measured slow
 	// for a reason unrelated to the question.
 	decode.stemDecodeSession.resetLane();
-	assert.equal(decode.stemDecodeSession.lane(), null, 'nothing may be assumed before a load');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'nothing may be assumed before a load');
 
 	const ctx = fakeContext();
 	// Load 1: main thread. What ships today, so a session with one stemmed
@@ -491,7 +491,7 @@ test('the first two stemmed loads measure one lane each, whole and uncontended',
 	assert.equal(first.state.made, 0, 'the first trial must not spawn a worker at all');
 	assert.equal(firstFallback.calls.length, 4);
 	assert.ok(one.reports.every((r) => r.refusal === 'calibrating'));
-	assert.equal(decode.stemDecodeSession.lane(), null, 'one lane is not a comparison');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'one lane is not a comparison');
 
 	// Load 2: workers.
 	decode.stemDecodeSession.resetPool();
@@ -505,7 +505,54 @@ test('the first two stemmed loads measure one lane each, whole and uncontended',
 	assert.equal(second.state.made, 4, 'the second trial runs the other lane, whole');
 	assert.deepEqual(secondFallback.calls, []);
 	assert.ok(two.reports.every((r) => r.viaWorker));
-	assert.equal(decode.stemDecodeSession.lane(), 'workers', 'the faster lane wins');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers', 'the faster lane wins');
+});
+
+test('each stem layout calibrates on its own, so a four-part verdict never pins a two-part load', async () => {
+	// Worker throughput depends on how many decodes overlap, and bytes per ms
+	// does not normalize that width. A mixed library (demucs4 + roformer2)
+	// once shared one verdict, so a four-part win could send two-part loads
+	// down the lane that is slower for them for the rest of the session.
+	const TWO = ['vocals', 'instrumental'];
+	const twoFlac = () => Object.fromEntries(TWO.map((part) => [part, FLAC()]));
+	const twoPartClock = (wholeLoadMs) => {
+		let calls = 0;
+		return () => ((calls += 1) >= 1 + 2 * TWO.length + 1 ? wholeLoadMs : 0);
+	};
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(400)
+	});
+	decode.stemDecodeSession.resetPool();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(100)
+	});
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers', 'four-part layout settled');
+	assert.equal(decode.stemDecodeSession.lane(TWO.length), null, 'two-part layout still unmeasured');
+
+	decode.stemDecodeSession.resetPool();
+	const twoMain = fakeDecoderFactory();
+	const twoMainRun = await decode.decodeStemParts(ctx, twoFlac(), TWO, {
+		makeDecoder: twoMain.factory,
+		decodeFallback: countingFallback().fn,
+		now: twoPartClock(100)
+	});
+	assert.equal(twoMain.state.made, 0, 'the two-part layout runs its own main-thread trial');
+	assert.ok(twoMainRun.reports.every((r) => r.refusal === 'calibrating'));
+
+	decode.stemDecodeSession.resetPool();
+	await decode.decodeStemParts(ctx, twoFlac(), TWO, {
+		makeDecoder: fakeDecoderFactory({ concurrent: TWO.length }).factory,
+		decodeFallback: countingFallback().fn,
+		now: twoPartClock(110)
+	});
+	assert.equal(decode.stemDecodeSession.lane(TWO.length), 'main-thread', 'slower workers lose at width 2');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers', 'and width 4 keeps its own verdict');
 });
 
 test('an engine where the main thread wins never gets the workers again', async () => {
@@ -522,7 +569,7 @@ test('an engine where the main thread wins never gets the workers again', async 
 		decodeFallback: countingFallback().fn,
 		now: stepClock(400)
 	});
-	assert.equal(decode.stemDecodeSession.lane(), 'main-thread');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'main-thread');
 
 	// And the NEXT load must actually honor it - a measurement nobody spends
 	// is the same as no measurement.
@@ -558,7 +605,7 @@ test('a narrow win keeps the main thread, because the rung must EARN the switch'
 			decodeFallback: countingFallback().fn,
 			now: stepClock(workerMs)
 		});
-		return decode.stemDecodeSession.lane();
+		return decode.stemDecodeSession.lane(PARTS.length);
 	};
 	// 1.2x for the workers: real, inside the margin, incumbent keeps the lane.
 	assert.equal(await settle(120, 100), 'main-thread');
@@ -583,7 +630,7 @@ test('a load that refused the worker path does not count as a trial of it', asyn
 		decodeFallback: countingFallback().fn,
 		now: stepClock(50)
 	});
-	assert.equal(decode.stemDecodeSession.lane(), null, 'a failed lane is unmeasured, not fast');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'a failed lane is unmeasured, not fast');
 });
 
 //------------------------------------------------- lane trials under overlap
@@ -769,7 +816,7 @@ test('an overlapping load neither becomes a trial nor contaminates the one runni
 	});
 	assert.equal(after.state.made, 0, 'the main-thread lane is still unmeasured, so it runs again');
 	assert.equal(afterFallback.calls.length, 4);
-	assert.equal(decode.stemDecodeSession.lane(), null, 'one lane is still not a comparison');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'one lane is still not a comparison');
 });
 
 test('a non-FLAC bundle is never recorded as the main-thread trial', async () => {
@@ -812,7 +859,7 @@ test('a non-FLAC bundle is never recorded as the main-thread trial', async () =>
 		now: stepClock(100)
 	});
 	assert.equal(workers.state.made, 4, 'the second FLAC load is the worker trial');
-	assert.equal(decode.stemDecodeSession.lane(), 'workers');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers');
 });
 
 test('a non-FLAC bundle never even claims the trial slot', async () => {
@@ -918,7 +965,7 @@ test('a calibration load still settles the lane when the fallback detaches its i
 		now: stepClock(100)
 	});
 	assert.equal(second.state.made, 4, 'the second trial must run the OTHER lane');
-	assert.equal(decode.stemDecodeSession.lane(), 'workers', 'and the session settles a lane');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), 'workers', 'and the session settles a lane');
 
 	// NEGATIVE CONTROL: a genuinely non-FLAC bundle must still be caught, so
 	// the fix is not "stop sniffing on this lane".
@@ -1062,7 +1109,7 @@ test('a bundle at a rate this context cannot run never spends a worker on it', a
 	// And it is not a lane trial: a load that could never run the worker lane
 	// cannot settle a comparison between the lanes.
 	assert.equal(decode.stemDecodeSession.trialing(), false);
-	assert.equal(decode.stemDecodeSession.lane(), null, 'no verdict from an ineligible bundle');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'no verdict from an ineligible bundle');
 
 	// CONTROL ON THE OVERSHOOT: "bar anything whose header mentions a rate"
 	// would satisfy the report above and delete the rung. A bundle disclosing
@@ -1094,7 +1141,7 @@ test('a rate the header hid settles the lane, so the waste is paid once not fore
 		decodeFallback: countingFallback().fn,
 		now: stepClock(400)
 	});
-	assert.equal(decode.stemDecodeSession.lane(), null, 'one trial is not a comparison');
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length), null, 'one trial is not a comparison');
 
 	// Trial 2: the worker lane, on a bundle whose rate the bytes did not
 	// disclose and whose decode comes back at the wrong rate.
@@ -1109,9 +1156,14 @@ test('a rate the header hid settles the lane, so the waste is paid once not fore
 	assert.equal(wasted.calls.length, PARTS.length, 'and was thrown away for a native one');
 	assert.ok(second.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
 	assert.equal(
-		decode.stemDecodeSession.lane(),
+		decode.stemDecodeSession.lane(PARTS.length),
 		'main-thread',
 		'so the lane settles rather than leaving the next load to repeat it'
+	);
+	assert.equal(
+		decode.stemDecodeSession.lane(2),
+		'main-thread',
+		'for every layout: a rate the workers cannot serve is a property of the context'
 	);
 
 	// The load after it pays ONE decode per part, not two, and forever after.

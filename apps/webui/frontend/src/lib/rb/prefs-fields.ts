@@ -1,14 +1,18 @@
 /**
- * Fail-fast parsers for the auto_sync + last_playlist fields of the
- * localStorage prefs blob, split out of prefs.svelte.ts's _load() (a
- * distinct concern from the reactive singleton and the primitive-field
- * checks that stay inline there - both of these validate a nested object
- * shape rather than a bare primitive).
+ * Fail-fast parsers for the nested-object fields of the localStorage prefs
+ * blob, split out of prefs.svelte.ts's _load() (a distinct concern from the
+ * reactive singleton and the primitive-field checks that stay inline there).
  *
  * Plain module (no runes): pure parse functions over an already-parsed
  * blob, so they need no .svelte.ts extension.
  */
-import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
+import type {
+	AutoSyncPrefs,
+	LastPlaylistPref,
+	LevelCalibrationPrefs,
+	SpotifyLibraryPref
+} from './prefs-types';
+import { SPOTIFY_PINNED_CAP, SPOTIFY_RECENT_CAP } from './spotify-playlist-rank';
 
 /** Bounds mirror `_CAL_MIN_DBFS`/`_CAL_MAX_DBFS`/`_CAL_CEILING_MAX_DBFS` in
  * `ui_prefs.py`: -60 is the meter's floor, +12 covers loudness-war true peaks
@@ -139,4 +143,51 @@ export function parseLevelCalibration(
 		}
 	}
 	return result;
+}
+
+function _parseSpotifyIdList(
+	raw: unknown,
+	storageKey: string,
+	field: 'pinned_ids' | 'recent_ids',
+	cap: number
+): string[] {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw)) {
+		throw new Error(
+			`${storageKey}: malformed prefs blob (spotify_library.${field} must be an array of non-empty strings) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const item of raw) {
+		if (typeof item !== 'string' || item === '') {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (spotify_library.${field} must be an array of non-empty strings) - ` +
+					'clear the localStorage key to recover'
+			);
+		}
+		if (seen.has(item)) continue;
+		seen.add(item);
+		out.push(item);
+	}
+	return out.slice(0, cap);
+}
+
+/** Absent (old blob written before #315) yields empty lists; present but the
+ * wrong shape throws, same fail-fast as last_playlist. A too-long but
+ * well-typed list loads truncated to the pin/recent caps. */
+export function parseSpotifyLibrary(raw: unknown, storageKey: string): SpotifyLibraryPref {
+	if (raw === undefined) return { pinned_ids: [], recent_ids: [] };
+	if (raw === null || typeof raw !== 'object') {
+		throw new Error(
+			`${storageKey}: malformed prefs blob (spotify_library must be an object) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const obj = raw as Partial<SpotifyLibraryPref>;
+	return {
+		pinned_ids: _parseSpotifyIdList(obj.pinned_ids, storageKey, 'pinned_ids', SPOTIFY_PINNED_CAP),
+		recent_ids: _parseSpotifyIdList(obj.recent_ids, storageKey, 'recent_ids', SPOTIFY_RECENT_CAP)
+	};
 }

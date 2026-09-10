@@ -52,6 +52,7 @@
 	import StemTags from './StemTags.svelte';
 	import VocalAnalyzeButton from './VocalAnalyzeButton.svelte';
 	import { computeVirtualWindow } from './virtual-window';
+	import { createRowVisibilityObserver } from './observe-row';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress,
@@ -744,43 +745,14 @@
 	}
 
 	// ------------------------------------------- lazy-hydration observer
-	// One-shot per row element: fetch fires the first time a row scrolls into
-	// view (ancestor overflow clipping is honoured by IntersectionObserver, so
-	// root null is correct for the scrolling table wrap).
-	const _rowByEl = new WeakMap<Element, BrowserRow>();
-	let _observer: IntersectionObserver | null = null;
-
-	function _ensureObserver(): IntersectionObserver | null {
-		if (typeof IntersectionObserver === 'undefined') return null; // SSR guard
-		if (_observer === null) {
-			_observer = new IntersectionObserver(
-				(entries) => {
-					for (const entry of entries) {
-						if (!entry.isIntersecting) continue;
-						const row = _rowByEl.get(entry.target);
-						_observer?.unobserve(entry.target);
-						if (row !== undefined) onrowvisible(row);
-					}
-				},
-				{ rootMargin: '120px 0px' }
-			);
-		}
-		return _observer;
-	}
-
-	function observeRow(node: HTMLElement, row: BrowserRow): { destroy(): void } {
-		_rowByEl.set(node, row);
-		_ensureObserver()?.observe(node);
-		return {
-			destroy(): void {
-				_observer?.unobserve(node);
-			}
-		};
-	}
+	const _rowVisibility = createRowVisibilityObserver<BrowserRow>({
+		onRowVisible: (row) => onrowvisible(row)
+	});
+	const observeRow = _rowVisibility.observeRow;
 
 	$effect(() => {
 		return () => {
-			_observer?.disconnect();
+			_rowVisibility.disconnect();
 		};
 	});
 
@@ -1267,6 +1239,7 @@
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<!-- Svelte reuses this keyed node across pane switches; observeRow.update() rebinds the WeakMap + observer. Pane identity stays out of the each-key so rows are not remounted and focus is not dropped. -->
 					<tr
 						use:observeRow={row}
 						data-testid="track-row"

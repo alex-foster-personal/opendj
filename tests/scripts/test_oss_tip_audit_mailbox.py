@@ -13,11 +13,15 @@ Regression lines:
 - if a mailbox after a slash, in a URL, quoted, at a numeric domain, at a Unicode
   domain, or ending in atext punctuation slips through then broken
 - if a delimiter (quote, =, backtick, tab) is absorbed into a token then broken
+- if a path-exempt mailbox stops being raised for ANY entry in the exempt set,
+  rather than only the one that sorts first, then broken
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+import pytest
 
 from scripts.oss_tip_audit import MAILBOX_EXEMPT_PATHS, audit_paths
 
@@ -34,6 +38,7 @@ _PATH_MAILBOX = "docs/" + _MAILBOX
 
 def _write(tmp_path: Path, name: str, text: str) -> Path:
     path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -73,10 +78,16 @@ def test_reserved_domains_and_non_addresses_are_not_mailboxes(tmp_path: Path) ->
     assert result.findings == (), [f.render() for f in result.findings]
 
 
-def test_exempt_path_mailboxes_are_counted_not_hidden(tmp_path: Path) -> None:
+@pytest.mark.parametrize("exempt_name", sorted(MAILBOX_EXEMPT_PATHS))
+def test_exempt_path_mailboxes_are_counted_not_hidden(tmp_path: Path, exempt_name: str) -> None:
     """A path exemption that dropped its matches could not be checked by the
-    person running the gate; it reports them under `exempt` instead."""
-    exempt_name = sorted(MAILBOX_EXEMPT_PATHS)[0]
+    person running the gate; it reports them under `exempt` instead.
+
+    One case per entry in the set, not the first one: #1808 grew the set from
+    one file to two, and a test that reads `sorted(...)[0]` covers whichever
+    path sorts first, so the next entry would arrive untested and the coverage
+    would look unchanged.
+    """
     path = _write(tmp_path, exempt_name, f"{_MAILBOX}\n{_CGNAT}\n")
     result = audit_paths(tmp_path, [path])
     assert [f.match for f in result.exempt] == [_MAILBOX]

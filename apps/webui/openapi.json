@@ -6020,6 +6020,76 @@
         "title": "MembershipReplaceIn",
         "type": "object"
       },
+      "MembershipTransferIn": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "add",
+              "move"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Etag"
+          },
+          "source_playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Playlist Id"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "mode"
+        ],
+        "title": "MembershipTransferIn",
+        "type": "object"
+      },
+      "MembershipTransferOut": {
+        "properties": {
+          "dest": {
+            "$ref": "#/components/schemas/PlaylistWriteOut"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistWriteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "dest"
+        ],
+        "title": "MembershipTransferOut",
+        "type": "object"
+      },
       "MixerChannelMarkOut": {
         "properties": {
           "assign": {
@@ -18148,6 +18218,74 @@
           }
         },
         "summary": "Replace Playlist Tracks",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/tracks/transfer": {
+      "post": {
+        "operationId": "transfer_playlist_tracks_api_v1_playlists__playlist_id__tracks_transfer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipTransferIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipTransferOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transfer Playlist Tracks",
         "tags": [
           "playlists-write"
         ]

@@ -289,7 +289,7 @@ async function main() {
 			await decode.decodeStemParts(ctx, await fresh(), parts);
 			const warmMs = Math.round(performance.now() - warmT0);
 			const pooled = decode.stemDecodeSession.pooled();
-			const chosenLane = decode.stemDecodeSession.lane();
+			const chosenLane = decode.stemDecodeSession.lane(PARTS.length);
 
 			// Now time both lanes head to head, independently of what the
 			// calibration decided, so the two can be cross-checked. A run that

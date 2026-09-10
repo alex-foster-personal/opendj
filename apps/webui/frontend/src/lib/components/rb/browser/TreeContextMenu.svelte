@@ -6,11 +6,13 @@
 		oncreate,
 		onrename,
 		deleteNode,
+		onduplicate,
 		onselect
 	}: {
 		oncreate?: (() => void) | undefined;
 		onrename?: ((node: PlaylistNode) => void) | undefined;
 		deleteNode?: ((node: PlaylistNode) => void) | undefined;
+		onduplicate?: ((node: PlaylistNode) => void) | undefined;
 		onselect: (node: PlaylistNode) => void;
 	} = $props();
 	let menu = $state<{ x: number; y: number; kind: 'playlist' | 'folder'; node?: PlaylistNode | undefined } | null>(null);
@@ -20,6 +22,14 @@
 			{ id: 'new-playlist', label: 'New playlist', run: oncreate }, { id: 'new-folder', label: 'New folder' },
 			{ id: 'rename', label: 'Rename', run: node === undefined ? undefined : () => onrename?.(node) },
 			{ id: 'delete', label: 'Delete', run: node === undefined ? undefined : () => deleteNode?.(node) },
+			{
+				id: 'duplicate',
+				label: 'Duplicate',
+				run:
+					kind === 'playlist' && node !== undefined
+						? () => onduplicate?.(node)
+						: undefined
+			},
 			{ id: 'export', label: 'Export' }, { id: 'spotify', label: 'Import from Spotify' },
 			{ id: 'offline', label: 'Pin offline' }, { id: 'sort', label: 'Sort by...' },
 			{ id: 'reveal', label: 'Reveal in tree', run: kind === 'playlist' && node !== undefined ? () => onselect(node) : undefined }

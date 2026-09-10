@@ -8,17 +8,23 @@ Regression lines:
 - if the gate reads working-tree bytes instead of the indexed blob then broken
 - if the gate reads only ONE of HEAD and the index then broken (they diverge both ways)
 - if a submodule pathname is dropped along with its absent blob then broken
+- if a symlink is audited by its target's bytes or its target's contents rather
+  than by its link text then broken
+- if a write-once record's CONTENT reaches audit_index then broken
+- if a record's PATHNAME stops being audited then broken
 - if the filesystem variant stops reading the filesystem then broken
+- if an unreadable committed tree reports clean instead of raising then broken
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from scripts.oss_tip_audit import audit_index, audit_paths
+from scripts.oss_tip_audit import RECORD_PATHS, audit_index, audit_paths
 
 # Assembled from fragments: the gate scans its own test suite.
 _USERS = "/" + "Users" + "/"
@@ -148,6 +154,40 @@ def test_a_submodule_pathname_is_audited_even_though_it_has_no_blob(
     assert gitlink == [(named, 0, named)], [f.render() for f in findings]
 
 
+def test_a_symlink_is_audited_by_its_link_text_not_by_its_target(tmp_path: Path) -> None:
+    """Codex P1, #1440. Git publishes the LINK TEXT of a symlink.
+
+    `is_file()` follows the link instead, and both directions were wrong: a
+    BROKEN link is not a file at all, so it vanished from the scan, and a
+    WORKING one had the target's contents audited under the link's pathname --
+    a string git never publishes. A link's own text is the only thing this gate
+    has any business reading.
+    """
+    mailbox = "someone" + "@" + "private-domain" + ".com"
+    target = tmp_path / "target.md"
+    target.write_text(f"{mailbox}\n", encoding="utf-8")
+    broken = tmp_path / "broken.link"
+    working = tmp_path / "working.link"
+    os.symlink(_REAL_HOME_ROOT + "/gone.md", broken)
+    os.symlink(target, working)
+
+    result = audit_paths(tmp_path, [broken, working])
+
+    # The broken link's TEXT names a home, and it is reported at line 1 of the
+    # text, not skipped for pointing at nothing.
+    assert [(f.path, f.line, f.match) for f in result.findings] == [
+        ("broken.link", 1, _REAL_HOME_ROOT)
+    ], [f.render() for f in result.findings]
+    # The working link's TARGET is the leak and its link text is not, so reading
+    # the target would report a mailbox against a pathname git does not publish.
+    assert not [f for f in result.findings if f.path == "working.link"], [
+        f.render() for f in result.findings
+    ]
+    # Control: the target IS a finding when it is audited as its own path, so
+    # the silence above is about the link and not about the planted address.
+    assert [f.match for f in audit_paths(tmp_path, [target]).findings] == [mailbox]
+
+
 def test_a_pathname_git_permits_but_utf8_forbids_is_audited_not_a_crash(
     tmp_path: Path,
 ) -> None:
@@ -266,3 +306,53 @@ def test_an_unborn_repository_still_audits_its_index(tmp_path: Path) -> None:
     leak.write_text(f"{_REAL_HOME_ROOT}/Music\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "leak.md"], check=True)
     assert [f.match for f in audit_index(root).findings] == [_REAL_HOME_ROOT]
+
+
+# ----- the record scope-out, at the source the walk actually reads ---------------------
+
+
+def test_a_record_is_scoped_out_of_the_index_and_counted(tmp_path: Path) -> None:
+    """The scope-out and its COUNT apply to audit_index too, which is the walk
+    CI runs. This is a SOURCE question rather than a spelling one: the gate is
+    reading the right bytes and must decline to judge them, and a count that
+    silently became a clean report would hide the trade the scope-out makes.
+    """
+    root = _repo(tmp_path)
+    record = root / RECORD_PATHS[0] / "note.md"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(f"ran on {_REAL_HOME_ROOT}/Music\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+
+    scoped = audit_index(root)
+
+    assert scoped.findings == (), [f.render() for f in scoped.findings]
+    assert scoped.records == 1, scoped.summary()
+    assert scoped.scanned == 0, scoped.summary()
+    # The escape hatch reads the same bytes and DOES judge them, so the silence
+    # above is the scope-out and not an unread blob.
+    full = audit_index(root, include_records=True)
+    assert [f.rule for f in full.findings] == ["home-path"]
+    assert full.records == 0, full.summary()
+    assert full.scanned == 1, full.summary()
+
+
+def test_a_records_pathname_is_audited_by_the_index_walk(tmp_path: Path) -> None:
+    """The scope-out covers CONTENT only, at this source as at the other. A
+    record whose own NAME carries an address is still reported, so the
+    exemption cannot become a smuggling route for anything path-shaped.
+    """
+    root = _repo(tmp_path)
+    mailbox = "someone" + "@" + "private-domain" + ".com"
+    record = root / RECORD_PATHS[0] / f"notes-{mailbox}.md"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+
+    findings = audit_index(root).findings
+
+    # The match itself carries the trailing `.md`, which is what an address
+    # followed by a file extension looks like; the PATHNAME and the rule are
+    # what this asserts, because the match string is the capture's business.
+    assert [(f.path, f.line, f.rule) for f in findings] == [
+        (f"{RECORD_PATHS[0]}notes-{mailbox}.md", 0, "consumer-mailbox")
+    ], [f.render() for f in findings]

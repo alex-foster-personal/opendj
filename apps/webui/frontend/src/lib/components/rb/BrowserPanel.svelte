@@ -70,7 +70,9 @@
 		collectBlankPlaylistDeletes,
 		createPlaylist,
 		deletePlaylist,
+		duplicatePlaylist,
 		getPlaylistTracksEtag,
+		transferPlaylistTracks,
 		isWithinCreateGrace,
 		markPlaylistCreateGrace,
 		PlaylistConflictError,
@@ -79,6 +81,7 @@
 	} from '$lib/rb/playlist-write';
 	import {
 		hydrateConfirmPrefsFromDisk,
+		rememberSpotifyRecent,
 		setConfirmPref,
 		setHideBrokenLinks,
 		setLastPlaylist,
@@ -1009,6 +1012,7 @@
 
 	function _selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated, writeQuery: boolean): void {
 		spotifySelectedId = playlist.playlist_id;
+		rememberSpotifyRecent(playlist.playlist_id);
 		if (writeQuery) _writeSpotifyQuery(playlist.playlist_id);
 		const node: PlaylistNode = {
 			playlist_id: playlist.playlist_id,
@@ -1441,6 +1445,18 @@
 		}
 	}
 
+	async function duplicatePlaylistUi(node: PlaylistNode): Promise<void> {
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			const copy = await duplicatePlaylist(node.playlist_id, etag);
+			await _refreshPlaylists();
+			pushToast(`Duplicated as "${copy.name}"`, 'info');
+		} catch (exc) {
+			pushToast(`duplicate failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function dropTracksOnPlaylist(playlistId: string, stableIds: string[]): Promise<void> {
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
@@ -1454,26 +1470,36 @@
 		}
 		try {
 			const dest = await getPlaylistTracksEtag(playlistId);
-			const destIds = dest.detail.tracks.map((t) => t.stable_id);
-			const merged = [...destIds];
-			for (const id of stableIds) {
-				if (!merged.includes(id)) merged.push(id);
-			}
-			await replacePlaylistTracks(playlistId, dest.etag, merged);
+			let effectiveMode: 'add' | 'move' = 'add';
+			let body: {
+				stable_ids: string[];
+				mode: 'add' | 'move';
+				source_playlist_id?: string;
+				source_etag?: string;
+			} = { stable_ids: stableIds, mode: 'add' };
 			if (mode === 'move') {
 				const srcId = panes[activePane].playlist_id;
-				if (srcId !== null && srcId !== playlistId && canMutatePlaylist(panes[activePane])) {
+				if (srcId !== null && srcId !== 'all' && srcId !== playlistId) {
 					const src = await getPlaylistTracksEtag(srcId);
-					const next = src.detail.tracks
-						.map((t) => t.stable_id)
-						.filter((id) => !stableIds.includes(id));
-					await replacePlaylistTracks(srcId, src.etag, next);
-					const node = _currentNode(panes[activePane]);
-					if (node !== null) await _loadPane(panes[activePane], node);
+					body = {
+						stable_ids: stableIds,
+						mode: 'move',
+						source_playlist_id: srcId,
+						source_etag: src.etag
+					};
+					effectiveMode = 'move';
 				}
 			}
+			await transferPlaylistTracks(playlistId, dest.etag, body);
+			if (effectiveMode === 'move') {
+				const node = _currentNode(panes[activePane]);
+				if (node !== null) await _loadPane(panes[activePane], node);
+			}
 			await _refreshPlaylists();
-			pushToast(`${mode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`, 'info');
+			pushToast(
+				`${effectiveMode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`,
+				'info'
+			);
 		} catch (exc) {
 			pushToast(`playlist drop failed: ${String(exc)}`, 'error');
 		}
@@ -2513,6 +2539,7 @@
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
+				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
 			/>
 		{/if}

@@ -174,6 +174,7 @@ import {
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
+import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
@@ -3907,22 +3908,14 @@ class RbAudioEngine implements AudioEngine {
 		if (finiteTimeDomain.some((value) => !Number.isFinite(value))) {
 			throw new Error('captureDeckAudio: analyser returned non-finite time-domain samples');
 		}
-		const snapshot: DeckAudioSnapshot = {
-			context_time_s: presentationContextTime,
-			sample_rate_hz: _ctx.sampleRate,
-			fft_size: analyser.fftSize,
-			frequency_db: finiteFrequencyDb,
-			time_domain: finiteTimeDomain
-		};
-		const scalarValues = [
-			snapshot.context_time_s,
-			snapshot.sample_rate_hz,
-			snapshot.fft_size
-		];
-		if (scalarValues.some((value) => !Number.isFinite(value))) {
-			throw new Error('captureDeckAudio: analyser metadata contains non-finite numbers');
-		}
-		return snapshot;
+		return buildDeckAudioSnapshot({
+			renderContextTimeS: _ctx.currentTime,
+			presentationContextTimeS: presentationContextTime,
+			sampleRateHz: _ctx.sampleRate,
+			fftSize: analyser.fftSize,
+			frequencyDb: finiteFrequencyDb,
+			timeDomain: finiteTimeDomain
+		});
 	}
 
 	setTrim(deck: DeckId, value: number): void {
