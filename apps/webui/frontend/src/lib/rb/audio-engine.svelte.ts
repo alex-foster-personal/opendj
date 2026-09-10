@@ -130,9 +130,11 @@ import {
 	upgradeDeckBeatgrid,
 	createBeatgridResyncGuards,
 	createBeatgridResyncTracking,
+	reconcileLoopForAuthoritativeGrid,
+	requireBeatGrid,
+	resolvePublishedAnlz,
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
-import { reconcileLoopForAuthoritativeGrid, requireBeatGrid, resolvePublishedAnlz } from '$lib/player/beatgrid-resync-guards';
 import {
 	beatJumpTargetMs,
 	beatJumpTargetWithinDurationMs,

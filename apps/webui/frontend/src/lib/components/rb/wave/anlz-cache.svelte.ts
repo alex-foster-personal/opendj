@@ -18,7 +18,10 @@ import type { AnlzData } from '$lib/rb/anlz-types';
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-lazy';
 export {
 	createBeatgridResyncGuards,
-	createBeatgridResyncTracking
+	createBeatgridResyncTracking,
+	reconcileLoopForAuthoritativeGrid,
+	requireBeatGrid,
+	resolvePublishedAnlz
 } from '$lib/player/beatgrid-resync-guards';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 
