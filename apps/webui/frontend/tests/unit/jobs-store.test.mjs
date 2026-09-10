@@ -262,6 +262,35 @@ test('a resync refetches the whole list', async () => {
 	);
 });
 
+/**
+ * PR #1656 review round 7 (P2 BLOCKING): events-bus.ts now fires a resync
+ * (reason 'initial-connect') on the bus's first-ever open too, not just a
+ * reconnect. This store already schedules its own deferred initial hydrate
+ * through `scheduler.defer` below the PERF-R6 boot-window quiet period, so
+ * hydrating again here on that same first open would duplicate the fetch and
+ * bypass the window it exists to enforce.
+ */
+test('an initial-connect resync does not duplicate the deferred boot hydrate', async () => {
+	const fake = makeFakeBus();
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse([job({ id: `after-${calls}` })]);
+	};
+	store.attach(fake.bus, immediateBootScheduler());
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1, 'attach does the first, deferred fetch');
+
+	fake.fireResync('initial-connect');
+	await new Promise((resolve) => setImmediate(resolve));
+
+	assert.equal(
+		calls,
+		1,
+		"the bus's first-ever open must not duplicate the deferred boot hydrate this store already schedules"
+	);
+});
+
 test('attach is idempotent, so a remount does not double every upsert', async () => {
 	const fake = makeFakeBus();
 	globalThis.fetch = async () => jsonResponse([]);

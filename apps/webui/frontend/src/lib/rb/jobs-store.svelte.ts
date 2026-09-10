@@ -305,9 +305,18 @@ class JobsStore {
 				})
 			);
 			this.#detachers.push(
-				bus.subscribeResync(() => {
+				bus.subscribeResync((reason) => {
 					// A gap means rows changed in ways no frame described. Refetch
 					// rather than trust what is on screen.
+					//
+					// 'initial-connect' is excluded: the bus's first-ever open now
+					// fires a resync for that too (events-bus.ts, PR #1656 round 5),
+					// but this store already schedules its own deferred initial
+					// hydrate below through `scheduler.defer`, behind the PERF-R6
+					// boot-window quiet period. Hydrating here as well on first open
+					// would duplicate that fetch and bypass the window it exists to
+					// enforce (PR #1656 review round 7, P2 BLOCKING).
+					if (reason === 'initial-connect') return;
 					void this.hydrate();
 				})
 			);

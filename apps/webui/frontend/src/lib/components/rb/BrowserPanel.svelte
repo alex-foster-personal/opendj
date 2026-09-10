@@ -47,6 +47,7 @@
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
 	import { resolveRowVocals } from '$lib/rb/row-vocals';
 	import { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
+	import { getHealthAtBoot, getHealthFreshWithRetry } from '$lib/rb/health-boot-retry';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -865,32 +866,14 @@
 		}
 	}
 
-	/**
-	 * getHealth() at boot, with one retry.
-	 *
-	 * _init() throws on any getHealth() rejection, which skips
-	 * _restoreBootPane() entirely - and _refreshLibraryRowsOnce's background
-	 * refresh loop explicitly skips any pane whose playlist_id is still null,
-	 * so a boot pane that never opened this way is never retried by anything
-	 * else. One retry with fresh:true (bypassing the coalesced entry, which
-	 * may itself be the failed attempt) covers a daemon that is merely slow -
-	 * including the fetch timeout src/lib/api.ts now adds - rather than
-	 * actually down. A second failure still propagates to _init()'s existing
-	 * catch/toast path unchanged.
-	 */
-	async function _getHealthAtBoot(): ReturnType<typeof getHealth> {
-		try {
-			return await getHealth();
-		} catch {
-			return await getHealth({ fresh: true });
-		}
-	}
-
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
 		try {
-			const [healthRes, lists] = await Promise.all([_getHealthAtBoot(), listPlaylistsHydrated()]);
+			const [healthRes, lists] = await Promise.all([
+				getHealthAtBoot(getHealth),
+				listPlaylistsHydrated()
+			]);
 			allTracksCount = healthRes.health.state_db.tracks;
 			libraryHealthError = null;
 			playlists = lists;
@@ -1221,24 +1204,6 @@
 	 * which decides when a background refetch may run and coalesces overlapping
 	 * triggers. See the comment on that binding.
 	 */
-	/**
-	 * getHealth({ fresh: true }) for a background library refresh, with one
-	 * retry - the same shape as `_getHealthAtBoot` above, for the same
-	 * reason. Once the bus's first-ever open has fired, nothing else retries
-	 * this read: the fallback poll below stands down while the connection is
-	 * open, and 'initial-connect' fires exactly once. A single transient
-	 * failure here must not permanently forfeit the one chance to repair a
-	 * boot pane a stale coalesced snapshot left blank (PR #1656 review round
-	 * 7, P2 BLOCKING).
-	 */
-	async function _getHealthFreshWithRetry(): ReturnType<typeof getHealth> {
-		try {
-			return await getHealth({ fresh: true });
-		} catch {
-			return await getHealth({ fresh: true });
-		}
-	}
-
 	async function _refreshLibraryRowsOnce(): Promise<void> {
 		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
@@ -1246,7 +1211,7 @@
 			// shared from before that change would paint a stale count and
 			// leave it there until the next event. The mount-time read in
 			// `_init` above has no such constraint and shares one.
-			const healthRes = await _getHealthFreshWithRetry();
+			const healthRes = await getHealthFreshWithRetry(getHealth);
 			allTracksCount = healthRes.health.state_db.tracks;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
