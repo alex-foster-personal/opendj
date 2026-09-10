@@ -66,26 +66,67 @@ async function _deckOneLoaded(page: Page, request: APIRequestContext): Promise<v
 }
 
 /**
- * `.wave-track-name` is a wrapper; the characters live in its inner `<span>`,
- * which already carries rules of its own (`.wave-track-name > span`). `color`
- * inherits, so the two agree today - but a blinded reviewer of this PR pointed
- * out that a single `.wave-track-name > span { color: var(--rb-text); }` would
- * repaint the visible text loud while leaving the WRAPPER's computed colour
- * untouched, which is exactly the regression this pin describes. So every
- * colour reading below resolves the leaf first, with `paintedTextEl` declared
- * inside each `page.evaluate` because that body runs in the browser and cannot
- * see anything from this module's scope.
+ * Everything the title's legibility actually depends on, measured once in the
+ * page and shared by the two tests below.
+ *
+ * Three things a blinded reviewer of this PR showed a naive reading misses:
+ *
+ * 1. `.wave-track-name` is a WRAPPER. The characters live in its inner
+ *    `<span>`, which already carries rules of its own. `color` inherits, so
+ *    the two agree today - but `.wave-track-name > span { color: var(--rb-text) }`
+ *    repaints the visible text loud while leaving the wrapper untouched.
+ *    So the leaf is what gets read.
+ * 2. `getComputedStyle(el).color` is the SPECIFIED colour, not the pixel.
+ *    `opacity` is a separate compositing step it cannot see, and a `color`
+ *    alpha below 1 is a blend it does not perform. `opacity: 0.5` on the
+ *    title is the single most likely next edit if a future pin says "still
+ *    too loud", and it would halve the real contrast while leaving every
+ *    naive assertion green. So the colour is COMPOSITED here: the alpha of
+ *    the text colour times the accumulated `opacity` of every element
+ *    between the text and the surface it sits on, blended over that surface.
+ *    Opacity on the backdrop-painting element itself is deliberately NOT
+ *    counted - it dims the text and its own background together, which
+ *    leaves the ratio between them unchanged.
+ * 3. `filter`, `mix-blend-mode` and a gradient `background-image` change the
+ *    painted result in ways this arithmetic genuinely cannot model. They are
+ *    collected as `blockers` and asserted empty, so the day one appears the
+ *    test fails loudly instead of quietly reporting a colour nothing is
+ *    painted in.
+ *
+ * The whole measurement is one `page.evaluate` because its body runs in the
+ * browser and cannot see anything from this module's scope - one copy rather
+ * than the same helpers redeclared per test.
  */
-test('the waveform track title paints the secondary text token, not the primary one', async ({
-	page,
-	request
-}) => {
-	await _deckOneLoaded(page, request);
-	// Both tokens are resolved through a real probe element rather than string
-	// -compared against theme.css, so this asserts on the same rgb() values the
-	// compositor uses and cannot drift from the theme's own units.
-	const measured = await page.locator('.wave-track-name').first().evaluate((node) => {
-		const paintedTextEl = (el: Element): Element => el.querySelector(':scope > span') ?? el;
+interface TitlePaint {
+	/** The leaf's own `color`, uncomposited - what the token comparison needs. */
+	painted: string;
+	dim: string;
+	primary: string;
+	/** `color` alpha x accumulated ancestor opacity, in [0, 1]. */
+	effectiveAlpha: number;
+	/** The first fully opaque background behind the text. */
+	backdrop: [number, number, number] | null;
+	/** `painted` blended over `backdrop` at `effectiveAlpha`. */
+	composited: [number, number, number] | null;
+	blockers: string[];
+}
+
+async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
+	return await page.locator('.wave-track-name').first().evaluate((node): TitlePaint => {
+		const leaf = node.querySelector(':scope > span') ?? node;
+		const channels = (value: string): number[] | null => {
+			const parts = value.match(/[\d.]+/g);
+			if (parts === null || parts.length < 3) return null;
+			return parts.map(Number);
+		};
+		const alphaOf = (value: string): number => {
+			const parsed = channels(value);
+			if (parsed === null) return 0;
+			return parsed.length >= 4 ? parsed[3] : 1;
+		};
+
+		// Both tokens through a real probe, so this compares the same rgb()
+		// values the compositor uses rather than string-matching theme.css.
 		const scope = node.closest('.perf-root') ?? document.body;
 		const probe = document.createElement('span');
 		scope.appendChild(probe);
@@ -96,8 +137,53 @@ test('the waveform track title paints the secondary text token, not the primary 
 		const dim = resolve('--rb-text-dim');
 		const primary = resolve('--rb-text');
 		probe.remove();
-		return { painted: getComputedStyle(paintedTextEl(node)).color, dim, primary };
+
+		const painted = getComputedStyle(leaf).color;
+		const paintedChannels = channels(painted);
+		let alpha = alphaOf(painted);
+		let backdrop: [number, number, number] | null = null;
+		const blockers: string[] = [];
+		let element: Element | null = leaf;
+		while (element !== null) {
+			const style = getComputedStyle(element);
+			const name = element.className === '' ? element.tagName : String(element.className);
+			if (style.filter !== 'none') blockers.push(`${name}: filter ${style.filter}`);
+			if (style.mixBlendMode !== 'normal') {
+				blockers.push(`${name}: mix-blend-mode ${style.mixBlendMode}`);
+			}
+			if (backdrop === null) {
+				if (style.backgroundImage !== 'none') {
+					blockers.push(`${name}: background-image ${style.backgroundImage}`);
+				}
+				const bg = channels(style.backgroundColor);
+				if (bg !== null && alphaOf(style.backgroundColor) === 1) {
+					backdrop = [bg[0], bg[1], bg[2]];
+					// Opacity at and above the backdrop dims text and surface
+					// alike, so it stops counting here.
+					break;
+				}
+				alpha *= Number(style.opacity);
+			}
+			element = element.parentElement;
+		}
+
+		const composited: [number, number, number] | null =
+			paintedChannels === null || backdrop === null
+				? null
+				: [0, 1, 2].map(
+						(i) => paintedChannels[i] * alpha + backdrop![i] * (1 - alpha)
+					) as [number, number, number];
+
+		return { painted, dim, primary, effectiveAlpha: alpha, backdrop, composited, blockers };
 	});
+}
+
+test('the waveform track title paints the secondary text token, not the primary one', async ({
+	page,
+	request
+}) => {
+	await _deckOneLoaded(page, request);
+	const measured = await _measureTitlePaint(page);
 	expect(measured.dim, 'the dim and primary tokens must differ, or this proves nothing').not.toBe(
 		measured.primary
 	);
@@ -112,62 +198,31 @@ test('the painted title clears the 4.5:1 AA floor against what is actually behin
 	request
 }) => {
 	await _deckOneLoaded(page, request);
-	// The backdrop is found by walking ancestors for the first non-transparent
-	// background, which is what a reader's eye does: the title's own
-	// background is transparent, so the token it sits on is a fact about the
-	// rendered tree rather than about the stylesheet.
-	const measured = await page.locator('.wave-track-name').first().evaluate((node) => {
-		const paintedTextEl = (el: Element): Element => el.querySelector(':scope > span') ?? el;
-		const channels = (value: string): number[] | null => {
-			const parts = value.match(/[\d.]+/g);
-			if (parts === null || parts.length < 3) return null;
-			return parts.map(Number);
-		};
-		/** Any alpha at all - text is painted at its own colour regardless. */
-		const rgb = (value: string): [number, number, number] | null => {
-			const parsed = channels(value);
-			if (parsed === null || (parsed.length >= 4 && parsed[3] === 0)) return null;
-			return [parsed[0], parsed[1], parsed[2]];
-		};
-		/** Alpha 1 only - anything less lets the surface behind it through. */
-		const opaqueRgb = (value: string): [number, number, number] | null => {
-			const parsed = channels(value);
-			if (parsed === null) return null;
-			if (parsed.length >= 4 && parsed[3] < 1) return null;
-			return [parsed[0], parsed[1], parsed[2]];
-		};
-		const painted = rgb(getComputedStyle(paintedTextEl(node)).color);
-		// Walk to the first FULLY OPAQUE background. A semi-transparent
-		// surface (`.rb-waverow.deck-focus` paints a color-mix whose alpha is
-		// below 1) is not the backdrop - the thing behind it still shows
-		// through - so treating it as one would report a ratio against a
-		// colour nothing is ever painted in.
-		let backdrop: [number, number, number] | null = null;
-		let element: Element | null = node;
-		while (element !== null && backdrop === null) {
-			backdrop = opaqueRgb(getComputedStyle(element).backgroundColor);
-			element = element.parentElement;
-		}
-		return { painted, backdrop };
-	});
-	expect(measured.painted, 'the title must have a resolvable colour').not.toBeNull();
+	const measured = await _measureTitlePaint(page);
+	expect(
+		measured.blockers,
+		'filter/mix-blend-mode/gradient change the painted result in ways this arithmetic ' +
+			'cannot model - the ratio below would be a number about nothing'
+	).toEqual([]);
 	expect(measured.backdrop, 'some ancestor must paint an opaque background').not.toBeNull();
+	expect(measured.composited, 'the title must have a resolvable painted colour').not.toBeNull();
 
-	const luminance = (channels: [number, number, number]): number => {
-		const [r, g, b] = channels
+	const luminance = (rgb: [number, number, number]): number => {
+		const [r, g, b] = rgb
 			.map((channel) => channel / 255)
 			.map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
 		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 	};
 	const [lighter, darker] = [
-		luminance(measured.painted!),
+		luminance(measured.composited!),
 		luminance(measured.backdrop!)
 	].sort((left, right) => right - left);
 	const ratio = (lighter + 0.05) / (darker + 0.05);
 	expect(
 		ratio,
-		`title ${JSON.stringify(measured.painted)} on ${JSON.stringify(measured.backdrop)} ` +
-			`measures ${ratio.toFixed(2)}:1`
+		`title ${JSON.stringify(measured.painted)} at effective alpha ` +
+			`${measured.effectiveAlpha} composites to ${JSON.stringify(measured.composited)} ` +
+			`on ${JSON.stringify(measured.backdrop)} and measures ${ratio.toFixed(2)}:1`
 	).toBeGreaterThanOrEqual(AA_CONTRAST_FLOOR);
 });
 
