@@ -73,6 +73,35 @@
 			.filter((row) => row.refusal !== null)
 	);
 
+	/**
+	 * Flags that are OFF for a reason that is not the App Store build: a plain
+	 * override, or an explicit MDT_FEATURE_FLAGS_FILE.
+	 *
+	 * These need their own row rather than falling through the gap between the
+	 * two branches below. `storeBuildRefusal` returns null both for a flag that
+	 * is ON and for one turned off locally - correct, because neither entitles
+	 * anything to say "App Store" - so filtering only on `refusal !== null` left
+	 * a locally-disabled flag listed nowhere, and the panel then rendered "Every
+	 * capability openDJ ships is available in this build" while one was off.
+	 * A panel whose whole job is to state what this build cannot do must not
+	 * claim it can do everything (PR #1668 round-4 P2).
+	 *
+	 * The row carries NO App Store attribution, mirroring the split
+	 * `usb_export.py::_disabled_response` already makes on the server: blaming
+	 * Apple's sandbox for a decision this machine made on its own is the same
+	 * misattribution the fourth state exists to prevent, pointed the other way.
+	 */
+	const disabledLocally = $derived(
+		buildFlags.flags.filter(
+			(flag) => !flag.enabled && storeBuildRefusal(flag.flag_id) === null
+		)
+	);
+
+	/** Nothing is switched off, by the store build or by this machine. */
+	const everythingAvailable = $derived(
+		absentInThisBuild.length === 0 && disabledLocally.length === 0
+	);
+
 	onMount(() => {
 		// This overlay is mounted at the root but starts closed, so its
 		// who-am-I is the second /auth/me of the boot burst and the one
@@ -242,28 +271,49 @@
 							</p>
 						{:else if !buildFlags.loaded}
 							<p class="ac-muted">Reading this build's capabilities from the daemon...</p>
-						{:else if absentInThisBuild.length === 0}
+						{:else if everythingAvailable}
 							<p
 								class="ac-muted"
-								title="Build profile {buildFlags.profile}, sandboxed: {buildFlags.sandboxed}. No declared capability is switched off for this build."
+								title="Build profile {buildFlags.profile}, sandboxed: {buildFlags.sandboxed}. No declared capability is switched off, by this build or by this machine."
 							>
 								Every capability openDJ ships is available in this build.
 							</p>
 						{:else}
-							<p class="ac-muted">
-								This build does not include the following. They are not missing from
-								openDJ and they are not withheld from your account; this particular
-								build cannot offer them.
-							</p>
-							<ul class="ac-features">
-								{#each absentInThisBuild as row (row.flag.flag_id)}
-									<li>
-										<span class="ac-store-label ac-mono">{row.flag.flag_id}</span>
-										<span class="ac-muted" title={row.refusal}>Not in this build</span>
-										<span class="ac-muted">{row.flag.note}</span>
-									</li>
-								{/each}
-							</ul>
+							{#if absentInThisBuild.length > 0}
+								<p class="ac-muted">
+									This build does not include the following. They are not missing from
+									openDJ and they are not withheld from your account; this particular
+									build cannot offer them.
+								</p>
+								<ul class="ac-features">
+									{#each absentInThisBuild as row (row.flag.flag_id)}
+										<li>
+											<span class="ac-store-label ac-mono">{row.flag.flag_id}</span>
+											<span class="ac-muted" title={row.refusal}>Not in this build</span>
+											<span class="ac-muted">{row.flag.note}</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+							{#if disabledLocally.length > 0}
+								<p class="ac-muted">
+									Turned off by this machine's own configuration, not by the build.
+									Whatever switched these off can switch them back on.
+								</p>
+								<ul class="ac-features">
+									{#each disabledLocally as flag (flag.flag_id)}
+										<li>
+											<span class="ac-store-label ac-mono">{flag.flag_id}</span>
+											<span
+												class="ac-muted"
+												title="Off in this daemon's flag file ({buildFlags.profile} profile). Nothing about the App Store or your plan is involved."
+												>Turned off here</span
+											>
+											<span class="ac-muted">{flag.note}</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						{/if}
 					</section>
 
