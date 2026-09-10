@@ -25,7 +25,7 @@ tier          meaning
 MIK-AUDIT section 3 recorded that NOT ONE MIK stored path resolved. That is now
 stale: re-measured here Tue 28 Jul 2026, 575 of 7,026 decoded bookmark paths
 resolve, because the ``af--link-repair`` workflow has been relocating files back
-under ``/Users/dev``. Re-run rather than quoting either number.
+under the owner's home directory. Re-run rather than quoting either number.
 
 Stdlib only on purpose: the heavy-dependency measurement scripts import this
 module from their own PEP 723 environments.

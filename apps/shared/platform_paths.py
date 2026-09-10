@@ -303,13 +303,13 @@ def resolve_local(path: Path) -> Path:
 
     A foreign-absolute path has no location on this machine, and
     ``Path.resolve`` does not say so -- on Windows it silently anchors a
-    drive-less ``/Users/dev`` to the current drive (``D:/Users/dev``), which
+    drive-less ``/Users/user`` to the current drive (``D:/Users/user``), which
     is a fabricated path that then compares unequal to the one the caller
     passed in. Foreign-absolute paths come back untouched; native ones
     resolve as before so symlinked roots still normalise.
 
     The Windows arm asks the Path, not its text: ``WindowsPath`` renders a
-    Mac ``/Users/dev`` as ``\\Users\\dev``, so the string test for a leading
+    Mac ``/Users/user`` as ``\\Users\\user``, so the string test for a leading
     ``/`` never sees it. Rooted-but-drive-less IS the condition -- that is
     exactly the path whose location depends on the current drive.
     """
@@ -367,7 +367,7 @@ def resolve_library_path(
     2. ``/PIONEER/...`` share-relative -> ``SHARE_ROOT / path.lstrip("/")``,
        reason "share".
     3. Remote mode + Mac ``/Users/...`` prefix: skip native (a leftover
-       ``/Users/dev`` tree on Linux must not win). Path-map only, or
+       ``/Users/user`` tree on Linux must not win). Path-map only, or
        ``resolved=None, reason="unmapped:remote"``.
     4. Absolute path native to THIS OS: if the file is materialised here,
        use it (reason "native"). If it is missing, apply :class:`PathMap`
