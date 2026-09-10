@@ -8,6 +8,11 @@ question at once.
 Regression lines:
 - if any enumerated spelling stops being detected then broken
 - if the Linux home rule starts folding case then broken (see the test for why)
+- if an exemption stops where its reason stops, in EITHER direction, then broken
+- if a URL authority before a home path stops exempting a URL route then broken
+- if the trailing-delimiter strip stops covering a JSON comma, a plist angle
+  bracket or a semicolon then broken
+- if the trailing-delimiter strip starts exempting a real login then broken
 """
 
 from __future__ import annotations
@@ -35,6 +40,8 @@ def _write(tmp_path: Path, name: str, text: str) -> Path:
 # more (an unfolded Linux rule) before a reviewer did. Values are assembled from
 # fragments because this file is scanned by the gate it tests.
 _L = "jdoe"
+_USERS = "/" + "Users" + "/"
+_HOME = "/" + "home" + "/"
 _CLASS_SPACE: tuple[tuple[str, str], ...] = (
     ("mac lower", "/" + "users" + "/" + _L),
     ("mac upper", "/" + "USERS" + "/" + _L),
@@ -120,6 +127,35 @@ _EXEMPTION_EDGES = [
     ("an unlisted all-caps segment", "/" + "Users" + "/$JANE/x", True),
     ("an unlisted all-caps profile", "C:\\" + "Users" + "\\$JANE\\Music", True),
     ("an unlisted all-caps local part", "$JANE@private-" + "domain.com", True),
+    # #1808 added one more exemption and widened an existing one. Each gets the
+    # same two-directional treatment as the pair above, because the exempt side
+    # alone is the direction that cannot fail: an exemption that has swallowed
+    # the whole class passes it.
+    #
+    # A URL AUTHORITY running straight into the match makes the segment a URL
+    # ROUTE rather than a home. The home rule is case-insensitive precisely so a
+    # lowercase spelling of a real home is caught, and that fold is what made
+    # the GitHub REST API's own `/users/<login>` shape read as a home directory
+    # (#1808: 130 matches in one recorded check-runs fixture, 3582 on the tree).
+    ("a url route, not a home", "https://api.github.com" + "/" + "users" + "/" + _L, False),
+    # The overshoot control, and the reason the exemption is ANCHORED at the
+    # end: an authority that does not run into the match is just a URL, so the
+    # segment after it is an ordinary path and must still be reported.
+    ("a url path with a segment before the home", "https://example.com/x" + _HOME + _L, True),
+    # The trailing-delimiter strip covers the punctuation a capture runs into at
+    # a boundary: a comma-separated PATH list ends a segment at the comma, a
+    # plist element at the angle bracket, a shell or SQL fragment at the
+    # semicolon. Each probe is shaped so that the delimiter under test is what
+    # ENDS the capture -- a quoted JSON value would end it at the quote, and the
+    # row would then pass whatever the strip did with a comma.
+    ("a comma-separated path list", "PATH=" + _USERS + "dev" + "," + _USERS + "user", False),
+    ("a plist element, trailing angle bracket", "<string>" + _USERS + "dev" + "</string>", False),
+    ("a semicolon-terminated segment", "ran on " + _USERS + "dev" + "; then rebuilt", False),
+    # The direction that makes it a STRIP rather than a shape rule: the check
+    # after the strip is still the exact-match list, so a real login carrying
+    # the same punctuation is reported rather than exempted.
+    ("a real login, trailing comma", "PATH=" + _USERS + _L + "," + _USERS + "dev", True),
+    ("a real login, trailing angle bracket", "<string>" + _USERS + _L + "</string>", True),
 ]
 
 
