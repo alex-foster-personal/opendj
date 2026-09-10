@@ -567,8 +567,12 @@ test('evictAnlzCacheEntriesServingOtherSource evicts only entries whose beatgrid
 	// fabricated globalThis.fetch onto this file's real fixture server per
 	// discussion_r3974993960 (P1 BLOCKING): the old version could pass with the
 	// production /anlz route, beatgrid_source resolution, and parser all broken.
-	cache.invalidateAnlzCacheEntry(SID_TRACK_A);
-	cache.invalidateAnlzCacheEntry(SID_TRACK_B);
+	//
+	// Full invalidation, not just these two ids: eviction sweeps the WHOLE
+	// shared cache, and an earlier test in this file can leave an unrelated
+	// track (SID_MIK_BPM, SID_SLOW, ...) cached under 'rekordbox' - which
+	// would make this test's "true" assertion pass for the wrong reason.
+	cache.invalidateAllAnlzCacheEntries();
 	try {
 		await daemonSelect('own');
 		cache.ensureAnlz(SID_TRACK_A);
@@ -599,14 +603,42 @@ test('evictAnlzCacheEntriesServingOtherSource evicts only entries whose beatgrid
 });
 
 test('evictAnlzCacheEntriesServingOtherSource reports nothing evicted when every cached entry already agrees (discussion_r3973991969 P1 BLOCKING)', async () => {
-	cache.invalidateAnlzCacheEntry(SID_TRACK_A);
-	await daemonSelect('own');
-	cache.ensureAnlz(SID_TRACK_A);
-	await new Promise((resolve) => setTimeout(resolve, 200));
-	assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
+	// An empty cache or a permanently broken eviction function would also
+	// report `false` here - the control below (a real disagreeing entry,
+	// evicted in the SAME call) is what proves this `false` means "nothing
+	// disagreed" rather than "this function reports nothing, ever". Full
+	// invalidation (not just these two ids), for the same reason as the
+	// preceding test: eviction sweeps the WHOLE shared cache.
+	cache.invalidateAllAnlzCacheEntries();
+	try {
+		await daemonSelect('own');
+		cache.ensureAnlz(SID_TRACK_A);
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
 
-	const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
+		const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
 
-	assert.equal(evicted, false, 'nothing disagreed, so the caller must not bump the fetch generation for no reason');
-	assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
+		assert.equal(
+			evicted,
+			false,
+			'nothing disagreed, so the caller must not bump the fetch generation for no reason'
+		);
+		assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
+
+		// Control: the same cache, same call shape, but now WITH a disagreeing
+		// entry - proves `false` above was a real report, not this function's
+		// only possible answer.
+		await daemonSelect('rbx');
+		cache.invalidateAnlzCacheEntry(SID_TRACK_B);
+		cache.ensureAnlz(SID_TRACK_B);
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		assert.equal(cache.getAnlzEntry(SID_TRACK_B)?.status, 'ready');
+		assert.equal(
+			cache.evictAnlzCacheEntriesServingOtherSource('own'),
+			true,
+			'control: a genuinely disagreeing entry must still be reported'
+		);
+	} finally {
+		await daemonSelect('own');
+	}
 });
