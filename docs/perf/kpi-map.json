@@ -111,7 +111,7 @@
         "waveform_dropped_frame_pct_10s",
         "waveform_frame_delta_ms_max"
       ],
-      "missing_kpi": "p95 rAF frame delta, dropped-frame percentage per 10s window, and max frame delta per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames. A fresh reviewer round found neither required KPI could ever report BREAKING, so a real freeze scored no worse than OVER: the spec's own breaking cell ('visible stutter / freeze while audible') names no duration, but a freeze is specifically a STOPPED canvas. A first attempt put a 1000ms breaking bound on the p95 KPI, and a second reviewer round correctly rejected it: p95 is the WRONG statistic for a single-event signal - one full-second freeze in a 10-second 60Hz capture is one slow sample among roughly 600, far below the ~30th-worst-sample rank p95 actually reads, so hundreds of healthy frames dilute it back near budget and the freeze vanishes from the number entirely. waveform_frame_delta_ms_max, the single worst gap in the window, cannot be diluted the same way: one freeze IS the max, regardless of how many healthy frames surround it. Its band is deliberately zero-width (budget = acceptable = breaking = 1000ms): an occasional single slow frame up to a second is ordinary OS/GC jitter, not a freeze, so there is no meaningful ACCEPTABLE/OVER middle state here the way there is for the p95 or dropped-frame distributions - a max gap past 1000ms reports BREAKING outright, nothing gentler.",
+      "missing_kpi": "p95 rAF frame delta, dropped-frame percentage per 10s window, and max frame delta per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames. A fresh reviewer round found neither required KPI could ever report BREAKING, so a real freeze scored no worse than OVER: the spec's own breaking cell ('visible stutter / freeze while audible') names no duration, but a freeze is specifically a STOPPED canvas. A first attempt put a 1000ms breaking bound on the p95 KPI, and a second reviewer round correctly rejected it: p95 is the WRONG statistic for a single-event signal - one full-second freeze in a 10-second 60Hz capture is one slow sample among roughly 600, far below the ~30th-worst-sample rank p95 actually reads, so hundreds of healthy frames dilute it back near budget and the freeze vanishes from the number entirely. waveform_frame_delta_ms_max, the single worst gap in the window, cannot be diluted the same way: one freeze IS the max, regardless of how many healthy frames surround it. Its band is deliberately zero-width (budget = acceptable = breaking = 999ms): an occasional single slow frame under a second is ordinary OS/GC jitter, not a freeze, so there is no meaningful ACCEPTABLE/OVER middle state here the way there is for the p95 or dropped-frame distributions - a max gap past 999ms reports BREAKING outright, nothing gentler. A third reviewer round caught that 1000ms itself, the literal one-second freeze this KPI exists to catch, is off by one: `verdict_for` checks `value <= budget` before it ever reaches the breaking comparison, so a zero-width band set to the exact round number let an exact one-second stall register PASS. The band sits at 999ms, one below the round number, so the stall duration this KPI is named for (>=1000ms) always lands on the BREAKING side of the boundary instead of the PASS side.",
       "lower_is_better": true,
       "budget": 16.7,
       "acceptable": 33.3,
@@ -147,9 +147,9 @@
           "kpi": "waveform_frame_delta_ms_max",
           "unit": "ms max frame delta per 10s window",
           "lower_is_better": true,
-          "budget": 1000,
-          "acceptable": 1000,
-          "breaking": 1000,
+          "budget": 999,
+          "acceptable": 999,
+          "breaking": 999,
           "unverifiable_columns": ["target", "acceptable", "breaking"]
         }
       ],
@@ -164,7 +164,7 @@
         "packaged_decode_throughput_mb_s",
         "settled_deck_load_fetchwall_ms_ab"
       ],
-      "missing_kpi": "The ledger holds a WORST case and a throughput, not a p95 over a named window. The boot-window and settled figures are the same scenario measured under two conditions and should be scored separately, because a user meeting the app for the first time only ever experiences the boot-window one.",
+      "missing_kpi": "The ledger holds a WORST case and a throughput, not a p95 over a named window. The boot-window and settled figures are the same scenario measured under two conditions and should be scored separately, because a user meeting the app for the first time only ever experiences the boot-window one. A reviewer round found that scoring packaged_deck_load_total_ms against one blended budget (2000) / acceptable (5000) pair let a WARM load that missed its own 2s target by nearly 4x still read ACCEPTABLE, because the tool cannot tell a warm reading from a cold one and defaulted to the generous cold band regardless. cache_state_bands now requires the reading's own note to say 'warm' or 'cold' before scoring: a warm-tagged reading is held to budget=acceptable=2000 (the spec states no separate warm-acceptable band, only a warm target), a cold-tagged reading to budget=acceptable=5000 (the spec states no separate cold-target band, only a cold acceptable), and breaking stays 10000 either way since the spec's breaking cell names no regime. A reading whose note names neither or both states goes UNMEASURED rather than guess which band applies - the existing 3,796ms row predates this and carries no warm/cold tag, so it will read UNMEASURED here until a re-capture records which state it ran under.",
       "lower_is_better": true,
       "budget": 2000,
       "acceptable": 5000,
@@ -176,7 +176,19 @@
         "breaking": ">10s"
       },
       "required": [
-        "packaged_deck_load_total_ms"
+        {
+          "kpi": "packaged_deck_load_total_ms",
+          "unit": "ms",
+          "lower_is_better": true,
+          "budget": 2000,
+          "acceptable": 5000,
+          "breaking": 10000,
+          "cache_state_bands": {
+            "warm": {"budget": 2000, "acceptable": 2000},
+            "cold": {"budget": 5000, "acceptable": 5000}
+          },
+          "unverifiable_columns": ["target", "acceptable", "breaking"]
+        }
       ],
       "context_kpis": [
         "packaged_decode_throughput_mb_s",

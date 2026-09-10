@@ -34,8 +34,6 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
-import math
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +46,14 @@ from scripts.perf.kpi_map_drift import (
     spec_scenario_ids,
     threshold_drift,
 )
+from scripts.perf.kpi_readings import (
+    Reading,
+    _classify_required_reading,
+    _cohort_mismatch_reason,
+    _missing_rejected_reasons,
+    newest_reading,
+)
+from scripts.perf.kpi_readings import age_in_days as age_in_days  # re-exported for callers
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SPEC = _REPO_ROOT / "specs" / "perf-latency-program.md"
@@ -55,28 +61,11 @@ _MAP = _REPO_ROOT / "docs" / "perf" / "kpi-map.json"
 _LEDGER = _REPO_ROOT / "docs" / "perf" / "kpi-ledger.json"
 
 UNMEASURED = "UNMEASURED"
-SUPERSEDED = "SUPERSEDED"
 
-_PERCENTILE = re.compile(r"p\d{2,3}")
-
-
-@dataclass(frozen=True)
-class Reading:
-    """One KPI's newest surviving measurement, or the absence of one."""
-
-    kpi: str
-    value: float | None
-    unit: str
-    date: str | None
-    source: str | None
-    superseded: bool
-    machine: str | None = None
-    note: str | None = None
-    capture_id: str | None = None
-
-    @property
-    def measured(self) -> bool:
-        return self.value is not None and not self.superseded
+# Reading selection/validation (Reading, newest_reading, age_in_days, the
+# _classify_required_reading family) lives in kpi_readings.py; imported above
+# and re-exported here so `from scripts.perf.kpi_scorecard import Reading`
+# etc. keeps working for existing callers and tests.
 
 
 @dataclass(frozen=True)
@@ -88,76 +77,6 @@ class Score:
     readings: tuple[Reading, ...]
     age_days: int | None
     note: str
-
-
-# ---------------------------------------------------------------- loading
-
-
-def newest_reading(entries: list[dict], kpi: str) -> Reading:
-    """The newest entry for `kpi`, treating a SUPERSEDED note as not a value.
-
-    A superseded row stays in the ledger on purpose so the retraction is
-    visible where the number is, but it must never be scored: that is how a
-    withdrawn number keeps being quoted.
-
-    `capture_id`, when a ledger entry names one, identifies the single
-    measurement session that produced it. `score_scenarios` uses it to
-    refuse combining two required KPIs' readings into one verdict when they
-    were recorded in demonstrably different sessions - see its own docstring.
-    """
-    matches = [e for e in entries if e.get("kpi") == kpi]
-    if not matches:
-        return Reading(kpi, None, "", None, None, superseded=False)
-    matches.sort(key=lambda e: str(e.get("date") or ""))
-    newest = matches[-1]
-    superseded = SUPERSEDED in str(newest.get("note", ""))
-    live = [e for e in matches if SUPERSEDED not in str(e.get("note", ""))]
-    if superseded and not live:
-        return Reading(
-            kpi,
-            None,
-            str(newest.get("unit", "")),
-            newest.get("date"),
-            str(newest.get("source") or ""),
-            True,
-            machine=newest.get("machine"),
-            note=newest.get("note"),
-            capture_id=newest.get("capture_id"),
-        )
-    if live:
-        newest = live[-1]
-    return Reading(
-        kpi,
-        _as_float(newest.get("value")),
-        str(newest.get("unit", "")),
-        newest.get("date"),
-        str(newest.get("source") or ""),
-        superseded=False,
-        machine=newest.get("machine"),
-        capture_id=newest.get("capture_id"),
-        note=newest.get("note"),
-    )
-
-
-def _as_float(value: object) -> float | None:
-    """A probed value, or None when it is not a trustworthy measurement.
-
-    Per docs/perf/learnings/_INDEX.md L-line convention, a probe returns -1
-    (never 0) when its subject never appeared, so a legitimate zero-valued
-    measurement (e.g. zero dropped keystrokes) must stay distinct from an
-    absent one. Rejecting any negative number therefore catches the sentinel
-    without touching a real reading, since every KPI this scores is a count,
-    duration, or rate that cannot go negative. NaN and +/-inf are rejected the
-    same way: neither is a value verdict_for can compare against a threshold.
-    """
-    if isinstance(value, bool):
-        return None
-    if not isinstance(value, (int, float)):
-        return None
-    result = float(value)
-    if not math.isfinite(result) or result < 0:
-        return None
-    return result
 
 
 # ---------------------------------------------------------------- scoring
@@ -209,192 +128,40 @@ def verdict_for(value: float, cfg: dict) -> str:
     return "OVER"
 
 
-def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
-    """`date_str` comes straight from a JSON ledger row, so its runtime type
-    is whatever a contributor typed, not what the `str | None` hint promises;
-    a bare int (20260909) or an array survives to here and
-    `date.fromisoformat` raises TypeError, not ValueError, for a non-str
-    argument. Reject those up front so a malformed row makes one reading
-    UNMEASURED instead of crashing the whole scorecard.
-    """
-    if not isinstance(date_str, str) or not date_str:
-        return None
-    try:
-        measured = _dt.date.fromisoformat(date_str)
-    except ValueError:
-        return None
-    return (today - measured).days
-
-
-def _needs_provenance(name: str, unit: str) -> bool:
-    """Is `name` a percentile, percentage, or rate KPI, which the spec's own
-    denominator-honesty note (specs/perf-latency-program.md, 'Denominator
-    honesty') requires to name its window and machine tier?
-
-    Scoped to percentile/percentage/rate KPIs specifically, matching the
-    note's own examples (dropped frames, xruns/hour, p95s) rather than every
-    KPI: a plain duration or count (deck load seconds, dropped-keystroke
-    count) has no window or sample size to misrepresent the same way a
-    percentile, a rate, or a percentage does. "hour" catches S1's xruns/hour
-    and silent-while-playing rate KPIs, the note's own rate example, without
-    matching a plain duration. The percentile match is a pattern
-    (`_PERCENTILE`, mirroring kpi_map_drift.py's `_PERCENTILE_LABEL`) rather
-    than a literal "p95", so renaming a KPI to p99 or any other percentile
-    cannot silently walk it out from under this gate.
-    """
-    haystack = f"{name} {unit}".lower()
-    return (
-        bool(_PERCENTILE.search(haystack))
-        or "%" in haystack
-        or "pct" in haystack
-        or "hour" in haystack
-    )
-
-
-@dataclass(frozen=True)
-class _ReadingCheck:
-    """Exactly one of these three is set, per how `_classify_required_reading`
-    resolved one required KPI's reading. A dataclass with three plain-typed
-    slots, rather than a `(status, str | tuple[float, int])` pair, so the
-    caller narrows by an `is not None` check mypy can actually follow instead
-    of unpacking a union it cannot prove is the tuple half.
-    """
-
-    ok: tuple[float, int] | None = None
-    missing_name: str | None = None
-    rejected_reason: str | None = None
-
-
-def _classify_required_reading(
-    req: dict, by_name: dict[str, Reading], today: _dt.date
-) -> _ReadingCheck:
-    """One required KPI's reading: present and trustworthy (`ok`), absent
-    (`missing_name`), or present but not trustworthy (`rejected_reason`).
-
-    Split out of `score_scenarios`'s own loop to keep that function's branch
-    count under the file's complexity ceiling; the four rejection checks
-    share nothing but "this reading cannot be trusted, stop here".
-    """
-    name = req["kpi"]
-    reading = by_name.get(name)
-    if reading is None or not reading.measured or reading.value is None:
-        return _ReadingCheck(missing_name=name)
-    if reading.unit != req["unit"]:
-        return _ReadingCheck(
-            rejected_reason=f"{name} recorded in {reading.unit!r}, map expects {req['unit']!r}"
-        )
-    age = age_in_days(reading.date, today)
-    if age is None or age < 0:
-        return _ReadingCheck(
-            rejected_reason=(
-                f"{name} has a missing, malformed, or future-dated reading ({reading.date!r})"
-            )
-        )
-    if _needs_provenance(name, req["unit"]) and not (reading.machine and reading.note):
-        return _ReadingCheck(
-            rejected_reason=(
-                f"{name} is a p95/percentage KPI recorded without a machine tier "
-                f"and measurement window/denominator (machine={reading.machine!r}, "
-                f"note={reading.note!r}), required by the denominator-honesty note "
-                "in specs/perf-latency-program.md"
-            )
-        )
-    if not reading.source:
-        return _ReadingCheck(
-            rejected_reason=(
-                f"{name} has no recorded source, so its measurement cannot be "
-                "traced back to evidence"
-            )
-        )
-    return _ReadingCheck(ok=(reading.value, age))
-
-
-def _normalize_capture_id(raw: object) -> str | None:
-    """A ledger row's `capture_id` reduced to `None` (absent, blank, or not a
-    string) or the stripped string itself. Closes two reviewer-found gaps: a
-    blank string used to count as one NAMED cohort (the set held one member,
-    not `None`); a non-string JSON value (an array or object) reached a
-    bare `{...}` set literal and crashed with `TypeError: unhashable type`.
-    """
-    if not isinstance(raw, str):
-        return None
-    return raw.strip() or None
-
-
-def _cohort_mismatch_reason(
-    scoreable: list[tuple[dict, float, int]], by_name: dict[str, Reading]
-) -> str | None:
-    """Do the scoreable required readings fail to share one NAMED evidence
-    cohort (capture_id), so they must not be combined into one verdict?
-
-    Split out of `score_scenarios` to keep that function's branch count
-    under the file's complexity ceiling; see that function's own docstring
-    for why an unnamed capture id does not excuse a reading from this check.
-    """
-    capture_ids = {
-        _normalize_capture_id(by_name[req["kpi"]].capture_id) for req, _, _ in scoreable
-    }
-    if len(capture_ids) == 1 and None not in capture_ids:
-        return None
-    return "required KPIs do not share one evidence cohort (capture_id): " + ", ".join(
-        f"{req['kpi']}={by_name[req['kpi']].capture_id!r}" for req, _, _ in scoreable
-    )
-
-
-def _missing_rejected_reasons(missing: list[str], rejected: list[str]) -> list[str]:
-    """The shared "required KPI not recorded"/"required KPI rejected" prose,
-    built once instead of twice in `score_scenarios`'s two note-assembly
-    branches, to keep that function's branch count under the complexity
-    ceiling.
-    """
-    reasons = []
-    if missing:
-        reasons.append(f"required KPI not recorded: {', '.join(missing)}")
-    if rejected:
-        reasons.append(f"required KPI rejected: {'; '.join(rejected)}")
-    return reasons
-
-
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
     """Score each scenario on its REQUIRED KPIs alone.
 
     Anything else bound to a scenario is context: it prints, it never scores.
-    A reviewer showed why an any-measured test was not enough. S2 would have
-    reported PASS the moment press-to-schedule was recorded, while
-    press-to-AUDIBLE, the number the scenario exists for, was still missing.
-    That recreates the partial pass this tool exists to prevent.
+    An any-measured test was not enough - S2 would report PASS the moment
+    press-to-schedule was recorded, while press-to-AUDIBLE, the number the
+    scenario exists for, was still missing. That is the partial pass this
+    tool exists to prevent.
 
     A required reading that cannot be trusted scores nothing, per
     .claude/rules/verification.md: refuse rather than assume. Two ways a
-    reading fails that trust without ever being absent: it is recorded in a
-    unit the map does not expect, or its date is missing, malformed, or in the
-    future. Either one used to fall through to verdict_for anyway - a wrong
-    unit produced a false verdict outright, and a bad date produced a real
-    verdict with no age, which let `--max-stale-days` exit 0 on evidence it
-    never actually checked.
+    reading fails that trust without being absent: a unit the map does not
+    expect, or a date missing, malformed, or in the future. Either used to
+    fall through to verdict_for anyway - a wrong unit produced a false
+    verdict outright, a bad date a real verdict with no age, letting
+    `--max-stale-days` exit 0 on evidence it never checked.
 
-    A confirmed BREAKING verdict among the scoreable required KPIs is
-    reported as BREAKING even when another required KPI is still missing or
-    rejected, rather than collapsing to UNMEASURED. Missing evidence
-    elsewhere cannot un-break a KPI that has already, conclusively, broken:
-    S7's dropped-keystroke count reading BREAKING must not vanish just
-    because the paired latency p95 has not been recorded yet. This does not
-    extend to OVER or ACCEPTABLE, which are directional judgments a still-
-    missing companion KPI could plausibly change the overall picture around;
-    only BREAKING is unconditionally the floor.
+    A confirmed BREAKING verdict among the scoreable required KPIs reports
+    BREAKING even when another required KPI is still missing or rejected,
+    rather than collapsing to UNMEASURED: missing evidence elsewhere cannot
+    un-break a KPI that has already, conclusively, broken (S7's
+    dropped-keystroke count BREAKING must not vanish for want of a paired
+    latency p95). OVER/ACCEPTABLE do not get this floor, since a still-
+    missing companion could plausibly change the picture; only BREAKING does.
 
-    A scenario requiring more than one KPI (S2's audible+visual, S4's frame
-    delta+dropped frames+max, S7's latency+drop count, S6's
-    duration+blockage) must not combine them into one non-BREAKING verdict
-    unless the evidence says they were captured together: each required
-    KPI's newest reading is picked independently, so nothing before this
-    stopped an audible p99 from one press-testing session pairing with a
-    visual p95 from an unrelated one. A ledger entry names its measurement
-    session via `capture_id`; readings combine ONLY when every one of them
-    names the SAME non-null, non-blank capture id - missing, blank, or
-    differing all reject the same way, since none of those can prove a
-    shared session. As with the BREAKING carve-out above, a KPI that is
-    independently, conclusively BREAKING needs no cohort at all.
+    A scenario requiring more than one KPI (S2, S4, S6, S7) must not combine
+    them into one non-BREAKING verdict unless the evidence says they were
+    captured together: each required KPI's newest reading is picked
+    independently, so nothing stops an audible p99 from one session pairing
+    with a visual p95 from an unrelated one. A ledger entry's `capture_id`
+    names its session; readings combine ONLY when every one names the SAME
+    non-null, non-blank id - missing, blank, or differing all reject the same
+    way, none can prove a shared session. As above, a conclusively BREAKING
+    KPI needs no cohort at all.
     """
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
@@ -408,8 +175,8 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
         for req in required:
             check = _classify_required_reading(req, by_name, today)
             if check.ok is not None:
-                value, age = check.ok
-                scoreable.append((req, value, age))
+                effective_req, value, age = check.ok
+                scoreable.append((effective_req, value, age))
             elif check.missing_name is not None:
                 missing.append(check.missing_name)
             elif check.rejected_reason is not None:
