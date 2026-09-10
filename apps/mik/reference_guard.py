@@ -38,6 +38,7 @@ Regression lines:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -224,10 +225,12 @@ def decision_document_states_the_decision(
             f"{decision.module}: decision {decision.decision} names {decision.record}, "
             "which is not in the tree. A decision with no document is a name, not a decision."
         )
-    if decision.decision not in document.read_text(encoding="utf-8"):
+    token = re.compile(rf"\b{re.escape(decision.decision)}\b")
+    if not token.search(document.read_text(encoding="utf-8")):
         raise MikImportDecisionUnrecorded(
             f"{decision.record} does not state {decision.decision}; the document must be the "
-            "record of THIS decision, not a pointer at it"
+            "record of THIS decision, not a pointer at it, and not a longer id that merely "
+            "starts with it"
         )
     return document
 

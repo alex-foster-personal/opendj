@@ -19,6 +19,7 @@ Regression lines:
   - if the guard admits a module that is not in the registry then broken
   - if the guard refuses a module that IS in the registry then broken
   - if a recorded decision names a record document that does not exist then broken
+  - if a document stating a longer decision id satisfies a shorter one then broken
   - if an unreadable registry is read as an empty one then broken
   - if an import decision is recorded without editing this suite then broken
 """
@@ -158,6 +159,21 @@ def test_two_decisions_for_one_action_are_refused(tmp_path: Path) -> None:
     )
     with pytest.raises(reference_guard.MikImportDecisionUnrecorded):
         reference_guard.load_import_decisions(registry, tmp_path)
+
+
+def test_a_document_stating_a_longer_decision_id_does_not_satisfy_a_shorter_one(
+    tmp_path: Path,
+) -> None:
+    """A prefix match is not the same decision: MIK-IMPORT-100 does not back MIK-IMPORT-10."""
+    record = tmp_path / "decision.md"
+    record.write_text("Decision MIK-IMPORT-100 records why this import was approved.\n", "utf-8")
+    registry = write_registry(
+        tmp_path / "registry.json",
+        [registry_entry("apps/mik/load.py", "MIK-IMPORT-10")],
+    )
+    with pytest.raises(reference_guard.MikImportDecisionUnrecorded) as excinfo:
+        reference_guard.load_import_decisions(registry, tmp_path)
+    assert "MIK-IMPORT-10" in str(excinfo.value)
 
 
 def test_a_decision_record_outside_the_tree_is_refused(tmp_path: Path) -> None:

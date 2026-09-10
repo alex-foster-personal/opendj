@@ -88,6 +88,7 @@ TEXT_SUFFIXES: tuple[str, ...] = (
     ".sh",
     ".svelte",
     ".ts",
+    ".tsx",
     ".yaml",
     ".yml",
 )
@@ -176,20 +177,39 @@ def docstring_constants(tree: ast.Module) -> set[int]:
     return found
 
 
-def literal_string(node: ast.AST) -> str | None:
-    """Raw string value of a ``+``-concatenation of literals, or None.
+def literal_string(node: ast.AST, bindings: dict[str, list[str]] | None = None) -> str | None:
+    """Raw string value of a ``+``-concatenation or f-string of literals, or None.
 
     Kept separate from :func:`literal_parts`: concatenation joins characters,
     not path segments, so ``"data/reference/" + "mik"`` must be glued into one
     string BEFORE it is split on ``/`` -- splitting each side first and
     rejoining the segment lists would lose the seam between "reference/" and
-    "mik" and never produce the adjacent pair the tail check looks for.
+    "mik" and never produce the adjacent pair the tail check looks for. An
+    f-string's ``{name}`` slot is resolved the same way a bound NAME is
+    elsewhere: through ``bindings``, rejoined on ``/`` so the surrounding
+    literal text can be glued to it character for character.
     """
+    known = bindings or {}
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
+    if isinstance(node, ast.Name):
+        return "/".join(known[node.id]) if node.id in known else None
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = literal_string(node.left), literal_string(node.right)
+        left, right = literal_string(node.left, known), literal_string(node.right, known)
         return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        pieces: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                pieces.append(value.value)
+                continue
+            if not isinstance(value, ast.FormattedValue):
+                return None
+            resolved = literal_string(value.value, known)
+            if resolved is None:
+                return None
+            pieces.append(resolved)
+        return "".join(pieces)
     return None
 
 
@@ -197,15 +217,15 @@ def literal_parts(node: ast.AST, bindings: dict[str, list[str]] | None = None) -
     """Ordered literal segments of a path expression built from strings, or None.
 
     Handles ``Path("a", "b")``, ``os.path.join("a", "b")``, ``Path("a").joinpath("b")``,
-    ``"a/" + "b"``, the ``/`` operator chained over literals and over a variable
-    base, and a NAME that was assigned a path expression earlier in the file. A
+    ``"a/" + "b"``, ``f"a/{b}"``, the ``/`` operator chained over literals and over a
+    variable base, and a NAME that was assigned a path expression earlier in the file. A
     non-literal operand contributes nothing rather than making the whole
     expression opaque: the corpus tail only has to appear somewhere in the
     literal run for the read to be classified, and ``DATA_DIR / "reference" / "mik"``
     is exactly that shape.
     """
     known = bindings or {}
-    concatenated = literal_string(node)
+    concatenated = literal_string(node, known)
     if concatenated is not None:
         return split_segments(concatenated)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -285,7 +305,7 @@ def corpus_sites(tree: ast.Module) -> list[str]:
                 continue
             if names_corpus(split_segments(node.value)) or GUARD_MODULE in node.value:
                 sites.setdefault(line, f"line {line}: {node.value!r}")
-        elif isinstance(node, ast.BinOp | ast.Call):
+        elif isinstance(node, ast.BinOp | ast.Call | ast.JoinedStr):
             parts = literal_parts(node, bindings)
             if parts is not None and names_corpus(parts):
                 sites.setdefault(line, f"line {line}: {'/'.join(parts)}")
