@@ -66,6 +66,81 @@ class KeyEstimate:
     margin: float
 
 
+#: The 24 candidates are one rotation per pitch class in each mode, indexed
+#: ``2 * pitch_class + (1 if minor else 0)``. One index space, so the
+#: correlation matrix, the Viterbi path and a segment's label cannot drift
+#: apart the way two hand-kept orderings would.
+N_KEYS = 24
+
+
+def key_for_index(index: int) -> Key:
+    if not 0 <= index < N_KEYS:
+        raise ValueError(f"key index must be 0..{N_KEYS - 1}, got {index}")
+    return Key(pitch_class=index // 2, is_minor=bool(index % 2))
+
+
+def _unit(vector: np.ndarray) -> np.ndarray:
+    return vector / (np.linalg.norm(vector) + 1e-9)
+
+
+def _profile_matrix(major_profile: np.ndarray, minor_profile: np.ndarray) -> np.ndarray:
+    """``(24, 12)``: row ``i`` is ``key_for_index(i)``'s profile, index-0-is-C.
+
+    ``np.roll(profile, pitch_class)`` moves the profile's tonic (its position
+    0) to the pitch class it is being scored as, which is the rotation
+    `_estimate` performed one candidate at a time.
+    """
+    major_norm = _unit(major_profile)
+    minor_norm = _unit(minor_profile)
+    return np.stack(
+        [
+            np.roll(major_norm if index % 2 == 0 else minor_norm, index // 2)
+            for index in range(N_KEYS)
+        ]
+    )
+
+
+def correlation_matrix(
+    chroma: np.ndarray,
+    major_profile: np.ndarray | None = None,
+    minor_profile: np.ndarray | None = None,
+) -> np.ndarray:
+    """``(24, T)``: one column per chroma column, the same scoring rule as a whole.
+
+    Per COLUMN, not per mean: the key-change segmenter scores each bar against
+    all 24 candidates, and it must be the same instrument the track-level
+    estimate uses, not a second one that can disagree with it.
+    """
+    if chroma.ndim != 2 or chroma.shape[0] != 12:
+        raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")
+    matrix = _profile_matrix(
+        _KRUMHANSL_MAJOR if major_profile is None else major_profile,
+        _KRUMHANSL_MINOR if minor_profile is None else minor_profile,
+    )
+    return matrix @ _unit_columns(chroma)
+
+
+def profile_correlations(
+    chroma: np.ndarray,
+    major_profile: np.ndarray | None = None,
+    minor_profile: np.ndarray | None = None,
+) -> np.ndarray:
+    """``(24,)``: the correlations of the MEAN chroma, in `key_for_index` order.
+
+    The long-term estimate's own score vector, exposed so segment confidence
+    and the track's scalar key come from one computation.
+    """
+    if chroma.ndim != 2 or chroma.shape[0] != 12:
+        raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")
+    return correlation_matrix(
+        chroma.mean(axis=1, keepdims=True), major_profile, minor_profile
+    )[:, 0]
+
+
+def _unit_columns(chroma: np.ndarray) -> np.ndarray:
+    return chroma / (np.linalg.norm(chroma, axis=0, keepdims=True) + 1e-9)
+
+
 #-----------------------------------------------------------------------------
 def _estimate(
     chroma: np.ndarray, major_profile: np.ndarray, minor_profile: np.ndarray
@@ -75,21 +150,12 @@ def _estimate(
     Chroma row 0 is pitch class C, matching librosa.feature.chroma_cqt and
     apps.analysis_key.canon.Key.pitch_class.
     """
-    if chroma.shape[0] != 12:
-        raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")
-    mean = chroma.mean(axis=1)
-    mean = mean / (np.linalg.norm(mean) + 1e-9)
-    major_norm = major_profile / (np.linalg.norm(major_profile) + 1e-9)
-    minor_norm = minor_profile / (np.linalg.norm(minor_profile) + 1e-9)
-
-    correlations: list[tuple[Key, float]] = []
-    for pitch_class in range(12):
-        major_rolled = np.roll(major_norm, pitch_class)
-        minor_rolled = np.roll(minor_norm, pitch_class)
-        correlations.append((Key(pitch_class, False), float(np.dot(mean, major_rolled))))
-        correlations.append((Key(pitch_class, True), float(np.dot(mean, minor_rolled))))
-
-    ranked = sorted(correlations, key=lambda pair: pair[1], reverse=True)
+    scores = profile_correlations(chroma, major_profile, minor_profile)
+    ranked = sorted(
+        ((key_for_index(index), float(score)) for index, score in enumerate(scores)),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
     best_key, best_corr = ranked[0]
     _, second_corr = ranked[1]
     return KeyEstimate(
