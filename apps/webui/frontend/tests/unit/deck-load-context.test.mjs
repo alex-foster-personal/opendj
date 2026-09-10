@@ -17,6 +17,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 
+import { immediateBootScheduler } from './fake-boot-scheduler.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://engine.example.test';
@@ -167,7 +168,9 @@ test('a cached reading reaches the row as numbers plus its age', async () => {
 		addEventListener() {},
 		removeEventListener() {}
 	});
-	const stop = context.startMachinePressurePolling();
+	// This suite is about the ROW, not the boot window (PERF-R6, #1658 review):
+	// the pressure poll's own deferral is machine-pressure.test.mjs's subject.
+	const stop = context.startMachinePressurePolling(immediateBootScheduler());
 	for (let i = 0; i < 5; i++) await Promise.resolve();
 
 	const { clock: perfMs, spanId } = context.beginDeckLoad(3);
