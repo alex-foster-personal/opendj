@@ -71,6 +71,7 @@
 		createPlaylist,
 		deletePlaylist,
 		getPlaylistTracksEtag,
+		transferPlaylistTracks,
 		isWithinCreateGrace,
 		markPlaylistCreateGrace,
 		PlaylistConflictError,
@@ -1454,26 +1455,36 @@
 		}
 		try {
 			const dest = await getPlaylistTracksEtag(playlistId);
-			const destIds = dest.detail.tracks.map((t) => t.stable_id);
-			const merged = [...destIds];
-			for (const id of stableIds) {
-				if (!merged.includes(id)) merged.push(id);
-			}
-			await replacePlaylistTracks(playlistId, dest.etag, merged);
+			let effectiveMode: 'add' | 'move' = 'add';
+			let body: {
+				stable_ids: string[];
+				mode: 'add' | 'move';
+				source_playlist_id?: string;
+				source_etag?: string;
+			} = { stable_ids: stableIds, mode: 'add' };
 			if (mode === 'move') {
 				const srcId = panes[activePane].playlist_id;
-				if (srcId !== null && srcId !== playlistId && canMutatePlaylist(panes[activePane])) {
+				if (srcId !== null && srcId !== 'all' && srcId !== playlistId) {
 					const src = await getPlaylistTracksEtag(srcId);
-					const next = src.detail.tracks
-						.map((t) => t.stable_id)
-						.filter((id) => !stableIds.includes(id));
-					await replacePlaylistTracks(srcId, src.etag, next);
-					const node = _currentNode(panes[activePane]);
-					if (node !== null) await _loadPane(panes[activePane], node);
+					body = {
+						stable_ids: stableIds,
+						mode: 'move',
+						source_playlist_id: srcId,
+						source_etag: src.etag
+					};
+					effectiveMode = 'move';
 				}
 			}
+			await transferPlaylistTracks(playlistId, dest.etag, body);
+			if (effectiveMode === 'move') {
+				const node = _currentNode(panes[activePane]);
+				if (node !== null) await _loadPane(panes[activePane], node);
+			}
 			await _refreshPlaylists();
-			pushToast(`${mode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`, 'info');
+			pushToast(
+				`${effectiveMode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`,
+				'info'
+			);
 		} catch (exc) {
 			pushToast(`playlist drop failed: ${String(exc)}`, 'error');
 		}

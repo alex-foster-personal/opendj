@@ -40,6 +40,8 @@ Operations (routes in ``routes/playlist_write.py`` map 1:1):
                                                        POST   /playlists/{id}/duplicate
   * ``replace_memberships(id, stable_ids, expected_etag=...)``
                                                        PUT    /playlists/{id}/tracks
+  * ``transfer_memberships(dest_id, stable_ids, dest_etag, mode, ...)``
+                                                       POST   /playlists/{id}/tracks/transfer
 
 ``replace_memberships`` is the single membership primitive: add / remove /
 reorder / move / copy are all expressed as one full-list replace. It is
@@ -69,7 +71,7 @@ import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional
 
 from apps.shared.state import db as _state_db
 from apps.shared.state.events import EventBus, FakeEventBus
@@ -289,6 +291,80 @@ class PlaylistStore:
                     return row
                 self._writer.set_playlist_memberships(playlist_id, list(stable_ids))
                 return self._load(playlist_id)
+
+    def transfer_memberships(
+        self,
+        dest_id: str,
+        stable_ids: list[str],
+        *,
+        dest_etag: str,
+        mode: Literal["add", "move"],
+        source_id: str | None = None,
+        source_etag: str | None = None,
+    ) -> tuple[PlaylistRow, PlaylistRow | None]:
+        """Atomic cross-playlist add (copy) or move of track identities.
+
+        Add appends missing stable_ids to dest (set-union, request-order).
+        Move also removes every matching stable_id from source. Both writes
+        happen inside one ``playlist_transaction`` so an interrupt rolls back.
+        """
+        if not stable_ids:
+            raise BackendError("stable_ids must be a non-empty list")
+        if mode == "move" and (source_id is None or source_etag is None):
+            raise BackendError(
+                "mode=move requires source_playlist_id and source_etag"
+            )
+        if source_id is not None and source_id == dest_id:
+            raise BackendError("cannot transfer a playlist onto itself")
+
+        with self._lock:
+            with self._writer.playlist_transaction():
+                self._require_known_tracks(stable_ids)
+                dest = self._load(dest_id)
+                self._check_etag(dest, dest_etag)
+
+                source: PlaylistRow | None = None
+                source_next: list[str] | None = None
+                if source_id is not None:
+                    source = self._load(source_id)
+                    if source_etag is not None:
+                        self._check_etag(source, source_etag)
+
+                dest_set = set(dest.items)
+                dest_next = list(dest.items)
+                pending: set[str] = set()
+                for sid in stable_ids:
+                    if sid in dest_set:
+                        continue
+                    if sid not in pending:
+                        dest_next.append(sid)
+                        pending.add(sid)
+
+                if mode == "move" and source is not None:
+                    drop = set(stable_ids)
+                    source_next = [sid for sid in source.items if sid not in drop]
+                else:
+                    source_next = source.items if source is not None else None
+
+                dest_unchanged = dest_next == list(dest.items)
+                source_unchanged = (
+                    source is None
+                    or source_next == list(source.items)
+                )
+                if dest_unchanged and (mode == "add" or source_unchanged):
+                    return dest, source if mode == "move" else None
+
+                if not dest_unchanged:
+                    self._writer.set_playlist_memberships(dest_id, dest_next)
+
+                if mode == "move" and source is not None and not source_unchanged:
+                    self._writer.set_playlist_memberships(source_id, source_next)
+
+                dest_row = self._load(dest_id)
+                source_row = (
+                    self._load(source_id) if mode == "move" and source_id else None
+                )
+                return dest_row, source_row
 
     # --- reads (for router symmetry) --------------------------------------
     def get_playlist_row(self, playlist_id: str) -> PlaylistRow:
