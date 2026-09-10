@@ -100,7 +100,7 @@
         "waveform_frame_delta_ms_p95",
         "waveform_dropped_frame_pct_10s"
       ],
-      "missing_kpi": "p95 rAF frame delta and dropped-frame percentage per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames.",
+      "missing_kpi": "p95 rAF frame delta and dropped-frame percentage per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames. A fresh reviewer round found neither required KPI could ever report BREAKING, so a real freeze scored no worse than OVER: the spec's own breaking cell ('visible stutter / freeze while audible') names no duration, but a freeze is specifically a STOPPED canvas, which waveform_frame_delta_ms_p95's own p95 gap already measures directly - a dropped-frame percentage alone cannot tell a genuine multi-second stall apart from many small, evenly-scattered stutters that sum to the same percentage. waveform_frame_delta_ms_p95's breaking is set to 1000ms: a p95 gap that large means at least 5% of the frame-to-frame intervals in the sample were a full second or longer, which is a stop, not a slowdown, on any display - no realistic refresh interval is within two orders of magnitude of 1000ms, so unlike the provisional budget/acceptable bands this figure needs no re-derivation once the true refresh interval is captured.",
       "lower_is_better": true,
       "budget": 16.7,
       "acceptable": 33.3,
@@ -119,8 +119,8 @@
           "lower_is_better": true,
           "budget": 16.7,
           "acceptable": 16.7,
-          "breaking": null,
-          "unverifiable_columns": ["target", "acceptable"]
+          "breaking": 1000,
+          "unverifiable_columns": ["target", "acceptable", "breaking"]
         },
         {
           "kpi": "waveform_dropped_frame_pct_10s",
