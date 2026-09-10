@@ -296,9 +296,25 @@
 								</ul>
 							{/if}
 							{#if disabledLocally.length > 0}
+								<!-- COPY THAT COVERS BOTH WAYS A FLAG GETS HERE, deliberately
+									 (PR #1720 round-2 P2). This group is every flag that is off
+									 without the store profile refusing it, and there are two of
+									 those: a local override file, and a flag whose DECLARED
+									 DEFAULT is false. The earlier wording named the first ("this
+									 machine's own configuration ... whatever switched these off
+									 can switch them back on") and would have been simply false of
+									 the second, which no file on this machine touched.
+
+									 Branching on `flag.overridden` would separate them, and is
+									 NOT what this does: the daemon declares exactly one flag
+									 today (apps/feature_flags/store.FLAGS, usb.export, default
+									 true), so a default-off row cannot be produced by any capture
+									 and that branch would ship untested. One sentence true of
+									 both states beats two sentences where one is unreachable. -->
 								<p class="ac-muted">
-									Turned off by this machine's own configuration, not by the build.
-									Whatever switched these off can switch them back on.
+									Off in the flag configuration this daemon resolved: a declared
+									default, or a local override. Neither the App Store build nor
+									your plan is involved.
 								</p>
 								<ul class="ac-features">
 									<!-- NO `flag.note` here, unlike the store group above, and that
@@ -318,7 +334,7 @@
 											<span class="ac-store-label ac-mono">{flag.flag_id}</span>
 											<span
 												class="ac-muted"
-												title="Off in this daemon's flag file ({buildFlags.profile} profile). Nothing about the App Store or your plan is involved."
+												title="Off in the flag configuration this daemon resolved ({buildFlags.profile} profile), from its declared default or a local override. Nothing about the App Store or your plan is involved."
 												>Turned off here</span
 											>
 										</li>
