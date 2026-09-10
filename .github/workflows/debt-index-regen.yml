@@ -83,6 +83,7 @@ jobs:
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
       # scripts/debt_index imports only the standard library, so this runs on

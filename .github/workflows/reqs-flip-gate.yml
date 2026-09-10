@@ -97,9 +97,15 @@ jobs:
           }
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
-
-      # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        timeout-minutes: 2
+        with:
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
