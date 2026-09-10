@@ -76,7 +76,19 @@ def _ffmpeg_can_resample() -> bool:
 # resampler, so the probe RUNS the filter chain rather than reading a
 # version string (Homebrew ffmpeg 9.0.1 on macOS passes the first check and
 # fails the second, measured Wed 9 Sep 2026).
-_HAS_SOXR: bool = _ffmpeg_can_resample() if _HAS_FFMPEG else False
+#
+# Called UNCONDITIONALLY, not gated behind `_HAS_FFMPEG`: that gate is a bare
+# PATH lookup, but `_ffmpeg_can_resample` resolves through the production
+# `resolve_ffmpeg` (MDT_FFMPEG override first, else PATH) via
+# `require_resampler`. Gating this call behind `_HAS_FFMPEG` meant a host with
+# ffmpeg available ONLY through `MDT_FFMPEG` - as a packaged or GUI-launched
+# app without Homebrew on PATH is expected to be - never ran the probe at
+# all, so `_HAS_SOXR` stayed False and every `requires_soxr` test was skipped
+# despite the capability being present (Codex P2 BLOCKING, PR #1587).
+# `_ffmpeg_can_resample` already catches an absent/broken ffmpeg (ImportError,
+# `FingerprintUnavailable`) and returns False, so calling it with no ffmpeg at
+# all anywhere is safe.
+_HAS_SOXR: bool = _ffmpeg_can_resample()
 # madmom is not installable from PyPI on Python 3.10+ (0.16.1 imports the
 # long-removed collections.MutableSequence), so requirements.txt pulls the
 # git HEAD with --no-build-isolation and no pyproject extra can supply it.

@@ -14,7 +14,6 @@ differs, and refuse rather than return a well-formed digest of nothing.
 from __future__ import annotations
 
 import hashlib
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -26,16 +25,25 @@ from apps.analysis.pcm_fingerprint import (
     canonical_decode_fingerprint,
     require_resampler,
 )
+from apps.analysis_waveform.decode import resolve_ffmpeg
 
 #-----------------------------------------------------------------------------
 # fixtures
 #-----------------------------------------------------------------------------
 
 def _synthesize(path: Path, *, hz: int, rate: int, seconds: float = 1.0) -> Path:
-    """A real encoded file, written by ffmpeg rather than hand-built bytes."""
+    """A real encoded file, written by ffmpeg rather than hand-built bytes.
+
+    Resolved through `resolve_ffmpeg` (MDT_FFMPEG override first, else PATH),
+    the same production resolver `require_resampler` uses - a bare
+    `shutil.which("ffmpeg") or "ffmpeg"` would still fail to exercise the
+    configured binary on a host that only has ffmpeg through MDT_FFMPEG, even
+    once the `requires_soxr` collection gate itself honors it (Codex P2
+    BLOCKING, PR #1587).
+    """
     subprocess.run(
         [
-            shutil.which("ffmpeg") or "ffmpeg", "-nostdin", "-v", "error", "-y",
+            resolve_ffmpeg(), "-nostdin", "-v", "error", "-y",
             "-f", "lavfi", "-i", f"sine=frequency={hz}:duration={seconds}:sample_rate={rate}",
             str(path),
         ],
@@ -151,7 +159,7 @@ def test_it_is_not_the_hash_of_the_model_input(tmp_path: Path) -> None:
 
     tone = _synthesize(tmp_path / "tone.wav", hz=440, rate=44100)
     raw = subprocess.run(
-        canonical_decode_command(tone, shutil.which("ffmpeg") or "ffmpeg"),
+        canonical_decode_command(tone, resolve_ffmpeg()),
         check=True, stdin=subprocess.DEVNULL, capture_output=True,
     ).stdout
     as_float32 = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
