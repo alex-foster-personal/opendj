@@ -212,6 +212,25 @@ def test_every_flag_and_value_the_review_lane_emits_is_accepted() -> None:
         "and this test only checked flag names"
     )
 
+    # The loop above is satisfied as soon as ANY flag's value gets checked,
+    # e.g. --output-format alone keeps it green while --permission-mode goes
+    # unchecked if the cli ever stops publishing its choices in the
+    # `(choices: "a", "b")` form this probe parses (--effort already uses a
+    # bare `(a, b)` form on this cli, so the alternate format is live in the
+    # same help text). Pin the safety-critical flag directly.
+    permission_mode = options.get("--permission-mode")
+    assert permission_mode is not None and permission_mode.choices is not None, (
+        "control: --permission-mode no longer publishes a parseable "
+        "'(choices: ...)' list, so the generic loop above skipped it and "
+        "dontAsk went unchecked. Update _CHOICES_RE or _help_options to "
+        "parse the new format."
+    )
+    assert "dontAsk" in permission_mode.choices, (
+        f"the installed cli's --permission-mode no longer documents "
+        f"'dontAsk' among {sorted(permission_mode.choices)}. The review "
+        "lane will fail closed with exit 3 the next time a PR needs it."
+    )
+
 
 def test_permission_mode_dontask_denies_rather_than_auto_approves() -> None:
     """[if] dontAsk auto-approves instead of denying [then] a hung or
