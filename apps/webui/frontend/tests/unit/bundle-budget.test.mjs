@@ -165,7 +165,7 @@ test('a dynamic import from performance is charged to other-lazy, not the route 
 });
 
 for (const surface of ['library', 'performance', 'other-lazy']) {
-  const overflow = { library: 260000, performance: 210000, 'other-lazy': 70000 }[surface];
+  const overflow = { library: 260000, performance: 230000, 'other-lazy': 70000 }[surface];
   test(`budget "${surface}" FAILS when its own weight exceeds the limit`, () => {
     const { code, out } = _run(_fixture({ sizes: { [surface]: overflow } }));
     assert.equal(code, 1, `expected a non-zero exit\n${out}`);
