@@ -15,10 +15,12 @@ import pytest
 
 from apps.webui.port_config import PortConfigError
 from apps.webui.run_agentbox import (
+    AGENTBOX_SSH_HOSTS_ENV,
     EPHEMERAL_LOG_DIR,
     LOG_DIR,
     _proc_cwd,
     allowed_ssh_host,
+    allowed_ssh_hosts,
     can_bind,
     dated_log_path,
     http_status,
@@ -33,6 +35,7 @@ from apps.webui.run_agentbox import (
     remote_check_command,
     remote_run_command,
     resolve_allowed_hosts,
+    serve_url_from_launcher_output,
     ssh_agentbox_argv,
     validate_serve_status,
 )
@@ -141,11 +144,47 @@ def test_dated_log_path_uses_utc_when_no_time_is_supplied(
     )
 
 
+#: A MagicDNS name on a synthetic tailnet. The real label is deployment config
+#: (#1540), so the tracked tree uses a placeholder that cannot resolve anywhere.
+TAILNET_HOST = "agentbox.example-tailnet.ts.net"
+
+
+def test_the_ssh_alias_alone_is_a_complete_allowlist() -> None:
+    """No MDT_AGENTBOX_SSH_HOSTS is a configured deployment, not a broken one."""
+    assert allowed_ssh_host("agentbox", environ={}) is True
+    assert allowed_ssh_host("198.51.100.7", environ={}) is False
+    assert allowed_ssh_host("evil.example", environ={}) is False
+
+
+def test_the_tailnet_destination_comes_from_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A MagicDNS name is allowed only when it was CONFIGURED.
+
+    The shape check this replaces would accept any tailnet whose owner happened
+    to name a node "agentbox", so the assertion below is deliberately about
+    membership of the configured set and not about the ".ts.net" suffix.
+    """
+    monkeypatch.setenv(AGENTBOX_SSH_HOSTS_ENV, TAILNET_HOST)
+    assert allowed_ssh_host(TAILNET_HOST) is True
+    assert allowed_ssh_host("agentbox", environ={AGENTBOX_SSH_HOSTS_ENV: ""}) is True
+
+
+def test_an_unconfigured_tailnet_destination_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(AGENTBOX_SSH_HOSTS_ENV, raising=False)
+    assert allowed_ssh_host(TAILNET_HOST) is False
+    assert TAILNET_HOST not in allowed_ssh_hosts(environ={})
+
+
+def test_config_is_parsed_as_an_exact_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(AGENTBOX_SSH_HOSTS_ENV, f" {TAILNET_HOST} , agentbox-alt ,, ")
+    assert allowed_ssh_hosts() == frozenset({"agentbox", TAILNET_HOST, "agentbox-alt"})
+
+
 def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
     assert is_agentbox(hostname="agentbox") is True
     assert is_agentbox(hostname="afmac") is False
     assert allowed_ssh_host("agentbox") is True
-    assert allowed_ssh_host("agentbox.example-tailnet.ts.net") is True
     assert allowed_ssh_host("198.51.100.7") is False
     assert allowed_ssh_host("evil.example") is False
     with pytest.raises(PortConfigError, match="refusing SSH host"):
@@ -328,3 +367,35 @@ def test_https_status_returns_zero_for_a_real_closed_socket() -> None:
     ) == 0
 
 pytestmark = pytest.mark.rb_parity
+
+
+def test_the_served_origin_is_read_back_from_the_launcher() -> None:
+    """The public URL comes from what the box REPORTED, never from local config."""
+    reported = (
+        "[OK] reserved 8585/5173 hosts=agentbox\n"
+        "[OK] serve agentbox.example-tailnet.ts.net -> https://agentbox.example-tailnet.ts.net/ via 100.64.0.5\n"
+    )
+    assert serve_url_from_launcher_output(reported) == (
+        "https://agentbox.example-tailnet.ts.net/"
+    )
+
+
+def test_the_last_serve_line_wins() -> None:
+    """A replayed log must not hand back an older run's origin."""
+    log = (
+        "[OK] serve old -> https://old.example-tailnet.ts.net/ via 100.64.0.1\n"
+        "[OK] serve new -> https://new.example-tailnet.ts.net/ via 100.64.0.2\n"
+    )
+    assert serve_url_from_launcher_output(log) == "https://new.example-tailnet.ts.net/"
+
+
+def test_no_serve_line_is_a_hard_failure() -> None:
+    """A restart that never came up must not fall back to a guessed URL."""
+    with pytest.raises(PortConfigError, match="no serve line"):
+        serve_url_from_launcher_output("[OK] hop ssh agentbox -> agentbox\n")
+
+
+def test_a_serve_line_without_a_url_is_a_hard_failure() -> None:
+    """Near-misses count as absent: the reader is not a substring match."""
+    with pytest.raises(PortConfigError, match="no serve line"):
+        serve_url_from_launcher_output("[OK] serve agentbox -> nope via 100.64.0.1\n")

@@ -41,7 +41,7 @@
 
 import type { components } from "../api-types";
 import { API_BASE, ApiError, api } from "../api/client";
-import { makeDebounce, type Debounced } from "./feedback";
+import { makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
 export type FeedbackPin = components["schemas"]["CommentOut"];
@@ -63,6 +63,8 @@ interface FeedbackState {
   general: FeedbackGeneralNote | null;
   panelOpen: boolean;
   placementArmed: boolean;
+  /** One-shot pin-draft handoff for QuickDraw; the widget consumes it. */
+  pendingDraft: PinDraft | null;
   /** Last daemon refusal, verbatim; null while everything saves clean. */
   error: string | null;
 }
@@ -74,6 +76,7 @@ export const feedbackState: FeedbackState = $state({
   general: null,
   panelOpen: false,
   placementArmed: false,
+  pendingDraft: null,
   error: null,
 });
 
@@ -127,6 +130,21 @@ export function armPinPlacement(): void {
 
 export function disarmPinPlacement(): void {
   feedbackState.placementArmed = false;
+}
+
+/** Queue a pin draft for FeedbackWidget without arming the placement overlay. */
+export function queuePinDraft(draft: PinDraft): boolean {
+  if (feedbackState.availability !== "ok") return false;
+  feedbackState.pendingDraft = draft;
+  feedbackState.placementArmed = false;
+  return true;
+}
+
+/** Widget-only: return and clear the queued draft. */
+export function takePendingPinDraft(): PinDraft | null {
+  const draft = feedbackState.pendingDraft;
+  feedbackState.pendingDraft = null;
+  return draft;
 }
 
 // ----- todos --------------------------------------------------------------

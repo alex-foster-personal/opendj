@@ -11,6 +11,7 @@ import json
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from . import record as record_mod
@@ -18,7 +19,13 @@ from . import retention as retention_mod
 from .classify import classify_session
 from .classify import model as classify_model
 from .label import label_session
+from .paths import SessionPathError
 from .replay import replay as replay_cmd
+from .soundcloud_export import (
+    LICENSING_REMINDER,
+    SessionNotFound,
+    build_soundcloud_export,
+)
 from .state import SetsState
 
 
@@ -203,7 +210,62 @@ def _build_parser() -> argparse.ArgumentParser:
     sp_replay.add_argument("--class", dest="class_filter", default=None)
     sp_replay.set_defaults(func=_dispatch_replay)
 
+    sp_sc = sub.add_parser(
+        "soundcloud-export",
+        help="generate a paste-ready SoundCloud tracklist comment (metadata only)",
+    )
+    sp_sc.add_argument("session_id")
+    sp_sc.add_argument(
+        "--json",
+        action="store_true",
+        help="print the export object as JSON",
+    )
+    sp_sc.add_argument(
+        "--acknowledge-rights",
+        action="store_true",
+        help="required to emit the paste-ready comment",
+    )
+    sp_sc.add_argument(
+        "--out",
+        default=None,
+        help="write only the comment text to PATH (requires --acknowledge-rights)",
+    )
+    sp_sc.set_defaults(func=_dispatch_soundcloud_export)
+
     return p
+
+
+def _dispatch_soundcloud_export(args: argparse.Namespace) -> int:
+    try:
+        export = build_soundcloud_export(args.session_id)
+    except SessionPathError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except SessionNotFound as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if not args.acknowledge_rights:
+        if args.json:
+            print(json.dumps(export.to_dict(include_comment=False), indent=2))
+        else:
+            print(LICENSING_REMINDER)
+        return 2
+
+    if args.out is not None:
+        Path(args.out).write_text(export.comment, encoding="utf-8")
+
+    if args.json:
+        print(json.dumps(export.to_dict(include_comment=True), indent=2))
+        return 0
+
+    print(LICENSING_REMINDER)
+    print()
+    if export.comment:
+        sys.stdout.write(export.comment)
+        if not export.comment.endswith("\n"):
+            sys.stdout.write("\n")
+    return 0
 
 
 def _dispatch_replay(args: argparse.Namespace) -> int:

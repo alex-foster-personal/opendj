@@ -169,6 +169,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/soundcloud-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Get Soundcloud Export */
+        get: operations["api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get"];
+        put?: never;
+        /** Api Post Soundcloud Export */
+        post: operations["api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/timeline": {
         parameters: {
             query?: never;
@@ -1454,6 +1472,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Readiness
+         * @description Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.
+         *
+         *     Requirements (mini-PRD):
+         *       READY-01: GET /api/v1/library/readiness reports per-present-track and
+         *       aggregate readiness. Counts use the present (materialized local audio)
+         *       denominator, never all tracks rows.
+         *         [if] a track's file is not materialized [then] it is absent from
+         *         present, items, and every count
+         *         [if] a present track has no PQTZ, no own beatgrid lane ok, and no
+         *         usable downbeats_s [then] counts.beatgrid_missing includes it and an
+         *         axis=beatgrid item names it
+         *         [if] a present track has a stems directory that load_stem_bundle
+         *         rejects and no valid bundle in any configured root [then]
+         *         stems == corrupt on the item and both counts.stems_corrupt and
+         *         /ingest/coverage corrupt.stems are >= 1
+         *         [if] limit is 1 and many present tracks are not ready [then] items
+         *         has 1 row and counts.not_ready is still the full population
+         *         [if] a present track has a validateBeatGrid-passing grid [then]
+         *         sync_compatible is true without anyone engaging Beat Sync
+         */
+        get: operations["get_library_readiness_api_v1_library_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/wheel": {
         parameters: {
             query?: never;
@@ -1662,6 +1718,48 @@ export interface paths {
          * @description Persist one compact semantic sample without blocking the audio path.
          */
         post: operations["capture_client_performance_api_v1_performance_telemetry_client_samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/telemetry/pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Machine Pressure
+         * @description What the machine is under right now, cheap enough to poll.
+         *
+         *     THE conditions half of a trustworthy timing row. The browser stamps this
+         *     onto every deck-load row (see the frontend's machine-pressure.ts) so a
+         *     latency number carries the machine state it was measured under instead of
+         *     leaving a later reader to guess, which is how the register ended up with a
+         *     waveform decode recorded at both 0.73 s and 7.53 s for the same work.
+         *
+         *     Read-only, and deliberately NOT a process walk: this is sysctl, getloadavg
+         *     and vm_stat, never the `ps` table that `/processes` reads out of the
+         *     probe's log. It is served from a short shared cache and every response
+         *     states the age of the sample it is handing back, so a caller can tell a
+         *     fresh reading from a five-second-old one rather than assuming.
+         *
+         *     Agent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.
+         *
+         *     Fields, all optional and all absent rather than zero when unreadable:
+         *     `load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical
+         *     memory, `vm_stat` Pages free only, not the wider reclaimable figure),
+         *     `swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).
+         *     `available` is false, with a `reason`, when nothing could be measured --
+         *     notably inside the packaged app, whose payload stages `apps` and not
+         *     `scripts`.
+         */
+        get: operations["machine_pressure_api_v1_performance_telemetry_pressure_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2514,10 +2612,51 @@ export interface paths {
          *     ``/pull``, this answer carries no per-row data, but it does carry the
          *     hub's live changelog position, which an unregistered caller had no
          *     business reading either.
+         *
+         *     A hub holding one row with an unorderable stored stamp no longer answers
+         *     422 (round 5). That row is excluded from the hash and counted in
+         *     ``quarantined``: a legacy row is a fact to report, not a reason to make
+         *     the endpoint every sync depends on unavailable.
+         *
+         *     For a caller that did not advertise ``quarantine/v1`` it still does
+         *     (module docstring). Such a spoke has no ``quarantined`` map to read, so
+         *     it compares a hash over the eligible set against its own hash over
+         *     everything, and the difference reads to it as the ADR 04 c6 CORRUPTION
+         *     alarm -- a false one, raised on ordinary legacy data.
          */
         get: operations["digest_api_v1_sync_digest_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll
+         * @description Join this hub's fleet under a proved owner. The ONE enrollment door.
+         *
+         *     Both ADR 12 paths come through here and neither can reach
+         *     :func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev
+         *     CLI is a thin argparse shell over this exact call, and the user path will
+         *     be the same call carrying a different credential kind.
+         *
+         *     Deliberately NOT behind a router-level dependency. It authenticates by
+         *     the credential in its BODY, which is what lets a headless machine with no
+         *     browser and no local Google session enroll at all. One transaction, so a
+         *     refusal registers nothing. Idempotent: a re-run answers ``created: false``.
+         */
+        post: operations["enroll_api_v1_sync_enroll_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2558,6 +2697,11 @@ export interface paths {
          *     Chunked because a first sync of a real library is megabytes of JSON held
          *     twice in memory on both sides (round 1 finding A2). ``has_more`` tells
          *     the client to come back with the ``seq`` this response reports.
+         *
+         *     A chunk that had to leave a row out is refused outright for a caller that
+         *     did not advertise ``quarantine/v1`` (module docstring). The shortfall is
+         *     invisible to such a caller, which records the reported ``seq`` as pulled
+         *     and can never ask for those entries again -- not even after the repair.
          */
         get: operations["pull_api_v1_sync_pull_get"];
         put?: never;
@@ -2585,6 +2729,12 @@ export interface paths {
          *     transaction (round 2 finding N4): a row this hub has never met is a
          *     FOREIGN KEY violation, and the recovery push after a hub restore is
          *     exactly the push most likely to carry one.
+         *
+         *     A pusher that did not advertise ``quarantine/v1`` gets ``origin/main``'s
+         *     answer instead of the partial one: 422, whole batch rolled back (module
+         *     docstring). That is the staged-rollout price and it is the safe half of
+         *     it -- an un-upgraded spoke reads ``accepted + rejected < offered`` as
+         *     nothing at all and steps its push fence over the held row.
          */
         post: operations["push_api_v1_sync_push_post"];
         delete?: never;
@@ -2818,6 +2968,13 @@ export interface paths {
          *     ``anlz_available`` reporting whether the authoritative rekordbox grid
          *     also exists). 404 with an explicit code when no grid can be served -
          *     a beatgrid is never invented.
+         *
+         *     A caller naming ``backend=`` gets exactly what it named. The default
+         *     newest-row lookup instead defers to native-analysis v1 first: when v1
+         *     has already settled a beatgrid determination for this track (a
+         *     canonical own pointer exists, whatever it resolved to), this endpoint
+         *     preserves that gridless/failed state rather than silently substituting
+         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -3333,6 +3490,11 @@ export interface components {
             lanes: {
                 [key: string]: components["schemas"]["LaneSourceOut"];
             };
+            /**
+             * Previous Toggle
+             * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
+             */
+            previous_toggle?: string | null;
         };
         /**
          * AnalysisSourcePut
@@ -3344,6 +3506,16 @@ export interface components {
              * @description rbx or own. Persisted; survives a relaunch.
              */
             default?: string | null;
+            /**
+             * Expected Toggle
+             * @description Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.
+             */
+            expected_toggle?: string | null;
+            /**
+             * Expected Toggle Revision
+             * @description Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.
+             */
+            expected_toggle_revision?: number | null;
             /**
              * Lane
              * @description beatgrid, key, waveform, loudness or vocal
@@ -3984,7 +4156,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "window-error" | "unhandled-rejection" | "sveltekit" | "ui-error";
+            kind: "window-error" | "unhandled-rejection" | "sveltekit" | "ui-error" | "console-error" | "console-warn" | "resource-error" | "csp-violation" | "webview-console" | "webview-navigation";
             /** Message */
             message: string;
             /** Name */
@@ -4456,6 +4628,10 @@ export interface components {
         DigestResponse: {
             /** Overall */
             overall: string;
+            /** Quarantined */
+            quarantined?: {
+                [key: string]: number;
+            };
             /** Seq */
             seq: number;
             /** Tables */
@@ -4487,6 +4663,74 @@ export interface components {
             /** Version */
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
+        };
+        /**
+         * EnrollCredentialModel
+         * @description The credential the joining machine presents. Rides the BODY, not a header.
+         *
+         *     :class:`apps.sync_hub.transport.HubTransport` is a two-method protocol
+         *     with no header support, and a grant is not a bearer for ``push`` or
+         *     ``pull``. Widening the transport for it would create a credential slot
+         *     those endpoints would then be expected to fill.
+         */
+        EnrollCredentialModel: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grant" | "google_id_token";
+            /** Value */
+            value: string;
+        };
+        /**
+         * EnrollErrorBody
+         * @description The ``detail`` object every refusal below carries.
+         *
+         *     Declared as a model rather than left implicit so the generated client can
+         *     branch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds
+         *     exactly this shape; the codes are enumerated per status in
+         *     :data:`ENROLL_RESPONSES`.
+         */
+        EnrollErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * EnrollErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        EnrollErrorResponse: {
+            detail: components["schemas"]["EnrollErrorBody"];
+        };
+        /**
+         * EnrollRequest
+         * @description No owner field, by construction: a request cannot name whose machine
+         *     it is becoming. The owner is read from the credential's own record.
+         */
+        EnrollRequest: {
+            credential: components["schemas"]["EnrollCredentialModel"];
+            machine: components["schemas"]["MachineModel"];
+            /** Schema Version */
+            schema_version: number;
+        };
+        /** EnrollResponse */
+        EnrollResponse: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Google Sub */
+            owner_google_sub: string;
         };
         /** EntitlementsOut */
         EntitlementsOut: {
@@ -4530,12 +4774,25 @@ export interface components {
         /**
          * FallbackBeatgridOut
          * @description Identical shape to the ``beatgrid`` object served by /anlz.
+         *
+         *     ``source`` is fixed at ``"own"``: every grid this endpoint can serve came
+         *     from an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ
+         *     to read), and the ANLZ contract this shape mirrors makes the field
+         *     REQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here
+         *     left the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a
+         *     real mismatch: a fail-closed, source-aware reader would reject this grid
+         *     outright (Codex P2 BLOCKING, PR #1587).
          */
         FallbackBeatgridOut: {
             /** Beat Count */
             beat_count: number;
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
+            /**
+             * Source
+             * @constant
+             */
+            source: "own";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
@@ -4680,17 +4937,22 @@ export interface components {
             overridden: boolean;
             /** Owner */
             owner: string;
+            refusal?: components["schemas"]["RefusalOut"] | null;
             /** Retire By */
             retire_by: string;
         };
         /** FlagsOut */
         FlagsOut: {
+            /** Build Profile */
+            build_profile: string;
             /** File Present */
             file_present: boolean;
             /** Flags */
             flags: components["schemas"]["FlagOut"][];
             /** Path */
             path: string;
+            /** Sandboxed */
+            sandboxed: boolean;
         };
         /**
          * FolderImportIn
@@ -4873,6 +5135,8 @@ export interface components {
         };
         /** HelloRequest */
         HelloRequest: {
+            /** Capabilities */
+            capabilities?: string[];
             machine: components["schemas"]["MachineModel"];
             /** Machines */
             machines?: components["schemas"]["MachineModel"][];
@@ -4881,12 +5145,19 @@ export interface components {
         };
         /** HelloResponse */
         HelloResponse: {
+            /** Capabilities */
+            capabilities?: string[];
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
             hub_machine_id: string;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign";
             /** Schema Version */
             schema_version: number;
             /** Seq */
@@ -5022,6 +5293,11 @@ export interface components {
              * @description In-memory dev toggle: unset, rbx or own. Launches unset.
              */
             toggle: string;
+            /**
+             * Toggle Revision
+             * @description Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.
+             */
+            toggle_revision: number;
         };
         /**
          * LastImportOut
@@ -5072,7 +5348,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error";
+            status: "ok" | "error" | "inconclusive";
         };
         /**
          * LevelCalibrationOut
@@ -5097,6 +5373,99 @@ export interface components {
              * @default false
              */
             red_enabled: boolean;
+        };
+        /**
+         * LibraryReadinessCounts
+         * @description Every field is a count over ``present``, never over ``total_tracks``.
+         */
+        LibraryReadinessCounts: {
+            /** Beatgrid Invalid */
+            beatgrid_invalid: number;
+            /** Beatgrid Missing */
+            beatgrid_missing: number;
+            /** Beatgrid Ok */
+            beatgrid_ok: number;
+            /** Has Analysis */
+            has_analysis: number;
+            /** Missing Analysis */
+            missing_analysis: number;
+            /** Not Ready */
+            not_ready: number;
+            /** Ready */
+            ready: number;
+            /** Stems Corrupt */
+            stems_corrupt: number;
+            /** Stems Missing */
+            stems_missing: number;
+            /** Stems Ready */
+            stems_ready: number;
+            /** Sync Compatible */
+            sync_compatible: number;
+            /** Sync Incompatible */
+            sync_incompatible: number;
+            /** Waveform Missing */
+            waveform_missing: number;
+            /** Waveform Ok */
+            waveform_ok: number;
+        };
+        /**
+         * LibraryReadinessItem
+         * @description One present track's stored-artifact readiness.
+         */
+        LibraryReadinessItem: {
+            /** Analysis Backend */
+            analysis_backend: string | null;
+            /** Analysis Version */
+            analysis_version: string | null;
+            /**
+             * Beatgrid
+             * @enum {string}
+             */
+            beatgrid: "ok" | "missing" | "invalid";
+            /** File Path */
+            file_path: string;
+            /** Gaps */
+            gaps: string[];
+            /** Has Analysis */
+            has_analysis: boolean;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Stems
+             * @enum {string}
+             */
+            stems: "ready" | "missing" | "corrupt";
+            /** Sync Compatible */
+            sync_compatible: boolean;
+            /** Sync Reason */
+            sync_reason: ("no_beatgrid" | "invalid_grid") | null;
+            /** Title */
+            title: string | null;
+            /**
+             * Waveform Preview
+             * @enum {string}
+             */
+            waveform_preview: "ok" | "missing";
+        };
+        /** LibraryReadinessOut */
+        LibraryReadinessOut: {
+            counts: components["schemas"]["LibraryReadinessCounts"];
+            /**
+             * Denominator
+             * @default present
+             * @constant
+             */
+            denominator: "present";
+            /** Generated At */
+            generated_at: number;
+            /** Items */
+            items: components["schemas"]["LibraryReadinessItem"][];
+            /** Present */
+            present: number;
+            /** Total Tracks */
+            total_tracks: number;
+            /** Unreachable */
+            unreachable: number;
         };
         /**
          * LocalDataOut
@@ -5271,6 +5640,11 @@ export interface components {
             eq_mid: number;
             /** Fader */
             fader: number;
+            /**
+             * Filter
+             * @default 0.5
+             */
+            filter: number;
             /** Trim */
             trim: number;
         };
@@ -5958,6 +6332,11 @@ export interface components {
             has_more: boolean;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
             /** Rows */
             rows: components["schemas"]["RowModel"][];
             /** Seq */
@@ -5970,6 +6349,8 @@ export interface components {
         };
         /** PushRequest */
         PushRequest: {
+            /** Capabilities */
+            capabilities?: string[];
             /** Machine Id */
             machine_id: string;
             /** Machines */
@@ -5983,6 +6364,11 @@ export interface components {
         PushResponse: {
             /** Accepted */
             accepted: number;
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
             /** Rejected */
             rejected: number;
             /** Seq */
@@ -6233,7 +6619,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error";
+            status: "ok" | "error" | "inconclusive";
         };
         /** ReconcileSummary */
         ReconcileSummary: {
@@ -6700,6 +7086,66 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SoundcloudExportAckRequest */
+        SoundcloudExportAckRequest: {
+            /**
+             * Acknowledge Rights
+             * @default false
+             */
+            acknowledge_rights: boolean;
+        };
+        /** SoundcloudExportResponse */
+        SoundcloudExportResponse: {
+            /** Acknowledged */
+            acknowledged?: boolean | null;
+            /**
+             * Audio Upload
+             * @constant
+             */
+            audio_upload: "not_offered";
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "metadata_only";
+            /** Licensing Reminder */
+            licensing_reminder: string;
+            /**
+             * Rights Position
+             * @constant
+             */
+            rights_position: "unsettled";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Takeover
+             * @constant
+             */
+            takeover: "not_offered";
+            /** Tracklist */
+            tracklist: components["schemas"]["SoundcloudTracklistRowModel"][];
+        };
+        /** SoundcloudTracklistRowModel */
+        SoundcloudTracklistRowModel: {
+            /** Artist */
+            artist: string | null;
+            /** Deck */
+            deck: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Source */
+            source: string | null;
+            /** Timestamp Label */
+            timestamp_label: string;
+            /** Timestamp S */
+            timestamp_s: number;
+            /** Title */
+            title: string | null;
+            /** Track Stable Id */
+            track_stable_id: string | null;
+        };
         /** StatusResponse */
         StatusResponse: {
             /** Hub Generation */
@@ -6942,7 +7388,7 @@ export interface components {
              * Asset Kind
              * @enum {string}
              */
-            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache" | "lyrics_cache" | "karaoke_words";
             /** Cache Budget Mb */
             cache_budget_mb?: number | null;
             /** Machine Id */
@@ -6963,7 +7409,7 @@ export interface components {
              * Asset Kind
              * @enum {string}
              */
-            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache" | "lyrics_cache" | "karaoke_words";
             /** Cache Budget Mb */
             cache_budget_mb?: number | null;
             /** Machine Id */
@@ -7571,6 +8017,8 @@ export interface components {
             code: "usb_volume_discovery_unavailable";
             /** Reason */
             reason: string;
+            /** Ui Title */
+            ui_title?: string | null;
         };
         /** UsbCapabilityErrorOut */
         UsbCapabilityErrorOut: {
@@ -8227,6 +8675,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoundcloudExportAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10489,6 +11003,40 @@ export interface operations {
             };
         };
     };
+    get_library_readiness_api_v1_library_readiness_get: {
+        parameters: {
+            query?: {
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+                /** @description Which present tracks appear in items. */
+                axis?: "not_ready" | "beatgrid" | "waveform" | "stems" | "stems_corrupt" | "sync" | "analysis" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryReadinessOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_library_wheel_api_v1_library_wheel_get: {
         parameters: {
             query?: {
@@ -10973,6 +11521,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    machine_pressure_api_v1_performance_telemetry_pressure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -12463,6 +13033,8 @@ export interface operations {
             query: {
                 /** @description the calling spoke */
                 machine_id: string;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
             };
             header?: never;
             path?: never;
@@ -12486,6 +13058,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enroll_api_v1_sync_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollResponse"];
+                };
+            };
+            /** @description The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
             };
         };
@@ -12532,6 +13164,8 @@ export interface operations {
                 since_seq?: number;
                 /** @description max changelog entries to consume in this chunk */
                 limit?: number;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
             };
             header?: never;
             path?: never;
@@ -13478,7 +14112,7 @@ export interface operations {
                     "application/json": components["schemas"]["UsbVolumesOut"];
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13507,7 +14141,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;

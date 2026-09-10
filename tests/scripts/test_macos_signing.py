@@ -29,8 +29,11 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -211,3 +214,294 @@ def test_a_codesign_failure_is_never_reported_as_success(tmp_path: Path) -> None
     combined = result.stdout + result.stderr
     assert "codesign failed inside the payload" in combined
     assert "[OK]" not in combined
+
+
+# ----- the RETURN trap in cmd_notarize_app --------------------------------
+#
+# macOS `/usr/bin/env bash` is bash 3.2, and a RETURN trap set inside a
+# function is not scoped to that function: it stays armed and fires again when
+# the CALLER returns. `cmd_notarize_app` cleaned up its temp zip that way with
+# a `local`, so the second firing dereferenced a name that was gone by then and
+# `set -u` killed a run that had already notarized, stapled and passed spctl.
+# Cost of the defect is a whole build, roughly 8 minutes, spent and thrown away
+# AFTER the expensive part succeeded.
+#
+# The harness below is deliberately variable-agnostic: it lifts the allocation
+# line and the trap line out of the real function and runs them under the real
+# nesting, so it keeps testing whatever shape the script actually ships rather
+# than a copy of one that was correct once.
+#
+# Single-line acceptance checks:
+#
+# - if the shipped trap statement can fire a second time and reference a name
+#   that is gone by then, a notarized build dies after its own success -> broken.
+# - if the harness stops reproducing that failure with the PRE-FIX pair, the
+#   guard is no longer measuring anything -> broken.
+# - if the shipped pair stops deleting the temp archive, it traded a crash for
+#   a zip of the whole app bundle leaked into TMPDIR on every signed build
+#   -> broken.
+# - if a TMPDIR containing an apostrophe breaks the cleanup, the path is being
+#   re-parsed as code somewhere it should be read as data -> broken.
+# - if a temp archive left by a failed run blocks the next notarization, every
+#   later signed build on that host dies at mkstemp "File exists" -> broken.
+# - if `die` mid-notarization leaves the temp archive behind, an 83MB zip leaks
+#   per failure and (with a fixed name) poisons the next run -> broken.
+# - if any mktemp template carries characters after its X run, BSD mktemp
+#   treats it as a literal name -> broken.
+
+# The declaration line matters as much as the trap line: it is `local` that
+# makes the name vanish before the second firing. A harness that lifts only the
+# assignment turns `zip` into a global and the defect evaporates, which is a
+# check that cannot fail. Caught by mutating this file's own guard, so these
+# constants and the extraction below both carry the whole setup block.
+PRE_FIX_SETUP = """    local zip out started elapsed
+    zip=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")
+    trap 'rm -f "$zip"' RETURN"""
+
+# The shape this branch pinned first: the path expanded INTO the trap string.
+# It survives the caller's return, which is why it shipped for an hour, but a
+# trap string is re-parsed as code when it fires, so an apostrophe anywhere in
+# TMPDIR ends the quoting early. Kept as the control for the apostrophe case.
+INTERPOLATED_SETUP = """    local zip out started elapsed
+    zip=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")
+    trap "rm -f '$zip'" RETURN"""
+
+# Same nesting as the real script: the subcommand function is called from
+# main(), and main() is the last thing the script does. TMPDIR is redirected
+# so the temp archive lands somewhere the test can inspect, and NOTARY_APP_ZIP
+# is predeclared so `set -u` behaves exactly as it does in the real script,
+# which declares it at file scope.
+_TRAP_HARNESS = """#!/bin/bash
+set -euo pipefail
+export TMPDIR={tmpdir}
+NOTARY_APP_DIR=""
+cmd_notarize_app() {{
+{setup}
+{body}
+}}
+main() {{
+    cmd_notarize_app
+    echo MAIN-BODY-FINISHED
+}}
+main "$@"
+echo REACHED-END
+"""
+
+TEMP_ARCHIVE_GLOB = "opendj-notary-app.*"
+
+
+def _notarize_function_body() -> str:
+    source = SIGN_SCRIPT.read_text()
+    start = source.index("\ncmd_notarize_app() {")
+    body = source[start:]
+    return body[: body.index("\n}\n")]
+
+
+def _shipped_notarize_setup() -> str:
+    """The declaration, allocation and trap statements `cmd_notarize_app` ships.
+
+    Lifted from the script rather than restated here, so reverting the fix
+    makes these tests go red instead of leaving a copy of the fixed text
+    behind. The slice runs from the `local` declaration that precedes the
+    allocation through the trap, because whether the path is `local` is half of
+    what is under test.
+    """
+    lines = _notarize_function_body().splitlines()
+    alloc = [
+        i for i, line in enumerate(lines) if "mktemp" in line and not line.strip().startswith("#")
+    ]
+    trap = [
+        i
+        for i, line in enumerate(lines)
+        if line.strip().startswith("trap ") and line.strip().endswith(" RETURN")
+    ]
+    assert len(alloc) == 1, f"expected one mktemp in cmd_notarize_app, found {alloc}"
+    assert len(trap) == 1, f"expected one RETURN trap in cmd_notarize_app, found {trap}"
+    decl = [i for i, line in enumerate(lines[: alloc[0]]) if line.strip().startswith("local ")]
+    start = decl[-1] if decl else alloc[0]
+    # Carry any trap lines straight after the RETURN one (the EXIT trap that
+    # cleans up after `die`), so the harness runs every cleanup the script arms.
+    end = trap[0] + 1
+    while end < len(lines) and lines[end].strip().startswith("trap "):
+        end += 1
+    block = [line for line in lines[start:end] if not line.strip().startswith("#")]
+    return "\n".join(block)
+
+
+def _run_trap_harness(
+    setup: str, tmpdir: Path, tmp_path: Path, body: str = "    echo NOTARIZED"
+) -> subprocess.CompletedProcess[str]:
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    script = tmp_path / "harness.sh"
+    script.write_text(
+        _TRAP_HARNESS.format(tmpdir=shlex.quote(str(tmpdir)), setup=setup, body=body)
+    )
+    script.chmod(0o755)
+    return subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, check=False)
+
+
+needs_system_bash_3 = pytest.mark.skipif(
+    sys.platform != "darwin" or not Path("/bin/bash").exists(),
+    reason="pins the RETURN-trap scoping of macOS's own /bin/bash, which is what ships this dmg",
+)
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_the_pre_fix_trap_shape_still_reproduces_the_double_fire(tmp_path: Path) -> None:
+    """Instrument check: without this failing, the guards below prove nothing.
+
+    A green result here would mean the harness no longer exercises the defect,
+    so a reverted fix could sail through the next tests unnoticed.
+    """
+    tmpdir = tmp_path / "tmp"
+    result = _run_trap_harness(PRE_FIX_SETUP, tmpdir, tmp_path)
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, f"the pre-fix shape did not fail: {combined}"
+    assert "unbound variable" in combined, combined
+    # And it died AFTER the work it was protecting had already succeeded,
+    # which is the whole reason this costs a build rather than catching one.
+    assert "NOTARIZED" in result.stdout
+    assert "MAIN-BODY-FINISHED" in result.stdout
+    assert "REACHED-END" not in result.stdout
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_the_shipped_notarize_trap_survives_the_callers_return(tmp_path: Path) -> None:
+    """The shipped statements run to completion under the same nesting."""
+    tmpdir = tmp_path / "tmp"
+    result = _run_trap_harness(_shipped_notarize_setup(), tmpdir, tmp_path)
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "REACHED-END" in result.stdout, combined
+    assert "unbound variable" not in combined
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_the_shipped_notarize_trap_still_deletes_its_temp_archive(tmp_path: Path) -> None:
+    """The fix must not have bought its survival by dropping the cleanup.
+
+    Asserted on the CONTENTS of TMPDIR rather than on a recorded path, so this
+    stays true whatever the script names the variable.
+    """
+    tmpdir = tmp_path / "tmp"
+    result = _run_trap_harness(_shipped_notarize_setup(), tmpdir, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    leftover = list(tmpdir.glob(TEMP_ARCHIVE_GLOB))
+    assert leftover == [], f"the temp archive survived the trap: {leftover}"
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_an_apostrophe_in_tmpdir_does_not_break_the_cleanup(tmp_path: Path) -> None:
+    """TMPDIR is environment-derived, so it must never reach the trap as code.
+
+    Raised as a BLOCKING P1 on PR #1634 against the earlier fix, which expanded
+    the path into the trap STRING: a trap string is re-parsed when it fires, so
+    an apostrophe closed the quoting early. The control below pins that the
+    case is real rather than theoretical, and the assertion pins that the
+    shipped shape is immune to it.
+    """
+    quoted_tmpdir = tmp_path / "al'ex tmp"
+
+    # Control: the interpolating shape genuinely breaks here. Without this, a
+    # pass below could mean nothing more than that apostrophes are harmless.
+    control = _run_trap_harness(INTERPOLATED_SETUP, quoted_tmpdir, tmp_path)
+    control_leftover = list(quoted_tmpdir.glob(TEMP_ARCHIVE_GLOB))
+    assert control.returncode != 0 or control_leftover != [], (
+        "the interpolating shape coped with an apostrophe, so this test is not "
+        f"measuring the reported defect: {control.stdout + control.stderr}"
+    )
+
+    for stale in quoted_tmpdir.glob(TEMP_ARCHIVE_GLOB):
+        stale.unlink()
+    result = _run_trap_harness(_shipped_notarize_setup(), quoted_tmpdir, tmp_path)
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "REACHED-END" in result.stdout, combined
+    leftover = list(quoted_tmpdir.glob(TEMP_ARCHIVE_GLOB))
+    assert leftover == [], f"the temp archive survived the trap: {leftover}"
+
+
+# The literal name the pre-fix template produced on macOS, every single time.
+PRE_FIX_LITERAL_ARCHIVE = "opendj-notary-app.XXXXXX.zip"
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_a_stale_archive_from_a_failed_run_does_not_block_the_next(tmp_path: Path) -> None:
+    """Hit live on silver Thu 10 Sep 2026: one failed submission, then every
+    signed build died at `mkstemp failed ... File exists` 3 minutes in."""
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    (tmpdir / PRE_FIX_LITERAL_ARCHIVE).write_text("left by a failed run\n")
+
+    control = _run_trap_harness(PRE_FIX_SETUP, tmpdir, tmp_path)
+    assert control.returncode != 0, "the pre-fix template coped with a stale file"
+    assert "File exists" in control.stderr, control.stderr
+
+    result = _run_trap_harness(_shipped_notarize_setup(), tmpdir, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "REACHED-END" in result.stdout
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_a_die_mid_notarization_still_deletes_the_temp_archive(tmp_path: Path) -> None:
+    """`die` exits, and an exit never fires a RETURN trap."""
+    dies = "    touch \"${NOTARY_APP_DIR:-$zip}\"/app.zip 2>/dev/null || true; exit 1"
+
+    control_tmp = tmp_path / "control"
+    control = _run_trap_harness(PRE_FIX_SETUP, control_tmp, tmp_path, body="    exit 1")
+    assert control.returncode == 1
+    assert list(control_tmp.glob(TEMP_ARCHIVE_GLOB)) != [], "control leaked nothing"
+
+    tmpdir = tmp_path / "tmp"
+    result = _run_trap_harness(_shipped_notarize_setup(), tmpdir, tmp_path, body=dies)
+    assert result.returncode == 1, result.stdout + result.stderr
+    leftover = list(tmpdir.glob(TEMP_ARCHIVE_GLOB))
+    assert leftover == [], f"die left the temp archive behind: {leftover}"
+
+
+# A template whose X run is followed by anything before the closing quote.
+SUFFIXED_MKTEMP = re.compile(r"mktemp\b[^\n]*?X{3,}[^X\s\"')/]+[\"']")
+
+
+def test_the_suffixed_template_detector_fires_on_the_known_bad_shapes() -> None:
+    """Positive control for the invariant below: it must be able to say no."""
+    assert SUFFIXED_MKTEMP.search('zip=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")')
+    assert SUFFIXED_MKTEMP.search('m="$(mktemp "${TMPDIR:-/tmp}/opendj-latest.XXXXXX.json")"')
+    assert not SUFFIXED_MKTEMP.search('d=$(mktemp -d "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX")')
+    assert not SUFFIXED_MKTEMP.search("mount=$(mktemp -d /tmp/opendj-dmg-verify.XXXXXX)")
+
+
+@needs_system_bash_3
+def test_bsd_mktemp_really_does_not_randomize_a_suffixed_template(tmp_path: Path) -> None:
+    """Instrument check: the invariant below guards a real macOS behavior."""
+    template = str(tmp_path / "probe.XXXXXX.zip")
+    first = subprocess.run(["mktemp", template], capture_output=True, text=True, check=True)
+    assert Path(first.stdout.strip()).name == "probe.XXXXXX.zip"
+    second = subprocess.run(["mktemp", template], capture_output=True, text=True, check=False)
+    assert second.returncode != 0 and "File exists" in second.stderr
+
+
+def test_no_shell_mktemp_template_carries_a_suffix_after_its_xs() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "*.sh", "justfile", "**/justfile"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert len(tracked) > 20, f"scanned implausibly few files: {tracked}"
+    hits = [
+        f"{path}:{number}: {line.strip()}"
+        for path in tracked
+        for number, line in enumerate(
+            (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        )
+        if SUFFIXED_MKTEMP.search(line)
+    ]
+    assert hits == [], "\n".join(hits)

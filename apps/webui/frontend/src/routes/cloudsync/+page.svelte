@@ -39,7 +39,9 @@
 		audio: 'Audio',
 		stem_bundle: 'Stem bundles',
 		anlz_cache: 'ANLZ cache',
-		vocal_cache: 'Vocal cache'
+		vocal_cache: 'Vocal cache',
+		lyrics_cache: 'Lyrics cache',
+		karaoke_words: 'Karaoke word timings'
 	};
 
 	function tabFromUrl(url: URL): Tab {

@@ -1,8 +1,11 @@
 <script lang="ts">
 	// Far-left browser icon rail (SCREENSHOT-SPEC 5a). Spotify is the only
 	// active source at this stage; all other source glyphs remain inert.
+	import { plannedTitle } from '$lib/rb/planned-explainers';
+
 	interface RailIcon {
-		tip: string;
+		tip?: string;
+		plannedId?: string;
 		color: string;
 		d: string;
 		mode: 'fill' | 'stroke';
@@ -24,12 +27,10 @@
 		onrecord?: () => void;
 	} = $props();
 
-	const TIP = 'not implemented - see PARITY-TODO';
-
 	const ICONS: RailIcon[] = [
-		{ tip: TIP, color: 'currentColor', d: 'M4 2h8v12l-4-3.2L4 14z', mode: 'fill' },
-		{ tip: TIP, color: 'currentColor', d: 'M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z', mode: 'fill' },
-		{ tip: TIP, color: 'currentColor', d: 'M2 3h12v2H2zM4 7h10v2H4zM6 11h8v2H6z', mode: 'fill' },
+		{ plannedId: 'collection-bookmarks', color: 'currentColor', d: 'M4 2h8v12l-4-3.2L4 14z', mode: 'fill' },
+		{ plannedId: 'explorer-grid', color: 'currentColor', d: 'M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z', mode: 'fill' },
+		{ plannedId: 'itunes-library', color: 'currentColor', d: 'M2 3h12v2H2zM4 7h10v2H4zM6 11h8v2H6z', mode: 'fill' },
 		{
 			tip: 'Spotify playlists and acquisition queue',
 			color: '#35c04f',
@@ -37,25 +38,25 @@
 			mode: 'fill',
 			source: 'spotify'
 		},
-		{ tip: TIP, color: '#3d7dd9', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
-		{ tip: TIP, color: '#8e5bd6', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
-		{ tip: TIP, color: 'currentColor', d: 'M2 3h12v8H2zM6 12h4v2H6z', mode: 'fill' },
+		{ plannedId: 'file-browser', color: '#3d7dd9', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
+		{ plannedId: 'beatport', color: '#8e5bd6', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
+		{ plannedId: 'video-output', color: 'currentColor', d: 'M2 3h12v8H2zM6 12h4v2H6z', mode: 'fill' },
 		{
 			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a)
-			tip: TIP,
+			plannedId: 'usb-export',
 			color: 'currentColor',
 			d: 'M5 2h6.5L13 3.5V14H5zM6.2 3.2v2.6M8 3.2v2.6M9.8 3.2v2.6M11.6 3.7v2.1',
 			mode: 'stroke'
 		},
 		{
-			tip: TIP,
+			plannedId: 'cloud-lock',
 			color: 'currentColor',
 			d: 'M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7M4 7h8v6H4z',
 			mode: 'stroke'
 		},
 		{
 			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a)
-			tip: TIP,
+			plannedId: 'play-history',
 			color: 'currentColor',
 			d: 'M6.5 1.5h3M8 1.5v2M8 3.5a5 5 0 1 1 0 10a5 5 0 1 1 0-10M8 8.5V5.5M8 8.5l2 1.5',
 			mode: 'stroke'
@@ -76,7 +77,13 @@
 	{#each ICONS as icon, i (i)}
 		{@const isRecord = icon.action === 'record'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}
-		{@const tip = isRecord ? (recording ? 'Stop set recording' : icon.tip) : icon.tip}
+		{@const tip = isRecord
+			? recording
+				? 'Stop set recording'
+				: (icon.tip ?? 'Start set recording')
+			: isInert && icon.plannedId !== undefined
+				? plannedTitle(icon.plannedId)
+				: (icon.tip ?? '')}
 		<button
 			class="rail-btn"
 			class:rb-inert={isInert}

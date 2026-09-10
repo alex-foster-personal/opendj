@@ -1,0 +1,125 @@
+name: Reqs Flip Gate
+
+# WHY THIS IS ITS OWN WORKFLOW AND NOT A STEP IN CI
+#
+# The gate reads the PR's own title and body and fails when either cites a
+# pending v1 requirement id the PR neither flips nor excuses with
+# `reqs: no-flip <id> <reason>`. It lived in ci.yml's `contracts` job until
+# Thu 10 Sep 2026, where TWO properties of that workflow made its verdict
+# worth less than it looked, both found by Codex on #1709:
+#
+# 1. ABSENT on the PRs it exists for. ci.yml's `pull_request` `paths` filter
+#    excludes `**.md`, `docs/**`, `handoffs/**`, `.planning/**` (re-including
+#    only REQUIREMENTS.md), `specs/**` and `blog/**`, so a docs-only PR
+#    schedules no ci.yml run at all and produced no check. A docs PR that
+#    records a pending id without shipping it is the exact case this gate was
+#    written to stop being silent about, and it was the one case that could
+#    never reach it. There is NO paths filter here, deliberately.
+#
+# 2. STALE relative to the metadata it reads. Title and body change with no new
+#    head SHA, and GitHub's default `pull_request` types are
+#    opened/synchronize/reopened, so a green check outlived the body that
+#    earned it. `edited` is in the list below; the other three are restated
+#    because naming `types` REPLACES the implicit list rather than adding to it.
+#
+# Splitting it out is also what makes `edited` affordable. Adding that type to
+# ci.yml would supersede the in-flight run for the ref and re-run the whole
+# fast lane on every body edit; this job is one checkout and one stdlib script.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  # Per PR, so a burst of body edits leaves one run standing and a run here can
+  # never cancel anything in ci.yml.
+  group: reqs-flip-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# The default workflow permissions on this repository are "read", which covers
+# contents and packages and nothing else, so `gh pr view` came back with
+# "GraphQL: Resource not accessible by integration" and the gate could only
+# report UNKNOWN. Declaring a block REPLACES the default, so `contents: read`
+# has to be restated for actions/checkout.
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  # Keep .pyc out of the persistent self-hosted workspace: root-owned bytecode
+  # is what made actions/checkout fail with EACCES and skip every later step
+  # (#1338). Pinned by tests/quality/test_workspace_ownership_hygiene.py.
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  gate:
+    name: reqs flip gate
+    # See the runner-selection note on ci.yml's `test` job.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # A checkout and one stdlib script that makes a single `gh pr view` call.
+    # Anything past five minutes is stuck, not slow.
+    timeout-minutes: 5
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+
+      # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        timeout-minutes: 2
+        with:
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Reqs flip gate (issue #1605 enforcement)
+        # No venv and no dependency install: scripts.reqs_flip_gate and the
+        # scripts.reqs_cited_unflipped matcher it reuses are stdlib only, and
+        # the reqs.json it reads is THIS PR's own checked-out copy, which is
+        # what makes "the id is flipped in this PR" a readable question.
+        # Exit 1 = a cited pending id is neither flipped nor excused.
+        # Exit 2 = the gate could not measure, which is never a pass.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m scripts.reqs_flip_gate --pr "${{ github.event.pull_request.number }}"

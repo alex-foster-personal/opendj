@@ -18,6 +18,7 @@
 	// 4-pane browser tabs (SCREENSHOT-SPEC 5c). Active tab shows
 	// 'Name (N Tracks)' + inert stepper chevrons; the other panes each
 	// remember their own playlist selection (only the active pane renders).
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		decodePlaylistDrag,
 		PLAYLIST_DRAG_MIME,
@@ -155,7 +156,7 @@
 					<button
 						class="rb-inert"
 						disabled
-						title="not implemented - see PARITY-TODO"
+						title={plannedTitle('pane-prev-track')}
 						aria-label="previous track in pane"
 					>
 						<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
@@ -170,7 +171,7 @@
 					<button
 						class="rb-inert"
 						disabled
-						title="not implemented - see PARITY-TODO"
+						title={plannedTitle('pane-next-track')}
 						aria-label="next track in pane"
 					>
 						<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">

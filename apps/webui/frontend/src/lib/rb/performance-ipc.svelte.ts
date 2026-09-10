@@ -42,6 +42,13 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import {
+	analysisSourceState,
+	installAnalysisSourceRefreshRunner,
+	setAnalysisSource,
+	type AnalysisSource,
+	type AnalysisSourceFeature
+} from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
@@ -73,7 +80,12 @@ import {
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
-import { pendingLoadPlayState, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
+import {
+	markArmedHotCuePress,
+	pendingLoadPlayState,
+	setPendingLoadPlayIntent,
+	type DeckId
+} from '$lib/rb/deck-slots';
 import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
 import type {
 	DeckAudioSnapshot,
@@ -152,6 +164,7 @@ export type PerformanceCommand =
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
+	| { type: 'filter'; deck: DeckId; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
 	| { type: 'assign'; deck: DeckId; assign: CrossfaderAssign }
 	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
@@ -164,6 +177,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
@@ -289,6 +303,22 @@ export interface PerformanceState {
 	preset: PerformancePresetLifecycleSnapshot;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
+	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
+	 * same way the `analysis_source` command names it. An agent driving this
+	 * daemon has to be able to READ the state it can write, including a
+	 * selection some other client PUT directly or one that survived a reload -
+	 * the highlighted RBX/OWN control was the only place it appeared
+	 * (discussion_r3968214027 P1 BLOCKING). Empty until the first
+	 * loadAnalysisSource lands, which is "not asked yet", never a default. */
+	analysis_source: Record<string, AnalysisSource>;
+	/** PARITY-02: the source the loaded DECKS are actually on, which lags
+	 * `analysis_source` by up to one poll and, on a switch whose deck refresh
+	 * keeps failing, may never catch up. An agent that PUT a source and wants to
+	 * know whether the decks followed can only read that here: the two fields
+	 * disagreeing IS the split (discussion_r3970117737, discussion_r3970117741).
+	 * Empty until the first refresh lands, which is "not asked yet", never a
+	 * default. */
+	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
@@ -435,7 +465,7 @@ export interface PerformanceBrowserIpc {
  * screen, copied to the clipboard and written into the perf-event ring row. */
 export interface ToastIpcRow {
 	id: string;
-	kind: 'info' | 'error';
+	kind: 'info' | 'warn' | 'error';
 	message: string;
 	count: number;
 	created_at: string;
@@ -495,11 +525,13 @@ export interface PerformanceHotCueDriver {
 		positionSec: number;
 		beats: readonly AnlzBeat[];
 	};
-	/** Immediate jump - the same path an unquantized click always took. */
-	jump(deck: DeckId, positionMs: number): Promise<void>;
+	/** Immediate jump - the same path an unquantized click always took.
+	 * pressT0Ms is Q1's operator-felt press stamp. */
+	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
-	 * AudioContext time the schedule lands at. */
-	arm(deck: DeckId, positionMs: number, armAtPositionSec: number): Promise<number>;
+	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
+	 * operator-felt press stamp. */
+	arm(deck: DeckId, positionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number>;
 	contextTimeNowSec(): number;
 }
 
@@ -517,8 +549,9 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 			beats: state.anlz?.beatgrid.beats ?? []
 		};
 	},
-	jump: (deck, positionMs) => engine.quantizedSeek(deck, positionMs),
-	arm: (deck, positionMs, armAtPositionSec) => engine.armHotCueTrigger(deck, positionMs, armAtPositionSec),
+	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
+	arm: (deck, positionMs, armAtPositionSec, pressT0Ms) =>
+		engine.armHotCueTrigger(deck, positionMs, armAtPositionSec, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
@@ -630,6 +663,14 @@ installScopedSyncRunner((_deck, run) => {
 			}
 		});
 });
+// PARITY-02: the poll in AnalysisSourceToggle.svelte adopts an agent's direct
+// PUT with no command of its own, so its deck/cache refresh needs the same
+// all-deck-plus-sync claim the `analysis_source` command takes. Same scopes,
+// so a poll-detected switch queues behind PREPARE/START and every deck
+// mutation instead of replacing grids underneath them
+// (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
+// because analysis-source.svelte.ts is imported FROM here.
+installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -782,6 +823,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('device_id must be a non-empty string');
 		}
 		return { type, device_id: record.device_id };
+	}
+	if (type === 'analysis_source') {
+		_exactKeys(record, ['type', 'feature', 'source']);
+		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (record.source !== 'rekordbox' && record.source !== 'own') {
+			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
+		}
+		return { type, feature: record.feature, source: record.source };
 	}
 	if (type === 'auto_play_two_track') {
 		_exactKeys(record, ['type']);
@@ -956,7 +1005,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`mode must be "beat" or "bar"; got ${String(record.mode)}`);
 		}
 		return { type, deck, mode: record.mode };
-	} else if (type === 'trim' || type === 'fader') {
+	} else if (type === 'trim' || type === 'fader' || type === 'filter') {
 		_exactKeys(record, ['type', 'deck', 'value']);
 		return { type, deck, value: _unit('value', record.value) };
 	} else if (type === 'eq') {
@@ -1260,6 +1309,13 @@ export function queryPerformanceState(): PerformanceState {
 			next_collapsed: uiPrefs.next_panel_collapsed,
 			recommended_collapsed: uiPrefs.recommended_panel_collapsed
 		},
+		// Spread, not the live rune: this snapshot is structuredClone'd across
+		// the IPC boundary and a $state Proxy is never cloneable.
+		analysis_source: { ...analysisSourceState.features },
+		// Spread for the same reason as the line above: analysisSourceState is a
+		// $state rune, so handing the live Proxy out breaks structuredClone for
+		// every agent reading this snapshot over IPC.
+		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary()
 	};
 }
@@ -1307,6 +1363,7 @@ export function performanceCommandQueueScopes(
 	) {
 		return ['headphone'];
 	}
+	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
 	const deck = _commandDeck(command);
 	if (command.type === 'channel_cue') {
 		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
@@ -1315,6 +1372,7 @@ export function performanceCommandQueueScopes(
 	if (
 		command.type === 'trim' ||
 		command.type === 'eq' ||
+		command.type === 'filter' ||
 		command.type === 'fader' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
@@ -1419,7 +1477,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		hotCueArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
-		if (!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play)) {
+		// Q1: the stamp rides WITH the intent, so the play this eventually
+		// becomes can time from the operator's keydown and not from the load.
+		if (
+			!setPendingLoadPlayIntent(command.deck, command.generation, command.desired_play, pressT0Ms)
+		) {
 			throw new Error(`load_play_intent generation ${command.generation} is not pending on CH${command.deck}`);
 		}
 	} else if (command.type === 'unload') {
@@ -1491,6 +1553,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
 		engine.setEq(command.deck, command.band, command.value);
+	} else if (command.type === 'filter') {
+		engine.setFilter(command.deck, command.value);
 	} else if (command.type === 'fader') {
 		engine.setFader(command.deck, command.value);
 		} else if (command.type === 'assign') {
@@ -1517,6 +1581,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'analysis_source') {
+		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'safety_loop_save') {
@@ -1579,9 +1645,18 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const plan = planHotCueTrigger(uiPrefs.beat_sync_max, playing, loopEngaged, positionSec, beats);
 		if (plan.kind === 'immediate') {
 			hotCueArmed[command.deck] = null;
-			await _hotCueDriver.jump(command.deck, cue.in_ms);
+			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
 		} else {
-			const targetContextTime = await _hotCueDriver.arm(command.deck, cue.in_ms, plan.armAtPositionSec);
+			// Mark BEFORE the row can file: the eventual schedule reads this same
+			// stamp via press-stamp.ts's claimArmedHotCuePress to distinguish an
+			// armed (deferred-to-downbeat) wait from an immediate press row.
+			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+			const targetContextTime = await _hotCueDriver.arm(
+				command.deck,
+				cue.in_ms,
+				plan.armAtPositionSec,
+				pressT0Ms
+			);
 			hotCueArmed[command.deck] = {
 				slot: command.slot,
 				target_position_ms: cue.in_ms,

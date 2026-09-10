@@ -16,6 +16,8 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
+		pingHealth,
+		timeoutSignal,
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
@@ -27,6 +29,10 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import {
+		libraryHealthDot as _computeLibraryHealthDot,
+		type LibraryHealthDot
+	} from '$lib/rb/library-health-dots';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -108,6 +114,7 @@
 		beginPendingLoadPlay,
 		clearPendingLoadPlay,
 		consumePendingLoadPlay,
+		markLoadSpanningPress,
 		pickDoubleClickDeck,
 		type DeckSlotState
 	} from '$lib/rb/deck-slots';
@@ -123,12 +130,16 @@
 		derivePlaylistDeckMembership,
 		derivePlaylistPaneOpenCounts,
 		filterRows,
+		getHealthAtBoot,
+		getHealthFreshWithRetry,
 		installBrowserSortIpc,
 		makeClientRowProvider,
 		multiPanePlaylistIds,
+		reconcileBootSnapshot,
 		reorderPanesInPlace,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
+		shouldRetryBootPane,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -154,6 +165,7 @@
 	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
@@ -189,7 +201,21 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
-	let allTracksPlayableCount = $state<number | null>(null);
+	// Bumped every time something OTHER than _init() writes allTracksCount or
+	// playlists respectively, so _init()'s boot Promise.all can tell whether
+	// its own snapshot of EACH field is still the freshest once it resolves.
+	// Two separate counters, not one shared epoch: _refreshLibraryRowsOnce
+	// writes these two fields at different times within the same call (
+	// _refreshPlaylists() first, the health re-read after), so a single
+	// shared epoch bumped by either write made a playlists-only write during
+	// _init()'s boot read discard _init()'s own, still-uncontested health
+	// snapshot - the boot pane then read a stale/null allTracksCount and
+	// _restoreBootPane() treated a non-empty library as empty (PR #1656
+	// review round 11, P2 BLOCKING). See reconcileBootSnapshot's doc comment
+	// for the race this guards.
+	let _healthWriteEpoch = 0;
+	let _playlistsWriteEpoch = 0;
+	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
 	let playlistsLoading = $state(true);
@@ -204,16 +230,44 @@
 	/** Brief unload affordance after a load blocked by an active deck. */
 	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
 	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
-	type LibraryHealthDot = {
-		label: 'Library health' | 'Vocals completion' | 'Stems completion' | 'Lyrics completion';
-		state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
-		detail: string;
-	};
-	let libraryHealth = $state<LibraryHealthDot>({
-		label: 'Library health',
+	// Restored by pin a66ee132a14e. #1339/#1352 replaced the old three-dot
+	// `conn-dots` strip (fe / be / lib) with this coverage row and carried
+	// only the `lib` signal across as `libraryHealth`, so the two liveness
+	// dots vanished with no replacement anywhere in the UI. They are the
+	// only thing that distinguishes "the library really is empty" from "the
+	// engine is not answering", which is exactly the confusion that made
+	// this pin worth filing.
+	let frontendOnline = $state<LibraryHealthDot>({
+		label: 'Frontend',
 		state: 'loading',
-		detail: 'checking library health'
+		detail: 'checking frontend'
 	});
+	let backendOnline = $state<LibraryHealthDot>({
+		label: 'Backend',
+		state: 'loading',
+		detail: 'checking backend'
+	});
+	let libraryHealthError = $state<string | null>(null);
+	/**
+	 * Derived, not assigned. pin a66ee132a14e: this dot used to quote
+	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
+	 * available" on a library where most of those rows are broken links to
+	 * files that are permanently gone. The playable total is
+	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
+	 * AFTER init - assigning the dot at init time is precisely how it came to
+	 * quote the wrong number, so the dot is computed from whatever has landed
+	 * instead of frozen at the first thing that did.
+	 */
+	const libraryHealth = $derived<LibraryHealthDot>(
+		_computeLibraryHealthDot(
+			libraryHealthError,
+			allTracksCount,
+			playlists.length,
+			allTracksNonBrokenCount,
+			allTracksBrokenCount,
+			allTracksReconcileError
+		)
+	);
 	let vocalsCompletion = $state<LibraryHealthDot>({
 		label: 'Vocals completion',
 		state: 'loading',
@@ -543,7 +597,7 @@
 			? pane.search_result_query === pane.search.trim() &&
 				pane.search_total === pane.search_results.length
 			: !pane.truncated;
-		// Only Next-only is bypassed. The user-selected Broken filter stays intact.
+		// Only the compatible filter is bypassed. The user-selected Broken filter stays intact.
 		return selectSearchFilterFallback(
 			pane.search,
 			visibleRows,
@@ -561,7 +615,7 @@
 	const filterBypassNote = $derived(
 		searchFilterFallback === null
 			? null
-			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with Next-only filter bypassed.`
+			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with the compatible filter bypassed.`
 	);
 	// Read contract handed to TrackTable (getters stay reactive through
 	// renderedRows/pane). The virtualization lane replaces THIS provider,
@@ -579,19 +633,21 @@
 	);
 	const emptyMessage = $derived.by((): string | null => {
 		if (searchFilterFallback !== null) return null;
+		// Overlay (LibraryLoadIndicator) is the only in-flight surface: load
+		// and whole-collection search both paint there (pin 02717d4ea496,
+		// follow-up #1688). Empty-state is settled-only, so a concurrent
+		// search+load cannot stack two status strings on the same pixels.
+		if (pane.loading || pane.searching) return null;
 		if (searchMode === 'find') {
-			if (pane.loading) return 'loading...';
-			else if (pane.error !== null) return `load failed: ${pane.error}`;
+			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
 		}
 		if (wholeCollectionActive) {
-			if (pane.searching) return 'searching whole collection...';
-			else if (visibleRows.length === 0) return 'no tracks match the search';
+			if (visibleRows.length === 0) return 'no tracks match the search';
 			else return null;
-		} else if (pane.loading) return 'loading...';
-		else if (pane.error !== null) return `load failed: ${pane.error}`;
+		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
@@ -657,6 +713,19 @@
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
 		);
+		// Liveness ping restored with pin a66ee132a14e's dots. Kept at the
+		// original 2.5s cadence and 2s timeout: this is the only signal that
+		// goes red while the rest of the pane simply shows stale data, so a
+		// slower poll would make it lie for longer than it is useful.
+		let connAlive = true;
+		const pingConn = async (): Promise<void> => {
+			const [be, fe] = await Promise.all([_pingBackend(), _pingFrontend()]);
+			if (!connAlive) return;
+			backendOnline = be;
+			frontendOnline = fe;
+		};
+		void pingConn();
+		const connTimer = setInterval(() => void pingConn(), CONN_PING_MS);
 
 		// ---- library listing freshness -------------------------------------
 		// FAST PATH: the engine tells us the moment a track changes, from any
@@ -667,6 +736,12 @@
 		// refetch is allowed to run, and its coalescer guarantees it is only
 		// ever one refetch.
 		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
+		// Another tab or API client creating/deleting a playlist must not leave
+		// the "N playlists found" health-dot total stale until this tab does a
+		// local playlist op or a reload.
+		const unsubscribePlaylists = subscribeKind('playlists', () =>
+			_libraryRefreshGate.request()
+		);
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => _libraryRefreshGate.request());
@@ -685,15 +760,62 @@
 		return () => {
 			uninstallBrowserSortIpc();
 			unregisterPerformanceBrowser();
+			connAlive = false;
+			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeTracks();
+			unsubscribePlaylists();
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 		};
 	});
+	/**
+	 * The Library health dot policy now lives in `$lib/rb/library-health-dots`
+	 * (pure, unit tested with no component or network mock), the same split
+	 * as `meter-math.ts`. `libraryHealth` above calls it directly.
+	 */
 
+	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
+	const CONN_PING_MS = 2500;
+	const CONN_PING_TIMEOUT_MS = 2000;
+
+	async function _pingBackend(): Promise<LibraryHealthDot> {
+		try {
+			await pingHealth(CONN_PING_TIMEOUT_MS);
+			return { label: 'Backend', state: 'complete', detail: 'engine online' };
+		} catch (error: unknown) {
+			// The reason is kept rather than flattened to "offline": a timeout
+			// and a 500 want different things from the reader.
+			const why = error instanceof Error ? error.message : String(error);
+			return { label: 'Backend', state: 'error', detail: `engine not answering - ${why}` };
+		}
+	}
+
+	async function _pingFrontend(): Promise<LibraryHealthDot> {
+		const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
+		try {
+			const response = await fetch(`${window.location.origin}/`, {
+				method: 'GET',
+				cache: 'no-store',
+				signal
+			});
+			if (!response.ok) {
+				return {
+					label: 'Frontend',
+					state: 'error',
+					detail: `dev server returned HTTP ${response.status}`
+				};
+			}
+			return { label: 'Frontend', state: 'complete', detail: 'dev server online' };
+		} catch (error: unknown) {
+			const why = error instanceof Error ? error.message : String(error);
+			return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
+		} finally {
+			clear();
+		}
+	}
 
 	function _coverageDot(
 		label: LibraryHealthDot['label'],
@@ -702,10 +824,14 @@
 	): LibraryHealthDot {
 		const missing = coverage.missing[step];
 		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
-			return { label, state: 'unavailable', detail: `${step} coverage is unavailable` };
+			return { label, state: 'unavailable', detail: `${step} coverage could not be measured` };
 		}
 		if (coverage.on_disk <= 0) {
-			return { label, state: 'unavailable', detail: `no reachable tracks to measure, ${coverage.unreachable} unreachable` };
+			return {
+				label,
+				state: 'unavailable',
+				detail: `no playable tracks to measure, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
+			};
 		}
 		const completed = coverage.on_disk - missing;
 		if (completed < 0) {
@@ -725,13 +851,13 @@
 			return {
 				label,
 				state: 'error',
-				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
 			};
 		}
 		return {
 			label,
 			state: missing === 0 ? 'complete' : 'incomplete',
-			detail: `${completed}/${coverage.on_disk} complete, ${missing} missing, ${coverage.unreachable} unreachable`
+			detail: `${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
 		};
 	}
 
@@ -752,7 +878,7 @@
 	async function _loadReconcileSummary(): Promise<void> {
 		try {
 			const summary = await getReconcileSummary();
-			allTracksPlayableCount = summary.total_tracks - summary.total_broken;
+			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
@@ -763,20 +889,45 @@
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
+		const bootHealthEpoch = _healthWriteEpoch;
+		const bootPlaylistsEpoch = _playlistsWriteEpoch;
 		try {
-			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
-			allTracksCount = healthRes.health.state_db.tracks;
-			libraryHealth = {
-				label: 'Library health',
-				state: allTracksCount > 0 ? 'complete' : 'unavailable',
-				detail: allTracksCount > 0 ? `${allTracksCount} tracks available` : 'no tracks available'
-			};
-			playlists = lists;
+			const [healthRes, lists] = await Promise.all([
+				getHealthAtBoot(getHealth),
+				listPlaylistsHydrated()
+			]);
+			libraryHealthError = null;
+			// A concurrent _refreshLibraryRowsOnce call (a library-change event, or
+			// the bus's first-ever open) can write a fresher allTracksCount and
+			// playlists while this Promise.all is still in flight. Applying this
+			// boot snapshot unconditionally would clobber that fresher data with
+			// older data (PR #1656 review round 9, P2 BLOCKING) - see
+			// reconcileBootSnapshot's doc comment. Each field is reconciled
+			// against its OWN write epoch: _refreshLibraryRowsOnce writes
+			// playlists (via _refreshPlaylists) and allTracksCount (via the
+			// health re-read) at different times within one call, so a
+			// playlists-only write in between must not discard this boot
+			// read's still-uncontested health value, and vice versa (PR #1656
+			// review round 11, P2 BLOCKING).
+			allTracksCount = reconcileBootSnapshot({
+				bootEpoch: bootHealthEpoch,
+				currentEpoch: _healthWriteEpoch,
+				bootValue: healthRes.health.state_db.tracks,
+				currentValue: allTracksCount
+			});
+			playlists = reconcileBootSnapshot({
+				bootEpoch: bootPlaylistsEpoch,
+				currentEpoch: _playlistsWriteEpoch,
+				bootValue: lists,
+				currentValue: playlists
+			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
-			await _sweepBlankPlaylists(lists);
+			if (_playlistsWriteEpoch === bootPlaylistsEpoch) {
+				await _sweepBlankPlaylists(lists);
+			}
 			if (source === 'spotify' && spotifySelectedId !== null) {
-				const selected = lists.find(
+				const selected = playlists.find(
 					(playlist) =>
 						playlist.vendor === 'spotify' && playlist.playlist_id === spotifySelectedId
 				);
@@ -789,11 +940,7 @@
 				await _restoreBootPane();
 			}
 		} catch (exc) {
-			libraryHealth = {
-				label: 'Library health',
-				state: 'error',
-				detail: exc instanceof Error ? exc.message : String(exc)
-			};
+			libraryHealthError = exc instanceof Error ? exc.message : String(exc);
 			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
 			throw exc;
@@ -1080,6 +1227,7 @@
 
 	async function _refreshPlaylists(): Promise<void> {
 		playlists = await listPlaylistsHydrated();
+		_playlistsWriteEpoch += 1;
 		await _sweepBlankPlaylists(playlists);
 	}
 
@@ -1104,10 +1252,15 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
-		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary()]);
+		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
-			const healthRes = await getHealth();
+			// `fresh` because this runs OFF a library-change event: a body
+			// shared from before that change would paint a stale count and
+			// leave it there until the next event. The mount-time read in
+			// `_init` above has no such constraint and shares one.
+			const healthRes = await getHealthFreshWithRetry(getHealth);
 			allTracksCount = healthRes.health.state_db.tracks;
+			_healthWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}
@@ -1142,17 +1295,37 @@
 				);
 			}
 		}
+		// A boot health read that joined an in-flight coalesced entry can settle
+		// with a snapshot from BEFORE a change this same trigger exists to react
+		// to (request-coalescer.ts's `forceInFlight: false` on the
+		// 'initial-connect' resync deliberately leaves such an entry untouched -
+		// see its docstring). _restoreBootPane() then saw a falsely-empty
+		// library and left panes[0] unclaimed on purpose, and nothing above this
+		// point ever retries it (blank panes are explicitly skipped). The fresh
+		// count just read above may have corrected that, so retry now rather
+		// than stranding the pane blank until a manual reload - see
+		// `shouldRetryBootPane`'s own doc comment for the decision and why it
+		// is a separate, pure, real-module-tested function.
+		if (
+			shouldRetryBootPane({
+				boot_pane_playlist_id: panes[0].playlist_id,
+				source,
+				spotify_selected_id: spotifySelectedId
+			})
+		) {
+			await _restoreBootPane();
+		}
 	}
 
 	/**
 	 * The only entry point for a background library refresh: WHEN it may run,
 	 * and how many times.
 	 *
-	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
-	 * the 60s degraded-path poll) and a single gap-revealing `library.changed`
-	 * frame fires the first two for ONE event. Unguarded that is two concurrent
-	 * full library reads racing to write the same panes; the gate's coalescer
-	 * makes it one run plus one trailing run (`$lib/rb/coalesce`).
+	 * Four triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
+	 * `subscribeResync` and the 60s degraded-path poll) and a single gap-revealing
+	 * `library.changed` frame fires two of them for ONE event. Unguarded that is
+	 * concurrent full library reads racing to write the same panes; the gate's
+	 * coalescer makes it one run plus one trailing run (`$lib/rb/coalesce`).
 	 *
 	 * PERFMODE-04 on top of that: no background refetch AT ALL while a deck is
 	 * playing. A refresh is a full library read per open pane followed by a
@@ -1325,7 +1498,7 @@
 			const result =
 				node.kind === 'all_tracks'
 					? await _fetchAllRows((info) =>
-							p.updateLoadProgress(seq, info.loaded, allTracksPlayableCount)
+							p.updateLoadProgress(seq, info.loaded, allTracksNonBrokenCount)
 						)
 					: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
@@ -1574,19 +1747,23 @@
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): void {
 		void _loadOntoDeck(row, deck, opts);
 	}
 
-	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
+	function loadSuggest(sid: string, opts: { play?: boolean; pressT0Ms?: number } = {}): void {
 		const row = { stable_id: sid, file_exists: true, is_streaming: false };
 		if (opts.play) {
 			const picked = pickDoubleDeck(row);
 			if (picked === null) return;
 			// pickDoubleDeck already reserved this deck - see _loadOntoDeck's
 			// reservation gate.
-			loadRow(row, picked.deck, { play: true, reservation: picked.reservation });
+			loadRow(row, picked.deck, {
+				play: true,
+				reservation: picked.reservation,
+				...(opts.pressT0Ms === undefined ? {} : { pressT0Ms: opts.pressT0Ms })
+			});
 			return;
 		}
 		loadRow(row, null);
@@ -1806,7 +1983,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -1847,12 +2024,15 @@
 			}
 			try {
 				loadIntent = beginPendingLoadPlay(target, opts.play === true);
-				await dispatchPerformanceCommand({
-					type: 'load_play_intent',
-					deck: target,
-					generation: loadIntent.generation,
-					desired_play: loadIntent.desiredPlay
-				});
+				await dispatchPerformanceCommand(
+					{
+						type: 'load_play_intent',
+						deck: target,
+						generation: loadIntent.generation,
+						desired_play: loadIntent.desiredPlay
+					},
+					opts.pressT0Ms
+				);
 				// Explicit CH load (incl. confirmed double-click): replace if occupied.
 				// refuseIfMaster: true on both - this is a destructive REPLACE, not
 				// a standalone eject, so it must stay refused if `target` raced to
@@ -1871,9 +2051,21 @@
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-				const desiredPlay = consumePendingLoadPlay(target, loadIntent.generation)?.desiredPlay ?? false;
-				if (desiredPlay) {
-					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+				const pendingPlay = consumePendingLoadPlay(target, loadIntent.generation);
+				if (pendingPlay?.desiredPlay === true) {
+					// Q1: timed from the operator's ORIGINAL keydown, which is
+					// what they felt, not from this dispatch downstream of the
+					// load they were waiting on.
+					// This dispatch only ever fires after `load` above has
+					// resolved, so a stamp reaching it always spans this
+					// deck's load - mark it before it is spent (r3974057968).
+					if (pendingPlay.pressT0Ms !== undefined) {
+						markLoadSpanningPress(pendingPlay.pressT0Ms);
+					}
+					await dispatchPerformanceCommand(
+						{ type: 'play', deck: target, playing: true },
+						pendingPlay.pressT0Ms
+					);
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2308,7 +2500,7 @@
 				nodes={treeNodes}
 				playlistsLoading={playlistsLoading}
 				playlistsError={playlistsError}
-				allTracksCount={allTracksPlayableCount}
+				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
 				selectedId={pane.playlist_id}
@@ -2355,7 +2547,7 @@
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('master-dropdown')}
 				>
 					MASTER <span class="caret">▾</span>
 				</button>
@@ -2386,7 +2578,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('single-column-layout')}
 					aria-label="single column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2396,7 +2588,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('split-column-layout')}
 					aria-label="split column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2429,6 +2621,25 @@
 					</svg>
 					<span>Broken</span>
 				</label>
+				<!--
+					pin 5e3ed689ad3a: this control used to live in `.search-options`,
+					which only renders while the search box is focused or non-empty, so
+					it vanished the moment you clicked away and the feature looked
+					deleted. It belongs in the header row next to Broken, where it is
+					always reachable. The persisted pref id stays `next_only_filter`:
+					renaming the storage key would silently drop every stored
+					preference (prefs.svelte.ts validates that exact key). Only the
+					user-facing label changes, to the one the maintainer asked for.
+				-->
+				<label class="next-only" title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
+					<input
+						type="checkbox"
+						aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
+						checked={uiPrefs.next_only_filter}
+						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+					/>
+					<span>compatible</span>
+				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -2444,17 +2655,6 @@
 				<div class="search-stack">
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
-							<label
-								class="next-only"
-								title="Filter visible candidates by Camelot and BPM. Shortcut: Tab"
-							>
-								<input
-									type="checkbox"
-									checked={uiPrefs.next_only_filter}
-									onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
-								/>
-								<span>Next-only</span>
-							</label>
 							<label
 								class="whole-collection"
 								title="Search all playlists uses server FTS across the collection. Unchecked filters only the current pane."
@@ -2489,8 +2689,15 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
+		{#snippet libraryLoadOverlay()}
+			<LibraryLoadIndicator
+				loading={pane.loading}
+				progress={pane.load_progress}
+				searching={pane.searching}
+			/>
+		{/snippet}
 		<TrackTable
+			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
 			{loadedIds}
@@ -2542,7 +2749,7 @@
 						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
 						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 						oncandidates={(cands) => (suggestCandidates = cands)}
 					/>
@@ -2556,7 +2763,7 @@
 						referenceKey={masterRef?.key ?? null}
 						stableId={decks[1].stable_id}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 					/>
 				{/if}
@@ -2576,7 +2783,7 @@
 		</div>
 	</div>
 	<div class="library-health" aria-label="library processing health">
-		{#each [libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
+		{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
 			<button
 				type="button"
 				class:complete={dot.state === 'complete'}
@@ -2595,7 +2802,7 @@
 		<button
 			class="icon-btn rb-inert"
 			disabled
-			title="not implemented - see PARITY-TODO"
+			title={plannedTitle('export-eject')}
 			aria-label="export/eject"
 		>
 			<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
@@ -2604,7 +2811,7 @@
 		</button>
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
-		<span class="wordmark"><em>oDj</em> open Dj</span>
+		<span class="wordmark">open dj</span>
 		{#if jobProgress.ribbon()}
 			{@const ribbon = jobProgress.ribbon()!}
 			<span
@@ -2712,12 +2919,20 @@
 	.unload-offer:hover {
 		background: rgba(232, 161, 58, 0.18);
 	}
+	/* min-height, not height: the control row below is allowed to wrap onto a
+	   second line when it cannot fit, and this header grows with it. Measured
+	   at 1280x800: `.list-panel` is 944px there, and an editable playlist's
+	   header-right is 808px + the 190px AddTrackSearch = 998px, so something
+	   HAD to give. A fixed height gave `.list-panel`'s `overflow: hidden` the
+	   rightmost controls (Bulk Edit, MyTags) silently; growing instead costs
+	   one row of library, which is this panel's documented degradation.
+	   `library-min-5-rows.test.mjs` reads this number as the header's floor. */
 	.pane-header {
 		flex: none;
 		display: flex;
 		align-items: stretch;
 		justify-content: space-between;
-		height: 24px;
+		min-height: 24px;
 		border-bottom: 1px solid var(--rb-border);
 		background: var(--rb-panel);
 		min-width: 0;
@@ -2725,9 +2940,20 @@
 	.header-right {
 		display: flex;
 		align-items: center;
+		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
+		   the 190px AddTrackSearch alongside these controls, and .list-panel
+		   is overflow: hidden, so a non-wrapping row silently clipped its
+		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
+		   running past the edge visibly. Bot review, PR #1672.
+		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
+		   `flex: none` this box sized to max-content, so `flex-wrap` had no
+		   narrower width to wrap INTO and did nothing at all. */
+		flex-wrap: wrap;
+		row-gap: 3px;
 		gap: 4px;
 		padding: 0 6px;
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
@@ -2990,6 +3216,7 @@
 		right: 0;
 		bottom: 16px;
 		min-width: 180px;
+		max-width: 320px;
 		padding: 6px 8px;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
@@ -2997,7 +3224,7 @@
 		font: inherit;
 		font-size: var(--rb-fs-label);
 		text-align: left;
-		white-space: nowrap;
+		white-space: normal;
 		box-shadow: 0 3px 10px rgb(0 0 0 / 40%);
 	}
 	.health-dot:hover .health-popover,
@@ -3008,7 +3235,6 @@
 		font-weight: 600;
 		letter-spacing: 0.5px;
 	}
-	.wordmark em { color: #fff; font-style: italic; font-weight: 800; letter-spacing: -0.08em; }
 	.grip {
 		/* No auto margin: the build identity that now precedes it already
 		   carries one, and TWO auto margins split the free space between them

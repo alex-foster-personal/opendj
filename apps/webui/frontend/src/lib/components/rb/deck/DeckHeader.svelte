@@ -66,15 +66,15 @@
 		gridless
 			? GRID_FEATURE_TIP
 			: deck.beat_sync_enabled
-				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (strict BAR 1-4)'
+				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (BAR phase, folding if it must)'
 				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
 	);
 	const beatSyncBullets: readonly string[] = $derived([
-		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4).',
+		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4 whenever the two tempos match outright).',
 		`Needs a real PQTZ grid on both decks. BAR tempo must land in pitch range [${syncBounds.min}, ${syncBounds.max}] (default +-16%).`,
 		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
 		'No grid on this track: the button is inert and transport runs unsynced.',
-		'Half/double tempo matching needs Sync mode BEAT (explicit opt-out), not BAR.'
+		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.'
 	]);
 	const masterTitle: string = $derived(
 		deck.stable_id === null
@@ -210,6 +210,20 @@
 	const remainText: string = $derived(
 		deck.duration_ms === null ? '--:--.-' : `-${_fmtClock(deck.duration_ms - deck.position_ms)}`
 	);
+	const remainTitle: string = $derived(
+		deck.duration_ms === null
+			? 'Remaining time --:--.- (no track loaded)'
+			: `Remaining time ${remainText} (MM:SS.d until the end of this track)`
+	);
+	const elapsedTitle: string = $derived(
+		deck.duration_ms === null
+			? 'Elapsed time --:--.- (no track loaded)'
+			: `Elapsed time ${elapsedText} (MM:SS.d from the start of this track)`
+	);
+	const keyOffTitle: string = $derived(
+		`Key shift ${keyShiftText} semitones from the original key`
+	);
+	const deckNumTitle: string = $derived(`Deck ${deckId}`);
 </script>
 
 <div class="deck-header">
@@ -246,7 +260,7 @@
 	<!-- Body wraps beside art so a second chrome row does not stack under the
 	     full artwork height (header = max(art, body), not art + body). -->
 	<div class="header-body">
-		<span class="deck-num">{deckId}</span>
+		<span class="deck-num" title={deckNumTitle}>{deckId}</span>
 
 		<div class="meta" class:empty={deck.stable_id === null}>
 			<span class="title">{deck.title ?? 'No track loaded'}</span>
@@ -257,7 +271,7 @@
 					<!-- Dot only, per pin scope: the library column, the click-to-set
 					     swatch selector, and the shift-stacked multi-tag layout are a
 					     separate feature and stay out of this packet. -->
-					<span class="color-dot" title="Colour tag (not yet settable)"></span>
+					<span class="color-dot" title="Color tag (not yet settable)"></span>
 				</span>
 			{/if}
 		</div>
@@ -299,8 +313,8 @@
 		</ControlExplainer>
 
 		<div class="clocks">
-			<span class="remain">{remainText}</span>
-			<span class="elapsed">{elapsedText}</span>
+			<span class="remain" title={remainTitle}>{remainText}</span>
+			<span class="elapsed" title={elapsedTitle}>{elapsedText}</span>
 		</div>
 
 		<div class="chrome">
@@ -355,7 +369,7 @@
 					style={keyColor !== null ? `color:${keyColor}` : undefined}
 					title={keyHover ?? undefined}>{keyText}</span
 				>
-				<span class="key-off">{keyShiftText}</span>
+				<span class="key-off" title={keyOffTitle}>{keyShiftText}</span>
 				<button
 					class="nudge"
 					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}

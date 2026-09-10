@@ -41,6 +41,11 @@
 	const badged = new Set<string>();
 
 	const running = $derived(status?.running === true);
+	const buttonTitle = $derived(
+		running
+			? 'Refresh analysis is running - hover for coverage; a second click does nothing until it finishes'
+			: 'Refresh analysis - click to find tracks missing analysis, stems, or vocals and run them; hover for coverage'
+	);
 	const pct = $derived.by(() => {
 		if (status === null || status.step_total === 0) return 0;
 		return Math.min(1, status.step_done / status.step_total);
@@ -144,6 +149,7 @@
 		class="tb-icon"
 		class:running
 		onclick={onClick}
+		title={buttonTitle}
 		aria-label="refresh analysis"
 		data-testid="refresh-analysis"
 	>

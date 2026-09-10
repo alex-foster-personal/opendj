@@ -204,3 +204,43 @@ def test_process_endpoint_is_explicit_when_native_probe_is_absent(tmp_path: Path
     }
 
 pytestmark = pytest.mark.rb_parity
+
+
+def test_pressure_route_answers_over_real_http() -> None:
+    """The agent-native door: GET it and get a body you can act on.
+
+    Asserted as a disjunction for the reason the unit suite spells out: a dev
+    checkout returns real numbers, a packaged app (whose payload stages
+    ``apps`` and not ``scripts``) must say it cannot measure. What is NOT
+    allowed is a third shape -- available with nothing in it, or unavailable
+    with no reason -- or a zero standing in for an unread field.
+    """
+
+    with TestClient(_app()) as client:
+        response = client.get("/api/v1/performance/telemetry/pressure")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cache_age_ms"] >= 0
+    if body["available"]:
+        readings = [k for k in ("load_avg_1m", "mem_free_mb", "swap_used_mb") if k in body]
+        assert readings, "available=true must carry at least one real reading"
+    else:
+        assert body["reason"]
+        assert not {"load_avg_1m", "mem_free_mb", "swap_used_mb"} & set(body)
+
+
+def test_pressure_route_does_not_leak_process_detail() -> None:
+    """Same allowlist discipline as /processes: no command lines, no PIDs."""
+
+    with TestClient(_app()) as client:
+        body = client.get("/api/v1/performance/telemetry/pressure").json()
+
+    assert set(body) <= {
+        "available",
+        "reason",
+        "cache_age_ms",
+        "load_avg_1m",
+        "mem_free_mb",
+        "swap_used_mb",
+    }

@@ -24,7 +24,18 @@ ContextValue = str | int | float | bool | None
 
 class ClientErrorIn(BaseModel):
     client_event_id: str = Field(min_length=1, max_length=128)
-    kind: Literal["window-error", "unhandled-rejection", "sveltekit", "ui-error"]
+    kind: Literal[
+        "window-error",
+        "unhandled-rejection",
+        "sveltekit",
+        "ui-error",
+        "console-error",
+        "console-warn",
+        "resource-error",
+        "csp-violation",
+        "webview-console",
+        "webview-navigation",
+    ]
     message: str = Field(min_length=1, max_length=4096)
     name: str | None = Field(default=None, max_length=256)
     stack: str | None = Field(default=None, max_length=32768)

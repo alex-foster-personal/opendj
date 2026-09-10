@@ -153,9 +153,17 @@ test('ChannelStrip places TRIM halfway between its old size and the EQ dials', a
 	);
 });
 
-// Pin 8cabf5b1df1e:
-// [if] the strip renders its main-owned inert FILTER slot [then] it is 10% smaller than its 39px predecessor without claiming #492's Color-FX ownership [else ⛔️]
-test('ChannelStrip reduces only the current-main inert FILTER slot and leaves Color-FX ownership explicit', async () => {
+// Pin 8cabf5b1df1e, updated on the #1021 merge:
+// [if] the strip renders its FILTER slot [then] it is 10% smaller than its 39px predecessor AND it is the live dial issue #990 wired, not the inert stub [else ⛔️]
+//
+// main's version of this test asserted `inert` with the message "this branch
+// must not claim live FILTER DSP from PR #1021/#492". #1021 IS that live DSP,
+// so merging it is the event that guard was holding the slot for: the size
+// assertion (the part that is really about layout) is unchanged, and the
+// ownership assertion flips from "still a stub" to "wired, and wired to this
+// strip's own props" so it can still fail if the dial is ever cut back to a
+// decoration.
+test('ChannelStrip keeps the reduced FILTER slot size and renders it as a live dial', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 	const constMatch = src.match(/const FILTER_SLOT_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(constMatch, 'FILTER slot needs a named size rather than a magic number');
@@ -163,12 +171,26 @@ test('ChannelStrip reduces only the current-main inert FILTER slot and leaves Co
 
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 	const filterKnob = src.match(knobTag('FILTER'));
-	assert.ok(filterKnob, 'current-main FILTER Knob element not found');
-	assert.match(filterKnob[0], /size=\{FILTER_SLOT_SIZE\}/);
-	assert.match(filterKnob[0], /inert/, 'this branch must not claim live FILTER DSP from PR #1021/#492');
+	assert.ok(filterKnob, 'FILTER Knob element not found');
+	// Pin 2917b0eca218: FILTER is no longer unmounted in LESS, it is shrunk
+	// like TRIM and the EQs, so the Knob takes the derived `filterSize` and
+	// the MORE-mode constant is asserted through that derivation instead of
+	// on the tag. Both halves are checked, so a `filterSize` that stopped
+	// depending on FILTER_SLOT_SIZE would still be caught.
+	assert.match(filterKnob[0], /size=\{filterSize\}/);
 	assert.match(
 		src,
-		/Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement/,
-		'future slot ownership must stay explicit so the #492 merge can carry the size safely'
+		/const filterSize = \$derived\(less \? LESS_FILTER_SIZE : FILTER_SLOT_SIZE\);/,
+		'filterSize must resolve to FILTER_SLOT_SIZE in MORE and the shrunk size in LESS'
 	);
+	const lessFilterMatch = src.match(/const LESS_FILTER_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(lessFilterMatch, 'LESS needs its own named FILTER size');
+	assert.ok(
+		Number(lessFilterMatch[1]) < EXPECTED_FILTER_SIZE,
+		`the LESS FILTER dial (${lessFilterMatch[1]}px) must be smaller than MORE's ` +
+			`${EXPECTED_FILTER_SIZE}px, or LESS is not compacting anything`
+	);
+	assert.match(filterKnob[0], /value=\{filter\}/, 'FILTER must read the strip\'s filter prop, not a frozen 0.5');
+	assert.match(filterKnob[0], /onchange=\{onfilter\}/, 'FILTER must emit changes, not sit inert');
+	assert.doesNotMatch(filterKnob[0], /\binert\b/, 'the inert stub is superseded by issue #990\'s live dial');
 });

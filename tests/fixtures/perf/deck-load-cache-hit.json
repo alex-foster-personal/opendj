@@ -1,0 +1,24 @@
+[
+  {
+    "t": "2026-08-31T22:59:27.283Z",
+    "kind": "deck-load sid=020fed57d930",
+    "deck": 1,
+    "message": "fetchAudioCacheHit=0 anlzCacheHit=0 ...",
+    "stages": {
+      "fetchAudioCacheHit": 0,
+      "anlzCacheHit": 0,
+      "probeStem": 9,
+      "getTrack": 11,
+      "fetchHotCues": 19,
+      "fetchWall": 21,
+      "audioBytes": 5059178,
+      "audioPrefetchHit": 1,
+      "stretchCreate": 67,
+      "decodeMix": 270,
+      "stretchLoad": 6,
+      "processorLatency": 0,
+      "totalBeforeSwap": 343,
+      "total": 401
+    }
+  }
+]

@@ -498,23 +498,46 @@ def test_saturated_admission_answers_retryable_and_is_never_cached(
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_missing_ffmpeg_not_decoded_is_not_retryable_and_stays_cacheable(
+def test_missing_ffmpeg_not_decoded_is_not_retryable_and_stays_revalidatable(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A track this host genuinely cannot decode is a fact about the track, not
-    a queue hiccup: no retryable claim, and the response stays cacheable."""
+    a queue hiccup: no retryable claim, and the response is still held (not
+    dropped outright like the saturated-admission case above), just revalidated
+    rather than replayed blind. `public, max-age=3600` predates c7004cdc0/
+    1e5fdf2d0, which made every non-retryable /anlz response `private, no-cache`
+    plus an ETag: this endpoint's beatgrid can change under a local track too
+    (the own-beatgrid overlay applies on this same branch), so nothing about the
+    LOCAL_SID fixture makes it exempt from the promotion-safety fix those
+    commits describe (Codex P1 BLOCKING, PR #1587)."""
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     response = client.get(f"/api/v1/tracks/{LOCAL_SID}/anlz")
     assert response.status_code == 200, response.text
     local = response.json()["local_waveform"]
     assert local["status"] == "not_decoded"
     assert local.get("retryable") is not True
-    assert response.headers["cache-control"] == "public, max-age=3600"
+    # Storable-and-revalidated, not `no-store`: that is what separates this
+    # permanent fact from the transient retryable case above. PARITY-02 made the
+    # body depend on a process-local toggle that does not appear in the URL, so
+    # the freshness rule is `no-cache` plus an ETag rather than a 1h max-age
+    # (discussion_r3970967302); the distinction this test exists for is intact.
+    assert response.headers["cache-control"] == "private, no-cache"
+    assert response.headers["etag"]
 
 
 @pytest.mark.requires_ffmpeg
-def test_successful_decode_stays_cacheable(client: TestClient) -> None:
+def test_successful_decode_stays_revalidatable(client: TestClient) -> None:
     response = client.get(f"/api/v1/tracks/{LOCAL_SID}/anlz")
     assert response.status_code == 200, response.text
     assert response.json()["local_waveform"]["status"] == "decoded"
-    assert response.headers["cache-control"] == "public, max-age=3600"
+    assert response.headers["cache-control"] == "private, no-cache"
+    etag = response.headers["etag"]
+    assert etag
+
+    # The bytes still stay off the wire when nothing changed, which is the half
+    # of "cacheable" this test was written to protect.
+    revalidated = client.get(
+        f"/api/v1/tracks/{LOCAL_SID}/anlz", headers={"If-None-Match": etag}
+    )
+    assert revalidated.status_code == 304
+    assert revalidated.content == b""

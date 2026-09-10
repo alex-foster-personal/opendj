@@ -11,6 +11,7 @@ Each therefore goes red against the pre-fix source.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -306,8 +307,197 @@ def test_a_put_with_both_halves_valid_still_applies_both(tmp_path) -> None:
                 "lane": "waveform", "default": "own", "toggle": "rbx",
             }).json()
         assert body["lanes"]["waveform"] == {
-            "default": "own", "toggle": "rbx", "effective": "rbx",
+            "default": "own", "toggle": "rbx", "toggle_revision": 1, "effective": "rbx",
         }
+    finally:
+        selection.reset_toggles()
+
+
+#-----------------------------------------------------------------------------
+# P1/P2: toggle ABA and a combined write's partial-success failure mode
+#-----------------------------------------------------------------------------
+
+def test_expected_toggle_revision_over_http_closes_the_aba_gap(tmp_path) -> None:
+    """discussion_r3974993963 P1 BLOCKING, HTTP half, reproduced first: a
+    rollback that captured the revision its own switch-set PUT landed at
+    must be refused once the toggle round-trips own -> rbx -> own before the
+    rollback runs, even though the CURRENT value equals what it still names
+    in `expected_toggle`.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    try:
+        with TestClient(app) as client:
+            first = client.put(
+                "/api/v1/analysis/source", json={"lane": "vocal", "toggle": "own"}
+            ).json()
+            revision = first["lanes"]["vocal"]["toggle_revision"]
+            # An external agent's own PUTs, unrelated to the rollback below.
+            client.put("/api/v1/analysis/source", json={"lane": "vocal", "toggle": "rbx"})
+            client.put("/api/v1/analysis/source", json={"lane": "vocal", "toggle": "own"})
+
+            stale = client.put(
+                "/api/v1/analysis/source",
+                json={
+                    "lane": "vocal",
+                    "toggle": "unset",
+                    "expected_toggle": "own",
+                    "expected_toggle_revision": revision,
+                },
+            )
+            assert stale.status_code == 409
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["vocal"]["toggle"] == "own", (
+                "the ABA-stale rollback must not erase the external agent's newer decision"
+            )
+
+            # Mutate-both-directions control: the identical rollback, given
+            # the CURRENT revision instead of the stale one, must succeed.
+            current_revision = after["lanes"]["vocal"]["toggle_revision"]
+            fresh = client.put(
+                "/api/v1/analysis/source",
+                json={
+                    "lane": "vocal",
+                    "toggle": "unset",
+                    "expected_toggle": "own",
+                    "expected_toggle_revision": current_revision,
+                },
+            )
+            assert fresh.status_code == 200
+            assert fresh.json()["lanes"]["vocal"]["toggle"] == "unset"
+    finally:
+        selection.reset_toggles()
+
+
+def test_a_combined_write_that_fails_on_the_default_restores_the_toggle(
+    tmp_path,
+) -> None:
+    """discussion_r3974993965 P2 BLOCKING, reproduced first: `_apply_toggle`
+    mutates the process-global toggle BEFORE `set_default`/`commit`, so a
+    genuine failure on the durable half used to leave the toggle changed
+    while the whole PUT reported an error.
+
+    The failure is a REAL `sqlite3.OperationalError`: a second connection to
+    the SAME file holds `BEGIN EXCLUSIVE` so the route's own write blocks for
+    the real `busy_timeout` and then genuinely fails, no production code
+    replaced (AGENTS.md's no-mocks contract). The lock is taken only AFTER a
+    priming PUT has already migrated the analysis schema for real - taking it
+    earlier would fail `_open()`'s own idempotent `CREATE TABLE IF NOT
+    EXISTS` instead of the later `commit()` this test is actually about,
+    which would make the toggle assertions below pass for the wrong reason
+    (never touched, not compensated) rather than the reason under test.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            prime = client.put(
+                "/api/v1/analysis/source", json={"lane": "beatgrid", "default": "rbx"}
+            )
+            assert prime.status_code == 200
+
+            locker = sqlite3.connect(str(path), timeout=0.1)
+            locker.execute("BEGIN EXCLUSIVE")
+            locker.execute(
+                "INSERT INTO analysis_source_default (lane, source, updated_at) "
+                "VALUES ('key', 'own', 'x')"
+            )
+            try:
+                resp = client.put(
+                    "/api/v1/analysis/source",
+                    json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+                )
+            finally:
+                locker.rollback()
+                locker.close()
+            assert resp.status_code == 500
+
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["beatgrid"]["toggle"] == "unset", (
+                "the toggle must be restored to what it held before this failed "
+                "combined write, not left at the value the failed durable half "
+                "never actually committed"
+            )
+            assert after["lanes"]["beatgrid"]["default"] == "rbx", (
+                "the durable half must not have taken effect either"
+            )
+            assert after["lanes"]["beatgrid"]["toggle_revision"] == 2, (
+                "one write for the failed switch, one for the compensation - "
+                "both are real writes, not a no-op that merely never touched it"
+            )
+
+            # Control: the SAME shape of PUT, with the lock released, applies
+            # both halves normally - the fix must not refuse every combined
+            # write, only compensate a genuinely failed one.
+            ok = client.put(
+                "/api/v1/analysis/source",
+                json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+            )
+            assert ok.status_code == 200
+            assert ok.json()["lanes"]["beatgrid"] == {
+                "default": "own", "toggle": "own", "toggle_revision": 3, "effective": "own",
+            }
+    finally:
+        selection.reset_toggles()
+
+
+def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
+    tmp_path,
+) -> None:
+    """Mutate-both-directions control for discussion_r3974993965: the
+    compensation must ONLY restore what THIS request's own write displaced.
+    An agent's unrelated write landing in the failure window must survive.
+
+    Real concurrency, not a fabricated call sequence: a second connection
+    holds `BEGIN EXCLUSIVE` so the route's write genuinely blocks for the
+    real `busy_timeout`, and a background thread calls the process-local
+    `selection.write_toggle` directly (a real concurrent agent never goes
+    through this same HTTP request, so simulating one as a plain function
+    call on another thread is the real shape of that failure, not a stand-in
+    for the route's own SQL). `sqlite3` releases the GIL while blocked on a
+    busy connection, so the thread's write reliably lands inside the window.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            prime = client.put(
+                "/api/v1/analysis/source", json={"lane": "beatgrid", "default": "rbx"}
+            )
+            assert prime.status_code == 200
+
+            locker = sqlite3.connect(str(path), timeout=0.1)
+            locker.execute("BEGIN EXCLUSIVE")
+            locker.execute(
+                "INSERT INTO analysis_source_default (lane, source, updated_at) "
+                "VALUES ('key', 'own', 'x')"
+            )
+
+            def _concurrent_agent() -> None:
+                time.sleep(0.3)
+                selection.write_toggle("beatgrid", "rbx")
+
+            agent = threading.Thread(target=_concurrent_agent)
+            agent.start()
+            try:
+                resp = client.put(
+                    "/api/v1/analysis/source",
+                    json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+                )
+            finally:
+                agent.join()
+                locker.rollback()
+                locker.close()
+            assert resp.status_code == 500
+
+            after = client.get("/api/v1/analysis/source").json()
+            assert after["lanes"]["beatgrid"]["toggle"] == "rbx", (
+                "a rollback that fires after a concurrent agent's own write must stand "
+                "down, not clobber their newer value with this request's stale one"
+            )
     finally:
         selection.reset_toggles()
 

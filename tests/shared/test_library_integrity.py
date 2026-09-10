@@ -60,8 +60,8 @@ def test_rehome_preserves_posix_home_flavor_on_windows_hosts():
 
 
 def test_rehome_uses_windows_home_flavor_for_windows_library():
-    assert rehome_path("/Users/old/Music/x.mp3", home=r"C:\Users\dev") == (
-        r"C:\Users\dev\Music\x.mp3"
+    assert rehome_path("/Users/old/Music/x.mp3", home=r"C:\Users\user") == (
+        r"C:\Users\user\Music\x.mp3"
     )
 
 
@@ -75,7 +75,7 @@ def test_rehome_accepts_absolute_windows_unc_home():
     "home",
     [
         "Users/dev",
-        r"C:Users\dev",
+        r"C:Users\user",
         r"\\server",
         "\\\\",
     ],
@@ -114,11 +114,11 @@ def test_rehomable_when_only_home_prefix_differs():
 
 
 def test_rehomable_when_current_home_is_windows_flavored():
-    rehomed = r"C:\Users\dev\Music\a.mp3"
+    rehomed = r"C:\Users\user\Music\a.mp3"
     rep = check_integrity(
         [FakeTrack("//Users/old/Music/a.mp3")],
         exists=_exists_from({rehomed}),
-        home=r"C:\Users\dev",
+        home=r"C:\Users\user",
     )
     assert (rep.present, rep.rehomable, rep.missing) == (0, 1, 0)
 

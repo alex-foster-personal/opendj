@@ -64,6 +64,10 @@
 		void runPerformanceCommandFromUi({ type: 'eq', deck, band, value });
 	}
 
+	function handleFilter(deck: DeckId, value: number): void {
+		void runPerformanceCommandFromUi({ type: 'filter', deck, value });
+	}
+
 	function handleFader(deck: DeckId, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'fader', deck, value });
 	}
@@ -117,7 +121,9 @@
 			type="button"
 			class="deck-layout-btn"
 			class:active={!deckLayoutLess}
-			title="Show all 4 decks (Cmd/Ctrl+4)"
+			title={deckLayoutLess
+				? 'MORE - switch to all 4 decks (Cmd/Ctrl+4). Current layout is LESS (2 decks, more library space).'
+				: 'MORE - currently showing all 4 decks. Click LESS for 2 decks and more library space (Cmd/Ctrl+2).'}
 			onclick={() => setDeckLayoutMode('more')}
 		>
 			MORE
@@ -126,7 +132,9 @@
 			type="button"
 			class="deck-layout-btn"
 			class:active={deckLayoutLess}
-			title="Show 2 decks, more library space (Cmd/Ctrl+2)"
+			title={deckLayoutLess
+				? 'LESS - currently showing 2 decks, more library space. Click MORE for all 4 decks (Cmd/Ctrl+4).'
+				: 'LESS - switch to 2 decks and more library space (Cmd/Ctrl+2). Current layout is MORE (all 4 decks).'}
 			onclick={() => setDeckLayoutMode('less')}
 		>
 			LESS
@@ -134,7 +142,20 @@
 	</div>
 	<div class="strips" class:less={deckLayoutLess}>
 		{#each STRIP_ORDER as deck (deck)}
-			<div class="strip-slot" class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}>
+			<!-- `inert`, not just `opacity: 0`. LESS mounts all four strips and
+			     hides 3/4 with opacity plus pointer-events, and NEITHER removes
+			     a descendant from sequential keyboard focus - so every control
+			     in a collapsed strip has always been tabbable and arrow-key
+			     operable while invisible. Pin 2917b0eca218 made that worse by
+			     mounting FILTER in LESS too, but the hole predates it and
+			     covers TRIM, the EQs, CUE, the fader and STEM as well. `inert`
+			     removes the whole subtree from focus AND from the a11y tree,
+			     so it closes all of them at once. Blinded review + Sol P2. -->
+			<div
+				class="strip-slot"
+				class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}
+				inert={deckLayoutLess && (deck === 3 || deck === 4)}
+			>
 				<ChannelStrip
 					deckId={deck}
 					less={deckLayoutLess}
@@ -142,11 +163,13 @@
 					eqHigh={mixerState.channels[deck].eq_high}
 					eqMid={mixerState.channels[deck].eq_mid}
 					eqLow={mixerState.channels[deck].eq_low}
+					filter={mixerState.channels[deck].filter}
 					fader={mixerState.channels[deck].fader}
 					cueEnabled={mixerState.channels[deck].cue_enabled}
 					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
 					oneq={(band, v) => handleEq(deck, band, v)}
+					onfilter={(v) => handleFilter(deck, v)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
 					onStemMute={(stem) => handleStemMute(deck, stem)}

@@ -254,6 +254,53 @@ def _swap_fields(swap: str) -> dict[str, float]:
     return found
 
 
+def _load_average() -> dict[str, float]:
+    """The three load averages, from the kernel, with no subprocess at all.
+
+    Load average is the single condition the performance register blames most
+    often for a number it cannot trust: the same waveform decode measured
+    0.73 s and 7.53 s in one evening with the load average moving between 39
+    and 141. It belongs in every machine sample, and ``os.getloadavg`` is a
+    plain syscall, so there is no cost argument against taking it.
+    """
+
+    try:
+        one, five, fifteen = os.getloadavg()
+    except OSError:
+        return {}
+    return {
+        "load_average_1m": round(one, 2),
+        "load_average_5m": round(five, 2),
+        "load_average_15m": round(fifteen, 2),
+    }
+
+
+def _vm_stat_free_mb() -> dict[str, float]:
+    """Free physical memory, from ``vm_stat``'s page counters.
+
+    FREE, not available: only ``Pages free`` is counted, deliberately. The
+    wider "free + inactive + speculative + purgeable" figure that
+    ``scripts/mem_gate.py`` computes answers a different question (how much
+    the kernel could reclaim under pressure) and is far larger, so mixing the
+    two under one name would make two samples incomparable. The register's own
+    "roughly 71 MB free RAM" reading is this narrow one.
+
+    An unparseable output yields NO key rather than a zero. A machine sample
+    that reports 0 MB free would be indistinguishable from a machine about to
+    die, which is exactly the reading this must never fabricate.
+    """
+
+    try:
+        output = run_text(["vm_stat"], timeout=2.0)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return {}
+    header = re.search(r"page size of (\d+) bytes", output)
+    free = re.search(r"^Pages free:\s+(\d+)", output, re.MULTILINE)
+    if header is None or free is None:
+        return {}
+    return {"free_memory_mb": round_mb(int(free.group(1)) * int(header.group(1)))}
+
+
 def machine_metrics() -> dict[str, Any]:
     result: dict[str, Any] = {}
     memsize = _sysctl("hw.memsize")
@@ -266,4 +313,6 @@ def machine_metrics() -> dict[str, Any]:
     if swap:
         result["swap_raw"] = swap
         result.update(_swap_fields(swap))
+    result.update(_load_average())
+    result.update(_vm_stat_free_mb())
     return result

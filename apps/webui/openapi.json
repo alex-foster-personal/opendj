@@ -546,6 +546,18 @@
             },
             "title": "Lanes",
             "type": "object"
+          },
+          "previous_toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.",
+            "title": "Previous Toggle"
           }
         },
         "required": [
@@ -568,6 +580,30 @@
             ],
             "description": "rbx or own. Persisted; survives a relaunch.",
             "title": "Default"
+          },
+          "expected_toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.",
+            "title": "Expected Toggle"
+          },
+          "expected_toggle_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.",
+            "title": "Expected Toggle Revision"
           },
           "lane": {
             "description": "beatgrid, key, waveform, loudness or vocal",
@@ -2024,7 +2060,13 @@
               "window-error",
               "unhandled-rejection",
               "sveltekit",
-              "ui-error"
+              "ui-error",
+              "console-error",
+              "console-warn",
+              "resource-error",
+              "csp-violation",
+              "webview-console",
+              "webview-navigation"
             ],
             "title": "Kind",
             "type": "string"
@@ -3460,6 +3502,13 @@
             "title": "Overall",
             "type": "string"
           },
+          "quarantined": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Quarantined",
+            "type": "object"
+          },
           "seq": {
             "title": "Seq",
             "type": "integer"
@@ -3539,6 +3588,127 @@
           "boot_id"
         ],
         "title": "EngineHealthOut",
+        "type": "object"
+      },
+      "EnrollCredentialModel": {
+        "description": "The credential the joining machine presents. Rides the BODY, not a header.\n\n:class:`apps.sync_hub.transport.HubTransport` is a two-method protocol\nwith no header support, and a grant is not a bearer for ``push`` or\n``pull``. Widening the transport for it would create a credential slot\nthose endpoints would then be expected to fill.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "grant",
+              "google_id_token"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "EnrollCredentialModel",
+        "type": "object"
+      },
+      "EnrollErrorBody": {
+        "description": "The ``detail`` object every refusal below carries.\n\nDeclared as a model rather than left implicit so the generated client can\nbranch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds\nexactly this shape; the codes are enumerated per status in\n:data:`ENROLL_RESPONSES`.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "EnrollErrorBody",
+        "type": "object"
+      },
+      "EnrollErrorResponse": {
+        "description": "FastAPI wraps an ``HTTPException`` detail under ``detail``.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/EnrollErrorBody"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "EnrollErrorResponse",
+        "type": "object"
+      },
+      "EnrollRequest": {
+        "description": "No owner field, by construction: a request cannot name whose machine\nit is becoming. The owner is read from the credential's own record.",
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/EnrollCredentialModel"
+          },
+          "machine": {
+            "$ref": "#/components/schemas/MachineModel"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine",
+          "schema_version",
+          "credential"
+        ],
+        "title": "EnrollRequest",
+        "type": "object"
+      },
+      "EnrollResponse": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "enrolled_at": {
+            "title": "Enrolled At",
+            "type": "string"
+          },
+          "enrolled_via": {
+            "title": "Enrolled Via",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_google_sub": {
+            "title": "Owner Google Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine_id",
+          "owner_google_sub",
+          "owner_email",
+          "hub_machine_id",
+          "enrolled_at",
+          "enrolled_via",
+          "created"
+        ],
+        "title": "EnrollResponse",
         "type": "object"
       },
       "EntitlementsOut": {
@@ -3653,7 +3823,7 @@
         "type": "object"
       },
       "FallbackBeatgridOut": {
-        "description": "Identical shape to the ``beatgrid`` object served by /anlz.",
+        "description": "Identical shape to the ``beatgrid`` object served by /anlz.\n\n``source`` is fixed at ``\"own\"``: every grid this endpoint can serve came\nfrom an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ\nto read), and the ANLZ contract this shape mirrors makes the field\nREQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here\nleft the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a\nreal mismatch: a fail-closed, source-aware reader would reject this grid\noutright (Codex P2 BLOCKING, PR #1587).",
         "properties": {
           "beat_count": {
             "title": "Beat Count",
@@ -3665,9 +3835,15 @@
             },
             "title": "Beats",
             "type": "array"
+          },
+          "source": {
+            "const": "own",
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
+          "source",
           "beat_count",
           "beats"
         ],
@@ -4019,6 +4195,16 @@
             "title": "Owner",
             "type": "string"
           },
+          "refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefusalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "retire_by": {
             "title": "Retire By",
             "type": "string"
@@ -4038,6 +4224,10 @@
       },
       "FlagsOut": {
         "properties": {
+          "build_profile": {
+            "title": "Build Profile",
+            "type": "string"
+          },
           "file_present": {
             "title": "File Present",
             "type": "boolean"
@@ -4052,11 +4242,17 @@
           "path": {
             "title": "Path",
             "type": "string"
+          },
+          "sandboxed": {
+            "title": "Sandboxed",
+            "type": "boolean"
           }
         },
         "required": [
           "path",
           "file_present",
+          "build_profile",
+          "sandboxed",
           "flags"
         ],
         "title": "FlagsOut",
@@ -4498,6 +4694,13 @@
       },
       "HelloRequest": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "machine": {
             "$ref": "#/components/schemas/MachineModel"
           },
@@ -4522,6 +4725,13 @@
       },
       "HelloResponse": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "hub_generation": {
             "title": "Hub Generation",
             "type": "string"
@@ -4537,6 +4747,15 @@
             "title": "Machines",
             "type": "array"
           },
+          "ownership": {
+            "enum": [
+              "owned",
+              "unowned",
+              "foreign"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          },
           "schema_version": {
             "title": "Schema Version",
             "type": "integer"
@@ -4551,7 +4770,8 @@
           "schema_version",
           "seq",
           "machines",
-          "hub_generation"
+          "hub_generation",
+          "ownership"
         ],
         "title": "HelloResponse",
         "type": "object"
@@ -4941,11 +5161,17 @@
             "description": "In-memory dev toggle: unset, rbx or own. Launches unset.",
             "title": "Toggle",
             "type": "string"
+          },
+          "toggle_revision": {
+            "description": "Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.",
+            "title": "Toggle Revision",
+            "type": "integer"
           }
         },
         "required": [
           "default",
           "toggle",
+          "toggle_revision",
           "effective"
         ],
         "title": "LaneSourceOut",
@@ -5042,7 +5268,8 @@
           "status": {
             "enum": [
               "ok",
-              "error"
+              "error",
+              "inconclusive"
             ],
             "title": "Status",
             "type": "string"
@@ -5092,6 +5319,249 @@
           }
         },
         "title": "LevelCalibrationOut",
+        "type": "object"
+      },
+      "LibraryReadinessCounts": {
+        "description": "Every field is a count over ``present``, never over ``total_tracks``.",
+        "properties": {
+          "beatgrid_invalid": {
+            "title": "Beatgrid Invalid",
+            "type": "integer"
+          },
+          "beatgrid_missing": {
+            "title": "Beatgrid Missing",
+            "type": "integer"
+          },
+          "beatgrid_ok": {
+            "title": "Beatgrid Ok",
+            "type": "integer"
+          },
+          "has_analysis": {
+            "title": "Has Analysis",
+            "type": "integer"
+          },
+          "missing_analysis": {
+            "title": "Missing Analysis",
+            "type": "integer"
+          },
+          "not_ready": {
+            "title": "Not Ready",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          },
+          "stems_corrupt": {
+            "title": "Stems Corrupt",
+            "type": "integer"
+          },
+          "stems_missing": {
+            "title": "Stems Missing",
+            "type": "integer"
+          },
+          "stems_ready": {
+            "title": "Stems Ready",
+            "type": "integer"
+          },
+          "sync_compatible": {
+            "title": "Sync Compatible",
+            "type": "integer"
+          },
+          "sync_incompatible": {
+            "title": "Sync Incompatible",
+            "type": "integer"
+          },
+          "waveform_missing": {
+            "title": "Waveform Missing",
+            "type": "integer"
+          },
+          "waveform_ok": {
+            "title": "Waveform Ok",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ready",
+          "not_ready",
+          "beatgrid_ok",
+          "beatgrid_missing",
+          "beatgrid_invalid",
+          "waveform_ok",
+          "waveform_missing",
+          "stems_ready",
+          "stems_missing",
+          "stems_corrupt",
+          "sync_compatible",
+          "sync_incompatible",
+          "has_analysis",
+          "missing_analysis"
+        ],
+        "title": "LibraryReadinessCounts",
+        "type": "object"
+      },
+      "LibraryReadinessItem": {
+        "description": "One present track's stored-artifact readiness.",
+        "properties": {
+          "analysis_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Backend"
+          },
+          "analysis_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Version"
+          },
+          "beatgrid": {
+            "enum": [
+              "ok",
+              "missing",
+              "invalid"
+            ],
+            "title": "Beatgrid",
+            "type": "string"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "has_analysis": {
+            "title": "Has Analysis",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "stems": {
+            "enum": [
+              "ready",
+              "missing",
+              "corrupt"
+            ],
+            "title": "Stems",
+            "type": "string"
+          },
+          "sync_compatible": {
+            "title": "Sync Compatible",
+            "type": "boolean"
+          },
+          "sync_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_beatgrid",
+                  "invalid_grid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Reason"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "waveform_preview": {
+            "enum": [
+              "ok",
+              "missing"
+            ],
+            "title": "Waveform Preview",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "file_path",
+          "beatgrid",
+          "waveform_preview",
+          "stems",
+          "has_analysis",
+          "analysis_backend",
+          "analysis_version",
+          "sync_compatible",
+          "sync_reason",
+          "gaps"
+        ],
+        "title": "LibraryReadinessItem",
+        "type": "object"
+      },
+      "LibraryReadinessOut": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/LibraryReadinessCounts"
+          },
+          "denominator": {
+            "const": "present",
+            "default": "present",
+            "title": "Denominator",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "number"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryReadinessItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "total_tracks": {
+            "title": "Total Tracks",
+            "type": "integer"
+          },
+          "unreachable": {
+            "title": "Unreachable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generated_at",
+          "present",
+          "total_tracks",
+          "unreachable",
+          "counts",
+          "items"
+        ],
+        "title": "LibraryReadinessOut",
         "type": "object"
       },
       "LocalDataOut": {
@@ -5574,6 +6044,11 @@
           },
           "fader": {
             "title": "Fader",
+            "type": "number"
+          },
+          "filter": {
+            "default": 0.5,
+            "title": "Filter",
             "type": "number"
           },
           "trim": {
@@ -7360,6 +7835,11 @@
             "title": "Machines",
             "type": "array"
           },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/RowModel"
@@ -7387,6 +7867,13 @@
       },
       "PushRequest": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "machine_id": {
             "minLength": 1,
             "title": "Machine Id",
@@ -7423,6 +7910,11 @@
         "properties": {
           "accepted": {
             "title": "Accepted",
+            "type": "integer"
+          },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
             "type": "integer"
           },
           "rejected": {
@@ -8087,7 +8579,8 @@
           "status": {
             "enum": [
               "ok",
-              "error"
+              "error",
+              "inconclusive"
             ],
             "title": "Status",
             "type": "string"
@@ -9380,6 +9873,172 @@
         "title": "SmartlistUpdateIn",
         "type": "object"
       },
+      "SoundcloudExportAckRequest": {
+        "properties": {
+          "acknowledge_rights": {
+            "default": false,
+            "title": "Acknowledge Rights",
+            "type": "boolean"
+          }
+        },
+        "title": "SoundcloudExportAckRequest",
+        "type": "object"
+      },
+      "SoundcloudExportResponse": {
+        "properties": {
+          "acknowledged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged"
+          },
+          "audio_upload": {
+            "const": "not_offered",
+            "title": "Audio Upload",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "kind": {
+            "const": "metadata_only",
+            "title": "Kind",
+            "type": "string"
+          },
+          "licensing_reminder": {
+            "title": "Licensing Reminder",
+            "type": "string"
+          },
+          "rights_position": {
+            "const": "unsettled",
+            "title": "Rights Position",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "takeover": {
+            "const": "not_offered",
+            "title": "Takeover",
+            "type": "string"
+          },
+          "tracklist": {
+            "items": {
+              "$ref": "#/components/schemas/SoundcloudTracklistRowModel"
+            },
+            "title": "Tracklist",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "session_id",
+          "audio_upload",
+          "takeover",
+          "rights_position",
+          "licensing_reminder",
+          "tracklist"
+        ],
+        "title": "SoundcloudExportResponse",
+        "type": "object"
+      },
+      "SoundcloudTracklistRowModel": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "timestamp_label": {
+            "title": "Timestamp Label",
+            "type": "string"
+          },
+          "timestamp_s": {
+            "title": "Timestamp S",
+            "type": "number"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "track_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Stable Id"
+          }
+        },
+        "required": [
+          "timestamp_s",
+          "timestamp_label",
+          "title",
+          "artist",
+          "track_stable_id",
+          "source",
+          "deck",
+          "display_name"
+        ],
+        "title": "SoundcloudTracklistRowModel",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "hub_generation": {
@@ -9893,7 +10552,9 @@
               "audio",
               "stem_bundle",
               "anlz_cache",
-              "vocal_cache"
+              "vocal_cache",
+              "lyrics_cache",
+              "karaoke_words"
             ],
             "title": "Asset Kind",
             "type": "string"
@@ -9961,7 +10622,9 @@
               "audio",
               "stem_bundle",
               "anlz_cache",
-              "vocal_cache"
+              "vocal_cache",
+              "lyrics_cache",
+              "karaoke_words"
             ],
             "title": "Asset Kind",
             "type": "string"
@@ -11830,6 +12493,17 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
           }
         },
         "required": [
@@ -13171,6 +13845,98 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/soundcloud-export": {
+      "get": {
+        "operationId": "api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Soundcloud Export",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "operationId": "api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SoundcloudExportAckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Post Soundcloud Export",
         "tags": [
           "sets"
         ]
@@ -16066,6 +16832,76 @@
         ]
       }
     },
+    "/api/v1/library/readiness": {
+      "get": {
+        "description": "Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.\n\nRequirements (mini-PRD):\n  READY-01: GET /api/v1/library/readiness reports per-present-track and\n  aggregate readiness. Counts use the present (materialized local audio)\n  denominator, never all tracks rows.\n    [if] a track's file is not materialized [then] it is absent from\n    present, items, and every count\n    [if] a present track has no PQTZ, no own beatgrid lane ok, and no\n    usable downbeats_s [then] counts.beatgrid_missing includes it and an\n    axis=beatgrid item names it\n    [if] a present track has a stems directory that load_stem_bundle\n    rejects and no valid bundle in any configured root [then]\n    stems == corrupt on the item and both counts.stems_corrupt and\n    /ingest/coverage corrupt.stems are >= 1\n    [if] limit is 1 and many present tracks are not ready [then] items\n    has 1 row and counts.not_ready is still the full population\n    [if] a present track has a validateBeatGrid-passing grid [then]\n    sync_compatible is true without anyone engaging Beat Sync",
+        "operationId": "get_library_readiness_api_v1_library_readiness_get",
+        "parameters": [
+          {
+            "description": "Cap on listed items. Never caps the reported counts.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Cap on listed items. Never caps the reported counts.",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Which present tracks appear in items.",
+            "in": "query",
+            "name": "axis",
+            "required": false,
+            "schema": {
+              "default": "not_ready",
+              "description": "Which present tracks appear in items.",
+              "enum": [
+                "not_ready",
+                "beatgrid",
+                "waveform",
+                "stems",
+                "stems_corrupt",
+                "sync",
+                "analysis",
+                "all"
+              ],
+              "title": "Axis",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryReadinessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Library Readiness",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/library/wheel": {
       "get": {
         "operationId": "get_library_wheel_api_v1_library_wheel_get",
@@ -16821,6 +17657,30 @@
           }
         },
         "summary": "Capture Client Performance",
+        "tags": [
+          "performance-telemetry"
+        ]
+      }
+    },
+    "/api/v1/performance/telemetry/pressure": {
+      "get": {
+        "description": "What the machine is under right now, cheap enough to poll.\n\nTHE conditions half of a trustworthy timing row. The browser stamps this\nonto every deck-load row (see the frontend's machine-pressure.ts) so a\nlatency number carries the machine state it was measured under instead of\nleaving a later reader to guess, which is how the register ended up with a\nwaveform decode recorded at both 0.73 s and 7.53 s for the same work.\n\nRead-only, and deliberately NOT a process walk: this is sysctl, getloadavg\nand vm_stat, never the `ps` table that `/processes` reads out of the\nprobe's log. It is served from a short shared cache and every response\nstates the age of the sample it is handing back, so a caller can tell a\nfresh reading from a five-second-old one rather than assuming.\n\nAgent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.\n\nFields, all optional and all absent rather than zero when unreadable:\n`load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical\nmemory, `vm_stat` Pages free only, not the wider reclaimable figure),\n`swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).\n`available` is false, with a `reason`, when nothing could be measured --\nnotably inside the packaged app, whose payload stages `apps` and not\n`scripts`.",
+        "operationId": "machine_pressure_api_v1_performance_telemetry_pressure_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Machine Pressure Api V1 Performance Telemetry Pressure Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Machine Pressure",
         "tags": [
           "performance-telemetry"
         ]
@@ -19025,7 +19885,7 @@
     },
     "/api/v1/sync/digest": {
       "get": {
-        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.",
+        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.\n\nA hub holding one row with an unorderable stored stamp no longer answers\n422 (round 5). That row is excluded from the hash and counted in\n``quarantined``: a legacy row is a fact to report, not a reason to make\nthe endpoint every sync depends on unavailable.\n\nFor a caller that did not advertise ``quarantine/v1`` it still does\n(module docstring). Such a spoke has no ``quarantined`` map to read, so\nit compares a hash over the eligible set against its own hash over\neverything, and the difference reads to it as the ADR 04 c6 CORRUPTION\nalarm -- a false one, raised on ordinary legacy data.",
         "operationId": "digest_api_v1_sync_digest_get",
         "parameters": [
           {
@@ -19038,6 +19898,20 @@
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
             }
           }
         ],
@@ -19064,6 +19938,78 @@
           }
         },
         "summary": "Digest",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/enroll": {
+      "post": {
+        "description": "Join this hub's fleet under a proved owner. The ONE enrollment door.\n\nBoth ADR 12 paths come through here and neither can reach\n:func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev\nCLI is a thin argparse shell over this exact call, and the user path will\nbe the same call carrying a different credential kind.\n\nDeliberately NOT behind a router-level dependency. It authenticates by\nthe credential in its BODY, which is what lets a headless machine with no\nbrowser and no local Google session enroll at all. One transaction, so a\nrefusal registers nothing. Idempotent: a re-run answers ``created: false``.",
+        "operationId": "enroll_api_v1_sync_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollErrorResponse"
+                }
+              }
+            },
+            "description": "The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollErrorResponse"
+                }
+              }
+            },
+            "description": "The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollErrorResponse"
+                }
+              }
+            },
+            "description": "The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE."
+          }
+        },
+        "summary": "Enroll",
         "tags": [
           "sync"
         ]
@@ -19113,7 +20059,7 @@
     },
     "/api/v1/sync/pull": {
       "get": {
-        "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.",
+        "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.\n\nA chunk that had to leave a row out is refused outright for a caller that\ndid not advertise ``quarantine/v1`` (module docstring). The shortfall is\ninvisible to such a caller, which records the reported ``seq`` as pulled\nand can never ask for those entries again -- not even after the repair.",
         "operationId": "pull_api_v1_sync_pull_get",
         "parameters": [
           {
@@ -19154,6 +20100,20 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
+            }
           }
         ],
         "responses": {
@@ -19186,7 +20146,7 @@
     },
     "/api/v1/sync/push": {
       "post": {
-        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.\n\nThe pusher's ``machines`` snapshot is merged first, in the same\ntransaction (round 2 finding N4): a row this hub has never met is a\nFOREIGN KEY violation, and the recovery push after a hub restore is\nexactly the push most likely to carry one.",
+        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.\n\nThe pusher's ``machines`` snapshot is merged first, in the same\ntransaction (round 2 finding N4): a row this hub has never met is a\nFOREIGN KEY violation, and the recovery push after a hub restore is\nexactly the push most likely to carry one.\n\nA pusher that did not advertise ``quarantine/v1`` gets ``origin/main``'s\nanswer instead of the partial one: 422, whole batch rolled back (module\ndocstring). That is the staged-rollout price and it is the safe half of\nit -- an un-upgraded spoke reads ``accepted + rejected < offered`` as\nnothing at all and steps its push fence over the held row.",
         "operationId": "push_api_v1_sync_push_post",
         "requestBody": {
           "content": {
@@ -19853,7 +20813,7 @@
     },
     "/api/v1/tracks/{stable_id}/beatgrid-fallback": {
       "get": {
-        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.",
+        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead defers to native-analysis v1 first: when v1\nhas already settled a beatgrid determination for this track (a\ncanonical own pointer exists, whatever it resolved to), this endpoint\npreserves that gridless/failed state rather than silently substituting\na superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).",
         "operationId": "get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get",
         "parameters": [
           {
@@ -20596,7 +21556,7 @@
                 }
               }
             },
-            "description": "USB volume discovery is unavailable on this host."
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
           }
         },
         "summary": "Get Usb Volumes",
@@ -20628,7 +21588,7 @@
                 }
               }
             },
-            "description": "USB volume discovery is unavailable on this host."
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
           }
         },
         "summary": "Usb Volume Events",

@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * One mixer channel strip (SCREENSHOT-SPEC 4), top-down:
-	 * channel number, TRIM, HI/MID/LOW, FILTER (visual stub),
+	 * channel number, TRIM, HI/MID/LOW, FILTER,
 	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
@@ -29,10 +29,13 @@
 		 * MORE (the mixer shares `.deck-area`'s single grid row with the
 		 * decks, and that row's floor shrinks in LESS - see +page.svelte's
 		 * `.perf-root.deck-layout-less` comment), so the strip compacts:
-		 * smaller TRIM/EQ knobs, tighter margins, and the inert FILTER stub
-		 * (not a "required dial" - it is not wired to anything yet, see the
-		 * FILTER_SLOT_SIZE comment below) drops out entirely. TRIM/EQ/CUE/
-		 * the fader+level-meter/STEM stay - those are the real controls. */
+		 * smaller TRIM/EQ/FILTER knobs, tighter margins, and a three-column
+		 * grid that puts the fader left of the EQs and STEM right of them.
+		 * LESS used to SHED the FILTER dial instead of shrinking it, on the
+		 * grounds that its resting value is neutral (0.5 = bypass) and its
+		 * state survives not being drawn. Pin 2917b0eca218 reversed that: an
+		 * unmounted dial is a dial the DJ cannot reach mid-mix, and the grid
+		 * makes room for every control. Nothing is unmounted by LESS now. */
 		less: boolean;
 		/** TRIM knob 0..1; 0.5 = unity. */
 		trim: number;
@@ -42,12 +45,15 @@
 		eqMid: number;
 		/** LOW knob 0..1; 0.5 = flat. */
 		eqLow: number;
+		/** FILTER knob 0..1; 0.5 = bypass. */
+		filter: number;
 		/** Channel fader 0..1; 1 = full. */
 		fader: number;
 		cueEnabled: boolean;
 		stemPending: boolean;
 		ontrim: (value: number) => void;
 		oneq: (band: EqBand, value: number) => void;
+		onfilter: (value: number) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 		onStemMute: (stem: StemControl) => Promise<void>;
@@ -61,11 +67,13 @@
 		eqHigh,
 		eqMid,
 		eqLow,
+		filter,
 		fader,
 		cueEnabled,
 		stemPending,
 		ontrim,
 		oneq,
+		onfilter,
 		onfader,
 		oncue,
 		onStemMute,
@@ -82,7 +90,9 @@
 	/** Halfway between TRIM's former 21px and the 30px EQ dials. MORE only -
 	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
 	const TRIM_SIZE = 25.5;
-	/** Current main owns this inert FILTER slot's presentation only; PR #492 owns the live COLOR-FX replacement. */
+	/** FILTER stays visually larger than the EQ stack, matching the mixer
+	 * layout contract. The exact number is main's, not this branch's 39:
+	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
 	const FILTER_SLOT_SIZE = 35.1;
 
 	// ------------------------------------------------------- level calibration (#1475)
@@ -141,14 +151,29 @@
 			uiPrefs.level_calibration.ceiling_enabled
 		)
 	);
+	const chNumTitle = $derived(`Mixer channel ${deckId} (deck ${deckId})`);
+	const cueTitle = $derived(
+		cueEnabled
+			? `Headphone cue ON for channel ${deckId} - click to stop sending this channel to the headphones`
+			: `Headphone cue OFF for channel ${deckId} - click to hear this channel in the headphones`
+	);
 	/** Pin 246b0f5 LESS mode: decks 1/2's strip has to fit inside the
-	 * shrunk LESS deck-area row (see +page.svelte), so TRIM/EQ shrink and
-	 * FILTER (inert stub, `{#if !less}` below) drops out -
-	 * channel-strip-less-floor.test.mjs derives the LESS deck-area floor
-	 * from these exact numbers, so a change here must stay in step with
-	 * that test. */
+	 * shrunk LESS deck-area row (see +page.svelte), so TRIM/EQ/FILTER all
+	 * shrink - channel-strip-less-floor.test.mjs derives the LESS
+	 * deck-area floor from these exact numbers, so a change here must stay
+	 * in step with that test.
+	 *
+	 * Pin 2917b0eca218 - the maintainer's words: "in LESS (2 deck) - channel slider
+	 * and butons just below it should probably go Left and Right (around)
+	 * the EQs. Cant currently see filter in LESS mode." FILTER used to be
+	 * unmounted here because a single vertical stack could not afford its
+	 * height. `.strip.less` is now a GRID that puts the fader left of the
+	 * EQs and STEM right of them, so the column the dials live in is the
+	 * only one that has to be tall, and FILTER fits back into it at the
+	 * same shrunk dial size as TRIM and the EQs. */
 	const LESS_TRIM_SIZE = 18;
 	const LESS_EQ_SIZE = 18;
+	const LESS_FILTER_SIZE = 18;
 	/** Knob's own default dial size (see Knob.svelte's `size = 30`), spelled out
 	 * explicitly here rather than omitted: `exactOptionalPropertyTypes` treats an
 	 * explicit `size={undefined}` as distinct from the prop being absent, so
@@ -156,6 +181,7 @@
 	const EQ_SIZE = 30;
 	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
 	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
+	const filterSize = $derived(less ? LESS_FILTER_SIZE : FILTER_SLOT_SIZE);
 </script>
 
 <div
@@ -172,7 +198,7 @@
 	}}
 >
 	<div class="strip-head">
-		<span class="ch-num">{deckId}</span>
+		<span class="ch-num" title={chNumTitle}>{deckId}</span>
 		<div class="cal-controls" role="group" aria-label={`level calibration channel ${deckId}`}>
 			<button
 				type="button"
@@ -210,24 +236,22 @@
 		<Knob knobId={knobId(deckId, 'mid')} label="MID" accessibleLabel={`mid EQ deck ${deckId}`} value={eqMid} size={eqSize} onchange={(v) => oneq('mid', v)} />
 		<Knob knobId={knobId(deckId, 'low')} label="LOW" accessibleLabel={`low EQ deck ${deckId}`} value={eqLow} size={eqSize} onchange={(v) => oneq('low', v)} />
 	</div>
-	{#if !less}
-		<div class="filter-slot">
-			<Knob
-				knobId={knobId(deckId, 'filter')}
-				label="FILTER"
-				accessibleLabel={`filter deck ${deckId}`}
-				value={0.5}
-				tone="rainbow"
-				size={FILTER_SLOT_SIZE}
-				inert
-			/>
-		</div>
-	{/if}
+	<div class="filter-slot">
+		<Knob
+			knobId={knobId(deckId, 'filter')}
+			label="FILTER"
+			accessibleLabel={`filter deck ${deckId}`}
+			value={filter}
+			size={filterSize}
+			onchange={onfilter}
+		/>
+	</div>
 	<button
 		class:enabled={cueEnabled}
 		class="cue-btn"
 		aria-pressed={cueEnabled}
 		aria-label={`cue channel ${deckId}`}
+		title={cueTitle}
 		data-testid={`cue-channel-${deckId}`}
 		onclick={() => oncue(!cueEnabled)}>CUE</button
 	>
@@ -241,7 +265,7 @@
 			label={`channel fader deck ${deckId}`}
 		/>
 	</div>
-	<span class="stem-label">STEM</span>
+	<span class="stem-label" title="Stem mute/solo chips for this channel, same controls as the deck stem row">STEM</span>
 	<div class="stem-slot">
 		<StemRow deck={deck} pending={stemPending} onMute={onStemMute} onSolo={onStemSolo} />
 	</div>
@@ -261,6 +285,51 @@
 		   of the channel level slider exactly as pin 8cd32a28c36d asks. */
 		padding: 2px 2px 4px;
 		border-radius: 2px;
+	}
+	/* Pin 2917b0eca218: "channel slider and butons just below it should
+	 * probably go Left and Right (around) the EQs. Cant currently see filter
+	 * in LESS mode."
+	 *
+	 * LESS mode only. The DOM is unchanged - MORE keeps the flex column
+	 * above - and the three columns come from grid AREAS, so no child moves
+	 * in the markup and every selector, testid and hotkey target elsewhere
+	 * still resolves. Measured at 1280x800 the strip is 114px wide and the
+	 * three columns need about 30 + 22 + 41 = 93px, so this fits across;
+	 * the win is vertical, where the single stack needed 299px and the
+	 * tallest column here needs about half that - which is what buys FILTER
+	 * its place back and lets +page.svelte hand the difference to the
+	 * library instead.
+	 *
+	 * The fader spans both dial rows on purpose: it is the one control that
+	 * should absorb spare height (`.fader-slot` is `flex: 1 1 auto` in MORE
+	 * for exactly that reason), so in LESS it comes out TALLER than the
+	 * 67px it used to get, not shorter. */
+	.strip.less {
+		display: grid;
+		grid-template-columns: max-content max-content max-content;
+		grid-template-rows: auto auto auto 1fr;
+		grid-template-areas:
+			'head head head'
+			'cue trim stemlabel'
+			'fader eq stem'
+			'fader filter stem';
+		justify-content: center;
+		align-items: start;
+		justify-items: center;
+		column-gap: 4px;
+	}
+	.strip.less .strip-head {
+		grid-area: head;
+	}
+	.strip.less .eq-stack {
+		grid-area: eq;
+	}
+	.strip.less .filter-slot {
+		grid-area: filter;
+	}
+	.strip.less .stem-slot {
+		grid-area: stem;
+		align-self: stretch;
 	}
 	.strip.secondary {
 		background: color-mix(in srgb, var(--rb-panel-raised, #1a1e25) 55%, transparent);
@@ -291,6 +360,12 @@
 	.strip > :not(.fader-slot) {
 		flex-shrink: 0;
 	}
+	/* `flex-shrink` is inert under `.strip.less`'s grid (pin 2917b0eca218),
+	 * and that is fine rather than a gap: a grid item's default
+	 * `min-height: auto` already refuses to shrink below its content, so a
+	 * too-short LESS strip overflows visibly exactly as the flex column did.
+	 * Nothing here may set `min-height: 0` on those items without restoring
+	 * an equivalent refusal. */
 	.ch-num {
 		font-size: 10px;
 		color: var(--rb-text);
@@ -335,6 +410,7 @@
 	 * from these exact numbers, so a change here must stay in step with
 	 * that test. */
 	.strip.less .trim-slot {
+		grid-area: trim;
 		margin-bottom: 3px;
 	}
 	.eq-stack {
@@ -363,6 +439,7 @@
 		cursor: pointer;
 	}
 	.strip.less .cue-btn {
+		grid-area: cue;
 		margin-bottom: 4px;
 	}
 	.cue-btn.enabled {
@@ -380,6 +457,8 @@
 		margin-bottom: 4px;
 	}
 	.strip.less .fader-slot {
+		grid-area: fader;
+		align-self: stretch;
 		margin-bottom: 4px;
 	}
 	.stem-label {
@@ -392,6 +471,7 @@
 		margin-top: 2px;
 	}
 	.strip.less .stem-label {
+		grid-area: stemlabel;
 		margin-top: 2px;
 	}
 	.stem-slot :global(.stems) {

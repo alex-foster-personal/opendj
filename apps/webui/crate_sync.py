@@ -40,8 +40,8 @@ from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
-    ALLOWED_SSH_HOSTS,
     allowed_ssh_host,
+    allowed_ssh_hosts_description,
     ssh_agentbox_argv,
 )
 
@@ -76,7 +76,12 @@ OWNER_SSH_TARGETS_ENV: str = "MDT_OWNER_SSH_TARGETS"
 #: check the path a --remote pull is told to trust (#910). Unset fails fast
 #: the same way, and only when --remote pull needs it.
 OWNER_REPO_ENV: str = "MDT_OWNER_REPO"
-OWNER_SSH_KEY = Path("/root/.ssh/agentbox_mac_sync_ed25519")
+#: Env naming the private key this deployment's owner-Mac pull lane
+#: authenticates with. A path under one machine's /root is deployment config,
+#: not repo content, so it sits beside OWNER_SSH_TARGETS_ENV rather than as a
+#: literal (#1540). Unset fails fast at the point a pull needs it, the same
+#: contract as the two env names above.
+OWNER_SSH_KEY_ENV: str = "MDT_OWNER_SSH_KEY"
 ANLZ_SIBLING_SUFFIXES: frozenset[str] = frozenset({".DAT", ".EXT", ".2EX"})
 ARTWORK_SIBLINGS: tuple[str, ...] = ("artwork.jpg", "artwork_s.jpg", "artwork_m.jpg")
 FileKind = Literal["audio", "anlz", "artwork"]
@@ -740,14 +745,37 @@ def allowed_owner_ssh(owner: str) -> bool:
     return owner in _owner_ssh_targets()
 
 
+def owner_ssh_key_path() -> Path:
+    """The configured owner-Mac pull key, or a hard failure.
+
+    No default: this used to be a literal path under one deployment's /root, and
+    defaulting an unset value to a path that exists nowhere is how a pull lane
+    reports a missing key as a permission error three layers down.
+    """
+    raw = os.environ.get(OWNER_SSH_KEY_ENV, "").strip()
+    if not raw:
+        raise RuntimeError(
+            f"{OWNER_SSH_KEY_ENV} must name the owner Mac SSH private key the "
+            "crate pull lane authenticates with; unset is not defaulted"
+        )
+    return Path(raw)
+
+
+def _require_owner_ssh_key() -> Path:
+    """The configured key, proven to exist. Both pull lanes open with this."""
+    key = owner_ssh_key_path()
+    if not key.is_file():
+        raise RuntimeError(f"owner SSH key missing: {key}")
+    return key
+
+
 def ssh_owner_argv(command: str, *, owner: str) -> list[str]:
     if not allowed_owner_ssh(owner):
         raise RuntimeError(
             f"refusing owner SSH target {owner!r}; allowed "
             f"{sorted(_owner_ssh_targets())}"
         )
-    if not OWNER_SSH_KEY.is_file():
-        raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
+    key = _require_owner_ssh_key()
     return [
         "ssh",
         "-o",
@@ -757,7 +785,7 @@ def ssh_owner_argv(command: str, *, owner: str) -> list[str]:
         "-o",
         "IdentitiesOnly=yes",
         "-i",
-        str(OWNER_SSH_KEY),
+        str(key),
         owner,
         command,
     ]
@@ -801,8 +829,7 @@ def _rsync_manifest_from_host(
             f"refusing owner SSH target {owner!r}; allowed "
             f"{sorted(_owner_ssh_targets())}"
         )
-    if not OWNER_SSH_KEY.is_file():
-        raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
+    owner_ssh_key = _require_owner_ssh_key()
     groups: dict[tuple[Path, Path], list[Path]] = {}
     for entry in _manifest_files(manifest):
         source = Path(str(entry["source"]))
@@ -845,7 +872,7 @@ def _rsync_manifest_from_host(
                 "--files-from=-",
                 "-e",
                 "ssh -o BatchMode=yes -o ConnectTimeout=8 "
-                f"-o IdentitiesOnly=yes -i {OWNER_SSH_KEY}",
+                f"-o IdentitiesOnly=yes -i {owner_ssh_key}",
                 f"{owner}:{shlex.quote(source_root.as_posix().rstrip('/') + '/')}",
                 dest_root.as_posix().rstrip("/") + "/",
             ],
@@ -1184,9 +1211,13 @@ def assert_push_host(*, dest_kind: DestKind, dest_host: str, to_explicit: bool) 
     if dest_kind == "local":
         return
     if sys.platform == "darwin":
-        if not allowed_ssh_host(dest_host) and dest_host != AGENTBOX_HOSTNAME:
+        # Exact membership of the configured allowlist, and nothing else. This
+        # destination goes to mkdir/rsync directly, without the remote-hostname
+        # check run_via_ssh performs, so the allowlist is the only thing between
+        # a typo (or a hostile argument) and a library copied off this machine.
+        if not allowed_ssh_host(dest_host):
             raise RuntimeError(
-                f"refusing dest host {dest_host!r}; allowed {sorted(ALLOWED_SSH_HOSTS)}"
+                f"refusing dest host {dest_host!r}; allowed {allowed_ssh_hosts_description()}"
             )
         return
     if to_explicit:

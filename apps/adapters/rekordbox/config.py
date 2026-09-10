@@ -82,7 +82,11 @@ ARTWORK_FILENAMES: dict[str, str] = {
 # Cached anlz JSON schema version. Bump whenever the payload shape or any
 # decode semantics change (band order fix, vocals field, ...) so stale
 # cache entries self-heal by recomputing instead of serving old shapes.
-ANLZ_CACHE_SCHEMA: int = 2
+# 3 adds the required `beatgrid.source` discriminator ("own" | "rekordbox",
+# NATIVE-01). A schema-2 entry has no `source` key at all, and a consumer that
+# fails closed on an unknown source would render every cached rekordbox track's
+# grid controls inert until the file happened to be re-decoded.
+ANLZ_CACHE_SCHEMA: int = 3
 # Bump whenever beatgrid_diagnostics' output shape or thresholds change.
 BEATGRID_ISSUE_CACHE_SCHEMA: int = 1
 # Bump whenever the local waveform cache ENTRY SHAPE changes, so stale entries

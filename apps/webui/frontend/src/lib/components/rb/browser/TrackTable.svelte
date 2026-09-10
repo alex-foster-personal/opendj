@@ -21,7 +21,7 @@
 	// DOM-virtualizes the render: only the scrolled window (+overscan) is
 	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
 	// provider.total.
-	import { untrack } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
 	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
@@ -265,7 +265,15 @@
 		searchQuery = '',
 		findQuery = '',
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
-		suggestHoverId = null as string | null
+		suggestHoverId = null as string | null,
+		/** pin 02717d4ea496. Rendered INSIDE the table region, pinned just
+		 * below the sticky column-header row, so a panel-owned status
+		 * surface (the library load indicator) cannot push the headers down
+		 * the page or sit above them. The table renders the snippet and
+		 * knows nothing about what is in it, so this stays a pure row
+		 * renderer; the one thing it contributes is the offset, which only
+		 * it can measure. */
+		bodyOverlay = undefined as Snippet | undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -278,7 +286,7 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
-		/** Honest note when a tiny search result bypasses Next-only only. */
+		/** Honest note when a tiny search result bypasses the compatible filter. */
 		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
 		 * scroll cursor restores when this changes, NOT on row updates. */
@@ -303,7 +311,7 @@
 		onloadrow: (
 			row: BrowserRow,
 			deck: DeckId | null,
-			opts?: { play?: boolean; reservation?: number }
+			opts?: { play?: boolean; reservation?: number; pressT0Ms?: number }
 		) => void;
 		/**
 		 * Preferred deck for double-click load+play. Shift -> CH3/CH4 when
@@ -342,12 +350,101 @@
 		findQuery?: string;
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId?: string | null;
+		/** Panel-owned status surface, pinned below the column headers. */
+		bodyOverlay?: Snippet;
 	} = $props();
+
+	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
+	 * height is density-dependent (`--tt-row-h`), so a constant would drift
+	 * the overlay into or away from the headers on a density change. */
+	let theadHeightPx = $state(0);
 
 	const GENRE_CLICK_MS = 320;
 	const LOAD_DBLCLICK_SEL = '.c-preview, .c-art, .c-title, .c-artist';
 	let _genreClickTimer: ReturnType<typeof setTimeout> | null = null;
 	let _rowGenreTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Issue #1558: must clear the platform double-click interval (~400ms)
+	 * with margin, so a real double-click's second click always lands inside
+	 * it, but a deliberate single click on a deck button - which arrives well
+	 * after human reaction time - is unaffected. */
+	const DBLCLICK_GUARD_MS = 500;
+	/** Rows currently within their post-click guard window: the quick-load
+	 * box's buttons stay pointer-events: none for these ids even while the
+	 * row is selected and hovered (see .dblclick-guard-active below). A JS
+	 * timer, not a CSS transition-delay: pointer-events is a discrete
+	 * property, so a browser only honors transition-delay on it with
+	 * `transition-behavior: allow-discrete` (Chrome 117+/Safari 17.4+) -
+	 * verified empirically on PR #1570 (Codex review) - and this app's
+	 * packaged WKWebView targets macOS 11, whose system WebKit predates that
+	 * entirely, so the CSS-only guard silently did nothing there. A plain
+	 * class-gated selector has no such floor. */
+	let dblclickGuardRowIds = $state(new Set<string>());
+	const _dblclickGuardTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function _armDblclickGuard(rowId: string): void {
+		const existing = _dblclickGuardTimers.get(rowId);
+		if (existing !== undefined) clearTimeout(existing);
+		dblclickGuardRowIds = new Set(dblclickGuardRowIds).add(rowId);
+		_dblclickGuardTimers.set(
+			rowId,
+			setTimeout(() => {
+				_dblclickGuardTimers.delete(rowId);
+				const next = new Set(dblclickGuardRowIds);
+				next.delete(rowId);
+				dblclickGuardRowIds = next;
+			}, DBLCLICK_GUARD_MS)
+		);
+	}
+
+	/** Pin 27f889893790's hide corridor: keep deck buttons hittable for
+	 * 100ms after the pointer leaves .c-art / .c-title, so travelling the
+	 * gap over the hanging box's dead area can still land on a button.
+	 * Same JS-timer + class shape as `_armDblclickGuard` - a CSS
+	 * `transition-delay` on `pointer-events` is discrete and only runs with
+	 * `transition-behavior: allow-discrete` (Chrome 117+/Safari 17.4+),
+	 * which this app's packaged WKWebView floor (macOS 11) does not have.
+	 * That is why the #1558 reveal guard was ported off CSS on PR #1570;
+	 * the hide twin was the same inert rule. Issue #1588. */
+	const CORRIDOR_GRACE_MS = 100;
+	let corridorGraceRowIds = $state(new Set<string>());
+	const _corridorGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function _armCorridorGrace(rowId: string): void {
+		const existing = _corridorGraceTimers.get(rowId);
+		if (existing !== undefined) clearTimeout(existing);
+		corridorGraceRowIds = new Set(corridorGraceRowIds).add(rowId);
+		_corridorGraceTimers.set(
+			rowId,
+			setTimeout(() => {
+				_corridorGraceTimers.delete(rowId);
+				const next = new Set(corridorGraceRowIds);
+				next.delete(rowId);
+				corridorGraceRowIds = next;
+			}, CORRIDOR_GRACE_MS)
+		);
+	}
+
+	function _onDeckTriggerPointerLeave(event: PointerEvent, row: BrowserRow): void {
+		const related = event.relatedTarget;
+		const trigger = event.currentTarget;
+		if (related instanceof Node && trigger instanceof HTMLElement) {
+			const triggerRow = trigger.closest('tr');
+			if (triggerRow !== null) {
+				const art = triggerRow.querySelector('.c-art');
+				const title = triggerRow.querySelector('.c-title');
+				if (
+					(art !== null && art.contains(related)) ||
+					(title !== null && title.contains(related))
+				) {
+					return;
+				}
+			}
+		}
+		if (!selectedIdSet.has(row.stable_id)) return;
+		if (dblclickGuardRowIds.has(row.stable_id)) return;
+		_armCorridorGrace(row.stable_id);
+	}
 
 	function genreWindowOpen(): boolean {
 		return genreFilterUntil > 0 && Date.now() < genreFilterUntil;
@@ -390,6 +487,10 @@
 	}
 
 	function onRowPointer(event: MouseEvent, row: BrowserRow): void {
+		// Any click on the row is where its FIRST double-click click would
+		// land, whether the row was already selected or is only selecting
+		// now - both cases must stay guarded (issue #1558).
+		_armDblclickGuard(row.stable_id);
 		onselectrow(row, event);
 		if (!genreWindowOpen() || ongenrefilter === undefined || event.detail < 2) return;
 		if (_rowGenreTimer !== null) clearTimeout(_rowGenreTimer);
@@ -424,7 +525,13 @@
 		const reservation = picked != null ? picked.reservation : null;
 		// Missing key = ask; false = skip (remembered "do this every time").
 		if (uiPrefs.confirm.dblclick_load_play === false) {
-			onloadrow(row, deck, reservation !== null ? { play: true, reservation } : { play: true });
+			onloadrow(
+				row,
+				deck,
+				reservation !== null
+					? { play: true, reservation, pressT0Ms: event.timeStamp }
+					: { play: true, pressT0Ms: event.timeStamp }
+			);
 			return;
 		}
 		// A second double-click before the first confirm is answered
@@ -686,6 +793,15 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
+	function orderCellTitle(order: number): string {
+		return `Playlist position ${order}`;
+	}
+
+	function timeCellTitle(ms: number | null): string {
+		if (ms === null) return 'Duration unknown';
+		return `Duration ${_fmtTime(ms)} (mm:ss)`;
+	}
+
 	function _fmtBpm(bpm: number | null): string {
 		// Screenshot truncates to '132.' - one decimal is the sanctioned improvement.
 		return bpm === null ? '' : String(Math.round(bpm));
@@ -825,6 +941,20 @@
 			▼ MASTER
 		</button>
 	{/if}
+	{#if bodyOverlay !== undefined}
+		<!-- `bind:clientHeight` only lands after the first resize callback, so on
+		     the very first paint theadHeightPx is still 0 and this would sit ON
+		     the sticky header instead of below it (blinded review, PR #1672).
+		     A pane that is already loading at mount is exactly when that
+		     happens. Unmeasured means invisible, not misplaced. -->
+		<div
+			class="tt-body-overlay"
+			class:measured={theadHeightPx > 0}
+			style={`top:${theadHeightPx}px`}
+		>
+			{@render bodyOverlay()}
+		</div>
+	{/if}
 	<div
 		class="table-wrap"
 		bind:this={wrapEl}
@@ -857,7 +987,7 @@
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
 			</colgroup>
-			<thead>
+			<thead bind:clientHeight={theadHeightPx}>
 				<tr>
 					<th
 						class="h-icon"
@@ -1133,7 +1263,7 @@
 						<td colspan={autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
-				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
+				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1144,6 +1274,9 @@
 						tabindex="0"
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
+						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
+						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
+						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
@@ -1218,7 +1351,7 @@
 								<span class="missing" title="audio file missing on disk (broken link)">!</span>
 							{/if}
 						</td>
-						<td class="c-order">
+						<td class="c-order" title={orderCellTitle(row.order)}>
 							{#if reorderable}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<span
@@ -1269,6 +1402,7 @@
 									: (artworkStatusLabel(row.artwork_status) ??
 										'artwork unavailable')
 								: undefined}
+							onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}
 						>
 							<span class="art-slate" aria-hidden="true"></span>
 							{#if row.artwork_available === true}
@@ -1280,7 +1414,7 @@
 								/>
 							{/if}
 						</td>
-						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''}>
+						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
 							<!-- Pin 27f889893790: the quick-load box is anchored here (not
 							     .c-preview) so its hitbox can never sit over the mini preview
 							     strip (.preview-hit) - hovering it must never block the
@@ -1377,7 +1511,7 @@
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
 						</td>
-						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
+						<td class="c-time" title={timeCellTitle(row.duration_ms)}>{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
 							<QualityBadge quality={row.quality} compact showContainer={false} />
 						</td>
@@ -1487,19 +1621,22 @@
 		<button
 			type="button"
 			class="load-confirm-yes"
-			onclick={() => {
+			onclick={(e) => {
 				const pending = loadConfirm;
 				const remember = loadConfirmEveryTime;
 				loadConfirm = null;
 				loadConfirmEveryTime = false;
 				if (pending === null) return;
 				if (remember) setConfirmPref('dblclick_load_play', false);
+				// The dialog paused for a human decision of unknown length, so
+				// the felt wait for THIS gesture starts at the Yes click, not
+				// at the double-click that only opened it (r3974057968).
 				onloadrow(
 					pending.row,
 					pending.deck,
 					pending.reservation !== null
-						? { play: true, reservation: pending.reservation }
-						: { play: true }
+						? { play: true, reservation: pending.reservation, pressT0Ms: e.timeStamp }
+						: { play: true, pressT0Ms: e.timeStamp }
 				);
 			}}>Yes</button
 		>
@@ -1936,6 +2073,20 @@
 	/* `left` comes from masterFoldCenterPx as an inline style: the middle of
 	 * the TABLE pointed at Rating / Comments, which is not what the badge is
 	 * about. See src/lib/rb/master-fold-anchor.ts (pin b44c957f082f). */
+	.tt-body-overlay {
+		position: absolute;
+		left: 0;
+		right: 0;
+		z-index: 3;
+		display: flex;
+		justify-content: center;
+		/* Never eats a click meant for the row underneath it. */
+		pointer-events: none;
+		visibility: hidden;
+	}
+	.tt-body-overlay.measured {
+		visibility: visible;
+	}
 	.master-fold {
 		position: absolute;
 		transform: translateX(-50%);
@@ -2176,10 +2327,21 @@
 	 * receive the very focus that would reveal it. opacity+pointer-events
 	 * do the hiding instead, and :focus-within always wins so Tab landing
 	 * on any of these buttons reveals the whole group before the very next
-	 * Tab press. Hiding pointer-events lags 100ms behind losing hover (pin
-	 * 27f889893790's corridor): the pointer can leave .c-art/.c-title,
-	 * cross the short gap, and still land on a deck button before the
-	 * group goes fully inert. Showing has no such delay. */
+	 * Tab press. Hiding pointer-events lags 100ms behind leaving .c-art/
+	 * .c-title (pin 27f889893790's corridor, now a JS timer flipping
+	 * `.corridor-grace-active` - CORRIDOR_GRACE_MS): the pointer can leave
+	 * those cells, cross the short gap, and still land on a deck button
+	 * before the group goes fully inert. The delay is not a CSS
+	 * `transition-delay` on `pointer-events`: that property is discrete
+	 * and only honours a delay with `transition-behavior: allow-discrete`
+	 * (Chrome 117+/Safari 17.4+), which this app's packaged WKWebView
+	 * floor (macOS 11) does not have - the same floor that made the #1558
+	 * CSS reveal guard inert (PR #1570, issue #1588). Showing has no such
+	 * delay for the corridor-travel and keyboard-focus paths - but the
+	 * row-selection-driven reveal DOES delay showing (DBLCLICK_GUARD_MS,
+	 * issue #1558): that trigger can fire on the first click of a
+	 * double-click aimed at the row, and an instantly-clickable box there
+	 * hijacked the gesture's second click. */
 	.c-title {
 		position: relative;
 		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the
@@ -2223,8 +2385,10 @@
 	}
 	/* The buttons carry BOTH the interactivity and the footprint, because over
 	 * the row above those are the same thing.
-	 * Hitbox: hiding pointer-events lags 100ms behind losing hover (pin
-	 * 27f889893790's corridor); showing has no such delay.
+	 * Hitbox: hiding pointer-events lags 100ms behind leaving the trigger
+	 * cells via `.corridor-grace-active` (pin 27f889893790's corridor, JS
+	 * timer - same allow-discrete floor as #1570 / issue #1588); showing
+	 * has no such delay.
 	 * Size: the global `button` rule (padding 0.4rem 0.9rem) made a
 	 * single-digit target 37px wide - measured, the whole box came to 220px,
 	 * the ENTIRE width of the title column, and 32px tall against a 22px row,
@@ -2235,7 +2399,6 @@
 	 * into the header. */
 	.deck-btns button {
 		pointer-events: none;
-		transition: pointer-events 0s 100ms;
 		padding: 0 4px;
 		min-width: 16px;
 		height: 16px;
@@ -2244,28 +2407,80 @@
 		border-radius: 2px;
 	}
 	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns,
+	tr.corridor-grace-active .deck-btns,
 	.deck-btns:hover,
 	.deck-btns:focus-within {
 		opacity: 1;
-		transition-delay: 0s;
 	}
-	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns button,
+	/* Issue #1602 round 2 (Sol P1 on pin 8f064eafc, review thread
+	 * PRRT_kwDOSEvNd86gwaHm): a runway spacer row gave row 0's box somewhere
+	 * to hang, but its added layout height was invisible to
+	 * computeVirtualWindow's scrollTop math (virtual-window.ts) - the
+	 * runway vanished the instant startIndex left 0, a real DOM height
+	 * discontinuity the JS offset math never accounted for.
+	 * Raising .deck-btns's OWN z-index cannot fix the header collision
+	 * either - `tbody tr` is `position: relative` with z-index: auto
+	 * (needed to contain every row's absolutely-positioned children, e.g.
+	 * .audio-cache-chevron), which makes EACH row its own stacking context,
+	 * the identical mechanism `.col-resize` documents for sticky `th`
+	 * above. .deck-btns's z-index: 5 is trapped inside its OWN row's
+	 * auto-level context and can never escape to outrank a sibling
+	 * context's explicit z-index (thead th, z-index: 1) - only the ROW's
+	 * own z-index decides that contest. Every row already beats the row
+	 * above it in paint order for free (a later DOM sibling outranks an
+	 * earlier one among z-index: auto contexts), which is why only row 0 -
+	 * the one row with the thead, not another row, ahead of it in DOM order
+	 * - ever needed anything raised. So: bump row 0's own z-index above
+	 * thead's, and ONLY while its box is genuinely revealed (identical
+	 * predicate to the opacity reveal directly above), so row 0 still
+	 * renders behind the sticky header the rest of the time, exactly like
+	 * every other row. Zero added layout height, so
+	 * computeVirtualWindow needs no change and no coupling to the runway's
+	 * failure mode is possible. */
+	tr.rb-row-first.rb-row-selected:has(.c-art:hover, .c-title:hover),
+	tr.rb-row-first.corridor-grace-active,
+	tr.rb-row-first:has(.deck-btns:hover),
+	tr.rb-row-first:has(.deck-btns:focus-within) {
+		z-index: 2;
+	}
+	/* Issue #1558: selecting a row makes this :has() match true at the exact
+	 * instant of the FIRST click of a double-click, with the pointer already
+	 * resting on .c-art/.c-title (a click cannot happen anywhere else). An
+	 * instant pointer-events here put a deck button under the gesture's
+	 * SECOND click, which the button's own ondblclick stopPropagation then
+	 * ate before the row's own dblclick handler ever ran - "Load onto deck
+	 * N" fired (no play) instead of the row's smart-load-and-play. The box
+	 * itself stays pointer-events: none throughout (see above), so while the
+	 * guard is active the click passes through to the row beneath, exactly
+	 * like the box was never there.
+	 * `.dblclick-guard-active` is a plain JS-timed class (DBLCLICK_GUARD_MS,
+	 * TrackTable.svelte script - armed on every row click), not a CSS
+	 * transition-delay: pointer-events is a discrete property, so a browser
+	 * only honors transition-delay on it with `transition-behavior:
+	 * allow-discrete` (Chrome 117+/Safari 17.4+ only) - tried first on this
+	 * PR and verified empirically to do nothing on this app's packaged
+	 * WKWebView floor (macOS 11, Codex review PR #1570). A class flip has no
+	 * such requirement.
+	 * `.deck-btns:hover`/`:focus-within` below are the corridor-travel and
+	 * keyboard-focus cases (the box is already open), so those stay instant;
+	 * only the SELECT-driven reveal needs the guard. */
+	tr.rb-row-selected:not(.dblclick-guard-active):has(.c-art:hover, .c-title:hover) .deck-btns button {
+		pointer-events: auto;
+	}
+	tr.corridor-grace-active:not(.dblclick-guard-active) .deck-btns button {
+		pointer-events: auto;
+	}
 	.deck-btns:hover button,
 	.deck-btns:focus-within button {
 		pointer-events: auto;
-		transition-delay: 0s;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		/* Pin 27f889893790's corridor grace (pointer-events lagging 100ms
-		 * behind hover) must survive reduced motion - it is not decorative,
-		 * it is what lets the mouse travel .c-art/.c-title -> deck button
-		 * without the box going inert underfoot. Only the opacity fade is a
-		 * pure animation; disable that alone, never the whole transition. */
+		/* Pin 27f889893790's corridor grace is a JS timer (CORRIDOR_GRACE_MS
+		 * / `.corridor-grace-active`), not a CSS transition, so reduced
+		 * motion cannot collapse it. Only the opacity fade is decorative;
+		 * disable that alone. */
 		.deck-btns {
 			transition: opacity 0s;
-		}
-		.deck-btns button {
-			transition: pointer-events 0s 100ms;
 		}
 	}
 	.deck-btns-title {

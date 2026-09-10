@@ -1,6 +1,7 @@
 /**
- * Pure deck-load/replacement/master-selection guards, split out of
- * audio-engine.svelte.ts (a distinct concern from the engine class itself -
+ * Pure deck-load/replacement/master-selection guards and knob-taper math,
+ * split out of audio-engine.svelte.ts (a distinct concern from the engine
+ * class itself -
  * none of these read `_ctx`/`_rt`/module-level engine state, they only
  * validate or derive from arguments the engine passes in). Kept as a plain
  * .ts module (no runes) since nothing here is reactive.
@@ -9,7 +10,15 @@
 // alongside DECK_IDS) rather than a fresh direct import of deck-slots.ts -
 // that module sits at its frontend.max_fan_in allowance, and constants.ts's
 // own re-export exists for exactly this pairing.
-import { DECK_IDS, type DeckId } from '$lib/player/constants';
+import {
+	DECK_IDS,
+	type DeckId,
+	FILTER_DEADZONE_FRAC,
+	FILTER_HP_CEILING_HZ,
+	FILTER_HP_FLOOR_HZ,
+	FILTER_LP_CEILING_HZ,
+	FILTER_LP_FLOOR_HZ
+} from '$lib/player/constants';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { PresentedTransportObservation } from '$lib/player/transport/presentation';
 
@@ -204,3 +213,40 @@ export function transportNeedsScheduledMutation(
 }
 
 // Deck-load/replacement/master-selection guards moved to
+
+/**
+ * FILTER knob -> {lpHz, hpHz} corner frequencies for the two parallel biquads
+ * (see FILTER_* constants) plus real dry/wet gains. `colour` is bipolar
+ * travel away from the 0.5 detent; below FILTER_DEADZONE_FRAC it is a true
+ * dry bypass around both filters. Away from the detent, only the selected
+ * side's wet gain is nonzero - the other side is silenced rather than left in
+ * series at its gentlest cutoff, which would still audibly color the signal
+ * (issue #990 follow-up). Sweeps are exponential in Hz, i.e. linear in
+ * octaves (L2 in docs/research/filter-taper-laws.md), so equal knob motion
+ * covers equal perceived distance anywhere in the travel.
+ */
+export function filterParamsFromKnob(value: number): {
+	lpHz: number;
+	hpHz: number;
+	dryGain: number;
+	lpWetGain: number;
+	hpWetGain: number;
+} {
+	const colour = (value - 0.5) * 2; // -1 (full CCW) .. 1 (full CW)
+	if (Math.abs(colour) < FILTER_DEADZONE_FRAC) {
+		return {
+			lpHz: FILTER_LP_CEILING_HZ,
+			hpHz: FILTER_HP_FLOOR_HZ,
+			dryGain: 1,
+			lpWetGain: 0,
+			hpWetGain: 0
+		};
+	}
+	const u = (Math.abs(colour) - FILTER_DEADZONE_FRAC) / (1 - FILTER_DEADZONE_FRAC);
+	if (colour < 0) {
+		const lpHz = FILTER_LP_CEILING_HZ * (FILTER_LP_FLOOR_HZ / FILTER_LP_CEILING_HZ) ** u;
+		return { lpHz, hpHz: FILTER_HP_FLOOR_HZ, dryGain: 0, lpWetGain: 1, hpWetGain: 0 };
+	}
+	const hpHz = FILTER_HP_FLOOR_HZ * (FILTER_HP_CEILING_HZ / FILTER_HP_FLOOR_HZ) ** u;
+	return { lpHz: FILTER_LP_CEILING_HZ, hpHz, dryGain: 0, lpWetGain: 0, hpWetGain: 1 };
+}

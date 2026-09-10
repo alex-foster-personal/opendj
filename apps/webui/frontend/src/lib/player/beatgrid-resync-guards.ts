@@ -21,14 +21,20 @@
  *   ✔︎ ✅ 🎯 An authoritative /anlz grid replaces a deck's merged fallback grid.
  *     [if] a vendor mapping lands and an ambient /anlz retry returns a real
  *       PQTZ grid [then] the engine's deck.anlz adopts it and re-reconciles ⛔️
+ *   ✔︎ ✅ 🎯 A source's revalidation failure invalidates an already-loaded deck.
+ *     [if] revalidateAnlz's background fetch settles with an RbApiError,
+ *       before or after the deck it was checking for has swapped in [then]
+ *       that deck's beatgrid empties and anlz_error is set, so quantize and
+ *       Beat Sync stop running against a source now known to have failed ⛔️
  */
 import type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
-import { sameBeatgrid } from '$lib/rb/beatgrid-fallback';
+import { hasAnlzBeatgrid, sameBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { isScopedCommandInvalidated } from '$lib/rb/performance-command-scheduler';
 import { createScopedSyncRunner, type ScopedSyncRunner } from '$lib/player/scoped-sync-runner';
+import { displayLoopFrom, pqtzLoopBeatCount, validateBeatGrid } from '$lib/rb/beat-sync-math';
 export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracking';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
-import type { AnlzData } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
 type DeckId = DeckState['deck_id'];
@@ -58,7 +64,41 @@ export interface BeatgridResyncGuardDeps {
 	deckStableId: (deck: DeckId) => string | null;
 	deckAnlz: (deck: DeckId) => AnlzData | null;
 	publishDeckAnlz: (deck: DeckId, anlz: AnlzData) => void;
+	/** The deck's own projected BPM, surfaced to the header, IPC state,
+	 * browser recommendations and autoplay - distinct from `deckAnlz`'s
+	 * `beatgrid.bpm`, which Beat Sync reads directly. Called on EVERY
+	 * authoritative source transition, `null` when the newly adopted block
+	 * carries no projected BPM of its own (own `missing`/`failed`, or a
+	 * demotion back to Rekordbox): only an own `status: ok` block carries
+	 * `beatgrid.bpm`, so leaving those transitions alone would strand the
+	 * PREVIOUS source's BPM on consumers that never settled against the new
+	 * beats (Codex P2 BLOCKING, PR #1587, and a fresh follow-up finding after
+	 * the first fix only covered the own-ok case). */
+	publishDeckBpm: (deck: DeckId, bpm: number | null) => void;
+	/** Surfaces an authoritative source failure onto the deck, the same field
+	 * `WaveRow`/`StripWaveform` already render an /anlz fetch failure through -
+	 * `adoptAuthoritativeError` is a second, later-arriving way to learn one.
+	 * Called with `null` to clear it once a later authoritative answer for
+	 * the same track shows the source has recovered. */
+	setDeckAnlzError: (deck: DeckId, code: string | null) => void;
+	/** Recomputes the deck's separately-tracked display loop
+	 * (`_displayLoopFrom`'s own consumer, audio-engine.svelte.ts) against a
+	 * newly adopted authoritative payload, without disrupting a currently
+	 * ENGAGED live loop's time bounds - only its beat-count readout follows
+	 * the new grid in that case (Codex P2 BLOCKING, PR #1587, fourth round).
+	 * `deck.anlz` itself is updated separately via `publishDeckAnlz`; this is
+	 * the loop-derived state `load()`'s own swap keeps in step but neither
+	 * adoption transaction here used to touch. */
+	reconcileDeckLoop: (deck: DeckId, anlz: AnlzData) => void;
 	reportError: (message: string) => void;
+	/** The PARITY-02 rbx-vs-own selection last CONFIRMED by the daemon
+	 * (analysisSourceState.features.beatgrid), for `adoptAuthoritativeGrid`
+	 * alone. `undefined` before any poll has confirmed a selection - nothing
+	 * to disagree with yet. A probe, not a direct import of
+	 * analysis-source-state.svelte.ts, to keep this module's own contract
+	 * ("the engine supplies the identity probes") and to keep it testable with
+	 * a fake, matching every other dependency here. */
+	desiredBeatgridSource: () => 'rekordbox' | 'own' | undefined;
 }
 
 function _message(error: unknown): string {
@@ -76,6 +116,42 @@ function _consumeInvalidation(reportError: (message: string) => void, context: s
 		if (isScopedCommandInvalidated(error)) return;
 		reportError(`${context} - ${_message(error)}`);
 	};
+}
+
+/** Merge every source-dependent field of an authoritative /anlz payload onto
+ * `base`, not just `beatgrid`: `tempo_changes`/`performance_hints` are
+ * own-analyzer-only keys a rekordbox payload never carries, so overwriting
+ * `beatgrid` alone either strands stale own markers on a deck that reverted
+ * to rekordbox, or installs a new own grid without the markers it came with
+ * (Codex P2 BLOCKING, PR #1587). Absent keys are deleted, not set to
+ * `undefined`, to match `data`'s own absence exactly under
+ * `exactOptionalPropertyTypes`. */
+function _withSourceDependentAnlzFields(base: AnlzData, data: AnlzData): AnlzData {
+	const merged: AnlzData = { ...base, beatgrid: data.beatgrid };
+	if (data.tempo_changes === undefined) delete merged.tempo_changes;
+	else merged.tempo_changes = data.tempo_changes;
+	if (data.performance_hints === undefined) delete merged.performance_hints;
+	else merged.performance_hints = data.performance_hints;
+	return merged;
+}
+
+/** True only when NONE of the source-dependent fields differ, so adoption can
+ * genuinely skip a no-op. `sameBeatgrid` alone compares `beats` only, so an
+ * empty Rekordbox grid and an own `missing`/`failed` result (also `beats:
+ * []`) read as identical to it even though `source`/`status`/`reason` flip -
+ * skipping the merge on that alone strands the wrong source label and any
+ * changed `tempo_changes`/`performance_hints` too (Codex P2 BLOCKING, PR
+ * #1587, fresh finding after the merge helper above landed). */
+function _sameSourceDependentAnlzFields(current: AnlzData, data: AnlzData): boolean {
+	return (
+		sameBeatgrid(current.beatgrid, data.beatgrid) &&
+		current.beatgrid.source === data.beatgrid.source &&
+		current.beatgrid.status === data.beatgrid.status &&
+		current.beatgrid.reason === data.beatgrid.reason &&
+		current.beatgrid.bpm === data.beatgrid.bpm &&
+		JSON.stringify(current.tempo_changes) === JSON.stringify(data.tempo_changes) &&
+		JSON.stringify(current.performance_hints) === JSON.stringify(data.performance_hints)
+	);
 }
 
 export interface BeatgridResyncGuards {
@@ -112,7 +188,16 @@ export interface BeatgridResyncGuards {
 		deck: DeckId,
 		landed: boolean,
 		publish: () => void,
-		isStale: () => boolean
+		isStale: () => boolean,
+		/** True only when the caller already holds a scheduler claim covering
+		 * `deck` plus the wide barrier (the rbx-vs-own switch's
+		 * `[...DECK_IDS, 'sync']` claim is the one caller). Skips `runScoped`
+		 * entirely and reconciles inline: re-claiming here would await a nested
+		 * `[deck]` claim whose only predecessor is the caller's own still-open
+		 * claim, a direct self-deadlock (discussion_r3972154599 P1 BLOCKING),
+		 * and the reclaim is redundant anyway since the wide scope this
+		 * settlement could ever need is already held. */
+		alreadyScoped?: boolean
 	): Promise<void>;
 	/** Fired from `_clearLoadedTrackState`/`unload()` right after `stranded` (the
 	 * followers `deck` left pending) is captured, but the actual reconciliation
@@ -153,9 +238,45 @@ export interface BeatgridResyncGuards {
 	 * publish inside the reclaimed scope, then reconcile - rather than
 	 * assigning `deck.anlz` directly, so followers pending on this deck are
 	 * re-locked (or abandoned) under the identical widen rules instead of
-	 * observing a grid change nothing reconciled. `landed` is true: a real
-	 * grid is exactly what a landed settlement means. */
-	adoptAuthoritativeGrid(stableId: string, data: AnlzData): void;
+	 * observing a grid change nothing reconciled. `landed` defaults to true: a
+	 * real grid is exactly what a landed settlement means, and the ambient
+	 * retry that drives this can only ever discover one. The PARITY-02
+	 * rbx-vs-own switch passes it explicitly, because selecting a source that
+	 * has no grid for this track REMOVES one, and a removal has to settle
+	 * gridless rather than leave a playing follower phase-locked to a grid the
+	 * deck no longer has (discussion_r3968213995).
+	 *
+	 * RETURNS A PROMISE THAT SETTLES ONCE EVERY TRIGGERED RECONCILIATION HAS
+	 * (discussion_r3970967293 P1 BLOCKING). Each `afterBeatgridUpgrade` call
+	 * used to be fire-and-forget here, so a caller inside the performance
+	 * command scheduler's all-deck-plus-sync claim - the rbx-vs-own source
+	 * switch is the only one - could report the switch complete, release the
+	 * claim, and let a LATER command's own claim be granted while this deck's
+	 * audible rescheduling was still queued behind `runScoped`'s widen. The
+	 * promise never rejects: every per-deck failure is already funneled
+	 * through `_consumeInvalidation`/`reportError` exactly as before, so
+	 * awaiting this only postpones "done", it does not turn a swallowed error
+	 * into an unhandled rejection. */
+	adoptAuthoritativeGrid(
+		stableId: string,
+		data: AnlzData,
+		landed?: boolean,
+		/** Forwarded to `afterBeatgridUpgrade` for every matching deck; see its
+		 * doc for why this must be true from inside an already-held wide claim. */
+		alreadyScoped?: boolean
+	): Promise<void>;
+	/** Invalidate every loaded deck holding `stableId` after its ANALYSIS
+	 * SOURCE (not the track) is learned to have explicitly failed to
+	 * revalidate - `anlz-cache.svelte.ts`'s `revalidateAnlz` fires this
+	 * instead of `adoptAuthoritativeGrid` because there is no fresh payload
+	 * to adopt, only the news that the cached one can no longer be trusted.
+	 *
+	 * Routes through the SAME `afterBeatgridUpgrade`/reconciliation machinery
+	 * `adoptAuthoritativeGrid`'s own authoritative-absence case (`landed:
+	 * false`) already exercises, so a follower pending on this deck is
+	 * abandoned or re-locked under the identical widen rules rather than
+	 * observing a grid change nothing reconciled. */
+	adoptAuthoritativeError(stableId: string, code: string): void;
 	/** Install the concrete scoped runner both wrappers claim through. The
 	 * runner itself lives here because these two wrappers are its only
 	 * consumers; audio-engine.svelte.ts re-exports this for the route to call.
@@ -166,14 +287,23 @@ export interface BeatgridResyncGuards {
 
 export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): BeatgridResyncGuards {
 	const { ports, deckRuntime, deckLoadToken, reportError } = deps;
-	const { deckStableId, deckAnlz, publishDeckAnlz } = deps;
+	const {
+		deckStableId,
+		deckAnlz,
+		publishDeckAnlz,
+		publishDeckBpm,
+		setDeckAnlzError,
+		reconcileDeckLoop,
+		desiredBeatgridSource
+	} = deps;
 	const scopedSync = createScopedSyncRunner<DeckId>();
 	const runScoped = scopedSync.run;
 	const afterBeatgridUpgrade: BeatgridResyncGuards['afterBeatgridUpgrade'] = (
 		deck,
 		landed,
 		publish,
-		isStale
+		isStale,
+		alreadyScoped = false
 	) =>
 		_loadResyncModule().then(({ reconcileAfterBeatgridSettled, resyncSettlementNeedsFullBarrier }) => {
 			const guardedPorts: BeatgridResyncPorts = {
@@ -193,12 +323,18 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 					if (!isStale()) ports.markSettledGridless(d);
 				}
 			};
+			const run = () => {
+				if (isStale()) return Promise.resolve();
+				return (publish(), reconcileAfterBeatgridSettled(guardedPorts, deck, landed));
+			};
+			// Caller already holds [deck] and the wide barrier (both are inside
+			// its own [...DECK_IDS, 'sync'] claim), so run inline: a fresh
+			// runScoped(deck, ...) here would await a nested claim whose only
+			// predecessor is that same still-open outer claim, a direct
+			// self-deadlock (discussion_r3972154599 P1 BLOCKING).
+			if (alreadyScoped) return run();
 			return runScoped(deck, (widen) => {
 				if (isStale()) return Promise.resolve();
-				const run = () => {
-					if (isStale()) return Promise.resolve();
-					return (publish(), reconcileAfterBeatgridSettled(guardedPorts, deck, landed));
-				};
 				if (!resyncSettlementNeedsFullBarrier(guardedPorts, deck, landed)) return run();
 				return (
 					widen(run).catch((error: unknown) =>
@@ -269,39 +405,243 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				)
 			).catch(onFailure);
 		},
-		adoptAuthoritativeGrid(stableId, data) {
+		adoptAuthoritativeGrid(stableId, data, landed = true, alreadyScoped = false) {
+			const settlements: Promise<void>[] = [];
 			for (const deck of ports.deckIds) {
 				if (deckStableId(deck) !== stableId) continue;
 				const current = deckAnlz(deck);
-				if (current === null || sameBeatgrid(current.beatgrid, data.beatgrid)) continue;
+				if (current === null) continue;
+				if (_sameSourceDependentAnlzFields(current, data)) {
+					// A fresh, non-error answer for this track is itself evidence
+					// the source has recovered, even when its payload happens to
+					// match what is already published - an error left over from an
+					// earlier failed revalidation must not outlive a later answer
+					// that says otherwise (Codex P2 BLOCKING, PR #1587, fourth
+					// round).
+					setDeckAnlzError(deck, null);
+					continue;
+				}
+				const runtime = deckRuntime(deck);
+				const token = deckLoadToken(deck);
+				// `alreadyScoped` callers (refreshAnalysisSourceDecks's own staged
+				// batch) are trusted outright: THIS call is what will advance the
+				// confirmed selection once it returns, so comparing against it here
+				// would reject the very write that is about to make it current.
+				// Every other caller (the ambient retry timer, a plain deck load, a
+				// hot-cue refresh) is untrusted against a source switch that can run
+				// concurrently with it, so re-check `data`'s own stamped source
+				// against the last CONFIRMED daemon selection at the moment this
+				// grid actually installs, not just when the fetch settled: an
+				// RBX->OWN->RBX round trip inside one poll interval leaves
+				// `currentAnlzFetchGeneration()` looking unchanged to a straggling
+				// fetch issued and settled entirely within that window, so its
+				// generation check alone lets a since-reverted response reach here
+				// and get installed onto a loaded deck with no later poll able to
+				// detect or undo it - `evictAnlzCacheEntriesServingOtherSource` only
+				// cleans the shared cache, never an already-loaded deck's own anlz
+				// (discussion_r3975650988 P1 BLOCKING). `undefined` means no poll has
+				// confirmed a selection yet (cold mount): nothing to disagree with.
+				const isStale = (): boolean =>
+					deckRuntime(deck) !== runtime ||
+					deckLoadToken(deck) !== token ||
+					deckStableId(deck) !== stableId ||
+					(!alreadyScoped &&
+						desiredBeatgridSource() !== undefined &&
+						desiredBeatgridSource() !== data.beatgrid_source);
+				const next: AnlzData = _withSourceDependentAnlzFields(current, data);
+				settlements.push(
+					afterBeatgridUpgrade(
+						deck,
+						landed,
+						() => {
+							// Re-read rather than trust `current`: the publish thunk runs
+							// inside a scope claim this call had to queue for, and a
+							// reload can have replaced the payload in that gap. The grid
+							// is what this adoption is about, so it is merged onto
+							// whatever payload is live at publish time, not the one read
+							// when the cache fired.
+							const latest = deckAnlz(deck);
+							const published =
+								latest === null ? next : _withSourceDependentAnlzFields(latest, data);
+							publishDeckAnlz(deck, published);
+							// Beat Sync reads `deck.anlz.beatgrid.bpm` directly, but the
+							// header, IPC state, browser recommendations and autoplay all
+							// read the deck's separately-tracked BPM, last set from
+							// `candidateTrack.bpm` at load time. Refresh it in the SAME
+							// transaction for every transition, not only the ones that
+							// carry an own projected BPM: an own `missing`/`failed` result
+							// or a demotion back to Rekordbox carries none, and keeping
+							// the previous source's number there would be exactly as
+							// stale as never refreshing it at all.
+							publishDeckBpm(deck, data.beatgrid.bpm ?? null);
+							// A landed authoritative answer - grid or absence - is itself
+							// evidence the source responded, so an error left over from an
+							// earlier failed revalidation must not survive it (Codex P2
+							// BLOCKING, PR #1587, fourth round).
+							setDeckAnlzError(deck, null);
+							// deck.loop is separately tracked from deck.anlz (audio-engine's
+							// own `_displayLoopFrom`) and this adoption used to leave it
+							// derived from the beats it just replaced (Codex P2 BLOCKING,
+							// PR #1587, fourth round).
+							reconcileDeckLoop(deck, published);
+						},
+						isStale,
+						alreadyScoped
+					).catch(
+						_consumeInvalidation(
+							reportError,
+							`Deck ${deck}'s beatgrid could not be updated to the analysis grid rekordbox now has`
+						)
+					)
+				);
+			}
+			return Promise.all(settlements).then(() => undefined);
+		},
+		adoptAuthoritativeError(stableId, code) {
+			for (const deck of ports.deckIds) {
+				if (deckStableId(deck) !== stableId) continue;
+				const current = deckAnlz(deck);
+				if (current === null) continue;
 				const runtime = deckRuntime(deck);
 				const token = deckLoadToken(deck);
 				const isStale = (): boolean =>
 					deckRuntime(deck) !== runtime ||
 					deckLoadToken(deck) !== token ||
 					deckStableId(deck) !== stableId;
-				const next: AnlzData = { ...current, beatgrid: data.beatgrid };
+				// `landed: false` is the same authoritative-absence path
+				// `adoptAuthoritativeGrid` already exercises for an own
+				// missing/failed answer, so followers reconcile off Beat Sync
+				// through the identical machinery.
 				afterBeatgridUpgrade(
 					deck,
-					true,
+					false,
 					() => {
-						// Re-read rather than trust `current`: the publish thunk runs
-						// inside a scope claim this call had to queue for, and a
-						// reload can have replaced the payload in that gap. The grid
-						// is what this adoption is about, so it is merged onto
-						// whatever payload is live at publish time, not the one read
-						// when the cache fired.
-						const latest = deckAnlz(deck);
-						publishDeckAnlz(deck, latest === null ? next : { ...latest, beatgrid: data.beatgrid });
+						// Re-read rather than trust `current`: publish runs inside a
+						// scope claim this call had to queue for.
+						const base = deckAnlz(deck) ?? current;
+						const published: AnlzData = {
+							...base,
+							beatgrid: { source: base.beatgrid.source, beat_count: 0, beats: [] }
+						};
+						// `tempo_changes`/`performance_hints` are own-analyzer-only
+						// fields describing the grid just emptied above; leaving them
+						// on the published error payload would claim tempo-change /
+						// dynamic-tempo detail for a beatgrid that no longer exists
+						// (Codex P2 BLOCKING, PR #1587, fifth round).
+						delete published.tempo_changes;
+						delete published.performance_hints;
+						publishDeckAnlz(deck, published);
+						publishDeckBpm(deck, null);
+						setDeckAnlzError(deck, code);
+						reconcileDeckLoop(deck, published);
 					},
 					isStale
 				).catch(
 					_consumeInvalidation(
 						reportError,
-						`Deck ${deck}'s beatgrid could not be updated to the analysis grid rekordbox now has`
+						`Deck ${deck}'s beatgrid could not be invalidated after its analysis source failed to revalidate`
 					)
 				);
 			}
 		}
 	};
+}
+
+/**
+ * The grid a GRID-DEPENDENT operation cannot proceed without.
+ *
+ * Reserved for operations that are meaningless with no grid: engaging Beat
+ * Sync, and beat loops. Transport must never call this - see the engine's
+ * own `_quantizeGrid`.
+ */
+export function requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
+	const beats = st.anlz?.beatgrid.beats;
+	try {
+		validateBeatGrid(beats ?? []);
+	} catch (error) {
+		throw new Error(
+			`${operation}: deck ${st.deck_id} requires a valid real PQTZ beat grid: ${String(error)}`,
+			{ cause: error }
+		);
+	}
+	return beats ?? [];
+}
+
+/** Reconciles `st.loop` against a beatgrid `adoptAuthoritativeGrid`/
+ * `adoptAuthoritativeError` just adopted onto an ALREADY-LOADED deck (the
+ * ordinary `load()` swap path derives `st.loop` fresh from `displayLoopFrom`
+ * itself and never calls this). A saved-but-not-currently-looping cue is
+ * simply re-derived, same as a fresh load. An ENGAGED live loop keeps its own
+ * time bounds untouched - re-deriving those from cues would silently move a
+ * playing loop's in/out points - and only its beat-count readout is
+ * recomputed against the new beats, mirroring `engageBeatLoop`'s own
+ * in-place `beat_length` mutation (Codex P2 BLOCKING, PR #1587, fourth
+ * round). */
+export function reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData): void {
+	if (st.loop === null || !st.loop.engaged) {
+		st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
+		return;
+	}
+	st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);
+}
+
+export interface PublishedAnlzResolution {
+	anlz: AnlzData;
+	anlzError: string | null;
+	bpm: number | null;
+}
+
+/**
+ * Decides what a deck's `load()` swap publishes for anlz/anlz_error/bpm once
+ * the buffer is decoded and ready to become the deck's live state.
+ *
+ * The fire-and-forget `revalidateAnlz` the engine kicks off earlier can
+ * settle WHILE the deck is still fetching/decoding, before `st.stable_id`
+ * names this track: `adoptAuthoritativeGrid` finds no deck to update and
+ * drops it, and publishing the pre-revalidation `candidateAnlz` as-is would
+ * then re-plant the exact stale grid the revalidation just corrected (Codex
+ * P1 BLOCKING, PR #1587). The caller re-reads the shared cache at swap time
+ * instead: a ready, non-retryable entry there is at least as fresh as
+ * `candidateAnlz` - identical to it on the ordinary cache-miss path (the
+ * fetch that produced `candidateAnlz` is the same call that just published
+ * that entry), newer on the raced path above.
+ *
+ * A `revalidateAnlz` RbApiError can ALSO settle in this same race window: the
+ * selected source has explicitly failed, so `candidateAnlz` predates
+ * known-bad information and its beatgrid must not be trusted as if the
+ * revalidation had said nothing (Codex P1 BLOCKING, PR #1587, third round) -
+ * it is refused the same way `adoptAuthoritativeError` refuses one that
+ * lands after this same swap.
+ *
+ * `usableAnlz` and `errorCode` are the caller's own `isAnlzEntryUsable`/
+ * cache-entry read, passed in rather than re-derived here so this stays a
+ * pure function with no dependency on the cache module's internals.
+ */
+export function resolvePublishedAnlz(
+	usableAnlz: AnlzData | null,
+	errorCode: string | null,
+	candidateAnlz: AnlzData,
+	fallbackBpm: number | null
+): PublishedAnlzResolution {
+	if (usableAnlz !== null) {
+		return { anlz: usableAnlz, anlzError: null, bpm: usableAnlz.beatgrid.bpm ?? fallbackBpm };
+	}
+	if (errorCode !== null) {
+		const anlz: AnlzData = {
+			...candidateAnlz,
+			beatgrid: { source: candidateAnlz.beatgrid.source, beat_count: 0, beats: [] }
+		};
+		// Same as `adoptAuthoritativeError`'s invalidation: these two fields
+		// describe the grid just emptied above and must not survive it onto
+		// the published error payload (Codex P2 BLOCKING, PR #1587, fifth
+		// round).
+		delete anlz.tempo_changes;
+		delete anlz.performance_hints;
+		return {
+			anlz,
+			anlzError: errorCode,
+			bpm: null
+		};
+	}
+	return { anlz: candidateAnlz, anlzError: null, bpm: candidateAnlz.beatgrid.bpm ?? fallbackBpm };
 }

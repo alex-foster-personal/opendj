@@ -150,12 +150,45 @@ def matrix_runs(job_id: str, job: dict) -> int:
     return runs
 
 
-def job_ceiling_usd(job_id: str, job: dict) -> float:
+def called_workflow_path(job_id: str, uses: str) -> Path:
+    """The local workflow a `uses:` job calls, refusing anything remote.
+
+    A remote reusable workflow (`owner/repo/.github/workflows/x.yml@ref`) is
+    not readable from this checkout, so its ceiling cannot be computed and
+    must not be assumed cheap.
+    """
+    assert uses.startswith("./.github/workflows/"), (
+        f"{job_id} calls {uses!r}, which this reader cannot price: only local "
+        "reusable workflows under ./.github/workflows/ can be read from this "
+        "checkout, and an unpriceable job must fail rather than read as free"
+    )
+    path = WORKFLOW_DIR.parents[1] / uses[2:]
+    assert path.is_file(), f"{job_id} calls {uses!r}, which does not exist"
+    return path
+
+
+def job_ceiling_usd(job_id: str, job: dict, _depth: int = 0) -> float:
     """One job's worst-case cost, priced through the guard's own SKU table.
 
     A matrix job is priced once per combination: the fast pytest lane shards
     across runners, and each shard is its own billed job with its own timeout.
+
+    A CALLER job (`uses: ./.github/workflows/x.yml`) has no `runs-on` and no
+    `timeout-minutes` of its own: GitHub forbids both on a reusable-workflow
+    call. Its cost is the called workflow's own ceiling, so it is priced by
+    recursion rather than by the assertion below, which would otherwise
+    classify every caller as unpriceable. periodic-checks.yml calls
+    full-ci.yml this way.
     """
+    uses = job.get("uses")
+    if isinstance(uses, str):
+        assert _depth < 4, f"{job_id}: reusable-workflow nesting is too deep to price"
+        called = yaml.safe_load(called_workflow_path(job_id, uses).read_text())
+        return sum(
+            job_ceiling_usd(f"{job_id}->{i}", j, _depth + 1)
+            for i, j in (called.get("jobs") or {}).items()
+        )
+
     timeout = job.get("timeout-minutes")
     assert isinstance(timeout, int), (
         f"{job_id} has no explicit timeout-minutes, so its ceiling is "

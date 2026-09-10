@@ -65,12 +65,15 @@ path this is meant to protect.
 
 So the warm-up is skipped when the on-disk cache is byte-for-byte what the
 last successful serial warm-up left behind. That is checked by fingerprinting
-the ``*.nbi``/``*.nbc`` artifacts (path, size, mtime) under the backend's
+the ``*.nbi``/``*.nbc`` artifacts (path and content) under the backend's
 cache roots and comparing against a stamp file written at the end of a
 warm-up. The invariant it asserts is exactly the one that matters - "this
 cache was produced by a serial compile and nothing has written to it since" -
 and anything else, including a purge, a librosa upgrade, or a racing writer,
-changes the fingerprint and warms again under the lock.
+changes the fingerprint and warms again under the lock. Content, not path,
+size and mtime: a torn or interleaved write from a racing or killed writer
+can rewrite an artifact's bytes in place at its original length and mtime
+(issue #1572), which a size/mtime-only fingerprint cannot see.
 
 It is verified, not assumed, that a warm-up leaves nothing for the workers to
 compile: on a purged cache the warm-up writes 78 artifacts, and a subsequent
@@ -193,9 +196,19 @@ def cache_fingerprint(roots: Sequence[Path], identity: str | None = None) -> str
     cache", and the caller treats an empty fingerprint as never matching a
     stamp, so the failure mode is an extra warm-up rather than a skipped one.
 
-    Size and mtime rather than content: the point is to notice that something
-    wrote to the cache, and hashing tens of megabytes of object code on every
-    CLI start would cost more than the warm-up it is avoiding.
+    Content, not size and mtime (issue #1572): a torn or interleaved write
+    from a racing or killed compiler can leave an artifact the wrong bytes at
+    its ORIGINAL length and mtime - the writer opened the existing file in
+    place, so nothing about the directory entry moved. A size-and-mtime
+    fingerprint vouches for that cache anyway, the warm-up skips, and the
+    next loader dereferences the corrupt object code: the exact #1316 crash
+    this module exists to prevent, on a cache the stamp swore was fine.
+
+    Measured on a real 78-artifact / ~4 MB librosa cache (the same shape as
+    CI's persistent per-runner cache): content-hashing it costs ~0.006 s,
+    against a 25-45 s cold compile. The "tens of megabytes" this docstring
+    used to warn about does not describe this cache; the warm-up this
+    fingerprint gates already dwarfs the cost of reading what it produced.
 
     ``identity`` (default :func:`toolchain_identity`) is folded in: a cache
     that persists across venv recreation outlives a librosa or numba upgrade
@@ -207,6 +220,9 @@ def cache_fingerprint(roots: Sequence[Path], identity: str | None = None) -> str
         identity = toolchain_identity()
     try:
         artifacts = _cache_artifacts(roots)
+        entries = [
+            f"{path}\0{hashlib.sha256(path.read_bytes()).hexdigest()}" for path in artifacts
+        ]
     except OSError as exc:
         log.error(
             "jit-warmup: cannot fingerprint cache roots %s (%s); warming "
@@ -215,10 +231,6 @@ def cache_fingerprint(roots: Sequence[Path], identity: str | None = None) -> str
             exc,
         )
         return ""
-    entries: list[str] = []
-    for path in artifacts:
-        st = path.stat()
-        entries.append(f"{path}\0{st.st_size}\0{st.st_mtime_ns}")
     if not entries:
         return ""
     digest = hashlib.sha256("\n".join([identity, *entries]).encode("utf-8")).hexdigest()
@@ -519,7 +531,17 @@ def purge_cache(roots: Sequence[Path]) -> int:
     Returns the number of artifacts removed. The stamp goes with them, since
     a stamp describing a cache that no longer exists would make the next
     warm-up skip against a fingerprint of nothing.
+
+    A no-op on an empty ``roots``: the lock, fingerprint and stamp are keyed
+    on the ENVIRONMENT (interpreter prefix and ``NUMBA_CACHE_DIR``), not on a
+    particular backend's roots, so a backend with no JIT cache of its own
+    (issue #1572 review) shares that key with every real cache under the
+    same venv. Purging nothing must not delete a stamp describing something
+    real - that would force a spurious full recompile on the next warm-up
+    for a reason that has nothing to do with this call.
     """
+    if not roots:
+        return 0
     removed = 0
     for root in roots:
         for path in sorted(root.rglob("*")):

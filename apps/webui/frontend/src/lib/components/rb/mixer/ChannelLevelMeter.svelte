@@ -107,7 +107,14 @@
 	aria-valuetext={readout}
 	title={`Post-EQ, pre-fader channel level: ${readout}. Responds to trim and EQ. Red means digital clipping here, not speaker risk.`}
 >
-	{#each SEGMENTS as segment, index (segment.threshold)}
+	<!--
+		Keyed by index, not segment.threshold: a low red-calibration anchor clamps
+		several thresholds to the same METER_FLOOR_DBFS value (see
+		segmentThresholdsForRed), so threshold is not a unique key. SEGMENTS is a
+		fixed-length array in a fixed order (one entry per index, always the same
+		count), so index is always unique and stable across recalibration.
+	-->
+	{#each SEGMENTS as segment, index (index)}
 		<div
 			class:lit={index < lit}
 			class:clip-latch={clipped && index === SEGMENTS.length - 1}

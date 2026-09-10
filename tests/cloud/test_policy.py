@@ -12,7 +12,14 @@ import pytest
 
 from apps.shared.platform_paths import PROJECT_ROOT
 
-ARTIFACT_KINDS = ("audio", "stem_bundle", "anlz_cache", "vocal_cache", "lyrics_cache")
+ARTIFACT_KINDS = (
+    "audio",
+    "stem_bundle",
+    "anlz_cache",
+    "vocal_cache",
+    "lyrics_cache",
+    "karaoke_words",
+)
 
 
 def _write_policy_config(data_dir: Path, mode: object) -> None:

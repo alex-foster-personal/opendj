@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass
 
 from scripts.review_gh import TriageError, _gh
-from scripts.review_prompt import RUN_ID_PLACEHOLDER, Fence
+from scripts.review_prompt import ALL_FENCES, RUN_ID_PLACEHOLDER, Fence
 
 REPO = "maintainer/music-dj-tools"
 
@@ -322,11 +322,12 @@ def parse_findings(output: str, run_id: str, fence: Fence, max_findings: int) ->
     """
     block = re.compile(re.escape(fence.open) + r"(.*?)" + re.escape(fence.close), re.DOTALL)
     blocks = [b for b in block.findall(output) if RUN_ID_PLACEHOLDER not in b]
-    mine = [b for b in blocks if run_id in b]
+    mine = [b for b in blocks if run_id in b] or _bare_replies(output, run_id)
     if not mine:
         raise TriageError(
-            f"no {fence.open} block carrying run id {run_id} in the model output; the "
-            f"model did not follow the reply contract. Tail:\n{output[-800:]}"
+            f"no {fence.open} block, and no standalone JSON object whose run is {run_id}, carrying "
+            f"run id {run_id} in the model output; the model did not follow the reply "
+            f"contract. Tail:\n{output[-800:]}"
         )
     try:
         payload = json.loads(mine[-1].strip())
@@ -368,6 +369,58 @@ def parse_findings(output: str, run_id: str, fence: Fence, max_findings: int) ->
             )
         )
     return findings
+
+
+def _bare_replies(output: str, run_id: str) -> list[str]:
+    """Top-level JSON objects in `output` whose "run" IS this run's id.
+
+    The fence is a convenience for finding the reply among the CLI's own log
+    lines; the RUN ID is what makes a reply this run's. It is minted fresh
+    per run, so the echoed prompt (whose example carries the placeholder) and
+    any block quoted in a diff cannot carry it. Measured Thu 10 Sep 2026 on
+    #1717: two Sol runs in a row printed a correct `{"run": ..., "findings":
+    [...]}` without the fence and were discarded, which is a real review
+    thrown away and coverage reported as MISS.
+
+    Only an object whose "run" EQUALS the id counts, never one that merely
+    contains the id somewhere, and only when no fenced block for this run
+    exists, so a fenced answer still wins. Text inside ANY lane's fence is
+    skipped: the fences are per lane so another lane's block (quoted source,
+    tests, or a mis-fenced reply) is never this lane's answer, and the
+    unfenced path must not reopen that. Each candidate is re-serialized so the
+    caller parses it exactly as it parses a fenced block.
+
+    The object must also STAND ALONE: it opens a line and nothing but
+    whitespace follows it on its last line, and it is not inside a Markdown
+    code block. Any decodable substring used to count, so a model writing "I
+    would have returned {...}, but could not review" posted a clean review
+    (Codex review, #1746). A candidate too deeply nested to decode is skipped
+    like any other undecodable one, rather than crashing the lane on a diff
+    that carries one (Codex review, #1746).
+    """
+    for fence in ALL_FENCES:
+        fenced = re.escape(fence.open) + r".*?" + re.escape(fence.close)
+        output = re.sub(fenced, "", output, flags=re.DOTALL)
+    output = _MARKDOWN_CODE_BLOCK.sub("", output)
+    decoder = json.JSONDecoder()
+    found: list[str] = []
+    for match in _LINE_OPENING_BRACE.finditer(output):
+        try:
+            value, end = decoder.raw_decode(output, match.end() - 1)
+        except (json.JSONDecodeError, RecursionError):
+            continue
+        rest_of_last_line = output[end:].split("\n", 1)[0]
+        if rest_of_last_line.strip() or not isinstance(value, dict):
+            continue
+        if value.get("run") == run_id:
+            found.append(json.dumps(value))
+    return found
+
+
+#: A brace that opens its line: where a standalone reply object can start.
+_LINE_OPENING_BRACE = re.compile(r"^[ \t]*\{", re.MULTILINE)
+#: A Markdown code block quotes JSON; it is never the reply itself.
+_MARKDOWN_CODE_BLOCK = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.DOTALL | re.MULTILINE)
 
 
 # ----- posting ------------------------------------------------------------

@@ -81,10 +81,15 @@ router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
 POLICIES_TABLE: str = "sync_policies"
 PLAYLIST_PINS_TABLE: str = "playlist_pins"
 
-AssetKind = Literal["audio", "stem_bundle", "anlz_cache", "vocal_cache"]
+AssetKind = Literal[
+    "audio",
+    "stem_bundle",
+    "anlz_cache",
+    "vocal_cache",
+    "lyrics_cache",
+    "karaoke_words",
+]
 SyncMode = Literal["pinned", "cached", "stream", "excluded"]
-
-_ASSET_KINDS: tuple[str, ...] = ("audio", "stem_bundle", "anlz_cache", "vocal_cache")
 
 
 # ----- connection + identity plumbing --------------------------------------

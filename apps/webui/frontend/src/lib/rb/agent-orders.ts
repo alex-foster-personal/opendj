@@ -57,8 +57,13 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('ramp must be an object');
 	const ramp = payload as Record<string, unknown>;
 	const command = _command(ramp.command);
-	if (command.type !== 'eq' && command.type !== 'fader' && command.type !== 'trim') {
-		throw new TypeError('ramp command must be eq, fader, or trim');
+	if (
+		command.type !== 'eq' &&
+		command.type !== 'fader' &&
+		command.type !== 'trim' &&
+		command.type !== 'filter'
+	) {
+		throw new TypeError('ramp command must be eq, fader, trim, or filter');
 	}
 	if (typeof ramp.to !== 'number' || !Number.isFinite(ramp.to) || ramp.to < 0 || ramp.to > 1) {
 		throw new RangeError('ramp to must be a finite 0..1 control value');

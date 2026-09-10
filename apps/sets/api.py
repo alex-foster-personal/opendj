@@ -14,13 +14,17 @@ Endpoints::
         body {"class": "..."}                       -> appends to labels.jsonl
     GET    /api/sets/{session_id}/audio/{segment}   -> MP3 stream (localhost-only
                                                        when share_state='private')
+    GET    /api/sets/{session_id}/soundcloud-export -> metadata-only tracklist
+    POST   /api/sets/{session_id}/soundcloud-export
+        body {"acknowledge_rights": true}           -> paste-ready comment after ack
 """
 from __future__ import annotations
 
 import threading
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from typing import Any, AsyncIterator, Iterable, Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi import Path as FPath
@@ -37,6 +41,11 @@ from .classify import CLASS_LIST, read_transitions
 from .label import append_label
 from .recorder_service import RecorderConflict, RecorderService
 from .sessions import Session, get_session, list_sessions, summary_to_dict
+from .soundcloud_export import (
+    SessionNotFound,
+    SoundcloudExport,
+    build_soundcloud_export,
+)
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
 
@@ -117,6 +126,33 @@ class RecorderRecoveryRequest(BaseModel):
     expected_pid: int = Field(gt=0)
 
 
+class SoundcloudTracklistRowModel(BaseModel):
+    timestamp_s: float
+    timestamp_label: str
+    title: str | None
+    artist: str | None
+    track_stable_id: str | None
+    source: str | None
+    deck: str | None
+    display_name: str
+
+
+class SoundcloudExportResponse(BaseModel):
+    kind: Literal["metadata_only"]
+    session_id: str
+    audio_upload: Literal["not_offered"]
+    takeover: Literal["not_offered"]
+    rights_position: Literal["unsettled"]
+    licensing_reminder: str
+    tracklist: list[SoundcloudTracklistRowModel]
+    comment: str | None = None
+    acknowledged: bool | None = None
+
+
+class SoundcloudExportAckRequest(BaseModel):
+    acknowledge_rights: bool = False
+
+
 class DeckObservationsRequest(BaseModel):
     """A batch of Open DJ deck-state snapshots, oldest first.
 
@@ -179,6 +215,15 @@ def _validated_recorder_session_id(service: RecorderService, session_id: str) ->
         sets_paths.session_dir(session_id, root=service.sets_root)
     except sets_paths.SessionPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _soundcloud_export_or_error(session_id: str) -> SoundcloudExport:
+    try:
+        return build_soundcloud_export(session_id)
+    except sets_paths.SessionPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="session not found") from exc
 
 
 def _session_or_not_found(session_id: str) -> Session:
@@ -328,6 +373,31 @@ async def api_timeline_stream(session_id: str) -> StreamingResponse:
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
+@router.get(
+    "/{session_id}/soundcloud-export",
+    response_model=SoundcloudExportResponse,
+)
+async def api_get_soundcloud_export(session_id: str) -> JSONResponse:
+    export = _soundcloud_export_or_error(session_id)
+    return JSONResponse(export.to_dict(include_comment=True))
+
+
+@router.post(
+    "/{session_id}/soundcloud-export",
+    response_model=SoundcloudExportResponse,
+)
+async def api_post_soundcloud_export(
+    session_id: str,
+    body: SoundcloudExportAckRequest,
+) -> JSONResponse:
+    export = _soundcloud_export_or_error(session_id)
+    if not body.acknowledge_rights:
+        return JSONResponse(export.to_dict(include_comment=False), status_code=400)
+    payload = export.to_dict(include_comment=True)
+    payload["acknowledged"] = True
+    return JSONResponse(payload)
+
+
 @router.get("/{session_id}/transitions")
 async def api_transitions(session_id: str) -> JSONResponse:
     _session_or_not_found(session_id)
@@ -378,8 +448,10 @@ async def api_audio(
 
 __all__ = [
     "LabelRequest",
-    "RecorderStartRequest",
     "RecorderRecoveryRequest",
+    "RecorderStartRequest",
     "RecorderStatus",
+    "SoundcloudExportAckRequest",
+    "SoundcloudExportResponse",
     "router",
 ]

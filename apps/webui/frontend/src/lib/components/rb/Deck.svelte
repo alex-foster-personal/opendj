@@ -5,8 +5,8 @@
 	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts +
 	// position tick, pitch fader + 8/16/WIDE range switcher. Stems are live
 	// only for validated real Demucs artifacts.
-	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown,
-	// grid-adjust stacks, AU, MA.
+	// INERT (plannedTitle per control): HOT CUE dropdown, grid-adjust stacks,
+	// AU, MA.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
@@ -57,6 +57,7 @@
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	let { deckId }: { deckId: DeckId } = $props();
 
@@ -97,7 +98,6 @@
 		)
 	);
 
-	const INERT_TIP = 'not implemented - see PARITY-TODO';
 	const hotCueActions = createDeckHotCueActions(() => deckId, () => deck);
 
 	// ------------------------------------------------- engine call plumbing
@@ -110,17 +110,30 @@
 
 	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
 	 * honour BeatSyncMax - routed through hot_cue_trigger, not seekTo, so it
-	 * can arm for the deck's own next downbeat instead of jumping immediately. */
-	async function triggerHotCue(slot: HotCueSlot): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot });
+	 * can arm for the deck's own next downbeat instead of jumping immediately.
+	 * Q1: see `playPause` for the `pressT0Ms` contract. */
+	async function triggerHotCue(slot: HotCueSlot, pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot }, pressT0Ms);
 	}
 
-	async function playPause(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'play', deck: deckId, playing: !deck.playing });
+	/**
+	 * Q1: `pressT0Ms` is the ORIGINATING click's `event.timeStamp`, threaded
+	 * from the button rather than re-read here. `runPerformanceCommandFromUi`
+	 * defaults it to its own `performance.now()`, which is already downstream of
+	 * the browser's input queue and of handler dispatch - real time the operator
+	 * waited, and previously invisible to `press_to_schedule_ms` on every one of
+	 * these paths, because no call site in the app has ever passed the stamp.
+	 */
+	async function playPause(pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi(
+			{ type: 'play', deck: deckId, playing: !deck.playing },
+			pressT0Ms
+		);
 	}
 
-	async function returnToCue(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'cue', deck: deckId });
+	/** Q1: see `playPause` for the `pressT0Ms` contract. */
+	async function returnToCue(pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'cue', deck: deckId }, pressT0Ms);
 	}
 
 	async function engageBeatLoop(beats: number, startMs?: number): Promise<void> {
@@ -337,10 +350,10 @@
 	<div class="main-row">
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
+			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-adjust')} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
 				<span class="ticks">&#9475;&#9475;&#9475;</span>
 			</button>
-			<button class="rb-lit-button rb-inert" disabled title={INERT_TIP} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
+			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-shift')} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
 				<span class="ticks">&#9478;&#9478;&#9478;</span>
 			</button>
 		</div>
@@ -356,13 +369,12 @@
 				onRename={hotCueActions.renameHotCueAt}
 				onDelete={hotCueActions.clearHotCueAt}
 				onRestore={hotCueActions.restoreHotCueAt}
-				inertTip={INERT_TIP}
 			/>
 		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
 		<div class="loop-col">
-			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} inertTip={INERT_TIP} />
+			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} />
 			<BeatJump {deck} {pending} onJump={beatJump} />
 		</div>
 
@@ -376,7 +388,6 @@
 			onQuantizeGrid={setQuantizeGrid}
 			onMasterTempo={toggleMasterTempo}
 			onSlip={toggleSlip}
-			inertTip={INERT_TIP}
 		/>
 
 		<PitchFader

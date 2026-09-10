@@ -44,6 +44,7 @@
 		type="button"
 		class="hp-btn"
 		title="Rescan available headphone output devices"
+		aria-label="Rescan available headphone output devices"
 		onclick={onrefresh}>↻</button
 	>
 	<select

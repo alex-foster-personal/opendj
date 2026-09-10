@@ -26,6 +26,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
+from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
@@ -167,6 +168,7 @@ def create_app(
     share_config: ShareConfig | None = None,
     auto_analyze: bool = False,
     lyric_index: bool = False,
+    feature_flags: FlagStore | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI app.
 
@@ -180,6 +182,15 @@ def create_app(
     (see :mod:`apps.webui.server.lyric_index_autostart`). It is OFF here on
     purpose too: only ``_build_default_app`` turns it on, from
     ``MUSIC_DJ_LYRIC_INDEX``, so no test builds a thread.
+
+    ``feature_flags`` is UNLIKE those two: it is wired here, not left for
+    ``_build_default_app``, because ``load_flags`` reads one small on-disk
+    file with no side effect worth deferring, and a USB route gated on
+    ``app.state.feature_flags`` (SAND-01) must not 500 on the daemon this
+    app boots directly (``python -m apps.webui.server``, the legacy entry
+    point that never passes through ``apps.engine_core.app.create_app``).
+    Pass an explicit ``FlagStore`` to pin the flags a test resolves against;
+    the default reads ``apps.shared.paths.DATA_DIR``.
     """
 
     if port is None:
@@ -243,6 +254,12 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.analysis_db_path = state_db_path
+    if feature_flags is not None:
+        app.state.feature_flags = feature_flags
+    else:
+        from apps.shared.paths import DATA_DIR
+
+        app.state.feature_flags = load_flags(DATA_DIR)
     app.state.version = version
     app.state.usb_simulation_enabled = usb_volumes_sim_routes.simulation_enabled()
     app.state.share_config = share_config or ShareConfig.from_environ()

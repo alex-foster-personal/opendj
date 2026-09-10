@@ -86,8 +86,8 @@ TABLES: dict[str, str] = {
     "sync_policies": (
         "One machine's sync mode (pinned, cached, stream, or excluded) and "
         "optional cache budget for one asset kind (audio, stem_bundle, "
-        "anlz_cache, vocal_cache). The CloudSync config UI's per-machine "
-        "toggles write here."
+        "anlz_cache, vocal_cache, lyrics_cache, karaoke_words). The "
+        "CloudSync config UI's per-machine toggles write here."
     ),
     "playlist_pins": (
         "One machine's sync-mode override for one playlist, taking "
@@ -112,6 +112,26 @@ TABLES: dict[str, str] = {
         "the spoke-local twin of hub_changelog that this machine's push "
         "watermark fences against. Machine-local; it never rides sync "
         "itself."
+    ),
+    # ----- enrollment: who OWNS a machine (ADR 12) -----------------------
+    "machine_owners": (
+        "One machine's owner, as ONE hub recorded it. Never synced: a "
+        "restored or hostile spoke must not be able to push ownership rows "
+        "and adopt machines under last-write-wins like any other row, so "
+        "the hub that performed the enrollment is the only writer. Every "
+        "row carries the enrolling hub's own machine_id, and a row whose "
+        "hub_machine_id is not this hub's live id reads as FOREIGN, not as "
+        "ownership -- a hub restored from another machine's backup inherits "
+        "this table but not the machine-id file that sits outside the "
+        "database."
+    ),
+    "enrollment_grants": (
+        "One short-lived single-use credential minted by an authenticated "
+        "operator on the hub and carried, once, to the machine that is "
+        "joining. Only the sha256 of the token is stored, never the token, "
+        "for the same reason as auth_sessions: a stolen database must not "
+        "hand anybody a redeemable credential. Redeemed rows keep their row "
+        "so a replay is refused rather than silently re-enrolled."
     ),
     # ----- analysis ------------------------------------------------------
     "analysis": (
@@ -185,6 +205,17 @@ TABLES: dict[str, str] = {
         "can be trusted, and on what basis (cross_source, single_source or "
         "unverified). What the equivalence gate consults before letting that "
         "source's analysis be promoted onto a track."
+    ),
+    # ----- lyrics --------------------------------------------------------
+    "lyric_verdict": (
+        "One track's karaoke lyrics standing: whether it has vocals worth "
+        "aligning (vocal, sparse, no-lyrics, unknown), where the text came "
+        "from, how much of it aligned, how suspect the alignment looked, and "
+        "the sha256 of the word-timing artifact that carries the timings "
+        "themselves. `override` is the human's answer and beats the computed "
+        "`verdict` -- read the two together, never `verdict` alone. Synced, "
+        "and deleted only by tombstone: the licensing purge stamps "
+        "`deleted_at` so peers stop hydrating the words too."
     ),
     # ----- curation ------------------------------------------------------
     "pairings": (

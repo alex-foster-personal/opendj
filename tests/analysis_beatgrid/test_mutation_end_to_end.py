@@ -410,3 +410,50 @@ def test_the_untouched_track_yields_zero_markers(analyzed):
     ]
     assert analysis.markers == (), f"false positives on an unmutated track: {detail}"
     assert analysis.static_grid_untrusted is False
+
+
+# ----- Exit code ----------------------------------------------------------
+
+
+def test_a_run_where_every_track_failed_exits_nonzero(tmp_path) -> None:
+    """If a run with zero successes exits 0, then an empty shard reads as done, or broken.
+
+    Found by measurement rather than review, on PR #1660: a mis-expanded shell
+    argument sent one bogus path, the runner printed `done: 0/1` and returned
+    0, and the artifact it wrote had no results at all. In a sharded backfill
+    that is a missing shard the merge accepts, which is the exit-code
+    false-green `.claude/rules/verification.md` names first.
+    """
+    out = str(tmp_path / "allfail.json")
+    result = subprocess.run(
+        ["uv", "run", "--no-project", "--script", RUNNER,
+         "--out", out, "--device", "cpu", "--audio", str(tmp_path / "absent.wav")],
+        check=False, capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    assert result.returncode != 0, "a run that produced nothing reported success"
+    assert "all 1 track(s) errored" in result.stderr
+
+
+def test_a_run_with_SOME_failures_still_exits_zero(tmp_path) -> None:
+    """If one bad track fails the whole run, then round 2's corpus is unrunnable, or broken.
+
+    The control for the test above, and the one that matters more, because the
+    plausible mistake here is the OVERSHOOT. GTZAN's corrupt `jazz.00054` fails
+    on every legitimate run of the committed round-2 corpus, so a rule of "any
+    failure is fatal" would refuse the benchmark this repository is built
+    around while satisfying the bug report perfectly.
+    """
+    good = str(tmp_path / "good.wav")
+    _render_clicks(good, _steady_beat_times(CLICK_BPM, 8.0), 8.0)
+    out = str(tmp_path / "partial.json")
+    result = subprocess.run(
+        ["uv", "run", "--no-project", "--script", RUNNER,
+         "--out", out, "--device", "cpu",
+         "--audio", good, str(tmp_path / "absent.wav")],
+        check=False, capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    with open(out, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    assert payload["n_tracks"] == 2
+    assert payload["n_failed"] == 1
