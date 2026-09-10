@@ -464,13 +464,33 @@ class OwnBeatgridBackfillBackend:
                 f"{audio_path} changed while the runner was analyzing it, so "
                 "its beats came from bytes this record cannot vouch for"
             )
-        return record_from_payload(
-            payload,
-            stable_id=stable_id,
-            audio_path=audio_path,
-            model_sha256=model_sha256,
-            decode_fingerprint=decode_fingerprint,
-        )
+        try:
+            return record_from_payload(
+                payload,
+                stable_id=stable_id,
+                audio_path=audio_path,
+                model_sha256=model_sha256,
+                decode_fingerprint=decode_fingerprint,
+            )
+        except TrackUnreadable:
+            # `record_from_payload` raises this specifically for a
+            # RUNNER-REPORTED per-track error (`result["error"]`), a path that
+            # bypasses `_fingerprint_or_unreadable` entirely - the recheck above
+            # only catches a CONTENT disagreement against the fingerprint taken
+            # before the runner ran, so a file that vanished for the runner's
+            # own read and is present again (or byte-identical) by the time
+            # that recheck runs still lands here unclassified. Left alone, this
+            # reads as an ordinary per-track failure (`run.py`'s track-failure
+            # status, not EXIT_MISSING_TARGETS), and a queue watcher marks the
+            # target attempted rather than retrying it once the file returns
+            # (Codex P2 BLOCKING, PR #1587). Rechecked here the same way
+            # `_fingerprint_or_unreadable` already does for its own vanished
+            # case.
+            if not audio_path.exists():
+                raise TrackVanished(
+                    f"{audio_path} vanished while the runner was analyzing it"
+                ) from None
+            raise
 
     @classmethod
     def jit_cache_roots(cls) -> tuple[Path, ...]:
