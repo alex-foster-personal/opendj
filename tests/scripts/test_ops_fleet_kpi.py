@@ -191,6 +191,25 @@ def test_an_unreadable_log_tree_is_unmeasurable_not_a_pass(tmp_path):
     assert _fatal_label(0) not in verdicts, out
 
 
+def test_a_probe_failing_with_a_common_exit_code_is_FAIL_not_unmeasurable(tmp_path):
+    """[if] an ordinary probe failure renders as UNMEASURABLE [then] fail, [else stop].
+
+    The UNMEASURABLE sentinel is an exit code, and most probes are a bare command whose
+    status passes straight through, so the sentinel must be a value no ordinary tool
+    returns. It was 2 for one commit: `grep -qs` returns 2 when its files do not exist, so
+    a home directory with no .profile and no .bashrc -- a real FAIL, there is no token --
+    reported UNMEASURABLE instead. The canary caught it in 44 seconds on PR #1662.
+
+    This pins the direction that regression went. `token present for launchers` is the
+    concrete case, and it is asserted here rather than only inside the red-fixture sweep so
+    the reason survives next to the assertion.
+    """
+    fixture = _copy_fixture(tmp_path)
+    home = _home(tmp_path, token_profile=False)  # neither .profile nor .bashrc exists
+    verdicts = _health(_run(_env(fixture, home)).stdout)
+    assert verdicts["token present for launchers"] == "FAIL"
+
+
 def test_a_readable_log_tree_with_no_fatal_still_passes(tmp_path):
     """[if] a genuinely FATAL-free fleet stops reporting PASS [then] fail, [else stop].
 
