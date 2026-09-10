@@ -12,7 +12,7 @@ error and mark the rest skipped.
 from __future__ import annotations
 
 import shlex
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,18 +34,22 @@ _SEPARATORS = (SEQUENCE_WORD, PARALLEL_WORD)
 # deadline has to outlast the ramp the CLI itself asked for, or a perfectly
 # healthy 32-bar move exits 5 (#1739).
 #
-# The bound below deliberately OVER-estimates. This deadline is a hang guard,
-# not a correctness gate, so being generous costs nothing while being tight
-# costs a false timeout: 60 BPM is slower than any real deck, and 32 bars is
-# the longest phrase Rekordbox emits, so both floors are picked to be safely
-# past reality rather than accurate to it.
-SLOWEST_BEAT_S = 1.0
+# The tempo comes from the LIVE mirror, never a constant. A constant was tried
+# and was wrong: `setTempoRatio` accepts any ratio inside the selected pitch
+# range, and the +-100% range admits ratios down toward zero, so an effective
+# tempo has no floor the engine enforces and no fixed "slower than any real
+# deck" number is an upper bound.
+#
+# A beat and a bar ARE exact here (`_downbeats` groups the grid in fours). A
+# phrase is not: `clock.phrases` comes from analysis and its rows vary, so 128
+# beats is the nominal 32-bar phrase, an estimate rather than a bound. The
+# margin below absorbs the ordinary case; an unusually long analyzed phrase
+# would still need --timeout, which is why the deadline is reported in --json.
 _BEATS_PER: dict[str, float] = {"beats": 1.0, "bars": 4.0, "phrases": 128.0}
 # An anchored ramp does not start when the order is claimed: the page waits for
-# the next beat, downbeat or phrase boundary FIRST, and only then runs the
-# ramp. `--over 4beats --anchor next_phrase` is a 2s move behind a wait that
-# can approach a whole phrase, so the wait belongs in the bound too. Each entry
-# is the longest that wait can be, in beats.
+# the next beat, downbeat or phrase boundary FIRST, and only then travels, so
+# the wait is part of what the page holds. Each entry is that wait at its
+# longest, in beats, on the same nominal-phrase footing as above.
 _ANCHOR_BEATS: dict[str, float] = {
     "next_beat": 1.0,
     "next_downbeat": 4.0,
@@ -54,41 +58,89 @@ _ANCHOR_BEATS: dict[str, float] = {
 RAMP_MARGIN_S = 10.0
 
 
-def ramp_hold_s(over: dict[str, Any]) -> float:
-    """How long the page may hold a ramp order open, over-estimated on purpose.
-
-    Beat-relative units cannot be resolved exactly here - the CLI cannot see
-    which deck is master, because the mirror publishes no `is_master` - so
-    rather than guess a tempo this converts at a floor slower than any real
-    one. An over-estimate only delays the hang guard; an under-estimate
-    reports a working ramp as a timeout.
-
-    Covers the anchor wait as well as the travel: the page holds the order for
-    BOTH.
-    """
-    unit = over["unit"]
-    n = float(over["n"])
-    if unit == "ms":
-        travel_s = n / 1000.0
-    elif unit in _BEATS_PER:
-        travel_s = n * _BEATS_PER[unit] * SLOWEST_BEAT_S
-    else:
-        raise InvocationError(f"cannot size a request deadline for duration unit {unit!r}")
-    return travel_s + _anchor_wait_s(over.get("anchor"))
-
-
-def _anchor_wait_s(anchor: str | None) -> float:
-    """The longest the page can wait for an anchor before the ramp starts."""
+def _anchor_beats(anchor: str | None) -> float:
+    """The longest the page can wait for an anchor, in beats."""
     if anchor is None:
         return 0.0
     if anchor not in _ANCHOR_BEATS:
         raise InvocationError(f"cannot size a request deadline for anchor {anchor!r}")
-    return _ANCHOR_BEATS[anchor] * SLOWEST_BEAT_S
+    return _ANCHOR_BEATS[anchor]
 
 
-def ramp_deadline_s(over: dict[str, Any], floor_s: float) -> float:
+def _clock_beat_s(over: dict[str, Any], mirror: Mapping[str, Any]) -> float | None:
+    """Wall seconds per beat on the deck this duration times against.
+
+    ``None`` when the page will NOT hold the order open for beats, so the
+    caller's floor stands. Each case is a refusal in `_ramp`
+    (apps/webui/frontend/src/lib/rb/agent-orders.ts), not a long wait:
+
+    * no elected master and no named clock -> ``no_master``
+    * the clock deck is not playing -> ``clock_not_playing``
+
+    plus the cases where the mirror simply cannot answer (deck absent, tempo
+    null before analysis lands). Guessing a tempo for any of them is what the
+    fixed constant did.
+
+    ``effective_bpm`` is the right field and ``bpm`` is not: it is
+    ``playbackBpm(..., tempoRatio: st.pitch, ...)``
+    (apps/webui/frontend/src/lib/player/state.svelte.ts), so it already carries
+    the pitch fader. A deck tagged 124 BPM running at ratio 0.5 travels a beat
+    in 0.97s, not 0.48s, and only the pitched tempo says so.
+    """
+    clock = over.get("clock", "master")
+    deck = mirror.get("master_deck") if clock in (None, "master") else clock
+    if deck is None:
+        return None
+    decks = mirror.get("decks")
+    if not isinstance(decks, Mapping):
+        return None
+    state = decks.get(str(deck))
+    if not isinstance(state, Mapping) or state.get("playing") is not True:
+        return None
+    bpm = state.get("effective_bpm")
+    if isinstance(bpm, bool) or not isinstance(bpm, (int, float)) or bpm <= 0:
+        return None
+    return 60.0 / float(bpm)
+
+
+def ramp_hold_s(over: dict[str, Any], mirror: Mapping[str, Any]) -> float | None:
+    """How long the page may hold a ramp order open, read off the live grid.
+
+    ``None`` means the grid cannot answer, which is NOT the same as zero: zero
+    would still collect the margin below and hand a refused order a 10s
+    deadline it has no use for. A tool that cannot measure reports that it
+    cannot measure.
+
+    A beat-relative ramp covers the anchor wait as well as the travel, because
+    `durationProgress` measures the clock deck's position against a plan whose
+    ``start_ms`` sits at or after the anchor: `--over 4beats --anchor
+    next_phrase` is a short move behind a wait that can approach a whole
+    phrase.
+
+    An ``ms`` ramp does NOT: its progress is `(performance.now() - startedAt) /
+    over.n`, pure wall time, and the resolved plan goes unread. So an anchor on
+    an ms duration costs the page no extra hold, and sizing for one here would
+    be sizing for behavior production does not have.
+    """
+    unit = over["unit"]
+    n = float(over["n"])
+    if unit == "ms":
+        return n / 1000.0
+    if unit not in _BEATS_PER:
+        raise InvocationError(f"cannot size a request deadline for duration unit {unit!r}")
+    beats = n * _BEATS_PER[unit] + _anchor_beats(over.get("anchor"))
+    beat_s = _clock_beat_s(over, mirror)
+    return None if beat_s is None else beats * beat_s
+
+
+def ramp_deadline_s(
+    over: dict[str, Any], floor_s: float, mirror: Mapping[str, Any]
+) -> float:
     """``floor_s`` unless the ramp we asked for needs longer than that."""
-    return max(floor_s, ramp_hold_s(over) + RAMP_MARGIN_S)
+    hold_s = ramp_hold_s(over, mirror)
+    if hold_s is None:
+        return floor_s
+    return max(floor_s, hold_s + RAMP_MARGIN_S)
 
 
 def single(invocation: Invocation) -> dict[str, Any]:

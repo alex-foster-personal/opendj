@@ -49,6 +49,10 @@ export function buildUiMirror(): Record<string, unknown> {
 	const silence = masterSilenceState();
 	return {
 		client_open: true,
+		// The elected master, and so the deck a Duration times against when
+		// no clock is named. Without it an agent cannot resolve its own
+		// beat-relative order against the grid the page will use (#1739).
+		master_deck: state.master_deck,
 		context_state: audioContextState(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSessionCounter(),

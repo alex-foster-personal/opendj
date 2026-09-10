@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -107,6 +108,26 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(EXIT_FAILED)
 
 
+def _seconds(raw: str) -> float:
+    """A deadline in seconds: finite and not negative.
+
+    ``float("nan")`` parses happily and then poisons every comparison it
+    reaches: `time.monotonic() >= deadline` is False for a NaN deadline no
+    matter how long the CLI has waited, so `--settle nan` polls the mirror
+    forever rather than exiting 4. `inf` wedges the same loop by being honest
+    about it, and a negative deadline is a typo, not an instruction.
+    """
+    try:
+        value = float(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{raw!r} is not a number of seconds") from None
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"{raw!r} is not a finite number of seconds")
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"a deadline cannot be negative, got {raw!r}")
+    return value
+
+
 def _parser(as_json: bool = False) -> _Parser:
     parser = _Parser(
         as_json=as_json,
@@ -128,13 +149,13 @@ def _parser(as_json: bool = False) -> _Parser:
     )
     parser.add_argument(
         "--timeout",
-        type=float,
+        type=_seconds,
         default=ORDER_TIMEOUT_S,
         help=f"seconds to wait for a page to complete an order (default {ORDER_TIMEOUT_S})",
     )
     parser.add_argument(
         "--settle",
-        type=float,
+        type=_seconds,
         default=SETTLE_TIMEOUT_S,
         help=f"seconds to wait for the mirror to confirm an order (default {SETTLE_TIMEOUT_S})",
     )
@@ -209,18 +230,14 @@ def _run_invocation(args: argparse.Namespace, origin: EngineOrigin, tokens: Sequ
     invocation = parse_invocation(tokens)
     if args.over is None and (args.anchor is not None or args.clock is not None):
         raise InvocationError("--anchor and --clock only mean something with --over")
-    timeout_s = args.timeout
+    over = None
     if args.over is None:
         order = single(invocation)
     else:
         over = parse_duration(args.over, anchor=args.anchor, clock=_clock(args.clock))
         order = ramp(invocation, over)
-        # The page holds a ramp order open for the ramp's whole duration, so
-        # the deadline that guards against a WEDGED page must not fire during a
-        # working one.
-        timeout_s = ramp_deadline_s(over, args.timeout)
     group = Group(kind=SINGLE, invocations=(invocation,))
-    return _dispatch(args, origin, [(group, order)], timeout_s=timeout_s)
+    return _dispatch(args, origin, [(group, order)], over=over)
 
 
 def _clock(raw: str | None) -> int | str | None:
@@ -245,6 +262,12 @@ def _refusal(args: argparse.Namespace, error: Exception) -> int:
     return _fail(args, "order_rejected", message, EXIT_FAILED)
 
 
+#: Weakest wins when a script's groups disagree. A run is only as strong as
+#: its weakest group: one unconfirmed group makes the whole run unconfirmed,
+#: and one merely accepted group means the run cannot claim confirmed.
+_VERDICTS = ("confirmed", "accepted", "unconfirmed")
+
+
 @dataclass
 class _Run:
     """What one script run did, and whether the mirror agreed as it went."""
@@ -252,16 +275,28 @@ class _Run:
     results: list[dict[str, Any]] = field(default_factory=list)
     checks: list[Check] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
-    affirmed: bool = False
+    verdicts: list[str] = field(default_factory=list)
 
     @property
     def failed(self) -> bool:
         return any(step.get("status") == "failed" for step in _steps(self.results))
 
+    @property
+    def halted(self) -> bool:
+        """Has the run hit something that must stop the REST of the script?
+
+        Both halves matter. A failed step is a page-reported error; an
+        unconfirmed group is a page that claimed success the mirror will not
+        corroborate. Carrying on past the second is the more dangerous of the
+        two, because the later commands then run against a deck whose state is
+        NOT the one the script asked for.
+        """
+        return self.failed or bool(self.failures)
+
     def verdict(self) -> str:
-        if self.failures:
-            return "unconfirmed"
-        return "confirmed" if self.affirmed else "accepted"
+        if not self.verdicts:
+            return "accepted"
+        return max(self.verdicts, key=_VERDICTS.index)
 
 
 def _post_all(
@@ -281,10 +316,15 @@ def _post_all(
     Checking each group against the mirror it produced needs no model of what a
     command touches, which is the point: the alternative is a second copy of
     production's side effects, and a second copy is exactly what drifts.
+
+    A group that does not confirm stops the script exactly as a failed step
+    does. `do "load 1 <id>" then "play 1"` is the case that matters: if the
+    load never lands, the deck still holds the PREVIOUS track, and dispatching
+    `play` there puts the wrong music into the room before the CLI exits 4.
     """
     run = _Run()
     for group, order in orders:
-        if run.failed:
+        if run.halted:
             run.results.append({"kind": group.kind, "skipped": group.label()})
             continue
         result = client.post_order(order)
@@ -304,8 +344,8 @@ def _post_all(
             ]
         )
         run.checks.extend(checks)
-        run.affirmed = run.affirmed or any(check.affirms for check in checks)
-        _, failures = _settle(client, checks, settle_s)
+        state, failures = _settle(client, checks, settle_s)
+        run.verdicts.append(state)
         run.failures.extend(failures)
     return run
 
@@ -327,12 +367,20 @@ def _dispatch(
     args: argparse.Namespace,
     origin: EngineOrigin,
     orders: Sequence[tuple[Group, dict[str, Any]]],
-    timeout_s: float | None = None,
+    over: dict[str, Any] | None = None,
 ) -> int:
-    deadline_s = args.timeout if timeout_s is None else timeout_s
-    client = EngineClient(origin=origin, timeout_s=deadline_s)
+    client = EngineClient(origin=origin, timeout_s=args.timeout)
     try:
-        client.mirror()
+        # The opening mirror read proves a page is there AND supplies the grid.
+        # It runs on its own short timeout, so reading it before the order
+        # deadline is sized costs nothing and is the only way to size that
+        # deadline from the tempo the page will really ramp at.
+        mirror = client.mirror()
+        if over is not None:
+            # The page holds a ramp order open for the ramp's whole duration,
+            # so the deadline that guards against a WEDGED page must not fire
+            # during a working one.
+            client.timeout_s = ramp_deadline_s(over, args.timeout, mirror)
         run = _post_all(client, orders, args.settle)
     except _REFUSALS as error:
         return _refusal(args, error)
@@ -347,7 +395,7 @@ def _dispatch(
         # How long the CLI was willing to wait for the page to answer. A ramp
         # raises it above --timeout, so an agent can see the deadline it
         # actually got rather than infer it.
-        "request_timeout_s": deadline_s,
+        "request_timeout_s": client.timeout_s,
     }
     if args.json:
         print(json.dumps(document, indent=2, sort_keys=True))

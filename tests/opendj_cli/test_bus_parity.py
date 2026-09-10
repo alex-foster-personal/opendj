@@ -238,6 +238,39 @@ def test_a_deck_field_the_mirror_withholds_is_reported_absent() -> None:
     assert "is_master" not in published, "the reader cannot say a key is absent"
 
 
+def test_the_mirror_publishes_the_clock_the_cli_sizes_a_ramp_from() -> None:
+    """`master_deck` decides how long a beat-relative ramp may be held open.
+
+    `_ramp` resolves `clock: master` to `before.master_deck` and throws
+    `no_master` when there is none (agent-orders.ts), so that field is the only
+    thing that tells the CLI which deck's tempo its own order will travel at.
+    While the mirror omitted it the CLI sized the deadline off a fixed 60 BPM,
+    which the +-100% pitch range makes wrong in the direction that times a
+    healthy ramp out (#1739). Read live, so the fixture cannot be what keeps
+    the two in agreement.
+    """
+    published = ts_contract.mirror_top_level_keys()
+
+    assert "master_deck" in published
+    assert "decks" in published
+
+
+def test_a_top_level_field_the_mirror_withholds_is_reported_absent() -> None:
+    """The negative control: a reader that returns everything proves nothing.
+
+    `is_master` is per-deck state in `_deckSnapshot` and appears nowhere in
+    `buildUiMirror`, at the top level least of all, so the reader must say so
+    rather than returning a set that happens to contain what was asked for.
+    """
+    published = ts_contract.mirror_top_level_keys()
+
+    assert "is_master" not in published
+    # Nested keys are not top-level keys: `crossfader` lives inside `mixer`,
+    # and a reader that flattened the whole document would swallow the
+    # distinction the check above depends on.
+    assert "crossfader" not in published
+
+
 # ----- a scripted command carries the text values a direct one does --------
 
 def test_a_do_command_keeps_a_quoted_text_argument_whole() -> None:

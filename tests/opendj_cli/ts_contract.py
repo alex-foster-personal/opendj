@@ -19,6 +19,7 @@ QUICK_DRAW_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/quick-draw-catal
 MIRROR_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/ui-mirror.ts"
 
 _MIRROR_DECK_OPEN = "Object.entries(state.decks).map(([id, deck]) => [id, {"
+_MIRROR_OPEN = "export function buildUiMirror()"
 
 _COMMAND_UNION = "export type PerformanceCommand ="
 _QUICK_DRAW_UNION = "export type QuickDrawActionId ="
@@ -155,4 +156,47 @@ def mirror_deck_keys() -> frozenset[str]:
             break
     if not keys:
         raise AssertionError(f"no deck keys parsed out of {MIRROR_SOURCE}")
+    return frozenset(keys)
+
+
+def mirror_top_level_keys() -> frozenset[str]:
+    """Every key ``buildUiMirror`` publishes at the top of the document.
+
+    Same reason as the deck projection: a CLI that reads a top-level path the
+    mirror never publishes cannot tell "absent" from "no". `master_deck` is the
+    case that forced this reader - without it the CLI cannot resolve
+    `clock: master` to the deck the page will actually time against, and it
+    guessed a tempo instead (#1739).
+    """
+    lines = MIRROR_SOURCE.read_text(encoding="utf-8").splitlines()
+    start = next(
+        (index for index, line in enumerate(lines) if line.startswith(_MIRROR_OPEN)),
+        None,
+    )
+    if start is None:
+        raise AssertionError(
+            f"{_MIRROR_OPEN!r} is not in {MIRROR_SOURCE}; this reader is pinned to "
+            "a shape that has changed and must be updated, not skipped"
+        )
+    opener = next(
+        (index for index, line in enumerate(lines[start:], start) if line.strip() == "return {"),
+        None,
+    )
+    if opener is None:
+        raise AssertionError(f"buildUiMirror has no object literal to read in {MIRROR_SOURCE}")
+    keys: set[str] = set()
+    depth = 0
+    for line in lines[opener:]:
+        stripped = line.strip()
+        if stripped.startswith(("//", "*", "/*")):
+            continue
+        if depth == 1:
+            match = re.match(r"^([a-z_][a-z0-9_]*)\s*:", stripped)
+            if match is not None:
+                keys.add(match.group(1))
+        depth += line.count("{") - line.count("}")
+        if depth <= 0 and keys:
+            break
+    if not keys:
+        raise AssertionError(f"read no top-level mirror keys from {MIRROR_SOURCE}")
     return frozenset(keys)

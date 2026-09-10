@@ -32,8 +32,10 @@ import json
 import socket
 import time
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
+import httpx
 import pytest
 
 from apps.opendj_cli import (
@@ -47,13 +49,31 @@ from apps.opendj_cli import (
 from apps.opendj_cli.__main__ import main
 from apps.opendj_cli.orders import ramp_deadline_s
 from apps.opendj_cli.verbs import InvocationError
-from tests.opendj_cli.conftest import Engine, PerformancePage
+from tests.opendj_cli.conftest import Engine, PerformancePage, blank_mirror
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _argv(engine: Engine, *tokens: str) -> list[str]:
     return ["--lock", str(engine.lock_path), *tokens]
+
+
+def _await_mirror(engine: Engine, ready: Callable[[dict], bool], what: str) -> None:
+    """Block until the ENGINE serves a mirror the CLI would read as ready.
+
+    Editing `page.mirror` only changes what the page will publish on its next
+    20ms tick, so a test that edits and immediately invokes the CLI is racing
+    that tick. It won the race in isolation and lost it in the full suite,
+    which is the worst way for a test to be wrong. Read the engine's own copy,
+    the exact document the CLI is about to GET, and wait for it.
+    """
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        response = httpx.get(f"{engine.base_url}/api/v1/state/ui-mirror", timeout=5.0)
+        if response.status_code == 200 and ready(response.json()):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"the engine never served {what}")
 
 
 # ----- the engine is not there ---------------------------------------------
@@ -712,20 +732,115 @@ def test_the_deadline_still_fires_when_no_ramp_justifies_waiting(
     assert "did not answer within" in capsys.readouterr().err
 
 
+def _grid(
+    bpm: float | None = 120.0, playing: bool = True, master_deck: int | None = 1
+) -> dict:
+    """A mirror carrying a clock the page could really ramp against."""
+    mirror = blank_mirror()
+    mirror["master_deck"] = master_deck
+    for deck in mirror["decks"].values():
+        deck["effective_bpm"] = bpm
+        deck["playing"] = playing
+    return mirror
+
+
 @pytest.mark.parametrize(
-    ("over", "floor", "expected"),
+    ("over", "bpm", "floor", "expected"),
     [
-        ({"unit": "ms", "n": 400.0}, 60.0, 60.0),        # short ramp: floor wins
-        ({"unit": "ms", "n": 120000.0}, 60.0, 130.0),    # Codex's --over 120000ms
-        ({"unit": "bars", "n": 32}, 60.0, 138.0),        # Codex's 32 bars
-        ({"unit": "beats", "n": 4}, 60.0, 60.0),
+        ({"unit": "ms", "n": 400.0}, 120.0, 60.0, 60.0),      # short ramp: floor wins
+        ({"unit": "ms", "n": 120000.0}, 120.0, 60.0, 130.0),  # Codex's --over 120000ms
+        # Codex's 32 bars, twice. Same duration, same floor, two tempos: 128
+        # beats is 128s at 60 BPM and 64s at 120, and only reading the grid
+        # tells them apart. A constant cannot produce both rows.
+        ({"unit": "bars", "n": 32}, 60.0, 60.0, 138.0),
+        ({"unit": "bars", "n": 32}, 120.0, 60.0, 74.0),
+        ({"unit": "beats", "n": 4}, 120.0, 60.0, 60.0),
     ],
 )
 def test_the_request_deadline_never_undercuts_the_ramp_it_asked_for(
-    over: dict, floor: float, expected: float
+    over: dict, bpm: float, floor: float, expected: float
 ) -> None:
     """Over-estimating costs nothing here; under-estimating is a false timeout."""
-    assert ramp_deadline_s(over, floor) == pytest.approx(expected)
+    assert ramp_deadline_s(over, floor, _grid(bpm)) == pytest.approx(expected)
+
+
+def test_the_deadline_is_read_off_the_live_tempo_not_assumed(
+    ) -> None:
+    """A slow master must buy MORE time than a fast one, from the same order.
+
+    The constant this replaced assumed 60 BPM was slower than any real deck.
+    It is not: production `setTempoRatio` accepts any ratio inside the selected
+    pitch range, and the +-100% range admits ratios down toward zero
+    (`Math.abs(ratio - 1) * 100 > rangePct`, audio-engine.svelte.ts), so a deck
+    can run at 30 BPM or less and a healthy 32-bar ramp still exits 5.
+    """
+    slow = ramp_deadline_s({"unit": "bars", "n": 32}, 0.0, _grid(30.0))
+    fast = ramp_deadline_s({"unit": "bars", "n": 32}, 0.0, _grid(174.0))
+
+    assert slow == pytest.approx(128 * 2.0 + 10.0)
+    assert fast == pytest.approx(128 * (60.0 / 174.0) + 10.0)
+    # The invariant, so this cannot rot into a pair of recorded numbers: half
+    # the tempo is twice the wait.
+    assert ramp_deadline_s({"unit": "bars", "n": 32}, 0.0, _grid(60.0)) == pytest.approx(
+        (slow - 10.0) / 2 + 10.0
+    )
+
+
+@pytest.mark.parametrize(
+    ("mirror", "why"),
+    [
+        (_grid(master_deck=None), "no master is elected, so `_ramp` throws no_master"),
+        (_grid(playing=False), "the clock is stopped, so `_ramp` throws clock_not_playing"),
+        (_grid(bpm=None), "the deck has no tempo yet, so nothing can be sized"),
+        ({"master_deck": 1, "decks": {}}, "the clock deck is not in the mirror"),
+        ({}, "the mirror answered nothing at all"),
+    ],
+)
+def test_a_grid_that_cannot_size_the_wait_leaves_the_floor_alone(
+    mirror: dict, why: str
+) -> None:
+    """Each of these is a page REFUSAL, not a long hold, so --timeout stands.
+
+    Guessing a tempo for them is what the fixed constant did. This is also the
+    overshoot control: a fix that always inflates the deadline would keep the
+    CLI waiting 138s on an order the page rejected in a millisecond.
+
+    The floor is deliberately SMALLER than the ramp margin. At floor 60 this
+    assertion passed while the code still added a 10s margin to a hold it had
+    just failed to measure, because 60 swallowed the 10 - a clean answer for a
+    case that should have been messy. The live test over HTTP caught it.
+    """
+    assert ramp_deadline_s({"unit": "bars", "n": 32}, 0.5, mirror) == 0.5, why
+
+
+def test_a_usable_grid_does_raise_the_deadline() -> None:
+    """The control for the row above: the floor must not become the only answer."""
+    assert ramp_deadline_s({"unit": "bars", "n": 32}, 0.5, _grid(60.0)) > 0.5
+
+
+def test_a_named_clock_deck_is_the_one_the_deadline_is_sized_from() -> None:
+    """`--clock 2` times against deck 2, so deck 2's tempo sizes the wait.
+
+    Source: `_ramp` resolves `over.clock` to the named deck and only falls back
+    to `before.master_deck` for 'master' (agent-orders.ts).
+    """
+    mirror = _grid(120.0)
+    mirror["decks"]["2"]["effective_bpm"] = 60.0
+
+    named = ramp_deadline_s({"unit": "beats", "n": 32, "clock": 2}, 0.0, mirror)
+    default = ramp_deadline_s({"unit": "beats", "n": 32}, 0.0, mirror)
+
+    assert named == pytest.approx(32 * 1.0 + 10.0)
+    # The control: reading the master instead would give this number for both.
+    assert default == pytest.approx(32 * 0.5 + 10.0)
+
+
+def test_a_named_clock_that_is_stopped_leaves_the_floor_alone() -> None:
+    """The named deck's own playing state decides, not the master's."""
+    mirror = _grid(120.0)
+    mirror["decks"]["2"]["playing"] = False
+
+    assert ramp_deadline_s({"unit": "beats", "n": 32, "clock": 2}, 0.5, mirror) == 0.5
 
 
 def test_a_ramp_reports_the_deadline_its_duration_required(
@@ -758,7 +873,7 @@ def test_a_ramp_reports_the_deadline_its_duration_required(
         page.stop()
 
     assert document["request_timeout_s"] == pytest.approx(
-        ramp_deadline_s({"unit": "ms", "n": 400.0}, 0.2)
+        ramp_deadline_s({"unit": "ms", "n": 400.0}, 0.2, _grid())
     )
     assert document["request_timeout_s"] == pytest.approx(10.4)
     # The control: with no ramp to extend it, --timeout is the deadline. A
@@ -769,7 +884,7 @@ def test_a_ramp_reports_the_deadline_its_duration_required(
 def test_a_duration_unit_with_no_wall_clock_bound_is_refused_not_guessed() -> None:
     """Fail loud rather than size a deadline off a unit nobody has mapped."""
     with pytest.raises(InvocationError):
-        ramp_deadline_s({"unit": "fortnights", "n": 2}, 60.0)
+        ramp_deadline_s({"unit": "fortnights", "n": 2}, 60.0, _grid())
 
 
 # ----- --json means --json, including before there is a namespace ----------
@@ -865,20 +980,270 @@ def test_a_group_that_does_not_land_is_still_unconfirmed_mid_script(
         ({"unit": "beats", "n": 4, "anchor": "next_beat"}, 60.0),
         # Codex's case: a 2s move behind a wait of nearly a whole phrase.
         ({"unit": "beats", "n": 4, "anchor": "next_phrase"}, 142.0),
-        ({"unit": "ms", "n": 2000.0, "anchor": "next_downbeat"}, 60.0),
     ],
 )
 def test_the_deadline_covers_the_anchor_wait_not_only_the_travel(
     over: dict, expected: float
 ) -> None:
     """The page waits for the anchor boundary FIRST, then runs the ramp."""
-    assert ramp_deadline_s(over, 60.0) == pytest.approx(expected)
+    assert ramp_deadline_s(over, 60.0, _grid(60.0)) == pytest.approx(expected)
+
+
+def test_an_ms_ramp_is_not_padded_for_an_anchor_production_ignores() -> None:
+    """`_ramp` measures an ms ramp against the WALL CLOCK, not the plan.
+
+    `progress = (performance.now() - startedAt) / over.n` for `unit === 'ms'`,
+    and the resolved plan, anchor and all, goes unread on that branch. So an
+    anchored ms ramp holds for exactly its own duration and padding the
+    deadline for the anchor would be sizing for behavior production does not
+    have. The beat-relative branch is the one that waits, and it is covered
+    above.
+    """
+    padded = ramp_deadline_s(
+        {"unit": "ms", "n": 2000.0, "anchor": "next_phrase"}, 0.2, _grid(60.0)
+    )
+
+    assert padded == pytest.approx(2.0 + 10.0)
 
 
 def test_an_anchor_with_no_wall_clock_bound_is_refused_not_guessed() -> None:
     """The control: an unmapped anchor must fail loud, not silently add zero."""
     with pytest.raises(InvocationError):
-        ramp_deadline_s({"unit": "beats", "n": 4, "anchor": "next_eclipse"}, 60.0)
+        ramp_deadline_s(
+            {"unit": "beats", "n": 4, "anchor": "next_eclipse"}, 60.0, _grid(60.0)
+        )
 
 
 # ----- a scripted command carries the text values a direct one does --------
+
+
+# ----- the deadline is sized from the mirror the page really published -----
+
+def test_a_ramp_sizes_its_deadline_from_the_live_mirror(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End to end, over HTTP: two tempos, two deadlines, one order.
+
+    The unit tests above pin the arithmetic; this pins the WIRING. The CLI has
+    to read the mirror before it sizes the request deadline, and read the real
+    one rather than a default, so the same `--over 4beats` against a 30 BPM
+    master and a 240 BPM master must not come back with the same number.
+    """
+
+    page = engine.page()
+    page.mirror["master_deck"] = 1
+    page.mirror["decks"]["1"] |= {"playing": True, "effective_bpm": 30.0}
+    page.start()
+    try:
+        argv = _argv(
+            engine, "--json", "--timeout", "0.2", "eq", "1", "low", "0.2", "--over", "4beats"
+        )
+        _await_mirror(
+            engine, lambda m: m["decks"]["1"]["effective_bpm"] == 30.0, "the 30 BPM master"
+        )
+        assert main(argv) == EXIT_CONFIRMED
+        slow = json.loads(capsys.readouterr().out)
+        page.mirror["decks"]["1"]["effective_bpm"] = 240.0
+        _await_mirror(
+            engine, lambda m: m["decks"]["1"]["effective_bpm"] == 240.0, "the 240 BPM master"
+        )
+        assert main(argv) == EXIT_CONFIRMED
+        fast = json.loads(capsys.readouterr().out)
+    finally:
+        page.stop()
+
+    assert slow["request_timeout_s"] == pytest.approx(4 * 2.0 + 10.0)
+    assert fast["request_timeout_s"] == pytest.approx(4 * 0.25 + 10.0)
+
+
+def test_a_ramp_with_no_master_to_time_against_keeps_the_floor(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: the live path must keep the floor where the page refuses.
+
+    A CLI that inflated every ramp deadline would pass the test above and then
+    wait 10s on an order `_ramp` threw `no_master` at immediately.
+    """
+
+    page = engine.page()
+    page.mirror["master_deck"] = None
+    page.mirror["decks"]["1"]["playing"] = True
+    page.start()
+    try:
+        argv = _argv(
+            engine, "--json", "--timeout", "7.5", "eq", "1", "low", "0.2", "--over", "4beats"
+        )
+        _await_mirror(engine, lambda m: m["master_deck"] is None, "a mirror with no master")
+        assert main(argv) == EXIT_CONFIRMED
+        document = json.loads(capsys.readouterr().out)
+    finally:
+        page.stop()
+
+    assert document["request_timeout_s"] == pytest.approx(7.5)
+
+
+# ----- a deadline that cannot expire is not a deadline ---------------------
+
+@pytest.mark.parametrize("flag", ["--settle", "--timeout"])
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "-1"])
+def test_a_deadline_that_can_never_pass_is_refused(
+    flag: str, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--settle nan` polls the mirror forever: NaN loses every comparison.
+
+    `time.monotonic() >= deadline` is False for a NaN deadline however long the
+    CLI has waited, so an unconfirmed command never reaches its exit 4 and the
+    agent driving it hangs with no error to read. `inf` wedges the same loop,
+    and a negative deadline is a typo rather than an instruction. Both flags
+    feed the same comparison, so both are validated - fixing only the reported
+    one leaves the class open.
+    """
+
+    with pytest.raises(SystemExit) as refusal:
+        main([flag, value, "state"])
+
+    assert refusal.value.code == EXIT_FAILED
+    assert f"argument {flag}: " in capsys.readouterr().err
+
+
+def test_a_finite_deadline_is_still_accepted(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: validating the flag must not reject the ordinary value.
+
+    0 is accepted deliberately - a zero settle is 'do not wait', which is a
+    real instruction unlike a negative one. It is asserted at parse level
+    because a zero settle also races the page's republish, so a verdict is not
+    what it pins.
+    """
+
+    assert main(["--settle", "0", "--timeout", "0", "--list-verbs"]) == EXIT_CONFIRMED
+    assert capsys.readouterr().out != ""
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "--settle", "0.5", "--timeout", "30", "play", "1")) == (
+            EXIT_CONFIRMED
+        )
+    finally:
+        page.stop()
+
+    assert "verdict: confirmed" in capsys.readouterr().out
+
+
+# ----- a script stops where its confirmation stops -------------------------
+
+def test_a_script_stops_after_a_group_the_mirror_will_not_confirm(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unconfirmed group must halt the script, exactly as a failed step does.
+
+    `do "load 1 <id>" then "play 1"` is the case that matters. If the load
+    never lands, the deck still holds whatever was there before, so dispatching
+    `play` starts the PREVIOUS track: the CLI exits 4 afterwards, but the wrong
+    music is already in the room. The page here reports every step succeeded
+    and simply does not move, which is the live fault this CLI exists to catch.
+    """
+
+    page = engine.page()
+    page.apply_commands = False
+    page.start()
+    try:
+        exit_code = main(
+            _argv(engine, "--settle", "0.3", "do", "load 1 new-id", "then", "play 1")
+        )
+        assert exit_code == EXIT_UNCONFIRMED
+        claimed = [order["payload"]["type"] for order in page.orders]
+    finally:
+        page.stop()
+
+    assert claimed == ["load"], "the page was handed play after the load never landed"
+    captured = capsys.readouterr().out
+    assert "skipped: play 1" in captured
+    assert "an earlier step failed" in captured
+
+
+def test_a_script_whose_groups_confirm_runs_all_of_them(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control, and the overshoot this fix could have made.
+
+    Halting on anything short of confirmed would satisfy the report above just
+    as well by never running a second group at all.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        exit_code = main(
+            _argv(engine, "--settle", "0.3", "do", "load 1 new-id", "then", "play 1")
+        )
+        assert exit_code == EXIT_CONFIRMED
+        claimed = [order["payload"]["type"] for order in page.orders]
+        assert page.mirror["decks"]["1"]["playing"] is True
+    finally:
+        page.stop()
+
+    assert claimed == ["load", "play"]
+    assert "skipped" not in capsys.readouterr().out
+
+
+# ----- a run is only as strong as its weakest group ------------------------
+
+def test_a_script_is_only_as_confirmed_as_its_weakest_group(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One accepted group means the run cannot claim confirmed.
+
+    `slip` is real deck state `buildUiMirror` does not publish, so its group is
+    accepted and never confirmed. A process-wide 'something affirmed' flag let
+    the `play` group's confirmation stand in for it and reported the whole run
+    confirmed, which tells an agent the slip was observed when nothing observed
+    it. Both orders are checked because a flag set by the FIRST group is the
+    shape the defect had.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "--json", "do", "play 1", "then", "slip 1 true")) == (
+            EXIT_CONFIRMED
+        )
+        after = json.loads(capsys.readouterr().out)
+        assert main(_argv(engine, "--json", "do", "slip 1 true", "then", "play 2")) == (
+            EXIT_CONFIRMED
+        )
+        before = json.loads(capsys.readouterr().out)
+        claimed = [order["payload"]["type"] for order in page.orders]
+    finally:
+        page.stop()
+
+    assert after["verdict"] == "accepted"
+    # Not just the LAST group's verdict, which would read confirmed here.
+    assert before["verdict"] == "accepted"
+    # And accepted is not a halt: only an unconfirmed group stops the script,
+    # so every group in both runs still reached the page.
+    assert claimed == ["play", "slip", "slip", "play"]
+
+
+def test_a_script_every_group_of_which_affirms_is_still_confirmed(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: weakest-wins must not make confirmed unreachable.
+
+    The overshoot for this finding is a run that reports accepted whenever it
+    has more than one group, which no report of the bug would object to.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "--json", "do", "play 1", "then", "play 2")) == (
+            EXIT_CONFIRMED
+        )
+        document = json.loads(capsys.readouterr().out)
+    finally:
+        page.stop()
+
+    assert document["verdict"] == "confirmed"
