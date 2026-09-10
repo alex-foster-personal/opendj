@@ -390,9 +390,7 @@ def audit_index(root: Path, *, include_records: bool = False) -> AuditResult:
     return AuditResult(tuple(findings), scanned, skipped_binary, tuple(exempt), records)
 
 
-def audit_paths(
-    root: Path, paths: Iterable[Path], *, include_records: bool = False
-) -> AuditResult:
+def audit_paths(root: Path, paths: Iterable[Path], *, include_records: bool = False) -> AuditResult:
     """Filesystem variant, for auditing a directory that is not a git index."""
     findings: list[Finding] = []
     exempt: list[Finding] = []

@@ -235,6 +235,8 @@ RECORD_PATHS = ("app_docs/", "docs/threads/", ".planning/", "specs/")
 def is_record_path(rel: str) -> bool:
     """True when `rel` is a path inside one of the write-once record directories."""
     return rel.startswith(RECORD_PATHS)
+
+
 # A MagicDNS host: `<node>.<tailnet>.ts.net`. Used twice -- as the tailnet rule
 # itself, and to recognize an ssh destination on an allowed tailnet as a fixture
 # rather than a mailbox.
