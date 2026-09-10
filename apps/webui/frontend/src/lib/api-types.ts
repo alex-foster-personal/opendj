@@ -5645,7 +5645,10 @@ export interface components {
         };
         /** MembershipTransferIn */
         MembershipTransferIn: {
-            /** Mode */
+            /**
+             * Mode
+             * @enum {string}
+             */
             mode: "add" | "move";
             /** Source Etag */
             source_etag?: string | null;
