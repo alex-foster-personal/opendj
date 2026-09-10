@@ -409,6 +409,26 @@ test('a late handoff rejection raises nothing once AutoPlay is off', async () =>
  * is labelled rather than counted as behavioural coverage. It reds on the
  * mutation that the driven tests could not see.
  */
+test('SHAPE GUARD: nothing in the handoff catch runs for a dead arming', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	const start = source.indexOf('} catch (error: unknown) {', source.indexOf('await _handoff('));
+	assert.notEqual(start, -1, 'the handoff catch could not be located: this guard asserts nothing');
+	const body = source.slice(start, source.indexOf('} finally {', start));
+	// The guard has to come before ANY reporting or state change, because
+	// `pushToast` writes the perf ring and posts to /api/v1/client-errors, and
+	// the quarantine below it steers the session that replaced this one.
+	const guardAt = body.indexOf('if (!_armedAt(generation)) return;');
+	assert.notEqual(guardAt, -1, 'the catch has no arming guard at all');
+	for (const effect of ['pushToast(', '_unplayableIds.add(', '_attemptsFor', '_triggeredFor =']) {
+		const at = body.indexOf(effect);
+		assert.notEqual(at, -1, `${effect} is not in the catch: this guard would assert nothing`);
+		assert.ok(guardAt < at, `${effect} runs before the arming guard`);
+	}
+});
+
 test('SHAPE GUARD: the late-failure check compares the captured arming generation', () => {
 	const source = readFileSync(
 		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),

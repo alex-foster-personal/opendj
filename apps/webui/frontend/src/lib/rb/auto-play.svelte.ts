@@ -464,6 +464,18 @@ async function _tick(): Promise<void> {
 		_attemptsFor = { source: '', failed_ids: [] };
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
+		// NOTHING from a dead arming may report or mutate (Codex r3974734066,
+		// r3974734057). The guard is here, at the top, rather than on the
+		// durable raise alone: `pushToast` writes the perf ring AND posts to
+		// /api/v1/client-errors, so a stale rejection was still filing a
+		// server-side failure against a session that had ended; and the
+		// quarantine below would make the REPLACEMENT session skip a candidate
+		// it never tried, then blame it for a load failure it never had.
+		//
+		// Safe to abandon: every field this would have touched is module-level
+		// state that teardown and the arm effect have already reset, and
+		// `_inFlight` is cleared in `finally` either way.
+		if (!_armedAt(generation)) return;
 		// An unclassified throw is treated as committed. That is the safe
 		// direction: a wrong 'load' guess would re-arm and load a second track,
 		// which is the live bug. A wrong 'commit' guess only forgoes a retry.
