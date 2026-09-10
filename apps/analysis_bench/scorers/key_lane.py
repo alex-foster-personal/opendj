@@ -335,6 +335,11 @@ def _score_against(stable_ids: list[str], reference: _ReferenceMap,
     }
 
 
+def _rate_pct(numerator: int, denominator: int) -> float | None:
+    """A named-denominator percentage, or None when the denominator is zero."""
+    return round(100.0 * numerator / denominator, 2) if denominator else None
+
+
 def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
              mik: _ReferenceMap, answers: _ReferenceMap) -> dict[str, Any]:
     """AGREE/DISAGREE-RELATED/DISAGREE-UNRELATED, classified by the
@@ -405,12 +410,9 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
             # 100 rather than silently hiding that a fourth, separately
             # reported category exists (Codex P2 BLOCKING, PR #1620: the
             # raw counts alone rendered no visible denominator at all).
-            "pct_sides_with_rekordbox": round(100.0 * len(related_rb) / len(related_ids), 2)
-            if related_ids else None,
-            "pct_sides_with_mik": round(100.0 * len(related_mik) / len(related_ids), 2)
-            if related_ids else None,
-            "pct_sides_with_neither": round(100.0 * len(related_neither) / len(related_ids), 2)
-            if related_ids else None,
+            "pct_sides_with_rekordbox": _rate_pct(len(related_rb), len(related_ids)),
+            "pct_sides_with_mik": _rate_pct(len(related_mik), len(related_ids)),
+            "pct_sides_with_neither": _rate_pct(len(related_neither), len(related_ids)),
         },
         "disagree_unrelated": {"n": len(unrelated_ids), "stable_ids": sorted(unrelated_ids)},
         "disagree_no_answer": {"n": len(no_answer_ids), "stable_ids": sorted(no_answer_ids)},
