@@ -99,6 +99,28 @@ def public_host(hosts: Sequence[str]) -> str:
     return hosts[0]
 
 
+#: The one line that reports the origin the box ACTUALLY served, and the pattern
+#: that reads it back. A caller must not re-derive the public host from local
+#: config: the MagicDNS name is deployment config (#1540), and a URL guessed here
+#: is how a restart that never came up behind HTTPS looks successful.
+SERVE_LINE_RE = re.compile(r"^\[OK\] serve \S+ -> (https://\S+) via \S+\s*$", re.MULTILINE)
+
+
+def serve_url_from_launcher_output(text: str) -> str:
+    """The HTTPS origin the launcher reported, or a hard failure.
+
+    Deliberately no fallback. The LAST match wins, so a caller replaying an
+    accumulated log gets the run it just made rather than an older one.
+    """
+    matches = SERVE_LINE_RE.findall(text)
+    if not matches:
+        raise PortConfigError(
+            "run-agentbox printed no serve line, so the box never came up behind "
+            "HTTPS serve; there is no public origin to open"
+        )
+    return matches[-1]
+
+
 def _windows_listener_pids(port: int) -> list[int]:
     """PIDs listening on ``port``, read from ``netstat -ano``.
 
