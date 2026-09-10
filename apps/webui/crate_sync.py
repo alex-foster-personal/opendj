@@ -40,8 +40,8 @@ from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
-    ALLOWED_SSH_HOSTS,
     allowed_ssh_host,
+    allowed_ssh_hosts_description,
     ssh_agentbox_argv,
 )
 
@@ -1184,9 +1184,13 @@ def assert_push_host(*, dest_kind: DestKind, dest_host: str, to_explicit: bool) 
     if dest_kind == "local":
         return
     if sys.platform == "darwin":
-        if not allowed_ssh_host(dest_host) and dest_host != AGENTBOX_HOSTNAME:
+        # Exact membership of the configured allowlist, and nothing else. This
+        # destination goes to mkdir/rsync directly, without the remote-hostname
+        # check run_via_ssh performs, so the allowlist is the only thing between
+        # a typo (or a hostile argument) and a library copied off this machine.
+        if not allowed_ssh_host(dest_host):
             raise RuntimeError(
-                f"refusing dest host {dest_host!r}; allowed {sorted(ALLOWED_SSH_HOSTS)}"
+                f"refusing dest host {dest_host!r}; allowed {allowed_ssh_hosts_description()}"
             )
         return
     if to_explicit:
