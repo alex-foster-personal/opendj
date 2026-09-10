@@ -46,6 +46,18 @@ GRANT_TABLE: str = "enrollment_grants"
 #: enough that a token left in shell history is not a standing key.
 GRANT_TTL_S: int = 900
 
+#: The longest lifetime :func:`mint_grant` will accept. One hour: long enough
+#: to cover walking to another machine, starting it, and fixing a typo, and
+#: nowhere near long enough for an unredeemed grant to become a standing key.
+#:
+#: Sol review, PR #1648 (P1 BLOCKING): ``ttl_s`` was taken on trust, so
+#: ``grant --ttl-seconds 99999999`` minted a credential valid for years and a
+#: leaked, unredeemed token stayed redeemable far past the short-lived window
+#: this design keeps claiming. The bound is enforced HERE rather than on the
+#: argparse argument because this function is the only writer of the grants
+#: table, and a check on one caller leaves every other caller unbounded.
+GRANT_TTL_MAX_S: int = 3600
+
 #: Every minted grant starts with this. Two reasons, and the first one is a
 #: measured bug rather than a style preference: ``secrets.token_urlsafe``
 #: draws from the base64url alphabet, so about one token in sixty-four begins
@@ -162,7 +174,19 @@ def mint_grant(
     ttl_s: int = GRANT_TTL_S,
     now: str | None = None,
 ) -> MintedGrant:
-    """Mint one single-use grant for ``owner``. Returns the raw token once."""
+    """Mint one single-use grant for ``owner``. Returns the raw token once.
+
+    Refuses a lifetime outside ``1 .. GRANT_TTL_MAX_S`` rather than clamping
+    it: an operator who asked for a week and silently got an hour would
+    believe the wrong expiry, and one who asked for zero wants to know the
+    request was nonsense, not to receive a token that is already dead.
+    """
+    if not 0 < ttl_s <= GRANT_TTL_MAX_S:
+        raise EnrollmentCredentialError(
+            f"grant ttl_s={ttl_s} is outside 1..{GRANT_TTL_MAX_S} seconds. A "
+            "grant is a short-lived single-use credential carried to one "
+            "machine; a longer one is a standing key by another name."
+        )
     created = sync_stamp.parse_canonical(now) if now else datetime.now(UTC)
     token = GRANT_TOKEN_PREFIX + secrets.token_urlsafe(32)
     created_at = sync_stamp.canonical_from(created)

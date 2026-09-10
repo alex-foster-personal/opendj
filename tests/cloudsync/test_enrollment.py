@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.sync_hub import client, enrollment_credentials, service
 from tests.cloudsync.conftest import (
@@ -36,6 +37,7 @@ from tests.cloudsync.conftest import (
 from tests.cloudsync.enrollment_helpers import (
     http_enroll,
     hub_machine_id,
+    mint_expired_grant,
     mint_grant,
     owner_rows,
     read_hub,
@@ -154,7 +156,7 @@ def test_a_grant_redeemed_by_one_machine_cannot_enroll_another(
 def test_an_expired_grant_enrolls_nothing(
     enroll_hub: TestClientTransport, enroll_hub_dir: Path, enroll_spoke_dir: Path
 ):
-    token = mint_grant(enroll_hub_dir, ttl_s=-1)
+    token = mint_expired_grant(enroll_hub_dir)
     with pytest.raises(client.SyncTransportError) as excinfo:
         http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=token)
     assert "401" in str(excinfo.value)
@@ -267,3 +269,86 @@ def test_the_google_id_token_kind_is_declared_and_not_yet_resolvable(
         )
     assert "501" in str(excinfo.value)
     assert owner_rows(enroll_hub_dir) == []
+
+
+# ----- what a grant's lifetime, and a re-run, are allowed to do --------------
+
+
+@pytest.mark.parametrize("ttl_s", [0, -1, enrollment_credentials.GRANT_TTL_MAX_S + 1])
+def test_a_grant_cannot_be_minted_outside_its_bounded_lifetime(
+    enroll_hub_dir: Path, ttl_s: int
+) -> None:
+    """[if] a grant can be minted with an unbounded lifetime then a leaked
+    token is a standing key, [else stop].
+
+    Sol review, PR #1648, P1 BLOCKING. ``ttl_s`` was taken on trust, so
+    ``grant --ttl-seconds 99999999`` minted a credential valid for years
+    while every docstring kept calling it short-lived.
+
+    Asserted at :func:`mint_grant`, the only writer of the grants table,
+    rather than on the argparse argument: a check on one caller leaves the
+    HTTP and programmatic callers unbounded.
+    """
+    conn = state_db.open_rw(client.state_db_path(enroll_hub_dir))
+    try:
+        owner = enrollment_credentials.owner_by_email(conn, ENROLL_OWNER_EMAIL)
+        with pytest.raises(
+            enrollment_credentials.EnrollmentCredentialError, match=str(ttl_s)
+        ):
+            enrollment_credentials.mint_grant(conn, owner=owner, ttl_s=ttl_s)
+        assert not read_hub(enroll_hub_dir, "enrollment_grants"), (
+            "a refused mint must leave no row behind"
+        )
+
+        minted = enrollment_credentials.mint_grant(
+            conn, owner=owner, ttl_s=enrollment_credentials.GRANT_TTL_MAX_S
+        )
+        assert minted.token, (
+            "control: the boundary value itself is ACCEPTED, so the refusals "
+            "above are about the bound and not about minting being broken"
+        )
+    finally:
+        conn.close()
+
+
+def test_a_repeat_enrollment_does_not_quietly_rename_the_fleet_row(
+    enroll_hub: TestClientTransport,
+    enroll_hub_dir: Path,
+    enroll_spoke_dir: Path,
+) -> None:
+    """[if] a re-run reports "already enrolled" while changing the machines
+    row then the report is a lie, [else stop].
+
+    Sol review, PR #1648, P2. ``merge_machines`` ran BEFORE the idempotent
+    return, so the caller-supplied row was upserted on every re-run: a second
+    enroll under a different ``--name`` renamed the fleet row while the result
+    said ``created=False``. Refreshing registry fields is what ``hello`` does
+    on every handshake; enroll is about ownership.
+    """
+    http_enroll(
+        enroll_hub,
+        enroll_spoke_dir,
+        name="original-name",
+        token=mint_grant(enroll_hub_dir),
+    )
+    machine_id = machine_identity.get_or_create_machine_id(enroll_spoke_dir)
+    before = {row["machine_id"]: row for row in read_hub(enroll_hub_dir, "machines")}
+    assert before[machine_id]["name"] == "original-name", (
+        "control: the first enrollment really did write the name being "
+        "watched, so an unchanged name below is a name that held rather "
+        "than one that was never there"
+    )
+
+    again = http_enroll(
+        enroll_hub,
+        enroll_spoke_dir,
+        name="renamed-behind-your-back",
+        token=mint_grant(enroll_hub_dir),
+    )
+    assert again["created"] is False, "the re-run is reported as a no-op"
+
+    after = {row["machine_id"]: row for row in read_hub(enroll_hub_dir, "machines")}
+    assert after[machine_id] == before[machine_id], (
+        "a re-run reported as created=False changed the fleet row: "
+        f"{before[machine_id]} -> {after[machine_id]}"
+    )

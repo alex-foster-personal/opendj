@@ -253,7 +253,11 @@ def _parser() -> argparse.ArgumentParser:
         "--ttl-seconds",
         type=int,
         default=enrollment_credentials.GRANT_TTL_S,
-        help="how long the grant stays redeemable; default %(default)s",
+        help=(
+            "how long the grant stays redeemable, in seconds; default "
+            "%(default)s, and refused above "
+            f"{enrollment_credentials.GRANT_TTL_MAX_S}"
+        ),
     )
 
     enroll_command = subcommands.add_parser(

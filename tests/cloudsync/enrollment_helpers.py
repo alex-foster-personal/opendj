@@ -9,13 +9,14 @@ paths under test.
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import client, maintenance_enroll
+from apps.sync_hub import client, enrollment_credentials, maintenance_enroll
 
 from .conftest import ENROLL_OWNER_EMAIL, ENROLL_PATH
 from .enrollment_transport import TestClientTransport
@@ -50,6 +51,29 @@ def mint_grant(
 ) -> str:
     """Mint through the same function the CLI's ``grant`` subcommand calls."""
     return maintenance_enroll.grant(hub_dir, owner_email=email, ttl_s=ttl_s).token
+
+
+def mint_expired_grant(hub_dir: Path, *, email: str = ENROLL_OWNER_EMAIL) -> str:
+    """Mint a grant whose window has ALREADY closed, through the real path.
+
+    Backdates ``now`` rather than passing a negative ``ttl_s``: since the Sol
+    P1 bound landed, ``mint_grant`` refuses a non-positive lifetime outright,
+    and a test that reached for one would be asserting on the mint guard
+    instead of on redemption. A normal lifetime issued an hour ago is what an
+    expired grant really looks like in the wild.
+    """
+    issued_at = sync_stamp.canonical_from(
+        datetime.now(UTC) - timedelta(seconds=enrollment_credentials.GRANT_TTL_S * 4)
+    )
+    conn = state_db.open_rw(client.state_db_path(hub_dir))
+    try:
+        conn.execute("BEGIN")
+        owner = enrollment_credentials.owner_by_email(conn, email)
+        minted = enrollment_credentials.mint_grant(conn, owner=owner, now=issued_at)
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    return minted.token
 
 
 def machine_payload(

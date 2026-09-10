@@ -202,8 +202,13 @@ def enroll_machine(
             owner=owner,
             hub_machine_id=hub_machine_id,
         )
-    merge_machines(conn, [machine], caller_id=machine.machine_id)
     if existing is not None and existing.hub_machine_id == hub_machine_id:
+        # Return BEFORE the merge, not after. Sol review, PR #1648 (P2): the
+        # upsert consumed the caller-supplied row, so a re-run with a
+        # different --name quietly renamed the fleet row while the CLI
+        # printed "already enrolled" and this result said created=False. A
+        # no-op has to be a no-op. Refreshing a machine's registry fields is
+        # what `hello` is for, on every handshake; enroll is about ownership.
         return EnrollmentResult(
             machine_id=machine.machine_id,
             owner=owner,
@@ -212,6 +217,7 @@ def enroll_machine(
             enrolled_via=existing.enrolled_via,
             created=False,
         )
+    merge_machines(conn, [machine], caller_id=machine.machine_id)
 
     stamp = now or sync_stamp.canonical_now()
     # No ``revoked_at`` in the UPDATE list, deliberately: this statement must
