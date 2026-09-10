@@ -220,7 +220,7 @@ async function _adopt(
 		analysisSourceState.features = features;
 		return;
 	}
-	const served = await _refreshDecks(serialize);
+	const served = await _refreshDecks(serialize, isSuperseded);
 	if (isSuperseded()) return;
 	// The watermark is what the SERVER stamped on the payloads it just served,
 	// not `features`. If the daemon moved during the refresh those two differ,
@@ -416,8 +416,20 @@ export function installAnalysisSourceRefreshRunner(runner: AnalysisSourceRefresh
 
 /** Throws rather than falling back to an unserialized refresh: a missing
  * runner is a wiring bug, and silently running the deck swap outside the
- * command queue is exactly the defect the runner exists to close. */
-async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null> {
+ * command queue is exactly the defect the runner exists to close.
+ *
+ * `isSuperseded` defaults to "never" for `_drainPendingRecordRefresh`'s
+ * record-change call site, which has no source-switch race to guard against
+ * (it owns `_recordRefreshGeneration` for its own ordering). `_adopt` passes
+ * its real predicate through so `refreshAnalysisSourceDecks` can decline to
+ * publish a fetch that a newer switch has already overtaken
+ * (discussion_r3975326238 P1 BLOCKING) - checking only AFTER this function
+ * returns, as `_adopt` already did, is too late: the decks and shared cache
+ * have been written by then. */
+async function _refreshDecks(
+	serialize: boolean,
+	isSuperseded: () => boolean = () => false
+): Promise<AnalysisSource | null> {
 	// Captured before the unbounded awaits below: a record-change event that
 	// arrives WHILE this refresh is in flight bumps the generation past this,
 	// so completing must not clear a pending mark it cannot have satisfied
@@ -428,7 +440,9 @@ async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null>
 		if (_refreshRunner === null) {
 			throw new Error('no analysis source refresh runner is installed');
 		}
-		served = await _refreshRunner(() => refreshAnalysisSourceDecks(DECK_IDS, deckStates));
+		served = await _refreshRunner(() =>
+			refreshAnalysisSourceDecks(DECK_IDS, deckStates, isSuperseded)
+		);
 		if (served === undefined) {
 			// A runner that awaits the work but drops its result would silently
 			// write `undefined` into the deck watermark, and every later
@@ -438,7 +452,7 @@ async function _refreshDecks(serialize: boolean): Promise<AnalysisSource | null>
 			throw new Error('the analysis source refresh runner dropped its work result');
 		}
 	} else {
-		served = await refreshAnalysisSourceDecks(DECK_IDS, deckStates);
+		served = await refreshAnalysisSourceDecks(DECK_IDS, deckStates, isSuperseded);
 	}
 	// Any successful refresh refetches EVERY loaded deck, so it satisfies a
 	// pending record-change retry whatever triggered it - unless a NEWER

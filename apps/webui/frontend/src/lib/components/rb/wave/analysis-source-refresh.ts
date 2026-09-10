@@ -108,7 +108,22 @@ export interface AnalysisSourceRefreshDeck {
 export async function refreshAnalysisSourceDecks(
 	deckIds: readonly DeckId[],
 	decks: Record<DeckId, AnalysisSourceRefreshDeck>,
-	ports: AnalysisSourceRefreshPorts
+	ports: AnalysisSourceRefreshPorts,
+	// Checked once, right before publish, after every staged fetch has
+	// settled (discussion_r3975326238 P1 BLOCKING): the caller's own
+	// post-await supersession check (analysis-source.svelte.ts's `_adopt`)
+	// runs AFTER this whole function returns, which is too late - by then the
+	// fetches staged below have already been written onto `decks[deck].anlz`
+	// and the shared cache. A slower switch that loses a race to a faster,
+	// later one must discard its answer HERE, before publishing, or the
+	// decks and cache end up holding the loser's bytes while the mirror
+	// (`analysisSourceState.deckFeatures`) reports the winner - a split no
+	// later poll can detect, since deckFeatures was never advanced past its
+	// pre-switch value for the loser. Defaults to "never superseded" for the
+	// one other caller (`_drainPendingRecordRefresh`'s record-change refresh,
+	// which owns its own generation guard, not a source-switch race) and for
+	// every test that calls this directly.
+	isSuperseded: () => boolean = () => false
 ): Promise<'rekordbox' | 'own' | null> {
 	bumpAnlzFetchGeneration();
 	ports.invalidateAllAnlzCacheEntries();
@@ -157,6 +172,14 @@ export async function refreshAnalysisSourceDecks(
 			);
 		}
 	}
+	// The LAST point before anything below mutates a deck or the shared cache.
+	// Every staged fetch above is an unbounded await, so a newer, faster
+	// switch (or poll) can already have won and moved the mirror on while
+	// this one was still in flight - publishing now would overwrite the
+	// winner's decks/cache with this call's stale bytes, and no later poll
+	// could ever detect the split because `deckFeatures` would still read as
+	// the winner's value (discussion_r3975326238 P1 BLOCKING).
+	if (isSuperseded()) return null;
 	// Collected, not awaited per-iteration (would serialize what the cache
 	// write below deliberately doesn't); only this function's RETURN waits.
 	// `alreadyScoped: true` below: this function already holds the claim,

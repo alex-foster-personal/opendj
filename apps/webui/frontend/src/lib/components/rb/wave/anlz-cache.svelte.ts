@@ -515,14 +515,20 @@ export function evictAnlzCacheEntriesServingOtherSource(
  * why a reverse import would close a cycle). */
 export function refreshAnalysisSourceDecks(
 	deckIds: readonly _RefreshDeckId[],
-	decks: Record<_RefreshDeckId, AnalysisSourceRefreshDeck>
+	decks: Record<_RefreshDeckId, AnalysisSourceRefreshDeck>,
+	isSuperseded?: () => boolean
 ): Promise<'rekordbox' | 'own' | null> {
-	return _refreshAnalysisSourceDecksImpl(deckIds, decks, {
-		invalidateAllAnlzCacheEntries,
-		refreshAnlzCacheEntry,
-		notifyGridlessSettlement,
-		fetchAnlzBypassingHttpCache
-	});
+	return _refreshAnalysisSourceDecksImpl(
+		deckIds,
+		decks,
+		{
+			invalidateAllAnlzCacheEntries,
+			refreshAnlzCacheEntry,
+			notifyGridlessSettlement,
+			fetchAnlzBypassingHttpCache
+		},
+		isSuperseded
+	);
 }
 
 /** Count of ready ANLZ entries for memory tracking. */
