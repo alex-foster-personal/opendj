@@ -1,5 +1,7 @@
 """The three-way split of FATAL records in ops/fleet/kpi.sh (issue #1670).
 
+[if] a refusal or provisioning fault reddens the fleet FATAL line [then] fail, [else stop].
+
 One health line asking "did anything write FATAL" cannot be green on a working box.
 The fleet's launchers announce a REFUSAL -- a guard that declined and left the system
 consistent -- with the same word they use for a fault. Measured on nucbox Thu 10 Sep
@@ -252,3 +254,43 @@ def test_an_unreadable_log_set_makes_all_three_lines_say_so(tmp_path):
     assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE", out
     assert verdicts[PROVISIONING_LABEL] == "UNMEASURABLE", out
     assert _refusals(out) == "UNKNOWN", out
+
+
+def test_prose_that_merely_mentions_fatal_is_not_a_fatal_record(tmp_path):
+    """If a log line that only CONTAINS the word FATAL counts as a FATAL then broken.
+
+    These logs are not all structured. `resident-*.log`, `issue-*.log` and
+    `dispatcher.log` are agent transcripts, and agents quote source lines, paste
+    diffs containing `+ log "FATAL: ..."`, and echo this script's own health
+    output back into themselves. Measured on nucbox Wed 9 Sep 2026, the
+    contains-anywhere rule reported 889 untimestamped FATALs of which 862 were
+    prose, so the excluded count carried no information, and a quoted line that
+    happens to lead with its own UTC stamp could redden the window check for a
+    fault that never happened.
+
+    Both directions are pinned here: prose must not count, and a real record must
+    still count, in the same fixture, so a rule that simply stopped matching
+    anything would fail this test rather than pass it.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "logs" / "resident-prose.log").write_text(
+        # An agent quoting a source line, with its own stamp at the front.
+        f'{_iso(NOW - 60)} the fixer patch adds: + log "FATAL: redteam trigger failed"\n'
+        # An agent echoing this script's own output back into its transcript.
+        f"{_iso(NOW - 50)} health FAIL no timestamped FATAL in logs last 6h\n"
+        # Prose with no stamp at all, mentioning the word mid-sentence.
+        "I refused to ship that because a FATAL there would be silent\n"
+    )
+
+    home = _home(tmp_path, token_profile=True)
+    assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "PASS"
+
+    # Same fixture, plus one genuine record: stamp, then FATAL as the next field.
+    # Deliberately a fault the classifier does NOT recognise as a refusal or a
+    # provisioning problem, so it lands on the fleet line (issue #1670). A
+    # "no brief" record would be a refusal and would correctly leave this line
+    # green, which would test the classifier rather than the prose rule.
+    (fixture / "jobs" / "logs" / "real-fatal.log").write_text(
+        f"{_iso(NOW - 40)} FATAL: redteam trigger failed\n"
+    )
+    assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "FAIL"
