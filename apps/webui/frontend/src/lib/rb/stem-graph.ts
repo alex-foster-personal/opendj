@@ -13,6 +13,7 @@
  *     [if] any group is soloed [then] non-solo groups gain 0; mute wins
  */
 
+import { decodeStemParts, stemDecodeLabels } from '$lib/player/decode/flac-stem-decode';
 import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
 import {
 	StretchDeckProcessor,
@@ -77,6 +78,24 @@ function _exactKeys(name: string, value: object, keys: readonly string[]): void 
 	if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
 		throw new TypeError(`${name} must contain exactly ${expected.join(', ')}`);
 	}
+}
+
+/**
+ * Q18 rung 1: encoded parts in, decoded StemBuffers out, four workers deep.
+ *
+ * Lives here rather than beside the decoder because this is the boundary the
+ * engine already knows - `stem-graph` is what turns parts into a graph, and
+ * `audio-engine.svelte.ts` sits at exactly its `frontend.max_fan_out` ratchet
+ * ceiling and can absorb no new module import. The rung, its three refusals
+ * and its numbers live in `$lib/player/decode/flac-stem-decode`.
+ */
+export async function decodeStemBuffers(
+	ctx: BaseAudioContext,
+	encoded: Partial<Record<StemPart, ArrayBuffer>>,
+	parts: readonly StemPart[]
+): Promise<{ buffers: StemBuffers; labels: Record<string, string> }> {
+	const decoded = await decodeStemParts(ctx, encoded, parts);
+	return { buffers: decoded.buffers, labels: stemDecodeLabels(decoded.reports) };
 }
 
 export function createDefaultStemControls(): StemControls {

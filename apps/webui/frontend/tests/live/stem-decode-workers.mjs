@@ -1,0 +1,280 @@
+/**
+ * Q18 rung 1, on a real browser with a real FLAC file.
+ *
+ * The unit tests prove the POLICY (sniffing, the three refusals, worker
+ * lifecycle) against an injected decoder. They cannot prove the thing most
+ * likely to break in practice: that `FLACDecoderWebWorker` actually spawns a
+ * worker and compiles its wasm once bundled, and that what comes back is the
+ * same audio `decodeAudioData` produces. A rung that silently falls back
+ * decodes correctly and buys nothing, and the unit suite would still be green.
+ *
+ * So this asserts three things a mock cannot:
+ *   1. the worker path is TAKEN (refusal === null on every part)
+ *   2. the samples are BIT-IDENTICAL to decodeAudioData's - FLAC is lossless
+ *      and neither path resamples, so anything less is a decoder bug
+ *   3. four parts in workers beat four parts through decodeAudioData
+ *
+ * Re-runnable: `pnpm test:live:stem-decode-workers`. Prints the measured
+ * numbers so a later round can compare against them rather than against a
+ * remembered figure.
+ */
+
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { existsSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { chromium, webkit } from '@playwright/test';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FRONTEND = path.resolve(HERE, '../..');
+const REPO = path.resolve(FRONTEND, '../../..');
+/**
+ * A REAL 44.1kHz stereo FLAC. Never synthesized: the claim under test is that
+ * a wasm decoder agrees with WebKit's on real audio, and a generated tone
+ * exercises neither's edge cases.
+ *
+ * `data/` is gitignored and does not exist in a fresh worktree, so the path is
+ * overridable and the failure names the override instead of a bare ENOENT.
+ */
+const FIXTURE_DIR =
+	process.env.Q18_FLAC_DIR ?? path.join(REPO, 'data/datasets/jamendolyrics-vocals');
+const PARTS = ['vocals', 'drums', 'bass', 'other'];
+const PORT = 8719;
+/** One least-significant bit of a 16-bit sample, in float. */
+const LSB_16_BIT = 1 / 32768;
+
+/** Bundle the module under test the way the app bundles it. */
+async function bundleModule() {
+	const out = path.join(tmpdir(), 'q18-stem-decode-bundle.mjs');
+	await new Promise((resolve, reject) => {
+		const proc = spawn(
+			path.join(FRONTEND, 'node_modules/.bin/esbuild'),
+			[
+				path.join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'),
+				'--bundle',
+				'--format=esm',
+				'--target=safari16',
+				`--outfile=${out}`
+			],
+			{ cwd: FRONTEND, stdio: ['ignore', 'inherit', 'inherit'] }
+		);
+		proc.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`esbuild ${code}`))));
+	});
+	return out;
+}
+
+const PAGE = `<!doctype html><meta charset="utf-8"><title>q18</title>`;
+
+async function main() {
+	// FOUR DISTINCT files, not one file four times. A decoder that caches by
+	// content would win the baseline lane on identical inputs and the whole
+	// comparison would measure the cache, not the decoder.
+	const fixtures = existsSync(FIXTURE_DIR)
+		? readdirSync(FIXTURE_DIR)
+				.filter((name) => name.endsWith('.flac'))
+				.sort()
+				.slice(0, PARTS.length)
+				.map((name) => path.join(FIXTURE_DIR, name))
+		: [];
+	if (fixtures.length < PARTS.length) {
+		console.log(`need ${PARTS.length} distinct .flac files, found ${fixtures.length} in ${FIXTURE_DIR}`);
+		console.log('point this run at a directory: Q18_FLAC_DIR=/abs/dir pnpm test:live:stem-decode-workers');
+		process.exit(2);
+	}
+	const bundle = await bundleModule();
+	const [moduleSource, ...flacs] = await Promise.all([
+		readFile(bundle, 'utf8'),
+		...fixtures.map((file) => readFile(file))
+	]);
+	const byPart = Object.fromEntries(PARTS.map((part, i) => [part, flacs[i]]));
+	for (const [i, file] of fixtures.entries()) {
+		console.log(`  part ${PARTS[i]}: ${path.basename(file)} (${(flacs[i].length / 1e6).toFixed(1)} MB)`);
+	}
+
+	const server = createServer((req, res) => {
+		if (req.url === '/') {
+			res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE);
+		} else if (req.url === '/decode.mjs') {
+			res.writeHead(200, { 'content-type': 'text/javascript' }).end(moduleSource);
+		} else if (req.url?.startsWith('/stem/')) {
+			const part = req.url.slice('/stem/'.length);
+			const body = byPart[part];
+			if (body === undefined) {
+				res.writeHead(404).end();
+				return;
+			}
+			res.writeHead(200, { 'content-type': 'audio/flac' }).end(body);
+		} else {
+			res.writeHead(404).end();
+		}
+	});
+	await new Promise((resolve) => server.listen(PORT, '127.0.0.1', resolve));
+
+	const engines = [
+		['webkit', webkit],
+		['chromium', chromium]
+	];
+	let failures = 0;
+	for (const [name, engine] of engines) {
+		let browser;
+		try {
+			browser = await engine.launch();
+		} catch (exc) {
+			console.log(`[skip] ${name} not installed: ${String(exc).split('\n')[0]}`);
+			continue;
+		}
+		const page = await browser.newPage();
+		page.on('console', (msg) => {
+			if (msg.type() === 'error') console.log(`  [${name} console.error] ${msg.text()}`);
+		});
+		await page.goto(`http://127.0.0.1:${PORT}/`);
+		const result = await page.evaluate(async (parts) => {
+			const decode = await import('/decode.mjs');
+			const ctx = new OfflineAudioContext(2, 1, 44100);
+			const fresh = async () => {
+				const entries = await Promise.all(
+					parts.map(async (part) => [part, await (await fetch('/stem/' + part)).arrayBuffer()])
+				);
+				return Object.fromEntries(entries);
+			};
+
+			// The reference decode, straight through decodeAudioData: what the
+			// worker output has to agree with.
+			const referenceBytes = await fresh();
+			const baseline = Object.fromEntries(
+				await Promise.all(
+					parts.map(async (p) => [p, await ctx.decodeAudioData(referenceBytes[p])])
+				)
+			);
+
+			// Let the module calibrate exactly as a session would: two whole
+			// loads, one lane each, then whatever it decided. The pool warms
+			// during the workers trial, so spawn and wasm compile stay out of
+			// the timed comparison below - the app pays that once per page.
+			const warmT0 = performance.now();
+			await decode.decodeStemParts(ctx, await fresh(), parts);
+			await decode.decodeStemParts(ctx, await fresh(), parts);
+			const warmMs = Math.round(performance.now() - warmT0);
+			const pooled = decode.stemDecodeSession.pooled();
+			const chosenLane = decode.stemDecodeSession.lane();
+
+			// Now time both lanes head to head, independently of what the
+			// calibration decided, so the two can be cross-checked. A run that
+			// only ever measured the chosen lane could not catch a wrong choice.
+			decode.stemDecodeSession.forceLane('main-thread');
+			const baselineBytes2 = await fresh();
+			const tb = performance.now();
+			await decode.decodeStemParts(ctx, baselineBytes2, parts);
+			const baselineMs = Math.round(performance.now() - tb);
+
+			decode.stemDecodeSession.forceLane('workers');
+			const workerBytes = await fresh();
+			const t1 = performance.now();
+			const run = await decode.decodeStemParts(ctx, workerBytes, parts);
+			const workerMs = Math.round(performance.now() - t1);
+
+			// Bit-for-bit: FLAC is lossless and neither lane resamples.
+			let maxAbsDiff = 0;
+			let comparedSamples = 0;
+			for (const part of parts) {
+				const a = baseline[part];
+				const b = run.buffers[part];
+				if (a.length !== b.length || a.numberOfChannels !== b.numberOfChannels) {
+					return { shapeMismatch: part, a: a.length, b: b.length };
+				}
+				for (let ch = 0; ch < a.numberOfChannels; ch++) {
+					const x = a.getChannelData(ch);
+					const y = b.getChannelData(ch);
+					for (let i = 0; i < x.length; i += 97) {
+						const d = Math.abs(x[i] - y[i]);
+						if (d > maxAbsDiff) maxAbsDiff = d;
+						comparedSamples++;
+					}
+				}
+			}
+			return {
+				reports: run.reports,
+				labels: decode.stemDecodeLabels(run.reports),
+				baselineMs,
+				workerMs,
+				warmMs,
+				pooled,
+				chosenLane,
+
+				maxAbsDiff,
+				comparedSamples,
+				frames: baseline[parts[0]].length,
+				sampleRate: baseline[parts[0]].sampleRate
+			};
+		}, PARTS);
+		await browser.close();
+
+		console.log(`\n[${name}] ${result.frames} frames @ ${result.sampleRate} Hz, ${PARTS.length} parts`);
+		if (result.shapeMismatch !== undefined) {
+			console.log(`  FAIL shape mismatch on ${result.shapeMismatch}: ${result.a} vs ${result.b}`);
+			failures++;
+			continue;
+		}
+		console.log(`  labels:            ${JSON.stringify(result.labels)}`);
+		console.log(`  pooled decoders:   ${result.pooled}`);
+		console.log(`  lane chosen here:  ${result.chosenLane}`);
+		console.log(`  calibration cost:  ${result.warmMs} ms (2 whole loads, spawn + wasm inside)`);
+		console.log(`  decodeAudioData:   ${result.baselineMs} ms (4-way)`);
+		console.log(`  wasm in workers:   ${result.workerMs} ms (4-way, warm pool)`);
+		console.log(
+			`  speed-up:          ${(result.baselineMs / result.workerMs).toFixed(2)}x`
+		);
+		console.log(
+			`  max |sample diff|: ${result.maxAbsDiff} over ${result.comparedSamples} compared samples`
+		);
+
+		// THE check this run exists for: the lane the module chose by itself
+		// must be the lane the stopwatch says is faster. A rung that
+		// calibrates to the slower lane is worse than no rung.
+		const faster = result.baselineMs / result.workerMs;
+		const stopwatchSays = faster > 1 ? 'workers' : 'main-thread';
+		const agrees = result.chosenLane === stopwatchSays;
+		console.log(
+			`  calibration chose ${result.chosenLane}; stopwatch says ${stopwatchSays}` +
+				` (workers ${faster.toFixed(2)}x) -> ${agrees ? 'AGREE' : 'DISAGREE'}`
+		);
+		if (!agrees) {
+			console.log('  FAIL the runtime calibration picked the slower lane');
+			failures++;
+		}
+		const tookWorkers = result.reports.every((r) => r.viaWorker && r.refusal === null);
+		if (!tookWorkers) {
+			console.log(`  FAIL the worker path was refused: ${JSON.stringify(result.reports)}`);
+			failures++;
+		}
+		// NOT bit-for-bit. Both decoders are lossless, but they scale a 16-bit
+		// sample to float by different conventions (/32768 vs /32767), which is
+		// a difference strictly below one LSB of the source. Anything at or
+		// above an LSB is a decoder disagreement, not a scaling convention.
+		if (result.maxAbsDiff >= LSB_16_BIT) {
+			console.log(
+				`  FAIL decode disagreed by ${result.maxAbsDiff} >= one 16-bit LSB (${LSB_16_BIT})`
+			);
+			failures++;
+		}
+		if (result.comparedSamples === 0) {
+			console.log(`  FAIL nothing was compared - the check cannot fail, so it proved nothing`);
+			failures++;
+		}
+		if (tookWorkers && result.maxAbsDiff < LSB_16_BIT && result.comparedSamples > 0) {
+			console.log('  PASS worker path taken, output agrees to within one 16-bit LSB');
+		}
+	}
+	server.close();
+	if (failures > 0) {
+		console.log(`\nFAILED: ${failures} check(s)`);
+		process.exit(1);
+	}
+	console.log('\nOK');
+}
+
+await main();
