@@ -37,7 +37,8 @@ import { test } from 'node:test';
 /** Modules whose perf rows mean "the operator may be hearing nothing". */
 const AUDIO_OUTPUT_MODULES = [
 	'../../src/lib/rb/audio-output-liveness.ts',
-	'../../src/lib/rb/audio-output-rebind.ts'
+	'../../src/lib/rb/audio-output-rebind.ts',
+	'../../src/lib/rb/master-silence-report.ts'
 ];
 
 const PERF_EVENT_LOG = fileURLToPath(

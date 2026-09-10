@@ -81,15 +81,65 @@ function firstMatch(source, pattern, label) {
 	return m;
 }
 
-test('ChannelStrip.svelte drops FILTER and shrinks TRIM/EQ only in LESS mode', () => {
+// Pin 2917b0eca218 - "Cant currently see filter in LESS mode." FILTER used
+// to be unmounted in LESS (`{#if !less}`) because a single vertical stack
+// could not afford its height. It is now SHRUNK like TRIM and the EQs, and
+// `.strip.less` is a grid that only needs its dial COLUMN to be tall.
+test('ChannelStrip.svelte keeps FILTER in both modes and shrinks every dial in LESS', () => {
 	const src = readFileSync(CHANNEL_STRIP_PATH, 'utf8');
-	assert.match(
+	assert.doesNotMatch(
 		src,
-		/\{#if !less\}\s*<div class="filter-slot">/,
-		'FILTER must be conditionally unmounted in LESS mode (it is an inert stub, not a required dial)'
+		/\{#if !less\}/,
+		'no control may be unmounted by LESS mode any more - the grid makes room for all of them'
 	);
 	assert.match(src, /size=\{trimSize\}/, 'TRIM must be driven by the derived trimSize');
 	assert.match(src, /size=\{eqSize\}/, 'HI/MID/LOW must be driven by the derived eqSize');
+	assert.match(src, /size=\{filterSize\}/, 'FILTER must be driven by the derived filterSize');
+	// EVERY child, not the four the first draft covered. CSS grid auto-places
+	// an unplaced item into the first open cell in DOM order, so with only ONE
+	// `grid-area` missing the layout still looks right by elimination - but
+	// drop two and the earlier child takes the earlier hole. `trim-slot`
+	// precedes `cue-btn` in the markup, so losing both areas silently SWAPS
+	// TRIM and CUE with nothing to catch it. Blinded review, Thu 10 Sep 2026.
+	for (const [name, area] of [
+		['strip-head', 'head'],
+		['cue-btn', 'cue'],
+		['trim-slot', 'trim'],
+		['stem-label', 'stemlabel'],
+		['fader-slot', 'fader'],
+		['eq-stack', 'eq'],
+		['stem-slot', 'stem'],
+		['filter-slot', 'filter']
+	]) {
+		assert.match(
+			src,
+			new RegExp(`\\.strip\\.less \\.${name}\\s*\\{[^}]*grid-area:\\s*${area}`),
+			`.${name} must be placed in the LESS grid`
+		);
+	}
+	// the maintainer asked for the slider and buttons LEFT and RIGHT of the EQs. The
+	// rendered proof is performance-less-mode-mixer-levels.spec.ts; this only
+	// pins the intent so the areas cannot be silently reordered into a stack.
+	const areas = firstMatch(src, /grid-template-areas:\s*([^;]*);/, 'the LESS grid-template-areas');
+	const rows = areas[1].trim().split('\n').map((row) => row.trim().replace(/'/g, '').split(/\s+/));
+	assert.deepEqual(
+		rows,
+		[
+			['head', 'head', 'head'],
+			['cue', 'trim', 'stemlabel'],
+			['fader', 'eq', 'stem'],
+			['fader', 'filter', 'stem']
+		],
+		'the whole LESS grid is the contract, not just the row the EQs sit in'
+	);
+	const dialRow = rows.find((row) => row.includes('eq'));
+	assert.ok(dialRow, 'one grid row must hold the EQ stack');
+	assert.equal(dialRow[0], 'fader', 'the channel fader belongs LEFT of the EQs');
+	assert.equal(dialRow[2], 'stem', 'the STEM buttons belong RIGHT of the EQs');
+	// Every named area is used by exactly one child, so no child can be left
+	// to auto-place into an implicit row.
+	const areaNames = new Set(rows.flat());
+	assert.equal(areaNames.size, 8, 'the LESS grid names exactly eight areas');
 });
 
 test('.strip fixes every non-fader child so a too-short strip overflows visibly instead of squeezing', () => {
@@ -116,12 +166,16 @@ function readSharedStripNumbers() {
 	const captionExtraPx = Number(gapMatch[1]) + Number(captionMatch[1]);
 	const knobBoxPx = (size) => size + captionExtraPx;
 
-	const eqGapMatch = firstMatch(stripSrc, /\.eq-stack\s*\{[^}]*gap:\s*(\d+)px/, '.eq-stack gap');
+	// ANCHORED to the start of a line, here and everywhere else a BASE rule
+	// is read: `.strip.less .eq-stack { grid-area: eq; }` (pin 2917b0eca218)
+	// also contains the text `.eq-stack {`, and an unanchored search would
+	// read the descendant rule's body instead of the base rule's.
+	const eqGapMatch = firstMatch(stripSrc, /^\t\.eq-stack\s*\{[^}]*gap:\s*(\d+)px/m, '.eq-stack gap');
 	const eqGapPx = Number(eqGapMatch[1]);
 
 	const faderMinMatch = firstMatch(
 		stripSrc,
-		/\.fader-slot\s*\{[^}]*min-height:\s*(\d+)px/,
+		/^\t\.fader-slot\s*\{[^}]*min-height:\s*(\d+)px/m,
 		'.fader-slot min-height floor'
 	);
 	const faderMinPx = Number(faderMinMatch[1]);
@@ -204,21 +258,55 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 	const faderMarginPx = lessMarginPx('.fader-slot', 'fader-slot');
 	const stemLabelMarginPx = lessMarginPx('.stem-label', 'stem-label');
 
-	// 7 children survive in LESS (FILTER drops out): ch-num, trim-slot,
-	// eq-stack, cue-btn, fader-slot, stem-label, stem-slot -> 6 flex gaps.
-	const CHILD_COUNT_LESS = 7;
-	const flexGapsTotalPx = (CHILD_COUNT_LESS - 1) * stripFlexGapPx;
+	const filterMarginPx = (() => {
+		const rule = firstMatch(stripSrc, /^\t\.filter-slot\s*\{([^}]*)\}/m, 'a .filter-slot rule');
+		const top = firstMatch(rule[1], /margin-top:\s*(\d+)px/, "filter-slot's margin-top");
+		const bottom = firstMatch(rule[1], /margin-bottom:\s*(\d+)px/, "filter-slot's margin-bottom");
+		return Number(top[1]) + Number(bottom[1]);
+	})();
+	const lessFilterMatch = firstMatch(
+		stripSrc,
+		/const LESS_FILTER_SIZE = (\d+(?:\.\d+)?);/,
+		'LESS_FILTER_SIZE'
+	);
+	const lessFilterSize = Number(lessFilterMatch[1]);
+
+	// Pin 2917b0eca218: `.strip.less` is a GRID, not a flex column, so the
+	// requirement is no longer the SUM of every child - it is the sum of the
+	// grid's four ROW heights, each of which is the tallest item in that row.
+	// That is the whole point of the change: only the dial column has to be
+	// tall, and the fader and STEM columns ride alongside it.
+	//
+	//   'head  head   head'       <- row 1
+	//   'cue   trim   stemlabel'  <- row 2
+	//   'fader eq     stem'       <- row 3   (fader/stem span rows 3-4)
+	//   'fader filter stem'       <- row 4
+	const headRowPx = Math.max(CH_NUM_PX, CAL_CONTROLS_PX);
+	const secondRowPx = Math.max(
+		CUE_BTN_PX + cueMarginPx,
+		knobBoxPx(lessTrimSize) + trimMarginPx,
+		STEM_LABEL_PX + stemLabelMarginPx
+	);
+	const eqRowPx = 3 * knobBoxPx(lessEqSize) + 2 * eqGapPx;
+	const filterRowPx = knobBoxPx(lessFilterSize) + filterMarginPx;
+	const ROW_COUNT_LESS = 4;
+	const rowGapsTotalPx = (ROW_COUNT_LESS - 1) * stripFlexGapPx;
+
+	// The fader and STEM columns span rows 3+4, so they only grow the strip
+	// if their own floors exceed what those two rows already provide. Asserted
+	// rather than assumed: if a future edit makes the fader taller than the
+	// dial column, this arithmetic would silently understate the requirement.
+	const spannedRowsPx = eqRowPx + filterRowPx + stripFlexGapPx;
+	const faderColumnPx = faderMinPx + faderMarginPx;
+	assert.ok(
+		spannedRowsPx >= Math.max(faderColumnPx, STEM_SLOT_PX),
+		`the dial column (${spannedRowsPx}px over rows 3-4) must still be the tallest thing in ` +
+			`the LESS grid - fader needs ${faderColumnPx}px, STEM needs ${STEM_SLOT_PX}px - or ` +
+			'the row heights below stop describing the strip'
+	);
 
 	const stripContentPx =
-		Math.max(CH_NUM_PX, CAL_CONTROLS_PX) +
-		(knobBoxPx(lessTrimSize) + trimMarginPx) +
-		(3 * knobBoxPx(lessEqSize) + 2 * eqGapPx) +
-		(CUE_BTN_PX + cueMarginPx) +
-		(faderMinPx + faderMarginPx) +
-		(STEM_LABEL_PX + stemLabelMarginPx) +
-		STEM_SLOT_PX +
-		flexGapsTotalPx +
-		stripPaddingPx;
+		headRowPx + secondRowPx + eqRowPx + filterRowPx + rowGapsTotalPx + stripPaddingPx;
 
 	const requiredMixerPx = TOGGLE_PX + stripContentPx + LOWER_PX + mixerChromePx;
 
@@ -249,6 +337,22 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 		lessFloorPx,
 		'the documented breakdown total must equal the actual CSS floor, or the comment has drifted'
 	);
+	// Pin 2917b0eca218 closed a hole here: the four terms were only checked
+	// against each other and against the floor, never against what the strip
+	// actually needs. So a strip that got shorter left "strip 296" standing as
+	// a documented fact about nothing while every assertion stayed green -
+	// which is what happened when `.strip.less` became a grid.
+	assert.equal(
+		Number(commentMatch[2]),
+		stripContentPx,
+		`the documented "strip" term (${commentMatch[2]}px) must equal the strip's real derived ` +
+			`LESS content height (${stripContentPx}px)`
+	);
+	assert.equal(
+		Number(commentMatch[4]),
+		mixerChromePx,
+		'the documented "chrome" term must equal the real mixer chrome'
+	);
 });
 
 // Sol P1 finding (comment 3963232872, BLOCKING): MORE mode's strip never
@@ -270,7 +374,11 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 	// The base (non-`.strip.less`) rules are MORE's numbers - `.strip.less`
 	// only ever overrides them for LESS.
 	function baseMarginPx(selector, label, side) {
-		const rule = firstMatch(stripSrc, new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`), `a .${selector} rule`);
+		const rule = firstMatch(
+			stripSrc,
+			new RegExp(`^\\t\\.${selector}\\s*\\{([^}]*)\\}`, 'm'),
+			`a .${selector} rule`
+		);
 		const marginMatch = firstMatch(rule[1], new RegExp(`margin-${side}:\\s*(\\d+)px`), `${label}'s MORE margin`);
 		return Number(marginMatch[1]);
 	}
@@ -280,7 +388,7 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 	const faderMarginPx = baseMarginPx('fader-slot', 'fader-slot', 'bottom');
 	const stemLabelMarginPx = baseMarginPx('stem-label', 'stem-label', 'top');
 
-	const filterSlotRule = firstMatch(stripSrc, /\.filter-slot\s*\{([^}]*)\}/, 'a .filter-slot rule');
+	const filterSlotRule = firstMatch(stripSrc, /^\t\.filter-slot\s*\{([^}]*)\}/m, 'a .filter-slot rule');
 	const filterMarginTopMatch = firstMatch(filterSlotRule[1], /margin-top:\s*(\d+)px/, "filter-slot's margin-top");
 	const filterMarginBottomMatch = firstMatch(
 		filterSlotRule[1],

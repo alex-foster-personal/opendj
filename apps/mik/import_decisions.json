@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "corpus_path": "data/reference/mik",
+  "note": "NATIVE-12 / D7 registry. `decisions` lists the ONLY modules allowed to take anything out of the Mixed In Key reference corpus, and each entry names the document that records its decision. It is EMPTY on purpose: nothing has been imported, and the state the requirement pins is that adding an importer is an edit to this file rather than a side effect of writing a loader. `corpus_path` is the single declaration of where the corpus lives; the code side reads it through apps.mik.reference_guard rather than repeating the literal.",
+  "decisions": []
+}

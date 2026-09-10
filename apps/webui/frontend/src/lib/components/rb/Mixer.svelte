@@ -138,7 +138,20 @@
 	</div>
 	<div class="strips" class:less={deckLayoutLess}>
 		{#each STRIP_ORDER as deck (deck)}
-			<div class="strip-slot" class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}>
+			<!-- `inert`, not just `opacity: 0`. LESS mounts all four strips and
+			     hides 3/4 with opacity plus pointer-events, and NEITHER removes
+			     a descendant from sequential keyboard focus - so every control
+			     in a collapsed strip has always been tabbable and arrow-key
+			     operable while invisible. Pin 2917b0eca218 made that worse by
+			     mounting FILTER in LESS too, but the hole predates it and
+			     covers TRIM, the EQs, CUE, the fader and STEM as well. `inert`
+			     removes the whole subtree from focus AND from the a11y tree,
+			     so it closes all of them at once. Blinded review + Sol P2. -->
+			<div
+				class="strip-slot"
+				class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}
+				inert={deckLayoutLess && (deck === 3 || deck === 4)}
+			>
 				<ChannelStrip
 					deckId={deck}
 					less={deckLayoutLess}

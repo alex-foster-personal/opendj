@@ -217,6 +217,17 @@ class CFG:
     # Frontend tool pins. Python pins live in ops/quality/requirements.txt.
     KNIP: str = "knip@6.32.2"
     JSCPD: str = "jscpd@5.0.15"
+    # Lockfiles are repetitive by construction. jscpd scoring them is not a
+    # duplication finding anyone can act on, and it made committing the
+    # launcher lockfile a CI failure. Class-wide, not the one file that
+    # happened to hurt: the next committed lockfile will be someone else's PR.
+    LOCKFILE_GLOBS: tuple[str, ...] = (
+        "**/pnpm-lock.yaml",
+        "**/package-lock.json",
+        "**/yarn.lock",
+        "**/Cargo.lock",
+        "**/uv.lock",
+    )
     # Paths excluded from size/complexity scoring: vendored, not ours.
     #
     # Third-party source only. "rb_vendor" in a filename is not a licence:
@@ -1062,6 +1073,40 @@ def _eval_frontend() -> list[Metric]:
 # ----- evaluator: size + duplication ---------------------------------------
 
 
+def _jscpd_duplication(apps_root: Path) -> Metric:
+    """Run pinned jscpd over `apps_root` and return the duplication metric.
+
+    Fresh report directory per call, removed after, for the same reason as
+    the deptry report: two concurrent gates must not share a path. A missing
+    JSON report is a broken tool, not a clean tree.
+    """
+    jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
+    try:
+        _pnpm_dlx(
+            CFG.JSCPD,
+            "--reporters", "json", "--output", str(jscpd_dir), "--silent",
+            "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
+            "--ignore", ",".join(CFG.LOCKFILE_GLOBS),
+            str(apps_root),
+            allow_fail=True,
+        )
+        report_path = jscpd_dir / "jscpd-report.json"
+        if not report_path.is_file():
+            raise RuntimeError(
+                f"jscpd produced no JSON report at {report_path}; "
+                "the pinned tool is missing, broken, or the scan root is empty"
+            )
+        report = json.loads(report_path.read_text())
+    finally:
+        shutil.rmtree(jscpd_dir, ignore_errors=True)
+    total = report["statistics"]["total"]
+    percent = round(float(total["percentage"]), 2)
+    clones = int(total["clones"])
+    return Metric(
+        "duplication.percent", percent, "% duplicated lines", f"{clones} clones"
+    )
+
+
 def _eval_size() -> list[Metric]:
     def _measure(files: list[Path], limit: int) -> tuple[int, str, int]:
         sizes = sorted(
@@ -1077,29 +1122,12 @@ def _eval_size() -> list[Metric]:
     py_max, py_worst, py_over = _measure(_python_files(), CFG.PY_FILE_LIMIT)
     fe_max, fe_worst, fe_over = _measure(_frontend_files(), CFG.FE_FILE_LIMIT)
 
-    # Fresh per call AND removed after, both for the reasons on the deptry
-    # report above.
-    jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
-    try:
-        _pnpm_dlx(
-            CFG.JSCPD,
-            "--reporters", "json", "--output", str(jscpd_dir), "--silent",
-            "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
-            str(REPO / "apps"),
-            allow_fail=True,
-        )
-        report = json.loads((jscpd_dir / "jscpd-report.json").read_text())
-    finally:
-        shutil.rmtree(jscpd_dir, ignore_errors=True)
-    percent = round(float(report["statistics"]["total"]["percentage"]), 2)
-    clones = int(report["statistics"]["total"]["clones"])
-
     return [
         Metric("file_size.max_python", py_max, "lines", py_worst),
         Metric("file_size.over_limit_python", py_over, f"files > {CFG.PY_FILE_LIMIT} lines"),
         Metric("file_size.max_frontend", fe_max, "lines", fe_worst),
         Metric("file_size.over_limit_frontend", fe_over, f"files > {CFG.FE_FILE_LIMIT} lines"),
-        Metric("duplication.percent", percent, "% duplicated lines", f"{clones} clones"),
+        _jscpd_duplication(REPO / "apps"),
     ]
 
 

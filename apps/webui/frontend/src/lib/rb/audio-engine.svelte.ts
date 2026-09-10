@@ -91,7 +91,7 @@ import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
-import { notePresentationClock, notePresentationTickFailure, readOutputTimestamp as _readOutputTimestamp } from '$lib/rb/presentation-clock-report';
+import { notePresentationClock, notePresentationTickFailure, readOutputTimestamp as _readOutputTimestamp, resetPresentationClockStall } from '$lib/rb/presentation-clock-report';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -142,6 +142,7 @@ import {
 	quantizeToNearestGridBeat
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import { deckHasRealBeatGrid, effectiveBeatSync, effectiveQuantize, GRID_FEATURE_TIP, gridFeaturesInert, hasRealBeatGrid } from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
@@ -516,7 +517,7 @@ let _masterGain: GainNode | null = null;
 let _masterAnalyser: AnalyserNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
-let _externalMerger: ChannelMergerNode | null = null;
+let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 /**
@@ -675,9 +676,8 @@ function _ensureGraph(): AudioContext {
 	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
 	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
 	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
-	_masterAnalyser = _ctx.createAnalyser();
-	_masterGain.connect(_masterAnalyser);
-	resetMasterSilenceWatch();
+	_masterGain.connect((_masterAnalyser = _ctx.createAnalyser()));
+	resetMasterSilenceWatch(); resetPresentationClockStall();
 	// Silence belt for headless test agents (`?muted=1`): the LAST node before
 	// the destination, so a mute is one gain value and every node upstream --
 	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
@@ -709,6 +709,7 @@ function _ensureGraph(): AudioContext {
 		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
 		_externalMerger.channelInterpretation = 'discrete';
 		_externalMerger.connect(_masterMuteGain);
+		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
 	}
 	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
 	// Post-EQ, pre-fader tap points, one per deck, PLUS one master tap sourced
@@ -1825,7 +1826,7 @@ function _tick(): void {
 			if (observation?.audible || observation?.transport_pending) anyTransport = true;
 		}
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		noteMasterSilence(_masterAnalyser, anyTransport, Date.now());
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());
 		if (anyTransport) noteAudioPresentationTick();
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
@@ -2455,14 +2456,12 @@ async function _synchronizeFollowers(
 			});
 		}
 		for (const item of planned) item.st.sync_error = null;
-		if (planFailed.length > 0) {
-			const skipped = planFailed.map((f) => f.deck).join(',');
-			pushToast(
-				`Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
-				'error', undefined, undefined, {}, `beat-sync-followers:${master}`
-			);
-			for (const f of planFailed) {
-				recordPerfEvent('beat-sync-skip', f.message, f.deck);
+		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
+		// a pure function; the engine only performs the effects it returns.
+		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
+			pushToast(notice.message, notice.kind, undefined, undefined, {}, notice.groupKey);
+			for (const event of notice.events) {
+				recordPerfEvent(event.kind, event.detail, event.deck, notice.kind);
 			}
 		}
 	} catch (error) {
@@ -2773,7 +2772,7 @@ class RbAudioEngine implements AudioEngine {
 		// hand a headless agent its audio back. Only the node is released.
 		attachMasterMuteNode(null);
 		_masterMuteGain = null;
-		_externalMerger = null;
+		_externalMerger = _externalRouteAnalyser = null;
 		_ctx = null;
 		_masterDeck = null;
 		for (const deck of DECK_IDS) {
