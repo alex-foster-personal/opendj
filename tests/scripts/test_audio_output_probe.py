@@ -65,30 +65,63 @@ def _fn(name: str) -> ast.FunctionDef:
 
 
 # ----- the toggle must be observed, not assumed --------------------------
+#
+# Shapes below are what `/api/v1/state/ui-mirror` publishes per deck:
+# `deckTransportClock` (audio-engine.svelte.ts:593) spreads `source`,
+# `desired_revision` and `presented_revision` into `presentation_clock`.
 
 
-def test_a_reached_state_with_a_trusted_clock_counts() -> None:
+def _published(playing: bool, source: str, desired: int = 7, presented: int = 7) -> dict:
+    return {
+        "playing": playing,
+        "source": source,
+        "desired_revision": desired,
+        "presented_revision": presented,
+    }
+
+
+def test_a_playing_deck_presenting_output_counts() -> None:
     """The check must be able to pass, or the probe can never measure anything."""
-    assert probe.transport_reached({"playing": True, "trust": "trusted"}, True) is True
-    assert probe.transport_reached({"playing": False, "trust": "trusted"}, False) is True
+    assert probe.transport_reached(_published(True, "audio_output"), True) is True
+
+
+def test_a_paused_deck_counts_as_paused() -> None:
+    """THE PAUSE HALF, which the mirror's own `trust` label cannot express.
+
+    Every acoustic cycle pauses first. `deckTransportClock` publishes
+    `source: 'paused_cursor'` whenever transport is inactive, and
+    `ui-mirror.ts:64` therefore labels EVERY paused deck `untrusted`, so a
+    confirmation keyed on `trust` waits out its timeout before the first OFF
+    sample and the probe can never measure anything at all.
+    """
+    assert probe.transport_reached(_published(False, "paused_cursor"), False) is True
 
 
 def test_the_wrong_transport_state_does_not_count() -> None:
     """The outage itself: the bus said succeeded and `playing` stayed false."""
-    assert probe.transport_reached({"playing": False, "trust": "trusted"}, True) is False
-    assert probe.transport_reached({"playing": True, "trust": "trusted"}, False) is False
+    assert probe.transport_reached(_published(False, "paused_cursor"), True) is False
+    assert probe.transport_reached(_published(True, "audio_output"), False) is False
 
 
-def test_an_untrusted_presentation_clock_does_not_count() -> None:
+def test_a_lagging_presented_revision_does_not_count() -> None:
     """`playing` can be true while the schedule the listener gets is a revision
-    behind. Sampling there measures the previous state."""
-    assert probe.transport_reached({"playing": True, "trust": "untrusted"}, True) is False
+    behind, so the deck is still sounding the PREVIOUS state."""
+    assert probe.transport_reached(_published(True, "audio_output", 8, 7), True) is False
+    assert probe.transport_reached(_published(False, "paused_cursor", 8, 7), False) is False
+
+
+def test_a_clock_source_that_contradicts_the_direction_does_not_count() -> None:
+    """Each direction has its OWN affirmative evidence, and neither may borrow
+    the other's: a play confirmed by a paused cursor is not sounding."""
+    assert probe.transport_reached(_published(True, "paused_cursor"), True) is False
+    assert probe.transport_reached(_published(False, "audio_output"), False) is False
 
 
 def test_an_absent_reading_does_not_count_as_reached() -> None:
     """An unmeasured state must never render as a good one."""
     assert probe.transport_reached({}, True) is False
-    assert probe.transport_reached({"playing": None, "trust": None}, True) is False
+    assert probe.transport_reached({"playing": None, "source": None}, True) is False
+    assert probe.transport_reached(_published(True, "audio_output", None, None), True) is False
 
 
 def test_set_deck_confirms_through_the_published_state() -> None:

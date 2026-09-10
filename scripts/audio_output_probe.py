@@ -223,10 +223,13 @@ def capture_level(seconds: float, tone_hz: int | None) -> Level:
 def _deck_transport(origin: str, deck: int) -> dict:
     """The ENGINE-PUBLISHED transport state for one deck. Never the command reply.
 
-    `playing` is what the engine says it is doing; `trust` compares the
-    presentation clock's desired revision against its presented one, so a
-    schedule the listener has not been handed yet reads as untrusted rather
-    than as applied.
+    Carries the presentation clock's RAW fields rather than the mirror's
+    `trust` label. `trust` answers "is this deck presenting output on the
+    schedule we asked for", which is the right question for PLAY and the wrong
+    one for PAUSE: `deckTransportClock` publishes `source: 'paused_cursor'`
+    whenever transport is inactive (`audio-engine.svelte.ts:596`) and
+    `ui-mirror.ts:64` therefore labels every paused deck `untrusted`. A pause
+    confirmed on `trust` could never be confirmed at all.
     """
     mirror = _get(origin, "/api/v1/state/ui-mirror")
     published = mirror.get("decks", {}).get(str(deck))
@@ -234,9 +237,12 @@ def _deck_transport(origin: str, deck: int) -> dict:
         raise Unmeasurable(
             f"ui-mirror publishes no deck {deck}; decks={sorted(mirror.get('decks', {}))}"
         )
+    clock = published.get("presentation_clock", {})
     return {
         "playing": published.get("playing"),
-        "trust": published.get("presentation_clock", {}).get("trust"),
+        "source": clock.get("source"),
+        "desired_revision": clock.get("desired_revision"),
+        "presented_revision": clock.get("presented_revision"),
     }
 
 
@@ -246,17 +252,37 @@ TOGGLE_CONFIRM_TIMEOUT_S = 6.0
 TOGGLE_POLL_S = 0.25
 
 
-def transport_reached(published: dict, playing: bool) -> bool:
-    """Whether the ENGINE-PUBLISHED transport shows the requested state, applied.
+# What `deckTransportClock` publishes for each transport state. A deck that is
+# presenting output says `audio_output`; one that is not says `paused_cursor`.
+# Asserting the RIGHT one per direction is what makes a pause confirmable at
+# all, and what stops a play being confirmed by a cursor that is not sounding.
+_SOURCE_FOR = {True: "audio_output", False: "paused_cursor"}
 
-    Both halves are required. `playing` alone can be true while the schedule
-    the listener is actually being handed is a revision behind, which is the
-    state a probe must not sample in: `trust` is `trusted` only when the
-    presentation clock's desired and presented revisions agree.
+
+def transport_reached(published: dict, playing: bool) -> bool:
+    """Whether the ENGINE-PUBLISHED transport shows the requested state, APPLIED.
+
+    Three halves, and each rules out a state the probe must not sample in:
+
+      - `playing` matches what was asked. The command reply cannot establish
+        this; the outage is a 200 `succeeded` with `playing` still false.
+      - the revisions agree. `playing` alone can be true while the schedule the
+        listener is actually being handed is one behind, so the deck is still
+        sounding the PREVIOUS state.
+      - the clock source matches the direction. `audio_output` means output is
+        being presented, `paused_cursor` means it is not, and each is the
+        affirmative evidence for one direction. Requiring `audio_output` for a
+        PAUSE (which the mirror's `trust` label does) can never be satisfied.
 
     A pure decision so it can be exercised without a running engine.
     """
-    return published.get("playing") is playing and published.get("trust") == "trusted"
+    desired, presented = published.get("desired_revision"), published.get("presented_revision")
+    return (
+        published.get("playing") is playing
+        and desired is not None
+        and desired == presented
+        and published.get("source") == _SOURCE_FOR[playing]
+    )
 
 
 def _set_deck(origin: str, deck: int, playing: bool) -> None:
