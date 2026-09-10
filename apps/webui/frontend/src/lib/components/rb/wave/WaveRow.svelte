@@ -560,16 +560,17 @@ estimated from the render clock and may run ahead of what you hear."
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
 	}
-	/* Match mixer CH3/4: gutter/chrome use the same lighter fill as the canvas. */
+	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
+	   mixer's translucent panel-raised mix, because the canvas is opaque. */
 	.rb-waverow.secondary {
-		background: #1a1f28;
+		background: var(--rb-waverow-secondary);
 	}
 	.rb-waverow.deck-focus {
 		background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 	}
 	.rb-waverow.secondary.deck-focus {
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, #1a1f28);
+		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
 	}
 	.canvas-wrap {
 		position: relative;

@@ -7,6 +7,7 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const themePath = path.join(__dirname, '../../src/lib/rb/theme.css');
 const waveRowPath = path.join(__dirname, '../../src/lib/components/rb/wave/WaveRow.svelte');
+const renderPath = path.join(__dirname, '../../src/lib/components/rb/wave/render.ts');
 
 /**
  * pin e585d3b67f4d: "the title below it is too loud (full white font) and too
@@ -64,14 +65,41 @@ function contrastRatio(fg, bg) {
 	return (light + 0.05) / (dark + 0.05);
 }
 
+/** Background declaration for one exact selector in WaveRow.svelte. */
+function backgroundOf(css, selector) {
+	const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const match = new RegExp(`${escaped}\\s*\\{[^}]*?background:\\s*([^;]+);`).exec(css);
+	assert.ok(match, `WaveRow must still declare ${selector} background`);
+	return match[1].trim();
+}
+
 test('the dim token clears the 4.5:1 AA floor on every surface this title renders on', () => {
 	const themeCss = readFileSync(themePath, 'utf8');
-	// The one background in play here that is NOT a token: decks 3/4 paint
-	// their whole row, gutter included, with a literal hex in WaveRow.svelte.
-	const secondaryRow = readFileSync(waveRowPath, 'utf8').match(
-		/\.rb-waverow\.secondary\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/
+	const waveRowCss = readFileSync(waveRowPath, 'utf8');
+	for (const selector of ['.rb-waverow.secondary', '.rb-waverow.secondary.deck-focus']) {
+		const background = backgroundOf(waveRowCss, selector);
+		assert.match(
+			background,
+			/var\(--rb-waverow-secondary\)/,
+			`${selector} must use var(--rb-waverow-secondary), got ${background}`
+		);
+		assert.doesNotMatch(
+			background,
+			/#[0-9a-fA-F]{6}/,
+			`${selector} must not keep a hardcoded #RRGGBB fill, got ${background}`
+		);
+	}
+
+	const renderSrc = readFileSync(renderPath, 'utf8');
+	const fnStart = renderSrc.indexOf('export function resolvePaintPalette');
+	assert.ok(fnStart !== -1, 'resolvePaintPalette must still exist');
+	const nextExport = renderSrc.indexOf('\nexport function', fnStart + 1);
+	const fnChunk = renderSrc.slice(fnStart, nextExport === -1 ? undefined : nextExport);
+	assert.doesNotMatch(
+		fnChunk,
+		/#1a1f28/i,
+		'resolvePaintPalette must not hardcode the dark secondary-row hex'
 	);
-	assert.ok(secondaryRow !== null, 'WaveRow must still declare the secondary-row fill');
 
 	const dark = paletteFor(themeCss, '.perf-root {');
 	const light = paletteFor(themeCss, "html[data-theme='light'] .perf-root {");
@@ -79,19 +107,12 @@ test('the dim token clears the 4.5:1 AA floor on every surface this title render
 		['dark --rb-bg', dark['--rb-text-dim'], dark['--rb-bg']],
 		['dark --rb-panel', dark['--rb-text-dim'], dark['--rb-panel']],
 		['dark --rb-panel-raised', dark['--rb-text-dim'], dark['--rb-panel-raised']],
-		['dark deck 3/4 row', dark['--rb-text-dim'], secondaryRow[1]],
+		['dark deck 3/4 row', dark['--rb-text-dim'], dark['--rb-waverow-secondary']],
 		['light --rb-bg', light['--rb-text-dim'], light['--rb-bg']],
 		['light --rb-panel', light['--rb-text-dim'], light['--rb-panel']],
-		['light --rb-panel-raised', light['--rb-text-dim'], light['--rb-panel-raised']]
-		// DELIBERATELY NOT LISTED: light theme on the deck 3/4 row. That row's
-		// fill is a hardcoded dark hex with no light-theme override, so this
-		// title measures 2.31:1 there - a real, PRE-EXISTING AA failure that
-		// belongs to WaveRow's palette, not to this title's colour. Listing it
-		// would make this test red for a defect it cannot fix; omitting it
-		// silently would hide it. It is tracked as issue #1722, and the
-		// number is recorded here so nobody has to rediscover it: before the
-		// dim token this same cell measured 1.07:1, so this change improved it
-		// 2.2x without clearing the floor.
+		['light --rb-panel-raised', light['--rb-text-dim'], light['--rb-panel-raised']],
+		['light deck 3/4 row', light['--rb-text-dim'], light['--rb-waverow-secondary']],
+		['light deck 3/4 row primary', light['--rb-text'], light['--rb-waverow-secondary']]
 	];
 	for (const [name, fg, bg] of surfaces) {
 		assert.ok(fg !== undefined && bg !== undefined, `missing colours for ${name}`);
