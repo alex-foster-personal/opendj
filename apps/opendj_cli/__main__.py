@@ -55,10 +55,12 @@ from apps.opendj_cli.confirm import (
 from apps.opendj_cli.orders import (
     SINGLE,
     Group,
+    clock_beat_s,
     parse_script,
     ramp,
     ramp_deadline_s,
     single,
+    slowed_since,
 )
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
 from apps.opendj_cli.verbs import (
@@ -216,28 +218,28 @@ def _run_state(args: argparse.Namespace, origin: EngineOrigin) -> int:
     return EXIT_CONFIRMED
 
 
-def _run_script(args: argparse.Namespace, origin: EngineOrigin, items: Sequence[str]) -> int:
-    groups = parse_script(items)
-    orders = [(group, group.order()) for group in groups]
-    return _dispatch(
-        args,
-        origin,
-        orders,
-    )
+def _plan(
+    args: argparse.Namespace, head: str, rest: Sequence[str]
+) -> tuple[list[tuple[Group, dict[str, Any]]], dict[str, Any] | None]:
+    """Read the invocation into orders, touching nothing outside this process.
 
-
-def _run_invocation(args: argparse.Namespace, origin: EngineOrigin, tokens: Sequence[str]) -> int:
-    invocation = parse_invocation(tokens)
+    Deliberately separate from dispatch, and run BEFORE the engine is resolved.
+    `opendj frobnicate` with the app closed used to exit 2 (engine not running),
+    so a typo was indistinguishable from a stopped app and no caller could
+    check a command's syntax offline. What the CLI can answer on its own it
+    answers on its own.
+    """
+    if head == _SCRIPT_COMMAND:
+        groups = parse_script(rest)
+        return [(group, group.order()) for group in groups], None
+    invocation = parse_invocation(args.invocation)
     if args.over is None and (args.anchor is not None or args.clock is not None):
         raise InvocationError("--anchor and --clock only mean something with --over")
-    over = None
-    if args.over is None:
-        order = single(invocation)
-    else:
-        over = parse_duration(args.over, anchor=args.anchor, clock=_clock(args.clock))
-        order = ramp(invocation, over)
     group = Group(kind=SINGLE, invocations=(invocation,))
-    return _dispatch(args, origin, [(group, order)], over=over)
+    if args.over is None:
+        return [(group, single(invocation))], None
+    over = parse_duration(args.over, anchor=args.anchor, clock=_clock(args.clock))
+    return [(group, ramp(invocation, over))], over
 
 
 def _clock(raw: str | None) -> int | str | None:
@@ -390,6 +392,7 @@ def _dispatch(
     over: dict[str, Any] | None = None,
 ) -> int:
     client = EngineClient(origin=origin, timeout_s=args.timeout)
+    beat_s: float | None = None
     try:
         # The opening mirror read proves a page is there AND supplies the grid.
         # It runs on its own short timeout, so reading it before the order
@@ -400,8 +403,13 @@ def _dispatch(
             # The page holds a ramp order open for the ramp's whole duration,
             # so the deadline that guards against a WEDGED page must not fire
             # during a working one.
+            beat_s = clock_beat_s(over, mirror)
             client.timeout_s = ramp_deadline_s(over, args.timeout, mirror)
         run = _post_all(client, orders, args.settle)
+    except OrderTimedOut as error:
+        return _fail(
+            args, "order_timeout", _timeout_message(client, error, over, beat_s), EXIT_TIMEOUT
+        )
     except _REFUSALS as error:
         return _refusal(args, error)
 
@@ -416,6 +424,9 @@ def _dispatch(
         # raises it above --timeout, so an agent can see the deadline it
         # actually got rather than infer it.
         "request_timeout_s": client.timeout_s,
+        # The tempo that deadline was sized against, so an agent can see WHY it
+        # is the length it is, and notice when the clock has moved since.
+        "ramp_clock_bpm": None if beat_s is None else 60.0 / beat_s,
     }
     if args.json:
         print(json.dumps(document, indent=2, sort_keys=True))
@@ -426,6 +437,36 @@ def _dispatch(
     if state == "unconfirmed":
         return EXIT_UNCONFIRMED
     return EXIT_CONFIRMED
+
+
+def _timeout_message(
+    client: EngineClient,
+    error: OrderTimedOut,
+    over: dict[str, Any] | None,
+    beat_s: float | None,
+) -> str:
+    """The timeout, plus the reason for it when the CLI can name one.
+
+    A deadline sized off the grid is sized off the grid AT DISPATCH, and a deck
+    slowed after that travels the same musical distance in more wall time. The
+    CLI cannot extend a request already in flight (`POST /api/v1/commands` is
+    held open by the engine until the page answers, and there is no
+    order-status route to poll), so the deadline stays a snapshot. What it can
+    do is stop reporting a slowed clock as though the page were wedged: those
+    demand opposite responses, and only one of them is fixed by a longer
+    --timeout.
+    """
+    message = str(error)
+    if over is None or beat_s is None:
+        return message
+    try:
+        mirror = client.mirror()
+    except _REFUSALS:
+        # The timeout is the finding; a second failure reading the mirror must
+        # not replace it with a different error.
+        return message
+    slowed = slowed_since(over, beat_s, mirror)
+    return message if slowed is None else f"{message}. {slowed}"
 
 
 def _settle(
@@ -567,12 +608,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_CONFIRMED
     try:
         head, rest = _head(args.invocation)
-        origin = resolve_origin(args.lock)
         if head == _STATE_COMMAND:
-            return _run_state(args, origin)
-        if head == _SCRIPT_COMMAND:
-            return _run_script(args, origin, rest)
-        return _run_invocation(args, origin, args.invocation)
+            return _run_state(args, resolve_origin(args.lock))
+        orders, over = _plan(args, head, rest)
+        return _dispatch(args, resolve_origin(args.lock), orders, over)
     except InvocationError as error:
         return _fail(args, "usage", str(error), EXIT_FAILED)
     except EngineNotRunning as error:

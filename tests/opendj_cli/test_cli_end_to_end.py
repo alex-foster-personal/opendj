@@ -27,9 +27,11 @@ of the same routes the browser polls.
 """
 from __future__ import annotations
 
+import copy
 import importlib
 import json
 import socket
+import threading
 import time
 import tomllib
 from collections.abc import Callable
@@ -47,8 +49,8 @@ from apps.opendj_cli import (
     EXIT_UNCONFIRMED,
 )
 from apps.opendj_cli.__main__ import main
-from apps.opendj_cli.orders import ramp_deadline_s
-from apps.opendj_cli.verbs import InvocationError
+from apps.opendj_cli.orders import ramp_deadline_s, slowed_since
+from apps.opendj_cli.verbs import InvocationError, parse_duration
 from tests.opendj_cli.conftest import Engine, PerformancePage, blank_mirror
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1258,3 +1260,237 @@ def test_a_script_every_group_of_which_affirms_is_still_confirmed(
         page.stop()
 
     assert document["verdict"] == "confirmed"
+
+
+# ----- what the CLI can answer alone, it answers alone ---------------------
+
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        ["frobnicate"],
+        ["beat_loop", "1", "nope"],
+        ["play", "9"],
+        ["--over", "infms", "eq", "1", "low", "0.2"],
+    ],
+)
+def test_a_malformed_command_is_a_usage_error_even_with_no_engine(
+    tokens: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exit 1, not 2, because the engine has nothing to do with a typo.
+
+    `resolve_origin` ran BEFORE the invocation was read, so with the app closed
+    a misspelled verb came back as `engine_not_running`. That makes a typo
+    indistinguishable from a stopped app and stops a caller checking a
+    command's syntax offline, which is exactly what an agent wants to do before
+    it dispatches anything.
+    """
+    monkeypatch.setenv("OPENDJ_LIVE_LOCK_PATH", str(tmp_path / "absent" / ".engine.lock"))
+
+    assert main(tokens) == EXIT_FAILED
+
+    captured = capsys.readouterr()
+    assert "opendj:" in captured.err
+    assert "engine" not in captured.err.lower(), "a typo was reported as an environment fault"
+
+
+def test_a_well_formed_command_with_no_engine_still_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: moving the parse earlier must not swallow the exit-2 case.
+
+    Exit 2 and the lock path it checked are the load-bearing part of the
+    contract for a VALID command, and a fix that reported usage for everything
+    would satisfy the report above just as well.
+    """
+    missing = tmp_path / "absent" / ".engine.lock"
+    monkeypatch.setenv("OPENDJ_LIVE_LOCK_PATH", str(missing))
+
+    assert main(["play", "1"]) == EXIT_NO_ENGINE
+    assert str(missing) in capsys.readouterr().err
+
+
+# ----- a duration magnitude must be a number time can reach ----------------
+
+@pytest.mark.parametrize("raw", ["infms", "1e309ms", "-infms", "nanms", "infbeats"])
+def test_a_duration_that_is_not_a_finite_number_is_refused(raw: str) -> None:
+    """`--over infms` became an INFINITE request deadline.
+
+    The same never-expiring wait `--settle nan` produced, reached by another
+    road, and my reply on that thread wrongly said this one was already closed.
+    It was not: `nan` was refused only because `not nan > 0` happens to be True,
+    which named the wrong problem, and `inf` was not refused at all on the `ms`
+    path because `is_integer()` never runs there.
+    """
+    with pytest.raises(InvocationError, match="finite"):
+        parse_duration(raw, anchor=None, clock=None)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("500ms", {"unit": "ms", "n": 500.0}),
+        ("0.5ms", {"unit": "ms", "n": 0.5}),
+        ("32bars", {"unit": "bars", "n": 32}),
+        ("1e3ms", {"unit": "ms", "n": 1000.0}),
+    ],
+)
+def test_a_finite_duration_is_still_read_exactly_as_before(
+    raw: str, expected: dict
+) -> None:
+    """The control: the finiteness check must not narrow what a duration accepts.
+
+    `ms` deliberately keeps fractional and exponent forms; only the beat units
+    require whole numbers, and that rule is unchanged.
+    """
+    assert parse_duration(raw, anchor=None, clock=None) == expected
+
+
+# ----- a slowed clock is not a wedged page ---------------------------------
+
+def test_a_ramp_that_times_out_on_a_slowed_clock_says_so(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The deadline is a snapshot, so at least say when the snapshot went stale.
+
+    A deck slowed after dispatch travels the same musical distance in more wall
+    time, and the CLI cannot extend a request already in flight: the engine
+    holds `POST /api/v1/commands` open until the page answers and exposes no
+    order-status route to poll. What it must not do is report that as a wedged
+    page, because the two demand opposite responses and only one of them is
+    fixed by a longer --timeout.
+
+    This test costs about ten seconds of wall clock, and cannot cost less: the
+    ramp margin is ten seconds, so any deadline sized off a real grid is at
+    least that long. It is the only test here that waits out a real timeout.
+    """
+
+    page = engine.page()
+    page.mirror["master_deck"] = 1
+    page.mirror["decks"]["1"] |= {"playing": True, "effective_bpm": 600.0}
+    page.start()
+    # Wedge it: the mirror stays registered, nothing will ever claim the order.
+    page._running = False
+    if page._thread is not None:
+        page._thread.join(timeout=5)
+    slowed = copy.deepcopy(page.mirror)
+    slowed["decks"]["1"]["effective_bpm"] = 60.0
+    changer = threading.Timer(
+        1.0,
+        lambda: httpx.put(
+            f"{engine.base_url}/api/v1/state/ui-mirror", json=slowed, timeout=5.0
+        ),
+    )
+    changer.start()
+    try:
+        argv = _argv(engine, "--timeout", "0.5", "eq", "1", "low", "0.2", "--over", "1beats")
+        assert main(argv) == EXIT_TIMEOUT
+    finally:
+        changer.cancel()
+        page.stop()
+
+    error = capsys.readouterr().err
+    assert "SLOWED" in error
+    assert "600 BPM then, 60 BPM now" in error
+    assert "--timeout" in error
+
+
+def test_a_timeout_with_no_slowdown_is_reported_plainly(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control, and the overshoot: not every timeout is a slowed clock.
+
+    A wedged page with no grid to size against keeps the --timeout floor and
+    must still read as a plain timeout. A fix that appended the slowdown
+    sentence to every ramp timeout would satisfy the report and mislead in the
+    commoner case.
+    """
+
+    page = engine.page()
+    page.mirror["master_deck"] = None
+    page.start()
+    page._running = False
+    if page._thread is not None:
+        page._thread.join(timeout=5)
+    try:
+        argv = _argv(engine, "--timeout", "0.5", "eq", "1", "low", "0.2", "--over", "32bars")
+        assert main(argv) == EXIT_TIMEOUT
+    finally:
+        page.stop()
+
+    error = capsys.readouterr().err
+    assert "did not answer within" in error
+    assert "SLOWED" not in error
+
+
+def test_the_json_document_names_the_tempo_the_deadline_was_sized_at(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An agent should not have to infer WHY its deadline is the length it is.
+
+    `request_timeout_s` says how long; `ramp_clock_bpm` says what that was
+    computed from, which is also what a later mirror read is compared against.
+    """
+
+    page = engine.page()
+    page.mirror["master_deck"] = 1
+    page.mirror["decks"]["1"] |= {"playing": True, "effective_bpm": 96.0}
+    page.start()
+    try:
+        _await_mirror(
+            engine, lambda m: m["decks"]["1"]["effective_bpm"] == 96.0, "the 96 BPM master"
+        )
+        argv = _argv(
+            engine, "--json", "--timeout", "1", "eq", "1", "low", "0.2", "--over", "4bars"
+        )
+        assert main(argv) == EXIT_CONFIRMED
+        ramped = json.loads(capsys.readouterr().out)
+        assert main(_argv(engine, "--json", "eq", "1", "low", "0.3")) == EXIT_CONFIRMED
+        plain = json.loads(capsys.readouterr().out)
+    finally:
+        page.stop()
+
+    assert ramped["ramp_clock_bpm"] == pytest.approx(96.0)
+    assert ramped["request_timeout_s"] == pytest.approx(16 * (60.0 / 96.0) + 10.0)
+    # The control: a command with no ramp has no ramp clock, and must say so
+    # rather than reporting a tempo it never used.
+    assert plain["ramp_clock_bpm"] is None
+
+
+@pytest.mark.parametrize(
+    ("sized_at_bpm", "now_bpm", "expected"),
+    [
+        (120.0, 60.0, True),    # slowed: the deadline is now too short
+        (120.0, 120.0, False),  # unchanged: a wedged page, not a slowed clock
+        (120.0, 174.0, False),  # sped up: the deadline is if anything generous
+        (120.0, None, False),   # the mirror can no longer answer
+    ],
+)
+def test_only_a_slowdown_blames_the_clock_for_a_timeout(
+    sized_at_bpm: float, now_bpm: float | None, expected: bool
+) -> None:
+    """The overshoot control, and the reason this decision is a pure function.
+
+    My first cut kept the comparison inside the message builder, and the only
+    control I had covered the case where no tempo was ever read. Mutating the
+    guard to blame the clock for EVERY ramp timeout left the suite green,
+    because that control returned before ever reaching the guard. A test that
+    cannot fail for the reason under test is not a control.
+    """
+    sentence = slowed_since(
+        {"unit": "bars", "n": 32}, 60.0 / sized_at_bpm, _grid(now_bpm)
+    )
+
+    assert (sentence is not None) is expected
+    if expected:
+        assert sentence is not None
+        assert "120 BPM then, 60 BPM now" in sentence
+
+
+def test_a_stopped_clock_does_not_blame_a_timeout_on_a_slowdown() -> None:
+    """The other way the mirror stops answering: the deck was paused.
+
+    A stopped clock reads as unmeasurable, not as infinitely slow, so it must
+    not produce the sentence either.
+    """
+    assert slowed_since({"unit": "bars", "n": 32}, 0.5, _grid(60.0, playing=False)) is None

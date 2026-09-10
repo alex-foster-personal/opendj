@@ -29,6 +29,7 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -241,6 +242,12 @@ def test_a_codesign_failure_is_never_reported_as_success(tmp_path: Path) -> None
 #   -> broken.
 # - if a TMPDIR containing an apostrophe breaks the cleanup, the path is being
 #   re-parsed as code somewhere it should be read as data -> broken.
+# - if a temp archive left by a failed run blocks the next notarization, every
+#   later signed build on that host dies at mkstemp "File exists" -> broken.
+# - if `die` mid-notarization leaves the temp archive behind, an 83MB zip leaks
+#   per failure and (with a fixed name) poisons the next run -> broken.
+# - if any mktemp template carries characters after its X run, BSD mktemp
+#   treats it as a literal name -> broken.
 
 # The declaration line matters as much as the trap line: it is `local` that
 # makes the name vanish before the second firing. A harness that lifts only the
@@ -267,10 +274,10 @@ INTERPOLATED_SETUP = """    local zip out started elapsed
 _TRAP_HARNESS = """#!/bin/bash
 set -euo pipefail
 export TMPDIR={tmpdir}
-NOTARY_APP_ZIP=""
+NOTARY_APP_DIR=""
 cmd_notarize_app() {{
 {setup}
-    echo NOTARIZED
+{body}
 }}
 main() {{
     cmd_notarize_app
@@ -312,14 +319,23 @@ def _shipped_notarize_setup() -> str:
     assert len(trap) == 1, f"expected one RETURN trap in cmd_notarize_app, found {trap}"
     decl = [i for i, line in enumerate(lines[: alloc[0]]) if line.strip().startswith("local ")]
     start = decl[-1] if decl else alloc[0]
-    block = [line for line in lines[start : trap[0] + 1] if not line.strip().startswith("#")]
+    # Carry any trap lines straight after the RETURN one (the EXIT trap that
+    # cleans up after `die`), so the harness runs every cleanup the script arms.
+    end = trap[0] + 1
+    while end < len(lines) and lines[end].strip().startswith("trap "):
+        end += 1
+    block = [line for line in lines[start:end] if not line.strip().startswith("#")]
     return "\n".join(block)
 
 
-def _run_trap_harness(setup: str, tmpdir: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+def _run_trap_harness(
+    setup: str, tmpdir: Path, tmp_path: Path, body: str = "    echo NOTARIZED"
+) -> subprocess.CompletedProcess[str]:
     tmpdir.mkdir(parents=True, exist_ok=True)
     script = tmp_path / "harness.sh"
-    script.write_text(_TRAP_HARNESS.format(tmpdir=shlex.quote(str(tmpdir)), setup=setup))
+    script.write_text(
+        _TRAP_HARNESS.format(tmpdir=shlex.quote(str(tmpdir)), setup=setup, body=body)
+    )
     script.chmod(0o755)
     return subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, check=False)
 
@@ -407,3 +423,85 @@ def test_an_apostrophe_in_tmpdir_does_not_break_the_cleanup(tmp_path: Path) -> N
     assert "REACHED-END" in result.stdout, combined
     leftover = list(quoted_tmpdir.glob(TEMP_ARCHIVE_GLOB))
     assert leftover == [], f"the temp archive survived the trap: {leftover}"
+
+
+# The literal name the pre-fix template produced on macOS, every single time.
+PRE_FIX_LITERAL_ARCHIVE = "opendj-notary-app.XXXXXX.zip"
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_a_stale_archive_from_a_failed_run_does_not_block_the_next(tmp_path: Path) -> None:
+    """Hit live on silver Thu 10 Sep 2026: one failed submission, then every
+    signed build died at `mkstemp failed ... File exists` 3 minutes in."""
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    (tmpdir / PRE_FIX_LITERAL_ARCHIVE).write_text("left by a failed run\n")
+
+    control = _run_trap_harness(PRE_FIX_SETUP, tmpdir, tmp_path)
+    assert control.returncode != 0, "the pre-fix template coped with a stale file"
+    assert "File exists" in control.stderr, control.stderr
+
+    result = _run_trap_harness(_shipped_notarize_setup(), tmpdir, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "REACHED-END" in result.stdout
+
+
+@pytest.mark.requirement("INSTALL-04")
+@needs_system_bash_3
+def test_a_die_mid_notarization_still_deletes_the_temp_archive(tmp_path: Path) -> None:
+    """`die` exits, and an exit never fires a RETURN trap."""
+    dies = "    touch \"${NOTARY_APP_DIR:-$zip}\"/app.zip 2>/dev/null || true; exit 1"
+
+    control_tmp = tmp_path / "control"
+    control = _run_trap_harness(PRE_FIX_SETUP, control_tmp, tmp_path, body="    exit 1")
+    assert control.returncode == 1
+    assert list(control_tmp.glob(TEMP_ARCHIVE_GLOB)) != [], "control leaked nothing"
+
+    tmpdir = tmp_path / "tmp"
+    result = _run_trap_harness(_shipped_notarize_setup(), tmpdir, tmp_path, body=dies)
+    assert result.returncode == 1, result.stdout + result.stderr
+    leftover = list(tmpdir.glob(TEMP_ARCHIVE_GLOB))
+    assert leftover == [], f"die left the temp archive behind: {leftover}"
+
+
+# A template whose X run is followed by anything before the closing quote.
+SUFFIXED_MKTEMP = re.compile(r"mktemp\b[^\n]*?X{3,}[^X\s\"')/]+[\"']")
+
+
+def test_the_suffixed_template_detector_fires_on_the_known_bad_shapes() -> None:
+    """Positive control for the invariant below: it must be able to say no."""
+    assert SUFFIXED_MKTEMP.search('zip=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")')
+    assert SUFFIXED_MKTEMP.search('m="$(mktemp "${TMPDIR:-/tmp}/opendj-latest.XXXXXX.json")"')
+    assert not SUFFIXED_MKTEMP.search('d=$(mktemp -d "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX")')
+    assert not SUFFIXED_MKTEMP.search("mount=$(mktemp -d /tmp/opendj-dmg-verify.XXXXXX)")
+
+
+@needs_system_bash_3
+def test_bsd_mktemp_really_does_not_randomize_a_suffixed_template(tmp_path: Path) -> None:
+    """Instrument check: the invariant below guards a real macOS behavior."""
+    template = str(tmp_path / "probe.XXXXXX.zip")
+    first = subprocess.run(["mktemp", template], capture_output=True, text=True, check=True)
+    assert Path(first.stdout.strip()).name == "probe.XXXXXX.zip"
+    second = subprocess.run(["mktemp", template], capture_output=True, text=True, check=False)
+    assert second.returncode != 0 and "File exists" in second.stderr
+
+
+def test_no_shell_mktemp_template_carries_a_suffix_after_its_xs() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "*.sh", "justfile", "**/justfile"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert len(tracked) > 20, f"scanned implausibly few files: {tracked}"
+    hits = [
+        f"{path}:{number}: {line.strip()}"
+        for path in tracked
+        for number, line in enumerate(
+            (REPO_ROOT / path).read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        )
+        if SUFFIXED_MKTEMP.search(line)
+    ]
+    assert hits == [], "\n".join(hits)
