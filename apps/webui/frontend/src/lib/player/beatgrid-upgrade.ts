@@ -128,7 +128,25 @@ export async function upgradeDeckBeatgrid(
 	const settleFromAnlzRefetch = async (): Promise<void> => {
 		const refreshed = await time('fetchAnlzRefetch', fetchAnlz(stableId, undefined, true));
 		if (isStale()) return;
-		if (hasAnlzBeatgrid(refreshed)) return await settle(true, publishGrid(refreshed));
+		if (hasAnlzBeatgrid(refreshed)) {
+			return await settle(true, () => {
+				// publish itself can run much later than this point (see
+				// publishGrid's own comment above): onSettled queues it behind
+				// whatever else already holds the deck's scoped command slot,
+				// and a source switch can land in that window. /anlz resolves
+				// `beatgrid_source` server-side AT FETCH TIME
+				// (rb_assets.py `_resolve_beatgrid_source`), so `refreshed` is
+				// only a valid answer for the source that was live when this
+				// fetch was issued - re-checking against the LIVE source at
+				// publish time is required here too, the same as the fallback
+				// path below, or a switch that lands in this window merges a
+				// grid stamped under the OLD source into a payload that by
+				// then belongs to the new one (discussion_r3976638762 P1
+				// BLOCKING).
+				if (analysisSourceState.features.beatgrid !== refreshed.beatgrid_source) return;
+				publishGrid(refreshed)();
+			});
+		}
 		return await settle(false);
 	};
 	try {
@@ -179,10 +197,10 @@ export async function upgradeDeckBeatgrid(
 		// above at deferral time - re-check it again at the moment of the
 		// actual write, or a switch that arrives between deferral and
 		// publication still lands the OWN fallback grid it raced against
-		// (discussion_r3973991956 P1 BLOCKING). Only this fallback-derived
-		// publish needs the source check: settleFromAnlzRefetch's own
-		// publishGrid call above wants ANLZ's real grid whichever source is
-		// effective, since a vendor mapping landing is not source-dependent.
+		// (discussion_r3973991956 P1 BLOCKING). settleFromAnlzRefetch's own
+		// publish thunk above carries the analogous check against
+		// `refreshed.beatgrid_source`, since /anlz's grid IS source-dependent
+		// even though a vendor mapping landing is not.
 		await settle(true, () => {
 			if (analysisSourceState.features.beatgrid !== 'own') return;
 			publishGrid(fallbackAnlz)();

@@ -172,6 +172,13 @@ function emptyAnlz() {
 		points: 38400,
 		waveform: { kind: 'mono', preview: { ...bands }, detail: { ...bands } },
 		beatgrid: { beat_count: 0, beats: [] },
+		// The real backend stamps this on EVERY /anlz response, unconditionally
+		// (rb_assets.py `_resolve_beatgrid_source`, called on every branch of
+		// `get_track_anlz`) - reading the live toggle at call time, same as the
+		// production route reads it at request time, keeps this fixture honest
+		// for the pre-publish source-revalidation check in beatgrid-upgrade.ts
+		// (discussion_r3976638762 P1 BLOCKING).
+		beatgrid_source: upgrade.analysisSourceState.features.beatgrid,
 		cues: [],
 		phrases: [],
 		vocals: { status: 'not_analyzed' }
