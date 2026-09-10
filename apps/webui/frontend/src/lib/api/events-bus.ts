@@ -66,8 +66,12 @@ export type ConnectionState = 'connecting' | 'open' | 'closed';
 
 /** Why the bus is telling subscribers to throw away what they have.
  * `slow-consumer` is distinguished from `gap` because it means THIS client was
- * too slow, which is actionable in a way that a server restart is not. */
-export type ResyncReason = 'gap' | 'reconnect' | 'slow-consumer' | 'malformed';
+ * too slow, which is actionable in a way that a server restart is not.
+ * `initial-connect` is distinguished from `reconnect` for the same reason:
+ * both mean "something might have changed since the last time you asked",
+ * but only one of them follows a period where this client had a live
+ * connection at all. */
+export type ResyncReason = 'gap' | 'reconnect' | 'slow-consumer' | 'malformed' | 'initial-connect';
 
 export interface EventEnvelope {
 	topic: string;
@@ -179,8 +183,16 @@ let _socketFactory: ((url: string) => WebSocketLike) | null = null;
 let _scheduler: Scheduler | null = null;
 let _retryDelayMs = BACKOFF_BASE_MS;
 let _retryTimer: number | null = null;
-/** False until the first successful open, so the first connect is not reported
- * as a reconnect (nothing was missed before there was a connection). */
+/** False until the first successful open, so a resync fired there is reported
+ * as `initial-connect` rather than `reconnect` (see `ResyncReason`). Both
+ * fire a resync: the socket connects asynchronously, after a capability-probe
+ * round trip, well after any boot-time HTTP call a consumer already made, so
+ * a change landing in that window is exactly as invisible as a reconnect
+ * gap. PR #1656 review round 5 found two independent consumers (a cached
+ * health read in api.ts, a library refresh trigger in BrowserPanel.svelte)
+ * that had each separately discovered this gap and worked around it with
+ * their own extra subscription; fixed at the source instead so every current
+ * and future `subscribeResync` consumer gets it for free. */
 let _hasConnected = false;
 /** Set while `disconnect()` is tearing down, so the close handler does not
  * schedule a reconnect for a socket we closed on purpose. */
@@ -467,11 +479,11 @@ function _open(): void {
 		if (_socket !== socket) return;
 		_retryDelayMs = BACKOFF_BASE_MS;
 		_setState('open');
-		if (_hasConnected) {
-			// Anything published while we were away is gone: no replay, so the
-			// only sound assumption is that we missed something.
-			_fireResync('reconnect');
-		}
+		// Anything published before this open is gone: no replay, so the only
+		// sound assumption is that we missed something. True on a reconnect
+		// (we were away) and equally true on the first-ever connect (the
+		// socket took time to open, and nothing before it had a subscriber).
+		_fireResync(_hasConnected ? 'reconnect' : 'initial-connect');
 		_hasConnected = true;
 	};
 	socket.onmessage = (event) => {
