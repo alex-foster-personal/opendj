@@ -58,10 +58,24 @@ def _paths_ever_together_on_main(
     it. Counting that pre-addition state would make ANY preview deletion of
     an ever-added path coexist by construction, defeating containment for
     deletions entirely; see r3974239193 for the rejected alternative and why.
+
+    An EMPTY candidate list is different from that rejected case, and is not
+    "never coexisted": it means main's FULL history never touched ANY of
+    ``paths`` at all, so every one of ``paths`` is absent at literally every
+    commit main has, tip included (r3974399475). Falling through to
+    ``any()`` over an empty list would return False and blame a preview
+    commit for "never coexisting" with a path combination main never had an
+    opinion on either way. Checking ``treeish`` against ``main_ref`` itself
+    in that case correctly returns True when ``treeish`` ALSO lacks every
+    path in ``paths`` (main's permanent absence trivially matches), and
+    False when ``treeish`` holds any of them present (main never introduced
+    it, so there is genuinely nothing to coexist with).
     """
     candidates = _git(
         cwd, "log", main_ref, "--full-history", "--format=%H", "--", *sorted(paths)
     ).split()
+    if not candidates:
+        return _trees_identical(cwd, treeish, main_ref, *paths)
     return any(_trees_identical(cwd, treeish, sha, *paths) for sha in candidates)
 
 

@@ -103,8 +103,21 @@ def _trees_identical(cwd: Path, left: str, right: str, *paths: str) -> bool:
 
 
 def _diff_paths(cwd: Path, left: str, right: str) -> set[str]:
-    """Paths that differ between two treeish refs."""
-    return set(_git(cwd, "diff", "--name-only", left, right).splitlines())
+    """Paths that differ between two treeish refs.
+
+    ``--no-renames`` is required: rename detection is ON by default for
+    ``git diff``, and a detected rename reports ONLY the destination path in
+    ``--name-only`` output, dropping the source entirely (r3974399470). A
+    caller unioning this into a containment check would then only ever
+    verify the renamed-TO path against main, silently never checking
+    whether main still holds the renamed-FROM path unchanged -- exactly the
+    kind of divergence this whole module exists to catch. Disabling rename
+    detection reports a rename as a plain delete-plus-add, both paths
+    included, at the cost of nothing this module ever wanted from rename
+    detection in the first place (it never inspects diff CONTENT, only the
+    set of touched paths).
+    """
+    return set(_git(cwd, "diff", "--no-renames", "--name-only", left, right).splitlines())
 
 
 def _worktree_dirty(cwd: Path) -> list[str]:
