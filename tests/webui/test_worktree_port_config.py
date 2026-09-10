@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import os
 import socket
-import tempfile
 import subprocess
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 from unittest import mock
@@ -804,11 +804,13 @@ def test_owner_registry_dir_is_the_shared_path_the_reaper_reads() -> None:
     ``tempfile.gettempdir()`` changes the derived value and reds this.
     """
     source = (PROJECT_ROOT / "apps" / "webui" / "port_config.py").read_text(encoding="utf-8")
-    assert "PORT_OWNER_REGISTRY_DIR = Path(tempfile.gettempdir())" not in source, (
+    tmpdir_derivation = "PORT_OWNER_REGISTRY_DIR = Path(tempfile.gettempdir())"
+    assert tmpdir_derivation not in source, (
         "PORT_OWNER_REGISTRY_DIR follows TMPDIR again; scripts/ci_reap_port_holders.sh "
         "reads a fixed path and would never find the markers"
     )
-    assert port_config.PORT_OWNER_REGISTRY_DIR == Path("/tmp/music-dj-tools-port-owners")
+    registry_dir = port_config.PORT_OWNER_REGISTRY_DIR
+    assert registry_dir == Path("/tmp/music-dj-tools-port-owners")
 
     script = (PROJECT_ROOT / "scripts" / "ci_reap_port_holders.sh").read_text(encoding="utf-8")
     assert (
