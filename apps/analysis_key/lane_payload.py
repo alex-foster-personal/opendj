@@ -52,7 +52,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from apps.analysis.lane_enums import LaneContractError
 from apps.analysis_key import canon
 from apps.analysis_key.flags import TonalCenterFlag
 from apps.analysis_key.profiles import KeyEstimate
@@ -130,28 +129,28 @@ def validate_key_depends_on(payload: Mapping[str, Any]) -> None:
         return
     depends_on = payload.get("depends_on")
     if not isinstance(depends_on, Mapping):
-        raise LaneContractError(
+        raise TypeError(
             "key.depends_on is missing; an ok segments block was computed on "
             "an own beatgrid record and must name it"
         )
     beatgrid = depends_on.get("beatgrid")
     if not isinstance(beatgrid, Mapping):
-        raise LaneContractError(
+        raise TypeError(
             "key.depends_on.beatgrid is missing; an ok segments block was "
             "computed on an own beatgrid record and must name it"
         )
     missing = [name for name in DEPENDS_ON_FIELDS if name not in beatgrid]
     if missing:
-        raise LaneContractError(
+        raise ValueError(
             f"key.depends_on.beatgrid is missing field(s) {missing}; all of "
             f"{DEPENDS_ON_FIELDS} are required on an ok segments block"
         )
     if not isinstance(beatgrid["decode_fingerprint"], str) or not beatgrid["decode_fingerprint"]:
-        raise LaneContractError(
+        raise ValueError(
             "key.depends_on.beatgrid.decode_fingerprint must be a non-empty string"
         )
     if not isinstance(beatgrid["record_digest"], str) or not beatgrid["record_digest"]:
-        raise LaneContractError(
+        raise ValueError(
             "key.depends_on.beatgrid.record_digest must be a non-empty string"
         )
 
