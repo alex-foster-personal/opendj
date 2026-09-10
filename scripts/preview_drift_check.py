@@ -33,14 +33,18 @@ Two failure shapes this reports:
 And one shape that is deliberately NOT either of those:
 
 ``FOSSIL``
-    So many preview-only commits that the ref cannot be a preview carrying
-    quick fixes: it is a divergent lineage left behind by a history rewrite.
-    That needs the ref re-pointed or deleted, not merged, so reporting it as
-    DRIFT would be a red no amount of merging can clear. Measured Tue 8 Sep
-    2026: ``origin/chrome-loop-preview-live`` sat 1615 commits "ahead" and 401
-    behind, still taking merges from the PRE-REWRITE main lineage as late as
-    Sun 6 Sep 2026, while the LIVE worktree head on the Air was fully
-    contained in main.
+    ``--remote`` mode only: so many preview-only commits that the ref cannot
+    be a preview carrying quick fixes, it is a divergent lineage left behind
+    by a history rewrite. That needs the ref re-pointed or deleted, not
+    merged, so reporting it as DRIFT would be a red no amount of merging can
+    clear. Measured Tue 8 Sep 2026: ``origin/chrome-loop-preview-live`` sat
+    1615 commits "ahead" and 401 behind, still taking merges from the
+    PRE-REWRITE main lineage as late as Sun 6 Sep 2026, while the LIVE
+    worktree head on the Air was fully contained in main. ``--worktree`` mode
+    never reports FOSSIL, even past the same threshold: ``cwd`` there IS the
+    served directory, so a fossil-shaped history at HEAD is still live,
+    ungated code being served right now, and DRIFT is preserved instead
+    (r3974540460).
 
 That distinction is the whole reason for the two modes:
 

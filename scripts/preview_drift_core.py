@@ -98,16 +98,42 @@ def _apply_cross_class_never_coexisted_check(
         report.reasons.append(reason)
 
 
-def _promote_to_fossil(report: Report, dirty_forces_drift: bool) -> None:
-    """Escalate ``report.verdict`` to FOSSIL, unless a dirty worktree already
-    forced DRIFT. A currently-served, uncommitted edit is a more urgent,
-    orthogonal finding than a stranded fossil ref -- FOSSIL's own message
-    ("safe to re-point or delete, not unmerged work") is the wrong thing to
-    say the instant something live and ungated is on disk, so it must never
-    mask the DRIFT the dirty check already raised.
+def _promote_to_fossil(report: Report) -> None:
+    """Escalate ``report.verdict`` to FOSSIL, unless the ref being measured
+    is the authoritative live worktree, in which case DRIFT is preserved
+    instead.
+
+    FOSSIL means "stray, non-authoritative ref: safe to re-point or delete,
+    not unmerged work". In ``--worktree`` mode ``cwd`` IS the served
+    directory (module docstring on ``scripts/preview_drift_check.py``), so a
+    fossil-shaped commit history at HEAD is STILL the live head being
+    served right now, committed or not -- saying "safe to delete" about code
+    currently being served is actively wrong (r3974540460). This subsumes
+    the earlier, narrower "dirty worktree" guard: an uncommitted edit was
+    one way live content could be masked by FOSSIL, but any worktree
+    measurement is authoritative regardless of whether its content is
+    committed or merely on disk. Only a non-authoritative ``--remote``
+    measurement, which cannot see anything live at all, gets FOSSIL.
     """
-    if not dirty_forces_drift:
+    if report.mode == "worktree":
+        report.verdict = "DRIFT"
+    else:
         report.verdict = "FOSSIL"
+
+
+def _fossil_shape_conclusion(mode: str) -> str:
+    """The sentence explaining what a fossil-shaped commit history MEANS,
+    which depends entirely on whether the measured ref is being served right
+    now: a stray ref is safe to discard, but the authoritative worktree head
+    never is, however fossil-shaped its history looks (r3974540460).
+    """
+    if mode == "worktree":
+        return (
+            "this IS the authoritative worktree head being served right "
+            "now, so it is reported as DRIFT rather than dismissed as a "
+            "stray ref safe to delete"
+        )
+    return "re-point or delete the ref: it is not unmerged preview work"
 
 
 def evaluate(
@@ -183,12 +209,10 @@ def evaluate(
     # A fifth blind spot neither commit nor tree comparison can see: in
     # --worktree mode, `cwd` IS the served directory, and a staged, unstaged,
     # or untracked edit on top of HEAD can be live in the browser while HEAD
-    # equals main and every check above reports clean. Set before the
-    # FOSSIL/DRIFT branches below, and `dirty_forces_drift` keeps this DRIFT
-    # from being overwritten by a later FOSSIL verdict: FOSSIL means "stale
-    # rewritten lineage, safe to ignore as unmerged work", which is the wrong
-    # message the instant something currently being served is uncommitted --
-    # that is live and ungated regardless of how the ref's history looks.
+    # equals main and every check above reports clean. `_promote_to_fossil`
+    # below preserves DRIFT for any worktree measurement regardless of this
+    # specific dirty-paths finding, so this DRIFT can never be overwritten by
+    # a later FOSSIL verdict.
     if mode == "worktree":
         report.dirty_paths = _worktree_dirty(cwd)
         if report.dirty_paths:
@@ -202,7 +226,6 @@ def evaluate(
                 f"files from disk, not from a commit object, so this can be "
                 f"live with no PR gate having seen it"
             )
-    dirty_forces_drift = bool(report.dirty_paths)
 
     merge_trusted_paths: set[str] = set()
     if report.serves_main_tree:
@@ -219,12 +242,12 @@ def evaluate(
             # A three-figure merge count is the divergent-lineage shape, and
             # replaying that many merges is not a cheap check. Say what it is
             # rather than spending minutes reaching the same answer.
-            _promote_to_fossil(report, dirty_forces_drift)
+            _promote_to_fossil(report)
             report.reasons.append(
                 f"{len(merges)} merge commits on the preview and not on "
-                f"{main_ref} (ceiling {fossil_threshold}). That is a divergent "
-                f"lineage left behind by a history rewrite, not unmerged "
-                f"preview work: re-point or delete the ref."
+                f"{main_ref} (ceiling {fossil_threshold}): a divergent "
+                f"lineage shape, left behind by a history rewrite -- "
+                f"{_fossil_shape_conclusion(mode)}."
             )
             return report
         carrying, merge_trusted_paths = _resolution_carrying_merges(cwd, main_ref, merges)
@@ -245,20 +268,23 @@ def evaluate(
             )
 
     stale = report.stale
-    # FOSSIL is checked BEFORE DRIFT. A ref stranded by a history rewrite has
-    # hundreds or thousands of "preview-only" commits that no merge can ever
-    # clear, and calling that DRIFT produces a red that is permanently true and
-    # therefore permanently ignored.
+    # FOSSIL is checked BEFORE DRIFT for a NON-authoritative (remote) ref: a
+    # ref stranded by a history rewrite has hundreds or thousands of
+    # "preview-only" commits that no merge can ever clear, and calling that
+    # DRIFT produces a red that is permanently true and therefore permanently
+    # ignored. That argument INVERTS for the authoritative worktree
+    # (r3974540460): the same fossil-shaped history is code being served
+    # right now, so a permanently-true red is the correct outcome, not a
+    # problem to avoid -- `_promote_to_fossil` preserves DRIFT there instead.
     if len(stale) >= fossil_threshold:
         oldest = min(stale, key=lambda c: c.committed_at)
         newest = max(stale, key=lambda c: c.committed_at)
-        _promote_to_fossil(report, dirty_forces_drift)
+        _promote_to_fossil(report)
         report.reasons.append(
             f"{len(stale)} preview-only commits (ceiling {fossil_threshold}), "
-            f"spanning {oldest.committed_at.date()} to {newest.committed_at.date()}. "
-            f"That is a divergent lineage left behind by a history rewrite, not "
-            f"unmerged preview work: re-point or delete the ref. Nothing here is "
-            f"merged to main."
+            f"spanning {oldest.committed_at.date()} to {newest.committed_at.date()}: "
+            f"a divergent lineage shape -- {_fossil_shape_conclusion(mode)}. "
+            f"Nothing here is merged to main."
         )
         return report
 
