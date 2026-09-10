@@ -57,9 +57,17 @@ _LEADING_DECORATION = re.compile(r"^[^0-9A-Za-z]+")
 # opposite error, and one this gate has already made once. Anchoring is what
 # keeps both directions correct at the same time: at offset zero the optional
 # NON- group consumes the prefix before BLOCKING is ever reached.
-# The trailing class is the marker's CLOSING punctuation, whatever it is: a
-# bracket or paren the wrapper opened, a colon or dash, or plain whitespace.
-_BLOCKING = re.compile(r"^(NON[-\s]?)?BLOCKING\b[\]\)}>:.,\-\s]", re.IGNORECASE)
+# Neither END of the marker enumerates punctuation, for the same reason the
+# leading end does not (PR #1671, Sol P1): a hard-coded closer list is the same
+# rot one character further right, and would read a wrapper nobody has seen yet
+# -- a full-width bracket, say -- as no marker at all. What is required instead
+# is that BLOCKING be a COMPLETE token: not followed by a word character or a
+# hyphen, so "BLOCKINGS" and "BLOCKING-ISH" are words that merely start the same
+# way, while "BLOCKING]", "BLOCKING】", "BLOCKING:" and a bare trailing
+# "BLOCKING" are all the verdict. The NON- separator is read the same way: any
+# single non-alphanumeric character, or none, so an U+2013 character or a non-breaking
+# hyphen does not silently promote a nit to a blocker.
+_BLOCKING = re.compile(r"^(NON[^0-9A-Za-z]?)?BLOCKING(?![\w-])", re.IGNORECASE)
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
