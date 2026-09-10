@@ -16,21 +16,16 @@ Two dicts:
 stays under the 600-line review threshold; the split is purely mechanical,
 ``from apps.database.column_docs import TABLE_DOCS`` still works. The four
 analysis-retention tables' entries (PR #383) moved the same way into
-:mod:`apps.database.column_docs_analysis_retention`, native-analysis v1's
-three into :mod:`apps.database.column_docs_native_analysis` and schema v9's
-``lyric_verdict`` into :mod:`apps.database.column_docs_lyrics`; all three are
+:mod:`apps.database.column_docs_analysis_retention`, and schema v10's
+``lyric_verdict`` into :mod:`apps.database.column_docs_lyrics`; both are
 merged into ``COLUMN_DOCS`` below, for the same reason.
 
 Coverage: every table :mod:`apps.shared.state.schema` knows about --
-``TABLES`` (the twenty-two this module actually creates), the seven real
+``TABLES`` (the fourteen this module actually creates), the seven real
 tables it declares in ``FOREIGN_AUTHORITY_TABLES`` but does not create
 (``pairings``, ``smartlists``, ``play_orders``, ``play_order_entries``,
 ``play_orders_schema_meta``, ``tracks_fts``, ``tracks_frecency``), and
-``schema_meta`` from ``INFRASTRUCTURE_TABLES`` -- thirty tables -- plus
-native-analysis v1's three, which the consolidated engine schema owns:
-thirty-three in all. These counts are hand-transcribed and the set equality
-in ``tests/database/test_agents_md_generator.py`` is what actually enforces
-coverage; re-count them when a table lands.
+``schema_meta`` from ``INFRASTRUCTURE_TABLES`` -- twenty-two tables in all.
 The five fts5 shadow tables in ``FOREIGN_AUTHORITY_TABLES``
 (``tracks_fts_config/_content/_data/_docsize/_idx``) are deliberately NOT
 documented here: :mod:`apps.database.generate_agents_md` excludes them
@@ -50,6 +45,9 @@ from __future__ import annotations
 from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
 from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
+from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
+from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
+from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
 __all__ = ["COLUMN_DOCS", "TABLE_DOCS"]
@@ -356,8 +354,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "asset_kind": (
             "CHECK IN ('audio', 'stem_bundle', 'anlz_cache', 'vocal_cache', "
             "'lyrics_cache', 'karaoke_words') -- widened from four kinds to "
-            "six by the schema v9 table rebuild "
-            "(apps/shared/state/migrations_v9.ASSET_KIND_CHECK_VALUES is the "
+            "six by the schema v10 table rebuild "
+            "(apps/shared/state/migrations_v10.ASSET_KIND_CHECK_VALUES is the "
             "one source of that list)."
         ),
         "mode": (
@@ -576,6 +574,11 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     **ANALYSIS_RETENTION_COLUMN_DOCS,
     **NATIVE_ANALYSIS_COLUMN_DOCS,
+    **PAIRING_CAPTURE_COLUMN_DOCS,
+    **SIBLING_APP_COLUMN_DOCS,
+    # Migration v9 enrollment tables (ADR 12).
+    **ENROLLMENT_COLUMN_DOCS,
+    # Migration v10 lyric_verdict (specs/karaoke-lyrics-operational-plan.md D13.1).
     **LYRICS_COLUMN_DOCS,
 }
 

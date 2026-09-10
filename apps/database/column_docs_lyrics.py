@@ -1,4 +1,4 @@
-"""Column docs for the karaoke lyrics verdict table (schema v9).
+"""Column docs for the karaoke lyrics verdict table (schema v10).
 
 Split out of ``column_docs.py`` for the same reason
 :mod:`apps.database.column_docs_analysis_retention` and
@@ -6,7 +6,7 @@ Split out of ``column_docs.py`` for the same reason
 Python-file gate); ``column_docs.py`` merges this dict into ``COLUMN_DOCS``,
 so callers still read one map.
 
-Schema authority: ``apps/shared/state/migrations_v9.py`` (``_V9``), mirrored
+Schema authority: ``apps/shared/state/migrations_v10.py`` (``_V10``), mirrored
 into the consolidated engine schema's ``lyrics`` domain.
 Design: ``specs/karaoke-lyrics-operational-plan.md`` D13.1 and D13.2.
 

@@ -91,9 +91,18 @@ export interface CloudSyncOverview {
 	machines: MachineOverview[];
 }
 
+/**
+ * Three verdicts, not two. `inconclusive` is a sync that COMPLETED while its
+ * post-sync digest compare excluded rows on one side, so agreement was never
+ * verified. Rendering it as `ok` would be a failed measurement shown as a
+ * clean result; rendering it as `error` would claim a failure that did not
+ * happen. See apps/sync_hub/status.py ResultStatus.
+ */
+export type CloudSyncResultStatus = 'ok' | 'error' | 'inconclusive';
+
 export interface CloudSyncRecentResult {
 	finished_at: string;
-	status: 'ok' | 'error';
+	status: CloudSyncResultStatus;
 	message: string;
 	pushed: number;
 	pulled: number;
@@ -105,7 +114,7 @@ export interface CloudSyncStatus {
 	signed_in_as: string | null;
 	last_push_at: string | null;
 	last_pull_at: string | null;
-	last_result: { status: 'ok' | 'error'; message: string } | null;
+	last_result: { status: CloudSyncResultStatus; message: string } | null;
 	rows_pending: number | null;
 	endpoint: string | null;
 	recent_results: CloudSyncRecentResult[];

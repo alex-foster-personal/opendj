@@ -243,14 +243,14 @@ def _exercise_hydration_writers(
 def _exercise_lyric_verdict_writes(
     conn: sqlite3.Connection, machine_id: str
 ) -> None:
-    """Drive the ``lyric_verdict`` write shape (schema v9, D13.1).
+    """Drive the ``lyric_verdict`` write shape (schema v10, D13.1).
 
     Written against ``stamped_transaction`` + ``stamp_and_log`` directly
     rather than through ``apps.lyrics.store``, for the same reason
     :func:`_exercise_hydration_writers` calls two module-private writers: it
     is the CHOKEPOINT that is under test here, and reaching it through the
     lyrics store would drag that package's validation and its verdict
-    vocabulary into a test about stamping. What this pins is that a v9 row
+    vocabulary into a test about stamping. What this pins is that a v10 row
     can only be written the stamped way -- an insert AND an update, because
     the ON CONFLICT branch is where the round 2 finding N1 writers all
     slipped through.

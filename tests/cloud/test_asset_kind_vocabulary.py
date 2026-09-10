@@ -8,7 +8,7 @@ place and forgetting another is now a red test, not a runtime surprise in a
 venue.
 
 The five sites, in the order a new kind travels through them:
-  1. ``apps.shared.state.migrations_v9.ASSET_KIND_CHECK_VALUES`` -- the DDL CHECK
+  1. ``apps.shared.state.migrations_v10.ASSET_KIND_CHECK_VALUES`` -- the DDL CHECK
   2. ``apps.cloud.hydration_core.ASSET_KINDS``                   -- the runtime gate
   3. ``apps.cloud.policy.ARTIFACT_KINDS``                        -- the storage policy
   4. ``routes.cloudsync.AssetKind``                              -- the HTTP contract
@@ -20,7 +20,7 @@ GENERATED from site 4 and are checked by ``just openapi-dump`` /
 ``pnpm run api:gen`` in the pre-push recipe, not here.
 
 Regression one-liners:
-  - if a new asset kind lands in policy.py but not the _V9 CHECK then broken
+  - if a new asset kind lands in policy.py but not the _V10 CHECK then broken
   - if a new asset kind lands in the CHECK but not hydration_core.ASSET_KINDS then broken
   - if the routes AssetKind Literal drifts from the Python vocabulary then broken
   - if api-cloudsync.ts ASSET_KINDS drifts from the Python vocabulary then broken
@@ -37,7 +37,7 @@ import pytest
 
 from apps.cloud import hydration_core, policy
 from apps.shared.platform_paths import PROJECT_ROOT
-from apps.shared.state import migrations_v9
+from apps.shared.state import migrations_v10
 from apps.webui.server.routes import cloudsync as cloudsync_routes
 
 _TS_MODULE: Path = (
@@ -60,7 +60,7 @@ def _typescript_asset_kinds() -> tuple[str, ...]:
 @pytest.mark.requirement("CLOUDSYNC-01")
 def test_every_asset_kind_registry_holds_the_same_vocabulary() -> None:
     """[if] one registry gains a kind the others lack [then] this fails, [else stop]."""
-    check_values = set(migrations_v9.ASSET_KIND_CHECK_VALUES)
+    check_values = set(migrations_v10.ASSET_KIND_CHECK_VALUES)
     assert set(hydration_core.ASSET_KINDS) == check_values
     assert set(policy.ARTIFACT_KINDS) == check_values
     assert set(get_args(cloudsync_routes.AssetKind)) == check_values
@@ -70,7 +70,7 @@ def test_every_asset_kind_registry_holds_the_same_vocabulary() -> None:
 @pytest.mark.requirement("CLOUDSYNC-01")
 def test_karaoke_words_is_registered_everywhere() -> None:
     """[if] the words artifact kind is missing from any registry [then] fail, [else stop]."""
-    assert "karaoke_words" in migrations_v9.ASSET_KIND_CHECK_VALUES
+    assert "karaoke_words" in migrations_v10.ASSET_KIND_CHECK_VALUES
     assert "karaoke_words" in hydration_core.ASSET_KINDS
     assert "karaoke_words" in policy.ARTIFACT_KINDS
     assert "karaoke_words" in get_args(cloudsync_routes.AssetKind)
@@ -80,7 +80,7 @@ def test_karaoke_words_is_registered_everywhere() -> None:
 @pytest.mark.requirement("CLOUDSYNC-01")
 def test_lyrics_cache_is_registered_everywhere() -> None:
     """[if] the #1470 lyrics_cache gap reopens anywhere [then] fail, [else stop]."""
-    assert "lyrics_cache" in migrations_v9.ASSET_KIND_CHECK_VALUES
+    assert "lyrics_cache" in migrations_v10.ASSET_KIND_CHECK_VALUES
     assert "lyrics_cache" in hydration_core.ASSET_KINDS
     assert "lyrics_cache" in policy.ARTIFACT_KINDS
     assert "lyrics_cache" in get_args(cloudsync_routes.AssetKind)
@@ -91,7 +91,7 @@ def test_lyrics_cache_is_registered_everywhere() -> None:
 def test_no_registry_carries_a_duplicate_kind() -> None:
     """[if] a registry lists a kind twice [then] fail, [else stop]."""
     for name, kinds in (
-        ("migrations_v9.ASSET_KIND_CHECK_VALUES", migrations_v9.ASSET_KIND_CHECK_VALUES),
+        ("migrations_v10.ASSET_KIND_CHECK_VALUES", migrations_v10.ASSET_KIND_CHECK_VALUES),
         ("hydration_core.ASSET_KINDS", hydration_core.ASSET_KINDS),
         ("policy.ARTIFACT_KINDS", policy.ARTIFACT_KINDS),
         ("routes.cloudsync.AssetKind", get_args(cloudsync_routes.AssetKind)),

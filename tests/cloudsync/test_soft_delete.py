@@ -84,26 +84,36 @@ def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def state_db_path(tmp_path: Path) -> Path:
+    """A path where no DB exists yet, NOT inside a ``state`` directory.
+
+    That placement is load-bearing: ``sync_stamp.data_dir_for_connection``
+    treats a DB outside a ``state`` dir as owning its own data dir, so this
+    fixture's machine identity cannot collide with a spoke's.
+    """
     return tmp_path / "state.db"
 
 
 @pytest.fixture
 def hub_dir(tmp_path: Path) -> Path:
+    """The hub's empty data dir. Guarantees as in ``test_hub_sync.py``."""
     return tmp_path / "hub"
 
 
 @pytest.fixture
 def spoke_a(tmp_path: Path) -> Path:
+    """Spoke A's empty data dir. Guarantees as in ``test_hub_sync.py``."""
     return tmp_path / "spoke-a"
 
 
 @pytest.fixture
 def spoke_b(tmp_path: Path) -> Path:
+    """Spoke B's empty data dir. Guarantees as in ``test_hub_sync.py``."""
     return tmp_path / "spoke-b"
 
 
 @pytest.fixture
 def hub(hub_dir: Path):
+    """The real sync router on an empty hub DB. See ``test_hub_sync.hub``."""
     app = FastAPI()
     app.state.state_db_path = str(client.state_db_path(hub_dir))
     app.state.sync_hub_data_dir = str(hub_dir)
@@ -360,7 +370,7 @@ _SYNCED_TABLES: frozenset[str] = frozenset({
     "track_locations",
     "sync_policies",
     "playlist_pins",
-    # Schema v9. The licensing purge is the ONLY thing that removes a verdict,
+    # Schema v10. The licensing purge is the ONLY thing that removes a verdict,
     # and it is a tombstone: a hard DELETE would leave every peer still
     # holding the licensed text this repo just promised to drop.
     "lyric_verdict",

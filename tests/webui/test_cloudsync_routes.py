@@ -233,7 +233,7 @@ def test_put_policy_invalid_asset_kind_422s(client: TestClient):
 
 @pytest.mark.parametrize("asset_kind", ("lyrics_cache", "karaoke_words"))
 def test_put_policy_accepts_the_v9_asset_kinds(client: TestClient, asset_kind: str):
-    """Schema _V9 widened the sync_policies CHECK; the route must accept both new kinds."""
+    """Schema _V10 widened the sync_policies CHECK; the route must accept both new kinds."""
     machine_id = _registered_machine_id(client)
     put = client.put("/api/v1/cloudsync/policies", json={
         "machine_id": machine_id, "asset_kind": asset_kind, "mode": "pinned",

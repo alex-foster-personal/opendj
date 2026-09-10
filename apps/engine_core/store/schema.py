@@ -79,12 +79,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cache
 
+from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 3
+SCHEMA_VERSION: int = 4
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -97,17 +99,8 @@ creating it from scratch. Distinct from the ``VERSION_OFFSET + n`` rows so a
 reader can tell "this file predates consolidation" from "this file was born
 consolidated"."""
 
-LEGACY_SHARED_STATE_VERSION: int = 9
-"""Terminal version of ``apps/shared/state/schema.py``'s own ladder.
-
-Under-stamping this is not cosmetic. :func:`_stamp_legacy_counters` writes
-``schema_meta`` rows 1..N, and the legacy runner short-circuits at
-``current >= SCHEMA_VERSION``; leave N behind and the legacy ladder re-runs
-its unapplied steps against a database this module already built. Every legacy
-step through v8 is ``IF NOT EXISTS`` and would merely be wasted work, but
-legacy ``_V9`` REBUILDS ``sync_policies`` (bare CREATE / INSERT SELECT / DROP /
-RENAME) and is not idempotent, so a stale value here is a live failure rather
-than a tidiness issue. It read 7 against a legacy ladder at 8 before v9."""
+LEGACY_SHARED_STATE_VERSION: int = 7
+"""Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
 
 BUSY_TIMEOUT_MS: int = 5000
 """How long the runner waits for a competing writer before giving up.
@@ -284,11 +277,11 @@ _SYNC_INFRA: tuple[str, ...] = (
     "name TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK (platform IN "
     "('macos','windows','linux')), is_hub INTEGER NOT NULL DEFAULT 0, "
     "data_root TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL )",
-    # The asset_kind CHECK carries the SIX kinds legacy _V9 rebuilds the table
-    # to, not the four v7 created it with: the legacy side of the parity gate
-    # runs the whole ladder, so this text is compared against the rebuilt
+    # The asset_kind CHECK carries the SIX kinds legacy _V10 rebuilds the
+    # table to, not the four v7 created it with: the legacy side of the parity
+    # gate runs the whole ladder, so this text is compared against the rebuilt
     # shape. Character-for-character with
-    # apps/shared/state/migrations_v9.ASSET_KIND_CHECK_VALUES.
+    # apps/shared/state/migrations_v10.ASSET_KIND_CHECK_VALUES.
     "CREATE TABLE IF NOT EXISTS sync_policies ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, asset_kind TEXT NOT "
     "NULL CHECK (asset_kind IN ('audio','stem_bundle','anlz_cache',"
@@ -315,6 +308,64 @@ _SYNC_INFRA: tuple[str, ...] = (
     "TEXT NOT NULL )",
     "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
     "ON local_changelog(table_name, row_pk)",
+)
+
+
+# ==========================================================================
+# DOMAIN: machine enrollment (who OWNS a machine, legacy v9)
+# Legacy source: apps/shared/state/migrations_v9.py (_V9, specs/
+# design_decision_12.md). Its own domain rather than more rows in
+# _SYNC_INFRA: those tables carry replication STATE and every one of them
+# rides the sync set, whereas neither table here is ever synced -- the hub
+# that performed the enrollment is the only writer (ADR 12 reading 1). One
+# domain, one answer to "does this cross machines".
+# ==========================================================================
+
+#: The provenance vocabulary, read from the legacy rung rather than retyped.
+#: Claude review, PR #1648 (P3): migrations_v9 builds its CHECK from this
+#: tuple explicitly "so the provenance list has one home rather than a copy
+#: that can drift from the constraint", and enrollment_table_docs repeats
+#: that claim to readers -- while this mirror wrote the three values out as a
+#: literal, which is the copy the docs deny exists. A fourth provenance would
+#: have left a consolidated database rejecting those rows with an
+#: IntegrityError naming nothing.
+#:
+#: The one import this module takes from a legacy bootstrap, and deliberately
+#: narrow: a VOCABULARY, not DDL. The table text stays a verbatim lift like
+#: every other domain here, because tests/engine_core/test_store_schema.py
+#: compares it against the legacy ladder's real output object by object, and
+#: importing the statements would make that gate compare a thing with itself.
+_ENROLLED_VIA_SQL: str = ",".join(f"'{value}'" for value in ENROLLED_VIA_VALUES)
+
+_ENROLLMENT: tuple[str, ...] = (
+    f"""
+    CREATE TABLE IF NOT EXISTS machine_owners (
+        machine_id      TEXT PRIMARY KEY
+                          REFERENCES machines(machine_id) ON DELETE CASCADE,
+        google_sub      TEXT NOT NULL
+                          REFERENCES users(google_sub) ON DELETE CASCADE,
+        hub_machine_id  TEXT NOT NULL,
+        enrolled_at     TEXT NOT NULL,
+        enrolled_via    TEXT NOT NULL CHECK
+                          (enrolled_via IN ({_ENROLLED_VIA_SQL})),
+        revoked_at      TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_machine_owners_sub "
+    "ON machine_owners(google_sub)",
+    """
+    CREATE TABLE IF NOT EXISTS enrollment_grants (
+        grant_token_sha256  TEXT PRIMARY KEY,
+        google_sub          TEXT NOT NULL
+                              REFERENCES users(google_sub) ON DELETE CASCADE,
+        created_at          TEXT NOT NULL,
+        expires_at          TEXT NOT NULL,
+        redeemed_at         TEXT,
+        redeemed_machine_id TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_enrollment_grants_expires "
+    "ON enrollment_grants(expires_at)",
 )
 
 
@@ -532,16 +583,18 @@ _ANALYSIS_RETENTION: tuple[str, ...] = (
 )
 
 
+
 # ==========================================================================
 # DOMAIN: karaoke lyrics -- one verdict row per track
-# Legacy source: apps/shared/state/schema.py (_V9, apps/shared/state/
-# migrations_v9.py). Same consolidation rule as everywhere else in this file:
-# the shapes below are the legacy ladder's output, reproduced verbatim.
+# Legacy source: apps/shared/state/migrations_v10.py (_V10, specs/
+# karaoke-lyrics-operational-plan.md D13.1). Same consolidation rule as
+# everywhere else in this file: the shapes below are the legacy ladder's
+# output, reproduced verbatim.
 #
 # ONE deliberate divergence from the legacy text, and it is a creation-time
 # flag rather than a shape: the legacy ladder writes a BARE ``CREATE TABLE``
 # and a BARE ``CREATE INDEX`` so a stale ``idx_lyric_verdict_red`` left on a
-# renamed-aside branch table fails the migration loudly (migrations_v9.py
+# renamed-aside branch table fails the migration loudly (migrations_v10.py
 # reading 2). This module cannot do that: every statement here is replayed
 # against ALREADY-provisioned databases by the adoption path, so it must be
 # ``IF NOT EXISTS`` or adoption breaks on every real file. ``normalize_object_
@@ -922,6 +975,7 @@ _LAUNCHER: tuple[str, ...] = (
 DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
     "sync_infra": _SYNC_INFRA,
+    "enrollment": _ENROLLMENT,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
     "lyrics": _LYRICS,
@@ -950,10 +1004,11 @@ wipe. Applied by :func:`apply_cache_migrations`, never by
 LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
     "sync_infra": "apps/shared/state/schema.py",
+    "enrollment": "apps/shared/state/migrations_v9.py",
     "analysis": "apps/analysis/store.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
-    "lyrics": "apps/shared/state/schema.py",
+    "lyrics": "apps/shared/state/migrations_v10.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -989,6 +1044,10 @@ TABLES: dict[str, tuple[str, ...]] = {
         "sync_state",
         "hub_changelog",
         "local_changelog",
+    ),
+    "enrollment": (
+        "machine_owners",
+        "enrollment_grants",
     ),
     "analysis": ("analysis", "analysis_events"),
     "native_analysis_v1": (
@@ -1035,15 +1094,16 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 
 # --- migration ladder -----------------------------------------------------
 
-_LATER_RUNGS: frozenset[str] = frozenset({"native_analysis_v1", "lyrics"})
-"""Domains that arrived AFTER consolidated v1 and therefore own their own rung.
-
-Excluded from :data:`_V1` so the rung a domain belongs to is stated in exactly
-one place. See :data:`_V2` for why an append to ``_V1`` is the wrong move."""
+#: Domains that are NOT part of rung 1 because they arrived later, each as
+#: its own rung. Named here rather than inline so the exclusion and the rung
+#: that compensates for it cannot drift apart silently.
+_POST_V1_DOMAINS: frozenset[str] = frozenset(
+    {"native_analysis_v1", "enrollment", "lyrics"}
+)
 
 _V1: list[str] = [
     stmt for name, domain in DOMAINS.items()
-    if name not in _LATER_RUNGS
+    if name not in _POST_V1_DOMAINS
     for stmt in domain
 ]
 """Consolidated 0 -> 1: create everything that existed at v1. Fresh-DB path."""
@@ -1059,17 +1119,26 @@ the two tables from a stamped database and re-running the ladder left them
 absent. Every statement is `IF NOT EXISTS`, so the rung is also safe on a
 database that already has them."""
 
-_V3: list[str] = list(_LYRICS)
-"""2 -> 3: the karaoke lyrics verdict row and its triage index.
+_V3: list[str] = list(_ENROLLMENT)
+"""2 -> 3: machine ownership and enrollment grants (legacy ladder v9).
 
-Its own rung for the same reason ``_V2`` is: an existing state.db is already
-stamped at the current version, so a statement appended to ``_V1`` would never
-run there. Mirrors legacy ``_V9`` (apps/shared/state/migrations_v9.py); the
-legacy sync_policies rebuild that ships in the same legacy step is NOT
-mirrored as a rebuild, because this module declares the END shape directly --
-its widened ``asset_kind`` CHECK is already in ``_SYNC_INFRA``."""
+A new rung for the reason _V2 spells out: an install already stamped at v2
+never re-runs _V1, so an enrollment table appended there would exist only on
+databases born after this commit -- and the fresh-DB tests would have passed
+anyway. The legacy ladder makes the same move at its own v9."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3]
+_V4: list[str] = list(_LYRICS)
+"""3 -> 4: the karaoke lyrics verdict row and its triage index.
+
+Its own rung for the reason _V2 and _V3 spell out. Mirrors legacy ``_V10``
+(apps/shared/state/migrations_v10.py); the legacy sync_policies rebuild that
+ships in the same legacy step is NOT mirrored as a rebuild, because this
+module declares the END shape directly -- its widened ``asset_kind`` CHECK is
+already in ``_SYNC_INFRA``. ``LEGACY_SHARED_STATE_VERSION`` deliberately stays
+where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it; REPORT.md O-16
+records what that costs."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.

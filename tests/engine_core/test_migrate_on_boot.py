@@ -14,8 +14,8 @@ Run in a SUBPROCESS, matching test_contract_rev.py / test_data_dir_sandbox.py:
 
 Single-line intent:
   - if a v5-shaped state.db boots through create_app then /api/v1/health
-    serves 200 with the ladder's terminal schema applied [broken if
-    migration only runs on a write path, per the #762 incident]
+    serves 200 with the v8 schema applied [broken if migration only runs on
+    a write path, per the #762 incident]
 """
 
 from __future__ import annotations
@@ -130,13 +130,14 @@ def test_engine_boots_and_serves_health_against_a_v5_db(probe: dict) -> None:
     assert probe["health_body"]["status"] == "ok"
 
 
-def test_v5_state_db_lands_on_the_current_version_after_boot(probe: dict) -> None:
-    """The terminal version, read from the ladder rather than transcribed.
+def test_v5_state_db_lands_on_the_ladder_top_after_boot(probe: dict) -> None:
+    """[if] booting over a v5 library leaves schema_meta below the ladder's
+    terminal version [then] the migration did not complete, [else stop].
 
-    This assertion was pinned at a literal 8 and went stale the moment v9
-    (lyric_verdict) landed. What #762 is about is that boot migrates AT ALL,
-    not which number the ladder currently ends on, so the ladder is the
-    right source for the expectation.
+    Pinned to ``state_schema.SCHEMA_VERSION`` rather than to the number that
+    happened to be terminal when this was written: a literal here passes the
+    day it is written and then silently stops checking that boot reaches the
+    TOP the moment a rung is added, which is precisely when it matters.
     """
     conn = sqlite3.connect(f"file:{probe['state_db']}?mode=ro", uri=True)
     try:

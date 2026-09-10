@@ -88,7 +88,7 @@ def _r2_skip_reason(dry_run: bool) -> str | None:
     """Why R2 was left alone, or None when it was actually visited."""
     if policy.CFG.mode == "local":
         return LOCAL_MODE_R2_REASON
-    elif policy.CFG.mode == "cloud":
+    elif policy.CFG.mode == "cloud":  # noqa: RET505 - explicit elif is the house style
         return DRY_RUN_R2_REASON if dry_run else None
     else:
         raise AssertionError(f"unhandled cloudsync mode {policy.CFG.mode!r}")

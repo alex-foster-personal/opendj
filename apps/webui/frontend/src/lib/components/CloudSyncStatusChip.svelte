@@ -6,9 +6,12 @@
 	let detailsOpen = $state(false);
 	let loadError = $state<string | null>(null);
 
-	function chipState(): 'off' | 'syncing' | 'ok' | 'error' {
+	function chipState(): 'off' | 'syncing' | 'ok' | 'error' | 'inconclusive' {
 		if (status === null || !status.enabled) return 'off';
 		if (status.last_result?.status === 'error') return 'error';
+		// Its own state, never folded into 'ok': the sync completed but its
+		// digest compare excluded rows, so agreement was not verified.
+		if (status.last_result?.status === 'inconclusive') return 'inconclusive';
 		if (status.last_result?.status === 'ok') return 'ok';
 		return 'syncing';
 	}
@@ -27,6 +30,8 @@
 		const state = chipState();
 		if (state === 'ok') return `sync: ok ${relativeTime(status?.last_push_at ?? null)}`;
 		if (state === 'error') return 'sync: error';
+		if (state === 'inconclusive')
+			return `sync: inconclusive ${relativeTime(status?.last_push_at ?? null)}`;
 		return `sync: ${state}`;
 	});
 	const title = $derived(status === null ? (loadError ?? 'Loading CloudSync status.') : JSON.stringify(status));
@@ -48,6 +53,7 @@
 		type="button"
 		class:error={chipState() === 'error'}
 		class:ok={chipState() === 'ok'}
+		class:inconclusive={chipState() === 'inconclusive'}
 		class="chip"
 		title={title}
 		aria-expanded={detailsOpen}
@@ -78,6 +84,7 @@
 	.chip { border: 1px solid var(--muted); border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 0.72rem; padding: 0.18rem 0.45rem; cursor: pointer; }
 	.chip.ok { border-color: var(--accent-dim); color: var(--accent); }
 	.chip.error { border-color: var(--danger); color: var(--danger); }
+	.chip.inconclusive { border-color: var(--warning, #b8860b); color: var(--warning, #b8860b); }
 	.details { position: absolute; z-index: 40; right: 0; top: calc(100% + 6px); width: 320px; padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--fg); font-size: 0.75rem; }
 	.details p { margin: 0.35rem 0; }
 	.details ol { max-height: 12rem; overflow: auto; margin: 0; padding-left: 1.2rem; }

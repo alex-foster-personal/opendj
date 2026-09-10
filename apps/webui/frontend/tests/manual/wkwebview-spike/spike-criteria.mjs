@@ -180,15 +180,16 @@ export const SPIKE_CRITERIA = [
 	},
 	{
 		id: 'WKV-10',
-		title: 'Strict BAR sync keeps real PQTZ phase 1-2-3-4',
+		title: 'BAR sync keeps real PQTZ phase 1-2-3-4, or folds and warns',
 		automation: 'auto',
 		failure_class: 'tuning',
 		measurement:
 			'Sync two decks in default BAR mode, compare real PQTZ beat numbers and phase at the settled position, then repeat with an explicit BEAT selection.',
 		pass_criterion:
-			'Beat 1 aligns with 1, 2 with 2, 3 with 3, 4 with 4 in BAR; half and double normalization is rejected in BAR and permitted only after an explicit BEAT selection; fresh decks default Quantize, Beat Sync and Master Tempo on.',
+			'When BAR locks exactly, beat 1 aligns with 1, 2 with 2, 3 with 3 and 4 with 4. When only a 0.5x/2x fold fits the pitch range, BAR takes it rather than refusing (pin 9bf12adccb45) and raises an ORANGE warning, not a red skip - so a folded lock is a PASS and phase equality is not required of it, because the fold gives up the bar count. A fold that reports a sync_error is a FAIL. Explicit BEAT still permits 0.5x/1x/2x; fresh decks default Quantize, Beat Sync and Master Tempo on.',
 		expectation: null,
-		human_step: null,
+		human_step:
+			'Confirm by eye that a folded BAR lock warns in ORANGE rather than red, and that the fold appears in the performance row; the harness reads the engine read model, which carries no toast.',
 		fallback: null
 	},
 	{
@@ -239,6 +240,53 @@ function _criterionIds() {
 }
 
 /** The criterion with `id`, or a thrown error naming the unknown id. */
+/**
+ * WKV-10's verdict, as a pure function of the settled read model.
+ *
+ * Lives here rather than inside the harness closure so it can be unit tested
+ * without a WKWebView, a real library and an operator. The harness itself is
+ * manual and nothing in CI runs it, which is exactly how it drifted: it went on
+ * scoring a half/double fold as FAIL for as long as it took a reviewer to read
+ * it, months after pin 9bf12adccb45 made folding the shipped behaviour.
+ *
+ * Two acceptance criteria, not one. An EXACT lock still owes 1->1 through 4->4.
+ * A FOLDED lock has surrendered the bar count - that is what its orange warning
+ * says - so it owes only that it locked at all.
+ *
+ * @param {{ masterPhase: number, followerPhase: number, ratio: number | null,
+ *           syncError: unknown, observations: Record<string, unknown> }} input
+ * @returns {{ verdict: string, detail: string, observations: Record<string, unknown> }}
+ */
+export function barSyncVerdict({ masterPhase, followerPhase, ratio, syncError, observations }) {
+	const folded = ratio !== null && (Math.abs(ratio - 0.5) < 0.02 || Math.abs(ratio - 2) < 0.02);
+	if (folded) {
+		if (syncError !== null && syncError !== undefined) {
+			return {
+				verdict: 'FAIL',
+				detail: `BAR refused a half/double fold (ratio ${String(ratio)}), which pin 9bf12adccb45 reversed: it must lock and warn in orange, not skip. sync_error ${String(syncError)}`,
+				observations: { ...observations, ratio, sync_error: syncError }
+			};
+		}
+		return {
+			verdict: 'PASS',
+			detail: `BAR folded to a half/double lock (ratio ${String(ratio)}) and did not refuse; phase ${masterPhase} to ${followerPhase} is not expected to match, because the fold gives up the bar count. Confirm the ORANGE (not red) fold warning and its perf row by eye, and exercise the explicit BEAT opt-out by hand, before accepting this row`,
+			observations: { ...observations, ratio, sync_error: syncError }
+		};
+	}
+	if (masterPhase !== followerPhase) {
+		return {
+			verdict: 'FAIL',
+			detail: `exact BAR sync misaligned: master phase ${masterPhase}, follower phase ${followerPhase}, effective bpm ratio ${String(ratio)}`,
+			observations: { ...observations, ratio, sync_error: syncError }
+		};
+	}
+	return {
+		verdict: 'PASS',
+		detail: `exact BAR sync aligned phase ${masterPhase} to ${followerPhase} with no half or double normalization (ratio ${String(ratio)}); exercise the explicit BEAT opt-out by hand before accepting this row`,
+		observations: { ...observations, ratio }
+	};
+}
+
 export function criterionById(id) {
 	const found = SPIKE_CRITERIA.find((criterion) => criterion.id === id);
 	if (found === undefined) {

@@ -1,8 +1,8 @@
-"""Migration v9: the ``lyric_verdict`` row and the widened ``asset_kind``.
+"""Migration v10: the ``lyric_verdict`` row and the widened ``asset_kind``.
 
 Contract under test: ``specs/karaoke-lyrics-operational-plan.md`` D13.1 and
 the ``sync_policies`` half of D13.2, implemented in
-:mod:`apps.shared.state.migrations_v9`.
+:mod:`apps.shared.state.migrations_v10`.
 
 Acceptance criteria, one assertion block each:
 - if a fresh ladder does not create ``lyric_verdict`` AND
@@ -14,7 +14,7 @@ Acceptance criteria, one assertion block each:
 - if the sync trio is not ``updated_at TEXT NOT NULL`` + nullable
   ``origin_device_id`` / ``deleted_at``, a peer's NULL-stamped row is stored
   as epoch-old instead of being refused -- broken.
-- if a v8 DB with ``sync_policies`` rows migrates to 9 and loses a row, a
+- if a v8 DB with ``sync_policies`` rows migrates to the top and loses a row, a
   tombstone, its PK, or changes its column list, the rebuild moved the sync
   digest and every peer diverges -- broken.
 - if a migrated ladder and a fresh ladder do not produce identical normalised
@@ -33,7 +33,7 @@ import pytest
 from apps.engine_core.store.schema import normalize_object_sql
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
-from apps.shared.state.migrations_v9 import ASSET_KIND_CHECK_VALUES
+from apps.shared.state.migrations_v10 import ASSET_KIND_CHECK_VALUES
 
 pytestmark = pytest.mark.requirement("INFRA-01")
 
@@ -272,7 +272,7 @@ def test_a_v8_db_migrates_with_its_policy_rows_and_column_list_intact(
     """The rebuild must move nothing the sync digest can see.
 
     ``protocol.table_digest`` hashes the column NAMES and ORDER out of
-    ``PRAGMA table_info`` and never sees CHECK text, so a v8 peer and a v9
+    ``PRAGMA table_info`` and never sees CHECK text, so a v8 peer and a v10
     peer only stay converged if the rebuild preserves both -- along with
     every row, including the tombstones.
     """
@@ -314,7 +314,7 @@ def test_a_v8_db_migrates_with_its_policy_rows_and_column_list_intact(
         ]
         assert pk == ["machine_id", "asset_kind"]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert "sync_policies_v9" not in _objects(conn), (
+        assert "sync_policies_v10" not in _objects(conn), (
             "the scratch table survived the rename"
         )
     finally:
@@ -374,8 +374,12 @@ def test_a_stale_index_name_on_a_renamed_aside_table_fails_the_migration(
         )
         with pytest.raises(sqlite3.OperationalError, match="idx_lyric_verdict_red"):
             state_schema.apply_migrations(conn)
+        # Every rung below v10 (v9 enrollment included) succeeds and stamps;
+        # only the lyric_verdict rung fails, so the DB sits one below the top.
         assert conn.execute(
             "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()[0] == 8, "a failed step must not stamp its version"
+        ).fetchone()[0] == state_schema.SCHEMA_VERSION - 1, (
+            "a failed step must not stamp its version"
+        )
     finally:
         conn.close()

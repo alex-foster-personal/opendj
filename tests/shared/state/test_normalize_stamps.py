@@ -27,8 +27,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.shared.state import normalize_stamps
-from apps.shared.state import sync_stamp
+from apps.shared.state import normalize_stamps, sync_stamp
 from apps.sync_hub import protocol as hub_protocol
 
 pytestmark = pytest.mark.requirement("INFRA-01")
@@ -138,10 +137,10 @@ def test_applying_the_repair_makes_every_stored_stamp_orderable(
     _seed_track(state_conn, "d" * 40, updated_at="not a timestamp")
     _seed_track(state_conn, "e" * 40, updated_at=CANONICAL)
 
-    applied = normalize_stamps.apply_repairs(
+    outcome = normalize_stamps.apply_repairs(
         state_conn, normalize_stamps.scan(state_conn)
     )
-    assert applied == 2
+    assert outcome.applied == 2
     assert normalize_stamps.scan(state_conn) == [], "the repair is idempotent"
 
     for (stored,) in state_conn.execute("SELECT updated_at FROM tracks"):
@@ -213,7 +212,7 @@ def test_the_digest_half_of_the_swept_list_stays_alphabetical() -> None:
         f"STAMP_COLUMNS' digest half is out of alphabetical order: {tables}"
     )
     assert "lyric_verdict" in digest, (
-        "schema v9 put lyric_verdict in the sync set; if it is not in the "
+        "schema v10 put lyric_verdict in the sync set; if it is not in the "
         "digest set here, the rest of this module's coverage is a lie"
     )
 
@@ -262,6 +261,55 @@ def test_live_rewrites_the_row(
     assert _stored_stamp(data_dir) == "2024-11-01T12:00:00.000000+00:00"
 
 
+def test_a_live_repair_names_the_hub_rotate_as_the_remaining_step(
+    data_dir: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """"[OK] rewrote N value(s)" alone is only true on a SPOKE.
+
+    A repair frees rows TRANSITIVELY, and neither thing this pass does
+    re-delivers the freed closure from a hub: ``_reset_sync_fences`` rewrites
+    ``sync_state``, whose only writer in the repo is the spoke loop in
+    ``apps.sync_hub.client``, so on a hub db it matches zero rows; and
+    ``_log_repaired_row`` requeues the repaired row alone, while every spoke
+    has already pulled past the entries its dependants were skipped in.
+
+    So the operator was being told the job was done at the exact moment their
+    fleet was one manual command short of converging, and the next digest
+    compare would mismatch permanently. This pass cannot RUN the rotate --
+    ``apps.shared`` must not import ``apps.sync_hub`` -- so it names it.
+    """
+    assert normalize_stamps.main(["--data-dir", str(data_dir), "--live"]) == 0
+    out = capsys.readouterr().out
+    assert "python -m apps.sync_hub rotate" in out
+    assert "HUB" in out
+
+
+def test_a_dry_run_does_not_tell_anyone_to_rotate_anything(
+    data_dir: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The control. A notice printed unconditionally would pass the test
+    above while telling an operator who changed NOTHING to go rotate a
+    production hub's generation, forcing a fleet-wide full re-offer for no
+    reason."""
+    assert normalize_stamps.main(["--data-dir", str(data_dir), "--dry-run"]) == 0
+    assert "rotate" not in capsys.readouterr().out
+
+
+def test_the_rotate_command_that_notice_names_actually_exists() -> None:
+    """A remediation message is a claim about the CLI, so verify the claim.
+
+    The whole point of this change was that the previous message named a
+    command which does nothing for the case it was printed about. Replacing
+    it with a command that does not parse at all would be the same defect
+    with a fresh coat of paint, and nothing else in the suite would notice --
+    the notice is a string, and strings do not typo-check themselves.
+    """
+    from apps.sync_hub import maintenance
+
+    args = maintenance._parser().parse_args(["rotate", "--data-dir", "."])
+    assert args.command == "rotate"
+
+
 def test_a_clean_db_says_so_and_exits_zero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -287,3 +335,274 @@ def test_the_write_mode_is_never_defaulted(
     to a database by default is a hidden default with a blast radius."""
     with pytest.raises(SystemExit):
         normalize_stamps.main(["--data-dir", str(data_dir), *flags])
+
+
+# ----- (5) round 5: a repair must reach the peer, not just the row ---------
+
+
+def test_a_repaired_row_is_logged_so_the_push_fence_can_offer_it(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """Repairing a row without logging it leaves it out of the sync set.
+
+    A machine that has ALREADY completed one sync offers only what
+    ``local_changelog`` recorded above its watermark. Before round 5 this
+    pass rewrote the stamp and appended nothing, so a row freed from
+    quarantine stayed out of the offer forever and the post-sync digest
+    compare failed permanently. Reproduced against the real library:
+    ``SyncDigestMismatch`` on ``['playlist_memberships', 'playlists',
+    'track_locations', 'track_vendor_ids', 'tracks']`` immediately after a
+    successful repair.
+    """
+    _seed_track(state_conn, SID, updated_at="2024-11-01T12:00:00")
+    state_conn.execute("DELETE FROM local_changelog")
+
+    normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
+
+    logged = state_conn.execute(
+        "SELECT table_name, row_pk, updated_at FROM local_changelog"
+    ).fetchall()
+    assert logged == [
+        ("tracks", sync_stamp.encode_row_pk((SID,)), "2024-11-01T12:00:00.000000+00:00")
+    ], "the entry must name the repaired row and carry its REPAIRED stamp"
+
+
+def test_a_clean_repair_run_logs_nothing(state_conn: sqlite3.Connection) -> None:
+    """The control: no repair, no changelog entry.
+
+    Without it the assertion above would pass for a pass that logged on every
+    invocation, which would re-offer the library on every operator run.
+    """
+    _seed_track(state_conn, SID, updated_at=CANONICAL)
+    state_conn.execute("DELETE FROM local_changelog")
+    outcome = normalize_stamps.apply_repairs(
+        state_conn, normalize_stamps.scan(state_conn)
+    )
+    assert outcome.applied == 0
+    assert state_conn.execute("SELECT COUNT(*) FROM local_changelog").fetchone()[0] == 0
+
+
+def test_a_repair_resets_both_fences_against_every_peer(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """The rows a repair FREES without touching still have to be exchanged.
+
+    Both directions, and the pull half is not symmetry for its own sake:
+
+    * PUSH -- quarantine is transitive over the foreign keys
+      (:mod:`apps.sync_hub.sync_set`), so repairing one ``tracks`` row also
+      frees its ``track_fields``, the playlists whose membership bundles
+      named it, and those playlists' pins -- none of which this pass writes
+      to, so none of which it can log. ``last_sync_at = NULL`` is what
+      ``Watermark.needs_full_offer`` reads.
+    * PULL -- while the local row could not be ordered,
+      ``apps.sync_hub.engine_apply`` REFUSED the peer's copy of it, and the
+      pull watermark advanced over that entry anyway. Nothing replays a
+      refusal, so leaving this floor parked made the peer's edit permanently
+      unreachable and every later sync raise ``SyncDigestMismatch`` while
+      the peer reported success.
+
+    Both are the primitive ``client._watermark_after_hello`` already uses
+    after a hub restore, where it resets both floors for the same reason.
+    """
+    _seed_track(state_conn, SID, updated_at="2024-11-01T12:00:00")
+    state_conn.execute(
+        "INSERT INTO sync_state(peer, last_push_seq, last_pull_seq, "
+        "last_sync_at, peer_generation) VALUES ('peer-1', 9, 9, ?, 'g1')",
+        (CANONICAL,),
+    )
+
+    normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
+
+    assert state_conn.execute(
+        "SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state"
+    ).fetchone() == (0, None, 0), (
+        "both floors reset, or a row the peer sent while this machine was "
+        "quarantined never comes back"
+    )
+
+
+def test_a_run_with_nothing_to_repair_still_resets_both_fences(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """B1c: the fence reset is the half a CLEAN machine runs this pass for.
+
+    Round 5 returned before the reset whenever ``scan`` came back empty --
+    which is the state of every healthy peer -- so the recovery the quarantine
+    log prints was false on the one machine that needed it. The log names the
+    machine that HOLDS the unorderable row; the machine whose pull fence has
+    already advanced past the entries the freed rows were skipped in is its
+    PEER, and on that peer there is nothing to rewrite.
+
+    The cost is stated rather than dodged: an operator who runs ``--live``
+    pays one full re-offer and one full re-pull. LWW rejects on equality, so
+    the replay is idempotent (proven three deep in round 1), and the cost of
+    NOT paying it was permanent loss. Nothing fires without ``--live``; see
+    the dry-run control below.
+    """
+    _seed_track(state_conn, SID, updated_at=CANONICAL)
+    state_conn.execute(
+        "INSERT INTO sync_state(peer, last_push_seq, last_pull_seq, "
+        "last_sync_at, peer_generation) VALUES ('peer-1', 9, 9, ?, 'g1')",
+        (CANONICAL,),
+    )
+    assert normalize_stamps.scan(state_conn) == [], "nothing to repair here"
+
+    outcome = normalize_stamps.apply_repairs(
+        state_conn, normalize_stamps.scan(state_conn)
+    )
+
+    assert outcome.applied == 0
+    assert outcome.fences_reset == 1, "and it must REPORT the reset it did"
+    assert state_conn.execute(
+        "SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state"
+    ).fetchone() == (0, None, 0), (
+        "both floors and last_sync_at: needs_full_offer reads the last, and "
+        "only a full offer reaches rows that predate local_changelog"
+    )
+
+
+def test_a_dry_run_moves_no_fence(tmp_path: Path) -> None:
+    """The control for the test above: nothing happens without ``--live``.
+
+    Without this, "the reset always fires" would be indistinguishable from "the
+    reset fires even when the operator only asked to look".
+    """
+    data_dir = tmp_path / "spoke"
+    (data_dir / "state").mkdir(parents=True)
+    conn = state_db.open_rw(normalize_stamps.state_db_path(data_dir))
+    try:
+        _seed_track(conn, SID, updated_at=CANONICAL)
+        conn.execute(
+            "INSERT INTO sync_state(peer, last_push_seq, last_pull_seq, "
+            "last_sync_at, peer_generation) VALUES ('peer-1', 9, 9, ?, 'g1')",
+            (CANONICAL,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert normalize_stamps.main(
+        ["--data-dir", str(data_dir), "--dry-run"]
+    ) == 0
+
+    conn = state_db.open_rw(normalize_stamps.state_db_path(data_dir))
+    try:
+        assert conn.execute(
+            "SELECT last_push_seq, last_sync_at, last_pull_seq FROM sync_state"
+        ).fetchone() == (9, CANONICAL, 9)
+    finally:
+        conn.close()
+
+
+def test_the_logged_pk_map_covers_every_synced_table() -> None:
+    """A table missing from the map is repaired and then never offered.
+
+    Pinned against the protocol's own sync set, not a second hand-written
+    list: two copies agreeing proves only that they were copied together.
+    """
+    expected = {spec.name for spec in hub_protocol.SYNC_TABLES}
+    expected.add(hub_protocol.MEMBERSHIP_TABLE)
+    assert set(normalize_stamps.SYNCED_PKS) == expected
+    for spec in hub_protocol.SYNC_TABLES:
+        assert normalize_stamps.SYNCED_PKS[spec.name] == spec.pk
+    assert (
+        normalize_stamps.SYNCED_PKS[hub_protocol.MEMBERSHIP_TABLE]
+        == hub_protocol.MEMBERSHIP_SPEC.pk
+    )
+    # Control: the two changelogs are deliberately ABSENT, because they are
+    # machine-local bookkeeping and logging them would be a loop.
+    assert sync_stamp.LOCAL_CHANGELOG_TABLE not in normalize_stamps.SYNCED_PKS
+    assert "hub_changelog" not in normalize_stamps.SYNCED_PKS
+
+
+def test_the_hub_changelog_is_swept_too() -> None:
+    """A hub that merged a row before this pass existed can hold a bad stamp.
+
+    ``scan`` skips a table that does not exist, so naming it costs a spoke
+    nothing.
+    """
+    swept = {table for table, _column in normalize_stamps.STAMP_COLUMNS}
+    assert "hub_changelog" in swept
+
+
+# ----- (6) round 6: a repair on a hub must be re-pullable, and race-safe ---
+
+
+def test_a_repaired_row_on_a_hub_gets_a_fresh_hub_changelog_entry(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """Without this a hub-side repair is invisible to every spoke.
+
+    ``hub_changes_since`` only returns entries whose ``seq`` is above a
+    spoke's own watermark; the row's ORIGINAL hub_changelog entry (at its
+    old, already-pulled seq) never crosses that fence again once repaired,
+    so the fix has to be a NEW entry, not just a rewritten row.
+    """
+    _seed_track(state_conn, SID, updated_at="2024-11-01T12:00:00")
+    state_conn.execute("DELETE FROM hub_changelog")
+
+    normalize_stamps.apply_repairs(state_conn, normalize_stamps.scan(state_conn))
+
+    logged = state_conn.execute(
+        "SELECT table_name, row_pk, updated_at FROM hub_changelog"
+    ).fetchall()
+    assert logged == [
+        ("tracks", sync_stamp.encode_row_pk((SID,)), "2024-11-01T12:00:00.000000+00:00")
+    ], "the entry must name the repaired row and carry its REPAIRED stamp"
+
+
+def test_a_clean_repair_run_logs_nothing_to_hub_changelog_either(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """The control: no repair, no hub_changelog entry either."""
+    _seed_track(state_conn, SID, updated_at=CANONICAL)
+    state_conn.execute("DELETE FROM hub_changelog")
+    outcome = normalize_stamps.apply_repairs(
+        state_conn, normalize_stamps.scan(state_conn)
+    )
+    assert outcome.applied == 0
+    assert state_conn.execute("SELECT COUNT(*) FROM hub_changelog").fetchone()[0] == 0
+
+
+def test_a_concurrent_write_in_the_scan_to_lock_gap_is_not_clobbered(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """``scan()`` reads before the write transaction's ``BEGIN IMMEDIATE``.
+
+    A writer that lands a newer, already-orderable value in that gap must
+    win: an unconditional ``UPDATE ... WHERE rowid = ?`` would overwrite it
+    with the stale repair replacement and silently change LWW ordering for
+    the row (round 6 finding).
+    """
+    _seed_track(state_conn, SID, updated_at="2024-11-01T12:00:00")
+    repairs = normalize_stamps.scan(state_conn)
+    assert len(repairs) == 1
+
+    newer = "2026-01-01T00:00:00.000000+00:00"
+    state_conn.execute(
+        "UPDATE tracks SET updated_at = ? WHERE stable_id = ?", (newer, SID)
+    )
+
+    outcome = normalize_stamps.apply_repairs(state_conn, repairs)
+
+    assert outcome.applied == 0, "the stale repair must not have been counted as applied"
+    assert (
+        state_conn.execute("SELECT updated_at FROM tracks").fetchone()[0] == newer
+    ), "the concurrent writer's newer value must survive"
+
+
+def test_a_repair_still_applies_and_logs_once_when_nothing_races_it(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """The control: the ordinary path is unaffected by the race guard."""
+    _seed_track(state_conn, SID, updated_at="2024-11-01T12:00:00")
+    repairs = normalize_stamps.scan(state_conn)
+
+    outcome = normalize_stamps.apply_repairs(state_conn, repairs)
+
+    assert outcome.applied == 1
+    assert (
+        state_conn.execute("SELECT updated_at FROM tracks").fetchone()[0]
+        == "2024-11-01T12:00:00.000000+00:00"
+    )

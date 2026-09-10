@@ -47,7 +47,14 @@ other name below) keeps the surface it had.
 from __future__ import annotations
 
 from apps.sync_hub.engine_apply import ApplyResult, hub_apply, spoke_apply
-from apps.sync_hub.engine_changes import ChangeBatch, hub_changes_since, spoke_push
+from apps.sync_hub.engine_changes import (
+    ChangeBatch,
+    HeldRow,
+    Offer,
+    hub_changes_since,
+    relog_held,
+    spoke_push,
+)
 from apps.sync_hub.engine_common import (
     CHANGELOG_TABLES,
     DEFAULT_KEEP_DAYS,
@@ -64,6 +71,7 @@ from apps.sync_hub.engine_watermark import (
     current_seq,
     local_seq,
     read_watermark,
+    settled_push_seq,
     write_watermark,
 )
 
@@ -75,6 +83,8 @@ __all__ = [
     "HUB_CHANGELOG_TABLE",
     "ApplyResult",
     "ChangeBatch",
+    "HeldRow",
+    "Offer",
     "SyncApplyError",
     "SyncSchemaMismatch",
     "Watermark",
@@ -86,6 +96,8 @@ __all__ = [
     "merge_machines",
     "prune_changelog",
     "read_watermark",
+    "relog_held",
+    "settled_push_seq",
     "spoke_apply",
     "spoke_push",
     "upsert_machine",

@@ -114,6 +114,7 @@
 		beginPendingLoadPlay,
 		clearPendingLoadPlay,
 		consumePendingLoadPlay,
+		markLoadSpanningPress,
 		pickDoubleClickDeck,
 		type DeckSlotState
 	} from '$lib/rb/deck-slots';
@@ -129,12 +130,16 @@
 		derivePlaylistDeckMembership,
 		derivePlaylistPaneOpenCounts,
 		filterRows,
+		getHealthAtBoot,
+		getHealthFreshWithRetry,
 		installBrowserSortIpc,
 		makeClientRowProvider,
 		multiPanePlaylistIds,
+		reconcileBootSnapshot,
 		reorderPanesInPlace,
 		resolveBootPlaylist,
 		resolveNewTabIndex,
+		shouldRetryBootPane,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
@@ -195,6 +200,20 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
+	// Bumped every time something OTHER than _init() writes allTracksCount or
+	// playlists respectively, so _init()'s boot Promise.all can tell whether
+	// its own snapshot of EACH field is still the freshest once it resolves.
+	// Two separate counters, not one shared epoch: _refreshLibraryRowsOnce
+	// writes these two fields at different times within the same call (
+	// _refreshPlaylists() first, the health re-read after), so a single
+	// shared epoch bumped by either write made a playlists-only write during
+	// _init()'s boot read discard _init()'s own, still-uncontested health
+	// snapshot - the boot pane then read a stale/null allTracksCount and
+	// _restoreBootPane() treated a non-empty library as empty (PR #1656
+	// review round 11, P2 BLOCKING). See reconcileBootSnapshot's doc comment
+	// for the race this guards.
+	let _healthWriteEpoch = 0;
+	let _playlistsWriteEpoch = 0;
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
@@ -577,7 +596,7 @@
 			? pane.search_result_query === pane.search.trim() &&
 				pane.search_total === pane.search_results.length
 			: !pane.truncated;
-		// Only Next-only is bypassed. The user-selected Broken filter stays intact.
+		// Only the compatible filter is bypassed. The user-selected Broken filter stays intact.
 		return selectSearchFilterFallback(
 			pane.search,
 			visibleRows,
@@ -595,7 +614,7 @@
 	const filterBypassNote = $derived(
 		searchFilterFallback === null
 			? null
-			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with Next-only filter bypassed.`
+			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with the compatible filter bypassed.`
 	);
 	// Read contract handed to TrackTable (getters stay reactive through
 	// renderedRows/pane). The virtualization lane replaces THIS provider,
@@ -613,9 +632,21 @@
 	);
 	const emptyMessage = $derived.by((): string | null => {
 		if (searchFilterFallback !== null) return null;
+		// The load indicator now paints INSIDE the table, pinned below the
+		// column headers (pin 02717d4ea496), which is exactly where the
+		// empty-state block sits. Both saying "loading..." put two status
+		// surfaces on the same pixels, so the empty state yields: the
+		// indicator is the richer of the two (progress, count, rows/s) and
+		// it is the one this pane deliberately renders. Bot review, PR #1672.
+		//
+		// NOT while a whole-collection search is in flight. The overlay
+		// reports load_progress, so it says nothing at all about the search;
+		// "searching whole collection..." is that state's only signal, and a
+		// background rescan raising pane.loading mid-search would otherwise
+		// silence it (blinded review, PR #1672).
+		if (pane.loading && !pane.searching) return null;
 		if (searchMode === 'find') {
-			if (pane.loading) return 'loading...';
-			else if (pane.error !== null) return `load failed: ${pane.error}`;
+			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
@@ -624,8 +655,7 @@
 			if (pane.searching) return 'searching whole collection...';
 			else if (visibleRows.length === 0) return 'no tracks match the search';
 			else return null;
-		} else if (pane.loading) return 'loading...';
-		else if (pane.error !== null) return `load failed: ${pane.error}`;
+		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
@@ -867,16 +897,45 @@
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
+		const bootHealthEpoch = _healthWriteEpoch;
+		const bootPlaylistsEpoch = _playlistsWriteEpoch;
 		try {
-			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
-			allTracksCount = healthRes.health.state_db.tracks;
+			const [healthRes, lists] = await Promise.all([
+				getHealthAtBoot(getHealth),
+				listPlaylistsHydrated()
+			]);
 			libraryHealthError = null;
-			playlists = lists;
+			// A concurrent _refreshLibraryRowsOnce call (a library-change event, or
+			// the bus's first-ever open) can write a fresher allTracksCount and
+			// playlists while this Promise.all is still in flight. Applying this
+			// boot snapshot unconditionally would clobber that fresher data with
+			// older data (PR #1656 review round 9, P2 BLOCKING) - see
+			// reconcileBootSnapshot's doc comment. Each field is reconciled
+			// against its OWN write epoch: _refreshLibraryRowsOnce writes
+			// playlists (via _refreshPlaylists) and allTracksCount (via the
+			// health re-read) at different times within one call, so a
+			// playlists-only write in between must not discard this boot
+			// read's still-uncontested health value, and vice versa (PR #1656
+			// review round 11, P2 BLOCKING).
+			allTracksCount = reconcileBootSnapshot({
+				bootEpoch: bootHealthEpoch,
+				currentEpoch: _healthWriteEpoch,
+				bootValue: healthRes.health.state_db.tracks,
+				currentValue: allTracksCount
+			});
+			playlists = reconcileBootSnapshot({
+				bootEpoch: bootPlaylistsEpoch,
+				currentEpoch: _playlistsWriteEpoch,
+				bootValue: lists,
+				currentValue: playlists
+			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
-			await _sweepBlankPlaylists(lists);
+			if (_playlistsWriteEpoch === bootPlaylistsEpoch) {
+				await _sweepBlankPlaylists(lists);
+			}
 			if (source === 'spotify' && spotifySelectedId !== null) {
-				const selected = lists.find(
+				const selected = playlists.find(
 					(playlist) =>
 						playlist.vendor === 'spotify' && playlist.playlist_id === spotifySelectedId
 				);
@@ -1176,6 +1235,7 @@
 
 	async function _refreshPlaylists(): Promise<void> {
 		playlists = await listPlaylistsHydrated();
+		_playlistsWriteEpoch += 1;
 		await _sweepBlankPlaylists(playlists);
 	}
 
@@ -1202,8 +1262,13 @@
 	async function _refreshLibraryRowsOnce(): Promise<void> {
 		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
 		try {
-			const healthRes = await getHealth();
+			// `fresh` because this runs OFF a library-change event: a body
+			// shared from before that change would paint a stale count and
+			// leave it there until the next event. The mount-time read in
+			// `_init` above has no such constraint and shares one.
+			const healthRes = await getHealthFreshWithRetry(getHealth);
 			allTracksCount = healthRes.health.state_db.tracks;
+			_healthWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}
@@ -1237,6 +1302,26 @@
 					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
 				);
 			}
+		}
+		// A boot health read that joined an in-flight coalesced entry can settle
+		// with a snapshot from BEFORE a change this same trigger exists to react
+		// to (request-coalescer.ts's `forceInFlight: false` on the
+		// 'initial-connect' resync deliberately leaves such an entry untouched -
+		// see its docstring). _restoreBootPane() then saw a falsely-empty
+		// library and left panes[0] unclaimed on purpose, and nothing above this
+		// point ever retries it (blank panes are explicitly skipped). The fresh
+		// count just read above may have corrected that, so retry now rather
+		// than stranding the pane blank until a manual reload - see
+		// `shouldRetryBootPane`'s own doc comment for the decision and why it
+		// is a separate, pure, real-module-tested function.
+		if (
+			shouldRetryBootPane({
+				boot_pane_playlist_id: panes[0].playlist_id,
+				source,
+				spotify_selected_id: spotifySelectedId
+			})
+		) {
+			await _restoreBootPane();
 		}
 	}
 
@@ -1670,19 +1755,23 @@
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): void {
 		void _loadOntoDeck(row, deck, opts);
 	}
 
-	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
+	function loadSuggest(sid: string, opts: { play?: boolean; pressT0Ms?: number } = {}): void {
 		const row = { stable_id: sid, file_exists: true, is_streaming: false };
 		if (opts.play) {
 			const picked = pickDoubleDeck(row);
 			if (picked === null) return;
 			// pickDoubleDeck already reserved this deck - see _loadOntoDeck's
 			// reservation gate.
-			loadRow(row, picked.deck, { play: true, reservation: picked.reservation });
+			loadRow(row, picked.deck, {
+				play: true,
+				reservation: picked.reservation,
+				...(opts.pressT0Ms === undefined ? {} : { pressT0Ms: opts.pressT0Ms })
+			});
 			return;
 		}
 		loadRow(row, null);
@@ -1902,7 +1991,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -1943,12 +2032,15 @@
 			}
 			try {
 				loadIntent = beginPendingLoadPlay(target, opts.play === true);
-				await dispatchPerformanceCommand({
-					type: 'load_play_intent',
-					deck: target,
-					generation: loadIntent.generation,
-					desired_play: loadIntent.desiredPlay
-				});
+				await dispatchPerformanceCommand(
+					{
+						type: 'load_play_intent',
+						deck: target,
+						generation: loadIntent.generation,
+						desired_play: loadIntent.desiredPlay
+					},
+					opts.pressT0Ms
+				);
 				// Explicit CH load (incl. confirmed double-click): replace if occupied.
 				// refuseIfMaster: true on both - this is a destructive REPLACE, not
 				// a standalone eject, so it must stay refused if `target` raced to
@@ -1967,9 +2059,21 @@
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-				const desiredPlay = consumePendingLoadPlay(target, loadIntent.generation)?.desiredPlay ?? false;
-				if (desiredPlay) {
-					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+				const pendingPlay = consumePendingLoadPlay(target, loadIntent.generation);
+				if (pendingPlay?.desiredPlay === true) {
+					// Q1: timed from the operator's ORIGINAL keydown, which is
+					// what they felt, not from this dispatch downstream of the
+					// load they were waiting on.
+					// This dispatch only ever fires after `load` above has
+					// resolved, so a stamp reaching it always spans this
+					// deck's load - mark it before it is spent (r3974057968).
+					if (pendingPlay.pressT0Ms !== undefined) {
+						markLoadSpanningPress(pendingPlay.pressT0Ms);
+					}
+					await dispatchPerformanceCommand(
+						{ type: 'play', deck: target, playing: true },
+						pendingPlay.pressT0Ms
+					);
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2525,6 +2629,25 @@
 					</svg>
 					<span>Broken</span>
 				</label>
+				<!--
+					pin 5e3ed689ad3a: this control used to live in `.search-options`,
+					which only renders while the search box is focused or non-empty, so
+					it vanished the moment you clicked away and the feature looked
+					deleted. It belongs in the header row next to Broken, where it is
+					always reachable. The persisted pref id stays `next_only_filter`:
+					renaming the storage key would silently drop every stored
+					preference (prefs.svelte.ts validates that exact key). Only the
+					user-facing label changes, to the one the maintainer asked for.
+				-->
+				<label class="next-only" title="Show only tracks compatible with the master deck: Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
+					<input
+						type="checkbox"
+						aria-label="Show only tracks compatible with the master deck"
+						checked={uiPrefs.next_only_filter}
+						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+					/>
+					<span>compatible</span>
+				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -2540,17 +2663,6 @@
 				<div class="search-stack">
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
-							<label
-								class="next-only"
-								title="Filter visible candidates by Camelot and BPM. Shortcut: Tab"
-							>
-								<input
-									type="checkbox"
-									checked={uiPrefs.next_only_filter}
-									onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
-								/>
-								<span>Next-only</span>
-							</label>
 							<label
 								class="whole-collection"
 								title="Search all playlists uses server FTS across the collection. Unchecked filters only the current pane."
@@ -2585,8 +2697,11 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
+		{#snippet libraryLoadOverlay()}
+			<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
+		{/snippet}
 		<TrackTable
+			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
 			{loadedIds}
@@ -2638,7 +2753,7 @@
 						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
 						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 						oncandidates={(cands) => (suggestCandidates = cands)}
 					/>
@@ -2652,7 +2767,7 @@
 						referenceKey={masterRef?.key ?? null}
 						stableId={decks[1].stable_id}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 					/>
 				{/if}
@@ -2700,7 +2815,7 @@
 		</button>
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
-		<span class="wordmark"><em>oDj</em> open Dj</span>
+		<span class="wordmark">open dj</span>
 		{#if jobProgress.ribbon()}
 			{@const ribbon = jobProgress.ribbon()!}
 			<span
@@ -2808,12 +2923,20 @@
 	.unload-offer:hover {
 		background: rgba(232, 161, 58, 0.18);
 	}
+	/* min-height, not height: the control row below is allowed to wrap onto a
+	   second line when it cannot fit, and this header grows with it. Measured
+	   at 1280x800: `.list-panel` is 944px there, and an editable playlist's
+	   header-right is 808px + the 190px AddTrackSearch = 998px, so something
+	   HAD to give. A fixed height gave `.list-panel`'s `overflow: hidden` the
+	   rightmost controls (Bulk Edit, MyTags) silently; growing instead costs
+	   one row of library, which is this panel's documented degradation.
+	   `library-min-5-rows.test.mjs` reads this number as the header's floor. */
 	.pane-header {
 		flex: none;
 		display: flex;
 		align-items: stretch;
 		justify-content: space-between;
-		height: 24px;
+		min-height: 24px;
 		border-bottom: 1px solid var(--rb-border);
 		background: var(--rb-panel);
 		min-width: 0;
@@ -2821,9 +2944,20 @@
 	.header-right {
 		display: flex;
 		align-items: center;
+		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
+		   the 190px AddTrackSearch alongside these controls, and .list-panel
+		   is overflow: hidden, so a non-wrapping row silently clipped its
+		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
+		   running past the edge visibly. Bot review, PR #1672.
+		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
+		   `flex: none` this box sized to max-content, so `flex-wrap` had no
+		   narrower width to wrap INTO and did nothing at all. */
+		flex-wrap: wrap;
+		row-gap: 3px;
 		gap: 4px;
 		padding: 0 6px;
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
@@ -3105,7 +3239,6 @@
 		font-weight: 600;
 		letter-spacing: 0.5px;
 	}
-	.wordmark em { color: #fff; font-style: italic; font-weight: 800; letter-spacing: -0.08em; }
 	.grip {
 		/* No auto margin: the build identity that now precedes it already
 		   carries one, and TWO auto margins split the free space between them

@@ -125,7 +125,8 @@ test("the Beat Sync explainer states that an impossible lock reverts the button"
   assert.match(
     bullets,
     /BAR/,
-    "if BAR is dropped from the copy then the strict 1-4 phase constraint is undocumented",
+    "if BAR is dropped from the copy then neither the 1-4 phase preference nor the "
+      + "0.5x/2x fold it falls back to is documented anywhere the DJ can see",
   );
 });
 

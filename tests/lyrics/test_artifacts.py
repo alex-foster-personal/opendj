@@ -32,7 +32,14 @@ from apps.cloud.eviction import HydrationError
 from apps.lyrics import artifacts, karaoke_cache, store
 from apps.lyrics.karaoke_cache import PIPELINE_VERSION
 
-from .conftest import InMemoryAssetS3, seed_stamped_policy, seed_track, use_cloud_mode, use_local_mode, word
+from .conftest import (
+    InMemoryAssetS3,
+    seed_stamped_policy,
+    seed_track,
+    use_cloud_mode,
+    use_local_mode,
+    word,
+)
 
 WORDS = [word("one", start_s=1.0, end_s=1.2), word("two", start_s=1.5, line_final=True)]
 AUDIO_DIGEST = "b" * 64

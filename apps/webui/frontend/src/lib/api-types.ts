@@ -1574,6 +1574,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/telemetry/pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Machine Pressure
+         * @description What the machine is under right now, cheap enough to poll.
+         *
+         *     THE conditions half of a trustworthy timing row. The browser stamps this
+         *     onto every deck-load row (see the frontend's machine-pressure.ts) so a
+         *     latency number carries the machine state it was measured under instead of
+         *     leaving a later reader to guess, which is how the register ended up with a
+         *     waveform decode recorded at both 0.73 s and 7.53 s for the same work.
+         *
+         *     Read-only, and deliberately NOT a process walk: this is sysctl, getloadavg
+         *     and vm_stat, never the `ps` table that `/processes` reads out of the
+         *     probe's log. It is served from a short shared cache and every response
+         *     states the age of the sample it is handing back, so a caller can tell a
+         *     fresh reading from a five-second-old one rather than assuming.
+         *
+         *     Agent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.
+         *
+         *     Fields, all optional and all absent rather than zero when unreadable:
+         *     `load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical
+         *     memory, `vm_stat` Pages free only, not the wider reclaimable figure),
+         *     `swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).
+         *     `available` is false, with a `reason`, when nothing could be measured --
+         *     notably inside the packaged app, whose payload stages `apps` and not
+         *     `scripts`.
+         */
+        get: operations["machine_pressure_api_v1_performance_telemetry_pressure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/telemetry/processes": {
         parameters: {
             query?: never;
@@ -2420,10 +2462,51 @@ export interface paths {
          *     ``/pull``, this answer carries no per-row data, but it does carry the
          *     hub's live changelog position, which an unregistered caller had no
          *     business reading either.
+         *
+         *     A hub holding one row with an unorderable stored stamp no longer answers
+         *     422 (round 5). That row is excluded from the hash and counted in
+         *     ``quarantined``: a legacy row is a fact to report, not a reason to make
+         *     the endpoint every sync depends on unavailable.
+         *
+         *     For a caller that did not advertise ``quarantine/v1`` it still does
+         *     (module docstring). Such a spoke has no ``quarantined`` map to read, so
+         *     it compares a hash over the eligible set against its own hash over
+         *     everything, and the difference reads to it as the ADR 04 c6 CORRUPTION
+         *     alarm -- a false one, raised on ordinary legacy data.
          */
         get: operations["digest_api_v1_sync_digest_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll
+         * @description Join this hub's fleet under a proved owner. The ONE enrollment door.
+         *
+         *     Both ADR 12 paths come through here and neither can reach
+         *     :func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev
+         *     CLI is a thin argparse shell over this exact call, and the user path will
+         *     be the same call carrying a different credential kind.
+         *
+         *     Deliberately NOT behind a router-level dependency. It authenticates by
+         *     the credential in its BODY, which is what lets a headless machine with no
+         *     browser and no local Google session enroll at all. One transaction, so a
+         *     refusal registers nothing. Idempotent: a re-run answers ``created: false``.
+         */
+        post: operations["enroll_api_v1_sync_enroll_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2464,6 +2547,11 @@ export interface paths {
          *     Chunked because a first sync of a real library is megabytes of JSON held
          *     twice in memory on both sides (round 1 finding A2). ``has_more`` tells
          *     the client to come back with the ``seq`` this response reports.
+         *
+         *     A chunk that had to leave a row out is refused outright for a caller that
+         *     did not advertise ``quarantine/v1`` (module docstring). The shortfall is
+         *     invisible to such a caller, which records the reported ``seq`` as pulled
+         *     and can never ask for those entries again -- not even after the repair.
          */
         get: operations["pull_api_v1_sync_pull_get"];
         put?: never;
@@ -2491,6 +2579,12 @@ export interface paths {
          *     transaction (round 2 finding N4): a row this hub has never met is a
          *     FOREIGN KEY violation, and the recovery push after a hub restore is
          *     exactly the push most likely to carry one.
+         *
+         *     A pusher that did not advertise ``quarantine/v1`` gets ``origin/main``'s
+         *     answer instead of the partial one: 422, whole batch rolled back (module
+         *     docstring). That is the staged-rollout price and it is the safe half of
+         *     it -- an un-upgraded spoke reads ``accepted + rejected < offered`` as
+         *     nothing at all and steps its push fence over the held row.
          */
         post: operations["push_api_v1_sync_push_post"];
         delete?: never;
@@ -4128,6 +4222,10 @@ export interface components {
         DigestResponse: {
             /** Overall */
             overall: string;
+            /** Quarantined */
+            quarantined?: {
+                [key: string]: number;
+            };
             /** Seq */
             seq: number;
             /** Tables */
@@ -4159,6 +4257,74 @@ export interface components {
             /** Version */
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
+        };
+        /**
+         * EnrollCredentialModel
+         * @description The credential the joining machine presents. Rides the BODY, not a header.
+         *
+         *     :class:`apps.sync_hub.transport.HubTransport` is a two-method protocol
+         *     with no header support, and a grant is not a bearer for ``push`` or
+         *     ``pull``. Widening the transport for it would create a credential slot
+         *     those endpoints would then be expected to fill.
+         */
+        EnrollCredentialModel: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grant" | "google_id_token";
+            /** Value */
+            value: string;
+        };
+        /**
+         * EnrollErrorBody
+         * @description The ``detail`` object every refusal below carries.
+         *
+         *     Declared as a model rather than left implicit so the generated client can
+         *     branch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds
+         *     exactly this shape; the codes are enumerated per status in
+         *     :data:`ENROLL_RESPONSES`.
+         */
+        EnrollErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * EnrollErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        EnrollErrorResponse: {
+            detail: components["schemas"]["EnrollErrorBody"];
+        };
+        /**
+         * EnrollRequest
+         * @description No owner field, by construction: a request cannot name whose machine
+         *     it is becoming. The owner is read from the credential's own record.
+         */
+        EnrollRequest: {
+            credential: components["schemas"]["EnrollCredentialModel"];
+            machine: components["schemas"]["MachineModel"];
+            /** Schema Version */
+            schema_version: number;
+        };
+        /** EnrollResponse */
+        EnrollResponse: {
+            /** Created */
+            created: boolean;
+            /** Enrolled At */
+            enrolled_at: string;
+            /** Enrolled Via */
+            enrolled_via: string;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Machine Id */
+            machine_id: string;
+            /** Owner Email */
+            owner_email: string;
+            /** Owner Google Sub */
+            owner_google_sub: string;
         };
         /** EntitlementsOut */
         EntitlementsOut: {
@@ -4202,12 +4368,25 @@ export interface components {
         /**
          * FallbackBeatgridOut
          * @description Identical shape to the ``beatgrid`` object served by /anlz.
+         *
+         *     ``source`` is fixed at ``"own"``: every grid this endpoint can serve came
+         *     from an ``apps.analysis`` record (an unmapped track has no rekordbox PQTZ
+         *     to read), and the ANLZ contract this shape mirrors makes the field
+         *     REQUIRED (``AnlzBeatgridSource`` in ``anlz-types.ts``). Omitting it here
+         *     left the frontend type assertion in ``beatgrid-fallback-api.ts`` hiding a
+         *     real mismatch: a fail-closed, source-aware reader would reject this grid
+         *     outright (Codex P2 BLOCKING, PR #1587).
          */
         FallbackBeatgridOut: {
             /** Beat Count */
             beat_count: number;
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
+            /**
+             * Source
+             * @constant
+             */
+            source: "own";
         };
         /** FeatureEntitlementOut */
         FeatureEntitlementOut: {
@@ -4352,17 +4531,22 @@ export interface components {
             overridden: boolean;
             /** Owner */
             owner: string;
+            refusal?: components["schemas"]["RefusalOut"] | null;
             /** Retire By */
             retire_by: string;
         };
         /** FlagsOut */
         FlagsOut: {
+            /** Build Profile */
+            build_profile: string;
             /** File Present */
             file_present: boolean;
             /** Flags */
             flags: components["schemas"]["FlagOut"][];
             /** Path */
             path: string;
+            /** Sandboxed */
+            sandboxed: boolean;
         };
         /**
          * FolderImportIn
@@ -4545,6 +4729,8 @@ export interface components {
         };
         /** HelloRequest */
         HelloRequest: {
+            /** Capabilities */
+            capabilities?: string[];
             machine: components["schemas"]["MachineModel"];
             /** Machines */
             machines?: components["schemas"]["MachineModel"][];
@@ -4553,12 +4739,19 @@ export interface components {
         };
         /** HelloResponse */
         HelloResponse: {
+            /** Capabilities */
+            capabilities?: string[];
             /** Hub Generation */
             hub_generation: string;
             /** Hub Machine Id */
             hub_machine_id: string;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "unowned" | "foreign";
             /** Schema Version */
             schema_version: number;
             /** Seq */
@@ -4744,7 +4937,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error";
+            status: "ok" | "error" | "inconclusive";
         };
         /**
          * LevelCalibrationOut
@@ -5635,6 +5828,11 @@ export interface components {
             has_more: boolean;
             /** Machines */
             machines: components["schemas"]["MachineModel"][];
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
             /** Rows */
             rows: components["schemas"]["RowModel"][];
             /** Seq */
@@ -5647,6 +5845,8 @@ export interface components {
         };
         /** PushRequest */
         PushRequest: {
+            /** Capabilities */
+            capabilities?: string[];
             /** Machine Id */
             machine_id: string;
             /** Machines */
@@ -5660,6 +5860,11 @@ export interface components {
         PushResponse: {
             /** Accepted */
             accepted: number;
+            /**
+             * Quarantined
+             * @default 0
+             */
+            quarantined: number;
             /** Rejected */
             rejected: number;
             /** Seq */
@@ -5910,7 +6115,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "error";
+            status: "ok" | "error" | "inconclusive";
         };
         /** ReconcileSummary */
         ReconcileSummary: {
@@ -7248,6 +7453,8 @@ export interface components {
             code: "usb_volume_discovery_unavailable";
             /** Reason */
             reason: string;
+            /** Ui Title */
+            ui_title?: string | null;
         };
         /** UsbCapabilityErrorOut */
         UsbCapabilityErrorOut: {
@@ -10489,6 +10696,28 @@ export interface operations {
             };
         };
     };
+    machine_pressure_api_v1_performance_telemetry_pressure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     latest_process_telemetry_api_v1_performance_telemetry_processes_get: {
         parameters: {
             query?: never;
@@ -11975,6 +12204,8 @@ export interface operations {
             query: {
                 /** @description the calling spoke */
                 machine_id: string;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
             };
             header?: never;
             path?: never;
@@ -11998,6 +12229,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enroll_api_v1_sync_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollResponse"];
+                };
+            };
+            /** @description The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
             };
         };
@@ -12044,6 +12335,8 @@ export interface operations {
                 since_seq?: number;
                 /** @description max changelog entries to consume in this chunk */
                 limit?: number;
+                /** @description protocol features the caller understands */
+                capabilities?: string[];
             };
             header?: never;
             path?: never;
@@ -12990,7 +13283,7 @@ export interface operations {
                     "application/json": components["schemas"]["UsbVolumesOut"];
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -13019,7 +13312,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description USB volume discovery is unavailable on this host. */
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -35,12 +35,14 @@
  *
  * These are the audio-liveness kinds: each one means "the operator may be
  * hearing nothing, or seeing nothing move", and each is worth a round trip.
- *
- * `audio-output-rebind-failed` joined them Wed 9 Sep 2026. The output-rebind
- * path was wired at `info` severity throughout, so the row that says the device
- * re-bind did NOT work - the operator is hearing nothing and the recovery
- * failed - stayed inside the browser. The 17:44:43Z Bluetooth flap that killed
- * audio on the Air left no line at all in `webui-client-errors-2026-09-09.log`.
+ * `audio-output-rebind-failed` (Wed 9 Sep 2026) is a failed re-bind that was
+ * wired at `info` severity and stayed inside the browser.
+ * `audio-output-dead`/`audio-output-dead-persistent` (#1641,
+ * `outputLatency === 0`) and `output-device-unreachable` (#1642,
+ * `output-device-watchdog.ts`'s `getOutputTimestamp()` stall), both Thu 10
+ * Sep 2026, are device-level "no sound is leaving this machine" verdicts.
+ * `escalated-kinds-superset.test.mjs` reds on any `error`-severity kind
+ * absent from this set, so drift is CHECKED, not just corrected.
  */
 const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 	'xrun',
@@ -48,7 +50,10 @@ const ESCALATED_KINDS: ReadonlySet<string> = new Set([
 	'silent-while-playing',
 	'presentation-clock-stalled',
 	'presentation-stalled',
-	'audio-output-rebind-failed'
+	'audio-output-rebind-failed',
+	'audio-output-dead',
+	'audio-output-dead-persistent',
+	'output-device-unreachable'
 ]);
 
 /**
@@ -70,18 +75,15 @@ const _lastEscalationAtMs = new Map<string, number>();
  * Where an escalated row goes, injected at client boot.
  *
  * THIS MODULE HAS NO IMPORTS, AND THAT IS A HARD PROPERTY, not a style
- * preference. It began as a pure module and a static import of
- * `reportClientError` was added here on Wed 2 Sep 2026 (the import statement is
- * deliberately not written out anywhere in this file: the quality gate's
- * dependency graph is built by scanning module TEXT, so a realistic import line
- * inside a comment is read as a real edge and reports a false cycle - which it
- * duly did). That import reaches `$lib/api/client.ts`, which evaluates
- * `import.meta.env.VITE_API_BASE` at module scope - and Playwright loads spec
- * files under plain Node, where `import.meta.env` is undefined. Every
+ * preference (the import statement that would prove it is deliberately not
+ * written out here: the quality gate's dependency graph scans module TEXT, so
+ * even a realistic import line inside a comment reads as a real edge). A
+ * static import of `reportClientError` was tried Wed 2 Sep 2026; it reaches
+ * `$lib/api/client.ts`, which evaluates `import.meta.env.VITE_API_BASE` at
+ * module scope, undefined under Playwright's plain-Node spec loader - every
  * Playwright config whose specs reach this module transitively died at CONFIG
- * LOAD with `TypeError: Cannot read properties of undefined` followed by
- * `Error: No tests found`, i.e. the gate reported zero tests rather than a
- * failure. A sink injected at boot keeps the escalation and keeps the purity.
+ * LOAD, reporting zero tests rather than a failure. A sink injected at boot
+ * keeps the escalation and keeps the purity.
  *
  * `null` is a legitimate state, not an error: unit tests, Playwright's Node
  * loader and any pre-boot code all run without a sink, and a row must never
@@ -159,7 +161,6 @@ export interface DeckStateBaseline {
 /**
  * Per-kind budgets. The ring is still bounded at the sum of these, so the
  * flushed JSON cannot grow; what changed is WHO pays for a burst.
- *
  * deck-load covers `deck-load sid=...` and `deck-load-fail`, i.e. the load KPI
  * __mdtLastLoads() reads. 16 rows is four full 4-deck loads.
  * transport-schedule is the latency instrument, and the noisy one: 16 rows is
@@ -176,24 +177,45 @@ const DECK_LOAD_BUDGET = 16;
 const TRANSPORT_SCHEDULE_BUDGET = 16;
 const DECK_STATE_BUDGET = 8;
 const OTHER_BUDGET = 8;
+/**
+ * Q1: press rows, kept out of the pitch fader's way. PitchFader drives
+ * `_scheduleDeck` from an unthrottled pointermove, so one drag is ~40 rows
+ * against 16. A DJ starts a track and then reaches for the fader to
+ * beatmatch it - the standard gesture, not an edge case - so the press row
+ * carrying `input_to_audible_ms` was evicted by the operator's very next
+ * move. 8 is two full four-deck press flurries, which is all a press
+ * comparison needs: a press is a discrete gesture, never a per-frame stream.
+ */
+const TRANSPORT_PRESS_BUDGET = 8;
 
 /** Trailing coalesce window for the localStorage write. */
 const FLUSH_DEBOUNCE_MS = 250;
 
-type PerfBucket = 'deck-load' | 'transport-schedule' | 'deck-state' | 'other';
+type PerfBucket =
+	| 'deck-load'
+	| 'transport-schedule'
+	| 'transport-schedule-press'
+	| 'deck-state'
+	| 'other';
 
 const BUDGETS: Record<PerfBucket, number> = {
 	'deck-load': DECK_LOAD_BUDGET,
 	'transport-schedule': TRANSPORT_SCHEDULE_BUDGET,
+	'transport-schedule-press': TRANSPORT_PRESS_BUDGET,
 	'deck-state': DECK_STATE_BUDGET,
 	other: OTHER_BUDGET
 };
 
 /** Prefix match, because kinds carry a suffix (`deck-load sid=<id>`).
  * `deck-unload` is matched exactly: it shares the deck-state bucket with the
- * `deck-state-*` kinds but predates the `deck-state-` prefix on its own kind. */
+ * `deck-state-*` kinds but predates the `deck-state-` prefix on its own kind.
+ *
+ * ORDER IS LOAD-BEARING below: press kinds are a SUFFIX of the plain one, so
+ * testing `transport-schedule` first would swallow every press row back into
+ * the fader's bucket. The suffix shape keeps existing prefix consumers whole. */
 function _bucketOf(kind: string): PerfBucket {
 	if (kind.startsWith('deck-load')) return 'deck-load';
+	if (kind.startsWith('transport-schedule-press')) return 'transport-schedule-press';
 	if (kind.startsWith('transport-schedule')) return 'transport-schedule';
 	if (kind.startsWith('deck-state') || kind === 'deck-unload') return 'deck-state';
 	return 'other';
@@ -211,6 +233,7 @@ function _withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
 	const taken: Record<PerfBucket, number> = {
 		'deck-load': 0,
 		'transport-schedule': 0,
+		'transport-schedule-press': 0,
 		'deck-state': 0,
 		other: 0
 	};
@@ -537,15 +560,17 @@ function _stemLoadTelemetry(stems: StemLoadFacts): _StemLoadTelemetry {
  * `stages` is copied, never mutated: the engine snapshots it into DeckState
  * BEFORE the ring write, and a mutating recorder would make those two disagree
  * depending on statement order.
+ *
+ * `extraLabels` merges in facts this module has no business deriving; omitted, the row is unchanged from before this parameter existed.
  */
 export function recordDeckLoadTiming(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
-	stems: StemLoadFacts
+	stems: StemLoadFacts, extraLabels?: Record<string, string>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
-	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, labels);
+	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, extraLabels === undefined ? labels : { ...labels, ...extraLabels });
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {

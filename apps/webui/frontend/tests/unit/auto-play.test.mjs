@@ -694,32 +694,104 @@ describe('auto-play Beat Sync handoff policy', () => {
 		);
 	});
 
-	it('never auto-selects BEAT; toast points at BAR pitch window or BEAT tip', () => {
+	// The error this toast formats is DERIVED from the real planner, never
+	// hand-written. The previous version built the string it wanted to see,
+	// which is how it went on asserting a "Select BEAT mode for half/double"
+	// branch for a message `computeFollowerSyncPlan` had stopped being able to
+	// produce: pin 9bf12adccb45 made BAR fold rather than throw in that case,
+	// so the only surviving BAR throw is pitch-range exhaustion. A synthetic
+	// fixture cannot notice that. Blinded review, Thu 10 Sep 2026.
+	it('formats the toast from the error the real planner actually throws', async () => {
 		const { formatAutoPlaySyncSkipToast } = mod;
-		const outOfRange = formatAutoPlaySyncSkipToast({
+		const math = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
+		const grid = (bpm, count) => {
+			const beats = [];
+			let t = 0;
+			for (let index = 0; index < count; index++) {
+				beats.push({ n: (index % 4) + 1, bpm, t });
+				t += 60 / bpm;
+			}
+			return beats;
+		};
+		// 128 against 40 is out of range raw (3.2), halved (1.6) and doubled
+		// (6.4), so no normalization rescues it and BAR has nothing to fold to.
+		let planError = null;
+		try {
+			math.computeFollowerSyncPlan({
+				masterGrid: grid(128, 400),
+				followerGrid: grid(40, 400),
+				masterPositionAtSyncSec: 20,
+				followerPositionSec: 20,
+				currentContextTimeSec: 0.5,
+				syncAtContextTimeSec: 1,
+				masterTempoRatio: 1,
+				minFollowerTempoRatio: 0.84,
+				maxFollowerTempoRatio: 1.16,
+				mode: 'bar'
+			});
+		} catch (error) {
+			planError = error.message;
+		}
+		assert.ok(planError !== null, 'a 128:40 pair must still be refused outright');
+		// Guard against the trap this test fell into while being written: an
+		// incomplete request throws a RangeError from argument validation, and
+		// every assertion below would then be inspecting the wrong message
+		// while looking green.
+		assert.match(
+			planError,
+			/no phase-capable bar anchor/,
+			`the refusal must be the real pitch-range one, not a validation error: ${planError}`
+		);
+		// The load-bearing assertion, and the one the deleted branch needed:
+		// BAR's surviving refusal carries no `tempoNormalization` substring, so
+		// a tip branching on it could never fire.
+		assert.doesNotMatch(
+			planError,
+			/tempoNormalization/,
+			"BAR's only remaining refusal must not mention normalization - if it does, " +
+				'the half/double tip removed from formatAutoPlaySyncSkipToast belongs back'
+		);
+
+		const toast = formatAutoPlaySyncSkipToast({
 			follower_deck: 2,
 			mode: 'bar',
-			plan_error:
-				'follower grid has no phase-capable bar anchor with tempo ratio within [0.84, 1.16] for beat n=2',
+			plan_error: planError,
 			min_ratio: 0.84,
 			max_ratio: 1.16
 		});
-		assert.match(outOfRange, /Beat Sync skipped \(bar\)/);
-		assert.match(outOfRange, /BAR needs a twin within pitch range/);
-		assert.doesNotMatch(outOfRange, /Select BEAT mode/);
+		assert.match(toast, /Beat Sync skipped \(bar\)/);
+		assert.match(toast, /BAR needs a twin within pitch range \[0.84, 1.16\]/);
+		assert.doesNotMatch(toast, /Select BEAT mode/);
+		assert.doesNotMatch(toast, /auto-switch/);
+	});
 
-		const halfDouble = formatAutoPlaySyncSkipToast({
-			follower_deck: 3,
-			mode: 'bar',
-			plan_error:
-				'strict BAR sync requires tempoNormalization=1 to preserve raw PQTZ cadence; ' +
-				'the available anchor requires tempoNormalization=0.5. ' +
-				'Select BEAT mode for half/double tempo matching or widen the follower tempo range.',
-			min_ratio: 0.84,
-			max_ratio: 1.16
+	// The other half of the same claim: a pair that CAN fold no longer reaches
+	// this toast at all, because BAR locks it instead of throwing.
+	it('a foldable pair never reaches the skip toast, because BAR locks it', async () => {
+		const math = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts');
+		const grid = (bpm, count) => {
+			const beats = [];
+			let t = 0;
+			for (let index = 0; index < count; index++) {
+				beats.push({ n: (index % 4) + 1, bpm, t });
+				t += 60 / bpm;
+			}
+			return beats;
+		};
+		const plan = math.computeFollowerSyncPlan({
+			masterGrid: grid(128, 400),
+			followerGrid: grid(64, 400),
+			masterPositionAtSyncSec: 20,
+			followerPositionSec: 20,
+			currentContextTimeSec: 0.5,
+			syncAtContextTimeSec: 1,
+			masterTempoRatio: 1,
+			minFollowerTempoRatio: 0.84,
+			maxFollowerTempoRatio: 1.16,
+			mode: 'bar'
 		});
-		assert.match(halfDouble, /Select BEAT mode for half\/double/);
-		assert.doesNotMatch(halfDouble, /auto-switch/);
+		assert.equal(plan.mode, 'bar');
+		assert.equal(plan.tempoNormalization, 0.5, '128 against 64 must lock as a half-tempo fold');
 	});
 });
 

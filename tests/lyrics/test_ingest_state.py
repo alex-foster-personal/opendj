@@ -1,7 +1,7 @@
 """ingest-state against a real state DB: matching, artifacts, honest counts.
 
 Ported from the feature branch's ``tests/lyrics/test_ingest_state.py``, whose
-assertions read word rows out of the retired ``lyric_word`` table. Under _V9
+assertions read word rows out of the retired ``lyric_word`` table. Under _V10
 the words live in the per-track ``karaoke_words`` artifact and the row records
 only their sha256, so the same intent is asserted through
 ``karaoke_cache.parse_words``.

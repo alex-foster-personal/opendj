@@ -23,7 +23,7 @@ from apps.shared.state import sync_stamp
 
 # Re-exported so the lyric tests use the ONE sanctioned in-memory S3 double
 # rather than minting a second one that can drift from it.
-from tests.cloudsync.conftest import InMemoryAssetS3  # noqa: F401
+from tests.cloudsync.conftest import InMemoryAssetS3
 
 
 @pytest.fixture

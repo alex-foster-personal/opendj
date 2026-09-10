@@ -113,7 +113,7 @@ test('a blur-triggering populated-pad click stays immediate while writes seriali
 	const clickEnd = text.indexOf('\n\t}', clickStart);
 	assert.ok(clickStart >= 0 && clickEnd > clickStart, 'onSlotClick must remain a named testable flow');
 	const clickFlow = text.slice(clickStart, clickEnd);
-	assert.match(clickFlow, /if \(entry\.cue !== null\) \{\s*await onJump\(entry\.slot\);\s*return;/);
+	assert.match(clickFlow, /if \(entry\.cue !== null\) \{\s*await onJump\(entry\.slot, pressT0Ms\);\s*return;/);
 	assert.doesNotMatch(clickFlow, /await acquireBusySlot\(entry\.slot\);\s*if \(entry\.cue !== null\)/);
 	assert.match(
 		source('lib/rb/performance-ipc.svelte.ts'),

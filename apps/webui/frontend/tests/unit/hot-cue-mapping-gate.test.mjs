@@ -73,7 +73,7 @@ test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before i
 	// are Class A immediate controls even while a rename persistence write is
 	// queued, and a filled slot must never be blocked by mapping metadata.
 	const guardIndex = fnText.search(EMPTY_SAVE_GUARD);
-	const jumpIndex = fnText.indexOf('onJump(entry.slot)');
+	const jumpIndex = fnText.indexOf('onJump(entry.slot, pressT0Ms)');
 	assert.ok(jumpIndex >= 0 && jumpIndex < guardIndex, 'the jump branch must stay immediate before the empty-save guard');
 });
 

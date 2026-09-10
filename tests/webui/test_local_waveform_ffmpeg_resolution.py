@@ -44,7 +44,7 @@ def test_mdt_ffmpeg_override_wins_over_path_lookup(
         "which",
         lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("PATH lookup must not run")),
     )
-    assert decode._resolve_ffmpeg() == str(override)
+    assert decode.resolve_ffmpeg() == str(override)
 
 
 def test_mdt_ffmpeg_set_but_not_executable_raises_rather_than_falling_back(
@@ -54,7 +54,7 @@ def test_mdt_ffmpeg_set_but_not_executable_raises_rather_than_falling_back(
     broken.write_text("not a binary")
     monkeypatch.setenv("MDT_FFMPEG", str(broken))
     with pytest.raises(decode.LocalDecodeUnavailable, match="MDT_FFMPEG"):
-        decode._resolve_ffmpeg()
+        decode.resolve_ffmpeg()
 
 
 def test_mdt_ffmpeg_unset_falls_back_to_path_lookup(
@@ -63,7 +63,7 @@ def test_mdt_ffmpeg_unset_falls_back_to_path_lookup(
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     on_path = _make_executable(tmp_path / "ffmpeg")
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert decode._resolve_ffmpeg() == str(on_path)
+    assert decode.resolve_ffmpeg() == str(on_path)
 
 
 def test_neither_mdt_ffmpeg_nor_path_yields_explicit_reason(
@@ -72,14 +72,14 @@ def test_neither_mdt_ffmpeg_nor_path_yields_explicit_reason(
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     with pytest.raises(decode.LocalDecodeUnavailable, match="MDT_FFMPEG"):
-        decode._resolve_ffmpeg()
+        decode.resolve_ffmpeg()
 
 
 def test_a_kernel_launch_failure_becomes_local_decode_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A wrong-architecture binary or a script whose interpreter is missing
-    passes _resolve_ffmpeg's is_file + X_OK check (both are real) but still
+    passes resolve_ffmpeg's is_file + X_OK check (both are real) but still
     fails at the kernel's exec step: subprocess.Popen raises OSError, not a
     nonzero ffmpeg exit. Real repro, no mocked exception: an executable
     script naming an interpreter that does not exist, which the kernel

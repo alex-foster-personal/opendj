@@ -228,7 +228,7 @@ def load_words(
     mode = policy.CFG.mode
     if mode == "local":
         return None
-    elif mode == "cloud":
+    elif mode == "cloud":  # noqa: RET505 - explicit elif is the house style
         client, config = _require_clients(s3, cfg, stable_id)
         asset_store.fetch_asset(config, client, expected, path)
         return karaoke_cache.parse_words(path, stable_id)

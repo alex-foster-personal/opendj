@@ -1,4 +1,4 @@
-"""The one-shot conversion of the branch-era lyric tables into _V9 + artifacts.
+"""The one-shot conversion of the branch-era lyric tables into _V10 + artifacts.
 
 The fixture reproduces what the D13.6 runbook leaves behind on the maintainer's real
 machine: a DB that ran the karaoke FEATURE branch (whose own ``_V8`` created
@@ -109,7 +109,7 @@ def _apply_ladder_to_v8(conn: sqlite3.Connection) -> None:
     """Run the REAL ladder, stopping at 8.
 
     Rolling ``SCHEMA_VERSION`` back is the same trick
-    ``tests/shared/state/test_schema_v9.py`` uses: hand-writing v8 here would
+    ``tests/shared/state/test_schema_v10.py`` uses: hand-writing v8 here would
     test this file's transcription of main's schema rather than main's schema.
     """
     original = state_schema.SCHEMA_VERSION
@@ -155,7 +155,7 @@ def _seed_legacy_db(db_path: Path, *, words: tuple[tuple[object, ...], ...]) -> 
 
 @pytest.fixture
 def legacy_conn(data_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    """A v9 DB (ladder applied on open) still holding the legacy tables."""
+    """A v10 DB (ladder applied on open) still holding the legacy tables."""
     use_local_mode(monkeypatch)
     db_path = data_dir / "state" / "state.db"
     _seed_legacy_db(db_path, words=_LEGACY_WORDS)
@@ -200,7 +200,7 @@ def test_the_ladder_reaches_v9_with_the_legacy_tables_still_present(
 def test_the_triage_index_lands_on_the_new_table_not_the_legacy_one(
     legacy_conn: sqlite3.Connection,
 ) -> None:
-    """The bare CREATE INDEX in _V9 only works because the runbook dropped the
+    """The bare CREATE INDEX in _V10 only works because the runbook dropped the
     branch-era index; this asserts where the surviving one is attached."""
     rows = legacy_conn.execute(
         "SELECT name, tbl_name FROM sqlite_master WHERE type='index' AND "

@@ -4,7 +4,7 @@ Used by BOTH the ingest CLI (``python -m apps.lyrics ingest-state``) and the
 daemon router, so the shapes the API returns and the shapes the pipeline
 writes can never drift apart.
 
-ONE table, schema _V9: ``lyric_verdict``, one row per track carrying the
+ONE table, schema _V10: ``lyric_verdict``, one row per track carrying the
 no-lyrics verdict, its evidence and provenance, a human ``override`` that
 always wins over the computed value, and the sha256 of that track's
 ``karaoke_words`` artifact. Word timings themselves are NOT here: they live in
@@ -70,7 +70,7 @@ COLUMNS: tuple[str, ...] = (
     "deleted_at",
 )
 
-#: ``order='recent'`` sorts on ``computed_at``, NOT ``updated_at``. Under _V9
+#: ``order='recent'`` sorts on ``computed_at``, NOT ``updated_at``. Under _V10
 #: ``updated_at`` is the sync stamp, so a peer's push would silently reorder
 #: the triage list by "when a machine last touched the row" rather than "when
 #: the pipeline last judged the track", which is what a human triaging asks
@@ -152,7 +152,7 @@ def _guard_tombstone(
         )
 
 
-def upsert_verdict(
+def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by design
     conn: sqlite3.Connection,
     *,
     stable_id: str,

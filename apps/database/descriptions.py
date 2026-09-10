@@ -113,6 +113,26 @@ TABLES: dict[str, str] = {
         "watermark fences against. Machine-local; it never rides sync "
         "itself."
     ),
+    # ----- enrollment: who OWNS a machine (ADR 12) -----------------------
+    "machine_owners": (
+        "One machine's owner, as ONE hub recorded it. Never synced: a "
+        "restored or hostile spoke must not be able to push ownership rows "
+        "and adopt machines under last-write-wins like any other row, so "
+        "the hub that performed the enrollment is the only writer. Every "
+        "row carries the enrolling hub's own machine_id, and a row whose "
+        "hub_machine_id is not this hub's live id reads as FOREIGN, not as "
+        "ownership -- a hub restored from another machine's backup inherits "
+        "this table but not the machine-id file that sits outside the "
+        "database."
+    ),
+    "enrollment_grants": (
+        "One short-lived single-use credential minted by an authenticated "
+        "operator on the hub and carried, once, to the machine that is "
+        "joining. Only the sha256 of the token is stored, never the token, "
+        "for the same reason as auth_sessions: a stolen database must not "
+        "hand anybody a redeemable credential. Redeemed rows keep their row "
+        "so a replay is refused rather than silently re-enrolled."
+    ),
     # ----- analysis ------------------------------------------------------
     "analysis": (
         "One track's computed audio analysis (BPM, key, beatgrid, loudness). "

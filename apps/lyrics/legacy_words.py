@@ -1,4 +1,4 @@
-"""One-shot conversion of the branch-era lyric tables into _V9 rows + artifacts.
+"""One-shot conversion of the branch-era lyric tables into _V10 rows + artifacts.
 
 `python -m apps.lyrics migrate-legacy-words [--dry-run]`.
 
@@ -6,7 +6,7 @@ The karaoke feature branch stored words in a ``lyric_word`` table beside an
 11-column ``lyric_verdict``. The D13.6 runbook renames both aside to
 ``lyric_verdict_legacy`` / ``lyric_word_legacy`` (dropping
 ``idx_lyric_verdict_red`` and ``idx_lyric_word_time``, which follow their
-tables through the rename and would otherwise make _V9's bare
+tables through the rename and would otherwise make _V10's bare
 ``CREATE INDEX`` fail), sets ``schema_meta`` to 7 and applies main's ladder to
 9. This command then converts the renamed-aside data: one ``karaoke_words``
 artifact per track (pushed in cloud mode exactly like the producer) plus one
@@ -135,7 +135,7 @@ def _convert_one(
     s3: asset_store.AssetS3Client | None,
     cfg: CloudConfig | None,
 ) -> None:
-    """Write one legacy row as an artifact + _V9 row."""
+    """Write one legacy row as an artifact + _V10 row."""
     stable_id = str(legacy["stable_id"])
     content_hash: str | None = None
     n_words: int | None = legacy["n_words"]

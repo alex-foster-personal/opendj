@@ -52,7 +52,7 @@ def test_columns_match_the_ddl_in_order(conn: sqlite3.Connection) -> None:
     actual = tuple(
         row[1] for row in conn.execute("PRAGMA table_info(lyric_verdict)")
     )
-    assert store.COLUMNS == actual
+    assert actual == store.COLUMNS
 
 
 def test_a_write_is_stamped_and_logged(conn: sqlite3.Connection) -> None:

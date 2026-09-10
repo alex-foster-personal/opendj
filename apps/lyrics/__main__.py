@@ -569,13 +569,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_witness_eval(
             args.dataset_dir, args.pred, args.asr, args.error_tol, args.local_window
         )
-    elif args.command == "ingest-state":
+    elif args.command in _STORAGE_COMMANDS:
+        return _cmd_storage(args)
+    else:
+        raise AssertionError(f"unhandled command {args.command!r}")
+
+
+_STORAGE_COMMANDS: frozenset[str] = frozenset({"ingest-state", "migrate-legacy-words", "purge"})
+
+
+def _cmd_storage(args: argparse.Namespace) -> int:
+    """The three subcommands that write state.db + the karaoke_words artifact."""
+    if args.command == "ingest-state":
         s3, cfg = asset_clients_for_mode(writing=args.write)
         return ingest_state.main(
             manifest=args.manifest, coverage=args.coverage, write=args.write,
             match_by=args.match_by, db_path=args.db_path, s3=s3, cfg=cfg,
         )
-    elif args.command == "migrate-legacy-words":
+    elif args.command == "migrate-legacy-words":  # noqa: RET505 - explicit elif is the house style
         s3, cfg = asset_clients_for_mode(writing=not args.dry_run)
         return legacy_words.main(
             db_path=args.db_path, dry_run=args.dry_run, s3=s3, cfg=cfg
@@ -587,7 +598,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             s3=s3, cfg=cfg,
         )
     else:
-        raise AssertionError(f"unhandled command {args.command!r}")
+        raise AssertionError(f"unhandled storage command {args.command!r}")
 
 
 if __name__ == "__main__":
