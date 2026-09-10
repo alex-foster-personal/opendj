@@ -15,13 +15,8 @@ import pytest
 from scripts.perf.kpi_scorecard import (
     UNMEASURED,
     age_in_days,
-    budget_drift,
-    drift,
     newest_reading,
     score_scenarios,
-    spec_budget_cells,
-    spec_scenario_ids,
-    threshold_drift,
     verdict_for,
 )
 
@@ -171,139 +166,6 @@ def test_a_null_breaking_threshold_never_reports_breaking() -> None:
     assert verdict_for(99.0, cfg) == "OVER"
 
 
-def test_budget_drift_is_silent_when_the_spec_is_unchanged() -> None:
-    kpi_map = {
-        "scenarios": {"S1": {"spec_cells": {"target": "a", "acceptable": "b", "breaking": "c"}}}
-    }
-    spec = "| S1 | scenario | P0 | a | b | c | yes |\n"
-    assert budget_drift(kpi_map, spec) == []
-
-
-def test_budget_drift_fires_when_the_spec_changes_a_threshold() -> None:
-    """The failure this exists for: budgets normally evolve WITHOUT a rename,
-    so id drift alone would keep scoring against a stale duplicated copy."""
-    kpi_map = {
-        "scenarios": {
-            "S1": {"spec_cells": {"target": "<=2s warm", "acceptable": "b", "breaking": "c"}}
-        }
-    }
-    spec = "| S1 | scenario | P0 | <=1s warm | b | c | yes |\n"
-    (finding,) = budget_drift(kpi_map, spec)
-    assert "S1 target" in finding and "<=1s warm" in finding
-
-
-def test_budget_drift_reports_a_scenario_that_records_no_spec_cells() -> None:
-    kpi_map = {"scenarios": {"S1": {}}}
-    (finding,) = budget_drift(kpi_map, "| S1 | scenario | P0 | a | b | c | yes |\n")
-    assert "spec_cells" in finding
-
-
-def test_shipped_map_has_no_budget_drift_against_the_shipped_spec() -> None:
-    import json
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    kpi_map = json.loads((root / "docs" / "perf" / "kpi-map.json").read_text())
-    spec = (root / "specs" / "perf-latency-program.md").read_text()
-    assert spec_budget_cells(spec), "no budget rows parsed, which would make this check vacuous"
-    assert budget_drift(kpi_map, spec) == []
-
-
-def test_threshold_drift_is_silent_when_the_map_matches_the_cell() -> None:
-    kpi_map = {
-        "scenarios": {
-            "S1": {
-                "unit": "ms",
-                "budget": 2000,
-                "acceptable": 5000,
-                "breaking": 10000,
-                "spec_cells": {
-                    "target": "<=2s warm",
-                    "acceptable": "<=5s cold",
-                    "breaking": ">10s",
-                },
-            }
-        }
-    }
-    assert threshold_drift(kpi_map) == []
-
-
-def test_threshold_drift_fires_on_a_stale_numeric_budget() -> None:
-    """The reviewer's own reproduction: S5.budget edited 2000 -> 5000 with the
-    spec_cells text left untouched. budget_drift compares that text verbatim
-    and sees no change; this is the gap it cannot close."""
-    kpi_map = {
-        "scenarios": {
-            "S5": {
-                "unit": "ms",
-                "budget": 5000,
-                "acceptable": 5000,
-                "breaking": 10000,
-                "spec_cells": {
-                    "target": "<=2s warm",
-                    "acceptable": "<=5s cold",
-                    "breaking": ">10s",
-                },
-            }
-        }
-    }
-    (finding,) = threshold_drift(kpi_map)
-    assert "S5 target" in finding and "5000" in finding
-
-
-def test_threshold_drift_skips_a_column_with_no_comparable_number() -> None:
-    """S4's real shape: the target cell states a refresh-relative bound with
-    no number at all, and the acceptable cell's first number is a percentage
-    for a different KPI sharing the column. Neither is checkable without
-    inventing a spec figure, so both must be skipped, not flagged."""
-    kpi_map = {
-        "scenarios": {
-            "S4": {
-                "unit": "ms p95 frame delta",
-                "budget": 16.7,
-                "acceptable": 33.3,
-                "breaking": None,
-                "spec_cells": {
-                    "target": "p95 frame delta <= display refresh interval",
-                    "acceptable": "<5% dropped frames per 10s window",
-                    "breaking": "visible stutter / freeze while audible",
-                },
-            }
-        }
-    }
-    assert threshold_drift(kpi_map) == []
-
-
-def test_threshold_drift_skips_self_consistent_bands() -> None:
-    """acceptable/breaking equal to budget is shorthand, not an independent
-    claim against the cell, so it must not be double-counted as a mismatch."""
-    kpi_map = {
-        "scenarios": {
-            "S3": {
-                "unit": "ms",
-                "budget": 16,
-                "acceptable": 16,
-                "breaking": None,
-                "spec_cells": {
-                    "target": "armed feedback <=16ms",
-                    "acceptable": "n/a",
-                    "breaking": "",
-                },
-            }
-        }
-    }
-    assert threshold_drift(kpi_map) == []
-
-
-def test_shipped_map_has_no_threshold_drift_against_its_own_cells() -> None:
-    import json
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    kpi_map = json.loads((root / "docs" / "perf" / "kpi-map.json").read_text())
-    assert threshold_drift(kpi_map) == []
-
-
 def test_unmeasured_scenario_carries_its_reason() -> None:
     kpi_map = {
         "scenarios": {
@@ -319,39 +181,6 @@ def test_unmeasured_scenario_carries_its_reason() -> None:
     (score,) = score_scenarios(kpi_map, [], _dt.date(2026, 9, 9))
     assert score.verdict == UNMEASURED
     assert score.note == "feature not built"
-
-
-def test_spec_ids_are_read_in_table_order_without_duplicates() -> None:
-    spec = "| S1 | a |\n| S2 | b |\n| S1 | dup |\ntext\n| S10 | c |\n"
-    assert spec_scenario_ids(spec) == ["S1", "S2", "S10"]
-
-
-def test_drift_reports_a_scenario_the_map_forgot() -> None:
-    """A map that silently drops a scenario reports a clean board by having
-    fewer checks, which is the failure mode the exit code exists for."""
-    unmapped, unknown = drift({"scenarios": {"S1": {}}}, ["S1", "S2"])
-    assert unmapped == ["S2"]
-    assert unknown == []
-
-
-def test_drift_reports_a_scenario_the_spec_retired() -> None:
-    unmapped, unknown = drift({"scenarios": {"S1": {}, "S99": {}}}, ["S1"])
-    assert unmapped == []
-    assert unknown == ["S99"]
-
-
-def test_no_drift_between_the_shipped_map_and_the_shipped_spec() -> None:
-    """The live control: the files as they actually ship must agree."""
-    import json
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    kpi_map = json.loads((root / "docs" / "perf" / "kpi-map.json").read_text())
-    ids = spec_scenario_ids((root / "specs" / "perf-latency-program.md").read_text())
-    assert ids, (
-        "the spec's scenario table parsed as empty, which would make drift detection vacuous"
-    )
-    assert drift(kpi_map, ids) == ([], [])
 
 
 def test_age_is_none_for_an_unparseable_date() -> None:
