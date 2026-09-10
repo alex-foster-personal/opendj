@@ -165,6 +165,27 @@ cmd_verify_dmg_app() {
 
 # A stapled app is required for the updater archive, not only the dmg. Apple
 # accepts app bundles only as a zip submission, then staples the original app.
+#
+# The temp archive path lives in a GLOBAL rather than a `local`, and the trap
+# below dereferences it when it fires. bash 3.2 (what `/usr/bin/env bash` is on
+# macOS) does not scope a RETURN trap to the function that set it: it stays
+# armed and fires AGAIN when the CALLER returns. A `local` is gone by then, so
+# `set -u` aborted a run that had already notarized, stapled and passed spctl.
+# Measured Tue 9 Sep 2026 on the Air: notarization printed
+# "[OK] app notarized, stapled and accepted by spctl in 86s" and the run then
+# died with "zip: unbound variable" attributed to main(), losing a 504s build.
+#
+# A global outlives the caller, so the second firing is an `rm -f` of a path
+# that is already gone, which is a no-op. Expanding the path INTO the trap
+# STRING would survive the same way, and was the first fix here, but a trap
+# string is re-parsed as CODE when it fires, so that form embeds an
+# environment-derived value (TMPDIR, below) into code. A global is
+# dereferenced as DATA and is never re-parsed, so no quoting question arises.
+# The sibling EXIT trap in cmd_verify_dmg_app does interpolate, and is safe for
+# a different reason: its path comes from `mktemp -d /tmp/...` with a hardcoded
+# prefix, so no part of it is environment-derived.
+NOTARY_APP_ZIP=""
+
 cmd_notarize_app() {
     local app="${1:-}"
     [ -n "$app" ] || die "usage: $0 notarize-app <app>"
@@ -175,12 +196,12 @@ cmd_notarize_app() {
     _require_tool spctl
     [ -d "$app" ] || die "no app bundle at $app"
 
-    local zip out started elapsed
-    zip=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")
-    trap 'rm -f "$zip"' RETURN
-    ditto -c -k --keepParent "$app" "$zip" || die "could not archive app for notarization"
+    local out started elapsed
+    NOTARY_APP_ZIP=$(mktemp "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX.zip")
+    trap 'rm -f "$NOTARY_APP_ZIP"' RETURN
+    ditto -c -k --keepParent "$app" "$NOTARY_APP_ZIP" || die "could not archive app for notarization"
     started=$(date +%s)
-    out=$(xcrun notarytool submit "$zip" \
+    out=$(xcrun notarytool submit "$NOTARY_APP_ZIP" \
         --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" --wait 2>&1) || {
         printf '%s\n' "$out"
         die "notarytool submit failed for app"

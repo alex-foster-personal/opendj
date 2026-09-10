@@ -23,7 +23,10 @@
 	type CtxItem = {
 		id: string;
 		label: string;
-		run: () => Promise<void>;
+		/** pressT0Ms is the triggering click's own event.timeStamp, Q1's
+		 * operator-felt press stamp - undefined for actions outside the P0
+		 * press paths (load, stems), which ignore it. */
+		run: (pressT0Ms?: number) => Promise<void>;
 		/** Inert rungs render dimmed and explain themselves on hover. */
 		disabled?: boolean;
 		title?: string;
@@ -159,14 +162,14 @@
 			{
 				id: `unload-${deck}`,
 				label: `Unload CH${deck}`,
-				run: () => _runAction('unload', deck)
+				run: (pressT0Ms) => _runAction('unload', deck, pressT0Ms)
 			}
 		];
 		if (getDeckState(deck).loop !== null) {
 			items.push({
 				id: `exit-loop-${deck}`,
 				label: `Exit Loop CH${deck}`,
-				run: () => _runAction('loop.exit', deck)
+				run: (pressT0Ms) => _runAction('loop.exit', deck, pressT0Ms)
 			});
 		}
 		return items;
@@ -210,15 +213,15 @@
 		if (e.key === 'Escape' && open) _close();
 	}
 
-	async function _runAction(id: QuickDrawActionId, deck: DeckId): Promise<void> {
+	async function _runAction(id: QuickDrawActionId, deck: DeckId, pressT0Ms?: number): Promise<void> {
 		_close();
-		await runPerformanceCommandFromUi(quickDrawCommand(id, deck));
+		await runPerformanceCommandFromUi(quickDrawCommand(id, deck), pressT0Ms);
 	}
 
-	async function _togglePlay(deck: DeckId): Promise<void> {
+	async function _togglePlay(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		_close();
 		const playing = getDeckState(deck).playing;
-		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing });
+		await runPerformanceCommandFromUi({ type: 'play', deck, playing: !playing }, pressT0Ms);
 	}
 
 	function _setRoot(next: Root): void {
@@ -260,7 +263,7 @@
 								type="button"
 								class="qd-item qd-tall"
 								role="menuitem"
-								onclick={() => void _runAction('unload', deck)}
+								onclick={(e) => void _runAction('unload', deck, e.timeStamp)}
 							>
 								CH{deck}
 							</button>
@@ -273,7 +276,7 @@
 								type="button"
 								class="qd-item qd-tall"
 								role="menuitem"
-								onclick={() => void _togglePlay(deck)}
+								onclick={(e) => void _togglePlay(deck, e.timeStamp)}
 							>
 								{getDeckState(deck).playing ? 'Pause' : 'Play'} CH{deck}
 							</button>
@@ -288,7 +291,7 @@
 									type="button"
 									class="qd-item qd-tall"
 									role="menuitem"
-									onclick={() => void _runAction(leaf, deck)}
+									onclick={(e) => void _runAction(leaf, deck, e.timeStamp)}
 								>
 									CH{deck}
 								</button>
@@ -362,10 +365,10 @@
 						role="menuitem"
 						disabled={item.disabled === true}
 						title={item.title ?? null}
-						onclick={() => {
+						onclick={(e) => {
 							if (item.disabled === true) return;
 							_close();
-							void item.run();
+							void item.run(e.timeStamp);
 						}}
 					>
 						{item.label}

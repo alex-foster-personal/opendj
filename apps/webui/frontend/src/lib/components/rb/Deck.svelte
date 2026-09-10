@@ -110,17 +110,30 @@
 
 	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
 	 * honour BeatSyncMax - routed through hot_cue_trigger, not seekTo, so it
-	 * can arm for the deck's own next downbeat instead of jumping immediately. */
-	async function triggerHotCue(slot: HotCueSlot): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot });
+	 * can arm for the deck's own next downbeat instead of jumping immediately.
+	 * Q1: see `playPause` for the `pressT0Ms` contract. */
+	async function triggerHotCue(slot: HotCueSlot, pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck: deckId, slot }, pressT0Ms);
 	}
 
-	async function playPause(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'play', deck: deckId, playing: !deck.playing });
+	/**
+	 * Q1: `pressT0Ms` is the ORIGINATING click's `event.timeStamp`, threaded
+	 * from the button rather than re-read here. `runPerformanceCommandFromUi`
+	 * defaults it to its own `performance.now()`, which is already downstream of
+	 * the browser's input queue and of handler dispatch - real time the operator
+	 * waited, and previously invisible to `press_to_schedule_ms` on every one of
+	 * these paths, because no call site in the app has ever passed the stamp.
+	 */
+	async function playPause(pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi(
+			{ type: 'play', deck: deckId, playing: !deck.playing },
+			pressT0Ms
+		);
 	}
 
-	async function returnToCue(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'cue', deck: deckId });
+	/** Q1: see `playPause` for the `pressT0Ms` contract. */
+	async function returnToCue(pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'cue', deck: deckId }, pressT0Ms);
 	}
 
 	async function engageBeatLoop(beats: number, startMs?: number): Promise<void> {

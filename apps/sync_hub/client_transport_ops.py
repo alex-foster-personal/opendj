@@ -18,8 +18,14 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import engine, protocol
+from apps.sync_hub import capabilities, engine, protocol
 from apps.sync_hub.transport import API_PREFIX, HubTransport, SyncTransportError
+
+#: What this build advertises on every request that can be answered
+#: partially (round 5 gate B-1). One comma-free token per request for the
+#: GET side, because :meth:`HubTransport.get` carries flat string params and
+#: FastAPI reads a single occurrence into a one-element list.
+_ADVERTISED: tuple[str, ...] = capabilities.THIS_BUILD
 
 
 def _local_machine_row(
@@ -106,11 +112,30 @@ def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
     conn.execute("COMMIT")
 
 
+def _total_reported(reports: Sequence[Any]) -> int | None:
+    """Sum peer-reported counts, or ``None`` when the peer did not report.
+
+    ``None`` covers both "an older build omitted the field" and "no request
+    of this kind was made, so the peer was never asked". Neither is zero: a
+    peer that was not asked has not answered, and reading an unmeasured
+    subject as a clean result is the defect ``.claude/rules/verification.md``
+    exists to stop.
+    """
+    if not reports:
+        return None
+    if any(not isinstance(value, int) or isinstance(value, bool) for value in reports):
+        return None
+    return sum(int(value) for value in reports)
+
+
 @dataclass(frozen=True)
 class _PushOutcome:
     accepted: int
     rejected: int
     requests: int
+    #: Rows of OURS the hub refused because ITS local copy carries a stamp it
+    #: cannot order. ``None`` means the hub did not report.
+    hub_quarantined: int | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +144,12 @@ class _PullOutcome:
     applied: int
     requests: int
     seq: int
+    #: Rows the hub could not OFFER because its own stored stamp is
+    #: unorderable. ``None`` means the hub did not report.
+    hub_quarantined: int | None = None
+    #: Incoming rows THIS machine refused because the LOCAL row they meet
+    #: cannot be ordered. Always measured, so never None.
+    quarantined: int = 0
 
 
 def _push_in_batches(
@@ -143,6 +174,7 @@ def _push_in_batches(
     accepted = 0
     rejected = 0
     requests = 0
+    reported: list[Any] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
     for chunk in _batched(rows, batch_rows):
         payload = channel.post(
@@ -152,12 +184,19 @@ def _push_in_batches(
                 "schema_version": state_schema.SCHEMA_VERSION,
                 "rows": [change.to_wire() for change in chunk],
                 "machines": wire_fleet,
+                "capabilities": list(_ADVERTISED),
             },
         )
         accepted += _int_from(payload, "accepted", "push")
         rejected += _int_from(payload, "rejected", "push")
+        reported.append(payload.get("quarantined"))
         requests += 1
-    return _PushOutcome(accepted=accepted, rejected=rejected, requests=requests)
+    return _PushOutcome(
+        accepted=accepted,
+        rejected=rejected,
+        requests=requests,
+        hub_quarantined=_total_reported(reported),
+    )
 
 
 def _pull_in_chunks(
@@ -178,6 +217,8 @@ def _pull_in_chunks(
     pulled = 0
     applied = 0
     requests = 0
+    quarantined = 0
+    reported: list[Any] = []
     cursor = int(since_seq)
     while True:
         payload = channel.get(
@@ -186,11 +227,13 @@ def _pull_in_chunks(
                 "machine_id": machine_id,
                 "since_seq": str(cursor),
                 "limit": str(limit),
+                "capabilities": capabilities.QUARANTINE_V1,
             },
         )
         incoming = _rows_from(payload, "pull")
         chunk_seq = _int_from(payload, "seq", "pull")
         has_more = bool(payload.get("has_more", False))
+        reported.append(payload.get("quarantined"))
         requests += 1
         with _transaction(conn):
             # The hub authored this snapshot, so it may refresh its OWN row and
@@ -199,11 +242,18 @@ def _pull_in_chunks(
             engine.merge_machines(
                 conn, _machines_from(payload, "pull"), caller_id=hub_machine_id
             )
-            applied += engine.spoke_apply(conn, incoming).accepted
+            result = engine.spoke_apply(conn, incoming)
+            applied += result.accepted
+            quarantined += result.quarantined
         pulled += len(incoming)
         if not has_more:
             return _PullOutcome(
-                pulled=pulled, applied=applied, requests=requests, seq=chunk_seq
+                pulled=pulled,
+                applied=applied,
+                requests=requests,
+                seq=chunk_seq,
+                hub_quarantined=_total_reported(reported),
+                quarantined=quarantined,
             )
         if chunk_seq <= cursor:
             raise SyncTransportError(
@@ -224,6 +274,7 @@ __all__ = [
     "_pull_in_chunks",
     "_push_in_batches",
     "_rows_from",
+    "_total_reported",
     "_transaction",
     "state_db_path",
 ]

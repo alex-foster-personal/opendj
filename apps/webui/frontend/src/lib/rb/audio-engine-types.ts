@@ -78,11 +78,19 @@ export interface AudioEngine {
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void;
 	/** Solo one real stem group. Rejects unless aligned artifacts are ready. */
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void;
-	/** Explicit seek entry point. cueJump delegates here so quantize is central. */
-	quantizedSeek(deck: DeckId, ms: number): Promise<void>;
+	/** Explicit seek entry point. cueJump delegates here so quantize is central.
+	 * pressT0Ms is Q1's operator-felt press stamp, present on the hot-cue jump
+	 * path and absent on a plain waveform seek. */
+	quantizedSeek(deck: DeckId, ms: number, skipGridQuantize?: boolean, pressT0Ms?: number): Promise<void>;
 	/** DECKUX-09: defer a hot-cue jump to `armAtPositionSec` on the deck's own
-	 * transport clock; returns the absolute AudioContext time it lands at. */
-	armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number): Promise<number>;
+	 * transport clock; returns the absolute AudioContext time it lands at.
+	 * pressT0Ms is Q1's operator-felt press stamp. */
+	armHotCueTrigger(
+		deck: DeckId,
+		targetPositionMs: number,
+		armAtPositionSec: number,
+		pressT0Ms?: number
+	): Promise<number>;
 	/** The engine's AudioContext clock, for projecting an armed trigger's
 	 * remaining wait without exposing the context itself. */
 	contextTimeNowSec(): number;

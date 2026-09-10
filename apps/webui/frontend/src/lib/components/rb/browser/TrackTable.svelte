@@ -21,7 +21,7 @@
 	// DOM-virtualizes the render: only the scrolled window (+overscan) is
 	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
 	// provider.total.
-	import { untrack } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
 	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
@@ -265,7 +265,15 @@
 		searchQuery = '',
 		findQuery = '',
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
-		suggestHoverId = null as string | null
+		suggestHoverId = null as string | null,
+		/** pin 02717d4ea496. Rendered INSIDE the table region, pinned just
+		 * below the sticky column-header row, so a panel-owned status
+		 * surface (the library load indicator) cannot push the headers down
+		 * the page or sit above them. The table renders the snippet and
+		 * knows nothing about what is in it, so this stays a pure row
+		 * renderer; the one thing it contributes is the offset, which only
+		 * it can measure. */
+		bodyOverlay = undefined as Snippet | undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -278,7 +286,7 @@
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
-		/** Honest note when a tiny search result bypasses Next-only only. */
+		/** Honest note when a tiny search result bypasses the compatible filter. */
 		filterBypassNote?: string | null;
 		/** Identity of the pane being rendered (e.g. pane index) - the
 		 * scroll cursor restores when this changes, NOT on row updates. */
@@ -303,7 +311,7 @@
 		onloadrow: (
 			row: BrowserRow,
 			deck: DeckId | null,
-			opts?: { play?: boolean; reservation?: number }
+			opts?: { play?: boolean; reservation?: number; pressT0Ms?: number }
 		) => void;
 		/**
 		 * Preferred deck for double-click load+play. Shift -> CH3/CH4 when
@@ -342,7 +350,14 @@
 		findQuery?: string;
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId?: string | null;
+		/** Panel-owned status surface, pinned below the column headers. */
+		bodyOverlay?: Snippet;
 	} = $props();
+
+	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
+	 * height is density-dependent (`--tt-row-h`), so a constant would drift
+	 * the overlay into or away from the headers on a density change. */
+	let theadHeightPx = $state(0);
 
 	const GENRE_CLICK_MS = 320;
 	const LOAD_DBLCLICK_SEL = '.c-preview, .c-art, .c-title, .c-artist';
@@ -461,7 +476,13 @@
 		const reservation = picked != null ? picked.reservation : null;
 		// Missing key = ask; false = skip (remembered "do this every time").
 		if (uiPrefs.confirm.dblclick_load_play === false) {
-			onloadrow(row, deck, reservation !== null ? { play: true, reservation } : { play: true });
+			onloadrow(
+				row,
+				deck,
+				reservation !== null
+					? { play: true, reservation, pressT0Ms: event.timeStamp }
+					: { play: true, pressT0Ms: event.timeStamp }
+			);
 			return;
 		}
 		// A second double-click before the first confirm is answered
@@ -862,6 +883,20 @@
 			▼ MASTER
 		</button>
 	{/if}
+	{#if bodyOverlay !== undefined}
+		<!-- `bind:clientHeight` only lands after the first resize callback, so on
+		     the very first paint theadHeightPx is still 0 and this would sit ON
+		     the sticky header instead of below it (blinded review, PR #1672).
+		     A pane that is already loading at mount is exactly when that
+		     happens. Unmeasured means invisible, not misplaced. -->
+		<div
+			class="tt-body-overlay"
+			class:measured={theadHeightPx > 0}
+			style={`top:${theadHeightPx}px`}
+		>
+			{@render bodyOverlay()}
+		</div>
+	{/if}
 	<div
 		class="table-wrap"
 		bind:this={wrapEl}
@@ -894,7 +929,7 @@
 				<col style={`width:${colWidths.genre}px`} />
 				<col style={`width:${colWidths.stems}px`} />
 			</colgroup>
-			<thead>
+			<thead bind:clientHeight={theadHeightPx}>
 				<tr>
 					<th
 						class="h-icon"
@@ -1526,19 +1561,22 @@
 		<button
 			type="button"
 			class="load-confirm-yes"
-			onclick={() => {
+			onclick={(e) => {
 				const pending = loadConfirm;
 				const remember = loadConfirmEveryTime;
 				loadConfirm = null;
 				loadConfirmEveryTime = false;
 				if (pending === null) return;
 				if (remember) setConfirmPref('dblclick_load_play', false);
+				// The dialog paused for a human decision of unknown length, so
+				// the felt wait for THIS gesture starts at the Yes click, not
+				// at the double-click that only opened it (r3974057968).
 				onloadrow(
 					pending.row,
 					pending.deck,
 					pending.reservation !== null
-						? { play: true, reservation: pending.reservation }
-						: { play: true }
+						? { play: true, reservation: pending.reservation, pressT0Ms: e.timeStamp }
+						: { play: true, pressT0Ms: e.timeStamp }
 				);
 			}}>Yes</button
 		>
@@ -1975,6 +2013,20 @@
 	/* `left` comes from masterFoldCenterPx as an inline style: the middle of
 	 * the TABLE pointed at Rating / Comments, which is not what the badge is
 	 * about. See src/lib/rb/master-fold-anchor.ts (pin b44c957f082f). */
+	.tt-body-overlay {
+		position: absolute;
+		left: 0;
+		right: 0;
+		z-index: 3;
+		display: flex;
+		justify-content: center;
+		/* Never eats a click meant for the row underneath it. */
+		pointer-events: none;
+		visibility: hidden;
+	}
+	.tt-body-overlay.measured {
+		visibility: visible;
+	}
 	.master-fold {
 		position: absolute;
 		transform: translateX(-50%);

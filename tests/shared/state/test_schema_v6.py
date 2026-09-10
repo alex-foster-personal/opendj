@@ -11,7 +11,7 @@ Acceptance criteria, one assertion block each:
   location_id that is not 32 lowercase hex, or drops the FK to tracks or
   either partial UNIQUE index, the PK rebuild is unsafe -- broken.
 - if a table exists in the DB that no schema authority declares, the
-  four-authorities drift is back and nobody notices -- broken.
+  multi-authority drift is back and nobody notices -- broken.
 - if machine identity is not stable across calls, a restored DB can
   impersonate another machine in hub_changelog -- broken.
 """
@@ -24,11 +24,11 @@ from pathlib import Path
 
 import pytest
 
-from apps.shared.pairings import schema_sql as pairings_schema
-from apps.shared.play_orders import schema as play_orders_schema
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity as mid
 from apps.shared.state import schema as state_schema
+from scripts import sync_drift_lint as lint
+from scripts import sync_drift_subject
 
 pytestmark = pytest.mark.requirement("INFRA-01")
 
@@ -41,27 +41,6 @@ _SYNCED_TABLES = (
     "playlists",
     "playlist_memberships",
     "track_locations",
-)
-
-# Mirrors apps/launcher/scripts/bootstrap_db.py:133 -- that file is a script
-# without an ``__init__.py``, so it cannot be imported. Kept verbatim so the
-# tripwire sees exactly what the launcher creates in a real state.db.
-_LAUNCHER_DDL: tuple[str, ...] = (
-    """
-    CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
-        title, artist, album, genre, key, tags,
-        tokenize='unicode61 remove_diacritics 2'
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS tracks_frecency (
-        stable_id        TEXT PRIMARY KEY,
-        plays            INTEGER DEFAULT 0,
-        drags            INTEGER DEFAULT 0,
-        last_played_at   INTEGER,
-        last_dragged_at  INTEGER
-    )
-    """,
 )
 
 
@@ -440,13 +419,19 @@ def test_v5_to_v8_is_idempotent(tmp_path: Path) -> None:
 
 
 def _provision_every_authority(path: Path) -> sqlite3.Connection:
-    """A DB carrying all four schema authorities, as a live state.db does."""
-    conn = state_db.open_rw(path)
-    pairings_schema.ensure_phase08_tables(conn)
-    play_orders_schema.apply_play_order_migrations(conn)
-    for stmt in _LAUNCHER_DDL:
-        conn.execute(stmt)
-    return conn
+    """A DB carrying every schema authority, as a live state.db does.
+
+    Delegates to ``scripts.sync_drift_subject``, which owns the canonical
+    list. This test used to hand-copy the authorities, and the copy went
+    stale twice over (both found Wed 9 Sep 2026): apps/analysis/store.py and
+    apps/spotify/state_aux.py had been writing five tables into state.db that
+    the copy had never heard of, and apps/shared/pairings/schema_sql.py's
+    SECOND entry point, apply_pairing_capture_migrations, three more. The
+    tripwire passed the whole time, over a database missing half its
+    authorities. One list means adding an authority there updates this test
+    and sync_drift_lint's D-08 together.
+    """
+    return sync_drift_subject.build_state_db(path)
 
 
 def test_every_table_in_a_fully_provisioned_db_is_declared(
@@ -454,10 +439,12 @@ def test_every_table_in_a_fully_provisioned_db_is_declared(
 ) -> None:
     conn = _provision_every_authority(state_db_path)
     try:
-        undeclared = sorted(_user_tables(conn) - state_schema.ALL_KNOWN_TABLES)
+        undeclared = sorted(_user_tables(conn) - lint.declared_state_tables())
         assert not undeclared, (
             "undeclared tables in state.db -- add them to schema.TABLES (this "
-            f"module owns them) or FOREIGN_AUTHORITY_TABLES: {undeclared}"
+            "module owns them), to FOREIGN_AUTHORITY_TABLES (another authority "
+            "this module knows about), or to apps/database's table docs (a "
+            f"sibling app writing to the shared connection): {undeclared}"
         )
         # And nothing declared is missing, so the tuples are not stale either.
         missing = sorted(state_schema.ALL_KNOWN_TABLES - _user_tables(conn))
@@ -470,7 +457,7 @@ def test_tripwire_fails_loudly_on_an_undeclared_table(state_db_path: Path) -> No
     conn = _provision_every_authority(state_db_path)
     try:
         conn.execute("CREATE TABLE rogue_authority_table (x TEXT)")
-        assert _user_tables(conn) - state_schema.ALL_KNOWN_TABLES == {
+        assert _user_tables(conn) - lint.declared_state_tables() == {
             "rogue_authority_table"
         }
     finally:

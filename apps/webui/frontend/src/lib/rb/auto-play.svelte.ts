@@ -28,15 +28,14 @@ import {
 } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
-	decideAutoPlayBeatSync,
 	decideMasterPromotion,
 	effectiveAutoPlayThresholdMs,
 	handoffFailureIsRetryable,
-	formatAutoPlaySyncSkipToast,
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
 	getAutoPlayPlaylistRevision,
 	registerAutoPlayRankProvider,
+	remainingAutoPlayCandidates,
 	pickFollowerDeck,
 	pickNextStableId,
 	pickSourceDeck,
@@ -49,11 +48,6 @@ import {
 	type AutoPlayMasterPromotion,
 	chartedOrderKey
 } from '$lib/rb/auto-play';
-import {
-	computeFollowerSyncPlan,
-	quantizeToNearestBeat,
-	validateBeatGrid
-} from '$lib/rb/beat-sync-math';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
@@ -64,7 +58,9 @@ import {
 	clearAutoPlayQueue,
 	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
-import type { AnlzBeat } from '$lib/rb/anlz-types';
+import { autoPlayExhaustionToast, autoPlayStallReason } from '$lib/rb/autoplay-stall';
+import { applyAutoPlayBeatSyncDecision } from '$lib/rb/auto-play-phase-lock';
+import { clearAutoPlayStall, noteAutoPlayExhaustion, noteAutoPlayHandoffStall, retireAutoPlayStallIfAudible } from '$lib/rb/autoplay-stall.svelte';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -77,8 +73,6 @@ const POLL_MS = 250;
  * near future and ranks beyond it are simply absent.
  */
 const CHARTED_ORDER_HORIZON = 64;
-/** Synthetic schedule horizon for preflight only (plan needs syncAt > now). */
-const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 /** Failed load/play attempts per source track before stopping. */
 const MAX_HANDOFF_ATTEMPTS = 3;
 
@@ -95,7 +89,18 @@ let _exhaustedFeedEpoch: number | null = null;
 let _chartedOrderKey: string | null = null;
 /** Candidates that failed load/play; cleared when playlist membership changes. */
 let _unplayableIds = new Set<string>();
-let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
+/**
+ * Candidates that failed to LOAD for the current source, by id.
+ *
+ * The ids, not a count (Codex r3974580403): a failed candidate is quarantined
+ * in `_unplayableIds` and therefore drops out of `remaining`, so a stall built
+ * from `remaining` named the surviving INCOMPATIBLE rows as the files to check
+ * while the ones that actually failed lived only in an expiring toast. It is
+ * also source-scoped and feed-scoped: `_syncPlayedSet` retires it with the rest
+ * of the playlist-scoped state, or a new playlist inherits the last one's
+ * failures and is told its own candidates failed to load (r3974580407).
+ */
+let _attemptsFor: { source: string; failed_ids: string[] } = { source: '', failed_ids: [] };
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
 /** Empty-feed toast epoch during playlist hydration, without consuming the source arm. */
@@ -169,6 +174,22 @@ function _refreshChartedOrder(
 	publishAutoPlayOrder(full.slice(1));
 }
 
+/**
+ * Which arming this is. Bumped on every install, arm and disarm edge.
+ *
+ * A handoff is several awaits long and can reject after the operator toggled
+ * AutoPlay off and on again, or left /performance and came back. "Is AutoPlay
+ * on right now" answers yes for the REPLACEMENT session, which would let a
+ * dead handoff restore its stale stall into it (Codex r3974381587), so a late
+ * failure has to prove it belongs to the arming it started under.
+ */
+let _generation = 0;
+
+/** Same arming, still armed, still installed. */
+function _armedAt(generation: number): boolean {
+	return uiPrefs.auto_play_enabled && _stopArmWatcher !== null && generation === _generation;
+}
+
 function _snaps(): AutoPlayDeckSnap[] {
 	return autoPlayDeckSnaps(DECK_IDS, (id) => deckStates[id], deckAudioClockPositionMs);
 }
@@ -181,89 +202,12 @@ function _syncPlayedSet(): void {
 		// already put on a deck must stay unpickable regardless of the feed.
 		_playedIds = new Set();
 		_unplayableIds = new Set();
+		_attemptsFor = { source: '', failed_ids: [] };
 		_playedFeedEpoch = epoch;
 		if (_exhaustedFeedEpoch !== null) {
 			_triggeredFor = null;
 			_exhaustedFeedEpoch = null;
 		}
-	}
-}
-
-function _gridOrNull(deck: DeckId): readonly AnlzBeat[] | null {
-	const beats = deckStates[deck].anlz?.beatgrid.beats;
-	try {
-		validateBeatGrid(beats ?? []);
-	} catch {
-		return null;
-	}
-	return beats ?? null;
-}
-
-/** Pure plan probe using live decks; never mutates transport. */
-function _phaseLockOk(sourceId: DeckId, follower: DeckId): { ok: true } | { ok: false; error: string } {
-	const masterGrid = _gridOrNull(sourceId);
-	const followerGrid = _gridOrNull(follower);
-	if (masterGrid === null) {
-		return { ok: false, error: `source deck ${sourceId} has no valid real PQTZ beat grid` };
-	}
-	if (followerGrid === null) {
-		return { ok: false, error: `follower deck ${follower} has no valid real PQTZ beat grid` };
-	}
-	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
-	const masterPosSec = Math.max(0, deckStates[sourceId].position_ms / 1000);
-	const rawFollowerSec = Math.max(0, deckStates[follower].position_ms / 1000);
-	const followerPositionSec = quantizeToNearestBeat(followerGrid, rawFollowerSec);
-	const masterTempoRatio = deckStates[sourceId].pitch;
-	const mode = deckStates[follower].sync_mode;
-	try {
-		computeFollowerSyncPlan({
-			masterGrid,
-			followerGrid,
-			masterPositionAtSyncSec: masterPosSec,
-			masterTempoRatio,
-			followerPositionSec,
-			currentContextTimeSec: 0,
-			syncAtContextTimeSec: PREFLIGHT_SYNC_AHEAD_SEC,
-			minFollowerTempoRatio: bounds.min,
-			maxFollowerTempoRatio: bounds.max,
-			mode
-		});
-		return { ok: true };
-	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { ok: false, error: message };
-	}
-}
-
-async function _applyBeatSyncDecision(
-	source: AutoPlayDeckSnap,
-	follower: DeckId
-): Promise<void> {
-	const probe = source.beat_sync_enabled
-		? _phaseLockOk(source.id, follower)
-		: { ok: false as const, error: 'source Beat Sync off' };
-	const decision = decideAutoPlayBeatSync({
-		source_beat_sync_enabled: source.beat_sync_enabled,
-		phase_lock_ok: probe.ok
-	});
-	const currentlyOn = deckStates[follower].beat_sync_enabled;
-	if (decision === 'enable' && !currentlyOn) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true });
-	} else if (decision === 'disable' && currentlyOn) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false });
-	}
-	if (source.beat_sync_enabled && !probe.ok) {
-		const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
-		pushToast(
-			formatAutoPlaySyncSkipToast({
-				follower_deck: follower,
-				mode: deckStates[follower].sync_mode,
-				plan_error: probe.error,
-				min_ratio: bounds.min,
-				max_ratio: bounds.max
-			}),
-			'info'
-		);
 	}
 }
 
@@ -289,7 +233,8 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	}
 	// ---- commit point: nextId is on deck `follower` from here down ----
 	try {
-		await _applyBeatSyncDecision(source, follower);
+		const syncSkip = await applyAutoPlayBeatSyncDecision(source, follower);
+		if (syncSkip !== null) pushToast(syncSkip, 'info');
 		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
 	} catch (error: unknown) {
 		throw new AutoPlayHandoffError('commit', error);
@@ -328,11 +273,16 @@ async function _promoteMaster(): Promise<void> {
 	if (decision === 'promote') {
 		_pendingMaster = null;
 		_promoting = true;
+		const generation = _generation;
 		try {
 			await dispatchPerformanceCommand({ type: 'master', deck: pending.deck });
 		} catch (error: unknown) {
+			if (!_armedAt(generation)) return;
 			const message = error instanceof Error ? error.message : String(error);
 			pushToast(`auto-play: deck ${pending.deck} master handover refused: ${message}`, 'error');
+			// PLAY-08 (r3974888765): playing, not master, so nothing queues
+			// after it. Terminal, and it was only ever an expiring toast.
+			noteAutoPlayHandoffStall('master-handover-refused', pending.stable_id, message, true);
 		} finally {
 			_promoting = false;
 		}
@@ -371,6 +321,7 @@ async function _tick(): Promise<void> {
 	}
 
 	_syncPlayedSet();
+	retireAutoPlayStallIfAudible(source.stable_id, deckStates[source.id].audible);
 	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
 
@@ -427,12 +378,10 @@ async function _tick(): Promise<void> {
 	});
 	if (nextId === null) {
 		const feed = getAutoPlayPlaylist();
-		const remaining = feed.filter(
-			(r) =>
-				r.stable_id !== source.stable_id &&
-				!excludeIds.has(r.stable_id) &&
-				!_playedIds.has(r.stable_id)
-		);
+		const remaining = remainingAutoPlayCandidates({
+			playlist: feed, current_stable_id: source.stable_id,
+			exclude_ids: excludeIds, played_ids: _playedIds
+		});
 		const allMissing = remaining.length > 0 && remaining.every((r) => !r.file_exists);
 		// An empty feed is its own diagnosis and must not be reported as a
 		// key/BPM dead end: on Tue 1 Sep 2026 that message sent the maintainer reading
@@ -450,14 +399,22 @@ async function _tick(): Promise<void> {
 			return;
 		}
 		_waitingEmptyFeedEpoch = null;
-		pushToast(
-			allMissing
-					? 'auto-play: remaining playlist tracks are missing/stub audio'
-					: uiPrefs.auto_play_enforce_order
-						? 'auto-play: no next unplayed track in playlist order'
-						: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
-			'error'
-		);
+		// ONE derivation for the toast and the durable state: the toast is what
+		// reaches webui-client-errors-*.log, so two derivations means the
+		// incident row and the screen can name different causes (r3974518065).
+		const reason = autoPlayStallReason({
+			all_missing: allMissing,
+			load_failures: _attemptsFor.source === source.stable_id && _attemptsFor.failed_ids.length > 0,
+			enforce_order: uiPrefs.auto_play_enforce_order
+		});
+		pushToast(autoPlayExhaustionToast(reason), 'error');
+		// The tracks worth NAMING differ by cause: for a load failure they are
+		// the quarantined candidates, which `remaining` has already excluded.
+		const blocked = reason === 'candidates-failed-to-load'
+			? feed.filter((row) => _attemptsFor.failed_ids.includes(row.stable_id))
+			: remaining;
+		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
+		noteAutoPlayExhaustion({ source_stable_id: source.stable_id, reason, blocked });
 		_triggeredFor = source.stable_id;
 		_exhaustedFeedEpoch = _playedFeedEpoch;
 		return;
@@ -466,6 +423,7 @@ async function _tick(): Promise<void> {
 	// Row 4/c: arm and claim BEFORE dispatching anything. Both are one-way for
 	// the life of this source track. Recording them only on success is what let
 	// a late failure roll the trigger back and load a second track.
+	const generation = _generation;
 	_inFlight = true;
 	_triggeredFor = source.stable_id;
 	_exhaustedFeedEpoch = null;
@@ -475,9 +433,21 @@ async function _tick(): Promise<void> {
 	_playedIds.add(nextId);
 	try {
 		await _handoff(source, follower, nextId);
-		_attemptsFor = { source: '', count: 0 };
+		_attemptsFor = { source: '', failed_ids: [] };
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
+		// NOTHING from a dead arming may report or mutate (Codex r3974734066,
+		// r3974734057). The guard is here, at the top, rather than on the
+		// durable raise alone: `pushToast` writes the perf ring AND posts to
+		// /api/v1/client-errors, so a stale rejection was still filing a
+		// server-side failure against a session that had ended; and the
+		// quarantine below would make the REPLACEMENT session skip a candidate
+		// it never tried, then blame it for a load failure it never had.
+		//
+		// Safe to abandon: every field this would have touched is module-level
+		// state that teardown and the arm effect have already reset, and
+		// `_inFlight` is cleared in `finally` either way.
+		if (!_armedAt(generation)) return;
 		// An unclassified throw is treated as committed. That is the safe
 		// direction: a wrong 'load' guess would re-arm and load a second track,
 		// which is the live bug. A wrong 'commit' guess only forgoes a retry.
@@ -491,21 +461,29 @@ async function _tick(): Promise<void> {
 					`did not finish: ${message}`,
 				'error'
 			);
+			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message, _armedAt(generation));
 			return;
 		}
 		// Row 16: nothing landed on the deck; quarantine and try another pick.
 		_unplayableIds.add(nextId);
 		if (_attemptsFor.source !== source.stable_id) {
-			_attemptsFor = { source: source.stable_id, count: 0 };
+			_attemptsFor = { source: source.stable_id, failed_ids: [] };
 		}
-		_attemptsFor.count += 1;
-		if (_attemptsFor.count < MAX_HANDOFF_ATTEMPTS) {
+		// Distinct by construction: nextId went into _claimedIds before dispatch.
+		_attemptsFor.failed_ids.push(nextId);
+		if (_attemptsFor.failed_ids.length < MAX_HANDOFF_ATTEMPTS) {
 			_triggeredFor = null;
 			pushToast(`auto-play: skipped unplayable (${nextId.slice(0, 12)}...): ${message}`, 'info');
 		} else {
 			pushToast(
 				`auto-play stopped after ${MAX_HANDOFF_ATTEMPTS} failed handoffs: ${message}`,
 				'error'
+			);
+			const failed = getAutoPlayPlaylist().filter((row) =>
+				_attemptsFor.failed_ids.includes(row.stable_id)
+			);
+			noteAutoPlayHandoffStall(
+				'handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation), failed
 			);
 		}
 	} finally {
@@ -551,6 +529,7 @@ export function installAutoPlay(): () => void {
 	const unregisterRankProvider = registerAutoPlayRankProvider(() => autoPlayOrder.rankOf);
 	_stopArmWatcher = $effect.root(() => {
 		$effect(() => {
+			_generation += 1;
 			if (uiPrefs.auto_play_enabled) {
 				// PLAY-05: activation creates the inspectable queue before the
 				// first poll has a master track from which to calculate handoffs.
@@ -563,10 +542,12 @@ export function installAutoPlay(): () => void {
 				_chartedOrderKey = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();
+				clearAutoPlayStall();
 			}
 		});
 	});
 	return () => {
+		_generation += 1;
 		unregisterRankProvider();
 		_stopArmWatcher?.();
 		_stopArmWatcher = null;
@@ -581,9 +562,10 @@ export function installAutoPlay(): () => void {
 		_claimedIds = new Set();
 		_playedIds = new Set();
 		_unplayableIds = new Set();
-		_attemptsFor = { source: '', count: 0 };
+		_attemptsFor = { source: '', failed_ids: [] };
 		_playedFeedEpoch = -1;
 		_clearChartedOrder();
 		clearAutoPlayQueue();
+		clearAutoPlayStall();
 	};
 }

@@ -15,7 +15,11 @@ router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
 class LastResultOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    status: Literal["ok", "error"]
+    #: Three verdicts, not two (round 5 gate T8). ``inconclusive`` is a sync
+    #: that completed while its digest compare EXCLUDED rows on one side, so
+    #: agreement was never verified. See
+    #: :data:`apps.sync_hub.status.ResultStatus`.
+    status: Literal["ok", "error", "inconclusive"]
     message: str
 
 
