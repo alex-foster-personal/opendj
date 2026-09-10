@@ -197,8 +197,22 @@ async function _adopt(
 		// switch (or a re-adoption of the same source) must not force every
 		// in-flight fetch elsewhere to re-check itself for nothing.
 		const beatgrid = features.beatgrid;
-		if (beatgrid !== undefined && evictAnlzCacheEntriesServingOtherSource(beatgrid)) {
-			bumpAnlzFetchGeneration();
+		if (beatgrid !== undefined) {
+			// `evictAnlzCacheEntriesServingOtherSource` only clears READY entries
+			// - a LOADING one (a prefetch already in flight when this adoption
+			// runs) is invisible to it, since we do not yet know what source it
+			// will resolve to (discussion_r3975043552 P1 BLOCKING). A generation
+			// bump is what actually protects that case: `_fetchAndPublish`
+			// discards any settle whose captured generation went stale, so
+			// bumping forces even an untouched in-flight fetch to re-validate
+			// itself against the source it settles under. Fire it whenever the
+			// effective value is actually changing, not only when the eviction
+			// found a ready entry to remove.
+			const evictedReady = evictAnlzCacheEntriesServingOtherSource(beatgrid);
+			const valueChanged = analysisSourceState.features.beatgrid !== beatgrid;
+			if (evictedReady || valueChanged) {
+				bumpAnlzFetchGeneration();
+			}
 		}
 		_recordDeckSources(features, null);
 		if (isSuperseded()) return;

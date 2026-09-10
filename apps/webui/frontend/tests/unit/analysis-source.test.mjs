@@ -637,6 +637,48 @@ test('a switch with no loaded deck to disagree still evicts a stale prefetched c
 	);
 });
 
+test('a first adoption whose value changes invalidates an in-flight prefetch even when nothing was ready to evict (r3975043552 P1 BLOCKING)', async () => {
+	analysisSource.invalidateAnlzCacheEntry('real-track-a-own-grid');
+
+	// Seed the daemon under the PRE-switch source, then start a prefetch and
+	// catch it while still 'loading' - `_fetchAndPublish` writes that status
+	// synchronously before its real HTTP request to the fixture server ever
+	// resolves, so nothing needs to be raced here.
+	await daemonSelect('rbx');
+	analysisSource.ensureAnlz('real-track-a-own-grid');
+	assert.equal(
+		analysisSource.getAnlzEntry('real-track-a-own-grid')?.status,
+		'loading',
+		'the prefetch must still be in flight for this test to prove anything'
+	);
+
+	// Flip the daemon and let THIS module's first-ever adopt see the changed
+	// value while that prefetch is still unresolved. Nothing is loaded on any
+	// deck, so this is the fast (no-refresh) `_adopt` path, and
+	// `evictAnlzCacheEntriesServingOtherSource` cannot see a 'loading' entry -
+	// it does not yet know what source it will resolve to. Only a generation
+	// bump stops the settling fetch from publishing stale rekordbox bytes
+	// under the toggle's new own answer.
+	await daemonSelect('own');
+	await analysisSource.loadAnalysisSource();
+
+	// Give the in-flight prefetch time to actually settle.
+	const deadline = Date.now() + 500;
+	while (
+		analysisSource.getAnlzEntry('real-track-a-own-grid')?.status === 'loading' &&
+		Date.now() < deadline
+	) {
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+
+	assert.notEqual(
+		analysisSource.getAnlzEntry('real-track-a-own-grid')?.status,
+		'ready',
+		'a discarded, superseded fetch must never publish - a ready entry here can only be the ' +
+			'stale rekordbox-sourced response leaking through after the switch to own'
+	);
+});
+
 test('a switch with no loaded deck leaves an already-agreeing prefetched entry untouched', async () => {
 	analysisSource.invalidateAnlzCacheEntry('real-track-b-own-grid');
 	await daemonSelect('own');
