@@ -1,5 +1,6 @@
 import { DECK_IDS } from '$lib/player/constants';
 import type { DeckId } from '$lib/player/constants';
+import type { SyncMode } from '$lib/rb/beat-sync-math';
 
 export function seekSyncMaster(
 	deck: DeckId,
@@ -66,4 +67,19 @@ export function syncMayWriteTempo(
 		throw new RangeError(`sync deck ids must be within 1..4, got deck=${deck}, master=${master}`);
 	}
 	return beatSyncEnabled && master !== null && master !== deck;
+}
+
+/** Beat Sync Max advertises BAR downbeat lock. A follower left in BEAT would
+ * otherwise nearest-beat lock, so master's n=1 can sit on follower n=2/3/4. */
+export function syncModeForBeatSyncMax(
+	beatSyncMax: boolean,
+	deckSyncMode: SyncMode
+): SyncMode {
+	if (typeof beatSyncMax !== 'boolean') {
+		throw new TypeError(`beatSyncMax must be boolean, got ${typeof beatSyncMax}`);
+	}
+	if (deckSyncMode !== 'beat' && deckSyncMode !== 'bar') {
+		throw new TypeError(`deckSyncMode must be "beat" or "bar", got ${String(deckSyncMode)}`);
+	}
+	return beatSyncMax ? 'bar' : deckSyncMode;
 }

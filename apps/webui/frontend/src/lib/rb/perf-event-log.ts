@@ -24,6 +24,11 @@
  *    localStorage is coalesced onto a timer and forced on pagehide.
  */
 
+import { withinBudgets, type PerfEvent } from './perf-event-buckets';
+
+export { audioHealthFaultSeverity } from './perf-event-buckets';
+export type { PerfEvent } from './perf-event-buckets';
+
 /**
  * The perf kinds whose ERROR-severity rows leave this browser.
  *
@@ -44,17 +49,26 @@
  * `escalated-kinds-superset.test.mjs` reds on any `error`-severity kind
  * absent from this set, so drift is CHECKED, not just corrected.
  */
-const ESCALATED_KINDS: ReadonlySet<string> = new Set([
-	'xrun',
-	'audio-context',
-	'silent-while-playing',
-	'presentation-clock-stalled',
-	'presentation-stalled',
-	'audio-output-rebind-failed',
-	'audio-output-dead',
-	'audio-output-dead-persistent',
-	'output-device-unreachable'
-]);
+// ESCALATED_KINDS was here until Thu 10 Sep 2026, an eight-name allowlist that
+// _escalate consulted AFTER recordPerfEvent had already gated on
+// `severity === 'error'`. It could therefore only ever SUBTRACT: its whole
+// effect was to drop error-severity rows before they left the browser.
+//
+// It was removed rather than extended. An allowlist of values must be
+// maintained forever and rots silently between maintenances, and this one had
+// already rotted in both directions: `presentation-tick-failed` was recorded
+// at `error` by presentation-clock-report.ts, with a message saying the
+// waveform would have frozen over live audio, and was silently discarded here;
+// while `presentation-stalled` sat in the set and is emitted by nothing.
+//
+// The comment that used to live here claimed escalated-kinds-superset.test.mjs
+// "reds if any module records a kind at error severity that is absent from
+// this set". That test read exactly two files. A guard whose docstring says
+// "any module" and whose code says "these two" cannot fail for the case it
+// claims to cover, which is why a live escapee went unnoticed.
+//
+// The invariant now stands on its own: recorded at `error` means escalated.
+// There is no list to drift.
 
 /**
  * At most one escalation per kind per window.
@@ -91,6 +105,8 @@ const _lastEscalationAtMs = new Map<string, number>();
  */
 let _escalator: ((event: PerfEvent) => void) | null = null;
 let _warnedNoEscalator = false;
+/** One warning per session when the escalator itself throws. */
+let _warnedEscalatorThrew = false;
 
 /**
  * Point escalated rows at a sink. Called once, at client boot.
@@ -102,37 +118,6 @@ let _warnedNoEscalator = false;
  */
 export function setPerfEventEscalator(sink: ((event: PerfEvent) => void) | null): void {
 	_escalator = sink;
-}
-
-export interface PerfEvent {
-	t: string;
-	kind: string;
-	deck: 1 | 2 | 3 | 4 | null;
-	message: string;
-	/** Present for timing rows (ms per stage). */
-	stages?: Record<string, number>;
-	/**
-	 * Non-numeric facts about the row, e.g. which stem layout a deck load
-	 * actually played. Optional and additive: rows written before this field
-	 * existed stay valid, and readers must treat it as possibly absent.
-	 *
-	 * Kept SEPARATE from `stages` rather than stringly-typed into it, because
-	 * `stages` is a ms-per-stage map and anything summing or charting it must
-	 * never trip over a value that is not a duration.
-	 */
-	labels?: Record<string, string>;
-	/**
-	 * Correlation id for rows that something on screen also shows.
-	 *
-	 * A toast prints this id and copies it to the clipboard, so the id here and
-	 * the id the user pasted into an issue are the same string by construction.
-	 * Without it, two identical `toast-error` rows ten minutes apart are
-	 * indistinguishable and the copied id refers to nothing.
-	 *
-	 * Optional and additive: rows written before this field existed stay valid,
-	 * and rows nothing displays (deck-load timings) have no id to carry.
-	 */
-	id?: string;
 }
 
 const STORAGE_KEY = 'mdt.perfEventLog';
@@ -158,95 +143,11 @@ export interface DeckStateBaseline {
 	unloaded: [1, 2, 3, 4];
 }
 
-/**
- * Per-kind budgets. The ring is still bounded at the sum of these, so the
- * flushed JSON cannot grow; what changed is WHO pays for a burst.
- * deck-load covers `deck-load sid=...` and `deck-load-fail`, i.e. the load KPI
- * __mdtLastLoads() reads. 16 rows is four full 4-deck loads.
- * transport-schedule is the latency instrument, and the noisy one: 16 rows is
- * the tail of one gesture, which is all a scheduled_offset_ms comparison needs.
- * deck-state covers `deck-state-empty` (legacy empty-deck boot rows) and
- * `deck-unload`, i.e. the rows the resource probe reconstructs deck state
- * from. Deck churn must be able neither to evict the audio-liveness kinds below
- * nor to be evicted by them, so it is not part of the shared remainder; 8 rows
- * is two full unload cycles.
- * Everything else (audio-context device floors, sync-failure, beat-sync-skip,
- * processor-latency-read-failed) is low volume and shares the remainder.
- */
-const DECK_LOAD_BUDGET = 16;
-const TRANSPORT_SCHEDULE_BUDGET = 16;
-const DECK_STATE_BUDGET = 8;
-const OTHER_BUDGET = 8;
-/**
- * Q1: press rows, kept out of the pitch fader's way. PitchFader drives
- * `_scheduleDeck` from an unthrottled pointermove, so one drag is ~40 rows
- * against 16. A DJ starts a track and then reaches for the fader to
- * beatmatch it - the standard gesture, not an edge case - so the press row
- * carrying `input_to_audible_ms` was evicted by the operator's very next
- * move. 8 is two full four-deck press flurries, which is all a press
- * comparison needs: a press is a discrete gesture, never a per-frame stream.
- */
-const TRANSPORT_PRESS_BUDGET = 8;
-
 /** Trailing coalesce window for the localStorage write. */
 const FLUSH_DEBOUNCE_MS = 250;
 
-type PerfBucket =
-	| 'deck-load'
-	| 'transport-schedule'
-	| 'transport-schedule-press'
-	| 'deck-state'
-	| 'other';
 
-const BUDGETS: Record<PerfBucket, number> = {
-	'deck-load': DECK_LOAD_BUDGET,
-	'transport-schedule': TRANSPORT_SCHEDULE_BUDGET,
-	'transport-schedule-press': TRANSPORT_PRESS_BUDGET,
-	'deck-state': DECK_STATE_BUDGET,
-	other: OTHER_BUDGET
-};
-
-/** Prefix match, because kinds carry a suffix (`deck-load sid=<id>`).
- * `deck-unload` is matched exactly: it shares the deck-state bucket with the
- * `deck-state-*` kinds but predates the `deck-state-` prefix on its own kind.
- *
- * ORDER IS LOAD-BEARING below: press kinds are a SUFFIX of the plain one, so
- * testing `transport-schedule` first would swallow every press row back into
- * the fader's bucket. The suffix shape keeps existing prefix consumers whole. */
-function _bucketOf(kind: string): PerfBucket {
-	if (kind.startsWith('deck-load')) return 'deck-load';
-	if (kind.startsWith('transport-schedule-press')) return 'transport-schedule-press';
-	if (kind.startsWith('transport-schedule')) return 'transport-schedule';
-	if (kind.startsWith('deck-state') || kind === 'deck-unload') return 'deck-state';
-	return 'other';
-}
-
-/**
- * The newest rows each bucket is allowed to keep, still in chronological order.
- *
- * Walking from the newest backwards is what makes eviction oldest-first WITHIN a
- * bucket while leaving the other buckets untouched. The reverse at the end
- * restores the newest-last order that __mdtPerfLog() consumers rely on.
- */
-function _withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
-	const kept: PerfEvent[] = [];
-	const taken: Record<PerfBucket, number> = {
-		'deck-load': 0,
-		'transport-schedule': 0,
-		'transport-schedule-press': 0,
-		'deck-state': 0,
-		other: 0
-	};
-	for (let i = events.length - 1; i >= 0; i--) {
-		const bucket = _bucketOf(events[i].kind);
-		if (taken[bucket] >= BUDGETS[bucket]) continue;
-		taken[bucket] += 1;
-		kept.push(events[i]);
-	}
-	return kept.reverse();
-}
-
-let _events: PerfEvent[] = _withinBudgets(_readStorage());
+let _events: PerfEvent[] = withinBudgets(_readStorage());
 /** Rows appended since the durable copy was last written. */
 let _unflushed = false;
 let _flushArmed = false;
@@ -350,7 +251,7 @@ function _scheduleFlush(): void {
 }
 
 function _push(entry: PerfEvent): void {
-	_events = _withinBudgets([..._events, entry]);
+	_events = withinBudgets([..._events, entry]);
 	_unflushed = true;
 	_scheduleFlush();
 }
@@ -381,8 +282,31 @@ function _stageSummary(stages: Record<string, number>): string {
  * `reportClientError` owns its own durable retry queue, so a POST that fails
  * is retried on the next report or page load rather than lost.
  */
+/**
+ * Whether some OTHER path already owns this row's trip to the server.
+ *
+ * `pushToast` writes the ring row AND, for an error toast, sends its own
+ * `reportClientError` carrying the real `cause`, the toast id and whatever
+ * context the caller measured (deck-load stage timings, say). Escalating the
+ * ring row as well produces TWO reports of one failure, and the two cannot
+ * merge: `reportClientError` fingerprints on `kind:source:message`, and these
+ * differ in both `source` (`perf-event` vs `toast`) and message (the row's
+ * `kind: message` composition vs the cause's own). The richer of the two is
+ * the one a reader needs, and it is the one that arrives second.
+ *
+ * This is not the value-allowlist that used to live at the top of this file.
+ * That list enumerated which FAILURES deserved reporting, which is a judgement
+ * that rots. This is a structural fact about one kind PREFIX: rows named
+ * `toast-*` are written by a reporter that already reports. The invariant
+ * "recorded at error means escalated" is intact; what is refused is escalating
+ * it TWICE.
+ */
+function _hasOwnServerReport(kind: string): boolean {
+	return kind.startsWith('toast-');
+}
+
 function _escalate(entry: PerfEvent): void {
-	if (!ESCALATED_KINDS.has(entry.kind)) return;
+	if (_hasOwnServerReport(entry.kind)) return;
 	if (_escalator === null) {
 		// Once per session, not per row: a sustained dropout would otherwise turn
 		// a missing sink into its own console flood. The row is already in the
@@ -401,7 +325,26 @@ function _escalate(entry: PerfEvent): void {
 	const lastMs = _lastEscalationAtMs.get(entry.kind);
 	if (lastMs !== undefined && nowMs - lastMs < ESCALATION_WINDOW_MS) return;
 	_lastEscalationAtMs.set(entry.kind, nowMs);
-	_escalator(entry);
+	// The escalate path is the ERROR-REPORTING path. A throw here would
+	// propagate out of recordPerfEvent and into whichever module was in the
+	// middle of reporting a fault, turning a reportable problem into a crash at
+	// exactly the moment things are already going wrong. The row is already in
+	// the ring and on the console, so the local record survives either way.
+	//
+	// This is NOT a fallback that masks a failure: the reason is surfaced, once
+	// per session, on the same console the row itself went to. What is refused
+	// is letting the reporter take down the reported.
+	try {
+		_escalator(entry);
+	} catch (cause) {
+		if (!_warnedEscalatorThrew) {
+			_warnedEscalatorThrew = true;
+			console.warn(
+				`[perf-event] escalator threw for kind ${entry.kind}; rows stay in this browser. ` +
+					`The ring and the console still hold them. Cause: ${String(cause)}`
+			);
+		}
+	}
 }
 
 export function recordPerfEvent(
@@ -416,6 +359,7 @@ export function recordPerfEvent(
 		kind,
 		deck,
 		message,
+		severity,
 		...(id === undefined ? {} : { id })
 	};
 	_push(entry);
@@ -463,6 +407,11 @@ export function recordPerfTiming(
 		kind,
 		deck,
 		message,
+		// A timing row is a measurement, not a verdict: `audio-context` is the
+		// device floor, recorded whether or not anything is wrong. Stamped
+		// explicitly rather than left absent so it reads as MEASURED-healthy
+		// instead of unknown.
+		severity: 'info',
 		stages: { ...stages },
 		...(labels === undefined ? {} : { labels: { ...labels } })
 	});

@@ -42,6 +42,13 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import {
+	analysisSourceState,
+	installAnalysisSourceRefreshRunner,
+	setAnalysisSource,
+	type AnalysisSource,
+	type AnalysisSourceFeature
+} from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
@@ -170,6 +177,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
 	/** UI contract only: no automatic second-track selection or mixing exists yet. */
 	| { type: 'auto_play_two_track' }
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
@@ -295,6 +303,22 @@ export interface PerformanceState {
 	preset: PerformancePresetLifecycleSnapshot;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
+	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
+	 * same way the `analysis_source` command names it. An agent driving this
+	 * daemon has to be able to READ the state it can write, including a
+	 * selection some other client PUT directly or one that survived a reload -
+	 * the highlighted RBX/OWN control was the only place it appeared
+	 * (discussion_r3968214027 P1 BLOCKING). Empty until the first
+	 * loadAnalysisSource lands, which is "not asked yet", never a default. */
+	analysis_source: Record<string, AnalysisSource>;
+	/** PARITY-02: the source the loaded DECKS are actually on, which lags
+	 * `analysis_source` by up to one poll and, on a switch whose deck refresh
+	 * keeps failing, may never catch up. An agent that PUT a source and wants to
+	 * know whether the decks followed can only read that here: the two fields
+	 * disagreeing IS the split (discussion_r3970117737, discussion_r3970117741).
+	 * Empty until the first refresh lands, which is "not asked yet", never a
+	 * default. */
+	analysis_source_decks: Record<string, AnalysisSource>;
 	feedback_marks: ReturnType<typeof performanceFeedbackSummary>;
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
@@ -639,6 +663,14 @@ installScopedSyncRunner((_deck, run) => {
 			}
 		});
 });
+// PARITY-02: the poll in AnalysisSourceToggle.svelte adopts an agent's direct
+// PUT with no command of its own, so its deck/cache refresh needs the same
+// all-deck-plus-sync claim the `analysis_source` command takes. Same scopes,
+// so a poll-detected switch queues behind PREPARE/START and every deck
+// mutation instead of replacing grids underneath them
+// (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
+// because analysis-source.svelte.ts is imported FROM here.
+installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -791,6 +823,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('device_id must be a non-empty string');
 		}
 		return { type, device_id: record.device_id };
+	}
+	if (type === 'analysis_source') {
+		_exactKeys(record, ['type', 'feature', 'source']);
+		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (record.source !== 'rekordbox' && record.source !== 'own') {
+			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
+		}
+		return { type, feature: record.feature, source: record.source };
 	}
 	if (type === 'auto_play_two_track') {
 		_exactKeys(record, ['type']);
@@ -1269,6 +1309,13 @@ export function queryPerformanceState(): PerformanceState {
 			next_collapsed: uiPrefs.next_panel_collapsed,
 			recommended_collapsed: uiPrefs.recommended_panel_collapsed
 		},
+		// Spread, not the live rune: this snapshot is structuredClone'd across
+		// the IPC boundary and a $state Proxy is never cloneable.
+		analysis_source: { ...analysisSourceState.features },
+		// Spread for the same reason as the line above: analysisSourceState is a
+		// $state rune, so handing the live Proxy out breaks structuredClone for
+		// every agent reading this snapshot over IPC.
+		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary()
 	};
 }
@@ -1316,6 +1363,7 @@ export function performanceCommandQueueScopes(
 	) {
 		return ['headphone'];
 	}
+	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
 	const deck = _commandDeck(command);
 	if (command.type === 'channel_cue') {
 		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
@@ -1533,6 +1581,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'analysis_source') {
+		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'safety_loop_save') {

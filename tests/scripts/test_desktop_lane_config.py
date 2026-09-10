@@ -338,6 +338,18 @@ def test_the_shell_strips_writeback_before_spawning_the_engine() -> None:
     assert "env_remove" in engine_rs
 
 
+@pytest.mark.requirement("ERRCAP-01")
+def test_the_shell_routes_its_own_diagnostics_into_engine_log() -> None:
+    """Bundled launches from Finder have no terminal; shell output must land in engine.log."""
+    main_rs = (TAURI_CONF.parent / "src/main.rs").read_text(encoding="utf-8")
+    engine_rs = (TAURI_CONF.parent / "src/engine.rs").read_text(encoding="utf-8")
+    assert "install_shell_logging" in main_rs
+    assert "append_shell_log" in main_rs
+    assert "panic::set_hook" in engine_rs
+    assert ".on_page_load(" in main_rs
+    assert "__OPENDJ_enqueueShellClientError" in main_rs
+
+
 @pytest.mark.requirement("INSTALL-14")
 def test_a_failed_boot_raises_a_dialog_rather_than_a_blank_window() -> None:
     """The blank window IS the bug; the shell must have no path to it."""

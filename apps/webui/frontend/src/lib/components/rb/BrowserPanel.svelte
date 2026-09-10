@@ -165,6 +165,7 @@
 	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
@@ -632,19 +633,11 @@
 	);
 	const emptyMessage = $derived.by((): string | null => {
 		if (searchFilterFallback !== null) return null;
-		// The load indicator now paints INSIDE the table, pinned below the
-		// column headers (pin 02717d4ea496), which is exactly where the
-		// empty-state block sits. Both saying "loading..." put two status
-		// surfaces on the same pixels, so the empty state yields: the
-		// indicator is the richer of the two (progress, count, rows/s) and
-		// it is the one this pane deliberately renders. Bot review, PR #1672.
-		//
-		// NOT while a whole-collection search is in flight. The overlay
-		// reports load_progress, so it says nothing at all about the search;
-		// "searching whole collection..." is that state's only signal, and a
-		// background rescan raising pane.loading mid-search would otherwise
-		// silence it (blinded review, PR #1672).
-		if (pane.loading && !pane.searching) return null;
+		// Overlay (LibraryLoadIndicator) is the only in-flight surface: load
+		// and whole-collection search both paint there (pin 02717d4ea496,
+		// follow-up #1688). Empty-state is settled-only, so a concurrent
+		// search+load cannot stack two status strings on the same pixels.
+		if (pane.loading || pane.searching) return null;
 		if (searchMode === 'find') {
 			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
@@ -652,8 +645,7 @@
 			else return null;
 		}
 		if (wholeCollectionActive) {
-			if (pane.searching) return 'searching whole collection...';
-			else if (visibleRows.length === 0) return 'no tracks match the search';
+			if (visibleRows.length === 0) return 'no tracks match the search';
 			else return null;
 		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
@@ -2555,7 +2547,7 @@
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('master-dropdown')}
 				>
 					MASTER <span class="caret">▾</span>
 				</button>
@@ -2586,7 +2578,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('single-column-layout')}
 					aria-label="single column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2596,7 +2588,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('split-column-layout')}
 					aria-label="split column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2639,10 +2631,10 @@
 					preference (prefs.svelte.ts validates that exact key). Only the
 					user-facing label changes, to the one the maintainer asked for.
 				-->
-				<label class="next-only" title="Show only tracks compatible with the master deck: Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
+				<label class="next-only" title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
 					<input
 						type="checkbox"
-						aria-label="Show only tracks compatible with the master deck"
+						aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
 						checked={uiPrefs.next_only_filter}
 						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
 					/>
@@ -2698,7 +2690,11 @@
 			</div>
 		{/if}
 		{#snippet libraryLoadOverlay()}
-			<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
+			<LibraryLoadIndicator
+				loading={pane.loading}
+				progress={pane.load_progress}
+				searching={pane.searching}
+			/>
 		{/snippet}
 		<TrackTable
 			bodyOverlay={libraryLoadOverlay}
@@ -2806,7 +2802,7 @@
 		<button
 			class="icon-btn rb-inert"
 			disabled
-			title="not implemented - see PARITY-TODO"
+			title={plannedTitle('export-eject')}
 			aria-label="export/eject"
 		>
 			<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">

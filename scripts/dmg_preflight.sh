@@ -196,6 +196,46 @@ check_signing_config() {
              "Create a profile with: xcrun notarytool store-credentials"
         return
     fi
+    # A configured NAME is not a usable IDENTITY. Measured on silver
+    # Thu 10 Sep 2026: MDT_MACOS_SIGNING_IDENTITY was set from ~/.zshenv while
+    # the machine held no Developer ID certificate in any keychain. Every check
+    # above passed, and the build died at codesign 30s later, having already
+    # staged the payload. This preflight exists precisely to convert that into
+    # a one-second refusal, so the string check alone was a check that could
+    # not fail for the condition it was there to catch.
+    if [ -n "$identity" ] && [ "$ship_unsigned" != "1" ]; then
+        if ! command -v security >/dev/null 2>&1; then
+            # CANNOT MEASURE IS AN UNMET PRECONDITION, NOT A WARNING.
+            #
+            # This branch used to print UNMEASURED and fall through to the
+            # `ok "signing as..."` below, so the preflight exited 0 and `just
+            # dmg` proceeded with an unverified identity. A warning that the
+            # exit code does not carry is a warning nothing acts on, and the
+            # summary line then said the same thing it says for a machine that
+            # really does hold the certificate. The whole point of this check
+            # is that those two states must not look alike.
+            fail "signing identity" \
+                 "the signing identity CANNOT BE MEASURED on this host: no \`security\` binary on PATH, so there is no way to tell a present certificate from an absent one before codesign runs" \
+                 "Run the build on a macOS host (\`security\` ships with the OS), or export MDT_SHIP_UNSIGNED=1 to build a deliberately unsigned dev image that testers must clear by hand."
+            return
+        else
+            # `-v` restricts to identities that are VALID (chain intact), and
+            # `-p codesigning` to those usable for signing, so a match means
+            # the cert, its private key and its chain are all really here.
+            # silver had the cert and reported 0 valid until Apple's G2
+            # intermediate was installed; that state must fail, not pass.
+            local available
+            available="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+            if ! printf '%s' "$available" | grep -qF -- "$identity"; then
+                fail "signing identity" \
+                     "MDT_MACOS_SIGNING_IDENTITY is set to '$identity' but no VALID codesigning identity on this machine matches it, so codesign will fail after the payload is staged" \
+                     "Install the Developer ID Application certificate AND its private key into a keychain on this host, then confirm with: security find-identity -v -p codesigning. A cert whose chain is incomplete reports 0 valid: if the identity is listed by \`security find-identity -p codesigning\` but not by the \`-v\` form, the Apple intermediate (Developer ID Certification Authority, OU=G2) is missing."
+                printf '          valid codesigning identities on this machine:\n'
+                printf '%s\n' "${available:-  (none)}" | sed 's/^/          /'
+                return
+            fi
+        fi
+    fi
     if [ -n "$identity" ]; then
         ok "signing as: $identity (notary profile: $notary)"
     else

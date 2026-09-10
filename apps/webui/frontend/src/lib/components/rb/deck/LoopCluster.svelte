@@ -41,6 +41,7 @@
 		restartEngageArgs,
 		safetyLoopTip
 	} from './loop-cluster-actions';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import LoopSafetyControls from './LoopSafetyControls.svelte';
 
 	let {
@@ -53,8 +54,7 @@
 		onSafetyArm,
 		onSafetyClear,
 		onIntervalMode,
-		onIntervalBase,
-		inertTip
+		onIntervalBase
 	}: {
 		deck: DeckState;
 		deckId: DeckId;
@@ -71,7 +71,6 @@
 		onIntervalMode: (enabled: boolean) => Promise<void>;
 		/** Move the window of four offered lengths to a new base. */
 		onIntervalBase: (base: number) => Promise<void>;
-		inertTip: string;
 	} = $props();
 
 	const MIN_BEATS = LOOP_MIN_BEATS;
@@ -280,7 +279,7 @@
 	>
 		<span class="mode-glyph" aria-hidden="true">&#9647;&#9647;</span>
 	</button>
-	<button class="rb-lit-button rb-inert int" disabled title={inertTip} aria-label={`loop source deck ${deckId}`} data-testid={`loop-source-deck-${deckId}`}>
+	<button class="rb-lit-button rb-inert int" disabled title={plannedTitle('loop-source')} aria-label={`loop source deck ${deckId}`} data-testid={`loop-source-deck-${deckId}`}>
 		INT <span class="caret">&#9662;</span>
 	</button>
 	{#if intervalGrid}

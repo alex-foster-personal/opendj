@@ -243,27 +243,32 @@ def valid_vocal_ids(vocal_dir: Path, audio_paths: dict[str, Path]) -> tuple[set[
     return done, corrupt
 
 
-def valid_stem_bundle_ids(roots: Sequence[Path]) -> set[str]:
-    """stable_ids with a COMPLETE stems bundle in any configured root.
+def valid_stem_bundle_ids(roots: Sequence[Path]) -> tuple[set[str], set[str]]:
+    """(done, corrupt) stable_ids for stem-bundle directories under ``roots``.
 
     A directory alone is not done: an interrupted worker can leave it without
     a manifest or with missing/corrupt stem files, and counting it as covered
-    would exclude the track from refresh targets forever. Invalid bundles
-    count as missing so refresh can repair them.
+    would exclude the track from refresh targets forever. ``load_stem_bundle``
+    searches every configured root, so a valid bundle in any root still wins
+    (STEM-01) even when another root holds junk. Directories the reader
+    rejects, with no valid bundle anywhere, land in ``corrupt``. A track with
+    no directory in any root is neither set (missing, never run).
     """
-    done: set[str] = set()
+    seen: set[str] = set()
     for root in roots:
         if not root.is_dir():
             continue
         for p in root.iterdir():
-            if not p.is_dir():
-                continue
-            try:
-                load_stem_bundle(p.name, roots=roots)
-            except (StemArtifactError, StemBundleNotFoundError):
-                continue
-            done.add(p.name)
-    return done
+            if p.is_dir():
+                seen.add(p.name)
+    done: set[str] = set()
+    for name in seen:
+        try:
+            load_stem_bundle(name, roots=roots)
+        except (StemArtifactError, StemBundleNotFoundError):
+            continue
+        done.add(name)
+    return done, seen - done
 
 
 def tracks_on_disk(
@@ -325,7 +330,7 @@ def missing_by_step(
         )
     finally:
         conn.close()
-    stems_done = valid_stem_bundle_ids(stem_roots)
+    stems_done, stems_corrupt = valid_stem_bundle_ids(stem_roots)
     # lyrics has no STEPS/refresh runner - this key only feeds the coverage
     # dot on the browser panel.
     audio_paths = {sid: Path(fp) for sid, fp in on_disk}
@@ -339,7 +344,7 @@ def missing_by_step(
     }
     corrupt = {
         "analysis": [],
-        "stems": [],
+        "stems": [(s, f) for s, f in on_disk if s in stems_corrupt],
         "vocals": [(s, f) for s, f in on_disk if s in vocals_corrupt],
         "lyrics": [(s, f) for s, f in on_disk if s in lyrics_corrupt],
     }

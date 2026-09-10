@@ -169,6 +169,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/soundcloud-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Get Soundcloud Export */
+        get: operations["api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get"];
+        put?: never;
+        /** Api Post Soundcloud Export */
+        post: operations["api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/timeline": {
         parameters: {
             query?: never;
@@ -1354,6 +1372,44 @@ export interface paths {
         put?: never;
         /** Reenqueue Job */
         post: operations["reenqueue_job_api_v1_jobs__job_id__reenqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Readiness
+         * @description Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.
+         *
+         *     Requirements (mini-PRD):
+         *       READY-01: GET /api/v1/library/readiness reports per-present-track and
+         *       aggregate readiness. Counts use the present (materialized local audio)
+         *       denominator, never all tracks rows.
+         *         [if] a track's file is not materialized [then] it is absent from
+         *         present, items, and every count
+         *         [if] a present track has no PQTZ, no own beatgrid lane ok, and no
+         *         usable downbeats_s [then] counts.beatgrid_missing includes it and an
+         *         axis=beatgrid item names it
+         *         [if] a present track has a stems directory that load_stem_bundle
+         *         rejects and no valid bundle in any configured root [then]
+         *         stems == corrupt on the item and both counts.stems_corrupt and
+         *         /ingest/coverage corrupt.stems are >= 1
+         *         [if] limit is 1 and many present tracks are not ready [then] items
+         *         has 1 row and counts.not_ready is still the full population
+         *         [if] a present track has a validateBeatGrid-passing grid [then]
+         *         sync_compatible is true without anyone engaging Beat Sync
+         */
+        get: operations["get_library_readiness_api_v1_library_readiness_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2818,6 +2874,13 @@ export interface paths {
          *     ``anlz_available`` reporting whether the authoritative rekordbox grid
          *     also exists). 404 with an explicit code when no grid can be served -
          *     a beatgrid is never invented.
+         *
+         *     A caller naming ``backend=`` gets exactly what it named. The default
+         *     newest-row lookup instead defers to native-analysis v1 first: when v1
+         *     has already settled a beatgrid determination for this track (a
+         *     canonical own pointer exists, whatever it resolved to), this endpoint
+         *     preserves that gridless/failed state rather than silently substituting
+         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -3333,6 +3396,11 @@ export interface components {
             lanes: {
                 [key: string]: components["schemas"]["LaneSourceOut"];
             };
+            /**
+             * Previous Toggle
+             * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
+             */
+            previous_toggle?: string | null;
         };
         /**
          * AnalysisSourcePut
@@ -3344,6 +3412,16 @@ export interface components {
              * @description rbx or own. Persisted; survives a relaunch.
              */
             default?: string | null;
+            /**
+             * Expected Toggle
+             * @description Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.
+             */
+            expected_toggle?: string | null;
+            /**
+             * Expected Toggle Revision
+             * @description Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.
+             */
+            expected_toggle_revision?: number | null;
             /**
              * Lane
              * @description beatgrid, key, waveform, loudness or vocal
@@ -3750,7 +3828,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "window-error" | "unhandled-rejection" | "sveltekit" | "ui-error";
+            kind: "window-error" | "unhandled-rejection" | "sveltekit" | "ui-error" | "console-error" | "console-warn" | "resource-error" | "csp-violation" | "webview-console" | "webview-navigation";
             /** Message */
             message: string;
             /** Name */
@@ -4887,6 +4965,11 @@ export interface components {
              * @description In-memory dev toggle: unset, rbx or own. Launches unset.
              */
             toggle: string;
+            /**
+             * Toggle Revision
+             * @description Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.
+             */
+            toggle_revision: number;
         };
         /**
          * LastImportOut
@@ -4962,6 +5045,99 @@ export interface components {
              * @default false
              */
             red_enabled: boolean;
+        };
+        /**
+         * LibraryReadinessCounts
+         * @description Every field is a count over ``present``, never over ``total_tracks``.
+         */
+        LibraryReadinessCounts: {
+            /** Beatgrid Invalid */
+            beatgrid_invalid: number;
+            /** Beatgrid Missing */
+            beatgrid_missing: number;
+            /** Beatgrid Ok */
+            beatgrid_ok: number;
+            /** Has Analysis */
+            has_analysis: number;
+            /** Missing Analysis */
+            missing_analysis: number;
+            /** Not Ready */
+            not_ready: number;
+            /** Ready */
+            ready: number;
+            /** Stems Corrupt */
+            stems_corrupt: number;
+            /** Stems Missing */
+            stems_missing: number;
+            /** Stems Ready */
+            stems_ready: number;
+            /** Sync Compatible */
+            sync_compatible: number;
+            /** Sync Incompatible */
+            sync_incompatible: number;
+            /** Waveform Missing */
+            waveform_missing: number;
+            /** Waveform Ok */
+            waveform_ok: number;
+        };
+        /**
+         * LibraryReadinessItem
+         * @description One present track's stored-artifact readiness.
+         */
+        LibraryReadinessItem: {
+            /** Analysis Backend */
+            analysis_backend: string | null;
+            /** Analysis Version */
+            analysis_version: string | null;
+            /**
+             * Beatgrid
+             * @enum {string}
+             */
+            beatgrid: "ok" | "missing" | "invalid";
+            /** File Path */
+            file_path: string;
+            /** Gaps */
+            gaps: string[];
+            /** Has Analysis */
+            has_analysis: boolean;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Stems
+             * @enum {string}
+             */
+            stems: "ready" | "missing" | "corrupt";
+            /** Sync Compatible */
+            sync_compatible: boolean;
+            /** Sync Reason */
+            sync_reason: ("no_beatgrid" | "invalid_grid") | null;
+            /** Title */
+            title: string | null;
+            /**
+             * Waveform Preview
+             * @enum {string}
+             */
+            waveform_preview: "ok" | "missing";
+        };
+        /** LibraryReadinessOut */
+        LibraryReadinessOut: {
+            counts: components["schemas"]["LibraryReadinessCounts"];
+            /**
+             * Denominator
+             * @default present
+             * @constant
+             */
+            denominator: "present";
+            /** Generated At */
+            generated_at: number;
+            /** Items */
+            items: components["schemas"]["LibraryReadinessItem"][];
+            /** Present */
+            present: number;
+            /** Total Tracks */
+            total_tracks: number;
+            /** Unreachable */
+            unreachable: number;
         };
         /**
          * LocalDataOut
@@ -6582,6 +6758,66 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SoundcloudExportAckRequest */
+        SoundcloudExportAckRequest: {
+            /**
+             * Acknowledge Rights
+             * @default false
+             */
+            acknowledge_rights: boolean;
+        };
+        /** SoundcloudExportResponse */
+        SoundcloudExportResponse: {
+            /** Acknowledged */
+            acknowledged?: boolean | null;
+            /**
+             * Audio Upload
+             * @constant
+             */
+            audio_upload: "not_offered";
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "metadata_only";
+            /** Licensing Reminder */
+            licensing_reminder: string;
+            /**
+             * Rights Position
+             * @constant
+             */
+            rights_position: "unsettled";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Takeover
+             * @constant
+             */
+            takeover: "not_offered";
+            /** Tracklist */
+            tracklist: components["schemas"]["SoundcloudTracklistRowModel"][];
+        };
+        /** SoundcloudTracklistRowModel */
+        SoundcloudTracklistRowModel: {
+            /** Artist */
+            artist: string | null;
+            /** Deck */
+            deck: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Source */
+            source: string | null;
+            /** Timestamp Label */
+            timestamp_label: string;
+            /** Timestamp S */
+            timestamp_s: number;
+            /** Title */
+            title: string | null;
+            /** Track Stable Id */
+            track_stable_id: string | null;
+        };
         /** StatusResponse */
         StatusResponse: {
             /** Hub Generation */
@@ -8111,6 +8347,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoundcloudExportAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10195,6 +10497,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_library_readiness_api_v1_library_readiness_get: {
+        parameters: {
+            query?: {
+                /** @description Cap on listed items. Never caps the reported counts. */
+                limit?: number;
+                /** @description Which present tracks appear in items. */
+                axis?: "not_ready" | "beatgrid" | "waveform" | "stems" | "stems_corrupt" | "sync" | "analysis" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryReadinessOut"];
                 };
             };
             /** @description Validation Error */

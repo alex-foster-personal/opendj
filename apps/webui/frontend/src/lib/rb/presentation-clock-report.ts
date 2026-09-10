@@ -36,11 +36,6 @@ export function isPresentationClockStalled(deck: DeckId): boolean {
 	return _stalled[deck];
 }
 
-/** True while any deck's output clock is stalled (aggregated for the UI mirror, which has no per-deck view of its own). */
-export function isAnyPresentationClockStalled(): boolean {
-	return Object.values(_stalled).some(Boolean);
-}
-
 /**
  * Clear every deck's stall latch, for a fresh audio graph.
  *

@@ -104,7 +104,10 @@ test('the compatible filter is always reachable in the header, never gated on se
 		'Search all playlists stays in the search-focused options row'
 	);
 	assert.match(source, /class="hide-broken"[\s\S]*?class="next-only"[\s\S]*?<span>compatible<\/span>/);
-	assert.match(source, /title="Show only tracks compatible with the master deck: Camelot key family/);
+	assert.match(
+		source,
+		/title="Show only tracks compatible with the reference deck \(master, else playing, else any loaded with key and BPM\): Camelot key family/
+	);
 });
 
 test('Search all playlists explains its current-pane and collection scopes', async () => {

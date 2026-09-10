@@ -8,6 +8,7 @@ verb table itself lives in :mod:`apps.opendj_cli.catalog`.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -124,31 +125,47 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
     return Invocation(verb=verb, command=command, values=values)
 
 
+def _split_duration(raw: str) -> tuple[str, str]:
+    """``4bars`` -> ``("4", "bars")``, refusing anything that is not a Duration."""
+    text = raw.strip().lower()
+    for suffix in sorted(DURATION_UNITS, key=len, reverse=True):
+        if text.endswith(suffix) and text[: -len(suffix)] != "":
+            return text[: -len(suffix)], DURATION_UNITS[suffix]
+    raise InvocationError(f"{_DURATION_HINT}; got {raw!r}")
+
+
+def _duration_n(raw: str, magnitude: str, unit: str) -> float:
+    """The magnitude, held to the bounds ``agent-duration.ts`` enforces."""
+    try:
+        n = float(magnitude)
+    except ValueError:
+        raise InvocationError(f"{_DURATION_HINT}; got {raw!r}") from None
+    if not math.isfinite(n):
+        # Checked BEFORE the sign test, which catches nan only by accident:
+        # `not nan > 0` is True, so nan was refused for the wrong reason and
+        # named the wrong problem. `inf` was not refused at all on the ms path,
+        # because `is_integer()` never runs there, and an infinite duration
+        # becomes an infinite request deadline: the same never-expiring wait
+        # `--settle nan` produced.
+        raise InvocationError(f"a duration must be a finite number, got {raw!r}")
+    if not n > 0:
+        raise InvocationError(f"a duration must be greater than zero, got {raw!r}")
+    if unit != "ms" and not n.is_integer():
+        raise InvocationError(f"{unit} must be a whole number, got {raw!r}")
+    return n
+
+
 def parse_duration(
     raw: str, *, anchor: str | None = None, clock: int | str | None = None
 ) -> dict[str, Any]:
     """``4beats`` / ``2bars`` / ``1phrase`` / ``500ms`` -> the AGENT-04 Duration.
 
-    The bounds are the ones ``agent-duration.ts`` enforces: ``n`` must be
-    positive, and an integer unless the unit is ``ms``. They are checked here
-    so a bad duration is refused by the CLI instead of by the page.
+    The bounds are the ones ``agent-duration.ts`` enforces: ``n`` must be a
+    finite number, positive, and an integer unless the unit is ``ms``. They are
+    checked here so a bad duration is refused by the CLI instead of by the page.
     """
-    text = raw.strip().lower()
-    magnitude = unit = None
-    for suffix in sorted(DURATION_UNITS, key=len, reverse=True):
-        if text.endswith(suffix) and text[: -len(suffix)] != "":
-            magnitude, unit = text[: -len(suffix)], DURATION_UNITS[suffix]
-            break
-    if magnitude is None:
-        raise InvocationError(f"{_DURATION_HINT}; got {raw!r}")
-    try:
-        n = float(magnitude)
-    except ValueError:
-        raise InvocationError(f"{_DURATION_HINT}; got {raw!r}") from None
-    if not n > 0:
-        raise InvocationError(f"a duration must be greater than zero, got {raw!r}")
-    if unit != "ms" and not n.is_integer():
-        raise InvocationError(f"{unit} must be a whole number, got {raw!r}")
+    magnitude, unit = _split_duration(raw)
+    n = _duration_n(raw, magnitude, unit)
     duration: dict[str, Any] = {"unit": unit, "n": int(n) if unit != "ms" else n}
     if anchor is not None:
         duration["anchor"] = anchor

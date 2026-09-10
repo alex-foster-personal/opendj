@@ -429,12 +429,15 @@ function _drawVocals(
 }
 
 /**
- * CH3/4 get a lighter fill than --rb-bg (#0d0f12) so secondary rows read
- * clearly under the opaque canvas (CSS alone cannot show through).
+ * CH3/4 still get a lighter fill than --rb-bg so the opaque canvas matches
+ * the gutter; the colour now comes from --rb-waverow-secondary, not a
+ * hardcoded dark hex. CSS alone cannot show through.
  */
 export function resolvePaintPalette(deckId: number, palette: WavePalette): WavePalette {
-	const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
-	return rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
+	if (deckId !== 3 && deckId !== 4) return palette;
+	return palette.secondaryBg === palette.bg
+		? palette
+		: { ...palette, bg: palette.secondaryBg };
 }
 
 /** Fixed center playhead. Always drawn (busy waveforms + empty decks).

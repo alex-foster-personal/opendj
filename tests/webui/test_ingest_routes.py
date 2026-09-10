@@ -204,6 +204,30 @@ def test_coverage_counts_a_valid_secondary_roformer_bundle(client, app, tmp_path
     assert targets["stems"] == []
 
 
+def test_coverage_distinguishes_corrupt_stems(client, app, tmp_path):
+    """A stems directory load_stem_bundle rejects is corrupt, not merely missing.
+
+    Coverage keeps corrupt as a subset of missing (refresh still targets it);
+    the extra corrupt.stems count is what tells absence apart from garbage.
+    """
+    audio = tmp_path / "real.mp3"
+    audio.write_bytes(b"x" * 4096)
+    _seed_track(app, "aaa", audio)
+    stems_dir = tmp_path / "stems"
+    bundle = stems_dir / "aaa"
+    bundle.mkdir(parents=True)
+    (bundle / "manifest.json").write_text("{", encoding="utf-8")
+    app.state.stem_roots = (stems_dir,)
+
+    out = client.get("/api/v1/ingest/coverage").json()
+    assert out["on_disk"] == 1
+    assert out["missing"]["stems"] == 1
+    assert out["corrupt"]["stems"] == 1
+    assert out["corrupt"]["analysis"] == 0
+    assert out["corrupt"]["vocals"] == 0
+    assert out["corrupt"]["lyrics"] == 0
+
+
 def test_refresh_resolves_configured_stem_roots_through_the_background_worker(
     client, app, tmp_path
 ):

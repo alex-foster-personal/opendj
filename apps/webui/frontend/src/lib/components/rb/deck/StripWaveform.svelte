@@ -61,6 +61,15 @@
 			: deck.anlz.cues.filter((c) => c.kind === 'memory').map((c) => c.in_ms)
 	);
 
+	// PARITY-02: OWN selected but this track has no own analysis to serve -
+	// the backend already returns the real empty grid plus this reason
+	// (rb_assets.py _resolve_beatgrid_source); nothing previously read it, so
+	// the strip went inert with no explanation beyond the toggle itself
+	// (discussion_r3921839841).
+	const ownGridUnavailable: string | null = $derived(
+		deck.anlz?.beatgrid_source === 'own' ? deck.anlz.beatgrid_own_unavailable_reason : null
+	);
+
 	// First stored loop in the hot-cue bank -> in/out time chips (display-only
 	// at v1 per COMPONENT-MAP 1.3; sparse coverage is real).
 	const loopCue: { slot: HotCueSlot; in_ms: number; out_ms: number } | null = $derived.by(() => {
@@ -147,13 +156,15 @@
 		onclick={(e) => void handleClick(e)}
 		disabled={deck.stable_id === null || pending}
 		aria-label={`waveform seek deck ${deck.deck_id}`}
-		data-testid={`waveform-seek-deck-${deck.deck_id}`}
+		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
 		title={vocalsTitle ?? undefined}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>
 
 		{#if deck.anlz_error !== null}
-			<span class="no-anlz">NO ANALYSIS</span>
+			<span class="no-anlz" title="No rekordbox ANLZ for this track - the strip has no waveform, beatgrid, or cue overlay">NO ANALYSIS</span>
+		{:else if ownGridUnavailable !== null}
+			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>
 		{/if}
 
 		{#each memoryCuesMs as ms, i (i)}
@@ -165,10 +176,10 @@
 		{/each}
 
 		{#if loopCue !== null}
-			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`}>
+			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`} title={`Loop in at ${_fmtMmSs(loopCue.in_ms)} (hot cue ${loopCue.slot})`}>
 				{loopCue.slot} {_fmtMmSs(loopCue.in_ms)}
 			</span>
-			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`}>
+			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`} title={`Loop out at ${_fmtMmSs(loopCue.out_ms)}`}>
 				{_fmtMmSs(loopCue.out_ms)}
 			</span>
 		{/if}

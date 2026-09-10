@@ -115,9 +115,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Compatible-only library filter',
 		group: 'library',
 		keywords: ['next', 'camelot', 'bpm', 'tab', 'suggest', 'compatible'],
-		title: 'Show only tracks compatible with the master deck',
+		title: 'Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)',
 		detail:
-			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the loaded/master reference (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
+			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the master, else playing, else any loaded with key and BPM (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -126,9 +126,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Beat Sync Max',
 		group: 'performance',
 		keywords: ['beatsync', 'bar', 'phase', 'seek', 'sync', 'master'],
-		title: 'Phase-preserving BAR sync on every relocate',
+		title: 'BAR downbeat lock on every relocate, held over playback',
 		detail:
-			'When on, every transport relocate (including master) keeps BAR phase lock across synced decks.',
+			'When on, synced playing decks keep PQTZ n=1 aligned, including after the lock, until Beat Sync Max or Beat Sync is turned off. When off, followers sync on seek using their own BEAT/BAR mode; the master free-seeks.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

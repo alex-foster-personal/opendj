@@ -31,10 +31,12 @@
 	 */
 	let {
 		loading,
-		progress
+		progress,
+		searching = false
 	}: {
 		loading: boolean;
 		progress: { loaded: number; total: number | null } | null;
+		searching?: boolean;
 	} = $props();
 
 	// Monotonic elapsed-time tracking for the rows/s figure. Resets whenever
@@ -73,22 +75,27 @@
 	});
 </script>
 
-{#if loading || progress !== null}
+{#if loading || progress !== null || searching}
 	<div class="lli-root" role="status" aria-live="polite">
 		<span class="lli-mark" aria-hidden="true"></span>
-		<div
-			class="lli-track"
-			class:lli-indeterminate={pct === null}
-			role="progressbar"
-			aria-label={label}
-			aria-valuemin={pct === null ? undefined : 0}
-			aria-valuemax={pct === null ? undefined : 100}
-			aria-valuenow={pct ?? undefined}
-			title={pct === null ? 'Loading progress is not yet knowable' : `${pct}%`}
-		>
-			<div class="lli-bar" style={pct === null ? undefined : `width:${pct}%`}></div>
-		</div>
-		<span class="lli-label">{label}{#if rowsPerSecond > 0}<span class="lli-rate"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
+		{#if searching}
+			<span class="lli-search">searching whole collection...</span>
+		{/if}
+		{#if loading || progress !== null}
+			<div
+				class="lli-track"
+				class:lli-indeterminate={pct === null}
+				role="progressbar"
+				aria-label={label}
+				aria-valuemin={pct === null ? undefined : 0}
+				aria-valuemax={pct === null ? undefined : 100}
+				aria-valuenow={pct ?? undefined}
+				title={pct === null ? 'Loading progress is not yet knowable' : `${pct}%`}
+			>
+				<div class="lli-bar" style={pct === null ? undefined : `width:${pct}%`}></div>
+			</div>
+			<span class="lli-label">{label}{#if rowsPerSecond > 0}<span class="lli-rate"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
+		{/if}
 	</div>
 {/if}
 
@@ -110,6 +117,9 @@
 		background: currentColor;
 		mask: url('/favicon.svg') center / contain no-repeat;
 		animation: library-mark-reveal 180ms step-end both, library-mark-spin 420ms linear infinite;
+	}
+	.lli-search {
+		white-space: nowrap;
 	}
 	.lli-label {
 		white-space: nowrap;

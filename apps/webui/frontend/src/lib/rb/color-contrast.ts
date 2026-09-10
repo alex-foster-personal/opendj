@@ -145,7 +145,7 @@ export interface ContrastViolation {
  *
  *  - `--rb-text` / `--rb-text-dim` are documented as body text and are
  *    checked against every surface they render on (window bg, panel, raised
- *    chrome, and the selected-row highlight) at 4.5:1.
+ *    chrome, the selected-row highlight, and the decks 3/4 waveform row) at 4.5:1.
  *  - `--rb-accent`, `--rb-green`, `--rb-orange`, `--rb-red`, `--rb-yellow`,
  *    `--rb-wave-mid` and `--rb-wave-high` are documented as indicators and
  *    graphical bands (toggles/lit buttons, loaded-track chip, waveform
@@ -190,6 +190,18 @@ export const PAIRINGS: ContrastPairing[] = [
     bg: "rb-panel-raised",
     level: "body",
     label: "dim text on raised chrome (buttons, chips)",
+  },
+  {
+    fg: "rb-text",
+    bg: "rb-waverow-secondary",
+    level: "body",
+    label: "primary text on deck 3/4 waveform row (WaveGutter deck number)",
+  },
+  {
+    fg: "rb-text-dim",
+    bg: "rb-waverow-secondary",
+    level: "body",
+    label: "dim text on deck 3/4 waveform row (title, bars, empty-state copy)",
   },
   {
     fg: "rb-accent",

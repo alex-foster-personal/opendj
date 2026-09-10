@@ -13,9 +13,16 @@ not cite ``OPS-15``, by design, because ranges are how docs PRs record ids.
     python -m scripts.reqs_cited_unflipped --days 30
     python -m scripts.reqs_cited_unflipped --strict       # exit 1 when any found
 
+The periodic tier calls it with the window it actually recorded rather than a
+rolling week:
+
+    python -m scripts.reqs_cited_unflipped \
+        --since 2026-09-03T05:41:12Z --until 2026-09-10T19:25:00Z
+
 Honest instrument: when the PR source cannot be read it prints UNKNOWN and
 exits 2. It never renders a failed read as "0 cited", because that is the
-exact silent-zero the periodic-checks table forbids.
+exact silent-zero the periodic-checks table forbids. A read that SUCCEEDS and
+finds nothing inside the recorded interval is a real zero and renders as one.
 """
 
 from __future__ import annotations
@@ -76,9 +83,67 @@ def citations(pending: Iterable[str], prs: Iterable[dict]) -> list[Citation]:
     return out
 
 
-def merged_prs_since(days: int, repo: str = DEFAULT_REPO) -> list[dict]:
+def _instant(value: str) -> datetime:
+    """One ISO-8601 instant in UTC.
+
+    Both spellings occur in the data this reads: GitHub's `created_at` on the
+    ledger comment ends in `Z`, while `git log --format=%cI` ends in `+00:00`.
+    Comparing the two as strings would be wrong, so both are parsed here.
+    """
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(UTC)
+
+
+@dataclass(frozen=True)
+class Window:
+    """The interval a periodic window covers, and how to ask gh for it.
+
+    `search` is the `merged:` term handed to gh; `covers` is the exact bound
+    applied to what comes back. They differ because gh's `merged:` range is
+    DAY-granular: `2026-09-03..2026-09-10` is the whole of both days, which is
+    a superset of the recorded interval and must be narrowed.
+    """
+
+    since: datetime
+    until: datetime
+    search: str
+    label: str
+
+    def covers(self, merged_at: str) -> bool:
+        """Is this PR's merge inside the recorded interval?"""
+        return self.since <= _instant(merged_at) <= self.until
+
+
+def window_bounds(days: int | None, since: str | None, until: str | None) -> Window:
+    """The interval to measure and the `merged:` term that asks GitHub for it.
+
+    A periodic window is recorded as a ledger-comment timestamp and a head SHA,
+    and the report exists to describe exactly THAT interval. A rolling `--days`
+    slice does not: windows close on 50 merges or 7 elapsed days, whichever
+    comes first, so a fixed week can miss the first day of an 8-day window or
+    re-report PRs an earlier window already covered. `--since`/`--until` take
+    the interval the window job actually recorded.
+
+    `--days` is the ad-hoc slice and keeps gh's own day-granular definition;
+    only an explicit interval is narrowed to its exact instants (see `covers`).
+    """
+    if since:
+        start = _instant(since)
+        end = _instant(until) if until else datetime.now(UTC)
+        return Window(
+            since=start,
+            until=end,
+            search=f"{start:%Y-%m-%d}..{end:%Y-%m-%d}",
+            label=f"{start:%Y-%m-%dT%H:%M:%SZ}..{end:%Y-%m-%dT%H:%M:%SZ}",
+        )
+    if days is None:
+        raise ValueError("one of --days or --since is required")
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+    return Window(since=start, until=end, search=f">={start:%Y-%m-%d}", label=f"{days}d")
+
+
+def merged_prs(search: str, repo: str = DEFAULT_REPO) -> list[dict]:
     """Merged PRs from gh. Raises on any failure; the caller renders UNKNOWN."""
-    since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
     proc = subprocess.run(
         [
             "gh",
@@ -91,7 +156,7 @@ def merged_prs_since(days: int, repo: str = DEFAULT_REPO) -> list[dict]:
             "--limit",
             "500",
             "--search",
-            f"merged:>={since}",
+            f"merged:{search}",
             "--json",
             "number,title,body,mergedAt",
         ],
@@ -105,10 +170,10 @@ def merged_prs_since(days: int, repo: str = DEFAULT_REPO) -> list[dict]:
     return json.loads(proc.stdout)
 
 
-def render(found: list[Citation], days: int, scanned: int) -> str:
+def render(found: list[Citation], label: str, scanned: int) -> str:
     cited = len({c.req_id for c in found})
     lines = [
-        f"[reqs-cited-unflipped] scanned={scanned} merged PRs in {days}d, cited pending ids={cited}"
+        f"[reqs-cited-unflipped] scanned={scanned} merged PRs in {label}, cited pending ids={cited}"
     ]
     for c in sorted(found, key=lambda c: (c.req_id, c.merged_at)):
         tag = "docs-title" if c.docs_only_title else "feature"
@@ -121,31 +186,49 @@ def render(found: list[Citation], days: int, scanned: int) -> str:
 def main(
     argv: list[str] | None = None,
     *,
-    fetch: Callable[[int], list[dict]] = merged_prs_since,
+    fetch: Callable[[str], list[dict]] = merged_prs,
     reqs_path: Path = REQS_JSON,
 ) -> int:
     parser = argparse.ArgumentParser(prog="reqs_cited_unflipped")
-    parser.add_argument("--days", type=int, default=DEFAULT_DAYS)
+    parser.add_argument("--days", type=int, default=None)
+    parser.add_argument(
+        "--since", default=None, help="window start, ISO instant; takes precedence over --days"
+    )
+    parser.add_argument("--until", default=None, help="window end, ISO instant (inclusive)")
     parser.add_argument(
         "--strict", action="store_true", help="exit 1 when any cited pending id is found"
     )
     args = parser.parse_args(argv)
+    days = args.days if (args.days is not None or args.since) else DEFAULT_DAYS
+
+    try:
+        window = window_bounds(days, args.since, args.until)
+    except ValueError as exc:
+        print(f"[reqs-cited-unflipped] UNKNOWN: {exc}", file=sys.stderr)
+        return 2
 
     payload = json.loads(reqs_path.read_text())
     try:
-        prs = fetch(args.days)
+        prs = fetch(window.search)
     except Exception as exc:
         print(f"[reqs-cited-unflipped] UNKNOWN: could not read merged PRs ({exc})", file=sys.stderr)
         return 2
     if not prs:
         print(
-            f"[reqs-cited-unflipped] UNKNOWN: gh returned no merged PRs in {args.days}d; "
+            f"[reqs-cited-unflipped] UNKNOWN: gh returned no merged PRs in {window.label}; "
             "a zero here is a measurement failure, not a clean result",
             file=sys.stderr,
         )
         return 2
+    # gh's `merged:` range is day-granular, so an explicit recorded interval is
+    # narrowed to its exact ends here: without this it would admit the tail of
+    # the previous window and any PR merged after the recorded head. The guard
+    # above has already run on the RAW read, so an empty result below is a real
+    # "nothing merged in this window", not an unreadable source rendered as zero.
+    if args.since:
+        prs = [pr for pr in prs if window.covers(pr["mergedAt"])]
     found = citations(pending_v1_ids(payload), prs)
-    print(render(found, args.days, len(prs)))
+    print(render(found, window.label, len(prs)))
     return 1 if (args.strict and found) else 0
 
 

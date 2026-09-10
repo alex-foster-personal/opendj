@@ -23,7 +23,7 @@ mod engine;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, PageLoadEvent, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 /// Test seam, mirroring the repo's ENGINE_CMD seam: point a packaged build
 /// at an engine that is already running, on any loopback port, without
@@ -94,17 +94,23 @@ fn usable_area_pt(app: &AppHandle) -> Option<(f64, f64)> {
     let monitor = match app.primary_monitor() {
         Ok(Some(found)) => found,
         Ok(None) => {
-            eprintln!("[WARN] no primary monitor reported; opening unclamped");
+            engine::append_shell_log("WARN", "no primary monitor reported; opening unclamped");
             return None;
         }
         Err(err) => {
-            eprintln!("[WARN] could not read the primary monitor ({err}); opening unclamped");
+            engine::append_shell_log(
+                "WARN",
+                &format!("could not read the primary monitor ({err}); opening unclamped"),
+            );
             return None;
         }
     };
     let scale = monitor.scale_factor();
     if !scale.is_finite() || scale <= 0.0 {
-        eprintln!("[WARN] monitor reported scale factor {scale}; opening unclamped");
+        engine::append_shell_log(
+            "WARN",
+            &format!("monitor reported scale factor {scale}; opening unclamped"),
+        );
         return None;
     }
     let usable = monitor.work_area().size;
@@ -202,7 +208,7 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
         .set_description(format!("{}\n\n{}", error.headline, error.detail))
         .set_buttons(rfd::MessageButtons::Ok)
         .show();
-    eprintln!("[ERROR] {error}");
+    engine::append_shell_log("ERROR", &format!("{error}"));
     std::process::exit(1);
 }
 
@@ -230,6 +236,11 @@ fn main() {
     let app = builder
         .setup(move |app| {
             let handle = app.handle().clone();
+            let data_dir = app_data_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
+            let log_path = data_dir.join(ENGINE_LOG);
+            if let Err(failure) = engine::install_shell_logging(&log_path) {
+                fail_visibly(&failure);
+            }
 
             // An externally supplied origin means an operator is driving this
             // build against an engine they started. Honour it exactly, and do
@@ -253,7 +264,15 @@ fn main() {
             // identity can break out of its assignment.
             let script = format!(
                 "globalThis.OPENDJ_ENGINE_ORIGIN = {};\
-                 globalThis.OPENDJ_SHELL_BUILD = {};",
+                 globalThis.OPENDJ_SHELL_BUILD = {};\
+                 globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ = globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ || [];\
+                 globalThis.__OPENDJ_enqueueShellClientError = function(kind, message, context) {{\
+                   globalThis.__OPENDJ_PENDING_SHELL_ERRORS__.push({{\
+                     kind: kind,\
+                     message: message,\
+                     context: context || {{ source: 'shell-webview' }}\
+                   }});\
+                 }};",
                 serde_json::to_string(&origin)?,
                 serde_json::to_string(&identity)?,
             );
@@ -265,6 +284,17 @@ fn main() {
                 .title(title)
                 .inner_size(width, height)
                 .initialization_script(script)
+                .on_page_load(|_window, payload| {
+                    let url = payload.url().to_string();
+                    match payload.event() {
+                        PageLoadEvent::Started => {
+                            engine::append_shell_log("webview", &format!("navigation started: {url}"));
+                        }
+                        PageLoadEvent::Finished => {
+                            engine::append_shell_log("webview", &format!("navigation finished: {url}"));
+                        }
+                    }
+                })
                 .build()?;
 
             app.manage(Supervisor(Mutex::new(running)));

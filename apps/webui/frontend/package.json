@@ -12,6 +12,7 @@
 		"test:e2e": "uv sync --extra dev --extra tags --extra analysis && uv run --no-sync python -m apps.webui.port_config claim && playwright test",
 		"test:live:wave-raf": "node tests/live/wave-row-raf-attribution.mjs",
 		"test:live:device-latency-floor": "node tests/live/device-latency-floor.mjs",
+		"test:live:stem-decode-workers": "node tests/live/stem-decode-workers.mjs",
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
     "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts",
     "storybook": "storybook dev -p 6006",
@@ -41,6 +42,7 @@
   "dependencies": {
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
+    "@wasm-audio-decoders/flac": "0.2.11",
     "openapi-fetch": "0.17.0",
     "signalsmith-stretch": "1.3.2"
   }

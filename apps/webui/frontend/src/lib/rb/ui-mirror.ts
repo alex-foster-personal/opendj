@@ -6,6 +6,9 @@ import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import { readXrunSessionCounter } from './xrun-sentinel';
+import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+import { readPerfEvents } from './perf-event-log';
+import { buildAudioHealthMirror } from './audio-health-mirror';
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
@@ -84,6 +87,23 @@ export function buildUiMirror(): Record<string, unknown> {
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : []),
 			...(deviceLiveness.verdict === 'device-unreachable' ? [{ id: 'output-device-unreachable' }] : [])
 		],
+		// AGENT-02 parity for audio health, and the durable half of the toast
+		// problem below. `toasts` above is the LIVE store: entries dismiss after
+		// about five seconds while this publishes every second, so a fault is
+		// unreadable moments later. On Thu 10 Sep 2026 the operator watched
+		// several audio errors on screen while this document published
+		// `toasts: []`, and the output-health bar he could see at
+		// `TopBar.svelte:605` was mirrored nowhere at all. `audio_health` carries
+		// that same bar's reading plus the DURABLE fault ring, so the next
+		// outage is still legible to an agent long after the toasts are gone.
+		audio_health: buildAudioHealthMirror({
+			snapshot: audioOutputHealth.snapshot,
+			rms: silence.rms,
+			rmsAgeMs: silence.at_ms === null ? null : Date.now() - silence.at_ms,
+			silenceVerdict: silence.verdict,
+			events: readPerfEvents(),
+			nowMs: Date.now()
+		}),
 		// PLAY-08: agent-native parity for the stall banner. An agent driving a
 		// set reads why AutoPlay stopped from the same object a person reads
 		// off the screen, rather than having to catch a five-second toast.
