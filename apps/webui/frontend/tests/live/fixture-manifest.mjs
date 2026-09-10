@@ -9,10 +9,11 @@
  * still print PASS. A pass whose subject is unknown is not acceptance evidence
  * for anything, and "four .flac files, 3.1 MB each" does not identify audio.
  *
- * So a run EMITS a manifest naming exactly what it decoded, by content, and
- * VERIFIES against a previously recorded one when there is one. The emitted
- * half is what makes a result citable; the verifying half is what makes a
- * re-run of a cited result mean the same thing.
+ * So a run VERIFIES what it decoded, by content, against a manifest that was
+ * pinned earlier and reviewed. Recording that manifest is a SEPARATE MODE that
+ * runs no checks and cannot report acceptance success, because a run allowed
+ * to mint its own baseline verifies nothing: whichever four files happened to
+ * sort first become the contract, and the very next line is a PASS.
  *
  * Kept in its own module, separate from the runner, so the comparison is
  * reachable from the unit suite: the runner needs two browsers and several
@@ -105,6 +106,31 @@ export function manifestMismatches(recorded, observed) {
 		problems.push(`part ${String(leftover)} is pinned by the manifest but was not decoded by this run`);
 	}
 	return problems;
+}
+
+/**
+ * What a run is allowed to do with the manifest it just built.
+ *
+ * A decision function rather than four branches inside the runner: the runner
+ * needs two browsers and gigabytes of audio to reach any of this, so branches
+ * living there are branches nothing can test. Every outcome except `verified`
+ * must stop the run.
+ *
+ * @param {{recordMode: boolean, manifestExists: boolean, recorded: unknown, observed: object}} state
+ * @returns {{action: 'record'|'refuse-overwrite'|'missing'|'mismatch'|'verified', problems: string[]}}
+ */
+export function manifestGate({ recordMode, manifestExists, recorded, observed }) {
+	if (recordMode) {
+		// Re-pinning is deliberate or it is not re-pinning. An overwrite that
+		// just happens is how a drifted directory becomes the new contract.
+		if (manifestExists) {
+			return { action: 'refuse-overwrite', problems: manifestMismatches(recorded, observed) };
+		}
+		return { action: 'record', problems: [] };
+	}
+	if (!manifestExists) return { action: 'missing', problems: [] };
+	const problems = manifestMismatches(recorded, observed);
+	return { action: problems.length === 0 ? 'verified' : 'mismatch', problems };
 }
 
 function short(digest) {

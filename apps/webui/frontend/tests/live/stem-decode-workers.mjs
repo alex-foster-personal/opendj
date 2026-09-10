@@ -16,14 +16,17 @@
  *
  * Re-runnable: `pnpm test:live:stem-decode-workers`. Prints the measured
  * numbers so a later round can compare against them rather than against a
- * remembered figure.
+ * remembered figure. It refuses to run until its audio inputs are pinned by
+ * checksum: `Q18_RECORD_FIXTURES=1` records that manifest and decodes nothing.
  *
  * Exit codes, because a run that measured nothing must not read as a pass:
  *   0  every required engine ran and every check passed
  *   1  an engine ran and a check FAILED
  *   2  the real FLAC fixtures are missing (set `Q18_FLAC_DIR`)
  *   3  UNAVAILABLE - an engine could not launch, so this is not evidence
- *   4  the inputs are not the ones the recorded manifest pins
+ *   4  the inputs are not the ones the pinned manifest names
+ *   5  no pinned manifest, or --record asked to overwrite one that exists
+ *   6  --record wrote a manifest; that mode runs no checks and proves nothing
  *
  * 3 is the one worth stating. WebKit is the engine the rung exists for and
  * Chromium is the reason it is a measurement rather than an assumption, so a
@@ -41,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium, webkit } from '@playwright/test';
 
-import { buildManifest, manifestMismatches } from './fixture-manifest.mjs';
+import { buildManifest, manifestGate } from './fixture-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(HERE, '../..');
@@ -69,6 +72,13 @@ const PORT = 8719;
  */
 const MANIFEST_PATH =
 	process.env.Q18_FIXTURE_MANIFEST ?? path.join(REPO, '.tmp/q18-stem-decode-fixtures.json');
+/**
+ * Pinning the inputs is a MODE of its own, not a thing an ordinary run does
+ * on its way past. A run that may write the contract it is about to check
+ * itself against has verified nothing, and on a fresh checkout - where the
+ * gitignored default does not exist - that would be every run.
+ */
+const RECORD_MODE = process.argv.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1';
 /** One least-significant bit of a 16-bit sample, in float. */
 const LSB_16_BIT = 1 / 32768;
 
@@ -118,10 +128,12 @@ async function main() {
 
 	// PROVENANCE. A basename and a size do not identify audio, and this
 	// directory is mutable, so a later run of the same command can pass
-	// against different files while being cited as the same evidence. The
-	// manifest is printed with the result and checked against the recorded
-	// one; a mismatch stops the run rather than being reported afterwards,
-	// because a measurement of the wrong subject is not worth taking.
+	// against different files while being cited as the same evidence. What
+	// this run read is therefore printed by content and checked against a
+	// manifest pinned EARLIER, by the separate --record mode below. Anything
+	// but a clean verification stops the run before a browser opens: a
+	// measurement of the wrong subject is not worth taking, and a run that
+	// pinned its own subject on the way past has verified nothing.
 	const manifest = buildManifest(
 		fixtures.map((file, i) => ({ part: PARTS[i], file, bytes: flacs[i] }))
 	);
@@ -131,34 +143,53 @@ async function main() {
 			`  part ${entry.part}: ${entry.name} (${(entry.bytes / 1e6).toFixed(1)} MB) sha256 ${entry.sha256}`
 		);
 	}
-	if (existsSync(MANIFEST_PATH)) {
-		let recorded = null;
+	let recorded = null;
+	const manifestExists = existsSync(MANIFEST_PATH);
+	if (manifestExists) {
 		try {
 			recorded = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
 		} catch (exc) {
+			// NOT a missing manifest: a file that cannot be read is a pin that
+			// cannot be honored, and it must not degrade into "record a new one".
 			recorded = `unparseable: ${String(exc).split('\n')[0]}`;
 		}
-		const problems = manifestMismatches(recorded, manifest);
-		if (problems.length > 0) {
-			console.log(`\nPROVENANCE MISMATCH against ${MANIFEST_PATH}`);
-			for (const problem of problems) console.log(`  ${problem}`);
-			console.log(
-				'\nThis run would measure audio the recorded evidence never covered. Point'
-			);
-			console.log(
-				'Q18_FLAC_DIR at the pinned inputs, or record a NEW manifest deliberately'
-			);
-			console.log(
-				'(delete the file above) and recapture the evidence - do not delete it to go green.'
-			);
-			process.exit(4);
-		}
-		console.log(`  verified against ${MANIFEST_PATH}`);
-	} else {
+	}
+	const gate = manifestGate({ recordMode: RECORD_MODE, manifestExists, recorded, observed: manifest });
+	if (gate.action === 'record') {
 		mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
 		writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, '\t')}\n`);
-		console.log(`  recorded to ${MANIFEST_PATH} (no manifest existed; later runs verify against it)`);
+		console.log(`\nRECORDED ${MANIFEST_PATH}`);
+		console.log('These four files are now the pinned contract. Have them reviewed:');
+		console.log('nothing has been decoded and no acceptance evidence was produced by');
+		console.log('this run. Re-run WITHOUT --record to produce evidence against them.');
+		process.exit(6);
 	}
+	if (gate.action === 'refuse-overwrite') {
+		console.log(`\n--record refuses to overwrite ${MANIFEST_PATH}`);
+		for (const problem of gate.problems) console.log(`  ${problem}`);
+		if (gate.problems.length === 0) console.log('  (it already pins exactly these files)');
+		console.log('Re-pinning is deliberate or it is not re-pinning: delete that file first.');
+		process.exit(5);
+	}
+	if (gate.action === 'missing') {
+		console.log(`\nNO PINNED MANIFEST at ${MANIFEST_PATH}`);
+		console.log('This run will not decide for itself which audio counts as the fixture');
+		console.log('contract and then pass against it. Pin the inputs deliberately with');
+		console.log('  Q18_FLAC_DIR=/abs/dir Q18_RECORD_FIXTURES=1 pnpm test:live:stem-decode-workers');
+		console.log('or point Q18_FIXTURE_MANIFEST at the manifest the evidence you are');
+		console.log('reproducing was captured against.');
+		process.exit(5);
+	}
+	if (gate.action === 'mismatch') {
+		console.log(`\nPROVENANCE MISMATCH against ${MANIFEST_PATH}`);
+		for (const problem of gate.problems) console.log(`  ${problem}`);
+		console.log('\nThis run would measure audio the pinned contract never covered. Point');
+		console.log('Q18_FLAC_DIR at the pinned inputs, or re-pin deliberately (delete the');
+		console.log('file above, re-run with --record) and recapture the evidence - do not');
+		console.log('delete it to go green.');
+		process.exit(4);
+	}
+	console.log(`  verified against ${MANIFEST_PATH}`);
 
 	const moduleSource = await readFile(await bundleModule(), 'utf8');
 

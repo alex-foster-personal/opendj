@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
 	MANIFEST_VERSION,
 	buildManifest,
+	manifestGate,
 	manifestMismatches
 } from '../live/fixture-manifest.mjs';
 
@@ -25,6 +26,10 @@ import {
  *   reports the same zero whether it passed or could not run at all
  * - if a matching manifest reports a problem then the guard is unusable and
  *   the next operator deletes the file to go green
+ * - if a run with no pinned manifest records one and carries on then it
+ *   verified nothing, and on a fresh checkout that is every run
+ * - if the recording mode can report acceptance success then the contract and
+ *   the evidence for it were produced by the same unreviewed command
  */
 
 const PARTS = ['vocals', 'drums', 'bass', 'other'];
@@ -131,4 +136,78 @@ test('a recording that pins nothing is a mismatch, never a quiet verification', 
 		const problems = manifestMismatches(recorded, observed);
 		assert.ok(problems.length > 0, `${label} must not verify`);
 	}
+});
+
+//-----------------------------------------------------------------------------
+// The gate: what a run is ALLOWED to do with the manifest it just built.
+
+test('a run with no pinned manifest is refused, never allowed to pin its own', () => {
+	// THE hole in the first version of this: the gitignored default does not
+	// exist in a fresh checkout, so whichever four files sorted first became
+	// the contract and the next line was a PASS against them.
+	const observed = buildManifest(selected());
+	const gate = manifestGate({
+		recordMode: false,
+		manifestExists: false,
+		recorded: null,
+		observed
+	});
+	assert.equal(gate.action, 'missing');
+});
+
+test('recording is its own mode, and a recording run never reaches the checks', () => {
+	const observed = buildManifest(selected());
+	assert.equal(
+		manifestGate({ recordMode: true, manifestExists: false, recorded: null, observed }).action,
+		'record'
+	);
+	// And it cannot quietly re-pin: an existing manifest stops it, whether or
+	// not the inputs drifted, so a directory that moved cannot become the new
+	// contract as a side effect of a command someone ran for another reason.
+	const pinned = buildManifest(selected());
+	assert.equal(
+		manifestGate({ recordMode: true, manifestExists: true, recorded: pinned, observed }).action,
+		'refuse-overwrite'
+	);
+	const drifted = manifestGate({
+		recordMode: true,
+		manifestExists: true,
+		recorded: pinned,
+		observed: buildManifest(selected({ drums: { content: 'other-audio' } }))
+	});
+	assert.equal(drifted.action, 'refuse-overwrite');
+	assert.equal(drifted.problems.length, 1, 'and it says what drifted, rather than only refusing');
+});
+
+test('only an ordinary run against a matching pinned manifest may continue', () => {
+	// POSITIVE CONTROL for the whole gate: exactly one of its five outcomes
+	// lets a browser open, and this is it. Without this the gate could refuse
+	// everything and every case above would still pass.
+	const pinned = buildManifest(selected());
+	const gate = manifestGate({
+		recordMode: false,
+		manifestExists: true,
+		recorded: pinned,
+		observed: buildManifest(selected())
+	});
+	assert.deepEqual(gate, { action: 'verified', problems: [] });
+
+	const changed = manifestGate({
+		recordMode: false,
+		manifestExists: true,
+		recorded: pinned,
+		observed: buildManifest(selected({ bass: { content: 'different' } }))
+	});
+	assert.equal(changed.action, 'mismatch');
+	assert.equal(changed.problems.length, 1);
+
+	// An unreadable pin is a pin that cannot be honored, not an absent one:
+	// degrading it to `missing` would hand the next run a fresh baseline.
+	const unreadable = manifestGate({
+		recordMode: false,
+		manifestExists: true,
+		recorded: 'unparseable: SyntaxError',
+		observed: buildManifest(selected())
+	});
+	assert.equal(unreadable.action, 'mismatch');
 });
