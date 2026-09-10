@@ -1,6 +1,25 @@
 import { expect, test, type Page } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { firstAnalyzedStableId } from './support/analyzed-track';
 
-const AZARA = '310f7d2431c0327bca197e7ab38525e79fbcc383';
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
+const DATA_DIR = process.env.MDT_DATA_DIR ?? join(REPOSITORY_ROOT, 'data');
+// Same reason as performance-controls.spec.ts: a synchronized follower ramp is
+// grid-derived, and it does not hold against a synthesized grid.
+const IS_GENERATED_FIXTURE = existsSync(join(DATA_DIR, 'fixture-revision.txt'));
+
+const API_BASE = process.env.PERFORMANCE_E2E_API_BASE ?? 'http://127.0.0.1:8686';
+// Was AZARA = a hardcoded row from the maintainer's personal library, which resolved on
+// no other machine. The track is discovered at run time instead, against a
+// requirement this test really does have: it drags deck 1's tempo fader and
+// asserts deck 2 RAMPS WITH IT, which only happens when both decks carry a
+// real beatgrid. Discovery reads whichever of the two real grid sources this
+// library uses (see support/analyzed-track.ts), so it resolves on a rekordbox
+// library and on the analyzed generated fixture alike, and skips - never
+// fails - when neither source can offer one.
+const MIN_BEATS = 32;
 
 type PerfEventRow = { kind: string; deck: number | null };
 
@@ -39,8 +58,21 @@ async function deckOneTransportScheduleCount(page: Page): Promise<number> {
 test('a wide master burst waits for each synchronized follower ramp before the next command', async ({
 	page
 }) => {
+	test.skip(
+		IS_GENERATED_FIXTURE,
+		`generated fixture at ${DATA_DIR}: a synchronized follower ramp is grid-derived and does ` +
+			'not hold against a synthesized grid; run with PERFORMANCE_E2E_FIXTURE=0'
+	);
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	const AZARA = await firstAnalyzedStableId(page.request, API_BASE, { minBeats: MIN_BEATS });
+	test.skip(
+		AZARA === null,
+		`no available track exposes a >= ${MIN_BEATS}-beat beatgrid on either /anlz or ` +
+			'/beatgrid-fallback; a synchronized follower ramp cannot be asserted without one'
+	);
+	// test.skip above already aborted; this only narrows the type for the compiler.
+	if (AZARA === null) throw new Error('unreachable: discovery returned no analyzed track');
 	await dispatch(page, { type: 'master_volume', value: 0.1 });
 	await dispatch(page, { type: 'load', deck: 1, stable_id: AZARA });
 	await dispatch(page, { type: 'master', deck: 1 });
