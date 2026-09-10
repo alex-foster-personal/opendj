@@ -131,6 +131,40 @@ describe('describeAutoPlayStall', () => {
 		assert.equal(stall.blocked_total, 3, 'de-duplication must not collapse different tracks');
 	});
 
+	it('says THREE DIFFERENT tracks failed, not one track three times', () => {
+		// A candidate goes into the controller's `_claimedIds` before its
+		// dispatch, so a retry can never pick the same id twice: the three
+		// attempts are necessarily three different files. "the next track failed
+		// three times" sent the operator hunting one flaky track that does not
+		// exist. Mutating the wording back left every other test in this file
+		// green, which is why this assertion is here at all.
+		const stall = mod.describeAutoPlayStall({
+			reason: 'handoff-attempts-exhausted',
+			source_stable_id: 'src-1',
+			blocked: [],
+			detail: 'load refused'
+		});
+		assert.match(stall.headline, /three different candidate tracks/);
+		assert.equal(
+			/the next track/.test(stall.headline),
+			false,
+			'a singular headline mis-describes what the attempt budget actually counted'
+		);
+		assert.match(stall.resume, /unlikely to be one bad track/);
+	});
+
+	it('CONTROL: the single-candidate branch still reads as one track', () => {
+		// handoff-incomplete IS about one specific track, so the plural above
+		// must not have been applied by sweeping every headline.
+		const stall = mod.describeAutoPlayStall({
+			reason: 'handoff-incomplete',
+			source_stable_id: 'src-1',
+			blocked: [],
+			detail: 'play refused'
+		});
+		assert.match(stall.headline, /the next track is on a deck/);
+	});
+
 	it('refuses a reason it has no words for', () => {
 		assert.throws(
 			() =>

@@ -63,14 +63,19 @@ export function noteAutoPlayExhaustion(input: {
 	source_stable_id: string;
 	/** From `autoPlayStallReason`, the SAME derivation the toast used. */
 	reason: AutoPlayStallReason;
-	remaining: readonly AutoPlayTrackRow[];
+	/**
+	 * The tracks to NAME, which differ by cause: the remaining candidates for a
+	 * key/tempo or order dead end, the quarantined ones for a load failure -
+	 * those are exactly the rows `remaining` has already excluded.
+	 */
+	blocked: readonly AutoPlayTrackRow[];
 }): void {
 	const { reason } = input;
 	raiseAutoPlayStall(
 		describeAutoPlayStall({
 			reason,
 			source_stable_id: input.source_stable_id,
-			blocked: input.remaining
+			blocked: input.blocked
 		})
 	);
 }

@@ -91,7 +91,18 @@ let _exhaustedFeedEpoch: number | null = null;
 let _chartedOrderKey: string | null = null;
 /** Candidates that failed load/play; cleared when playlist membership changes. */
 let _unplayableIds = new Set<string>();
-let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
+/**
+ * Candidates that failed to LOAD for the current source, by id.
+ *
+ * The ids, not a count (Codex r3974580403): a failed candidate is quarantined
+ * in `_unplayableIds` and therefore drops out of `remaining`, so a stall built
+ * from `remaining` named the surviving INCOMPATIBLE rows as the files to check
+ * while the ones that actually failed lived only in an expiring toast. It is
+ * also source-scoped and feed-scoped: `_syncPlayedSet` retires it with the rest
+ * of the playlist-scoped state, or a new playlist inherits the last one's
+ * failures and is told its own candidates failed to load (r3974580407).
+ */
+let _attemptsFor: { source: string; failed_ids: string[] } = { source: '', failed_ids: [] };
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
 /** Empty-feed toast epoch during playlist hydration, without consuming the source arm. */
@@ -193,6 +204,7 @@ function _syncPlayedSet(): void {
 		// already put on a deck must stay unpickable regardless of the feed.
 		_playedIds = new Set();
 		_unplayableIds = new Set();
+		_attemptsFor = { source: '', failed_ids: [] };
 		_playedFeedEpoch = epoch;
 		if (_exhaustedFeedEpoch !== null) {
 			_triggeredFor = null;
@@ -420,12 +432,17 @@ async function _tick(): Promise<void> {
 		// incident row and the screen can name different causes (r3974518065).
 		const reason = autoPlayStallReason({
 			all_missing: allMissing,
-			load_failures: _attemptsFor.source === source.stable_id && _attemptsFor.count > 0,
+			load_failures: _attemptsFor.source === source.stable_id && _attemptsFor.failed_ids.length > 0,
 			enforce_order: uiPrefs.auto_play_enforce_order
 		});
 		pushToast(autoPlayExhaustionToast(reason), 'error');
+		// The tracks worth NAMING differ by cause: for a load failure they are
+		// the quarantined candidates, which `remaining` has already excluded.
+		const blocked = reason === 'candidates-failed-to-load'
+			? feed.filter((row) => _attemptsFor.failed_ids.includes(row.stable_id))
+			: remaining;
 		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
-		noteAutoPlayExhaustion({ source_stable_id: source.stable_id, reason, remaining });
+		noteAutoPlayExhaustion({ source_stable_id: source.stable_id, reason, blocked });
 		_triggeredFor = source.stable_id;
 		_exhaustedFeedEpoch = _playedFeedEpoch;
 		return;
@@ -444,7 +461,7 @@ async function _tick(): Promise<void> {
 	_playedIds.add(nextId);
 	try {
 		await _handoff(source, follower, nextId);
-		_attemptsFor = { source: '', count: 0 };
+		_attemptsFor = { source: '', failed_ids: [] };
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		// An unclassified throw is treated as committed. That is the safe
@@ -466,10 +483,11 @@ async function _tick(): Promise<void> {
 		// Row 16: nothing landed on the deck; quarantine and try another pick.
 		_unplayableIds.add(nextId);
 		if (_attemptsFor.source !== source.stable_id) {
-			_attemptsFor = { source: source.stable_id, count: 0 };
+			_attemptsFor = { source: source.stable_id, failed_ids: [] };
 		}
-		_attemptsFor.count += 1;
-		if (_attemptsFor.count < MAX_HANDOFF_ATTEMPTS) {
+		// Distinct by construction: nextId went into _claimedIds before dispatch.
+		_attemptsFor.failed_ids.push(nextId);
+		if (_attemptsFor.failed_ids.length < MAX_HANDOFF_ATTEMPTS) {
 			_triggeredFor = null;
 			pushToast(`auto-play: skipped unplayable (${nextId.slice(0, 12)}...): ${message}`, 'info');
 		} else {
@@ -555,7 +573,7 @@ export function installAutoPlay(): () => void {
 		_claimedIds = new Set();
 		_playedIds = new Set();
 		_unplayableIds = new Set();
-		_attemptsFor = { source: '', count: 0 };
+		_attemptsFor = { source: '', failed_ids: [] };
 		_playedFeedEpoch = -1;
 		_clearChartedOrder();
 		clearAutoPlayQueue();

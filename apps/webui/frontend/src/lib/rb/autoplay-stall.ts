@@ -111,7 +111,11 @@ function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 		case 'candidates-failed-to-load':
 			return 'AutoPlay stopped: every compatible track it tried failed to load';
 		case 'handoff-attempts-exhausted':
-			return 'AutoPlay stopped: the next track failed to load or play three times';
+			// THREE DIFFERENT tracks, not one flaky one (Codex r3974580407): a
+			// candidate is added to `_claimedIds` before its dispatch, so a
+			// retry can never pick the same id twice. "the next track failed
+			// three times" sent the operator hunting one bad file.
+			return 'AutoPlay stopped: three different candidate tracks failed to load or play in a row';
 		case 'handoff-incomplete':
 			return 'AutoPlay stopped: the next track is on a deck but the handoff did not finish';
 		default: {
@@ -135,7 +139,7 @@ function _resume(reason: AutoPlayStallReason): string {
 		case 'candidates-failed-to-load':
 			return 'The candidates were compatible and would not load, so key and tempo are not the problem: check those files, then press play on a deck.';
 		case 'handoff-attempts-exhausted':
-			return 'Load the next track by hand and press play; the failures are in the toast log.';
+			return 'Several different files failed in a row, so this is unlikely to be one bad track: load one by hand and press play, and check the toast log for the three errors.';
 		case 'handoff-incomplete':
 			return 'Press play on the deck that was loaded, or load a track by hand.';
 		default: {

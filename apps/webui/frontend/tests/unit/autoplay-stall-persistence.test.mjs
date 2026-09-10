@@ -26,7 +26,13 @@
  *   raise-everything fix would fail].
  * [if] a compatible candidate already failed to LOAD for this source [then] the
  *   stall blames the files, not key and tempo [⛔️ if it tells the operator to
- *   widen a pitch range when the pitch range was never the problem].
+ *   widen a pitch range when the pitch range was never the problem], and NAMES
+ *   the candidates that failed [⛔️ if it names the surviving incompatible rows
+ *   instead, which is where `remaining` points once the failures are
+ *   quarantined out of it].
+ * [if] the operator opens a different playlist after a load failure [then] the
+ *   next dead end does NOT claim the new playlist's candidates failed to load
+ *   [⛔️ if attempt state outlives the feed it was measured on].
  * [if] AutoPlay is switched off while a handoff is still awaiting [then] the
  *   late rejection raises nothing [⛔️ if a stop banner sits over a
  *   switched-off feature, and rides module state into the next mount].
@@ -50,7 +56,7 @@ const POLL_SETTLE_MS = 900;
 
 const ENTRY = [
 	"export { installAutoPlay } from '$lib/rb/auto-play.svelte';",
-	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
+	"export { setAutoPlayEnabled, setAutoPlayEnforceOrder, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
 	"export { readAutoPlayStall, noteAutoPlayHandoffStall } from '$lib/rb/autoplay-stall.svelte';"
@@ -315,6 +321,52 @@ test('a candidate that failed to LOAD blames the files, not key and tempo', asyn
 			`a load failure must not be reported as a key/BPM dead end (got ${stall.reason})`
 		);
 		assert.match(stall.resume, /key and tempo are not the problem/);
+		// BOTH were attempted here: with Enforce play order off, the picker's
+		// fallback takes any playable unplayed row, so `far-1` was tried too and
+		// also failed. That makes the point harder, not softer - `remaining` is
+		// EMPTY once both are quarantined, so the previous code named nothing at
+		// all and the operator was told files failed without being told which.
+		assert.deepEqual(
+			stall.blocked.map((t) => t.stable_id).sort(),
+			['far-1', 'ghost-1'],
+			'the named files must be the ones that FAILED; `remaining` has excluded them'
+		);
+		assert.equal(stall.blocked_total, 2);
+	});
+});
+
+test('a new playlist does not inherit the last one\'s load failures', async () => {
+	await withController(async (mod) => {
+		mod.setAutoPlayTrackFeed('playlist-a', [
+			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
+			{ stable_id: 'ghost-1', key: '8A', bpm: 124, file_exists: true, title: 'Ghost', artist: 'Bo' }
+		]);
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		await settle();
+		await settle();
+		assert.equal(
+			mod.readAutoPlayStall()?.reason,
+			'candidates-failed-to-load',
+			'precondition: playlist A really did record a load failure'
+		);
+
+		// A different playlist, same source deck still master. Enforce play
+		// order with the source LAST, so the picker dead-ends without attempting
+		// anything at all: nothing in playlist B has failed to load, and saying
+		// it did would be the app reporting a failure that never happened.
+		mod.setAutoPlayEnforceOrder(true);
+		mod.setAutoPlayTrackFeed('playlist-b', [
+			{ stable_id: 'b-1', key: '3B', bpm: 175, file_exists: true, title: 'Bee', artist: 'Di' },
+			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' }
+		]);
+		await settle();
+		await settle();
+
+		assert.equal(
+			mod.readAutoPlayStall()?.reason,
+			'no-next-in-order',
+			'attempt state that outlives its feed makes the app claim failures that never happened'
+		);
 	});
 });
 
