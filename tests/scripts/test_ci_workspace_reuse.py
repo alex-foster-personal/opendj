@@ -38,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -87,10 +88,51 @@ def _touch(root: Path, *relpaths: str) -> None:
         target.write_text("x", encoding="utf-8")
 
 
-def _run_venv_script(workdir: Path) -> subprocess.CompletedProcess:
+def _run_venv_script(
+    workdir: Path,
+    *extra_args: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    run_env = os.environ.copy()
+    run_env.pop("VIRTUAL_ENV", None)
+    if env is not None:
+        run_env.update(env)
     return subprocess.run(
-        ["bash", str(VENV_SCRIPT), PYTHON], cwd=workdir, capture_output=True, text=True, check=False
+        ["bash", str(VENV_SCRIPT), PYTHON, *extra_args],
+        cwd=workdir,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=run_env,
     )
+
+
+def _offline_uv_env(cache_dir: Path, home: Path) -> dict[str, str]:
+    """Keep uv on the real interpreter and cache, with no network or downloads."""
+    interpreter_dir = Path(sys.executable).resolve().parent
+    uv_dir = Path(shutil.which("uv") or "").resolve().parent
+    return {
+        "PATH": f"/usr/bin:/bin:/usr/sbin:/sbin:{interpreter_dir}:{uv_dir}",
+        "HOME": str(home),
+        "UV_CACHE_DIR": str(cache_dir),
+        "UV_PYTHON_DOWNLOADS": "never",
+        "UV_OFFLINE": "1",
+    }
+
+
+def _installed_distribution_names(python: Path) -> set[str]:
+    code = (
+        "import importlib.metadata as m\n"
+        "for dist in sorted(m.distributions(), key=lambda d: d.metadata['Name'].lower()):\n"
+        "    print(dist.metadata['Name'].lower())\n"
+    )
+    result = subprocess.run(
+        [str(python), "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {line for line in result.stdout.splitlines() if line}
 
 
 def _version_of(python: Path) -> str:
@@ -253,6 +295,57 @@ def test_venv_script_recreates_a_wrong_or_broken_interpreter(
     assert reason in result.stdout, result.stdout
     assert not (tmp_path / ".venv" / "MARKER").exists(), "mismatched venv must be rebuilt"
     assert _version_of(tmp_path / ".venv" / "bin" / "python") == _wanted_version()
+
+
+@needs_uv
+def test_venv_script_installs_exactly_with_offline_venv(tmp_path: Path) -> None:
+    """--sync must leave only lockfile packages, even when reusing a polluted venv."""
+    project = tmp_path / "project"
+    project.mkdir()
+    cache = tmp_path / "uv-cache"
+    home = tmp_path / "home"
+    home.mkdir()
+    offline = _offline_uv_env(cache, home)
+
+    pyproject = """\
+[project]
+name = "ci-venv-exactness"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["certifi"]
+"""
+    (project / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+
+    subprocess.run(["uv", "lock"], cwd=project, check=True, env=offline | {"UV_OFFLINE": "0"})
+    subprocess.run(["uv", "sync"], cwd=project, check=True, env=offline | {"UV_OFFLINE": "0"})
+
+    expected = _installed_distribution_names(project / ".venv" / "bin" / "python")
+    assert "certifi" in expected, f"seed sync must install certifi, got {sorted(expected)}"
+
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(project / ".venv" / "bin" / "python"),
+            "idna",
+        ],
+        cwd=project,
+        check=True,
+        env=offline | {"UV_OFFLINE": "0"},
+    )
+    polluted = _installed_distribution_names(project / ".venv" / "bin" / "python")
+    assert polluted != expected, "pollution step must change the venv before the exact sync"
+
+    result = _run_venv_script(project, "--sync", env=offline)
+    assert result.returncode == 0, result.stderr or result.stdout
+
+    actual = _installed_distribution_names(project / ".venv" / "bin" / "python")
+    assert actual == expected, (
+        f"offline --sync must match lockfile exactly: "
+        f"missing={sorted(expected - actual)} extra={sorted(actual - expected)}"
+    )
 
 
 def test_scripts_are_executable() -> None:
