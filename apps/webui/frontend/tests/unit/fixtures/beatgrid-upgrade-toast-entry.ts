@@ -7,7 +7,10 @@
  * array - pushToast() inside the bundled upgrade module would write to a copy
  * the test can never read. Re-exporting both from one entry means the toasts
  * array the test asserts on IS the one `pushToast` (called from inside
- * `upgradeDeckBeatgrid`) mutates.
+ * `upgradeDeckBeatgrid`) mutates. Same reasoning extends to
+ * `analysisSourceState`: the PARITY-02 gate reads it live, so a test driving
+ * this harness needs the SAME copy `upgradeDeckBeatgrid` reads to set it.
  */
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-upgrade';
 export { toasts } from '$lib/stores.svelte';
+export { analysisSourceState } from '$lib/rb/analysis-source.svelte';
