@@ -63,6 +63,25 @@ def test_higher_is_better_bands(value: float, expected: str) -> None:
     assert verdict_for(value, HIGHER) == expected
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0.0, "PASS"),
+        (4.99, "ACCEPTABLE"),
+        (5.0, "OVER"),
+        (5.01, "OVER"),
+    ],
+)
+def test_acceptable_strict_excludes_the_boundary_value(value: float, expected: str) -> None:
+    """S4's own reproduction: a spec cell stated as "<5%" with no equals sign
+    must report OVER, not ACCEPTABLE, for a reading of exactly 5%. The default
+    inclusive `<=` (test_lower_is_better_bands above) would wrongly call this
+    ACCEPTABLE; `acceptable_strict` is what closes that gap."""
+    cfg = {"budget": 0.0, "acceptable": 5.0, "breaking": None, "lower_is_better": True,
+           "acceptable_strict": True}
+    assert verdict_for(value, cfg) == expected
+
+
 def test_newest_wins_over_older() -> None:
     entries = [
         {"kpi": "k", "value": 100, "unit": "ms", "date": "2026-08-01"},
@@ -390,6 +409,38 @@ def test_a_reading_with_no_source_does_not_score() -> None:
     }
     entries = [
         {"kpi": "packaged_deck_load_total_ms", "value": 20, "unit": "ms", "date": "2026-09-09"}
+    ]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == UNMEASURED
+    assert "packaged_deck_load_total_ms" in score.note
+
+
+def test_a_reading_with_a_null_source_does_not_score() -> None:
+    """A JSON `"source": null` row is a distinct case from a MISSING source
+    key: `dict.get("source", "")` only falls back to the default when the key
+    is absent, so a present-but-null key reaches `str(None)`, which is the
+    truthy string "None". A ledger row must not slip through the source gate
+    just because it explicitly nulled the field instead of omitting it."""
+    kpi_map = {
+        "scenarios": {
+            "S5": {
+                "title": "t",
+                "class": "P1",
+                "kpis": ["packaged_deck_load_total_ms"],
+                "required": ["packaged_deck_load_total_ms"],
+                "missing_kpi": "placeholder",
+                **LOWER,
+            }
+        }
+    }
+    entries = [
+        {
+            "kpi": "packaged_deck_load_total_ms",
+            "value": 20,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "source": None,
+        }
     ]
     (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
     assert score.verdict == UNMEASURED

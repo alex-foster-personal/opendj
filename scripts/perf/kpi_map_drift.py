@@ -172,6 +172,35 @@ def _threshold_matches_cell(threshold: float, unit: str, cell: str) -> bool | No
     return math.isclose(value, threshold, rel_tol=1e-9, abs_tol=1e-9)
 
 
+_DIRECTION = re.compile(r"(<=|>=|<|>)\s*-?\d")
+
+
+def _direction_matches(lower_is_better: bool, column: str, cell: str) -> bool | None:
+    """Does `cell`'s comparator, immediately before its first number, agree
+    with `lower_is_better`?
+
+    Returns None when the cell states no comparator right before a number -
+    a prose-only cell (S4's provisional target, S1's qualitative breaking)
+    asserts no checkable direction, the same "nothing to compare against"
+    case the numeric checks already skip rather than flag.
+
+    `target`/`acceptable` read as an upper bound when lower_is_better (a
+    smaller reading is the good one, so the cell says "<=" or "<"), and a
+    lower bound otherwise (">=" or ">"). `breaking` is the opposite sense:
+    it names the bound a reading must NOT cross, so a lower-is-better
+    scenario's breaking cell reads ">" (exceeding an upper ceiling breaks
+    it), while a higher-is-better scenario's breaking cell reads "<"
+    (falling under a floor breaks it).
+    """
+    match = _DIRECTION.search(cell)
+    if match is None:
+        return None
+    cell_is_upper_bound = match.group(1).startswith("<")
+    if column == "breaking":
+        cell_is_upper_bound = not cell_is_upper_bound
+    return cell_is_upper_bound == lower_is_better
+
+
 def _per_kpi_family(unit: str) -> str:
     wants_ms, wants_pct = _unit_wants(unit)
     if wants_pct:
@@ -219,21 +248,40 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
     numbers `_resolve_required` hands to `verdict_for` - must match the spec
     cell it is scored against, not just the scenario's headline field.
 
-    A plain (single-KPI) scenario's resolved entry IS the scenario's headline
-    field, so this duplicates the scalar check above for it; the case this
-    exists for is S2/S4/S7, each of which requires a SECOND KPI carrying its
-    own numbers in the SAME shared cell text as the first, which nothing
-    validated before. Numbers are matched by rank within same-family KPIs, in
-    `required` order: the Nth ms-typed required KPI is checked against the
-    Nth ms-tagged number the cell states, and a KPI with fewer same-family
-    numbers available than its rank is left unchecked rather than guessed at.
+    A plain-string required entry's resolved values ARE the scenario's own
+    headline fields (`_resolve_required` copies them verbatim), so checking
+    it here would only re-run the scalar check above a second time - worse,
+    without that check's ms<->s conversion, so a plain-string entry recorded
+    in a different unit family than its cell (S5, S8) would falsely report
+    uncheckable. Only DICT-shaped `required` entries carry their OWN numbers
+    distinct from the scenario headline, so only those are checked here; the
+    case this exists for is S2/S4/S7, each of which requires a SECOND KPI
+    carrying its own numbers in the SAME shared cell text as the first, which
+    nothing validated before. Numbers are matched by rank within same-family
+    DICT entries, in `required` order: the Nth ms-typed dict entry is checked
+    against the Nth ms-tagged number the cell states.
+
+    A required threshold with no comparable candidate now FAILS CLOSED (is a
+    finding), not silently skipped: an uncheckable value is a value nothing
+    can catch drifting, which is worse than a wrong one that at least a human
+    reviewing this finding will see. A prose-only cell that is genuinely,
+    deliberately unverifiable (S4's provisional target, S7's dropped-keystroke
+    thresholds, S2's visual acceptable band sharing the audible-only cell)
+    must instead name itself in that entry's `unverifiable_columns` list - an
+    explicit, reviewed opt-out beside the entry it applies to, rather than an
+    absence of candidates the code cannot tell apart from a stale number
+    nobody meant to leave unchecked.
     """
     problems: list[str] = []
     family_rank: dict[str, int] = {}
-    for req in resolve_required(cfg):
+    raw_entries = cfg.get("required", [])
+    for raw, req in zip(raw_entries, resolve_required(cfg)):
+        if isinstance(raw, str):
+            continue
         family = _per_kpi_family(str(req.get("unit", "")))
         rank = family_rank.get(family, 0) + 1
         family_rank[family] = rank
+        unverifiable = set(req.get("unverifiable_columns", []))
         for column, value in (
             ("target", req.get("budget")),
             ("acceptable", req.get("acceptable")),
@@ -244,6 +292,12 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
             cell = str(cells.get(column, ""))
             candidates = _strict_family_candidates(cell, family)
             if rank > len(candidates):
+                if column in unverifiable:
+                    continue
+                problems.append(
+                    f"{sid} {req['kpi']} {column}: map records {value!r}, but spec cell "
+                    f"{cell!r} states no comparable number to check it against"
+                )
                 continue
             if not math.isclose(candidates[rank - 1], float(value), rel_tol=1e-9, abs_tol=1e-9):
                 problems.append(
@@ -274,6 +328,14 @@ def threshold_drift(kpi_map: dict) -> list[str]:
     produce the same equality by coincidence and must still be checked
     against the cell like any other value - "no comparable number in the
     cell" is the only condition that skips a column.
+
+    A scenario's numeric bands mean nothing without knowing which side is
+    good: `lower_is_better` flipped with the numbers left untouched passes
+    every check above (a "PASS" reading is still <= budget, whichever way
+    round it is compared) while silently inverting the verdict. This is
+    checked once per scenario against the target cell's own comparator - the
+    cell most reliably stating one - rather than per required KPI, since
+    direction is a scenario-level scoring choice, not a per-KPI one.
     """
     problems: list[str] = []
     for sid, cfg in kpi_map["scenarios"].items():
@@ -281,6 +343,13 @@ def threshold_drift(kpi_map: dict) -> list[str]:
         if not cells:
             continue
         unit = str(cfg.get("unit", ""))
+        lower_is_better = bool(cfg.get("lower_is_better", True))
+        target_cell = str(cells.get("target", ""))
+        if _direction_matches(lower_is_better, "target", target_cell) is False:
+            problems.append(
+                f"{sid} lower_is_better: map records {lower_is_better!r}, which "
+                f"disagrees with the comparator in spec cell {target_cell!r}"
+            )
         for column, value in (
             ("target", cfg.get("budget")),
             ("acceptable", cfg.get("acceptable")),

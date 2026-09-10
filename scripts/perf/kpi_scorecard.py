@@ -111,7 +111,7 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
             None,
             str(newest.get("unit", "")),
             newest.get("date"),
-            str(newest.get("source", "")),
+            str(newest.get("source") or ""),
             True,
             machine=newest.get("machine"),
             note=newest.get("note"),
@@ -123,7 +123,7 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
         _as_float(newest.get("value")),
         str(newest.get("unit", "")),
         newest.get("date"),
-        str(newest.get("source", "")),
+        str(newest.get("source") or ""),
         superseded=False,
         machine=newest.get("machine"),
         note=newest.get("note"),
@@ -166,23 +166,34 @@ def verdict_for(value: float, cfg: dict) -> str:
     `breaking` may be None, meaning the spec declines to define one. Such a
     scenario can report OVER but never BREAKING, rather than having a threshold
     invented for it here.
+
+    `acceptable_strict`, when true, makes the acceptable boundary exclusive
+    (`<`/`>`) rather than the default inclusive (`<=`/`>=`). Most spec cells
+    state their acceptable bound as "<=", which the default matches; S4's
+    dropped-frame cell states "<5%" with no equals, so a reading of exactly
+    5% must report OVER, not ACCEPTABLE. The map still records the value the
+    spec cell literally states (5), matched by threshold_drift as normal;
+    only the comparison operator changes.
     """
     lower_is_better = bool(cfg.get("lower_is_better", True))
     budget = float(cfg["budget"])
     acceptable = float(cfg["acceptable"])
+    acceptable_strict = bool(cfg.get("acceptable_strict", False))
     raw_breaking = cfg.get("breaking")
     breaking = None if raw_breaking is None else float(raw_breaking)
     if lower_is_better:
         if value <= budget:
             return "PASS"
-        if value <= acceptable:
+        within_acceptable = value < acceptable if acceptable_strict else value <= acceptable
+        if within_acceptable:
             return "ACCEPTABLE"
         if breaking is not None and value > breaking:
             return "BREAKING"
         return "OVER"
     if value >= budget:
         return "PASS"
-    if value >= acceptable:
+    within_acceptable = value > acceptable if acceptable_strict else value >= acceptable
+    if within_acceptable:
         return "ACCEPTABLE"
     if breaking is not None and value < breaking:
         return "BREAKING"

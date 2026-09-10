@@ -65,7 +65,8 @@
           "lower_is_better": true,
           "budget": 16,
           "acceptable": 16,
-          "breaking": null
+          "breaking": null,
+          "unverifiable_columns": ["acceptable"]
         }
       ],
       "context_kpis": [
@@ -115,7 +116,8 @@
           "lower_is_better": true,
           "budget": 16.7,
           "acceptable": 16.7,
-          "breaking": null
+          "breaking": null,
+          "unverifiable_columns": ["target", "acceptable"]
         },
         {
           "kpi": "waveform_dropped_frame_pct_10s",
@@ -123,7 +125,9 @@
           "lower_is_better": true,
           "budget": 0,
           "acceptable": 5,
-          "breaking": null
+          "acceptable_strict": true,
+          "breaking": null,
+          "unverifiable_columns": ["target"]
         }
       ],
       "context_kpis": []
@@ -218,7 +222,8 @@
           "lower_is_better": true,
           "budget": 0,
           "acceptable": 0,
-          "breaking": 0
+          "breaking": 0,
+          "unverifiable_columns": ["target", "acceptable", "breaking"]
         }
       ],
       "context_kpis": [
