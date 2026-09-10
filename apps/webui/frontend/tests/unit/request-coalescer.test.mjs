@@ -23,6 +23,14 @@
  *    read it just replaced
  *  - if two keys share one entry then a caller gets another endpoint's body
  *    typed as its own
+ *  - if invalidate() fires while the entry is still in flight and the
+ *    in-flight request's own answer is kept, then every caller already
+ *    holding that promise (a boot-time layout mount and BrowserPanel both
+ *    routinely join the same in-flight entry) receives an answer captured
+ *    from BEFORE whatever change invalidate() was reacting to, and
+ *    invalidate() has protected only callers who had not yet asked -- found
+ *    in review round 4 of PR #1656, against the round-2/round-3 invalidation
+ *    fixes in src/lib/api.ts
  *
  * WHY A HAND-DRIVEN CLOCK AND FAKE REQUESTS HERE, rather than the real HTTP
  * path. This module is a pure coordination primitive: it takes a `now()` and
@@ -86,6 +94,22 @@ function makeDeferredRequest(value) {
 async function settle() {
 	await Promise.resolve();
 	await Promise.resolve();
+}
+
+/** A request stub whose Nth call is resolved individually by index, so a
+ * test can answer the first (stale) call and the second (fresh) call with
+ * two different, distinguishable values. */
+function makeSequencedRequest() {
+	const state = { calls: 0, resolvers: [] };
+	state.request = () => {
+		const idx = state.calls;
+		state.calls += 1;
+		return new Promise((resolve, reject) => {
+			state.resolvers[idx] = { resolve, reject };
+		});
+	};
+	state.resolve = (idx, value) => state.resolvers[idx].resolve(value);
+	return state;
 }
 
 before(async () => {
@@ -199,4 +223,50 @@ test('the shipped TTL clears the measured wave gap and stays under the poll cade
 	const FASTEST_LEGITIMATE_REREAD_MS = 2_500;
 	assert.ok(mod.BOOT_COALESCE_TTL_MS > WIDEST_MEASURED_WAVE_GAP_MS);
 	assert.ok(mod.BOOT_COALESCE_TTL_MS < FASTEST_LEGITIMATE_REREAD_MS);
+});
+
+test('invalidate() during an in-flight request discards its stale answer for every existing waiter', async () => {
+	const seq = makeSequencedRequest();
+	const waiter = coalescer.share('health', 1000, seq.request);
+
+	// The world changes (e.g. a tracks import, or the bus's first connection
+	// opening) while the very first request is still in flight -- exactly
+	// the case the two prior invalidation fixes in src/lib/api.ts cannot
+	// reach, since they only stop a FUTURE caller from joining a stale
+	// SETTLED entry.
+	coalescer.invalidate('health');
+
+	// The original, now-invalidated request finally answers with the world
+	// as it was BEFORE the change.
+	seq.resolve(0, 'stale-pre-change-body');
+	await settle();
+
+	assert.equal(
+		seq.calls,
+		2,
+		'an entry invalidated before it settles must trigger a fresh request immediately, not only evict the cache for the next caller'
+	);
+
+	seq.resolve(1, 'fresh-post-change-body');
+	assert.equal(
+		await waiter,
+		'fresh-post-change-body',
+		'every caller already holding the in-flight promise must receive the fresh answer, not the stale one that was in flight when invalidate() fired'
+	);
+});
+
+test('invalidate() on an already-settled entry is unaffected by the in-flight fix', async () => {
+	const backing = makeDeferredRequest('settled-body');
+
+	const first = coalescer.share('ui-prefs', 1000, backing.request);
+	backing.resolveAll();
+	await first;
+	await settle();
+
+	coalescer.invalidate('ui-prefs');
+	const second = coalescer.share('ui-prefs', 1000, backing.request);
+
+	assert.equal(backing.calls, 2, 'a settled entry invalidated after the fact must still re-request immediately, exactly as before');
+	backing.resolveAll();
+	assert.equal(await second, 'settled-body');
 });
