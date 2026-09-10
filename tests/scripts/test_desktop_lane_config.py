@@ -10,8 +10,12 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
   under an unintended name or escape its directory -> broken.
 - if the dmg filename carries a space or a parenthesis, every downstream
   shell command needs quoting -> broken.
-- if the architecture is guessed rather than read from what Tauri built,
-  an arm64/aarch64 mismatch ships in the filename -> broken.
+- if the architecture is guessed rather than read from the built
+  executable, an arm64/aarch64 mismatch ships in the filename -> broken.
+- if tauri.conf.json asks for Tauri's own dmg target, bundle_dmg.sh drives
+  Finder and every headless build dies at AppleEvent timeout -1712 -> broken.
+- if the image is created only on the signed path, an MDT_SHIP_UNSIGNED=1
+  build produces no artifact at all -> broken.
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ import pytest
 
 from scripts.desktop_lane_config import (
     LaneLabelError,
-    arch_from_built_name,
+    arch_from_lipo,
     dmg_filename,
     lane_identifier,
     lane_product_name,
@@ -141,22 +145,56 @@ def test_dmg_name_is_shell_safe(label: str | None) -> None:
 
 
 @pytest.mark.requirement("INSTALL-05")
-def test_arch_is_read_from_the_built_artifact() -> None:
-    assert arch_from_built_name("Open DJ (B)_0.1.0_aarch64.dmg") == "aarch64"
+@pytest.mark.parametrize(("lipo", "arch"), [("arm64", "aarch64"), ("x86_64\n", "x86_64")])
+def test_arch_is_read_from_the_built_executable(lipo: str, arch: str) -> None:
+    """``lipo -archs`` says arm64; the artifact name keeps Rust's aarch64."""
+    assert arch_from_lipo(lipo) == arch
 
 
 @pytest.mark.requirement("INSTALL-05")
-def test_arch_refuses_a_name_it_cannot_parse() -> None:
+@pytest.mark.parametrize("lipo", ["", "   ", "x86_64 arm64", "arm64e", "ppc"])
+def test_arch_refuses_what_it_cannot_name_exactly(lipo: str) -> None:
+    """A universal or unknown binary must not be named as a single arch."""
     with pytest.raises(LaneLabelError):
-        arch_from_built_name("opendj.dmg")
+        arch_from_lipo(lipo)
 
 
 # ----- the real config ---------------------------------------------------
-def test_shipped_config_bundles_a_dmg() -> None:
-    """The work item itself: bundling must be on, with a dmg target."""
+def test_shipped_config_bundles_the_app_without_tauris_dmg() -> None:
+    """Tauri's dmg target runs bundle_dmg.sh, which drives Finder (#1711).
+
+    Finder does not answer Apple events from a non-interactive session, so
+    that target made every headless build fail, and its image was deleted
+    and rebuilt with hdiutil anyway. The recipe makes the image itself.
+    """
     conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
     assert conf["bundle"]["active"] is True
-    assert "dmg" in conf["bundle"]["targets"]
+    assert conf["bundle"]["targets"] == ["app"]
+    assert conf["bundle"]["createUpdaterArtifacts"] is True
+
+
+def _dmg_recipe() -> str:
+    recipe = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    start = recipe.index("\ndmg lane='':\n")
+    end = recipe.index("\n\n", recipe.index("[TIMING] recipe_end", start))
+    return recipe[start:end]
+
+
+def test_the_dmg_recipe_creates_the_image_on_both_paths() -> None:
+    """ONE hdiutil create, at recipe level, never inside the signing branch.
+
+    Before #1711 the unsigned path shipped Tauri's image and only the signed
+    path ran hdiutil. With Tauri's dmg target gone, an hdiutil call nested
+    under ``if [ -n "$identity" ]`` would leave MDT_SHIP_UNSIGNED=1 builds
+    with nothing to ship.
+    """
+    recipe = _dmg_recipe()
+    creates = re.findall(r"^( *)hdiutil create .*-format UDZO", recipe, re.M)
+    assert creates == ["    "], creates
+    # Nothing reads a Tauri-produced image back any more.
+    assert "ls -t apps/desktop/src-tauri/target/release/bundle/dmg" not in recipe
+    assert "--built" not in recipe
+    assert 'dmg-name --config "$conf" --label "$label" --lipo-archs' in recipe
 
 
 def test_shipped_config_is_the_unlabelled_product() -> None:
@@ -327,10 +365,32 @@ def test_cli_names_the_labelled_artifact() -> None:
         str(TAURI_CONF),
         "--label",
         "B",
-        "--built",
-        "Open DJ (B)_0.1.0_aarch64.dmg",
+        "--lipo-archs",
+        "arm64",
     )
-    assert name == "OpenDJ-B-0.1.1-aarch64.dmg"
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    assert name == f"OpenDJ-B-{conf['version']}-aarch64.dmg"
+
+
+def test_cli_refuses_to_name_the_artifact_without_an_architecture() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.desktop_lane_config",
+            "dmg-name",
+            "--config",
+            str(TAURI_CONF),
+            "--label",
+            "",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "--lipo-archs" in result.stderr
 
 
 @pytest.mark.requirement("INSTALL-04")

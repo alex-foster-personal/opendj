@@ -49,6 +49,10 @@ LABEL_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9]+$")
 
 LANE_SEGMENT_PREFIX: str = "lane-"
 
+# Apple's lipo spelling -> the Rust target spelling Tauri used in its own
+# artifact names, which every shipped filename has carried since.
+LIPO_TO_ARTIFACT_ARCH: dict[str, str] = {"arm64": "aarch64", "x86_64": "x86_64"}
+
 
 class LaneLabelError(ValueError):
     """The lane label cannot be turned into a safe bundle name."""
@@ -125,20 +129,22 @@ def dmg_filename(
     return f"{'-'.join(parts)}.dmg"
 
 
-def arch_from_built_name(built: str) -> str:
-    """Take the architecture from what Tauri actually produced.
+def arch_from_lipo(lipo_archs: str) -> str:
+    """Name the architecture of the executable that was actually built.
 
-    Reading ``uname -m`` would be a guess: it reports ``arm64`` where Tauri
-    writes ``aarch64``, and it says nothing about a cross build.
+    Takes ``lipo -archs`` output for the app's main binary. Reading
+    ``uname -m`` would be a guess about the host, not a fact about the
+    artifact. Apple says ``arm64`` where Rust and Tauri say ``aarch64``, and
+    the artifact name keeps Tauri's spelling. A universal binary is refused:
+    one arch in the filename would understate it.
     """
-    stem = Path(built).stem
-    arch = stem.rsplit("_", 1)[-1]
-    if arch in ("", stem):
+    archs = lipo_archs.split()
+    if len(archs) != 1 or archs[0] not in LIPO_TO_ARTIFACT_ARCH:
         raise LaneLabelError(
-            f"cannot read an architecture out of {built!r}; expected Tauri's "
-            "{productName}_{version}_{arch}.dmg shape"
+            f"lipo reported {lipo_archs.strip()!r}; expected exactly one of "
+            f"{', '.join(sorted(LIPO_TO_ARTIFACT_ARCH))}"
         )
-    return arch
+    return LIPO_TO_ARTIFACT_ARCH[archs[0]]
 
 
 # ----- CLI ---------------------------------------------------------------
@@ -186,7 +192,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=None, type=Path)
     parser.add_argument("--label", default=None)
     parser.add_argument(
-        "--built", default=None, help="the dmg Tauri produced; required for dmg-name"
+        "--lipo-archs",
+        default=None,
+        help="`lipo -archs` of the built executable; required for dmg-name",
     )
     parser.add_argument(
         "--manifest", default=None, type=Path, help="payload manifest; required for stamp"
@@ -208,10 +216,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.emit == "overlay":
         print(json.dumps(overlay(product_name, identifier, label), sort_keys=True))
     elif args.emit == "dmg-name":
-        if args.built is None:
-            raise LaneLabelError("dmg-name needs --built to read the architecture")
-        arch = arch_from_built_name(args.built)
-        print(dmg_filename(product_name, label, version, arch))
+        if args.lipo_archs is None:
+            raise LaneLabelError("dmg-name needs --lipo-archs to name the architecture")
+        print(dmg_filename(product_name, label, version, arch_from_lipo(args.lipo_archs)))
     return 0
 
 
