@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from apps.feature_flags import FlagRefusal
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
+from apps.webui.server.routes.usb_gate import usb_export_gate
 
 router = APIRouter(prefix="/usb-export", tags=["usb-export"])
 
@@ -95,8 +97,38 @@ def _error(exc: workflow.UsbExportError) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": exc.to_dict()})
 
 
+def _disabled_response(refusal: FlagRefusal | None) -> JSONResponse:
+    """SAND-01/SAND-02: the same fourth refusal ``/api/v1/flags`` reports.
+
+    A route that never read ``app.state.feature_flags`` stayed callable under
+    the appstore profile even though the flag it exists to gate says off;
+    this is the response that closes that gap. ``refusal`` is None when the
+    flag is off for a LOCAL reason (a plain override, an explicit
+    ``MDT_FEATURE_FLAGS_FILE``) rather than the shipped store profile or an
+    actually-sandboxed runtime, in which case the response must not blame
+    Apple's sandbox for a decision this machine made on its own.
+    """
+    detail: dict[str, str | None]
+    if refusal is not None:
+        detail = {
+            "code": refusal.code,
+            "message": refusal.message,
+            "ui_title": refusal.ui_title,
+        }
+    else:
+        detail = {
+            "code": "usb_export_disabled_in_this_build",
+            "message": "USB export is turned off by this build's own configuration.",
+            "ui_title": None,
+        }
+    return JSONResponse(status_code=503, content={"detail": detail})
+
+
 @router.post("/plan", response_model=PlanModel)
-def plan_export(body: PlanRequest) -> dict[str, Any] | JSONResponse:
+def plan_export(body: PlanRequest, request: Request) -> dict[str, Any] | JSONResponse:
+    gate = usb_export_gate(request)
+    if not gate.available:
+        return _disabled_response(gate.refusal)
     try:
         plan = workflow.plan_export(
             template_path=body.template_path,
@@ -119,7 +151,16 @@ def plan_export(body: PlanRequest) -> dict[str, Any] | JSONResponse:
 
 
 @router.post("/apply", response_model=ReceiptModel)
-def apply_export(body: ApplyRequest) -> dict[str, Any] | JSONResponse:
+def apply_export(
+    body: ApplyRequest, request: Request
+) -> dict[str, Any] | JSONResponse:
+    # usb.export is checked FIRST so a disabled store build reports the SAME
+    # refusal on apply as on plan/readback; checking the writeback gate first
+    # would report the one-way-import refusal instead, a different reason for
+    # the same disabled capability (SAND-01 review round 2, PR #1668).
+    gate = usb_export_gate(request)
+    if not gate.available:
+        return _disabled_response(gate.refusal)
     require_writeback_enabled("http.usb-export.apply")
     try:
         plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
@@ -130,7 +171,12 @@ def apply_export(body: ApplyRequest) -> dict[str, Any] | JSONResponse:
 
 
 @router.post("/readback", response_model=ReadbackModel)
-def readback_export(body: ReadbackRequest) -> dict[str, Any] | JSONResponse:
+def readback_export(
+    body: ReadbackRequest, request: Request
+) -> dict[str, Any] | JSONResponse:
+    gate = usb_export_gate(request)
+    if not gate.available:
+        return _disabled_response(gate.refusal)
     try:
         plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
         receipt = workflow.ApplyReceipt.from_dict(body.receipt.model_dump())
