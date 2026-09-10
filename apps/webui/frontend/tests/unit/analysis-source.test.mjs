@@ -456,10 +456,12 @@ test('an event-driven refresh records what /anlz actually SERVED, not the stale 
 	// rbx-vs-own SERVER-side, so it genuinely serves rbx.
 	//
 	// SID_NO_OWN_ANALYSIS (no own record seeded, no rekordbox mapping either):
-	// its bpm provenance never reports `status: 'ok'` for the own lane, which
-	// keeps this test clear of refreshAnalysisSourceDecks's OWN grid/tempo
-	// pairing guard (discussion_r3972264411) - that guard is a real,
-	// independently-tested invariant, not the thing this test is about.
+	// with no rekordbox mapping, its bpm provenance entry is wholly ABSENT
+	// under this rbx selection (apps.analysis.selection has no track_fields
+	// row to report), which keeps this test clear of refreshAnalysisSourceDecks's
+	// OWN grid/tempo pairing guard (discussion_r3972264411, widened by
+	// discussion_r3976638774) - that guard is a real, independently-tested
+	// invariant, not the thing this test is about.
 	await daemonSelect('rbx');
 	analysisSource.analysisSourceState.features = { beatgrid: 'own' };
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };

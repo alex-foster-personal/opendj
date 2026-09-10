@@ -173,7 +173,18 @@ export async function refreshAnalysisSourceDecks(
 	// measured together (discussion_r3972264411 P1 BLOCKING).
 	for (const { stableId, fresh, track } of staged) {
 		const bpmProvenance = track.provenance?.bpm;
-		if (bpmProvenance === undefined || bpmProvenance.status !== 'ok') continue;
+		// A wholly ABSENT entry is the rekordbox side's genuine "no value" case
+		// - apps.analysis.selection.effective_fields never synthesizes one for
+		// an rbx lane with no track_fields row, so there is really nothing to
+		// compare here. A PRESENT entry with a non-'ok' status is different: it
+		// is always own-side (selection.py's own synthesized placeholder,
+		// `source: "own-analysis"`, for a lane with no own record yet) - `status`
+		// says whether the VALUE resolved, not which side produced the entry, so
+		// skipping THIS case too let a row whose own analysis has not run yet
+		// publish an own-stamped grid without ever comparing it against a stale
+		// rekordbox-side answer from before a source switch (discussion_r3976638774
+		// P2 BLOCKING).
+		if (bpmProvenance === undefined) continue;
 		const bpmOnOwn = _isOwnProvenanceSource(bpmProvenance.source);
 		const gridOnOwn = fresh.beatgrid_source !== 'rekordbox';
 		if (bpmOnOwn !== gridOnOwn) {
