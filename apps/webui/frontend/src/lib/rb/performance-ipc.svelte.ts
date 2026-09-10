@@ -87,6 +87,7 @@ import {
 	type DeckId
 } from '$lib/rb/deck-slots';
 import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
+import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
 	DeckState,
@@ -2296,22 +2297,7 @@ function _toastId(id: unknown): string {
 }
 
 function _captureUnknown(deck: unknown): DeckAudioSnapshot {
-	const snapshot = engine.captureDeckAudio(_deck(deck));
-	const scalars = [snapshot.context_time_s, snapshot.sample_rate_hz, snapshot.fft_size];
-	const values = [...scalars, ...snapshot.frequency_db, ...snapshot.time_domain];
-	if (!values.every((value) => Number.isFinite(value))) {
-		throw new Error('deck audio capture contains non-finite values and cannot be serialized');
-	}
-	if (snapshot.sample_rate_hz <= 0 || !Number.isInteger(snapshot.fft_size) || snapshot.fft_size <= 0) {
-		throw new Error('deck audio capture has invalid sample-rate or FFT metadata');
-	}
-	return {
-		context_time_s: snapshot.context_time_s,
-		sample_rate_hz: snapshot.sample_rate_hz,
-		fft_size: snapshot.fft_size,
-		frequency_db: [...snapshot.frequency_db],
-		time_domain: [...snapshot.time_domain]
-	};
+	return copyDeckAudioSnapshot(engine.captureDeckAudio(_deck(deck)));
 }
 
 export function installPerformanceBrowserIpc(): () => void {
