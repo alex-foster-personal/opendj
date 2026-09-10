@@ -290,6 +290,13 @@ export async function setAnalysisSource(
 	// keyed off that cache would restore the wrong prior value
 	// (discussion_r3974235454 P1 BLOCKING).
 	const displacedToggle = body.previous_toggle ?? undefined;
+	// The revision THIS write produced, so the rollback's compare-and-set can
+	// require that nothing has touched the toggle since - a value-only
+	// `expected_toggle` still round-trips through own -> rbx -> own back to
+	// `attemptedToggle` and would let a stale rollback clobber a newer write
+	// that merely landed on the same value (discussion_r3976638752 P2
+	// BLOCKING).
+	const attemptedToggleRevision = body.lanes[lane]?.toggle_revision;
 	const features = _featuresOf(body);
 	try {
 		// `serialize: false`: the ONLY caller is the `analysis_source` performance
@@ -298,7 +305,13 @@ export async function setAnalysisSource(
 		// second time from inside that claim would wait on its own tail forever.
 		await _adopt(features, () => mutation !== _latestMutation, false);
 	} catch (exc) {
-		await _rollBackFailedSwitch(lane, displacedToggle, attemptedToggle, mutation);
+		await _rollBackFailedSwitch(
+			lane,
+			displacedToggle,
+			attemptedToggle,
+			attemptedToggleRevision,
+			mutation
+		);
 		throw exc;
 	}
 }
@@ -335,11 +348,22 @@ export async function setAnalysisSource(
  * (discussion_r3973129053 P2 BLOCKING, sharpening discussion_r3972682728). If
  * the daemon no longer holds what this switch put there, somebody else's
  * change is now live and owns the daemon; the server refuses with 409 rather
- * than clobbering that newer change with a stale one nobody asked for. */
+ * than clobbering that newer change with a stale one nobody asked for.
+ *
+ * `attemptedToggleRevision` closes an ABA gap `expected_toggle` alone cannot:
+ * a VALUE-only compare-and-set still succeeds after an external round trip
+ * `attemptedToggle -> other -> attemptedToggle`, because the current value
+ * equals `attemptedToggle` again even though a newer write landed in between.
+ * Passed through as `expected_toggle_revision`, which the server additionally
+ * requires to still equal the revision THIS switch's own PUT produced
+ * (discussion_r3976638752 P2 BLOCKING). `undefined` (a lane the server has
+ * never reported a revision for) degrades to the value-only check exactly as
+ * before this field existed. */
 async function _rollBackFailedSwitch(
 	lane: string,
 	displacedToggle: string | undefined,
 	attemptedToggle: string,
+	attemptedToggleRevision: number | undefined,
 	mutation: number
 ): Promise<void> {
 	if (mutation !== _latestMutation) return;
@@ -373,7 +397,12 @@ async function _rollBackFailedSwitch(
 		// re-syncing here (discussion_r3970967286 P1 BLOCKING, discussion_r3974235454).
 		await unwrap(
 			api.PUT('/api/v1/analysis/source', {
-				body: { lane, toggle: displacedToggle, expected_toggle: attemptedToggle }
+				body: {
+					lane,
+					toggle: displacedToggle,
+					expected_toggle: attemptedToggle,
+					expected_toggle_revision: attemptedToggleRevision ?? null
+				}
 			})
 		);
 	} catch (exc) {
