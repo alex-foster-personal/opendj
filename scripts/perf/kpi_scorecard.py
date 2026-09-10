@@ -42,6 +42,7 @@ from pathlib import Path
 
 from scripts.perf.kpi_map_drift import (
     budget_drift,
+    class_drift,
     drift,
     resolve_required,
     spec_scenario_ids,
@@ -71,6 +72,7 @@ class Reading:
     superseded: bool
     machine: str | None = None
     note: str | None = None
+    capture_id: str | None = None
 
     @property
     def measured(self) -> bool:
@@ -97,11 +99,16 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
     A superseded row stays in the ledger on purpose so the retraction is
     visible where the number is, but it must never be scored: that is how a
     withdrawn number keeps being quoted.
+
+    `capture_id`, when a ledger entry names one, identifies the single
+    measurement session that produced it. `score_scenarios` uses it to
+    refuse combining two required KPIs' readings into one verdict when they
+    were recorded in demonstrably different sessions - see its own docstring.
     """
     matches = [e for e in entries if e.get("kpi") == kpi]
     if not matches:
         return Reading(kpi, None, "", None, None, superseded=False)
-    matches.sort(key=lambda e: e.get("date", ""))
+    matches.sort(key=lambda e: str(e.get("date") or ""))
     newest = matches[-1]
     superseded = SUPERSEDED in str(newest.get("note", ""))
     live = [e for e in matches if SUPERSEDED not in str(e.get("note", ""))]
@@ -115,6 +122,7 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
             True,
             machine=newest.get("machine"),
             note=newest.get("note"),
+            capture_id=newest.get("capture_id"),
         )
     if live:
         newest = live[-1]
@@ -126,6 +134,7 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
         str(newest.get("source") or ""),
         superseded=False,
         machine=newest.get("machine"),
+        capture_id=newest.get("capture_id"),
         note=newest.get("note"),
     )
 
@@ -235,6 +244,97 @@ def _needs_provenance(name: str, unit: str) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class _ReadingCheck:
+    """Exactly one of these three is set, per how `_classify_required_reading`
+    resolved one required KPI's reading. A dataclass with three plain-typed
+    slots, rather than a `(status, str | tuple[float, int])` pair, so the
+    caller narrows by an `is not None` check mypy can actually follow instead
+    of unpacking a union it cannot prove is the tuple half.
+    """
+
+    ok: tuple[float, int] | None = None
+    missing_name: str | None = None
+    rejected_reason: str | None = None
+
+
+def _classify_required_reading(
+    req: dict, by_name: dict[str, Reading], today: _dt.date
+) -> _ReadingCheck:
+    """One required KPI's reading: present and trustworthy (`ok`), absent
+    (`missing_name`), or present but not trustworthy (`rejected_reason`).
+
+    Split out of `score_scenarios`'s own loop to keep that function's branch
+    count under the file's complexity ceiling; the four rejection checks
+    share nothing but "this reading cannot be trusted, stop here".
+    """
+    name = req["kpi"]
+    reading = by_name.get(name)
+    if reading is None or not reading.measured or reading.value is None:
+        return _ReadingCheck(missing_name=name)
+    if reading.unit != req["unit"]:
+        return _ReadingCheck(
+            rejected_reason=f"{name} recorded in {reading.unit!r}, map expects {req['unit']!r}"
+        )
+    age = age_in_days(reading.date, today)
+    if age is None or age < 0:
+        return _ReadingCheck(
+            rejected_reason=(
+                f"{name} has a missing, malformed, or future-dated reading ({reading.date!r})"
+            )
+        )
+    if _needs_provenance(name, req["unit"]) and not (reading.machine and reading.note):
+        return _ReadingCheck(
+            rejected_reason=(
+                f"{name} is a p95/percentage KPI recorded without a machine tier "
+                f"and measurement window/denominator (machine={reading.machine!r}, "
+                f"note={reading.note!r}), required by the denominator-honesty note "
+                "in specs/perf-latency-program.md"
+            )
+        )
+    if not reading.source:
+        return _ReadingCheck(
+            rejected_reason=(
+                f"{name} has no recorded source, so its measurement cannot be "
+                "traced back to evidence"
+            )
+        )
+    return _ReadingCheck(ok=(reading.value, age))
+
+
+def _cohort_mismatch_reason(
+    scoreable: list[tuple[dict, float, int]], by_name: dict[str, Reading]
+) -> str | None:
+    """Do two or more scoreable required readings name DIFFERING capture
+    ids, so they must not be combined into one verdict?
+
+    Split out of `score_scenarios` to keep that function's branch count
+    under the file's complexity ceiling; see that function's own docstring
+    for why an unnamed capture id on either side is not itself a conflict.
+    """
+    capture_ids = {by_name[req["kpi"]].capture_id for req, _, _ in scoreable}
+    named = {c for c in capture_ids if c is not None}
+    if len(named) <= 1:
+        return None
+    return "required KPIs do not share one evidence cohort (capture_id): " + ", ".join(
+        f"{req['kpi']}={by_name[req['kpi']].capture_id!r}" for req, _, _ in scoreable
+    )
+
+
+def _missing_rejected_reasons(missing: list[str], rejected: list[str]) -> list[str]:
+    """The shared "required KPI not recorded"/"required KPI rejected" prose,
+    built once instead of twice in `score_scenarios`'s two note-assembly
+    branches, to keep that function's branch count under the complexity
+    ceiling.
+    """
+    reasons = []
+    if missing:
+        reasons.append(f"required KPI not recorded: {', '.join(missing)}")
+    if rejected:
+        reasons.append(f"required KPI rejected: {'; '.join(rejected)}")
+    return reasons
+
+
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
     """Score each scenario on its REQUIRED KPIs alone.
 
@@ -262,6 +362,25 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
     extend to OVER or ACCEPTABLE, which are directional judgments a still-
     missing companion KPI could plausibly change the overall picture around;
     only BREAKING is unconditionally the floor.
+
+    A scenario requiring more than one KPI (S2's audible+visual, S4's frame
+    delta+dropped frames, S7's latency+drop count) must not combine them into
+    one non-BREAKING verdict unless the evidence says they were captured
+    together: each required KPI's newest reading is picked independently, so
+    nothing before this stopped an audible p99 from one press-testing session
+    pairing with a visual p95 from an unrelated one, reporting a combined
+    experience nobody actually measured happening at once. A ledger entry may
+    name the single measurement session it came from via `capture_id`; when
+    two or more required readings are scoreable and name DIFFERING (both
+    present, but different) capture ids, they are rejected as not sharing one
+    evidence cohort rather than combined. A capture id left unnamed on either
+    side is not itself treated as a conflict - it cannot disprove a shared
+    session the way an explicit mismatch can - so a scenario whose ledger
+    predates this field, like S6's already-shipped duration+blockage pair,
+    keeps scoring exactly as before. As with the BREAKING carve-out above, a
+    KPI that is independently, conclusively BREAKING needs no cohort at all:
+    it stands on its own regardless of what else was or was not measured
+    alongside it.
     """
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
@@ -273,49 +392,28 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
         rejected: list[str] = []
         scoreable: list[tuple[dict, float, int]] = []
         for req in required:
-            name = req["kpi"]
-            reading = by_name.get(name)
-            if reading is None or not reading.measured or reading.value is None:
-                missing.append(name)
-                continue
-            if reading.unit != req["unit"]:
-                rejected.append(
-                    f"{name} recorded in {reading.unit!r}, map expects {req['unit']!r}"
-                )
-                continue
-            age = age_in_days(reading.date, today)
-            if age is None or age < 0:
-                rejected.append(
-                    f"{name} has a missing, malformed, or future-dated reading "
-                    f"({reading.date!r})"
-                )
-                continue
-            if _needs_provenance(name, req["unit"]) and not (reading.machine and reading.note):
-                rejected.append(
-                    f"{name} is a p95/percentage KPI recorded without a machine tier "
-                    f"and measurement window/denominator (machine={reading.machine!r}, "
-                    f"note={reading.note!r}), required by the denominator-honesty note "
-                    "in specs/perf-latency-program.md"
-                )
-                continue
-            if not reading.source:
-                rejected.append(
-                    f"{name} has no recorded source, so its measurement cannot be "
-                    "traced back to evidence"
-                )
-                continue
-            scoreable.append((req, reading.value, age))
+            check = _classify_required_reading(req, by_name, today)
+            if check.ok is not None:
+                value, age = check.ok
+                scoreable.append((req, value, age))
+            elif check.missing_name is not None:
+                missing.append(check.missing_name)
+            elif check.rejected_reason is not None:
+                rejected.append(check.rejected_reason)
 
         verdicts = [verdict_for(value, req) for req, value, _ in scoreable]
         conclusive_breaking = "BREAKING" in verdicts
 
+        if not conclusive_breaking and len(scoreable) > 1:
+            cohort_problem = _cohort_mismatch_reason(scoreable, by_name)
+            if cohort_problem is not None:
+                rejected.append(cohort_problem)
+                scoreable = []
+                verdicts = []
+
         if not required or (not conclusive_breaking and (missing or rejected)):
             note = str(cfg.get("missing_kpi", "")) or "no KPI is bound to this scenario"
-            reasons = []
-            if missing:
-                reasons.append(f"required KPI not recorded: {', '.join(missing)}")
-            if rejected:
-                reasons.append(f"required KPI rejected: {'; '.join(rejected)}")
+            reasons = _missing_rejected_reasons(missing, rejected)
             if reasons:
                 note = ". ".join(reasons) + ". " + note
             scores.append(
@@ -329,11 +427,7 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
         )
         ages = [age for _, _, age in scoreable]
         if missing or rejected:
-            reasons = []
-            if missing:
-                reasons.append(f"required KPI not recorded: {', '.join(missing)}")
-            if rejected:
-                reasons.append(f"required KPI rejected: {'; '.join(rejected)}")
+            reasons = _missing_rejected_reasons(missing, rejected)
             note = "BREAKING confirmed despite incomplete evidence elsewhere: " + "; ".join(
                 reasons
             )
@@ -391,6 +485,18 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
     return lines
 
 
+def _report_drift(label: str, problems: list[str]) -> None:
+    """Print one drift check's findings in the shared refuse-to-score shape.
+
+    Split out of `main` so BUDGET/CLASS/THRESHOLD drift share one branch in
+    the caller instead of three near-identical `if` blocks, keeping `main`
+    under the file's complexity ceiling.
+    """
+    print(f"[kpi-scorecard] {label} DRIFT, refusing to score:", file=sys.stderr)
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Score UX scenarios against measured KPIs.")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
@@ -418,19 +524,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  the map scores {sid}; the spec no longer declares it", file=sys.stderr)
         return 1
 
-    budget_problems = budget_drift(kpi_map, spec_text)
-    if budget_problems:
-        print("[kpi-scorecard] BUDGET DRIFT, refusing to score:", file=sys.stderr)
-        for problem in budget_problems:
-            print(f"  {problem}", file=sys.stderr)
-        return 1
-
-    threshold_problems = threshold_drift(kpi_map)
-    if threshold_problems:
-        print("[kpi-scorecard] THRESHOLD DRIFT, refusing to score:", file=sys.stderr)
-        for problem in threshold_problems:
-            print(f"  {problem}", file=sys.stderr)
-        return 1
+    for label, problems in (
+        ("BUDGET", budget_drift(kpi_map, spec_text)),
+        ("CLASS", class_drift(kpi_map, spec_text)),
+        ("THRESHOLD", threshold_drift(kpi_map)),
+    ):
+        if problems:
+            _report_drift(label, problems)
+            return 1
 
     scores = score_scenarios(kpi_map, ledger["entries"], today)
     if args.json:
