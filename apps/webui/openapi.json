@@ -9209,6 +9209,172 @@
         "title": "SmartlistUpdateIn",
         "type": "object"
       },
+      "SoundcloudExportAckRequest": {
+        "properties": {
+          "acknowledge_rights": {
+            "default": false,
+            "title": "Acknowledge Rights",
+            "type": "boolean"
+          }
+        },
+        "title": "SoundcloudExportAckRequest",
+        "type": "object"
+      },
+      "SoundcloudExportResponse": {
+        "properties": {
+          "acknowledged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged"
+          },
+          "audio_upload": {
+            "const": "not_offered",
+            "title": "Audio Upload",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "kind": {
+            "const": "metadata_only",
+            "title": "Kind",
+            "type": "string"
+          },
+          "licensing_reminder": {
+            "title": "Licensing Reminder",
+            "type": "string"
+          },
+          "rights_position": {
+            "const": "unsettled",
+            "title": "Rights Position",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "takeover": {
+            "const": "not_offered",
+            "title": "Takeover",
+            "type": "string"
+          },
+          "tracklist": {
+            "items": {
+              "$ref": "#/components/schemas/SoundcloudTracklistRowModel"
+            },
+            "title": "Tracklist",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "session_id",
+          "audio_upload",
+          "takeover",
+          "rights_position",
+          "licensing_reminder",
+          "tracklist"
+        ],
+        "title": "SoundcloudExportResponse",
+        "type": "object"
+      },
+      "SoundcloudTracklistRowModel": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "timestamp_label": {
+            "title": "Timestamp Label",
+            "type": "string"
+          },
+          "timestamp_s": {
+            "title": "Timestamp S",
+            "type": "number"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "track_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Stable Id"
+          }
+        },
+        "required": [
+          "timestamp_s",
+          "timestamp_label",
+          "title",
+          "artist",
+          "track_stable_id",
+          "source",
+          "deck",
+          "display_name"
+        ],
+        "title": "SoundcloudTracklistRowModel",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "hub_generation": {
@@ -13011,6 +13177,98 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/soundcloud-export": {
+      "get": {
+        "operationId": "api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Soundcloud Export",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "operationId": "api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SoundcloudExportAckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Post Soundcloud Export",
         "tags": [
           "sets"
         ]

@@ -33,8 +33,8 @@
 </script>
 
 {#if refusal === null && state.active}
-	<button class="stems-progress" {title} onclick={toggleJobsDrawer} aria-label="Stems separation progress, opens the jobs drawer">
-		<span class="stems-label" {title}>STEMS</span>
+	<button class="stems-progress" title={title} onclick={toggleJobsDrawer} aria-label="Stems separation progress, opens the jobs drawer">
+		<span class="stems-label" title={title}>STEMS</span>
 		<span
 			class="stems-bar"
 			role="progressbar"
@@ -42,10 +42,10 @@
 			aria-valuemin="0"
 			aria-valuemax="100"
 			aria-label="Stems separation progress"
-			{title}
+			title={title}
 		>
 			<span class="stems-fill" style={`width: ${pct}%`}></span>
-			<span class="stems-pct" {title}>{pct}%</span>
+			<span class="stems-pct" title={title}>{pct}%</span>
 		</span>
 	</button>
 {/if}

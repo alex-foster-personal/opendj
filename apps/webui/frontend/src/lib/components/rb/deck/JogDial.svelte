@@ -17,6 +17,7 @@
 	import type { PhaseBeatMark } from '$lib/components/rb/wave/wave-math';
 	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
@@ -26,8 +27,7 @@
 		onQuantize,
 		onQuantizeGrid,
 		onMasterTempo,
-		onSlip,
-		inertTip
+		onSlip
 	}: {
 		deck: DeckState;
 		pitchRange: PitchRange;
@@ -39,7 +39,6 @@
 		onQuantizeGrid: (beats: 1 | 4 | 8) => Promise<void>;
 		onMasterTempo: () => Promise<void>;
 		onSlip: () => Promise<void>;
-		inertTip: string;
 	} = $props();
 
 	// Live BPM = PQTZ grid BPM x playback ratio (Beat Sync plans from PQTZ,
@@ -165,6 +164,15 @@
 			? 'Master Tempo ON - hold musical key while changing tempo'
 			: 'Master Tempo OFF - pitch and key shift together with tempo'
 	);
+	const dialTitle: string = $derived(
+		[
+			`Jog dial: live BPM ${bpmText}, pitch ${pitchText}, range ${rangeText}`,
+			phaseTitle,
+			offTempoTitle
+		]
+			.filter((part): part is string => part !== null)
+			.join('. ')
+	);
 </script>
 
 	<div class="jog" role="group" aria-label={`jog controls deck ${deck.deck_id}`}>
@@ -172,7 +180,7 @@
 		class="dial-wrap"
 		class:jog-off-tempo={offTempoTitle !== null}
 		class:dial-playing={deck.audible}
-		title={offTempoTitle ?? undefined}
+		title={dialTitle}
 	>
 		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label={`jog dial readout, ${phaseTitle}`}>
 			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
@@ -228,6 +236,8 @@
 							class:selected={deck.quantize_grid_beats === beats}
 							data-testid={`quantize-grid-${beats}-deck-${deck.deck_id}`}
 							aria-pressed={deck.quantize_grid_beats === beats}
+							title={`${beats}-beat snap grid${deck.quantize_grid_beats === beats ? ' (selected)' : ''}`}
+							aria-label={`${beats}-beat snap grid deck ${deck.deck_id}`}
 							onclick={async () => await onQuantizeGrid(beats)}
 						>
 							{beats}
@@ -297,8 +307,8 @@
 		>
 			MT
 		</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip} aria-label={`auto cue deck ${deck.deck_id}`} data-testid={`auto-cue-deck-${deck.deck_id}`}>AU</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip} aria-label={`manual deck ${deck.deck_id}`} data-testid={`manual-deck-${deck.deck_id}`}>MA</button>
+		<button class="rb-lit-button rb-inert" disabled title={plannedTitle('auto-cue')} aria-label={`auto cue deck ${deck.deck_id}`} data-testid={`auto-cue-deck-${deck.deck_id}`}>AU</button>
+		<button class="rb-lit-button rb-inert" disabled title={plannedTitle('manual-source')} aria-label={`manual deck ${deck.deck_id}`} data-testid={`manual-deck-${deck.deck_id}`}>MA</button>
 	</div>
 </div>
 

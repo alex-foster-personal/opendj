@@ -30,14 +30,19 @@ def test_beatgrid_continues_its_own_counter() -> None:
     assert lanes.get_lane("key").round_floor == 0
 
 
-def test_a_lane_without_a_scorer_yet_refuses_by_name() -> None:
-    """Fail fast: an unbuilt lane must not score, and must say which issue owns it."""
-    for name in ("loudness",):
+def test_loudness_and_waveform_lanes_have_scorers() -> None:
+    """Both remaining v1 lanes now point at a module that implements the contract."""
+    from apps.analysis_bench.scorers import get_scorer
+
+    for name in ("loudness", "waveform"):
         lane = lanes.get_lane(name)
-        assert lane.scorer_module is None
-        with pytest.raises(lanes.LaneError) as excinfo:
-            lanes.require_scorer(lane)
-        assert "#1477" in str(excinfo.value)
+        assert lane.scorer_module is not None
+        module_path = lanes.require_scorer(lane)
+        assert module_path == lane.scorer_module
+        module = get_scorer(module_path)
+        assert hasattr(module, "SCORER_VERSION")
+        assert hasattr(module, "score_bundle")
+        assert hasattr(module, "render_table")
 
 
 def test_an_unknown_candidate_names_the_known_ones() -> None:

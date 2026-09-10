@@ -5,11 +5,9 @@ experiment log the round lands in, where that lane's counter is up to, which
 scorer holds its ruler, which candidates stand as its controls -- is declared
 here once, and the CLI reads it rather than branching on the lane name.
 
-TWO LANES SHIP WITHOUT A SCORER IN THIS PR ON PURPOSE. `loudness` and
-`waveform` are registered with `scorer_module=None`, so `run` and `score` refuse
-by name and point at the follow-up issue. Registering them is what makes the
-refusal specific; leaving them out would make `--lane loudness` read as a typo,
-and stubbing a scorer that returned something would be worse than either.
+ALL FOUR V1 LANES HAVE A SCORER. `require_scorer`'s None branch and FOLLOW_UP
+stay in place so a fifth lane can still ship registered-but-unscored and refuse
+by name; they just no longer fire for loudness or waveform.
 """
 
 from __future__ import annotations
@@ -132,7 +130,7 @@ LANES: dict[str, Lane] = {
         name="waveform",
         log_path=DEFAULT_LOG,
         round_floor=0,
-        scorer_module=None,
+        scorer_module="apps.analysis_bench.scorers.waveform_lane",
         fixture_builder="scripts/build_waveform_bundle.py (needs this Mac's rekordbox PWV)",
         truth="rekordbox PWV3/PWV5/PWV6 per-band columns",
         candidates=(
@@ -144,7 +142,7 @@ LANES: dict[str, Lane] = {
         name="loudness",
         log_path=DEFAULT_LOG,
         round_floor=0,
-        scorer_module=None,
+        scorer_module="apps.analysis_bench.scorers.loudness_lane",
         fixture_builder="apps.analysis_bench fixtures build --lane loudness",
         truth="pyloudnorm LUFS and a 4x-oversampled true-peak reference",
         candidates=(

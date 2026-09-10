@@ -167,7 +167,7 @@
 		gap: 2px;
 		width: 80px;
 		height: 4px;
-		pointer-events: none;
+		pointer-events: auto;
 	}
 	.rb-master-level-meter-segment {
 		min-width: 2px;

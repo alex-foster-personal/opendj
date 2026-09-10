@@ -30,15 +30,17 @@ import { test } from 'node:test';
  * - if the CSS reveal selector triggers on hovering anything other than
  *   .c-art / .c-title (e.g. the bare row) then broken
  * - if there is no hide-delay (corridor grace) distinct from the show
- *   transition then broken - an instant hide defeats the corridor
+ *   path then broken - an instant hide defeats the corridor
  * - if .c-preview or .preview-hit appears anywhere in the reveal selector
  *   then broken
  * - if `prefers-reduced-motion: reduce` collapses the corridor grace along
  *   with the opacity animation then broken (Sol review round, PR #1355):
- *   the corridor's pointer-events delay is not decorative motion, it is the
- *   mechanism the pin asks for ("should not be hard to get mouse from
- *   artwork/track -> deck choice"). Only the opacity fade may be disabled
- *   for reduced motion.
+ *   the corridor is a JS timer (CORRIDOR_GRACE_MS / .corridor-grace-active),
+ *   not decorative motion, and is the mechanism the pin asks for ("should
+ *   not be hard to get mouse from artwork/track -> deck choice"). Only the
+ *   opacity fade may be disabled for reduced motion. A CSS
+ *   `transition: pointer-events` hide delay is inert on the macOS 11
+ *   WKWebView floor (issue #1588, same allow-discrete gap as #1570).
  */
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
@@ -91,17 +93,53 @@ test('reveal is scoped to hovering c-art / c-title, never the bare row or the pr
 	);
 });
 
-test('a 100ms corridor grace delays the hide, distinct from the (near-instant) show', () => {
+test('a 100ms JS corridor grace delays the hide; the inert CSS pointer-events transition is gone', () => {
 	const text = source(TABLE_PATH);
-	assert.match(
-		text,
-		/\.deck-btns button\s*\{[^}]*transition: pointer-events 0s 100ms/s,
-		'hiding pointer-events must lag 100ms behind losing hover, so the pointer can travel the gap'
+	const graceMsMatch = text.match(/const CORRIDOR_GRACE_MS = (\d+);/);
+	assert.ok(graceMsMatch, 'expected a CORRIDOR_GRACE_MS constant driving the hide corridor');
+	assert.equal(
+		Number(graceMsMatch[1]),
+		100,
+		'the corridor must stay a 100ms hide delay, not a different interval'
 	);
 	assert.match(
 		text,
-		/\.deck-btns:hover button,\s*\n?\s*\.deck-btns:focus-within button\s*\{[^}]*transition-delay: 0s/s,
-		'once the pointer is over the box itself (or it is focused) the delay must not apply'
+		/function _armCorridorGrace\(rowId: string\): void \{/,
+		'expected a function arming the per-row corridor timer'
+	);
+	assert.match(
+		text,
+		/function _onDeckTriggerPointerLeave\(event: PointerEvent, row: BrowserRow\): void \{/,
+		'expected a pointerleave handler that decides whether to arm the corridor'
+	);
+	const artCellStart = text.indexOf('class="c-art"');
+	const artCellEnd = text.indexOf('</td>', artCellStart);
+	assert.match(
+		text.slice(artCellStart, artCellEnd),
+		/onpointerleave=\{\(e\) => _onDeckTriggerPointerLeave\(e, row\)\}/,
+		'leaving .c-art must be able to start the hide corridor'
+	);
+	const titleCellStart = text.indexOf('class="c-title"');
+	const titleCellEnd = text.indexOf('</td>', titleCellStart);
+	assert.match(
+		text.slice(titleCellStart, titleCellEnd),
+		/onpointerleave=\{\(e\) => _onDeckTriggerPointerLeave\(e, row\)\}/,
+		'leaving .c-title must be able to start the hide corridor'
+	);
+	assert.match(
+		text,
+		/class:corridor-grace-active=\{corridorGraceRowIds\.has\(row\.stable_id\)\}/,
+		'expected the row element to carry the corridor class while its timer is live'
+	);
+	assert.match(
+		text,
+		/tr\.corridor-grace-active:not\(\.dblclick-guard-active\) \.deck-btns button \{\s*pointer-events: auto;/,
+		'grace must grant button pointer-events, and the #1558 guard must still win'
+	);
+	assert.doesNotMatch(
+		text,
+		/transition:\s*pointer-events/,
+		'the inert CSS pointer-events transition must stay gone - it does nothing on the WKWebView floor'
 	);
 });
 
@@ -176,19 +214,32 @@ test('the box stays anchored inside c-title, clear of the preview column, and fl
 test('reduced motion disables the opacity fade only - the 100ms corridor grace must survive it', () => {
 	const text = source(TABLE_PATH);
 	const reducedMotionMatch = text.match(
-		/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.deck-btns button\s*\{([^}]*)\}/
+		/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\t\}/
 	);
-	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion override for .deck-btns button');
+	assert.ok(reducedMotionMatch, 'expected a prefers-reduced-motion media query');
 	const body = reducedMotionMatch[1];
+	assert.match(
+		body,
+		/\.deck-btns\s*\{\s*transition: opacity 0s;/,
+		'reduced motion may only zero the opacity fade'
+	);
 	assert.doesNotMatch(
 		body,
 		/transition:\s*none\s*;/,
-		'`transition: none` under reduced motion kills the pointer-events delay along with the opacity fade - ' +
-			'crossing from artwork/title to a deck button would then dismiss the box instantly, breaking the corridor for reduced-motion users'
+		'`transition: none` under reduced motion would be a blunt disable of the box transition'
 	);
-	assert.match(
+	assert.doesNotMatch(
 		body,
-		/pointer-events 0s 100ms/,
-		'the 100ms pointer-events hide delay must be explicitly preserved under reduced motion'
+		/pointer-events/,
+		'the corridor is a JS timer, not a CSS pointer-events transition; reduced motion must not reintroduce one'
+	);
+	const graceMsMatch = text.match(/const CORRIDOR_GRACE_MS = (\d+);/);
+	assert.ok(graceMsMatch, 'expected CORRIDOR_GRACE_MS driving the hide corridor');
+	assert.equal(Number(graceMsMatch[1]), 100);
+	const constIndex = text.indexOf('const CORRIDOR_GRACE_MS');
+	const mediaIndex = text.indexOf('@media (prefers-reduced-motion: reduce)');
+	assert.ok(
+		constIndex !== -1 && (mediaIndex === -1 || constIndex < mediaIndex),
+		'CORRIDOR_GRACE_MS must live in JS, outside any matchMedia / reduced-motion query'
 	);
 });

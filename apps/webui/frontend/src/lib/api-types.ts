@@ -169,6 +169,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/{session_id}/soundcloud-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Get Soundcloud Export */
+        get: operations["api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get"];
+        put?: never;
+        /** Api Post Soundcloud Export */
+        post: operations["api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/{session_id}/timeline": {
         parameters: {
             query?: never;
@@ -6609,6 +6627,66 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SoundcloudExportAckRequest */
+        SoundcloudExportAckRequest: {
+            /**
+             * Acknowledge Rights
+             * @default false
+             */
+            acknowledge_rights: boolean;
+        };
+        /** SoundcloudExportResponse */
+        SoundcloudExportResponse: {
+            /** Acknowledged */
+            acknowledged?: boolean | null;
+            /**
+             * Audio Upload
+             * @constant
+             */
+            audio_upload: "not_offered";
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "metadata_only";
+            /** Licensing Reminder */
+            licensing_reminder: string;
+            /**
+             * Rights Position
+             * @constant
+             */
+            rights_position: "unsettled";
+            /** Session Id */
+            session_id: string;
+            /**
+             * Takeover
+             * @constant
+             */
+            takeover: "not_offered";
+            /** Tracklist */
+            tracklist: components["schemas"]["SoundcloudTracklistRowModel"][];
+        };
+        /** SoundcloudTracklistRowModel */
+        SoundcloudTracklistRowModel: {
+            /** Artist */
+            artist: string | null;
+            /** Deck */
+            deck: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Source */
+            source: string | null;
+            /** Timestamp Label */
+            timestamp_label: string;
+            /** Timestamp S */
+            timestamp_s: number;
+            /** Title */
+            title: string | null;
+            /** Track Stable Id */
+            track_stable_id: string | null;
+        };
         /** StatusResponse */
         StatusResponse: {
             /** Hub Generation */
@@ -8138,6 +8216,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_soundcloud_export_api_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_post_soundcloud_export_api_sets__session_id__soundcloud_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoundcloudExportAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
                 };
             };
             /** @description Validation Error */

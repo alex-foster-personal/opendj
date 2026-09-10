@@ -125,7 +125,7 @@ test('every module-level PARITY-TODO constant holds the identical string', () =>
 		}
 	}
 	assert.ok(
-		declarations.length >= 4,
+		declarations.length >= 3,
 		`expected the inert title to be declared in several modules, found ${declarations.length}`
 	);
 	const drifted = declarations.filter((d) => d.value !== INERT_TITLE);

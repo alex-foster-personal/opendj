@@ -151,6 +151,12 @@
 			uiPrefs.level_calibration.ceiling_enabled
 		)
 	);
+	const chNumTitle = $derived(`Mixer channel ${deckId} (deck ${deckId})`);
+	const cueTitle = $derived(
+		cueEnabled
+			? `Headphone cue ON for channel ${deckId} - click to stop sending this channel to the headphones`
+			: `Headphone cue OFF for channel ${deckId} - click to hear this channel in the headphones`
+	);
 	/** Pin 246b0f5 LESS mode: decks 1/2's strip has to fit inside the
 	 * shrunk LESS deck-area row (see +page.svelte), so TRIM/EQ/FILTER all
 	 * shrink - channel-strip-less-floor.test.mjs derives the LESS
@@ -192,7 +198,7 @@
 	}}
 >
 	<div class="strip-head">
-		<span class="ch-num">{deckId}</span>
+		<span class="ch-num" title={chNumTitle}>{deckId}</span>
 		<div class="cal-controls" role="group" aria-label={`level calibration channel ${deckId}`}>
 			<button
 				type="button"
@@ -245,6 +251,7 @@
 		class="cue-btn"
 		aria-pressed={cueEnabled}
 		aria-label={`cue channel ${deckId}`}
+		title={cueTitle}
 		data-testid={`cue-channel-${deckId}`}
 		onclick={() => oncue(!cueEnabled)}>CUE</button
 	>
@@ -258,7 +265,7 @@
 			label={`channel fader deck ${deckId}`}
 		/>
 	</div>
-	<span class="stem-label">STEM</span>
+	<span class="stem-label" title="Stem mute/solo chips for this channel, same controls as the deck stem row">STEM</span>
 	<div class="stem-slot">
 		<StemRow deck={deck} pending={stemPending} onMute={onStemMute} onSolo={onStemSolo} />
 	</div>

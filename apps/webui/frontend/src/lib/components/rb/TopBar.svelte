@@ -256,7 +256,7 @@
 	<StemsProgress />
 
 	<details class="mode-picker" bind:this={modePickerEl} ontoggle={_placeModeMenu}>
-		<summary class="mode-dd" aria-label="Choose app mode">
+		<summary class="mode-dd" aria-label="Choose app mode" title="App mode picker - PERFORMANCE is the current mode">
 			PERFORMANCE
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
 				<path d="M0.5 1 L3.5 4 L6.5 1" fill="none" stroke="currentColor" stroke-width="1.2" />

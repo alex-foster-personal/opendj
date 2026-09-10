@@ -165,6 +165,7 @@
 	} from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
@@ -2555,7 +2556,7 @@
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('master-dropdown')}
 				>
 					MASTER <span class="caret">▾</span>
 				</button>
@@ -2586,7 +2587,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('single-column-layout')}
 					aria-label="single column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2596,7 +2597,7 @@
 				<button
 					class="icon-btn rb-inert"
 					disabled
-					title="not implemented - see PARITY-TODO"
+					title={plannedTitle('split-column-layout')}
 					aria-label="split column layout"
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -2806,7 +2807,7 @@
 		<button
 			class="icon-btn rb-inert"
 			disabled
-			title="not implemented - see PARITY-TODO"
+			title={plannedTitle('export-eject')}
 			aria-label="export/eject"
 		>
 			<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
