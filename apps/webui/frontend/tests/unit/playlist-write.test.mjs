@@ -159,6 +159,70 @@ test('renamePlaylist patches with If-Match and the new name', async () => {
 	assert.equal(row.name, 'Renamed');
 });
 
+test('transferPlaylistTracks posts to transfer with CAS header and move body', async () => {
+	let seen;
+	let body;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		body = await request.clone().json();
+		return jsonResponse(
+			{
+				dest: playlistRow({ items: ['t-2', 't-1'] }),
+				source: playlistRow({ playlist_id: 'pl-src', items: [] })
+			},
+			{ headers: { etag: '"rev-transfer"' } }
+		);
+	};
+
+	const result = await playlistWrite.transferPlaylistTracks('pl-dest', '"rev-dest"', {
+		stable_ids: ['t-1'],
+		mode: 'move',
+		source_playlist_id: 'pl-src',
+		source_etag: '"rev-src"'
+	});
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/playlists/pl-dest/tracks/transfer`);
+	assert.equal(seen.method, 'POST');
+	assert.equal(seen.headers.get('if-match'), '"rev-dest"');
+	assert.deepEqual(body, {
+		stable_ids: ['t-1'],
+		mode: 'move',
+		source_playlist_id: 'pl-src',
+		source_etag: '"rev-src"'
+	});
+	assert.equal(result.etag, '"rev-transfer"');
+	assert.deepEqual(result.dest.items, ['t-2', 't-1']);
+});
+
+test('transferPlaylistTracks maps 409 to PlaylistConflictError', async () => {
+	const current = playlistRow();
+	globalThis.fetch = async () =>
+		jsonResponse(
+			{ error: 'conflict', message: 'playlist If-Match mismatch', current, etag: '"rev-9"' },
+			{ status: 409, statusText: 'Conflict' }
+		);
+
+	const caught = await playlistWrite
+		.transferPlaylistTracks('pl-1', '"rev-1"', { stable_ids: ['t-1'], mode: 'add' })
+		.then(() => null, (error) => error);
+
+	assert.ok(caught instanceof playlistWrite.PlaylistConflictError);
+	assert.deepEqual(caught.current, current);
+});
+
+test('transferPlaylistTracks refuses a response without an ETag header', async () => {
+	globalThis.fetch = async () =>
+		jsonResponse({ dest: playlistRow(), source: null });
+
+	await assert.rejects(
+		playlistWrite.transferPlaylistTracks('pl-1', '"rev-1"', {
+			stable_ids: ['t-1'],
+			mode: 'add'
+		}),
+		/playlist pl-1: POST transfer response carries no ETag header/
+	);
+});
+
 test('deletePlaylist sends If-Match and accepts the bodyless 204', async () => {
 	let seen;
 	globalThis.fetch = async (request) => {

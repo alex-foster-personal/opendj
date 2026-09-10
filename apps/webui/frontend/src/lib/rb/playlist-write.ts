@@ -141,6 +141,36 @@ export async function replacePlaylistTracks(
 	return { items: out.items, etag: fresh };
 }
 
+/** POST /playlists/{id}/tracks/transfer - atomic cross-playlist add (copy)
+ * or move. Throws PlaylistConflictError on a stale If-Match (409). */
+export async function transferPlaylistTracks(
+	destId: string,
+	destEtag: string,
+	body: {
+		stable_ids: string[];
+		mode: 'add' | 'move';
+		source_playlist_id?: string;
+		source_etag?: string;
+	}
+): Promise<{ dest: PlaylistRowWire; source: PlaylistRowWire | null; etag: string }> {
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.POST('/api/v1/playlists/{playlist_id}/tracks/transfer', {
+			params: { path: { playlist_id: destId }, header: { 'If-Match': destEtag } },
+			body
+		}));
+	} catch (error) {
+		_throwWriteError(error, `transfer tracks to playlist ${destId}`);
+	}
+	const fresh = response.headers.get('etag');
+	if (!fresh) {
+		throw new Error(`playlist ${destId}: POST transfer response carries no ETag header`);
+	}
+	const out = data as { dest: PlaylistRowWire; source: PlaylistRowWire | null };
+	return { dest: out.dest, source: out.source ?? null, etag: fresh };
+}
+
 /** POST /playlists - create empty playlist (201 + ETag). No If-Match, so
  * unlike the mutations below a failure never maps to PlaylistConflictError
  * (exactly as before the conversion). */

@@ -1780,6 +1780,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/tracks/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer Playlist Tracks */
+        post: operations["transfer_playlist_tracks_api_v1_playlists__playlist_id__tracks_transfer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/writeback/apply": {
         parameters: {
             query?: never;
@@ -5297,6 +5314,22 @@ export interface components {
              * @description Complete desired membership in position order. Duplicates allowed; unknown ids -> 422.
              */
             stable_ids: string[];
+        };
+        /** MembershipTransferIn */
+        MembershipTransferIn: {
+            /** Mode */
+            mode: "add" | "move";
+            /** Source Etag */
+            source_etag?: string | null;
+            /** Source Playlist Id */
+            source_playlist_id?: string | null;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
+        /** MembershipTransferOut */
+        MembershipTransferOut: {
+            dest: components["schemas"]["PlaylistWriteOut"];
+            source?: components["schemas"]["PlaylistWriteOut"] | null;
         };
         /** MixerChannelMarkOut */
         MixerChannelMarkOut: {
@@ -11336,6 +11369,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transfer_playlist_tracks_api_v1_playlists__playlist_id__tracks_transfer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipTransferIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipTransferOut"];
                 };
             };
             /** @description Validation Error */
