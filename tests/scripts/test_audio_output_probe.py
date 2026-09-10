@@ -34,6 +34,7 @@ Regression lines:
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -200,3 +201,108 @@ def test_the_entry_state_is_read_before_the_first_toggle() -> None:
     assert body.index("_deck_transport") < body.index("_set_deck"), (
         "the deck's own state must be read before the probe starts moving it"
     )
+
+
+# ----- the shape is the PRODUCER's, not this file's ----------------------
+#
+# The pure-decision tests above take dicts written here. That is legitimate for
+# a pure function (the dict IS the argument, not a stand-in for a dependency),
+# but on its own it leaves one thing unverified and it is the thing that breaks
+# in practice: whether those field names are the ones the app actually
+# publishes. Rename `presented_revision` in the engine and every test above
+# still passes while the probe reads `None` forever and can never confirm a
+# toggle again.
+#
+# So the shape is pinned to the PRODUCTION SOURCES on both sides, and the
+# assertions below are derived from them rather than restated here. Either side
+# renaming a field turns this red.
+
+_FRONTEND = Path(probe.__file__).resolve().parents[1] / "apps/webui/frontend/src/lib/rb"
+_ENGINE_TS = _FRONTEND / "audio-engine.svelte.ts"
+_MIRROR_TS = _FRONTEND / "ui-mirror.ts"
+
+
+def _deck_transport_clock_fields() -> set[str]:
+    """Field names `deckTransportClock` publishes, read out of the real source."""
+    source = _ENGINE_TS.read_text(encoding="utf-8")
+    start = source.index("export function deckTransportClock")
+    body = source[start : source.index("\n}\n", start)]
+    return set(re.findall(r"^\t\t(\w+):", body, flags=re.MULTILINE))
+
+
+def _probe_clock_reads() -> set[str]:
+    """Keys `_deck_transport` pulls out of `presentation_clock`.
+
+    `ast.unparse` normalizes to single quotes, so the pattern matches those.
+    The caller asserts the set is NON-EMPTY: a regex that stopped matching
+    would otherwise make the contract check below pass by measuring nothing.
+    """
+    return set(re.findall(r"clock\.get\('(\w+)'\)", ast.unparse(_fn("_deck_transport"))))
+
+
+def test_the_probe_reads_fields_the_engine_actually_publishes() -> None:
+    """The cross-language contract, checked against both production sources."""
+    published = _deck_transport_clock_fields()
+    assert published, f"no fields parsed out of deckTransportClock in {_ENGINE_TS}"
+    reads = _probe_clock_reads()
+    assert reads, "no presentation_clock reads in _deck_transport; probe or check moved"
+    missing = reads - published
+    assert not missing, (
+        f"{missing} is read from presentation_clock by scripts/audio_output_probe.py "
+        f"but no longer published by deckTransportClock in {_ENGINE_TS}"
+    )
+
+
+def test_the_mirror_publishes_the_clock_under_the_key_the_probe_opens() -> None:
+    """`presentation_clock` and `playing` are the mirror's names, not this file's."""
+    mirror = _MIRROR_TS.read_text(encoding="utf-8")
+    assert "presentation_clock: {" in mirror, f"{_MIRROR_TS} no longer publishes presentation_clock"
+    assert "playing: deck.playing" in mirror, f"{_MIRROR_TS} no longer publishes a deck's playing"
+    unparsed = ast.unparse(_fn("_deck_transport"))
+    assert "published.get('presentation_clock'" in unparsed
+    assert "published.get('playing')" in unparsed
+
+
+def test_the_expected_source_values_are_the_engine_s_own_literals() -> None:
+    """A direction confirmed against a source string the engine never emits is
+    a confirmation that can never arrive."""
+    source = _ENGINE_TS.read_text(encoding="utf-8")
+    start = source.index("export function deckTransportClock")
+    body = source[start : source.index("\n}\n", start)]
+    emitted = set(re.findall(r"source: [^\n]*?'(\w+)' : '(\w+)'", body)[0])
+    assert set(probe._SOURCE_FOR.values()) == emitted, (
+        f"the probe expects {sorted(probe._SOURCE_FOR.values())} but deckTransportClock "
+        f"emits {sorted(emitted)}"
+    )
+
+
+# ----- and against a real app when one is running ------------------------
+
+
+def test_a_running_app_publishes_a_clock_this_probe_can_read() -> None:
+    """The acceptance, run against the real HTTP path when it is available.
+
+    UNAVAILABLE rather than mocked: a stand-in engine would answer with
+    whatever this file believes the shape to be, which is the belief under
+    test. When no app is running there is nothing to measure and the test says
+    so instead of manufacturing a pass.
+    """
+    try:
+        origin = probe._origin_from_lock()
+        mirror = probe._get(origin, "/api/v1/state/ui-mirror")
+    except Exception as cause:  # noqa: BLE001 - any failure to reach it is UNAVAILABLE
+        pytest.skip(f"UNAVAILABLE: no running Open DJ engine to read ({cause})")
+    decks = mirror.get("decks", {})
+    assert decks, "a running engine published no decks at all"
+    deck = int(sorted(decks)[0])
+    entry = probe._deck_transport(origin, deck)
+    assert isinstance(entry["playing"], bool), f"deck {deck} published playing={entry['playing']!r}"
+    assert entry["source"] in set(probe._SOURCE_FOR.values()), (
+        f"deck {deck} published an unrecognized clock source {entry['source']!r}"
+    )
+    assert isinstance(entry["desired_revision"], int)
+    assert isinstance(entry["presented_revision"], int)
+    # The predicate must reach a decision on real published state, and the
+    # opposite direction must not also be satisfiable by the same reading.
+    assert isinstance(probe.transport_reached(entry, entry["playing"]), bool)
+    assert probe.transport_reached(entry, not entry["playing"]) is False

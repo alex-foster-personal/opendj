@@ -40,8 +40,17 @@ function snap(verdict, latencyMs = 12.5) {
 	};
 }
 
-function evt(kind, ageMs, message = 'something') {
-	return { t: new Date(NOW - ageMs).toISOString(), kind, deck: null, message };
+/**
+ * A ring row as `recordPerfEvent` writes one.
+ *
+ * `severity` is part of the row, not decoration: it is what separates
+ * `audio-output-dead` from `audio-output-alive` now that both are audio-domain
+ * kinds. `undefined` is deliberately reachable, because rows written before
+ * severity was persisted are still in real localStorage.
+ */
+function evt(kind, ageMs, message = 'something', severity = 'error') {
+	const row = { t: new Date(NOW - ageMs).toISOString(), kind, deck: null, message };
+	return severity === undefined ? row : { ...row, severity };
 }
 
 describe('buildAudioHealthMirror', () => {
@@ -114,10 +123,65 @@ describe('buildAudioHealthMirror', () => {
 	it('ignores unrelated perf events so the block stays about audio', () => {
 		const out = build({
 			snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
-			events: [evt('deck-load-timing', 1000), evt('audio-context', 2000)],
+			events: [evt('deck-load-timing', 1000), evt('audio-output-dead', 2000)],
 			nowMs: NOW
 		});
-		assert.deepEqual(out.recent_faults.map((r) => r.kind), ['audio-context']);
+		assert.deepEqual(out.recent_faults.map((r) => r.kind), ['audio-output-dead']);
+	});
+
+	it('does not report a healthy audio row as a fault', () => {
+		// Codex, Thu 10 Sep 2026. Selecting on the `audio-` PREFIX made a
+		// perfectly healthy startup publish a nonempty `recent_faults`: the
+		// device-floor row, the liveness row and the recovery row are all
+		// audio-domain rows that report that things are FINE. An agent reading
+		// this block to answer "is anything wrong" was told yes, always.
+		const out = build({
+			snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
+			events: [
+				evt('audio-context', 3000, 'sample_rate_hz=48000', 'info'),
+				evt('audio-output-alive', 2000, 'output is back', 'info'),
+				evt('audio-output-rebound', 1500, 're-bound after devicechange', 'info'),
+				evt('presentation-clock-recovered', 1000, 'clock caught up', 'info')
+			],
+			nowMs: NOW
+		});
+		assert.deepEqual(out.recent_faults, [], 'healthy audio rows are not faults');
+	});
+
+	it('still reports a real audio fault, which is the overshoot control', () => {
+		// The opposite mutation: a rule tightened until nothing qualifies
+		// satisfies "no false faults" perfectly and publishes an empty timeline
+		// through an outage.
+		const out = build({
+			snapshot: snap('dead', 0), rms: 0, rmsAgeMs: 50, silenceVerdict: 'silent-while-playing',
+			events: [
+				evt('audio-output-alive', 4000, 'output is back', 'info'),
+				evt('audio-output-dead', 3000, 'rendering into a dead output', 'error'),
+				evt('audio-output-rebind-deferred', 2000, 'deferred while playing', 'warn'),
+				evt('silent-while-playing', 1000, 'nothing leaving the master bus', 'error')
+			],
+			nowMs: NOW
+		});
+		assert.deepEqual(
+			out.recent_faults.map((r) => r.kind),
+			['silent-while-playing', 'audio-output-rebind-deferred', 'audio-output-dead'],
+			'every non-info audio row is a fault, newest first'
+		);
+		assert.deepEqual(out.recent_faults.map((r) => r.severity), ['error', 'warn', 'error']);
+	});
+
+	it('carries a row written before severity existed as unknown, not as healthy', () => {
+		// A row already in localStorage from an older build. Dropping it would
+		// lose a real outage; calling it healthy would be the absent-measurement
+		// -reads-as-good defect this whole module exists to remove. It is
+		// labelled instead, so a reader can tell it from a diagnosed fault.
+		const out = build({
+			snapshot: snap('ok'), rms: 0.3, rmsAgeMs: 50, silenceVerdict: 'ok',
+			events: [evt('audio-output-dead', 1000, 'legacy row', null)],
+			nowMs: NOW
+		});
+		assert.equal(out.recent_faults.length, 1);
+		assert.equal(out.recent_faults[0].severity, 'unknown');
 	});
 
 	it('refuses a sample time from the future rather than reporting a negative age', () => {
@@ -176,13 +240,47 @@ describe('audio faults survive unrelated ring traffic', () => {
 		);
 	});
 
-	it('agrees with the mirror about which kinds are audio health', () => {
+	it('keeps the outage row behind sixteen HEALTHY audio rows', () => {
+		// The eviction Codex found after the first retention fix. The dedicated
+		// bucket holds 16, and `audio-output-alive` is emitted on every recovery,
+		// so a prefix-keyed bucket let the good news flush the bad news out of
+		// the one place the mirror looks.
+		ring.recordPerfEvent('audio-output-dead', 'the outage under test', null, 'error');
+		for (let i = 0; i < 24; i++) {
+			ring.recordPerfEvent('audio-output-alive', `recovery ${i}`, null, 'info');
+			ring.recordPerfTiming('audio-context', { sample_rate_hz: 48000 });
+		}
+		const kinds = ring.readPerfEvents().map((row) => row.kind);
+		assert.ok(
+			kinds.includes('audio-output-dead'),
+			`healthy audio rows evicted the outage; ring holds: ${kinds.join(', ')}`
+		);
+	});
+
+	it('agrees with the mirror about which rows are audio-health faults', () => {
 		// One predicate, imported by the mirror. Two copies could let the ring
 		// retain rows the fold ignores, or evict rows it looks for.
-		assert.equal(ring.isAudioHealthKind('audio-output-dead'), true);
-		assert.equal(ring.isAudioHealthKind('silent-while-playing'), true);
-		assert.equal(ring.isAudioHealthKind('presentation-clock-stalled'), true);
-		assert.equal(ring.isAudioHealthKind('xrun'), false, 'xrun has its own counter and would crowd the bucket');
-		assert.equal(ring.isAudioHealthKind('deck-load'), false);
+		const at = (kind, severity) => ring.audioHealthFaultSeverity({
+			t: new Date(NOW).toISOString(), kind, deck: null, message: 'x', severity
+		});
+		assert.equal(at('audio-output-dead', 'error'), 'error');
+		assert.equal(at('audio-output-rebind-deferred', 'warn'), 'warn');
+		assert.equal(at('silent-while-playing', 'error'), 'error');
+		assert.equal(at('presentation-clock-stalled', 'error'), 'error');
+		assert.equal(at('audio-output-alive', 'info'), null, 'a recovery is not a fault');
+		assert.equal(at('audio-context', 'info'), null, 'a device floor is not a fault');
+		assert.equal(at('xrun', 'error'), null, 'xrun has its own counter and would crowd the bucket');
+		assert.equal(at('deck-load', 'error'), null, 'not an audio-health row at all');
+		assert.equal(at('audio-output-dead', undefined), 'unknown', 'a legacy row is unknown, not healthy');
+	});
+
+	it('persists the severity it recorded, so a reload can still tell the two apart', () => {
+		ring.recordPerfEvent('audio-output-dead', 'persisted fault', null, 'error');
+		ring.recordPerfEvent('audio-output-alive', 'persisted recovery', null, 'info');
+		const rows = ring.readPerfEvents();
+		const fault = rows.findLast((row) => row.kind === 'audio-output-dead');
+		const alive = rows.findLast((row) => row.kind === 'audio-output-alive');
+		assert.equal(fault.severity, 'error');
+		assert.equal(alive.severity, 'info');
 	});
 });

@@ -29,7 +29,7 @@
  */
 import type { AudioOutputSnapshot } from './audio-output-liveness';
 import { describeAudioOutputHealth, type AudioOutputHealthDisplay } from './audio-output-health-display';
-import { isAudioHealthKind, type PerfEvent } from './perf-event-log';
+import { audioHealthFaultSeverity, type PerfEvent } from './perf-event-log';
 import type { SilenceVerdict } from './silence-watchdog';
 
 /**
@@ -46,10 +46,10 @@ export const METER_FRESH_MAX_MS = 2_000;
 export const RECENT_FAULT_LIMIT = 10;
 
 /**
- * Which kinds belong to audio health is decided by `isAudioHealthKind` in
- * `perf-event-log.ts`, and imported rather than restated here.
+ * Which rows are audio-health FAULTS is decided by `audioHealthFaultSeverity`
+ * in `perf-event-log.ts`, and imported rather than restated here.
  *
- * That predicate also owns those kinds' RETENTION BUDGET in the ring. A second
+ * That predicate also owns those rows' RETENTION BUDGET in the ring. A second
  * copy of the rule here would let the rows the ring keeps and the rows this
  * fold looks for drift apart, and a fault that was retained but not selected
  * (or selected but already evicted) is the same invisible-outage defect this
@@ -61,6 +61,12 @@ export interface AudioHealthFault {
 	kind: string;
 	message: string;
 	age_ms: number;
+	/**
+	 * The severity the recording site judged. `unknown` is a row written before
+	 * severity was persisted: it is carried rather than dropped, and labelled
+	 * rather than promoted to a diagnosed fault.
+	 */
+	severity: 'warn' | 'error' | 'unknown';
 }
 
 export interface AudioHealthMirror {
@@ -87,7 +93,8 @@ export function buildAudioHealthMirror(input: AudioHealthInput): AudioHealthMirr
 
 	const faults: AudioHealthFault[] = [];
 	for (const event of events) {
-		if (!isAudioHealthKind(event.kind)) continue;
+		const severity = audioHealthFaultSeverity(event);
+		if (severity === null) continue;
 		const age = nowMs - Date.parse(event.t);
 		if (Number.isNaN(age)) {
 			throw new RangeError(`perf event ${event.kind} has an unparseable timestamp ${event.t}`);
@@ -101,7 +108,7 @@ export function buildAudioHealthMirror(input: AudioHealthInput): AudioHealthMirr
 					'the fault timeline cannot be ordered'
 			);
 		}
-		faults.push({ t: event.t, kind: event.kind, message: event.message, age_ms: age });
+		faults.push({ t: event.t, kind: event.kind, message: event.message, age_ms: age, severity });
 	}
 	faults.sort((a, b) => a.age_ms - b.age_ms);
 

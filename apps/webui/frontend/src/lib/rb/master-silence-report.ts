@@ -42,6 +42,15 @@ function _masterRms(analyser: AnalyserNode): number {
 }
 
 /**
+ * The value handed to the fold when there is no meter to read.
+ *
+ * Full scale, so the fold sees "not silence" and resets the run: a graph with
+ * no analyser is not evidence of a dropout. It is a CONTROL VALUE, never a
+ * measurement, which is why `noteMasterSilence` refuses to publish it.
+ */
+const NO_METER_RMS_SENTINEL = 1;
+
+/**
  * Sample the master bus once and report a dropout on the sample that crosses
  * the window.
  *
@@ -54,9 +63,20 @@ export function noteMasterSilence(
 	tMs: number
 ): void {
 	const playing = anyDeckPlaying && analyser !== null;
-	const masterRms = analyser === null ? 1 : _masterRms(analyser);
-	_lastMasterRms = masterRms;
-	_lastMasterRmsAtMs = Date.now();
+	const masterRms = analyser === null ? NO_METER_RMS_SENTINEL : _masterRms(analyser);
+	// ONLY A REAL SAMPLE IS PUBLISHED (Codex, Thu 10 Sep 2026). Stamping the
+	// no-meter sentinel made the mirror read `rms: 1, fresh: true` during graph
+	// initialization and teardown - a synthetic full-scale value wearing the
+	// costume of a fresh measurement, which is the exact misleading
+	// healthy-signal diagnosis this whole change exists to remove. No analyser
+	// means no reading, and the mirror is told so.
+	if (analyser === null) {
+		_lastMasterRms = null;
+		_lastMasterRmsAtMs = null;
+	} else {
+		_lastMasterRms = masterRms;
+		_lastMasterRmsAtMs = Date.now();
+	}
 	_state = foldSilenceSample(_state, { playing, masterRms, tMs });
 	if (_state.verdict !== 'silent-while-playing') return;
 	recordPerfEvent(
