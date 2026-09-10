@@ -538,24 +538,16 @@ function _stemLoadTelemetry(stems: StemLoadFacts): _StemLoadTelemetry {
  * BEFORE the ring write, and a mutating recorder would make those two disagree
  * depending on statement order.
  *
- * `extraLabels` is how a caller adds facts this module has no business
- * deriving -- the measurement CONDITIONS (which other loads were in flight,
- * what the machine was under) that deck-load-context.ts owns. They merge over
- * the stem labels rather than replacing them, and an absent argument leaves
- * the row byte-identical to the one written before this parameter existed.
+ * `extraLabels` merges in facts this module has no business deriving; omitted, the row is unchanged from before this parameter existed.
  */
 export function recordDeckLoadTiming(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
-	stems: StemLoadFacts,
-	extraLabels?: Record<string, string>
+	stems: StemLoadFacts, extraLabels?: Record<string, string>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
-	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, {
-		...labels,
-		...extraLabels
-	});
+	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, extraLabels === undefined ? labels : { ...labels, ...extraLabels });
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {

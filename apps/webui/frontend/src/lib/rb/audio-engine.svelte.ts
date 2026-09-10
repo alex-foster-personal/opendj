@@ -2828,8 +2828,7 @@ class RbAudioEngine implements AudioEngine {
 		// mix decoded into; re-resolving it after the swap could hand the stems a
 		// rebuilt graph and a silent sample-rate mismatch.
 		let loadCtx: AudioContext | null = null;
-		// Always-on stage timings + load conditions -> DevTools filter `[perf]`.
-		// spanId binds every recordDeckLoad below to THIS load's own span (#1658).
+		// Stage timings + load conditions for DevTools `[perf]`; spanId binds every recordDeckLoad below to THIS load's own span (#1658).
 		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
 		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
@@ -3021,10 +3020,8 @@ class RbAudioEngine implements AudioEngine {
 				}
 			}
 		}).catch((exc: unknown) => {
-			// A swap failure is still a load that STARTED. Without this the span
-			// beginDeckLoad opened never closes, so every later row reports
-			// solo=0 until the 16-deep window evicts it: a contention label that
-			// is wrong while looking exactly like a measurement (#1658 review).
+			// A swap failure is still a load that STARTED; without this the span
+			// beginDeckLoad opened never closes and later rows report stale solo=0 (#1658 review).
 			stages.total = perfMs();
 			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
 			throw exc;
