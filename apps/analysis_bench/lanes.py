@@ -113,9 +113,14 @@ LANES: dict[str, Lane] = {
     "key": Lane(
         name="key",
         log_path=DEFAULT_LOG,
+        # Round 0's log block already exists (`### Key lane round 0` in
+        # specs/native-analysis-v1.md). The scored table is continued in
+        # place there, not via `run --post` (that heading does not match
+        # rounds.py). Floor stays 0 until a scored table is actually posted
+        # into that block so a later `--post` cannot skip the measurement.
         round_floor=0,
         scorer_module="apps.analysis_bench.scorers.key_lane",
-        fixture_builder="apps.analysis_bench fixtures build --lane key",
+        fixture_builder="scripts/build_key_bundle.py",
         truth="rekordbox djmdKey plus Mixed In Key, canonicalized to (pitch class, mode)",
         candidates=(
             _control("key", "negative", "constant_key",
@@ -124,6 +129,21 @@ LANES: dict[str, Lane] = {
                      "always answers the most common rekordbox key in the bundle"),
             _control("key", "positive", "truth_echo", "answers the rekordbox reference key"),
             _control("key", "positive_mik", "truth_echo_mik", "answers the MIK reference key"),
+            Candidate(
+                name="krumhansl",
+                role="candidate",
+                argv=("{python}", "-m", "scripts.keybench.run_krumhansl",
+                      "--fixtures", "{fixtures}", "--out", "{out}"),
+                note="Krumhansl-Kessler 1982 profiles over librosa chroma_cqt, CPU",
+            ),
+            Candidate(
+                name="skey",
+                role="candidate",
+                argv=("{python}", "-m", "scripts.keybench.run_skey",
+                      "--fixtures", "{fixtures}", "--out", "{out}",
+                      "--device", "cpu"),
+                note="Deezer S-KEY via apps/analysis_key/skey_runner.py, CPU, --skip-onnx-export",
+            ),
         ),
     ),
     "waveform": Lane(

@@ -57,6 +57,23 @@ def _cmd_lanes(_args: argparse.Namespace) -> int:
 def _cmd_fixtures(args: argparse.Namespace) -> int:
     lane = lanes.get_lane(args.lane)
     if args.action == "build":
+        if lane.name == "key":
+            from scripts.build_key_bundle import main as build_key_bundle
+
+            forwarded: list[str] = ["build", "--version", args.version]
+            if args.dir:
+                forwarded.extend(["--out", args.dir])
+            for flag in (
+                "rekordbox", "mik_windows", "mik_macos", "audio_root",
+                "copy_manifest", "seed", "sample_size",
+            ):
+                value = getattr(args, flag, None)
+                if value is None or value is False:
+                    continue
+                forwarded.extend([f"--{flag.replace('_', '-')}", str(value)])
+            if getattr(args, "allow_tiny", False):
+                forwarded.append("--allow-tiny")
+            return int(build_key_bundle(forwarded))
         raise SystemExit(
             f"[bench] this harness does not build {lane.name} fixtures itself; its builder is:\n"
             f"    {lane.fixture_builder}\n"
@@ -273,6 +290,15 @@ def _parser() -> argparse.ArgumentParser:
     fixtures.add_argument("--dest", help="where `pull` writes, default the bundle dir")
     fixtures.add_argument("--store", help=f"default ${stores.STORE_ENV}")
     fixtures.add_argument("--expect-bundle-id", help="refuse a pull that is not this bundle")
+    fixtures.add_argument("--rekordbox", help="decrypted master.plain.db, key-lane build")
+    fixtures.add_argument("--mik-windows", help="copied Windows MIKStore.db, key-lane build")
+    fixtures.add_argument("--mik-macos", help="optional Collection10.mikdb, key-lane build")
+    fixtures.add_argument("--audio-root", help="linux copy of mik-run audio, key-lane build")
+    fixtures.add_argument("--copy-manifest", help="copy-manifest.nfc.jsonl, key-lane build")
+    fixtures.add_argument("--seed", type=int, help="sample seed, key-lane build")
+    fixtures.add_argument("--sample-size", type=int, help="sample size, key-lane build")
+    fixtures.add_argument("--allow-tiny", action="store_true",
+                          help="permit a tiny rekordbox db, tests only")
     fixtures.set_defaults(func=_cmd_fixtures)
 
     for name, func in (("score", _cmd_score), ("run", _cmd_run)):
