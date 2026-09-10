@@ -12,6 +12,8 @@ asks the installed binary whether it knows every flag the lane emits. A flag
 renamed upstream fails here, and a flag ADDED to the lane is covered without
 anybody remembering to update a list.
 
+[if] the lane emits a flag the cli lacks [then] review is dead, [else stop].
+
 Regression one-liners:
   - if the lane emits a flag the installed claude cli rejects then broken
   - if the probe reports clean while no cli is installed then broken
@@ -64,8 +66,9 @@ def _known_flags(cli: str) -> set[str]:
 
 
 def test_the_probe_does_not_report_an_invented_flag_as_known() -> None:
-    """[if] the probe reports a flag nobody ever added as known then every
-    result below is vacuous, [else stop].
+    """[if] an invented flag reads as known [then] all below is vacuous, [else stop].
+
+    The NEGATIVE control, and it has already earned its keep.
 
     The NEGATIVE control, and it has already earned its keep: the first
     version of this module fed each flag to the cli alongside `--help` and
@@ -81,8 +84,10 @@ def test_the_probe_does_not_report_an_invented_flag_as_known() -> None:
 
 
 def test_every_flag_the_review_lane_emits_is_accepted() -> None:
-    """[if] the lane emits a flag the installed cli rejects then the third
-    reviewer is dead and nothing says so until a merge needs it, [else stop].
+    """[if] the cli lacks a flag the lane emits [then] review is dead, [else stop].
+
+    The third reviewer being dead is not otherwise visible until a merge
+    needs it, which is how `--permission-prompts` survived a CLI rename.
     """
     argv = claude_review._claude_argv("claude-opus-5", "high")
     assert argv[0] == "claude", (
