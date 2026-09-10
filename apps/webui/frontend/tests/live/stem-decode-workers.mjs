@@ -23,6 +23,7 @@
  *   1  an engine ran and a check FAILED
  *   2  the real FLAC fixtures are missing (set `Q18_FLAC_DIR`)
  *   3  UNAVAILABLE - an engine could not launch, so this is not evidence
+ *   4  the inputs are not the ones the recorded manifest pins
  *
  * 3 is the one worth stating. WebKit is the engine the rung exists for and
  * Chromium is the reason it is a measurement rather than an assumption, so a
@@ -32,13 +33,15 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { chromium, webkit } from '@playwright/test';
+
+import { buildManifest, manifestMismatches } from './fixture-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(HERE, '../..');
@@ -55,6 +58,17 @@ const FIXTURE_DIR =
 	process.env.Q18_FLAC_DIR ?? path.join(REPO, 'data/datasets/jamendolyrics-vocals');
 const PARTS = ['vocals', 'drums', 'bass', 'other'];
 const PORT = 8719;
+/**
+ * Where this run records what it decoded, and what it verifies against.
+ *
+ * Overridable so a reviewer can point a re-run at the manifest quoted in an
+ * evidence comment and have the run refuse to proceed on different audio.
+ * Default lives in the repo's gitignored scratch dir: the files it pins are
+ * per-machine, so a tracked default would fail for everyone but the machine
+ * that wrote it.
+ */
+const MANIFEST_PATH =
+	process.env.Q18_FIXTURE_MANIFEST ?? path.join(REPO, '.tmp/q18-stem-decode-fixtures.json');
 /** One least-significant bit of a 16-bit sample, in float. */
 const LSB_16_BIT = 1 / 32768;
 
@@ -96,15 +110,57 @@ async function main() {
 		console.log('point this run at a directory: Q18_FLAC_DIR=/abs/dir pnpm test:live:stem-decode-workers');
 		process.exit(2);
 	}
-	const bundle = await bundleModule();
-	const [moduleSource, ...flacs] = await Promise.all([
-		readFile(bundle, 'utf8'),
-		...fixtures.map((file) => readFile(file))
-	]);
+	// Read and VERIFY the inputs before spending an esbuild on them: a run
+	// whose subject is wrong is not worth preparing, and the refusal below
+	// should cost seconds rather than a bundle plus two browser launches.
+	const flacs = await Promise.all(fixtures.map((file) => readFile(file)));
 	const byPart = Object.fromEntries(PARTS.map((part, i) => [part, flacs[i]]));
-	for (const [i, file] of fixtures.entries()) {
-		console.log(`  part ${PARTS[i]}: ${path.basename(file)} (${(flacs[i].length / 1e6).toFixed(1)} MB)`);
+
+	// PROVENANCE. A basename and a size do not identify audio, and this
+	// directory is mutable, so a later run of the same command can pass
+	// against different files while being cited as the same evidence. The
+	// manifest is printed with the result and checked against the recorded
+	// one; a mismatch stops the run rather than being reported afterwards,
+	// because a measurement of the wrong subject is not worth taking.
+	const manifest = buildManifest(
+		fixtures.map((file, i) => ({ part: PARTS[i], file, bytes: flacs[i] }))
+	);
+	console.log(`fixture manifest v${manifest.version} from ${FIXTURE_DIR}`);
+	for (const entry of manifest.parts) {
+		console.log(
+			`  part ${entry.part}: ${entry.name} (${(entry.bytes / 1e6).toFixed(1)} MB) sha256 ${entry.sha256}`
+		);
 	}
+	if (existsSync(MANIFEST_PATH)) {
+		let recorded = null;
+		try {
+			recorded = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+		} catch (exc) {
+			recorded = `unparseable: ${String(exc).split('\n')[0]}`;
+		}
+		const problems = manifestMismatches(recorded, manifest);
+		if (problems.length > 0) {
+			console.log(`\nPROVENANCE MISMATCH against ${MANIFEST_PATH}`);
+			for (const problem of problems) console.log(`  ${problem}`);
+			console.log(
+				'\nThis run would measure audio the recorded evidence never covered. Point'
+			);
+			console.log(
+				'Q18_FLAC_DIR at the pinned inputs, or record a NEW manifest deliberately'
+			);
+			console.log(
+				'(delete the file above) and recapture the evidence - do not delete it to go green.'
+			);
+			process.exit(4);
+		}
+		console.log(`  verified against ${MANIFEST_PATH}`);
+	} else {
+		mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
+		writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, '\t')}\n`);
+		console.log(`  recorded to ${MANIFEST_PATH} (no manifest existed; later runs verify against it)`);
+	}
+
+	const moduleSource = await readFile(await bundleModule(), 'utf8');
 
 	const server = createServer((req, res) => {
 		if (req.url === '/') {

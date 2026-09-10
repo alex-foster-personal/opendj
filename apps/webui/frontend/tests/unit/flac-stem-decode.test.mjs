@@ -964,3 +964,52 @@ test('a rejecting part does not release the lane while its siblings are still de
 	assert.equal(decode.stemDecodeSession.loadsInFlight(), 0, 'released only once all parts settled');
 	assert.equal(decode.stemDecodeSession.trialing(), false, 'and no claim is left behind');
 });
+
+test('a failing native fallback reports its own error, not a detached retry of itself', async () => {
+	// The worker refused (wrong rate), so the part goes to `decodeAudioData`.
+	// That call DETACHES the bytes. If it then rejects from inside the try, the
+	// catch retries the same fallback on a buffer that no longer has any bytes,
+	// and the operator is shown "detached ArrayBuffer" for a file whose real
+	// problem was the media. The first terminal error is the news.
+	const ctx = fakeContext(44100);
+	const { factory } = fakeDecoderFactory({ sampleRate: 48000 });
+	const calls = [];
+	const fallback = async (bytes) => {
+		calls.push(bytes.byteLength);
+		if (bytes.byteLength === 0) throw new Error('cannot decode a detached ArrayBuffer');
+		structuredClone(bytes, { transfer: [bytes] });
+		throw new Error('EncodingError: the media could not be decoded');
+	};
+
+	const exc = await decode
+		.decodeStemParts(ctx, allFlac(), PARTS, { makeDecoder: factory, decodeFallback: fallback })
+		.then(
+			() => new Error('the load must not resolve when every part failed to decode'),
+			(err) => err
+		);
+
+	assert.match(
+		String(exc),
+		/the media could not be decoded/,
+		'the real media error must reach the caller'
+	);
+	assert.doesNotMatch(String(exc), /detached/, 'and must not be replaced by a retry artifact');
+	assert.equal(calls.length, PARTS.length, 'one fallback attempt per part, never two');
+	assert.ok(
+		calls.every((length) => length > 0),
+		'so no attempt is ever made against an already-detached buffer'
+	);
+
+	// CONTROL ON THE OVERSHOOT: "stop calling the fallback after a refusal"
+	// satisfies the report above completely and turns every 48kHz bundle into a
+	// failed deck load. A refusal whose fallback SUCCEEDS still resolves, on the
+	// fallback's buffer, with the refusal recorded.
+	decode.stemDecodeSession.resetPool();
+	const healthy = countingFallback();
+	const ok = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory({ sampleRate: 48000 }).factory,
+		decodeFallback: healthy.fn
+	});
+	assert.equal(healthy.calls.length, PARTS.length, 'the fallback still runs on a refusal');
+	assert.ok(ok.reports.every((r) => r.refusal === 'sample-rate-mismatch' && !r.viaWorker));
+});

@@ -509,29 +509,33 @@ async function _decodeOnePart(
 		return { buffer: await fallback(bytes), refusal: 'decoder-unavailable' };
 	}
 	let decoder: StemFlacDecoder | null = null;
+	let refusal: StemDecodeRefusal;
 	try {
 		decoder = await _takeDecoder(makeDecoder);
 		const result = await decoder.decodeFile(new Uint8Array(bytes));
 		const built = stemAudioBuffer(ctx, result);
-		if (typeof built === 'string') {
-			// A refusal for the BUNDLE's shape (wrong rate, not FLAC) leaves a
-			// healthy decoder, which is parked. A refusal the DECODER reported
-			// does not: it has processed a damaged stream, so it goes the same
-			// way a thrown decode does.
-			if (built === 'decode-failed') await _freeQuietly(decoder);
-			else _returnDecoder(decoder);
+		if (typeof built !== 'string') {
+			_returnDecoder(decoder);
 			decoder = null;
-			return { buffer: await fallback(bytes), refusal: built };
+			return { buffer: built, refusal: null };
 		}
-		_returnDecoder(decoder);
+		// A refusal for the BUNDLE's shape (wrong rate, not FLAC) leaves a
+		// healthy decoder, which is parked. A refusal the DECODER reported
+		// does not: it has processed a damaged stream, so it goes the same
+		// way a thrown decode does.
+		if (built === 'decode-failed') await _freeQuietly(decoder);
+		else _returnDecoder(decoder);
 		decoder = null;
-		return { buffer: built, refusal: null };
+		refusal = built;
 	} catch {
 		// Not returned to the pool - see above.
 		if (decoder !== null) await _freeQuietly(decoder);
-		decoder = null;
-		return { buffer: await fallback(bytes), refusal: 'decode-failed' };
+		refusal = 'decode-failed';
 	}
+	// OUTSIDE the try on purpose: `decodeAudioData` detaches its input, so a
+	// fallback called from inside would be retried by the catch on a detached
+	// buffer, and that meaningless second failure would replace the real one.
+	return { buffer: await fallback(bytes), refusal };
 }
 
 /**
