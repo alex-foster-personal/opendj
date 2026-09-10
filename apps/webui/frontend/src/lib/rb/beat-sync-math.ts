@@ -256,12 +256,27 @@ function _bestFollowerAnchor(
 	let foldedDistance = Number.POSITIVE_INFINITY;
 	for (let index = 0; index < beats.length - 1; index++) {
 		const beat = beats[index];
-		if (mode === 'bar' && beat.n !== masterBeatNumber) continue;
 		const followerBpm = _windowedIntervalBpm(beats, index);
 		const rawRatio = (masterBpm * masterTempoRatio) / followerBpm;
 		const tempo = _tempoRatioWithinRangeOrNull(rawRatio, minRatio, maxRatio);
 		if (tempo === null) continue;
 		const foldedBar = mode === 'bar' && tempo.normalization !== 1;
+		// The PQTZ bar-number constraint belongs to the EXACT lock alone. A
+		// folded lock has already given up the bar count - that is precisely
+		// what its orange warning says - so requiring a folded candidate to
+		// ALSO sit on the master's beat number throws away three quarters of
+		// the phase points for a property the fold does not preserve anyway.
+		// It is not merely wasteful, it moves the deck: 200 BPM master against
+		// a 100 BPM follower at 0.3 s on master beat 2 has its nearest folded
+		// phase point at follower 0.3 s, and the same-number filter picks
+		// 0.9 s instead - a whole 100-BPM beat away. So folded candidates
+		// search every beat number and exact ones keep the constraint.
+		//
+		// The cost is that BAR now measures the local BPM at every beat rather
+		// than at one in four, because normalization is not known until after
+		// `_tempoRatioWithinRangeOrNull` has run. That is the price of asking
+		// the right question in the right order.
+		if (mode === 'bar' && !foldedBar && beat.n !== masterBeatNumber) continue;
 		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex % 2 : 0;
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
