@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -56,6 +57,32 @@ const REPO = path.resolve(HERE, '../../../../..');
 const REAL_FLAC = path.join(REPO, 'tests/fixtures/phase7-dedup/src.flac');
 /** Real audio that is NOT FLAC, for the container sniff. */
 const REAL_WAV = path.join(REPO, 'tests/fixtures/phase7-dedup/src.wav');
+/**
+ * The fixtures PINNED by size and SHA-256, per AGENTS.md L141: a canonical
+ * fixture is verified by checksum before use, not merely found.
+ *
+ * Existence alone is not verification. These two files belong to the dedup
+ * suite, not to this one, so another feature could legitimately regenerate
+ * them - and this suite would keep passing against different audio while still
+ * reporting that it decoded "the real fixture". The digest is what ties the
+ * assertions below to THESE bytes: 66150 frames, 22050 Hz, mono.
+ *
+ * If a digest mismatch is what brought you here, do NOT re-pin it to go green.
+ * That is the fixture-contract change AGENTS.md L135-139 says to isolate and
+ * review on its own.
+ */
+const PINNED_FIXTURES = [
+	{
+		path: REAL_FLAC,
+		bytes: 28985,
+		sha256: '097aaa60892594e030549ab364528b9963130048009774713a0a98a0d75e99c9'
+	},
+	{
+		path: REAL_WAV,
+		bytes: 132378,
+		sha256: 'babd53ed1d5fde0b9112105a37ab6874407e7f538c632a5ef659c0459a20bf0c'
+	}
+];
 const FIXTURE_RATE = 22050;
 const PARTS = ['vocals', 'drums', 'bass', 'other'];
 
@@ -121,10 +148,23 @@ function bundleOf(bytes) {
 before(async () => {
 	// UNAVAILABLE rather than skipped: a suite whose subject is missing has not
 	// passed, and a green tick on zero real decodes is not evidence.
-	for (const fixture of [REAL_FLAC, REAL_WAV]) {
+	for (const fixture of PINNED_FIXTURES) {
 		assert.ok(
-			existsSync(fixture),
-			`UNAVAILABLE: the real-audio fixture ${fixture} is missing, so nothing real was decoded`
+			existsSync(fixture.path),
+			`UNAVAILABLE: the real-audio fixture ${fixture.path} is missing, so nothing real was decoded`
+		);
+		const bytes = await readFile(fixture.path);
+		// Size first: it names a mismatch in a readable unit before the digest
+		// names it in an unreadable one.
+		assert.equal(
+			bytes.length,
+			fixture.bytes,
+			`fixture ${fixture.path} is ${bytes.length} bytes, pinned at ${fixture.bytes}`
+		);
+		assert.equal(
+			createHash('sha256').update(bytes).digest('hex'),
+			fixture.sha256,
+			`fixture ${fixture.path} does not match its pinned SHA-256; this suite's frame counts are derived from those exact bytes, so re-pinning to go green would make it assert nothing`
 		);
 	}
 	flacBytes = new Uint8Array(await readFile(REAL_FLAC));

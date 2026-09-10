@@ -909,3 +909,58 @@ test('a calibration load still settles the lane when the fallback detaches its i
 	);
 	assert.ok(ogg.reports.every((r) => r.refusal === 'not-flac'), 'real non-FLAC is still named');
 });
+
+test('a rejecting part does not release the lane while its siblings are still decoding', async () => {
+	// `Promise.all` rejects on the FIRST rejection and its siblings keep running,
+	// because they cannot be cancelled. Releasing the claim there hands the next
+	// deck load an "uncontended" machine that is in fact still decoding, and it
+	// times its calibration trial against those orphans.
+	decode.stemDecodeSession.resetLane();
+	decode.stemDecodeSession.forceLane('main-thread');
+	const ctx = fakeContext();
+
+	let releaseSiblings;
+	const held = new Promise((resolve) => (releaseSiblings = resolve));
+	let siblingsRunning = 0;
+	let first = true;
+	const failing = async (bytes) => {
+		void bytes;
+		if (first) {
+			first = false;
+			throw new Error('the native decoder rejected this part');
+		}
+		siblingsRunning += 1;
+		await held;
+		siblingsRunning -= 1;
+		return { numberOfChannels: 2, length: 99, sampleRate: 44100 };
+	};
+
+	let settled = false;
+	const load = decode
+		.decodeStemParts(ctx, allFlac(), PARTS, {
+			makeDecoder: fakeDecoderFactory().factory,
+			decodeFallback: failing
+		})
+		.catch((exc) => {
+			settled = true;
+			return exc;
+		});
+
+	// Let the rejection propagate as far as it can while the siblings are held.
+	await new Promise((resolve) => setImmediate(resolve));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(siblingsRunning, 3, 'the three siblings are genuinely still in flight');
+	assert.equal(settled, false, 'the load must not resolve or reject before they finish');
+	assert.equal(
+		decode.stemDecodeSession.loadsInFlight(),
+		1,
+		'and the load must still be counted as occupying the machine'
+	);
+
+	releaseSiblings();
+	const exc = await load;
+	assert.match(String(exc), /native decoder rejected/, 'the first failure is rethrown unchanged');
+	assert.equal(siblingsRunning, 0);
+	assert.equal(decode.stemDecodeSession.loadsInFlight(), 0, 'released only once all parts settled');
+	assert.equal(decode.stemDecodeSession.trialing(), false, 'and no claim is left behind');
+});

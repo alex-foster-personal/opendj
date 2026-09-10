@@ -24,7 +24,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -164,8 +164,33 @@ test('a dynamic import from performance is charged to other-lazy, not the route 
 	assert.ok(otherLazy > 9000, `other-lazy must pay for the deferred chunk, got ${otherLazy}`);
 });
 
+/**
+ * Read a budget's limit out of the gate rather than restating it here.
+ *
+ * The `other-lazy` overflow below used to be the literal 70000, chosen to clear
+ * a 67584 limit. When that limit moved to 110592 for the Q18 FLAC decoder
+ * (PR #1691), 70000 stopped overflowing anything and this guard went GREEN
+ * while asserting that a budget fails - the exact "decorative budget" failure
+ * the header above says these tests exist to prevent, one level up. A guard
+ * that stops guarding when the thing it guards changes is worse than no guard,
+ * so the number is derived now and cannot go stale again.
+ */
+function _limitOf(name) {
+  const source = readFileSync(GATE, 'utf8');
+  const match = source.match(new RegExp(`name: '${name}', limit: (\\d+)`));
+  assert.ok(match, `could not read the ${name} limit out of ${GATE}`);
+  return Number(match[1]);
+}
+
 for (const surface of ['library', 'performance', 'other-lazy']) {
-  const overflow = { library: 260000, performance: 210000, 'other-lazy': 70000 }[surface];
+  // library and performance stay literal: their fixtures carry other chunks
+  // that already count toward the surface, so the overflow is not a simple
+  // offset from the limit and deriving it would misstate the margin.
+  const overflow = {
+    library: 260000,
+    performance: 210000,
+    'other-lazy': _limitOf('other-lazy') + 8000
+  }[surface];
   test(`budget "${surface}" FAILS when its own weight exceeds the limit`, () => {
     const { code, out } = _run(_fixture({ sizes: { [surface]: overflow } }));
     assert.equal(code, 1, `expected a non-zero exit\n${out}`);

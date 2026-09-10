@@ -96,7 +96,17 @@ const BUDGETS = [
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   { name: 'performance', limit: 216064, measured: 205141, note: '/performance and children' },
-  { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
+  // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
+  // is dynamically imported, so it lands here rather than in the deck route's eager
+  // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
+  // increase (107319 total, 63486 without it, against main's 64328). It is fetched only
+  // when a stemmed deck loads, never at boot and never on a route that has no stems, so
+  // it costs nothing on the boot-latency budget this program is elsewhere reducing.
+  // Flagged rather than absorbed quietly: the PR's own body measured the deck route
+  // closure (+2 KB) and did NOT measure this bucket, so this cost was unreported until
+  // the gate caught it. If the AAC rung (Q18 rung 2) ever replaces this decoder rather
+  // than adding to it, this limit comes back down with it.
+  { name: 'other-lazy', limit: 110592, measured: 107319, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

@@ -58,15 +58,12 @@ export interface DecodedStemAudio {
 	/**
 	 * What the decoder itself reported wrong, if anything.
 	 *
-	 * `decodeFile` RESOLVES on a damaged stream: libFLAC's error and state
-	 * codes are collected into this array and handed back ALONGSIDE whatever
-	 * frames did decode, rather than rejecting. Omitting the field from this
-	 * shape would make a partial decode indistinguishable from a whole one, so
-	 * it is declared here and checked in `stemAudioBuffer`.
-	 *
-	 * Typed as unknown rather than the vendor's `DecodeError`: importing that
-	 * type is the one static reference that would pull the decoder package back
-	 * into the boot bundle, and nothing here reads a field of it.
+	 * `decodeFile` RESOLVES on a damaged stream: libFLAC's error and state codes
+	 * are collected here and returned ALONGSIDE whatever frames did decode.
+	 * Omitting the field would make a partial decode indistinguishable from a
+	 * whole one. Typed as unknown rather than the vendor's `DecodeError`, whose
+	 * import is the one static reference that would pull the decoder package
+	 * back into the boot bundle; nothing here reads a field of it.
 	 */
 	errors?: readonly unknown[];
 }
@@ -238,19 +235,23 @@ export async function decodeStemParts<P extends string>(
 		// that arrived after it.
 		const mainThreadRefusal = _mainThreadRefusal(claim);
 		const reports: StemPartDecodeReport[] = [];
-		const decoded = await Promise.all(
+		// allSettled, NOT all. `Promise.all` rejects on the FIRST rejection while
+		// its siblings keep running - they cannot be cancelled - so the `finally`
+		// would release the claim with decodes still in flight. The next load
+		// would read an uncontended machine and time a trial against those
+		// orphans: the contamination the claim exists to prevent, arriving
+		// through the error path rather than the happy one.
+		const settled = await Promise.allSettled(
 			parts.map(async (part) => {
 				const started = now();
 				const bytes = encoded[part] as ArrayBuffer;
 				// BOTH read before any decode touches the buffer.
 				// `decodeAudioData` DETACHES the ArrayBuffer it is given, so a
-				// byte read afterwards sees a zero-length buffer and answers a
-				// question about nothing. That is why the sniff below is
-				// hoisted rather than written inline where it is used: the
-				// inline version made every calibration load report `not-flac`,
-				// which made the trial unclean, which stopped the session ever
-				// settling a lane. Unit tests could not see it, because their
-				// fallback does not detach; the live browser run did.
+				// byte read afterwards sees a zero-length buffer. Written inline
+				// where it is used, the sniff below reported `not-flac` for real
+				// FLAC, made every calibration trial unclean, and stopped the
+				// session ever settling a lane. No unit test saw it - their
+				// fallback does not detach - and the live browser run did.
 				const byteLength = bytes === undefined ? 0 : bytes.byteLength;
 				const isFlac = _flacBytes(bytes);
 				const outcome =
@@ -273,6 +274,13 @@ export async function decodeStemParts<P extends string>(
 				});
 				return [part, outcome.buffer] as const;
 			})
+		);
+		// Every part has now settled, so nothing is still consuming a decoder
+		// when the claim is released. The first failure is rethrown unchanged.
+		const failure = settled.find((result) => result.status === 'rejected');
+		if (failure !== undefined) throw (failure as PromiseRejectedResult).reason;
+		const decoded = settled.map(
+			(result) => (result as PromiseFulfilledResult<readonly [P, AudioBuffer]>).value
 		);
 		reports.sort((a, b) => parts.indexOf(a.part as P) - parts.indexOf(b.part as P));
 		// Only a CLEAN run of the lane counts. A load where some part refused
@@ -367,19 +375,16 @@ interface LaneClaim {
  * trial yet" read does not give:
  *
  * 1. RESERVED, not inferred. Two loads starting in the same tick would both
- *    read "main-thread has never been trialed" and both become that trial. The
- *    trial lane is claimed here, in one synchronous step, so the second load
- *    sees it taken.
+ *    read "main-thread has never been trialed" and both become that trial.
  * 2. CONTENDED trials are discarded. A decode sharing the machine with another
- *    decode measures the contention, not the lane. The failure this prevents is
- *    not symmetric noise: two overlapping main-thread loads both measure slow,
- *    and a later uncontended worker trial then wins by default - which is how
- *    Chromium, where the workers are 1.7x SLOWER, could pin itself to them for
- *    the session.
- * 3. Only COMPARABLE bundles are trialed. Both lanes must have decoded FLAC.
- *    The worker lane can only ever trial FLAC (anything else refuses per part
- *    and the trial is discarded as unclean), so a main-thread trial on an
- *    AAC or OGG v3 bundle would settle a FLAC lane from a different codec.
+ *    measures contention, not the lane - and the failure is not symmetric
+ *    noise: two overlapping main-thread loads both measure slow, so a later
+ *    uncontended worker trial wins by default, which is how Chromium, where
+ *    the workers are 1.7x SLOWER, could pin itself to them for the session.
+ * 3. Only COMPARABLE bundles are trialed. The worker lane can only ever trial
+ *    FLAC (anything else refuses per part and the trial is unclean), so a
+ *    main-thread trial on an AAC or OGG v3 bundle would settle a FLAC lane
+ *    from a different codec.
  *
  * A load that cannot be a trial runs the MAIN THREAD, which is what ships
  * today, rather than guessing at the unmeasured lane.
@@ -437,15 +442,13 @@ const MAX_POOLED_DECODERS = 4;
 /**
  * Check out a decoder, owning it on EVERY exit.
  *
- * Both awaits here can reject - a wasm compile that never finishes ready, a
- * `reset()` on a decoder whose worker has died - and a rejection that escapes
- * this function escapes it holding a live worker thread that nothing else has
- * a reference to. The caller cannot free it: it never received it. So the
- * cleanup belongs HERE, on the only frame that ever held the object.
- *
- * A leak per failed attempt is not a leak per page either: the failure is not
- * recorded as a lane trial, so every later stem load retries and leaks four
- * more worker threads and four more wasm heaps.
+ * Both awaits can reject - a wasm compile that never finishes ready, a
+ * `reset()` on a decoder whose worker has died - and a rejection escaping this
+ * function escapes holding a live worker thread nothing else references. The
+ * caller cannot free what it never received, so cleanup belongs HERE, on the
+ * only frame that ever held the object. The leak is per RETRY, not per page:
+ * a failed checkout is not recorded as a lane trial, so every later stem load
+ * tries again and strands four more workers and four more wasm heaps.
  */
 async function _takeDecoder(make: StemFlacDecoderFactory): Promise<StemFlacDecoder> {
 	const pooled = _pool.pop();
@@ -585,5 +588,7 @@ export const stemDecodeSession = {
 		_trialContended = false;
 	},
 	/** Whether a calibration load is running right now. For tests and probes. */
-	trialing: (): boolean => _trialLane !== null
+	trialing: (): boolean => _trialLane !== null,
+	/** How many loads are decoding right now. The contention denominator. */
+	loadsInFlight: (): number => _loadsInFlight
 };
