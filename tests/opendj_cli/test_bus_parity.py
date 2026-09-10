@@ -8,12 +8,15 @@
      validator accepts, because ``_exactKeys`` throws on an unexpected field.
 [if] a quick-draw action exists [then ⛔] a verb reaches the same command, which
      is what "verb ids seeded from QuickDrawActionId" means in practice.
+[if] a verb observes the mirror [then ⛔] its expectation is either a sentinel
+     or a field the verb's own command carries, so an observation cannot name a
+     field that will never be built.
 """
 from __future__ import annotations
 
 import pytest
 
-from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS
+from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS, Expectation
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
@@ -164,3 +167,26 @@ def test_the_rampable_types_match_the_pages_own_ramp_guard() -> None:
 
 def test_anchors_are_the_three_the_duration_type_declares() -> None:
     assert DURATION_ANCHORS == ("next_beat", "next_downbeat", "next_phrase")
+
+
+# ----- what a verb may claim to observe ------------------------------------
+
+@pytest.mark.parametrize("verb_name", sorted(VERBS))
+def test_every_observation_expects_a_sentinel_or_a_field_the_command_carries(
+    verb_name: str,
+) -> None:
+    """An observation naming a field the command never emits can never pass.
+
+    ``unload`` shipped with the wrong half of an overloaded ``expect=None``,
+    which meant "must be present and not null" for a load and had to mean the
+    opposite for an eject. This is the invariant that stops the next one: an
+    expectation is a sentinel that says its own name, or a key the verb's own
+    argument list can supply.
+    """
+    verb = VERBS[verb_name]
+    buildable = {argument.key for argument in verb.args} | {key for key, _ in verb.fixed}
+    for observe in verb.observes:
+        assert isinstance(observe.expect, Expectation) or observe.expect in buildable, (
+            f"{verb_name} observes {'.'.join(observe.path)} expecting "
+            f"{observe.expect!r}, which its command never carries"
+        )

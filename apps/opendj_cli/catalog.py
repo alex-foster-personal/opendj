@@ -63,17 +63,40 @@ _UNIT = arg("value", "unit", unit_value, "0..1")
 
 
 @dataclass(frozen=True)
+class Expectation:
+    """A mirror expectation that names no command field.
+
+    ``expect=None`` used to carry BOTH of these, which is why ``unload`` was
+    unconfirmable: the CLI read "the path must be present and not null" out of
+    an absent expectation, while the production mirror answers an unload by
+    setting the deck title to null (``_emptyDeckState`` in
+    ``apps/webui/frontend/src/lib/player/state.svelte.ts``). One sentinel for
+    two opposite outcomes cannot be right for both, so each says its own name.
+    """
+
+    label: str
+
+    def __repr__(self) -> str:
+        return self.label
+
+
+PRESENT = Expectation("present and not null")
+NULL = Expectation("null")
+
+
+@dataclass(frozen=True)
 class Observe:
     """Where the truth for one verb lives in the UI mirror.
 
     ``path`` segments are formatted with the built command, so ``{deck}`` and
     ``{band}`` index the right strip. ``expect`` names the command field the
-    mirror must agree with; ``None`` means "the path must be present and not
-    null", which is all a load can be confirmed by today.
+    mirror must agree with, or is one of the :class:`Expectation` sentinels
+    (``PRESENT`` / ``NULL``) when the outcome is not a value the command
+    carries.
     """
 
     path: tuple[str, ...]
-    expect: str | None
+    expect: str | Expectation
     tolerance: float | None = None
 
 
@@ -113,14 +136,14 @@ _VERBS: tuple[Verb, ...] = (
     # ----- transport ----------------------------------------------------
     Verb("load", "load", (_DECK, arg("stable_id", "text", text_value)),
          quick_draws=("load",),
-         observes=(Observe(("decks", "{deck}", "title"), None),)),
+         observes=(Observe(("decks", "{deck}", "title"), PRESENT),)),
     Verb("load_play_intent", "load_play_intent", (
         _DECK,
         arg("generation", "int", positive_int_value),
         arg("desired_play", "bool", bool_value, "true|false"),
     )),
     Verb("unload", "unload", (_DECK,), quick_draws=("unload",),
-         observes=(Observe(("decks", "{deck}", "title"), None),)),
+         observes=(Observe(("decks", "{deck}", "title"), NULL),)),
     Verb("play", "play", (_DECK,), fixed=(("playing", True),),
          quick_draws=("play.toggle",), observes=_deck_playing()),
     Verb("pause", "play", (_DECK,), fixed=(("playing", False),), observes=_deck_playing()),
@@ -139,7 +162,8 @@ _VERBS: tuple[Verb, ...] = (
     Verb("loop_interval_mode", "loop_interval_mode", (_DECK, _ENABLED)),
     Verb("loop_interval_base", "loop_interval_base", (_DECK, arg("base", "number", number_value))),
     Verb("tempo", "tempo", (_DECK, arg("ratio", "number", number_value)),
-         quick_draws=("tempo.reset",)),
+         quick_draws=("tempo.reset",),
+         observes=(Observe(("decks", "{deck}", "pitch"), "ratio", 1e-6),)),
     Verb("pitch_range", "pitch_range", (
         _DECK, arg("range", "int", int_enum_value(PITCH_RANGE_VALUES), "8|16|100"),
     )),
@@ -241,4 +265,14 @@ VERBS: dict[str, Verb] = {verb.name: verb for verb in _VERBS}
 VERB_NAMES: tuple[str, ...] = tuple(verb.name for verb in _VERBS)
 
 # Re-exported so callers that only need "is this a deck?" do not import kinds.
-__all__ = ["DECK_VALUES", "RAMPABLE_TYPES", "VERBS", "VERB_NAMES", "Observe", "Verb"]
+__all__ = [
+    "DECK_VALUES",
+    "NULL",
+    "PRESENT",
+    "RAMPABLE_TYPES",
+    "VERBS",
+    "VERB_NAMES",
+    "Expectation",
+    "Observe",
+    "Verb",
+]

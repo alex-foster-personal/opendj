@@ -11,6 +11,13 @@ of the same routes the browser polls.
 [if] a page claims an order and reports succeeded without the state moving
      [then ⛔] the CLI exits 4 rather than printing done.
 [if] a command exists on the bus [then ⛔] ``--list-verbs`` names it.
+[if] an unload clears the deck title to null [then ⛔] the CLI confirms it,
+     rather than reading null as "the control never moved".
+[if] a script writes one mirrored control twice [then ⛔] only the last write is
+     required of the final mirror, so the run confirms.
+[if] the mirror names no control this command moves [then ⛔] the verdict is
+     accepted, never confirmed - a settled clock rules a fault out, it does not
+     rule the effect in.
 """
 from __future__ import annotations
 
@@ -390,3 +397,196 @@ def test_the_page_that_claims_nothing_never_sees_a_command(
     finally:
         page.stop()
     assert "no performance page" in capsys.readouterr().err
+
+
+# ----- what the mirror can and cannot answer for ---------------------------
+
+def test_unload_is_confirmed_when_the_deck_title_goes_null(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Production answers an unload with ``title: null`` (_emptyDeckState).
+
+    Read as "the control never moved", that made every successful unload wait
+    out the settle deadline and exit 4.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "load", "1", "track-a")) == EXIT_CONFIRMED
+        assert page.mirror["decks"]["1"]["title"] == "track-a"
+
+        assert main(_argv(engine, "--settle", "0.3", "unload", "1")) == EXIT_CONFIRMED
+        assert page.mirror["decks"]["1"]["title"] is None
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "verdict: confirmed" in captured.out
+    # The exit code alone does not pin this. A settle read can land in the
+    # window between the result POST and the page's republish, where the
+    # mirror still holds the PRE-unload title - and there the old, wrong
+    # expectation passes too. Asserting what the CLI DEMANDED is what makes
+    # this test discriminate; found by mutating the expectation back.
+    assert "decks.1.title == null" in captured.out
+
+
+def test_unload_is_unconfirmed_when_the_title_never_clears(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control on the fix above: expecting null must still be able to FAIL.
+
+    Reading a null expectation as "anything goes" would satisfy this run just
+    as happily as the correct one, which is the over-correction the fix has to
+    survive.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "load", "1", "track-a")) == EXIT_CONFIRMED
+        page.apply_commands = False
+        assert main(_argv(engine, "--settle", "0.3", "unload", "1")) == EXIT_UNCONFIRMED
+        assert page.mirror["decks"]["1"]["title"] == "track-a"
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "unconfirmed" in captured.out
+    assert "decks.1.title" in captured.out
+    assert "expected null" in captured.out
+
+
+def test_a_script_that_writes_one_control_twice_confirms_the_last_write(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``play 1`` then ``pause 1`` asked one mirror for true AND false.
+
+    No final mirror can satisfy both, so a sequence that ran perfectly waited
+    out the settle deadline and exited 4.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        exit_code = main(_argv(engine, "--settle", "0.3", "do", "play 1", "then", "pause 1"))
+        assert exit_code == EXIT_CONFIRMED
+        assert page.mirror["decks"]["1"]["playing"] is False
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "confirmed" in captured.out
+    assert "decks.1.playing == False" in captured.out
+    assert "decks.1.playing == True" not in captured.out
+
+
+def test_a_script_whose_last_write_never_lands_is_unconfirmed(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: dropping superseded checks must not drop the final one.
+
+    Ordered pause-then-play deliberately. A blank mirror already reads
+    ``playing: false``, so keeping the SUPERSEDED check would pass this run
+    just as happily as keeping none at all; only keeping the LAST one reports
+    the truth, which is that nothing moved.
+    """
+
+    page = engine.page()
+    page.apply_commands = False
+    page.start()
+    try:
+        exit_code = main(_argv(engine, "--settle", "0.3", "do", "pause 1", "then", "play 1"))
+        assert exit_code == EXIT_UNCONFIRMED
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "unconfirmed" in captured.out
+    # The FINAL expectation is the one demanded of the mirror. Had the
+    # superseded check survived instead, this run would have confirmed.
+    assert "decks.1.playing is False, expected True" in captured.out
+
+
+def test_a_command_the_mirror_cannot_observe_is_accepted_not_confirmed(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``slip`` is real deck state that ``buildUiMirror`` does not publish.
+
+    The deck's presentation clock reads 0 == 0 whether or not the slip landed,
+    so calling this confirmed claimed an affirmation the mirror never made.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "slip", "1", "true")) == EXIT_CONFIRMED
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "verdict: accepted" in captured.out
+    assert "verdict: confirmed" not in captured.out
+
+
+def test_an_unobservable_command_on_a_lagging_deck_is_still_unconfirmed(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: accepted must not become a verdict nothing can fail.
+
+    The clock stops being an affirmation, but it stays a precondition, so a
+    deck the page never presented still refuses to pass.
+    """
+
+    page = engine.page()
+    page.start()
+    page.settle = False
+    page.mirror["decks"]["1"]["presentation_clock"] |= {
+        "desired_revision": 5,
+        "presented_revision": 1,
+    }
+    try:
+        assert main(_argv(engine, "--settle", "0.3", "slip", "1", "true")) == EXIT_UNCONFIRMED
+    finally:
+        page.stop()
+
+    assert "has not been presented" in capsys.readouterr().out
+
+
+def test_tempo_is_confirmed_against_the_pitch_the_mirror_publishes(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``setTempoRatio`` lands as ``st.pitch``, which the mirror does publish."""
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "tempo", "1", "1.04")) == EXIT_CONFIRMED
+        assert page.mirror["decks"]["1"]["pitch"] == pytest.approx(1.04)
+    finally:
+        page.stop()
+
+    assert "decks.1.pitch" in capsys.readouterr().out
+
+
+def test_a_knob_does_not_advance_the_decks_presentation_clock(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fixture models production: only a scheduled command moves the clock.
+
+    ``acknowledgePresentedTransportSchedule`` is the one writer of
+    ``desired_revision``, and an EQ turn never reaches it. A page that bumped
+    the clock for every deck command made the clock check look like evidence
+    it cannot be.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "eq", "1", "low", "0.2")) == EXIT_CONFIRMED
+    finally:
+        page.stop()
+
+    clock = page.mirror["decks"]["1"]["presentation_clock"]
+    assert clock == {"source": "audio_output", "desired_revision": 0, "presented_revision": 0}
+    assert "confirmed" in capsys.readouterr().out

@@ -47,6 +47,7 @@ from apps.opendj_cli.confirm import (
     SETTLE_TIMEOUT_S,
     Check,
     checks_for,
+    final_checks,
     verdict,
 )
 from apps.opendj_cli.orders import SINGLE, Group, parse_script, ramp, single
@@ -253,10 +254,12 @@ def _dispatch(
     invocations: Sequence[Invocation],
 ) -> int:
     client = EngineClient(origin=origin, timeout_s=args.timeout)
-    checks = tuple(
-        check
-        for invocation in invocations
-        for check in checks_for(invocation.verb, invocation.command)
+    checks = final_checks(
+        [
+            check
+            for invocation in invocations
+            for check in checks_for(invocation.verb, invocation.command)
+        ]
     )
     try:
         client.mirror()
@@ -323,9 +326,10 @@ def _dispatch_text(document: dict[str, Any]) -> str:
         )
     else:
         lines.append(
-            "verdict: accepted - the page claimed the order and reported no error; "
-            "nothing in the mirror verifies this command, so acceptance is all that "
-            "is claimed"
+            "verdict: accepted - the page claimed the order and reported no error "
+            "and no deck's presentation clock is lagging; nothing in the mirror "
+            "names the control this command moves, so acceptance is all that is "
+            "claimed"
         )
     return "\n".join(lines)
 
