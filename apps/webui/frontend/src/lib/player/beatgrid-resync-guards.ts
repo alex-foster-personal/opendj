@@ -76,8 +76,19 @@ export interface BeatgridResyncGuardDeps {
 	publishDeckBpm: (deck: DeckId, bpm: number | null) => void;
 	/** Surfaces an authoritative source failure onto the deck, the same field
 	 * `WaveRow`/`StripWaveform` already render an /anlz fetch failure through -
-	 * `adoptAuthoritativeError` is a second, later-arriving way to learn one. */
+	 * `adoptAuthoritativeError` is a second, later-arriving way to learn one.
+	 * Called with `null` to clear it once a later authoritative answer for
+	 * the same track shows the source has recovered. */
 	setDeckAnlzError: (deck: DeckId, code: string | null) => void;
+	/** Recomputes the deck's separately-tracked display loop
+	 * (`_displayLoopFrom`'s own consumer, audio-engine.svelte.ts) against a
+	 * newly adopted authoritative payload, without disrupting a currently
+	 * ENGAGED live loop's time bounds - only its beat-count readout follows
+	 * the new grid in that case (Codex P2 BLOCKING, PR #1587, fourth round).
+	 * `deck.anlz` itself is updated separately via `publishDeckAnlz`; this is
+	 * the loop-derived state `load()`'s own swap keeps in step but neither
+	 * adoption transaction here used to touch. */
+	reconcileDeckLoop: (deck: DeckId, anlz: AnlzData) => void;
 	reportError: (message: string) => void;
 }
 
@@ -234,7 +245,7 @@ export interface BeatgridResyncGuards {
 
 export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): BeatgridResyncGuards {
 	const { ports, deckRuntime, deckLoadToken, reportError } = deps;
-	const { deckStableId, deckAnlz, publishDeckAnlz, publishDeckBpm, setDeckAnlzError } = deps;
+	const { deckStableId, deckAnlz, publishDeckAnlz, publishDeckBpm, setDeckAnlzError, reconcileDeckLoop } = deps;
 	const scopedSync = createScopedSyncRunner<DeckId>();
 	const runScoped = scopedSync.run;
 	const afterBeatgridUpgrade: BeatgridResyncGuards['afterBeatgridUpgrade'] = (
@@ -341,7 +352,17 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 			for (const deck of ports.deckIds) {
 				if (deckStableId(deck) !== stableId) continue;
 				const current = deckAnlz(deck);
-				if (current === null || _sameSourceDependentAnlzFields(current, data)) continue;
+				if (current === null) continue;
+				if (_sameSourceDependentAnlzFields(current, data)) {
+					// A fresh, non-error answer for this track is itself evidence
+					// the source has recovered, even when its payload happens to
+					// match what is already published - an error left over from an
+					// earlier failed revalidation must not outlive a later answer
+					// that says otherwise (Codex P2 BLOCKING, PR #1587, fourth
+					// round).
+					setDeckAnlzError(deck, null);
+					continue;
+				}
 				const runtime = deckRuntime(deck);
 				const token = deckLoadToken(deck);
 				const isStale = (): boolean =>
@@ -368,10 +389,9 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 						// whatever payload is live at publish time, not the one read
 						// when the cache fired.
 						const latest = deckAnlz(deck);
-						publishDeckAnlz(
-							deck,
-							latest === null ? next : _withSourceDependentAnlzFields(latest, data)
-						);
+						const published =
+							latest === null ? next : _withSourceDependentAnlzFields(latest, data);
+						publishDeckAnlz(deck, published);
 						// Beat Sync reads `deck.anlz.beatgrid.bpm` directly, but the
 						// header, IPC state, browser recommendations and autoplay all
 						// read the deck's separately-tracked BPM, last set from
@@ -382,6 +402,16 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 						// the previous source's number there would be exactly as
 						// stale as never refreshing it at all.
 						publishDeckBpm(deck, data.beatgrid.bpm ?? null);
+						// A landed authoritative answer - grid or absence - is itself
+						// evidence the source responded, so an error left over from an
+						// earlier failed revalidation must not survive it (Codex P2
+						// BLOCKING, PR #1587, fourth round).
+						setDeckAnlzError(deck, null);
+						// deck.loop is separately tracked from deck.anlz (audio-engine's
+						// own `_displayLoopFrom`) and this adoption used to leave it
+						// derived from the beats it just replaced (Codex P2 BLOCKING,
+						// PR #1587, fourth round).
+						reconcileDeckLoop(deck, published);
 					},
 					isStale
 				).catch(
@@ -414,9 +444,14 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 						// Re-read rather than trust `current`: publish runs inside a
 						// scope claim this call had to queue for.
 						const base = deckAnlz(deck) ?? current;
-						publishDeckAnlz(deck, { ...base, beatgrid: { source: base.beatgrid.source, beat_count: 0, beats: [] } });
+						const published: AnlzData = {
+							...base,
+							beatgrid: { source: base.beatgrid.source, beat_count: 0, beats: [] }
+						};
+						publishDeckAnlz(deck, published);
 						publishDeckBpm(deck, null);
 						setDeckAnlzError(deck, code);
+						reconcileDeckLoop(deck, published);
 					},
 					isStale
 				).catch(

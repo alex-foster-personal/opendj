@@ -90,3 +90,43 @@ test('load() publishes the freshest usable anlz cache entry at swap time, not th
 	const captureInLoad = source.lastIndexOf('const candidateAnlz = anlz;', swapStart);
 	assert.ok(captureInLoad > loadStart, 'candidateAnlz capture not found before the swap');
 });
+
+test('_reconcileLoopForAuthoritativeGrid re-derives an idle loop but only re-measures an ENGAGED one, and is wired to the guards', () => {
+	// Codex P2 BLOCKING, PR #1587, fourth round: adoptAuthoritativeGrid/
+	// adoptAuthoritativeError can replace an already-loaded deck's beatgrid
+	// long after load() published st.loop from the OLD beats. A saved-but-
+	// idle loop cue is safe to fully re-derive; a currently ENGAGED live loop
+	// must keep its own time bounds (re-deriving from cues could silently
+	// move a playing loop's in/out points) and only its beat-count readout
+	// may follow the new grid.
+	const fnStart = source.indexOf(
+		'function _reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData): void {'
+	);
+	assert.ok(fnStart > 0, '_reconcileLoopForAuthoritativeGrid not found');
+	const bodyEnd = source.indexOf('\n}', fnStart);
+	assert.ok(bodyEnd > fnStart, 'could not bound the function body');
+	const body = source.slice(fnStart, bodyEnd);
+
+	const engagedCheckIndex = body.indexOf('!st.loop.engaged');
+	const rederiveIndex = body.indexOf('st.loop = _displayLoopFrom(anlz.cues, anlz.beatgrid.beats);');
+	const returnIndex = body.indexOf('return;');
+	const beatLengthIndex = body.indexOf(
+		'st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);'
+	);
+
+	assert.ok(engagedCheckIndex > 0, 'must branch on whether the current loop is engaged, not treat every loop alike');
+	assert.ok(
+		rederiveIndex > engagedCheckIndex,
+		'an idle (or absent) loop must be fully re-derived from the new grid, same as a fresh load()'
+	);
+	assert.ok(returnIndex > rederiveIndex, 'the idle branch must not also fall through into the engaged branch');
+	assert.ok(
+		beatLengthIndex > returnIndex,
+		'an engaged loop must recompute beat_length in place rather than being silently skipped entirely'
+	);
+
+	assert.ok(
+		source.includes('reconcileDeckLoop: (deck, anlz) => _reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),'),
+		'_reconcileLoopForAuthoritativeGrid must be wired to the guards as the reconcileDeckLoop dependency'
+	);
+});

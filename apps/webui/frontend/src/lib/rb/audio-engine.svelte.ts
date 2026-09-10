@@ -1882,6 +1882,24 @@ function _displayLoopFrom(cues: AnlzCue[], beats: readonly AnlzBeat[]): LoopStat
 	};
 }
 
+/** Reconciles `st.loop` against a beatgrid `adoptAuthoritativeGrid`/
+ * `adoptAuthoritativeError` just adopted onto an ALREADY-LOADED deck (the
+ * ordinary `load()` swap path derives `st.loop` fresh from `_displayLoopFrom`
+ * itself and never calls this). A saved-but-not-currently-looping cue is
+ * simply re-derived, same as a fresh load. An ENGAGED live loop keeps its own
+ * time bounds untouched - re-deriving those from cues would silently move a
+ * playing loop's in/out points - and only its beat-count readout is
+ * recomputed against the new beats, mirroring `engageBeatLoop`'s own
+ * in-place `beat_length` mutation (Codex P2 BLOCKING, PR #1587, fourth
+ * round). */
+function _reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData): void {
+	if (st.loop === null || !st.loop.engaged) {
+		st.loop = _displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
+		return;
+	}
+	st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);
+}
+
 function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
 	// audible flips BEFORE re-election (excludes this deck as its own replacement) and election runs BEFORE reconciling (r3912339497); stranded is captured NOW, before clearForDeck wipes it and before the scoped continuation below starts (r3912339491, second pass).
@@ -2533,6 +2551,7 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
 	publishDeckBpm: (deck, bpm) => (deckStates[deck].bpm = bpm),
 	setDeckAnlzError: (deck, code) => (deckStates[deck].anlz_error = code),
+	reconcileDeckLoop: (deck, anlz) => _reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),
 	reportError: (message) => pushToast(message, 'error')
 });
 installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);

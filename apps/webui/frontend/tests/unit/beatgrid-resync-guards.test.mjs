@@ -98,7 +98,7 @@ function _ports() {
  * which is the whole point: a reload bumps the token, a dispose REPLACES the
  * runtime and restarts the token from zero. */
 function _harness(overrides = {}) {
-	const calls = { setBeatSyncEnabled: [], setSyncError: [], markPending: [], synchronize: [] };
+	const calls = { setBeatSyncEnabled: [], setSyncError: [], markPending: [], synchronize: [], reconcileDeckLoop: [] };
 	const runtimes = Object.fromEntries(DECKS.map((deck) => [deck, { deck }]));
 	const tokens = Object.fromEntries(DECKS.map((deck) => [deck, 0]));
 	const stableIds = Object.fromEntries(DECKS.map((deck) => [deck, null]));
@@ -126,6 +126,7 @@ function _harness(overrides = {}) {
 		publishDeckAnlz: (deck, next) => (anlz[deck] = next),
 		publishDeckBpm: (deck, next) => (bpm[deck] = next),
 		setDeckAnlzError: (deck, code) => (anlzError[deck] = code),
+		reconcileDeckLoop: (deck, next) => calls.reconcileDeckLoop.push([deck, next]),
 		reportError: (message) => errors.push(message)
 	});
 	// The claim is granted a turn LATE on purpose: every finding on this surface
@@ -239,6 +240,7 @@ test('beforeClear on an empty stranded list claims no scope at all', () => {
 		publishDeckAnlz: () => {},
 		publishDeckBpm: () => {},
 		setDeckAnlzError: () => {},
+		reconcileDeckLoop: () => {},
 		reportError: () => {}
 	});
 	guards.installScopedSyncRunner(() => {
@@ -376,6 +378,60 @@ test('adoptAuthoritativeGrid does not republish a grid the deck already holds', 
 	);
 });
 
+test('adoptAuthoritativeGrid clears a recovered deck anlz_error when it republishes a changed grid', async () => {
+	// A prior RbApiError revalidation set anlz_error via adoptAuthoritativeError
+	// (blanking the grid in the process); a later successful /anlz answer for
+	// the same track is evidence the source has recovered (Codex P2 BLOCKING,
+	// PR #1587, fourth round) - StripWaveform must stop showing NO ANALYSIS
+	// and deckAnlzNeedsFetch must stop treating this deck as terminal.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', []);
+	h.anlzError[1] = 'ANALYSIS_SOURCE_FAILED';
+	h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(8, 128)));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlz[1].beatgrid.beats.length, 8);
+	assert.equal(h.anlzError[1], null, 'a recovered grid must clear the stale anlz_error');
+});
+
+test('adoptAuthoritativeGrid clears a recovered deck anlz_error even when the republished grid is otherwise unchanged', async () => {
+	// The republish is skipped entirely as a no-op (adoptAuthoritativeGrid
+	// does not republish a grid the deck already holds), but a stale error
+	// must not survive that skip - the whole point is that a fresh answer
+	// landed at all (Codex P2 BLOCKING, PR #1587, fourth round).
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	const beats = _beats(16, 124);
+	h.anlz[1] = _anlz('sid-a', beats);
+	h.anlzError[1] = 'ANALYSIS_SOURCE_FAILED';
+	h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(16, 124)));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlzError[1], null);
+});
+
+test('adoptAuthoritativeGrid reconciles the deck loop against the newly adopted grid', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	const authoritative = _anlz('sid-a', _beats(16, 124));
+	h.guards.adoptAuthoritativeGrid('sid-a', authoritative);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(
+		h.calls.reconcileDeckLoop,
+		[[1, h.anlz[1]]],
+		'the loop-derived state must be reconciled against the SAME published payload in the same transaction'
+	);
+});
+
+test('adoptAuthoritativeError also reconciles the deck loop against the newly blanked grid', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	h.guards.adoptAuthoritativeError('sid-a', 'ANALYSIS_SOURCE_FAILED');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(h.calls.reconcileDeckLoop, [[1, h.anlz[1]]]);
+});
+
 test('adoptAuthoritativeGrid ignores decks holding a different track', async () => {
 	const h = _harness();
 	h.stableIds[1] = 'sid-a';
@@ -400,6 +456,7 @@ test('adoptAuthoritativeGrid skips a deck that reloaded before the claim was gra
 		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
 		publishDeckBpm: (deck, next) => (h.bpm[deck] = next),
 		setDeckAnlzError: (deck, code) => (h.anlzError[deck] = code),
+		reconcileDeckLoop: () => {},
 		reportError: () => {}
 	});
 	// Reload the deck inside the gap between submission and the claim.
@@ -476,6 +533,7 @@ test('adoptAuthoritativeError skips a deck that reloaded before the claim was gr
 		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
 		publishDeckBpm: (deck, next) => (h.bpm[deck] = next),
 		setDeckAnlzError: (deck, code) => (h.anlzError[deck] = code),
+		reconcileDeckLoop: () => {},
 		reportError: () => {}
 	});
 	guards.installScopedSyncRunner(async (deck, task) => {
