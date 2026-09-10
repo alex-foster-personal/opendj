@@ -260,8 +260,9 @@ def test_resolve_beatgrid_source_takes_its_source_as_a_plain_argument_not_a_seco
 
 @pytest.mark.requirement("PARITY-02")
 def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestClient) -> None:
-    """[if] the rekordbox lane is selected [then] the served beatgrid is left
-    untouched, [else stop]."""
+    """
+    [if] rekordbox is selected [then] the served beatgrid is left untouched, [else stop].
+    """
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -277,9 +278,9 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
 def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and a real analysis record exists [then]
-    the beatgrid swaps to that record's grid in exact ANLZ shape, [else
-    stop]."""
+    """
+    [if] the own lane has a real record [then] its beatgrid fills in exact ANLZ shape, [else stop].
+    """
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
@@ -302,8 +303,9 @@ def test_own_source_swaps_in_the_analysis_grid_in_exact_anlz_shape(
 def test_own_source_serves_the_same_record_the_projection_derives_bpm_from(
     anlz_state_db: Path, anlz_client: TestClient,
 ) -> None:
-    """[if] /anlz's own grid and analysis_projection's bpm come from
-    different records [then] fail, [else stop]."""
+    """
+    [if] the own grid and projection's bpm come from different records [then] fail, [else stop].
+    """
     _set_source(anlz_client, "own")
     grid = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz").json()["beatgrid"]
     conn = sqlite3.connect(anlz_state_db)
@@ -328,8 +330,9 @@ def test_own_source_serves_the_same_record_the_projection_derives_bpm_from(
 def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbox(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and no analysis record exists [then] the
-    beatgrid goes explicitly empty with a named reason, [else stop]."""
+    """
+    [if] own has no analysis record [then] the beatgrid goes empty with a named reason, [else stop].
+    """
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_UNANALYZED}/anlz")
     assert r.status_code == 200, r.text
@@ -343,8 +346,9 @@ def test_own_source_with_no_analysis_record_goes_explicitly_empty_never_rekordbo
 def test_own_source_with_a_failed_beatgrid_lane_names_that_lanes_reason(
     anlz_client: TestClient,
 ) -> None:
-    """[if] the own lane is selected and its beatgrid lane failed [then] the
-    beatgrid goes empty carrying that lane's own reason, [else stop]."""
+    """
+    [if] the own beatgrid lane failed [then] the grid empties with that lane's reason, [else stop].
+    """
     _set_source(anlz_client, "own")
     r = anlz_client.get(f"/api/v1/tracks/{SID_OWN_LANE_FAILED}/anlz")
     assert r.status_code == 200, r.text
