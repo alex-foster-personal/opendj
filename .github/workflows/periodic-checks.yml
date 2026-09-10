@@ -691,11 +691,27 @@ jobs:
           # last run that actually FINISHED within the floor, so a run is
           # only ever reported once it has a real conclusion to show, and
           # nothing in flight gets silently abandoned.
+          #
+          # `--limit 10`, not `1` (r3974912528): `--status completed` alone
+          # still lets a FAILURE go unreported if two nightly runs complete
+          # between two windows -- night N is still running at this window's
+          # start (so `--status completed --limit 1` returns night N-1's
+          # PASS instead), night N then FAILS, and by the time the NEXT
+          # window runs, night N+1 has ALSO completed, so `--limit 1` returns
+          # N+1 and N's failure is never seen by any window. Fetching every
+          # completed run within the 48h floor (at most a handful at one
+          # scheduled run a night) and preferring the newest FAILURE over the
+          # newest PASS means a failure inside the floor is always surfaced,
+          # even if a later run already passed again.
           if e2e_line="$(gh run list --repo "$REPO" --workflow e2e.yml \
-                           --event schedule --status completed --limit 1 \
+                           --event schedule --status completed --limit 10 \
                            --created ">=$(date -u -d '2 days ago' +%FT%TZ)" \
                            --json conclusion,createdAt,url \
-                           --jq '.[] | "\(.conclusion) (\(.createdAt)) \(.url)"' \
+                           --jq 'def fails: map(select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"));
+                                 if length == 0 then empty else
+                                   ((fails | sort_by(.createdAt) | last) // (sort_by(.createdAt) | last))
+                                   | "\(.conclusion) (\(.createdAt)) \(.url)"
+                                 end' \
                          2>e2e.err)"; then
             [ -n "$e2e_line" ] || e2e_line="NO COMPLETED SCHEDULED RUNS FOUND (or none within the last 2 days)"
           else

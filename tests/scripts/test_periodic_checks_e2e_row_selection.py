@@ -92,6 +92,20 @@ def test_the_query_restricts_to_completed_runs(tmp_path: Path) -> None:
     assert "--status completed" in argv, argv
 
 
+def test_the_query_fetches_more_than_the_single_newest_run(tmp_path: Path) -> None:
+    """r3974912528: the stub `gh` does not re-implement GitHub's own
+    `--limit` filtering (see module docstring), so the newest-failure-wins
+    behavior alone cannot catch a regression back to `--limit 1` -- a
+    payload-based test would still pass no matter which value is on the
+    command line, since the stub returns whatever payload the test hands it
+    regardless of `--limit`. Asserting the argv directly is what actually
+    guards it: `--limit 1` can only ever see ONE completed run per window,
+    so an older failure sitting behind a newer pass would never even be
+    fetched, let alone compared."""
+    _, argv = _run_with_stub_gh(tmp_path, json_payload=[])
+    assert "--limit 10" in argv, argv
+
+
 def test_a_completed_runs_conclusion_is_reported_verbatim(tmp_path: Path) -> None:
     """The ordinary case: GitHub's own `--status completed` filtering has
     already dropped a still-running newer run, leaving the last COMPLETED
@@ -108,6 +122,55 @@ def test_a_completed_runs_conclusion_is_reported_verbatim(tmp_path: Path) -> Non
         ],
     )
     assert e2e_line == "failure (2026-09-08T04:17:00Z) https://example/runs/1"
+
+
+def test_an_older_failure_is_not_masked_by_a_newer_pass(tmp_path: Path) -> None:
+    """r3974912528: two nightly runs can both complete between two windows
+    (night N was still running at the previous window's start, so it was
+    skipped; night N+1 finishes before the next window runs). A newest-only
+    selection would report N+1's PASS and never surface N's FAILURE. The
+    newest FAILURE within the floor must win over a newer PASS, or a real
+    failure silently ages out of the ledger the moment anything later
+    passes."""
+    e2e_line, _ = _run_with_stub_gh(
+        tmp_path,
+        json_payload=[
+            {
+                "conclusion": "failure",
+                "createdAt": "2026-09-08T04:17:00Z",
+                "url": "https://example/runs/1",
+            },
+            {
+                "conclusion": "success",
+                "createdAt": "2026-09-09T04:17:00Z",
+                "url": "https://example/runs/2",
+            },
+        ],
+    )
+    assert e2e_line == "failure (2026-09-08T04:17:00Z) https://example/runs/1"
+
+
+def test_multiple_passes_report_the_newest_one(tmp_path: Path) -> None:
+    """OPPOSITE DIRECTION: with no failure anywhere in the floor, the row
+    must still report the MOST RECENT completed run, not the oldest --
+    preferring a failure over a later pass must not accidentally flip the
+    ordering when every run passed."""
+    e2e_line, _ = _run_with_stub_gh(
+        tmp_path,
+        json_payload=[
+            {
+                "conclusion": "success",
+                "createdAt": "2026-09-08T04:17:00Z",
+                "url": "https://example/runs/1",
+            },
+            {
+                "conclusion": "success",
+                "createdAt": "2026-09-09T04:17:00Z",
+                "url": "https://example/runs/2",
+            },
+        ],
+    )
+    assert e2e_line == "success (2026-09-09T04:17:00Z) https://example/runs/2"
 
 
 def test_no_completed_runs_is_reported_as_such_not_as_a_pass(tmp_path: Path) -> None:

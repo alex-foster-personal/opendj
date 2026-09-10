@@ -253,10 +253,23 @@ def _mark_superseded_commits(
     cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]
 ) -> None:
     """Flag a preview-only commit as ``superseded`` when its net effect is
-    already gone from the served tree -- an explicit revert, or any later
-    edit that happens to land back where it started. Scoped to exactly the
-    paths that commit changed: if the preview's CURRENT tree already matches
-    what came right before that commit at those paths, nothing of it remains.
+    already gone from the served tree: the preview's CURRENT content, at
+    exactly the paths this commit touched, no longer matches what the
+    commit ITSELF produced -- whether that is an explicit revert back to the
+    pre-commit state, or a later, unrelated edit overwriting those paths
+    with something else entirely (r3974912531).
+
+    Comparing against the commit's own PRE-state only catches the first
+    shape: a fresh overwrite to some THIRD value -- neither the commit's own
+    content nor its pre-state -- left the old commit permanently "not
+    reverted" and aging into DRIFT even though none of ITS content survives
+    either. The served state at those paths belongs to whichever commit
+    most recently produced it, exactly the responsibility rule
+    ``_newest_touch_age_hours`` already applies for the combined-state
+    checks; comparing against the commit's own POST-state (does the preview
+    still show what I introduced?) generalizes cleanly to both shapes,
+    because "reverted to my pre-state" is just one way of no longer matching
+    my post-state.
 
     An EMPTY diff (an ``--allow-empty`` commit, or any commit whose net
     effect is a no-op) is the degenerate case of "nothing of it remains": it
@@ -267,7 +280,7 @@ def _mark_superseded_commits(
     """
     for commit in commits:
         paths = _touched_paths(cwd, commit.sha)
-        if not paths or _trees_identical(cwd, f"{commit.sha}~1", preview_ref, *paths):
+        if not paths or not _trees_identical(cwd, commit.sha, preview_ref, *paths):
             commit.superseded = True
 
 
