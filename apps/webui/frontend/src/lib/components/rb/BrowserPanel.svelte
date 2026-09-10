@@ -1263,6 +1263,20 @@
 				);
 			}
 		}
+		// A boot health read that joined an in-flight coalesced entry can settle
+		// with a snapshot from BEFORE a change this same trigger exists to react
+		// to (request-coalescer.ts's `forceInFlight: false` on the
+		// 'initial-connect' resync deliberately leaves such an entry untouched -
+		// see its docstring). _restoreBootPane() then saw a falsely-empty
+		// library and left panes[0] unclaimed on purpose, and nothing above this
+		// point ever retries it (blank panes are explicitly skipped). The fresh
+		// count just read above may have corrected that, so retry now rather
+		// than stranding the pane blank until a manual reload - the same
+		// reasoning `_getHealthAtBoot`'s own retry already applies to a failed
+		// (rather than merely stale) boot read.
+		if (panes[0].playlist_id === null && !(source === 'spotify' && spotifySelectedId !== null)) {
+			await _restoreBootPane();
+		}
 	}
 
 	/**
