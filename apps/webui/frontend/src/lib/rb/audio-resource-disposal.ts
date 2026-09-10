@@ -66,3 +66,14 @@ export async function disposeAudioResources(
 	if (failures.length === 1) throw failures[0];
 	if (failures.length > 1) throw new AggregateError(failures, 'multiple audio teardown operations failed');
 }
+
+/** Detaches an owner's worklet/processor node for disposal without leaving it
+ * reachable afterward. Lives here (not audio-engine.svelte.ts, file-size
+ * ratchet) alongside the `AudioDisconnectable` shape it shares. */
+export function detachProcessorForDisposal<T extends AudioDisconnectable>(owner: {
+	processor: T | null;
+}): T | null {
+	const processor = owner.processor;
+	owner.processor = null;
+	return processor;
+}

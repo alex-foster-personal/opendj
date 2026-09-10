@@ -546,6 +546,18 @@
             },
             "title": "Lanes",
             "type": "object"
+          },
+          "previous_toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.",
+            "title": "Previous Toggle"
           }
         },
         "required": [
@@ -568,6 +580,30 @@
             ],
             "description": "rbx or own. Persisted; survives a relaunch.",
             "title": "Default"
+          },
+          "expected_toggle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.",
+            "title": "Expected Toggle"
+          },
+          "expected_toggle_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.",
+            "title": "Expected Toggle Revision"
           },
           "lane": {
             "description": "beatgrid, key, waveform, loudness or vocal",
@@ -4704,11 +4740,17 @@
             "description": "In-memory dev toggle: unset, rbx or own. Launches unset.",
             "title": "Toggle",
             "type": "string"
+          },
+          "toggle_revision": {
+            "description": "Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.",
+            "title": "Toggle Revision",
+            "type": "integer"
           }
         },
         "required": [
           "default",
           "toggle",
+          "toggle_revision",
           "effective"
         ],
         "title": "LaneSourceOut",
@@ -19544,7 +19586,7 @@
     },
     "/api/v1/tracks/{stable_id}/beatgrid-fallback": {
       "get": {
-        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.",
+        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.\n\nA caller naming ``backend=`` gets exactly what it named. The default\nnewest-row lookup instead defers to native-analysis v1 first: when v1\nhas already settled a beatgrid determination for this track (a\ncanonical own pointer exists, whatever it resolved to), this endpoint\npreserves that gridless/failed state rather than silently substituting\na superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).",
         "operationId": "get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get",
         "parameters": [
           {

@@ -151,9 +151,10 @@ const originalFetch = globalThis.fetch;
 before(async () => {
 	source = readFrontendSource(ENGINE);
 	guardsSource = readFrontendSource(GUARDS);
-	upgrade = await loadTypeScriptModule('src/lib/player/beatgrid-upgrade.ts', {
-		viteApiBase: API_BASE
-	});
+	upgrade = await loadTypeScriptModule(
+		'tests/unit/fixtures/beatgrid-upgrade-analysis-source-entry.ts',
+		{ viteApiBase: API_BASE }
+	);
 	// Separate bundle: shares one `toasts` array with the upgrade module it
 	// re-exports (see the fixture's own docstring), so pushToast calls made
 	// from inside upgradeDeckBeatgrid are readable here. The other tests above
@@ -171,6 +172,13 @@ function emptyAnlz() {
 		points: 38400,
 		waveform: { kind: 'mono', preview: { ...bands }, detail: { ...bands } },
 		beatgrid: { beat_count: 0, beats: [] },
+		// The real backend stamps this on EVERY /anlz response, unconditionally
+		// (rb_assets.py `_resolve_beatgrid_source`, called on every branch of
+		// `get_track_anlz`) - reading the live toggle at call time, same as the
+		// production route reads it at request time, keeps this fixture honest
+		// for the pre-publish source-revalidation check in beatgrid-upgrade.ts
+		// (discussion_r3976638762 P1 BLOCKING).
+		beatgrid_source: upgrade.analysisSourceState.features.beatgrid,
 		cues: [],
 		phrases: [],
 		vocals: { status: 'not_analyzed' }
@@ -261,6 +269,68 @@ function stubDaemon({
 
 beforeEach(() => {
 	globalThis.fetch = originalFetch;
+	// PARITY-02: shouldUseBeatgridFallback now additionally requires the
+	// effective 'beatgrid' selection to read 'own' (discussion_r3972682719 P1
+	// BLOCKING) - default every test to that baseline so the existing
+	// fallback-lands assertions below keep exercising what they always did;
+	// the PARITY-02 gating tests further down set this to 'rekordbox' or
+	// delete it themselves.
+	upgrade.analysisSourceState.features.beatgrid = 'own';
+	toastHarness.analysisSourceState.features.beatgrid = 'own';
+});
+
+// ----- behaviour: PARITY-02 gates the fallback on the effective source -----
+//
+// MUTATION CHECK (re-measure at your SHA, do not trust this comment's count):
+//   - the effectiveSource check dropped from shouldUseBeatgridFallback -> the
+//     first test below fails
+//   - the pre-publish live re-check dropped from beatgrid-upgrade.ts        -> the
+//     second test below fails
+// Each isolates to exactly the guard written for it.
+
+test('PARITY-02: rekordbox explicitly selected never substitutes an own-derived grid (discussion_r3972682719 P1 BLOCKING)', async () => {
+	upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+	const paths = stubDaemon({ vendor: 'local' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
+
+	assert.deepEqual(
+		st.anlz.beatgrid.beats,
+		[],
+		'no own-derived grid lands while the toggle and IPC report rekordbox'
+	);
+	assert.deepEqual(
+		paths.map((p) => p.split('/').pop()),
+		['rb-meta'],
+		'the fallback grid is never even fetched once rekordbox is confirmed selected'
+	);
+});
+
+test('PARITY-02: a switch back to rekordbox mid-fetch is honored, not overwritten by the already-in-flight own-derived grid (discussion_r3972682719 P1 BLOCKING)', async () => {
+	upgrade.analysisSourceState.features.beatgrid = 'own';
+	stubDaemon({ vendor: 'local' });
+	// Flip the toggle the instant the deferred /beatgrid-fallback request
+	// actually goes out - simulating a DJ clicking back to rekordbox while
+	// this request is in flight, which the fetchRbMeta-time gate check alone
+	// cannot see.
+	const inFlightFetch = globalThis.fetch;
+	globalThis.fetch = async (input) => {
+		const path = new URL(typeof input === 'string' ? input : input.url, API_BASE).pathname;
+		if (path.endsWith('/beatgrid-fallback')) {
+			upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+		}
+		return inFlightFetch(input);
+	};
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
+
+	assert.deepEqual(
+		st.anlz.beatgrid.beats,
+		[],
+		'the switch back to rekordbox must win even though the own-derived fetch already resolved'
+	);
 });
 
 // ----- behaviour: the grid actually lands on the deck ------------------------
@@ -450,6 +520,32 @@ test('publish revalidates staleness at the moment it actually runs, not when onS
 	});
 
 	assert.equal(st.anlz, newTrackAnlz, "the old track's fallback grid must never overwrite the new track that already won the race");
+});
+
+test('publish revalidates the effective source at the moment it actually runs, not when settle() was first called (discussion_r3973991956 P1 BLOCKING)', async () => {
+	// Same deferred-publish window as the staleness test above, but the race
+	// is a source switch rather than a replacement load: the live check just
+	// before settle(true, publish) confirms 'own', but publish() itself is
+	// queued behind onSettled's scoped command slot and can run only after a
+	// switch back to rekordbox has already happened underneath it. Neither
+	// isStale() (tracks loadToken, unaffected by a source switch) nor the
+	// earlier live check (already evaluated) can catch this - only a re-check
+	// inside the deferred thunk itself can.
+	stubDaemon({ vendor: 'local' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false, (deck, landed, publish) => {
+		// Simulate a switch to rekordbox winning the race while this deferred
+		// publish sat queued behind the scoped command slot.
+		upgrade.analysisSourceState.features.beatgrid = 'rekordbox';
+		publish();
+	});
+
+	assert.deepEqual(
+		st.anlz.beatgrid.beats,
+		[],
+		'the own-derived fallback grid must never land once the effective source switched to rekordbox, even if that switch happened after settle() was already called'
+	);
 });
 
 test("PR #765 'Merge the fallback grid into the latest ANLZ payload': a hot-cue refresh that lands during the queue wait keeps its cues", async () => {
@@ -743,19 +839,30 @@ test('the deferred resync reclaims scope through the scheduler before publishing
 			'an all-scope preset phase - see AGENTS.md on the scoped command ' +
 			'scheduler'
 	);
-	const runnerStart = body.indexOf('runScoped(');
-	const runnerBody = body.slice(runnerStart);
+	// publish()/reconcileAfterBeatgridSettled now live in a `run` helper shared
+	// by both the runScoped path and the alreadyScoped inline bypass
+	// (discussion_r3972154599 P1 BLOCKING: a fresh runScoped(deck, ...) here
+	// when the caller already holds [deck] plus the wide barrier deadlocks
+	// against that still-open outer claim), so their ordering is asserted
+	// against the whole function body rather than the runScoped(...) slice
+	// alone.
 	assert.ok(
-		runnerBody.indexOf('publish()') < runnerBody.indexOf('reconcileAfterBeatgridSettled('),
+		body.indexOf('publish()') < body.indexOf('reconcileAfterBeatgridSettled('),
 		'publish() must run BEFORE reconcileAfterBeatgridSettled, inside the ' +
 			'reclaimed scope - publishing before the scope claim lets other code ' +
 			'observe the grid as landed before reconciliation has run (PR #765 ' +
 			'follow-up P1)'
 	);
 	assert.ok(
-		runnerBody.includes('reconcileAfterBeatgridSettled(guardedPorts, deck, landed)'),
+		body.includes('reconcileAfterBeatgridSettled(guardedPorts, deck, landed)'),
 		'the resync hook never delegates to the pure, independently tested ' +
 			'reconcileAfterBeatgridSettled - see beatgrid-resync.ts'
+	);
+	assert.ok(
+		body.includes('if (alreadyScoped) return run();'),
+		'a caller that already holds [deck] plus the wide barrier must reconcile ' +
+			'inline, not through a fresh runScoped(deck, ...) claim that deadlocks ' +
+			'against its own still-open outer claim (discussion_r3972154599 P1 BLOCKING)'
 	);
 	assert.ok(
 		body.includes('guardedPorts: BeatgridResyncPorts = {') && body.includes('...ports'),
@@ -783,7 +890,7 @@ test('the deferred resync reclaims scope through the scheduler before publishing
 		);
 	}
 	assert.ok(
-		runnerBody.includes('isStale()') && runnerBody.indexOf('isStale()') < runnerBody.indexOf('publish()'),
+		body.includes('isStale()') && body.indexOf('isStale()') < body.indexOf('publish()'),
 		"the reclaimed scope must revalidate isStale() and skip BEFORE publish() runs - only the assignment was " +
 			'guarded by the earlier publish-token fix, so a stale landed/deck pair could still reach ' +
 			'reconcileAfterBeatgridSettled and phase-lock or permanently gridless-mark a replacement track ' +
@@ -806,9 +913,11 @@ test('the deferred resync call site threads the same load-token check into after
 
 test('the lazy beatgrid upgrade module resolves when a deck first uses it (issue #920)', async () => {
 	stubDaemon();
-	const lazyUpgrade = await loadTypeScriptModule('src/lib/player/beatgrid-lazy.ts', {
-		viteApiBase: API_BASE
-	});
+	const lazyUpgrade = await loadTypeScriptModule(
+		'tests/unit/fixtures/beatgrid-lazy-analysis-source-entry.ts',
+		{ viteApiBase: API_BASE }
+	);
+	lazyUpgrade.analysisSourceState.features.beatgrid = 'own';
 	const st = { anlz: { ...emptyAnlz(), beatgrid: { beat_count: 0, beats: [] } }, anlz_error: null };
 	await lazyUpgrade.upgradeDeckBeatgrid(1, SID, st, () => false);
 	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS, 'the first lazy call runs the unchanged upgrade API');
@@ -838,8 +947,10 @@ test('the injected resync ports wire the real engine sync primitives, not stand-
 });
 
 test('the mid-flight anlz_available refetch bypasses the HTTP cache instead of possibly replaying the empty response it may have cached', async () => {
-	// PR #765 send-back, r3912339484: the backend serves /anlz with
-	// Cache-Control: public, max-age=3600. The initial load already fetched
+	// PR #765 send-back, r3912339484: the backend served /anlz with
+	// Cache-Control: public, max-age=3600 (now `private, no-cache` plus an
+	// ETag, which is why this guard no longer rests on the header at all, only
+	// on the explicit bypass). The initial load already fetched
 	// this exact URL (with the empty local payload) minutes earlier; without
 	// forcing a network read here, a browser that happens to have that
 	// response cached would replay it, settling gridless despite the real

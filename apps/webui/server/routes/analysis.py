@@ -43,6 +43,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.analysis.auto_cues import propose_cues
+from apps.analysis.canonical import canonical_pointer
 from apps.analysis.record import AnalysisRecord
 from apps.shared.paths import STATE_DB
 
@@ -120,7 +121,7 @@ class BeatgridFallbackOut(BaseModel):
 # ----- helpers ----------------------------------------------------------------
 
 def _analysis_db_path(request: Request) -> Path:
-    override: Optional[Path] = getattr(request.app.state, "analysis_db_path", None)
+    override: Path | None = getattr(request.app.state, "analysis_db_path", None)
     return Path(override) if override is not None else STATE_DB
 
 
@@ -139,8 +140,8 @@ def _open_analysis_ro(path: Path) -> sqlite3.Connection:
 
 
 def _load_latest_record(
-    db_path: Path, stable_id: str, backend: Optional[str]
-) -> Optional[AnalysisRecord]:
+    db_path: Path, stable_id: str, backend: str | None
+) -> AnalysisRecord | None:
     """Newest analysis row for ``stable_id`` (deterministic tie-break).
 
     Returns None when the track has no analysis row (or the ``analysis``
@@ -184,6 +185,31 @@ def _load_latest_record(
     return AnalysisRecord.from_json(row[0])
 
 
+def _own_beatgrid_lane_settled(db_path: Path, stable_id: str) -> bool:
+    """Whether native-analysis v1 has already made ANY beatgrid determination
+    for this track, ok or failed.
+
+    ``recompute_canonical`` (apps/analysis/canonical.py) deletes the
+    ``analysis_canonical`` pointer only when no eligible own row exists at
+    all - a FAILED lane result is exactly as eligible as an OK one, so the
+    pointer's presence, not its outcome, is what proves v1 has already
+    answered this question. Serving `/beatgrid-fallback`'s legacy row past
+    that point would let a stale, superseded pre-v1 result override v1's
+    own answer, which is the same shadowing failure ``_load_latest_record``'s
+    own_* exclusion above was written to prevent, just from the other
+    direction (discussion_r3975326241 P1 BLOCKING).
+    """
+    conn = _open_analysis_ro(db_path)
+    try:
+        return canonical_pointer(conn, stable_id, "beatgrid") is not None
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return False
+        raise
+    finally:
+        conn.close()
+
+
 def _default_anlz_available(stable_id: str) -> bool:
     """Disk truth: does a rekordbox ANLZ .DAT exist for this track?
 
@@ -205,7 +231,7 @@ def _default_anlz_available(stable_id: str) -> bool:
 
 
 def _anlz_available(request: Request, stable_id: str) -> bool:
-    fn: Optional[Callable[[str], bool]] = getattr(
+    fn: Callable[[str], bool] | None = getattr(
         request.app.state, "anlz_available_fn", None
     )
     if fn is not None:
@@ -223,7 +249,7 @@ def _invalid_record(stable_id: str, message: str) -> HTTPException:
     )
 
 
-def synthesize_fallback_beats(record: AnalysisRecord) -> Optional[list[FallbackBeatOut]]:
+def synthesize_fallback_beats(record: AnalysisRecord) -> list[FallbackBeatOut] | None:
     """Derive an ANLZ-shaped beat list from measured analysis data.
 
     Anchored on ``downbeats_s`` (n=1 on every detected downbeat, beats
@@ -292,7 +318,7 @@ def synthesize_fallback_beats(record: AnalysisRecord) -> Optional[list[FallbackB
 def get_auto_cues(
     stable_id: str,
     request: Request,
-    backend: Optional[str] = Query(
+    backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
     _backend: StateBackend = Depends(get_read_state),
@@ -326,7 +352,7 @@ def get_auto_cues(
 def get_beatgrid_fallback(
     stable_id: str,
     request: Request,
-    backend: Optional[str] = Query(
+    backend: str | None = Query(
         None, description="Analysis backend to read (default: newest row)"
     ),
     _backend: StateBackend = Depends(get_read_state),
@@ -337,15 +363,26 @@ def get_beatgrid_fallback(
     ``anlz_available`` reporting whether the authoritative rekordbox grid
     also exists). 404 with an explicit code when no grid can be served -
     a beatgrid is never invented.
+
+    A caller naming ``backend=`` gets exactly what it named. The default
+    newest-row lookup instead defers to native-analysis v1 first: when v1
+    has already settled a beatgrid determination for this track (a
+    canonical own pointer exists, whatever it resolved to), this endpoint
+    preserves that gridless/failed state rather than silently substituting
+    a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
     """
     anlz_ok = _anlz_available(request, stable_id)
-    record = _load_latest_record(_analysis_db_path(request), stable_id, backend)
+    db_path = _analysis_db_path(request)
+    own_lane_settled = backend is None and _own_beatgrid_lane_settled(db_path, stable_id)
+    record = None if own_lane_settled else _load_latest_record(db_path, stable_id, backend)
     beats = synthesize_fallback_beats(record) if record is not None else None
     if record is None or beats is None:
-        reason = (
-            "no apps.analysis record" if record is None
-            else "analysis record has no usable downbeats"
-        )
+        if own_lane_settled:
+            reason = "own analysis already holds a beatgrid determination for this track"
+        elif record is None:
+            reason = "no apps.analysis record"
+        else:
+            reason = "analysis record has no usable downbeats"
         raise HTTPException(
             status_code=404,
             detail={

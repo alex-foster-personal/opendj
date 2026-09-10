@@ -173,6 +173,11 @@ _TOGGLE_LOCK = threading.Lock()
 # restored would be able to reapply an override a promotion superseded,
 # which is the exact failure PARITY-02's launch state exists to prevent.
 _TOGGLE: dict[str, ToggleState] = {lane: "unset" for lane in LANES}
+# Bumped by every write `write_toggle` makes, launch state 0. A VALUE can
+# repeat (own -> rbx -> own reads as "own" again); a revision never does, so
+# it is what tells "nothing changed since my write" apart from "the value
+# happens to match again" (discussion_r3974993963 P1 BLOCKING).
+_TOGGLE_REVISION: dict[str, int] = {lane: 0 for lane in LANES}
 
 
 def get_toggle(lane: str) -> ToggleState:
@@ -181,12 +186,96 @@ def get_toggle(lane: str) -> ToggleState:
         return _TOGGLE[lane]
 
 
-def set_toggle(lane: str, state: str) -> ToggleState:
+def get_toggle_revision(lane: str) -> int:
     _check_lane(lane)
-    check_toggle_state(state)
     with _TOGGLE_LOCK:
-        _TOGGLE[lane] = state  # type: ignore[assignment]
-    return state  # type: ignore[return-value]
+        return _TOGGLE_REVISION[lane]
+
+
+def all_toggle_revisions() -> dict[str, int]:
+    with _TOGGLE_LOCK:
+        return dict(_TOGGLE_REVISION)
+
+
+@dataclass(frozen=True)
+class ToggleWrite:
+    """One toggle mutation's result: the displaced value and the revision
+    the write landed at, both read under ONE lock acquisition so a caller
+    compensating this exact write later has the REVISION, not just the
+    value that can repeat after an own -> rbx -> own round trip
+    (discussion_r3974993963 P1 BLOCKING).
+    """
+
+    previous: ToggleState
+    revision: int
+
+
+def write_toggle(
+    lane: str,
+    new: str,
+    *,
+    expected: str | None = None,
+    expected_revision: int | None = None,
+) -> ToggleWrite | None:
+    """The one locked primitive `set_toggle` and `compare_and_set_toggle`
+    delegate to. Unconditional when `expected` is None; otherwise a
+    compare-and-set requiring the CURRENT value to equal `expected` and,
+    when `expected_revision` is also given, the CURRENT revision to equal
+    it too. `expected_revision` is ignored when `expected` is None.
+
+    Returns the `ToggleWrite` this call produced, or None when a condition
+    was given and failed - the toggle is left untouched in that case.
+    """
+    _check_lane(lane)
+    check_toggle_state(new)
+    if expected is not None:
+        check_toggle_state(expected)
+    with _TOGGLE_LOCK:
+        current = _TOGGLE[lane]
+        if expected is not None and current != expected:
+            return None
+        if (
+            expected is not None
+            and expected_revision is not None
+            and _TOGGLE_REVISION[lane] != expected_revision
+        ):
+            return None
+        _TOGGLE[lane] = new  # type: ignore[assignment]
+        _TOGGLE_REVISION[lane] += 1
+        return ToggleWrite(previous=current, revision=_TOGGLE_REVISION[lane])
+
+
+def set_toggle(lane: str, state: str) -> ToggleState:
+    """Set `lane`'s toggle unconditionally. Returns the value it DISPLACED,
+    read and written under the same lock acquisition so it is authoritative
+    even when a concurrent PUT landed since the caller's own last read
+    (discussion_r3974235454 P1 BLOCKING). Use `write_toggle` directly when
+    the resulting REVISION is also needed.
+    """
+    result = write_toggle(lane, state)
+    assert result is not None  # unconditional write never refuses
+    return result.previous
+
+
+def compare_and_set_toggle(
+    lane: str, expected: str, new: str, *, expected_revision: int | None = None
+) -> bool:
+    """Set `lane`'s toggle to `new` only if it currently holds `expected`,
+    reading and writing under one lock acquisition (inside `write_toggle`)
+    so a compensating rollback (analysis-source.svelte.ts
+    `_rollBackFailedSwitch`) can never clobber a concurrent agent's newer
+    write with a stale pre-switch value (discussion_r3973129053 P2
+    BLOCKING).
+
+    `expected_revision` closes the ABA gap a value-only compare-and-set
+    misses: `expected` -> something else -> `expected` round-trips back to
+    a value that matches again even though the world moved in between
+    (discussion_r3974993963 P1 BLOCKING). A caller holding the revision its
+    own prior `write_toggle` landed at can pass it here to require that
+    nothing wrote the toggle at all since. Returns whether the set happened.
+    """
+    result = write_toggle(lane, new, expected=expected, expected_revision=expected_revision)
+    return result is not None
 
 
 def all_toggles() -> dict[str, ToggleState]:
@@ -199,6 +288,7 @@ def reset_toggles() -> None:
     with _TOGGLE_LOCK:
         for lane in LANES:
             _TOGGLE[lane] = "unset"
+            _TOGGLE_REVISION[lane] = 0
 
 
 #-----------------------------------------------------------------------------
@@ -256,11 +346,13 @@ def source_state(conn: sqlite3.Connection) -> dict[str, Any]:
     """The whole selection surface, as the HTTP endpoint and CLI report it."""
     defaults = all_defaults(conn)
     toggles = all_toggles()
+    revisions = all_toggle_revisions()
     return {
         "lanes": {
             lane: {
                 "default": defaults[lane],
                 "toggle": toggles[lane],
+                "toggle_revision": revisions[lane],
                 "effective": toggles[lane] if toggles[lane] != "unset" else defaults[lane],
             }
             for lane in LANES
@@ -459,22 +551,27 @@ __all__ = [
     "SelectionError",
     "Source",
     "ToggleState",
+    "ToggleWrite",
     "all_defaults",
+    "all_toggle_revisions",
     "all_toggles",
     "check_lane",
     "check_source",
     "check_toggle_state",
+    "compare_and_set_toggle",
     "effective_fields",
     "effective_source",
     "ensure_tables",
     "field_column_sql",
     "get_default",
     "get_toggle",
+    "get_toggle_revision",
     "lane_for_field",
     "reset_toggles",
     "set_default",
     "set_toggle",
     "source_state",
+    "write_toggle",
 ]
 
 

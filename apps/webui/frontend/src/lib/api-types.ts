@@ -2818,6 +2818,13 @@ export interface paths {
          *     ``anlz_available`` reporting whether the authoritative rekordbox grid
          *     also exists). 404 with an explicit code when no grid can be served -
          *     a beatgrid is never invented.
+         *
+         *     A caller naming ``backend=`` gets exactly what it named. The default
+         *     newest-row lookup instead defers to native-analysis v1 first: when v1
+         *     has already settled a beatgrid determination for this track (a
+         *     canonical own pointer exists, whatever it resolved to), this endpoint
+         *     preserves that gridless/failed state rather than silently substituting
+         *     a superseded pre-v1 legacy row (discussion_r3975326241 P1 BLOCKING).
          */
         get: operations["get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get"];
         put?: never;
@@ -3333,6 +3340,11 @@ export interface components {
             lanes: {
                 [key: string]: components["schemas"]["LaneSourceOut"];
             };
+            /**
+             * Previous Toggle
+             * @description The toggle value this PUT's `toggle` just displaced for `lane`, read and overwritten under the same lock acquisition. Null for a GET, or a PUT that did not set `toggle`. A client's own prior GET/PUT response can be stale by the time it issues a later PUT (a concurrent agent's write can land in between), so a compensating rollback must restore THIS value, not one read earlier over a separate round trip.
+             */
+            previous_toggle?: string | null;
         };
         /**
          * AnalysisSourcePut
@@ -3344,6 +3356,16 @@ export interface components {
              * @description rbx or own. Persisted; survives a relaunch.
              */
             default?: string | null;
+            /**
+             * Expected Toggle
+             * @description Compare-and-set precondition for `toggle`: apply it only if the lane's CURRENT toggle equals this value, atomically. 409 on a mismatch. Ignored unless `toggle` is also given; a plain `toggle` with no `expected_toggle` sets unconditionally, exactly as before this field existed.
+             */
+            expected_toggle?: string | null;
+            /**
+             * Expected Toggle Revision
+             * @description Additional compare-and-set precondition on top of `expected_toggle`: apply it only if the lane's CURRENT `toggle_revision` also equals this value. Closes an ABA gap `expected_toggle` alone cannot: a value-only compare-and-set still succeeds after the toggle round-trips own -> rbx -> own, because the current value equals `expected_toggle` again even though a newer write happened in between (discussion_r3974993963 P1 BLOCKING). Ignored unless `expected_toggle` is also given.
+             */
+            expected_toggle_revision?: number | null;
             /**
              * Lane
              * @description beatgrid, key, waveform, loudness or vocal
@@ -4887,6 +4909,11 @@ export interface components {
              * @description In-memory dev toggle: unset, rbx or own. Launches unset.
              */
             toggle: string;
+            /**
+             * Toggle Revision
+             * @description Monotonic counter bumped by every toggle write for this lane, launches at 0. A VALUE can repeat (own -> rbx -> own reads as 'own' again); this never does, so a client that captures it after a write can pass it back as `expected_toggle_revision` to require that nothing has touched the toggle since, not merely that the value looks unchanged.
+             */
+            toggle_revision: number;
         };
         /**
          * LastImportOut

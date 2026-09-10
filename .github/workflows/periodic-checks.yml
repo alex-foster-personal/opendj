@@ -357,6 +357,7 @@ jobs:
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
       # corepack BEFORE setup-node, so a pnpm shim exists when setup-node's
@@ -484,6 +485,7 @@ jobs:
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
       - name: Enable pinned pnpm
