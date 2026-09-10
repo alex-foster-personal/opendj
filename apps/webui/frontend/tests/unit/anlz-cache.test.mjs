@@ -671,57 +671,9 @@ test('a decoded payload is terminal and never refetches', async () => {
 
 // ---------------------------------------- stale-source prefetch eviction
 
-test('evictAnlzCacheEntriesServingOtherSource evicts only entries whose beatgrid_source disagrees with the wanted one (discussion_r3973991969 P1 BLOCKING)', async () => {
-	// A source switch with no LOADED deck to disagree (analysis-source.svelte.ts's
-	// _decksDisagreeWith) never runs refreshAnalysisSourceDecks, so a track merely
-	// prefetched by library browsing keeps whatever beatgrid_source it was fetched
-	// under - the next deck that loads it must not get a cache HIT on those stale
-	// bytes just because nothing was loaded at switch time.
-	globalThis.fetch = async (input) => {
-		const url = input instanceof Request ? input.url : String(input);
-		const beatgrid_source = url.includes('own-track') ? 'own' : 'rekordbox';
-		return jsonResponse({ ...anlzPayload(null), beatgrid_source });
-	};
-	try {
-		cache.ensureAnlz('own-track');
-		cache.ensureAnlz('rbx-track');
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		assert.equal(cache.getAnlzEntry('own-track').status, 'ready');
-		assert.equal(cache.getAnlzEntry('rbx-track').status, 'ready');
-
-		const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
-
-		assert.equal(evicted, true, 'a disagreeing entry was cached, so eviction must report it happened');
-		assert.equal(
-			cache.getAnlzEntry('rbx-track'),
-			undefined,
-			'the pre-switch rekordbox entry must be evicted so the next deck load actually refetches under own'
-		);
-		assert.equal(
-			cache.getAnlzEntry('own-track').status,
-			'ready',
-			'an entry that already agrees with the wanted source must be left alone'
-		);
-	} finally {
-		globalThis.fetch = originalFetch;
-	}
-});
-
-test('evictAnlzCacheEntriesServingOtherSource reports nothing evicted when every cached entry already agrees', async () => {
-	globalThis.fetch = async () => jsonResponse({ ...anlzPayload(null), beatgrid_source: 'own' });
-	try {
-		cache.ensureAnlz('already-own-track');
-		await new Promise((resolve) => setTimeout(resolve, 0));
-
-		const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
-
-		assert.equal(
-			evicted,
-			false,
-			'nothing disagreed, so the caller must not bump the fetch generation for no reason'
-		);
-		assert.equal(cache.getAnlzEntry('already-own-track').status, 'ready');
-	} finally {
-		globalThis.fetch = originalFetch;
-	}
-});
+// evictAnlzCacheEntriesServingOtherSource's regression tests moved to
+// analysis-source-deck-refresh.test.mjs (discussion_r3974993960 P1 BLOCKING):
+// a fabricated globalThis.fetch response here let the assertions pass without
+// exercising the production request, source-selection, parser, or error
+// paths. They now run against that file's real fixture server, the same move
+// discussion_r3970117748 already made for invalidateAllAnlzCacheEntries.

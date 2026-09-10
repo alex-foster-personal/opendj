@@ -557,3 +557,56 @@ test('invalidateAllAnlzCacheEntries forces a REAL second request, not a fabricat
 	assert.match(secondPass[0], new RegExp(`/tracks/${SID_TRACK_A}/anlz\\?points=`));
 	assert.equal(cache.getAnlzEntry(SID_TRACK_A).status, 'ready');
 });
+
+test('evictAnlzCacheEntriesServingOtherSource evicts only entries whose beatgrid_source disagrees with the wanted one (discussion_r3973991969 P1 BLOCKING)', async () => {
+	// A source switch with no LOADED deck to disagree (analysis-source.svelte.ts's
+	// _decksDisagreeWith) never runs refreshAnalysisSourceDecks, so a track merely
+	// prefetched by library browsing keeps whatever beatgrid_source it was fetched
+	// under - the next deck that loads it must not get a cache HIT on those stale
+	// bytes just because nothing was loaded at switch time. Moved off a
+	// fabricated globalThis.fetch onto this file's real fixture server per
+	// discussion_r3974993960 (P1 BLOCKING): the old version could pass with the
+	// production /anlz route, beatgrid_source resolution, and parser all broken.
+	cache.invalidateAnlzCacheEntry(SID_TRACK_A);
+	cache.invalidateAnlzCacheEntry(SID_TRACK_B);
+	try {
+		await daemonSelect('own');
+		cache.ensureAnlz(SID_TRACK_A);
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready', 'the own-sourced fetch must land first');
+
+		await daemonSelect('rbx');
+		cache.ensureAnlz(SID_TRACK_B);
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		assert.equal(cache.getAnlzEntry(SID_TRACK_B)?.status, 'ready', 'the rbx-sourced fetch must land too');
+
+		const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
+
+		assert.equal(evicted, true, 'a disagreeing entry was cached, so eviction must report it happened');
+		assert.equal(
+			cache.getAnlzEntry(SID_TRACK_B),
+			undefined,
+			'the pre-switch rekordbox entry must be evicted so the next deck load actually refetches under own'
+		);
+		assert.equal(
+			cache.getAnlzEntry(SID_TRACK_A)?.status,
+			'ready',
+			'an entry that already agrees with the wanted source must be left alone'
+		);
+	} finally {
+		await daemonSelect('own');
+	}
+});
+
+test('evictAnlzCacheEntriesServingOtherSource reports nothing evicted when every cached entry already agrees (discussion_r3973991969 P1 BLOCKING)', async () => {
+	cache.invalidateAnlzCacheEntry(SID_TRACK_A);
+	await daemonSelect('own');
+	cache.ensureAnlz(SID_TRACK_A);
+	await new Promise((resolve) => setTimeout(resolve, 200));
+	assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
+
+	const evicted = cache.evictAnlzCacheEntriesServingOtherSource('own');
+
+	assert.equal(evicted, false, 'nothing disagreed, so the caller must not bump the fetch generation for no reason');
+	assert.equal(cache.getAnlzEntry(SID_TRACK_A)?.status, 'ready');
+});
