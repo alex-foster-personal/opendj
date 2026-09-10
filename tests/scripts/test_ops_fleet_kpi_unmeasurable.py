@@ -269,3 +269,40 @@ def test_a_fifo_named_like_a_log_does_not_hang_the_board(tmp_path):
         assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
     finally:
         fifo.unlink()
+
+
+def test_a_logs_path_that_is_not_a_directory_is_unmeasurable(tmp_path):
+    """[if] a non-directory logs path yields a verdict [then] fail, [else stop].
+
+    Sixth P1 on PR #1662. The guard only looked INSIDE logs/ when `-d` said it was a
+    directory. A logs path that exists as a regular file made `-d` false, the whole branch
+    was skipped, and a readable watchdog.log alone made the input set non-empty. The line
+    then reported PASS having omitted the entire logs source.
+
+    Same principle as every other case here, applied to one more path: a name that is ABSENT
+    contributes nothing and that is fine, a name that EXISTS but is not usable is
+    unmeasurable. Six findings on this PR were six paths where that was not yet true.
+    """
+    fixture = _copy_fixture(tmp_path)
+    shutil.rmtree(fixture / "jobs" / "logs")
+    (fixture / "jobs" / "logs").write_text("not a directory\n")
+    (fixture / "jobs" / "watchdog.log").write_text("readable and quiet\n")
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+    assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
+
+
+def test_an_absent_logs_directory_with_a_clean_watchdog_still_passes(tmp_path):
+    """[if] an absent logs directory stops the line passing [then] fail, [else stop].
+
+    The control for the case above, and the one that keeps the rule honest. ABSENT and
+    MALFORMED must not collapse into the same answer: a guard that refused whenever logs/
+    was not a readable directory would satisfy that test perfectly, and would also report
+    UNMEASURABLE on a fleet that simply has not written a log yet.
+    """
+    fixture = _copy_fixture(tmp_path)
+    shutil.rmtree(fixture / "jobs" / "logs")
+    (fixture / "jobs" / "watchdog.log").write_text("readable and quiet\n")
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+    assert verdicts[_fatal_label(0)] == "PASS"
