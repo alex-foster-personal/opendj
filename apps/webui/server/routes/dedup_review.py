@@ -1,53 +1,63 @@
 """Duplicate-cluster review routes with identity-bound, CAS-guarded decisions.
 
 ``GET /dedup/clusters`` exposes the derived duplicate clusters and the exact
-decision-store revision. ``POST /dedup/clusters/{cluster_id}/decision`` only
-records a pending decision. It never invokes ``apps.dedup.apply``, rewrites a
-playlist, changes the duplicate database, or deletes an audio file.
+decision-store revision. ``POST /dedup/clusters/{cluster_id}/decision`` records
+a pending decision. ``POST .../apply`` rewrites OpenDJ playlist memberships
+via PlaylistStore; ``POST .../undo`` restores the journaled ``before`` lists.
+These routes never invoke ``apps.dedup.apply``, write Rekordbox ``master.db``,
+or delete an audio file.
 
 The numeric SQLite cluster id is display-only. Decisions are keyed by a stable
-SHA-256 digest of the cluster member stable ids, so rebuilding the derived
-tables cannot attach an old decision to unrelated tracks that reused an id.
-Every write requires ``If-Match`` and is a locked read-modify-replace cycle.
+SHA-256 digest of the cluster member stable ids. Every write requires
+``If-Match`` and is a locked read-modify-replace cycle.
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import sqlite3
-import tempfile
-import threading
-from contextlib import contextmanager
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Iterator, Literal, Optional
-
-from apps.shared import fs_residency
-
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict
 
-from apps.dedup.find_clusters import (
-    DEFAULT_DURATION_DELTA_S,
-    DEFAULT_MAX_CLUSTER,
-)
 from apps.shared import paths as dedup_paths
 from apps.shared.events import publish
 
 from ..backend import StateBackend
+from ..dedup_decisions import (
+    DECISIONS_FILE,
+    DecisionRevisionConflict,
+    InvalidDecisionStoreError,
+    PersistedDecision,
+    commit_decision_store,
+    decision_file_lock,
+)
+from ..dedup_review_ops import (
+    cluster_key,
+    cluster_member_ids,
+    cluster_needs_manual_review,
+    conflict,
+    decision_store_error,
+    dedup_db_path,
+    drop_apply_journal,
+    hydrate_member,
+    load_cluster_for_write,
+    now_iso,
+    persist_apply_journal,
+    playlist_name,
+    prepare_merge_apply,
+    prepare_merge_undo,
+    read_raw_clusters,
+    read_store_or_http,
+    reject_duplicate_cluster_keys,
+    require_identity,
+)
 from ..deps import get_read_state, get_write_state
+from ..playlist_store import PlaylistStore
+from .playlist_write import get_playlist_store
 
 router = APIRouter(prefix="/dedup", tags=["dedup-review"])
 
-DECISIONS_FILE: Path = dedup_paths.DEDUP_DIR / "review-decisions.json"
-_WRITE_LOCK = threading.Lock()
-_DECISION_SCHEMA_VERSION = 1
+# Re-export so existing tests can monkeypatch this name or the decisions module.
+_decision_file_lock = decision_file_lock
 
 ActionLiteral = Literal["merge", "keep-all", "skip"]
 
@@ -78,20 +88,17 @@ _IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
 }
 
 
-# ----- API and persisted models ----------------------------------------------
-
-
 class MemberOut(BaseModel):
     stable_id: str
     path: str
     is_canonical: bool
-    similarity: Optional[float]
-    title: Optional[str]
-    artist: Optional[str]
-    bpm: Optional[float]
-    key: Optional[str]
-    duration_ms: Optional[int]
-    rating: Optional[int]
+    similarity: float | None
+    title: str | None
+    artist: str | None
+    bpm: float | None
+    key: str | None
+    duration_ms: int | None
+    rating: int | None
     file_exists: bool
 
 
@@ -100,22 +107,23 @@ class DecisionOut(BaseModel):
     survivor: str
     action: ActionLiteral
     decided_at: str
+    pending_apply: bool
 
 
 class ClusterOut(BaseModel):
     cluster_id: int
     cluster_key: str
     survivor_stable_id: str
-    rationale: Optional[str]
+    rationale: str | None
     flagged_manual_review: bool
     members: list[MemberOut]
-    decision: Optional[DecisionOut] = None
+    decision: DecisionOut | None = None
 
 
 class ClustersOut(BaseModel):
     clusters: list[ClusterOut]
     revision: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class DecisionIn(BaseModel):
@@ -123,6 +131,12 @@ class DecisionIn(BaseModel):
     cluster_key: str
     survivor: str
     action: ActionLiteral
+
+
+class ApplyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    cluster_key: str
+    survivor: str
 
 
 class DecisionRecordOut(BaseModel):
@@ -135,341 +149,55 @@ class DecisionRecordOut(BaseModel):
     pending_apply: bool = True
 
 
-class PersistedDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class PlaylistRewriteOut(BaseModel):
+    playlist_id: str
+    name: str
+    before: list[str]
+    after: list[str]
+
+
+class ApplyRecordOut(BaseModel):
     cluster_id: int
     cluster_key: str
-    member_stable_ids: list[str]
     survivor: str
-    action: ActionLiteral
+    action: Literal["merge"]
     decided_at: str
+    revision: str
+    pending_apply: bool
+    playlists: list[PlaylistRewriteOut]
 
 
-class DecisionStore(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    schema_version: Literal[1]
-    decisions: dict[str, PersistedDecision]
-
-
-# ----- persistence ------------------------------------------------------------
-
-
-def _http_error(code: int, error: str, message: str) -> HTTPException:
-    return HTTPException(code, detail={"error": error, "message": message})
-
-
-def _decision_store_error(message: str) -> HTTPException:
-    return _http_error(
-        status.HTTP_500_INTERNAL_SERVER_ERROR,
-        "invalid_decision_store",
-        message,
-    )
-
-
-def _empty_decision_store() -> DecisionStore:
-    return DecisionStore(
-        schema_version=_DECISION_SCHEMA_VERSION,
-        decisions={},
-    )
-
-
-def _encode_decision_store(store: DecisionStore) -> bytes:
-    payload = json.dumps(
-        store.model_dump(mode="json"),
-        indent=2,
-        sort_keys=True,
-    )
-    return f"{payload}\n".encode("utf-8")
-
-
-def _decision_revision(payload: bytes) -> str:
-    return f'"{hashlib.sha256(payload).hexdigest()}"'
-
-
-def _validate_decision_store(store: DecisionStore) -> None:
-    for cluster_key, decision in store.decisions.items():
-        expected_members = sorted(set(decision.member_stable_ids))
-        if cluster_key != decision.cluster_key:
-            raise _decision_store_error(
-                f"decision key {cluster_key!r} does not match its cluster_key"
-            )
-        if not expected_members or expected_members != decision.member_stable_ids:
-            raise _decision_store_error(
-                f"decision {cluster_key!r} has empty, duplicate, or unsorted members"
-            )
-        if decision.survivor not in expected_members:
-            raise _decision_store_error(
-                f"decision {cluster_key!r} names a survivor outside its members"
-            )
-
-
-def _read_decision_snapshot() -> tuple[DecisionStore, str]:
-    if not DECISIONS_FILE.is_file():
-        store = _empty_decision_store()
-        payload = _encode_decision_store(store)
-        return store, _decision_revision(payload)
-    try:
-        payload = DECISIONS_FILE.read_bytes()
-    except OSError as exc:
-        raise _decision_store_error(
-            f"cannot read {DECISIONS_FILE}: {exc}"
-        ) from exc
-    try:
-        store = DecisionStore.model_validate_json(payload)
-    except (ValidationError, ValueError) as exc:
-        raise _decision_store_error(
-            f"{DECISIONS_FILE} is not a valid versioned decision store: {exc}"
-        ) from exc
-    _validate_decision_store(store)
-    return store, _decision_revision(payload)
-
-
-def _dump_decision_store_atomic(store: DecisionStore) -> str:
-    payload = _encode_decision_store(store)
-    DECISIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    file_descriptor, temp_path = tempfile.mkstemp(
-        dir=str(DECISIONS_FILE.parent),
-        prefix=".review-decisions.",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(file_descriptor, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, DECISIONS_FILE)
-        if os.name != "nt":
-            directory_descriptor = os.open(DECISIONS_FILE.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
-    except BaseException:
-        Path(temp_path).unlink(missing_ok=True)
-        raise
-    return _decision_revision(payload)
-
-
-@contextmanager
-def _decision_file_lock() -> Iterator[None]:
-    """Serialize the complete read-check-write cycle across processes."""
-    with _WRITE_LOCK:
-        DECISIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        lock_path = DECISIONS_FILE.with_name(f"{DECISIONS_FILE.name}.lock")
-        with lock_path.open("a+b") as lock_handle:
-            if os.name == "nt":
-                lock_handle.seek(0, os.SEEK_END)
-                if lock_handle.tell() == 0:
-                    lock_handle.write(b"\0")
-                    lock_handle.flush()
-                    os.fsync(lock_handle.fileno())
-                lock_handle.seek(0)
-                msvcrt.locking(lock_handle.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                if os.name == "nt":
-                    lock_handle.seek(0)
-                    msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-
-
-def _conflict(current_revision: str, message: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail={
-            "error": "conflict",
-            "message": message,
-            "revision": current_revision,
-        },
-        headers={"ETag": current_revision},
-    )
-
-
-def _persist_decision(
-    record: PersistedDecision,
-    expected_revision: str,
-) -> str:
-    with _decision_file_lock():
-        store, current_revision = _read_decision_snapshot()
-        if expected_revision != current_revision:
-            raise _conflict(
-                current_revision,
-                "If-Match does not match the current decision-store ETag",
-            )
-        decisions = dict(store.decisions)
-        decisions[record.cluster_key] = record
-        return _dump_decision_store_atomic(
-            DecisionStore(
-                schema_version=_DECISION_SCHEMA_VERSION,
-                decisions=decisions,
-            )
-        )
-
-
-# ----- cluster database and hydration ----------------------------------------
-
-
-def _dedup_db_path() -> Path:
-    return dedup_paths.DEDUP_FALLBACK_DB
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-def _read_raw_clusters(db_path: Path) -> Optional[list[dict[str, Any]]]:
-    """Return None when fingerprinting exists but clustering has not run."""
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
-    try:
-        table_names = {
-            str(row[0])
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
-        if not {"duplicate_clusters", "track_aliases"} <= table_names:
-            return None
-        cluster_columns = {
-            str(row[1])
-            for row in connection.execute("PRAGMA table_info(duplicate_clusters)")
-        }
-        flag_expression = (
-            "flagged_manual_review"
-            if "flagged_manual_review" in cluster_columns
-            else "0 AS flagged_manual_review"
-        )
-        canonical_duration_expression = (
-            "(SELECT duration FROM fingerprints "
-            "WHERE path = duplicate_clusters.canonical_path) AS canonical_duration"
-            if "fingerprints" in table_names
-            else "NULL AS canonical_duration"
-        )
-        cluster_rows = connection.execute(
-            "SELECT cluster_id, canonical_stable_id, canonical_path, rationale, "
-            f"{flag_expression}, {canonical_duration_expression} "
-            "FROM duplicate_clusters ORDER BY cluster_id"
-        ).fetchall()
-        clusters: list[dict[str, Any]] = []
-        for cluster_row in cluster_rows:
-            alias_duration_expression = (
-                "(SELECT duration FROM fingerprints "
-                "WHERE path = track_aliases.alias_path) AS alias_duration"
-                if "fingerprints" in table_names
-                else "NULL AS alias_duration"
-            )
-            alias_rows = connection.execute(
-                "SELECT alias_stable_id, alias_path, similarity, "
-                f"{alias_duration_expression} "
-                "FROM track_aliases WHERE cluster_id = ? ORDER BY alias_path",
-                (cluster_row["cluster_id"],),
-            ).fetchall()
-            cluster = dict(cluster_row)
-            cluster["aliases"] = [dict(alias) for alias in alias_rows]
-            clusters.append(cluster)
-        return clusters
-    finally:
-        connection.close()
-
-
-def _cluster_member_ids(cluster: dict[str, Any]) -> list[str]:
-    member_ids = [cluster["canonical_stable_id"]]
-    member_ids.extend(alias["alias_stable_id"] for alias in cluster["aliases"])
-    if any(not isinstance(member_id, str) or not member_id for member_id in member_ids):
-        raise _http_error(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "invalid_cluster_identity",
-            f"cluster {cluster['cluster_id']} has a missing stable id",
-        )
-    unique_ids = sorted(set(member_ids))
-    if len(unique_ids) != len(member_ids):
-        raise _http_error(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "invalid_cluster_identity",
-            f"cluster {cluster['cluster_id']} has duplicate stable ids",
-        )
-    return unique_ids
-
-
-def _cluster_key(member_stable_ids: list[str]) -> str:
-    canonical_members = json.dumps(
-        member_stable_ids,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return f"sha256:{hashlib.sha256(canonical_members).hexdigest()}"
-
-
-def _cluster_needs_manual_review(cluster: dict[str, Any]) -> bool:
-    if bool(cluster["flagged_manual_review"]):
-        return True
-    if len(cluster["aliases"]) + 1 > DEFAULT_MAX_CLUSTER:
-        return True
-    canonical_duration = cluster["canonical_duration"]
-    if canonical_duration is None:
-        return False
-    return any(
-        alias["alias_duration"] is not None
-        and abs(float(canonical_duration) - float(alias["alias_duration"]))
-        > DEFAULT_DURATION_DELTA_S
-        for alias in cluster["aliases"]
-    )
-
-
-def _hydrate_member(
-    tracks: dict[str, Any],
-    *,
-    stable_id: str,
-    path: str,
-    is_canonical: bool,
-    similarity: Optional[float],
-) -> MemberOut:
-    track = tracks.get(stable_id)
-    return MemberOut(
-        stable_id=stable_id,
-        path=path,
-        is_canonical=is_canonical,
-        similarity=similarity,
-        title=track.title if track else None,
-        artist=track.artist if track else None,
-        bpm=track.bpm if track else None,
-        key=track.key if track else None,
-        duration_ms=track.duration_ms if track else None,
-        rating=track.rating if track else None,
-        file_exists=bool(path) and fs_residency.is_materialised(Path(path)),
-    )
-
-
-def _find_raw_cluster(
-    clusters: list[dict[str, Any]],
-    cluster_id: int,
-) -> dict[str, Any]:
-    for cluster in clusters:
-        if cluster["cluster_id"] == cluster_id:
-            return cluster
-    raise _http_error(
-        status.HTTP_404_NOT_FOUND,
-        "not_found",
-        f"unknown cluster_id: {cluster_id}",
-    )
+class UndoRecordOut(BaseModel):
+    cluster_id: int
+    cluster_key: str
+    survivor: str
+    action: Literal["merge"]
+    decided_at: str
+    revision: str
+    pending_apply: bool
+    playlist_ids: list[str]
 
 
 def _require_if_match(request: Request) -> str:
     if_match = request.headers.get("If-Match")
     if if_match is None:
-        raise _http_error(
+        raise HTTPException(
             status.HTTP_428_PRECONDITION_REQUIRED,
-            "precondition_required",
-            "POST /dedup/clusters/{cluster_id}/decision requires If-Match",
+            detail={
+                "error": "precondition_required",
+                "message": "POST /dedup/clusters/{cluster_id} writes require If-Match",
+            },
         )
     return if_match
 
 
-# ----- routes -----------------------------------------------------------------
+def _commit_store(**kwargs: Any) -> str:
+    try:
+        return commit_decision_store(**kwargs)
+    except DecisionRevisionConflict as exc:
+        raise conflict(exc.current_revision, exc.message) from exc
+    except InvalidDecisionStoreError as exc:
+        raise decision_store_error(str(exc)) from exc
 
 
 @router.get(
@@ -479,11 +207,11 @@ def _require_if_match(request: Request) -> str:
 )
 def get_dedup_clusters(
     response: Response,
-    backend: StateBackend = Depends(get_read_state),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008
 ) -> ClustersOut:
-    store, revision = _read_decision_snapshot()
+    store, revision = read_store_or_http()
     response.headers["ETag"] = revision
-    db_path = _dedup_db_path()
+    db_path = dedup_db_path()
     if not db_path.is_file():
         return ClustersOut(
             clusters=[],
@@ -495,7 +223,7 @@ def get_dedup_clusters(
             ),
         )
 
-    raw_clusters = _read_raw_clusters(db_path)
+    raw_clusters = read_raw_clusters(db_path)
     if raw_clusters is None:
         return ClustersOut(
             clusters=[],
@@ -510,46 +238,48 @@ def get_dedup_clusters(
         {
             member_id
             for cluster in raw_clusters
-            for member_id in _cluster_member_ids(cluster)
+            for member_id in cluster_member_ids(cluster)
         }
     )
     tracks = backend.get_tracks_bulk(stable_ids)
 
     clusters_out: list[ClusterOut] = []
     for cluster in raw_clusters:
-        member_ids = _cluster_member_ids(cluster)
-        cluster_key = _cluster_key(member_ids)
+        member_ids = cluster_member_ids(cluster)
+        key = cluster_key(member_ids)
         members = [
-            _hydrate_member(
+            hydrate_member(
                 tracks,
                 stable_id=cluster["canonical_stable_id"],
                 path=cluster["canonical_path"],
                 is_canonical=True,
                 similarity=None,
+                member_out_cls=MemberOut,
             )
         ]
         members.extend(
-            _hydrate_member(
+            hydrate_member(
                 tracks,
                 stable_id=alias["alias_stable_id"],
                 path=alias["alias_path"],
                 is_canonical=False,
                 similarity=alias["similarity"],
+                member_out_cls=MemberOut,
             )
             for alias in cluster["aliases"]
         )
-        decision = store.decisions.get(cluster_key)
+        decision = store.decisions.get(key)
         if decision is not None and decision.member_stable_ids != member_ids:
-            raise _decision_store_error(
-                f"decision {cluster_key!r} does not match the current cluster members"
+            raise decision_store_error(
+                f"decision {key!r} does not match the current cluster members"
             )
         clusters_out.append(
             ClusterOut(
                 cluster_id=cluster["cluster_id"],
-                cluster_key=cluster_key,
+                cluster_key=key,
                 survivor_stable_id=cluster["canonical_stable_id"],
                 rationale=cluster["rationale"],
-                flagged_manual_review=_cluster_needs_manual_review(cluster),
+                flagged_manual_review=cluster_needs_manual_review(cluster),
                 members=members,
                 decision=(
                     DecisionOut(
@@ -557,12 +287,14 @@ def get_dedup_clusters(
                         survivor=decision.survivor,
                         action=decision.action,
                         decided_at=decision.decided_at,
+                        pending_apply=key not in store.applies,
                     )
                     if decision is not None
                     else None
                 ),
             )
         )
+    reject_duplicate_cluster_keys(clusters_out)
     return ClustersOut(clusters=clusters_out, revision=revision)
 
 
@@ -577,48 +309,28 @@ def post_dedup_decision(
     body: DecisionIn,
     response: Response,
     if_match: str = Depends(_require_if_match),
-    _backend: StateBackend = Depends(get_write_state),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
 ) -> DecisionRecordOut:
     """Persist a pending review decision without applying a merge."""
-    db_path = _dedup_db_path()
-    if not db_path.is_file():
-        raise _http_error(
-            status.HTTP_404_NOT_FOUND,
-            "not_found",
-            f"no dedup fingerprint database found at {db_path}",
-        )
-    raw_clusters = _read_raw_clusters(db_path)
-    if raw_clusters is None:
-        raise _http_error(
-            status.HTTP_404_NOT_FOUND,
-            "not_found",
-            "duplicate clusters are not materialized; run apps.dedup.find_clusters",
-        )
-    cluster = _find_raw_cluster(raw_clusters, cluster_id)
-    member_ids = _cluster_member_ids(cluster)
-    current_cluster_key = _cluster_key(member_ids)
-    if body.cluster_key != current_cluster_key:
-        _, current_revision = _read_decision_snapshot()
-        raise _conflict(
-            current_revision,
-            "cluster membership changed; refresh before recording a decision",
-        )
-    if body.survivor not in member_ids:
-        raise _http_error(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "invalid_survivor",
-            f"{body.survivor!r} is not a member of cluster {cluster_id}",
-        )
-
+    member_ids, current_cluster_key = load_cluster_for_write(cluster_id)
+    require_identity(
+        body_key=body.cluster_key,
+        current_key=current_cluster_key,
+        member_ids=member_ids,
+        survivor=body.survivor,
+        cluster_id=cluster_id,
+        stale_message="cluster membership changed; refresh before recording a decision",
+        read_store=read_store_or_http,
+    )
     record = PersistedDecision(
         cluster_id=cluster_id,
         cluster_key=current_cluster_key,
         member_stable_ids=member_ids,
         survivor=body.survivor,
         action=body.action,
-        decided_at=_now_iso(),
+        decided_at=now_iso(),
     )
-    revision = _persist_decision(record, if_match)
+    revision = _commit_store(expected_revision=if_match, decision=record)
     response.headers["ETag"] = revision
     publish("library.changed", {"kind": "dedup", "ids": [str(cluster_id)]})
     return DecisionRecordOut(
@@ -632,4 +344,130 @@ def post_dedup_decision(
     )
 
 
-__all__ = ["router"]
+@router.post(
+    "/clusters/{cluster_id}/apply",
+    response_model=ApplyRecordOut,
+    responses=_POST_RESPONSES,
+    openapi_extra={"parameters": [_IF_MATCH_OPENAPI_PARAMETER]},
+)
+def post_dedup_apply(
+    cluster_id: int,
+    body: ApplyIn,
+    response: Response,
+    if_match: str = Depends(_require_if_match),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
+) -> ApplyRecordOut:
+    """Rewrite OpenDJ playlist memberships so aliases point at the survivor."""
+    member_ids, current_cluster_key = load_cluster_for_write(cluster_id)
+    require_identity(
+        body_key=body.cluster_key,
+        current_key=current_cluster_key,
+        member_ids=member_ids,
+        survivor=body.survivor,
+        cluster_id=cluster_id,
+        stale_message="cluster membership changed; refresh before applying a merge",
+        read_store=read_store_or_http,
+    )
+    with decision_file_lock():
+        snap, current_revision = read_store_or_http()
+        if if_match != current_revision:
+            raise conflict(
+                current_revision,
+                "If-Match does not match the current decision-store ETag",
+            )
+        record, apply_row, journal = prepare_merge_apply(
+            snap=snap,
+            current_revision=current_revision,
+            current_cluster_key=current_cluster_key,
+            cluster_id=cluster_id,
+            survivor=body.survivor,
+            member_ids=member_ids,
+            backend=backend,
+            store=store,
+        )
+        revision = persist_apply_journal(snap, record=record, apply_row=apply_row)
+
+    response.headers["ETag"] = revision
+    publish("library.changed", {"kind": "dedup", "ids": [str(cluster_id)]})
+    playlists_out = [
+        PlaylistRewriteOut(
+            playlist_id=entry.playlist_id,
+            name=playlist_name(backend, entry.playlist_id),
+            before=list(entry.before),
+            after=list(entry.after),
+        )
+        for entry in journal
+    ]
+    return ApplyRecordOut(
+        cluster_id=cluster_id,
+        cluster_key=current_cluster_key,
+        survivor=body.survivor,
+        action="merge",
+        decided_at=record.decided_at,
+        revision=revision,
+        pending_apply=False,
+        playlists=playlists_out,
+    )
+
+
+@router.post(
+    "/clusters/{cluster_id}/undo",
+    response_model=UndoRecordOut,
+    responses=_POST_RESPONSES,
+    openapi_extra={"parameters": [_IF_MATCH_OPENAPI_PARAMETER]},
+)
+def post_dedup_undo(
+    cluster_id: int,
+    body: ApplyIn,
+    response: Response,
+    if_match: str = Depends(_require_if_match),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
+) -> UndoRecordOut:
+    """Restore playlist memberships from the apply journal for this cluster."""
+    member_ids, current_cluster_key = load_cluster_for_write(cluster_id)
+    require_identity(
+        body_key=body.cluster_key,
+        current_key=current_cluster_key,
+        member_ids=member_ids,
+        survivor=body.survivor,
+        cluster_id=cluster_id,
+        stale_message="cluster membership changed; refresh before undoing a merge",
+        read_store=read_store_or_http,
+    )
+    with decision_file_lock():
+        snap, current_revision = read_store_or_http()
+        if if_match != current_revision:
+            raise conflict(
+                current_revision,
+                "If-Match does not match the current decision-store ETag",
+            )
+        apply_row = prepare_merge_undo(
+            snap=snap,
+            current_revision=current_revision,
+            current_cluster_key=current_cluster_key,
+            cluster_id=cluster_id,
+            body_key=body.cluster_key,
+            survivor=body.survivor,
+            store=store,
+        )
+        revision = drop_apply_journal(snap, current_cluster_key)
+        decision = snap.decisions.get(current_cluster_key)
+
+    response.headers["ETag"] = revision
+    publish("library.changed", {"kind": "dedup", "ids": [str(cluster_id)]})
+    decided_at = decision.decided_at if decision is not None else now_iso()
+    return UndoRecordOut(
+        cluster_id=cluster_id,
+        cluster_key=current_cluster_key,
+        survivor=body.survivor,
+        action="merge",
+        decided_at=decided_at,
+        revision=revision,
+        pending_apply=True,
+        playlist_ids=[entry.playlist_id for entry in apply_row.playlists],
+    )
+
+
+__all__ = ["DECISIONS_FILE", "dedup_paths", "router"]

@@ -115,6 +115,19 @@ def _pick_canonical(members: list[_MemberRow]) -> tuple[_MemberRow, str]:
     return cands[0], f"oldest-mtime={cands[0].fp.mtime:.0f}"
 
 
+def _wipe_derived_cluster_tables(conn: sqlite3.Connection) -> None:
+    """Derived tables are rebuilt each run; fingerprints stay."""
+    conn.execute("DELETE FROM track_aliases")
+    conn.execute("DELETE FROM duplicate_clusters")
+    sequence_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
+    ).fetchone()
+    if sequence_exists is not None:
+        conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name = 'duplicate_clusters'"
+        )
+
+
 def _is_on_canonical_root(path: Path, roots: Iterable[Path]) -> bool:
     for r in roots:
         try:
@@ -203,6 +216,7 @@ def run_find_clusters(
     # Open state DB for the write-through (INSERT rows into
     # duplicate_clusters / track_aliases).
     conn = dedup_schema.ensure_schema(use_db)
+    _wipe_derived_cluster_tables(conn)
 
     outcomes: list[ClusterOutcome] = []
     use_csv.parent.mkdir(parents=True, exist_ok=True)
