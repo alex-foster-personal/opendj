@@ -53,12 +53,13 @@ def _prs(jobs: Path, entries: list[dict]) -> Path:
     return p
 
 
-def _run(jobs: Path, prs: Path | None, expect_ok: bool = True, **env_extra):
+def _run(jobs: Path, prs: Path | None, expect_ok: bool = True,
+          cli_args: list[str] | None = None, **env_extra):
     env = {"TIER_JOBS_DIR": str(jobs), "PATH": "/usr/bin:/bin", **env_extra}
     if prs is not None:
         env["TIER_GH_PRS"] = str(prs)
-    r = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, text=True, env=env,
-                       timeout=120, check=False)
+    r = subprocess.run([sys.executable, str(SCRIPT), *(cli_args or [])],
+                       capture_output=True, text=True, env=env, timeout=120, check=False)
     if expect_ok:
         assert r.returncode == 0, f"scorecard failed: {r.stdout}\n{r.stderr}"
     return r
@@ -149,6 +150,71 @@ def test_a_real_red_mine_gate_silences_the_warning(tmp_path: Path) -> None:
     prs = _prs(jobs, [_pr(9910, "af--issue-910--x")])
     out = _run(jobs, prs).stdout
     assert "RED-MINE is 0 across all" not in out, "warning must clear once the gate bites"
+
+
+#---------------------------------------------------------------- cohort boundary
+def test_since_isolates_post_swap_cohort_from_polluted_all_time_rate(tmp_path: Path) -> None:
+    """The reviewer's own arithmetic (PR #1635 thread 1): an all-time read mixes an
+    old cohort (7 merged of 8) with a new post-swap cohort (4 merged of 8) into a
+    contaminated 11/16 that clears a 9/14 stop-rule threshold the new cohort alone
+    does not. --since must isolate the 8-issue post-swap cohort at 4 merged, not
+    the polluted combined rate."""
+    jobs = tmp_path / "jobs"
+    boundary = "2026-09-09T21:00:00Z"
+    old_start = "2026-09-01T10:00:00Z"
+    new_start = "2026-09-10T02:00:00Z"
+    prs: list[dict] = []
+    for n in range(200, 208):  # old cohort: 8 issues, 7 merged
+        _write_log(jobs, str(n), f"{_attempt('deepseek', start=old_start)}\n"
+                                  f"EXIT=0 ended_by=self turns=10\n")
+        prs.append(_pr(9000 + n, f"af--issue-{n}--old", state="MERGED" if n < 207 else "OPEN"))
+    for n in range(300, 308):  # new cohort: 8 issues, 4 merged
+        _write_log(jobs, str(n), f"{_attempt('deepseek', start=new_start)}\n"
+                                  f"EXIT=0 ended_by=self turns=10\n")
+        prs.append(_pr(9000 + n, f"af--issue-{n}--new", state="MERGED" if n < 304 else "OPEN"))
+    prs_path = _prs(jobs, prs)
+
+    out_all = _run(jobs, prs_path).stdout
+    ds_all = next(ln for ln in out_all.splitlines() if ln.startswith("deepseek"))
+    assert ds_all.split()[3] == "16" and ds_all.split()[4] == "11", \
+        f"unfiltered read must show the polluted 11/16: {ds_all}"
+
+    out_cohort = _run(jobs, prs_path, cli_args=["--since", boundary]).stdout
+    ds_cohort = next(ln for ln in out_cohort.splitlines() if ln.startswith("deepseek"))
+    assert ds_cohort.split()[3] == "8", f"post-swap cohort must be exactly 8, not: {ds_cohort}"
+    assert ds_cohort.split()[4] == "4", \
+        f"post-swap cohort must show 4 merged (below the 9/14 threshold), got: {ds_cohort}"
+    assert boundary in out_cohort, "the scored cohort's boundary must be stated in the output"
+
+
+def test_no_since_labels_the_cohort_as_all_time(tmp_path: Path) -> None:
+    jobs = tmp_path / "jobs"
+    _write_log(jobs, "1100", f"{_attempt('deepseek')}\nEXIT=0 ended_by=self turns=5\n")
+    prs = _prs(jobs, [_pr(91100, "af--issue-1100--x")])
+    out = _run(jobs, prs).stdout
+    assert "Cohort: all-time" in out
+
+
+#---------------------------------------------------------------- PR read cap
+def test_pr_read_at_the_cap_is_fatal_not_a_silent_truncation(tmp_path: Path) -> None:
+    """Past the gh pr list read cap, older outcomes vanish into noPR for every
+    tier without a word. A result sitting exactly at the cap must be treated as
+    truncated and refused, not scored."""
+    jobs = tmp_path / "jobs"
+    _write_log(jobs, "1200", f"{_attempt('deepseek')}\nEXIT=0 ended_by=self turns=5\n")
+    capped_prs = [_pr(i, f"af--issue-{9000 + i}--filler", state="OPEN") for i in range(2000)]
+    prs = _prs(jobs, capped_prs)
+    r = _run(jobs, prs, expect_ok=False)
+    assert r.returncode != 0, "a PR list at the read cap must not render as a score"
+    assert "cap" in r.stderr, f"stderr did not explain why: {r.stderr}"
+
+
+def test_pr_read_under_the_cap_is_not_flagged(tmp_path: Path) -> None:
+    jobs = tmp_path / "jobs"
+    _write_log(jobs, "1300", f"{_attempt('deepseek')}\nEXIT=0 ended_by=self turns=5\n")
+    under_cap_prs = [_pr(i, f"af--issue-{9000 + i}--filler", state="OPEN") for i in range(1999)]
+    prs = _prs(jobs, under_cap_prs)
+    _run(jobs, prs, expect_ok=True)
 
 
 #---------------------------------------------------------------- small-n honesty
