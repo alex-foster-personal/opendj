@@ -24,6 +24,8 @@ Regression lines:
 from __future__ import annotations
 
 import os
+import platform
+import shutil
 
 import pytest
 
@@ -43,7 +45,21 @@ from tests.platform_capabilities import posix_permission_denial_supported
 #: because a broken link is unreadable to root as well.
 _CAN_DENY_PERMISSION = posix_permission_denial_supported(os.name, getattr(os, "geteuid", None))
 
-pytestmark = pytest.mark.requirement("OPS-16")
+# Duplicated from test_ops_fleet_kpi.py, NOT inherited: pytest marks are module-scoped, so
+# importing that module's helpers brings none of its skips. Without these, the five cases
+# below would run kpi.sh on macOS or a jq-less host -- a script documented as GNU-only --
+# and a pass there would mean nothing. Raised as a P2 on PR #1662.
+pytestmark = [
+    pytest.mark.requirement("OPS-16"),
+    pytest.mark.skipif(
+        platform.system() != "Linux",
+        reason="ops/fleet/kpi.sh is Linux-only: GNU date -d/stat -c, /proc, systemd --user, tmux",
+    ),
+    pytest.mark.skipif(
+        shutil.which("jq") is None,
+        reason="ops/fleet/kpi.sh parses the gh JSON fixtures with jq",
+    ),
+]
 
 def test_an_unreadable_log_tree_is_unmeasurable_not_a_pass(tmp_path):
     """[if] the FATAL health line reads PASS when its logs cannot be read [then] fail, [else stop].
@@ -114,7 +130,11 @@ def test_a_partially_readable_log_set_is_unmeasurable(tmp_path):
     """
     fixture = _copy_fixture(tmp_path)
     logs = fixture / "jobs" / "logs"
-    blinded = logs / "resident-blinded.log"
+    # NOT resident-*.log. That name makes kpi.sh's retired-lane scan read the file too,
+    # and an unreadable one there aborts the whole script with exit 2 before the health
+    # section runs, so this test was asserting against a board that was never printed.
+    # The failure was real and loud, but it was not the failure this test names.
+    blinded = logs / "blinded.log"
     blinded.write_text("2026-01-01T00:00:00Z nothing to see\n")
     blinded.chmod(0o000)
     try:
@@ -136,9 +156,32 @@ def test_a_dangling_symlink_in_the_log_glob_is_unmeasurable(tmp_path):
     unreadable to UID 0 too, so this assertion holds wherever the suite runs.
     """
     fixture = _copy_fixture(tmp_path)
-    dangling = fixture / "jobs" / "logs" / "resident-gone.log"
+    dangling = fixture / "jobs" / "logs" / "gone.log"
     dangling.symlink_to(fixture / "jobs" / "logs" / "no-such-target.log")
     assert dangling.is_symlink() and not dangling.exists(), "fixture is not actually dangling"
 
     verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
     assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
+
+
+@pytest.mark.skipif(not _CAN_DENY_PERMISSION, reason="chmod cannot deny root")
+def test_an_unenumerable_logs_directory_is_unmeasurable(tmp_path):
+    """[if] a logs directory that cannot be listed reports a count [then] fail, [else stop].
+
+    Third P1 on PR #1662, and the one the previous two fixes walked straight past. `-d`
+    succeeds on a directory that cannot be enumerated, `nullglob` then yields zero entries,
+    and a readable watchdog.log was enough to mark the whole set measurable. Every file
+    under logs/ went silently unread while the line printed +0 and PASS.
+
+    Zero entries from a directory you cannot open is not an empty directory. It is the same
+    defect as the empty-awk-output one this module exists for, one level up the tree.
+    """
+    fixture = _copy_fixture(tmp_path)
+    logs = fixture / "jobs" / "logs"
+    (fixture / "jobs" / "watchdog.log").write_text("2026-01-01T00:00:00Z fine\n")
+    logs.chmod(0o000)
+    try:
+        verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+        assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
+    finally:
+        logs.chmod(0o755)
