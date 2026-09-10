@@ -47,6 +47,8 @@ Regression lines:
     without an operator, so broken
 
 Numbers this module measures are printed. Run with ``-s`` to see them.
+
+[if] a sync-set table ends short on the hub [then] fail, [else stop].
 """
 from __future__ import annotations
 

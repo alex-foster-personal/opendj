@@ -2,6 +2,7 @@
 import { toasts } from '$lib/stores.svelte';
 import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState } from './master-silence-report';
+import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import { readXrunSessionCounter } from './xrun-sentinel';
@@ -68,6 +69,10 @@ export function buildUiMirror(): Record<string, unknown> {
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),
 			...(silence.verdict === 'silent-while-playing' ? [{ id: 'silent-while-playing' }] : [])
 		],
+		// PLAY-08: agent-native parity for the stall banner. An agent driving a
+		// set reads why AutoPlay stopped from the same object a person reads
+		// off the screen, rather than having to catch a five-second toast.
+		autoplay_stall: readAutoPlayStall(),
 		open_overlays: [...document.querySelectorAll('[role="dialog"], .overlay, .modal')].map((element, index) => _controlName(element, index)),
 		controls: _controls()
 	};
