@@ -115,6 +115,15 @@ async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
 	return await page.locator('.wave-track-name').first().evaluate((node): TitlePaint => {
 		const leaf = node.querySelector(':scope > span') ?? node;
 		const channels = (value: string): number[] | null => {
+			// Only rgb()/rgba(). Chromium normally flattens color-mix() before
+			// serializing, but `.rb-waverow.deck-focus` IS declared as
+			// `color-mix(in srgb, rgba(255,255,255,0.08) 50%, var(--rb-bg))`
+			// (WaveRow.svelte), and a digit scrape of an UNRESOLVED color-mix
+			// string harvests a percentage and two colours' channels as
+			// though they were one colour - a number about nothing, silently.
+			// Returning null instead makes the caller report no backdrop,
+			// which the assertions treat as a hard failure. Blinded review.
+			if (!/^rgba?\(/.test(value)) return null;
 			const parts = value.match(/[\d.]+/g);
 			if (parts === null || parts.length < 3) return null;
 			return parts.map(Number);
@@ -159,10 +168,16 @@ async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
 				if (bg !== null && alphaOf(style.backgroundColor) === 1) {
 					backdrop = [bg[0], bg[1], bg[2]];
 					// Opacity at and above the backdrop dims text and surface
-					// alike, so it stops counting here.
-					break;
+					// alike, so it stops counting here. The BLOCKER scan does
+					// not stop with it: a filter or mix-blend-mode on an
+					// ancestor ABOVE this element (`.perf-root` carries the
+					// app shell's own rules) re-composites the "opaque"
+					// backdrop against whatever is behind it, so a contrast
+					// ratio measured against this token would again be a
+					// number about nothing. Blinded review, Thu 10 Sep 2026.
+				} else {
+					alpha *= Number(style.opacity);
 				}
-				alpha *= Number(style.opacity);
 			}
 			element = element.parentElement;
 		}
