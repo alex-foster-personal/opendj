@@ -1,8 +1,13 @@
 <script lang="ts">
 	/**
 	 * Honest, page-granular library load progress (pin ad59ac, follow-on to
-	 * #937). Mounted BETWEEN the pane header and TrackTable - never inside
-	 * TrackTable, which stays a pure row renderer.
+	 * #937). Rendered through TrackTable's `bodyOverlay` slot, which pins it
+	 * inside the table region just below the sticky column-header row
+	 * (pin 02717d4ea496: mounted as a sibling ABOVE the table it pushed the
+	 * column headers down the page, which reads as the headers being in the
+	 * wrong place). TrackTable renders the snippet without knowing what is
+	 * in it, so it stays a pure row renderer; it contributes only the
+	 * measured header offset, which nothing outside it can know.
 	 *
 	 * "Honest" here means: the bar, the count, and the rows/s figure only
 	 * ever move in the same whole-page jumps PaneStore.load_progress does

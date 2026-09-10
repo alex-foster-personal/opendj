@@ -7,8 +7,9 @@
     GET    /api/v1/entitlements             the plan, the refusal shape, and
                                             every gateable feature
     GET    /api/v1/entitlements/{feature}   may this account use one feature
-    GET    /api/v1/flags                    the declared feature flags and
-                                            where each value came from
+    GET    /api/v1/flags                    the declared feature flags, where
+                                            each value came from, and which
+                                            build profile is active
 
 THIS ROUTE REPORTS; IT NEVER DECIDES.  ``apps.entitlements`` answers
 ``has`` / ``quota`` and owns the refusal wording, ``apps.feature_flags`` owns
@@ -42,6 +43,12 @@ Requirements (mini-PRD):
   * ✔︎ ✅ 🎯 /flags reports the file it read and whether each value is a
     default or an override.
     [if] an override reads as a default [then ⛔️]
+  * ✔︎ ✅ 🎯 /flags names the active build profile and whether this process is
+    sandboxed, and attaches the FOURTH refusal (SAND-01) to every flag the
+    shipped App Store profile turned off, so a dead control reads its reason
+    off the server instead of composing one.
+    [if] a flag off in the store build carries no refusal [then ⛔️]
+    [if] a flag off for any OTHER reason carries one anyway [then ⛔️]
 """
 
 from __future__ import annotations
@@ -60,7 +67,14 @@ from apps.entitlements import (
     has,
     quota,
 )
-from apps.feature_flags import FlagStore
+from apps.feature_flags import (
+    FlagState,
+    FlagStore,
+    store_build_refusal,
+    store_profile_is_source,
+)
+from apps.feature_flags.profiles import selected_profile
+from apps.shared.sandbox import is_sandboxed
 from apps.webui.server.auth import SESSION_COOKIE_NAME, SessionUser
 from apps.webui.server.routes.auth import session_store, signed_in_user
 
@@ -196,6 +210,12 @@ class FlagOut(BaseModel):
     owner: str
     note: str
     retire_by: str
+    #: SAND-01. Non-null only when this flag is off BECAUSE the shipped App
+    #: Store profile turned it off, and it carries the fourth refusal
+    #: sentence. Null covers both "this flag is on" and "it is off for some
+    #: other reason", which are the same fact from a control's point of view:
+    #: nothing there entitles it to say "App Store".
+    refusal: RefusalOut | None = None
 
 
 class FlagsOut(BaseModel):
@@ -204,6 +224,15 @@ class FlagsOut(BaseModel):
     #: Absolute path of the flag file, present or not.
     path: str
     file_present: bool
+    #: The named build profile this process resolved (``full`` when none was
+    #: selected). A CONFIG fact.
+    build_profile: str
+    #: Whether this process is inside a macOS App Sandbox container. A
+    #: RUNTIME fact, and reported beside the profile rather than folded into
+    #: it because SAND-04 turns on the two being able to disagree: a
+    #: mis-packaged bundle is sandboxed on the full profile, and a developer
+    #: can run the store profile unsandboxed.
+    sandboxed: bool
     flags: list[FlagOut]
 
 
@@ -218,6 +247,26 @@ def _flag_store(request: Request) -> FlagStore:
             "missing boot step"
         )
     return store
+
+
+def _store_build_refusal(
+    flag: FlagState, *, from_store_profile: bool, sandboxed: bool
+) -> RefusalOut | None:
+    """Adapt :func:`apps.feature_flags.store_build_refusal` to the account wire model.
+
+    The decision itself lives in ``apps.feature_flags`` so the USB gate
+    (``apps.webui.server.routes.usb_gate``) computes the SAME refusal from
+    the SAME inputs this endpoint discloses, rather than each guessing at
+    attribution on its own (SAND-01 review, PR #1668).
+    """
+    refusal = store_build_refusal(
+        flag, from_store_profile=from_store_profile, sandboxed=sandboxed
+    )
+    if refusal is None:
+        return None
+    return RefusalOut(
+        code=refusal.code, message=refusal.message, ui_title=refusal.ui_title
+    )
 
 
 def _refusal() -> RefusalOut:
@@ -441,9 +490,13 @@ def read_flags(request: Request) -> FlagsOut:
     to, and folding them into one response is the first step toward one store.
     """
     store = _flag_store(request)
+    from_store_profile = store_profile_is_source(store)
+    sandboxed = is_sandboxed()
     return FlagsOut(
         path=str(store.path),
         file_present=store.file_present,
+        build_profile=selected_profile(),
+        sandboxed=sandboxed,
         flags=[
             FlagOut(
                 flag_id=flag.flag_id,
@@ -453,6 +506,11 @@ def read_flags(request: Request) -> FlagsOut:
                 owner=flag.owner,
                 note=flag.note,
                 retire_by=flag.retire_by,
+                refusal=_store_build_refusal(
+                    flag,
+                    from_store_profile=from_store_profile,
+                    sandboxed=sandboxed,
+                ),
             )
             for flag in store.snapshot()
         ],

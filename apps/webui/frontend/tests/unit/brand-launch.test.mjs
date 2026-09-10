@@ -1,10 +1,12 @@
 /**
  * OPS-10 brand launch contract.
  *
- * - if the launch marker is absent then the oDj animation plays once
+ * - if the launch marker is absent then the launch animation plays once
  * - if a completed marker is present then a later launch is immediately usable
- * - if the visible brand stops using the white italic oDj wordmark then the
- *   shipped identity no longer matches the desktop icon
+ * - if the shipped mark stops being the two-shade broken circle then the icon
+ *   the maintainer reverted to on Wed 9 Sep 2026 has been replaced again
+ * - if the app shell stops showing the plain "Open DJ" wordmark then the
+ *   reverted identity no longer matches that mark
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -36,16 +38,43 @@ test('only the exact completion marker suppresses the launch', () => {
 	assert.equal(brand.shouldPlayBrandLaunch(storage), true);
 });
 
-test('the app shell mounts a non-blocking oDj launch and wordmark', () => {
+test('the app shell mounts a non-blocking launch and the Open DJ wordmark', () => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const layout = readFileSync(`${root}/src/routes/+layout.svelte`, 'utf8');
 	const launch = readFileSync(`${root}/src/lib/components/BrandLaunch.svelte`, 'utf8');
-	const wordmark = readFileSync(`${root}/src/lib/components/OdjWordmark.svelte`, 'utf8');
+
+	const browserPanel = readFileSync(`${root}/src/lib/components/rb/BrowserPanel.svelte`, 'utf8');
 
 	assert.match(layout, /<BrandLaunch \/>/);
-	assert.match(layout, /<OdjWordmark/);
+	assert.match(layout, /<h1>Open DJ<\/h1>/);
+	// The toolbar wordmark has read lowercase since long before the oDj mark,
+	// so the revert restores "open dj" here and "Open DJ" in the sidebar. Both
+	// are pinned, or a later tidy-up "fixes" one of them into drift.
+	assert.match(browserPanel, /<span class="wordmark">open dj<\/span>/);
 	assert.match(launch, /pointer-events:\s*none/);
 	assert.match(launch, /animationend/);
-	assert.match(wordmark, /font-style:\s*italic/);
-	assert.match(wordmark, />oDj</);
+	assert.match(launch, />Open DJ</);
+	// The launch must settle on the SHIPPED mark, not a hand-drawn imitation of
+	// it, or the artwork and the animation can drift apart again.
+	assert.match(launch, /url\('\/favicon\.svg'\)/);
+
+	// An INVARIANT, not a pinned value: the mark's two halves carry different
+	// shades, so the spin must end on a whole number of turns or the launch
+	// settles on a mark whose colors are swapped against the shipped artwork.
+	// 900deg shipped in #1367 and was 180deg out; nothing caught it, because
+	// the rings it drew then were their own artwork and could not disagree
+	// with anything.
+	const finalRotation = launch.match(/100%\s*\{\s*transform:\s*rotate\((-?\d+(?:\.\d+)?)deg\)/);
+	assert.ok(finalRotation, 'the launch spin must declare a terminal rotation');
+	assert.equal(Number(finalRotation[1]) % 360, 0);
+});
+
+test('the shipped mark is the two-shade broken circle the maintainer reverted to', () => {
+	const root = fileURLToPath(new URL('../..', import.meta.url));
+	const mark = readFileSync(`${root}/static/favicon.svg`, 'utf8');
+
+	// Both half-discs must be present: one shade alone is half a logo.
+	assert.match(mark, /fill="#D97757"/);
+	assert.match(mark, /fill="#9c4b34"/);
+	assert.match(mark, /A 188\.00,188\.00 /);
 });

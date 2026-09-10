@@ -376,3 +376,80 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 	expect(report.median.healthCallsAtBoot, 'health@boot must be exactly 4: 3 coalesced + 1 uncoalesced fresh refresh').toBe(4);
 	expect(report.median.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline').toBe(2);
 });
+
+/**
+ * The conditions half of a timing row, end to end, with nothing injected.
+ *
+ * The unit suites drive `machine-pressure.ts` with a substituted `fetch` so
+ * the unreachable-engine and unreadable-field branches are exercisable at all;
+ * this is the other half, and the half a mock cannot give: the real engine
+ * answering the real endpoint, the real poller storing it, and a real deck
+ * load stamping it onto a real perf-ring row.
+ *
+ * Asserted as a CONTRACT, not values. The load average of the machine running
+ * this is whatever it is; what must hold is that a row either carries a finite
+ * reading or carries none, and that `solo` / `concurrent_loads` describe the
+ * load that actually happened.
+ *
+ * Regression lines:
+ *  - if the row carries no `solo` then the contention half never reached the ring
+ *  - if `pressure_age_ms` is present with no reading beside it then the row
+ *    is claiming a measurement it does not have
+ *  - if a lone load reports `solo=0` then the span accounting is leaking, which
+ *    is the #1658 review finding that made every later row report contention
+ */
+test('a real deck load stamps the real machine conditions', async ({ browser }) => {
+	const ids = await _fixtureTrackIds(browser);
+	const context = await browser.newContext();
+	const page = await context.newPage();
+	try {
+		await page.goto('/performance');
+		await page.waitForFunction(
+			() => (window as PerfRingWindow).musicDjToolsPerformance?.version === 1,
+			undefined,
+			{ timeout: 60_000 }
+		);
+		// The endpoint itself, unmocked, before anything reads it second-hand.
+		const pressure = (await page.evaluate(async () => {
+			const res = await fetch('/api/v1/performance/telemetry/pressure');
+			return res.json();
+		})) as Record<string, unknown>;
+		expect(typeof pressure.available).toBe('boolean');
+
+		// Let the poller take its first sample, then load ONE deck.
+		await page.waitForTimeout(2_000);
+		await page.evaluate((id: string) => {
+			const ipc = (window as PerfRingWindow).musicDjToolsPerformance;
+			void ipc?.dispatch({ type: 'load', deck: 1, stable_id: id });
+		}, ids[0]);
+		await page.waitForFunction(
+			() => ((window as PerfRingWindow).__mdtLastLoads?.(8) ?? []).length > 0,
+			undefined,
+			{ timeout: 120_000 }
+		);
+
+		const labels = await page.evaluate(() => {
+			const rows = (window as PerfRingWindow).__mdtLastLoads?.(4) ?? [];
+			return (rows[0] as { labels?: Record<string, string> }).labels ?? {};
+		});
+
+		// The contention half always reaches the row; one load alone is solo.
+		expect(labels.solo).toBe('1');
+		expect(labels.concurrent_loads).toBe('1');
+
+		// The machine half is present only when the engine could measure, and
+		// an age without a reading beside it would be a row claiming one.
+		if (pressure.available === true) {
+			const readings = ['load_avg_1m', 'mem_free_mb', 'swap_used_mb'].filter(
+				(name) => labels[name] !== undefined
+			);
+			expect(readings.length).toBeGreaterThan(0);
+			expect(Number(labels.pressure_age_ms)).toBeGreaterThanOrEqual(0);
+			for (const name of readings) expect(Number.isFinite(Number(labels[name]))).toBe(true);
+		} else {
+			expect(labels.pressure_age_ms).toBeUndefined();
+		}
+	} finally {
+		await context.close();
+	}
+});

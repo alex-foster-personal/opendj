@@ -3045,6 +3045,13 @@
             "title": "Overall",
             "type": "string"
           },
+          "quarantined": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Quarantined",
+            "type": "object"
+          },
           "seq": {
             "title": "Seq",
             "type": "integer"
@@ -3604,6 +3611,16 @@
             "title": "Owner",
             "type": "string"
           },
+          "refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefusalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "retire_by": {
             "title": "Retire By",
             "type": "string"
@@ -3623,6 +3640,10 @@
       },
       "FlagsOut": {
         "properties": {
+          "build_profile": {
+            "title": "Build Profile",
+            "type": "string"
+          },
           "file_present": {
             "title": "File Present",
             "type": "boolean"
@@ -3637,11 +3658,17 @@
           "path": {
             "title": "Path",
             "type": "string"
+          },
+          "sandboxed": {
+            "title": "Sandboxed",
+            "type": "boolean"
           }
         },
         "required": [
           "path",
           "file_present",
+          "build_profile",
+          "sandboxed",
           "flags"
         ],
         "title": "FlagsOut",
@@ -4083,6 +4110,13 @@
       },
       "HelloRequest": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "machine": {
             "$ref": "#/components/schemas/MachineModel"
           },
@@ -4107,6 +4141,13 @@
       },
       "HelloResponse": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "hub_generation": {
             "title": "Hub Generation",
             "type": "string"
@@ -4627,7 +4668,8 @@
           "status": {
             "enum": [
               "ok",
-              "error"
+              "error",
+              "inconclusive"
             ],
             "title": "Status",
             "type": "string"
@@ -6950,6 +6992,11 @@
             "title": "Machines",
             "type": "array"
           },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/RowModel"
@@ -6977,6 +7024,13 @@
       },
       "PushRequest": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "machine_id": {
             "minLength": 1,
             "title": "Machine Id",
@@ -7013,6 +7067,11 @@
         "properties": {
           "accepted": {
             "title": "Accepted",
+            "type": "integer"
+          },
+          "quarantined": {
+            "default": 0,
+            "title": "Quarantined",
             "type": "integer"
           },
           "rejected": {
@@ -7677,7 +7736,8 @@
           "status": {
             "enum": [
               "ok",
-              "error"
+              "error",
+              "inconclusive"
             ],
             "title": "Status",
             "type": "string"
@@ -11420,6 +11480,17 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
           }
         },
         "required": [
@@ -16185,6 +16256,30 @@
         ]
       }
     },
+    "/api/v1/performance/telemetry/pressure": {
+      "get": {
+        "description": "What the machine is under right now, cheap enough to poll.\n\nTHE conditions half of a trustworthy timing row. The browser stamps this\nonto every deck-load row (see the frontend's machine-pressure.ts) so a\nlatency number carries the machine state it was measured under instead of\nleaving a later reader to guess, which is how the register ended up with a\nwaveform decode recorded at both 0.73 s and 7.53 s for the same work.\n\nRead-only, and deliberately NOT a process walk: this is sysctl, getloadavg\nand vm_stat, never the `ps` table that `/processes` reads out of the\nprobe's log. It is served from a short shared cache and every response\nstates the age of the sample it is handing back, so a caller can tell a\nfresh reading from a five-second-old one rather than assuming.\n\nAgent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.\n\nFields, all optional and all absent rather than zero when unreadable:\n`load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical\nmemory, `vm_stat` Pages free only, not the wider reclaimable figure),\n`swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).\n`available` is false, with a `reason`, when nothing could be measured --\nnotably inside the packaged app, whose payload stages `apps` and not\n`scripts`.",
+        "operationId": "machine_pressure_api_v1_performance_telemetry_pressure_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Machine Pressure Api V1 Performance Telemetry Pressure Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Machine Pressure",
+        "tags": [
+          "performance-telemetry"
+        ]
+      }
+    },
     "/api/v1/performance/telemetry/processes": {
       "get": {
         "description": "Return a privacy-reduced Activity Monitor-style app breakdown.",
@@ -18384,7 +18479,7 @@
     },
     "/api/v1/sync/digest": {
       "get": {
-        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.",
+        "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.\n\nA hub holding one row with an unorderable stored stamp no longer answers\n422 (round 5). That row is excluded from the hash and counted in\n``quarantined``: a legacy row is a fact to report, not a reason to make\nthe endpoint every sync depends on unavailable.\n\nFor a caller that did not advertise ``quarantine/v1`` it still does\n(module docstring). Such a spoke has no ``quarantined`` map to read, so\nit compares a hash over the eligible set against its own hash over\neverything, and the difference reads to it as the ADR 04 c6 CORRUPTION\nalarm -- a false one, raised on ordinary legacy data.",
         "operationId": "digest_api_v1_sync_digest_get",
         "parameters": [
           {
@@ -18397,6 +18492,20 @@
               "minLength": 1,
               "title": "Machine Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
             }
           }
         ],
@@ -18472,7 +18581,7 @@
     },
     "/api/v1/sync/pull": {
       "get": {
-        "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.",
+        "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.\n\nA chunk that had to leave a row out is refused outright for a caller that\ndid not advertise ``quarantine/v1`` (module docstring). The shortfall is\ninvisible to such a caller, which records the reported ``seq`` as pulled\nand can never ask for those entries again -- not even after the repair.",
         "operationId": "pull_api_v1_sync_pull_get",
         "parameters": [
           {
@@ -18513,6 +18622,20 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "protocol features the caller understands",
+            "in": "query",
+            "name": "capabilities",
+            "required": false,
+            "schema": {
+              "description": "protocol features the caller understands",
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
+            }
           }
         ],
         "responses": {
@@ -18545,7 +18668,7 @@
     },
     "/api/v1/sync/push": {
       "post": {
-        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.\n\nThe pusher's ``machines`` snapshot is merged first, in the same\ntransaction (round 2 finding N4): a row this hub has never met is a\nFOREIGN KEY violation, and the recovery push after a hub restore is\nexactly the push most likely to carry one.",
+        "description": "Merge offered rows under last-writer-wins; append to ``hub_changelog``.\n\nThe pusher's ``machines`` snapshot is merged first, in the same\ntransaction (round 2 finding N4): a row this hub has never met is a\nFOREIGN KEY violation, and the recovery push after a hub restore is\nexactly the push most likely to carry one.\n\nA pusher that did not advertise ``quarantine/v1`` gets ``origin/main``'s\nanswer instead of the partial one: 422, whole batch rolled back (module\ndocstring). That is the staged-rollout price and it is the safe half of\nit -- an un-upgraded spoke reads ``accepted + rejected < offered`` as\nnothing at all and steps its push fence over the held row.",
         "operationId": "push_api_v1_sync_push_post",
         "requestBody": {
           "content": {
@@ -19955,7 +20078,7 @@
                 }
               }
             },
-            "description": "USB volume discovery is unavailable on this host."
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
           }
         },
         "summary": "Get Usb Volumes",
@@ -19987,7 +20110,7 @@
                 }
               }
             },
-            "description": "USB volume discovery is unavailable on this host."
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
           }
         },
         "summary": "Usb Volume Events",

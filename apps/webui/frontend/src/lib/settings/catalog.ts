@@ -112,11 +112,12 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	{
 		id: 'next_only_filter',
-		label: 'Next-only library filter',
+		label: 'Compatible-only library filter',
 		group: 'library',
 		keywords: ['next', 'camelot', 'bpm', 'tab', 'suggest', 'compatible'],
-		title: 'Keep only Camelot+BPM-compatible next tracks',
-		detail: 'Filters the library list vs the loaded/master reference. Also toggled with Tab on /performance.',
+		title: 'Show only tracks compatible with the master deck',
+		detail:
+			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the loaded/master reference (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

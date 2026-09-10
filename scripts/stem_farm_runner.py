@@ -2,8 +2,10 @@
 """Process stem inbox on a farm host: one bundle per audio file.
 
 Expects files named ``<stable_id>.<ext>`` plus optional ``manifest.jsonl``.
-Writes completed bundles as ``outbox/<stable_id>.tar`` containing the 4 wavs
-+ manifest.json (Mac untars into data/state/stems/<stable_id>/).
+Writes completed bundles as ``outbox/<stable_id>.tar`` containing the 4 stem
+parts (codec per apps/stems/stem_size_policy.py's source-extension policy,
+not fixed to wav) + manifest.json (Mac untars into
+data/state/stems/<stable_id>/).
 
 Usage on VM:
   MDT_STEM_WORKER_PYTHON=/opt/mdt-stems/venv/bin/python \\
@@ -25,6 +27,15 @@ from pathlib import Path
 
 WORKER = Path(__file__).resolve().parent / "stem_bundle_worker.py"
 AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aiff", ".aif"}
+
+
+def _bundle_tar_members(manifest: dict) -> list[str]:
+    """Filenames to package for one bundle: manifest.json plus every file it
+    declares (issue #1497 -- stem_bundle_worker.py's output extension now
+    follows apps/stems/stem_size_policy.py's codec policy, not a fixed
+    ``.wav``, so the packager must read the manifest instead of assuming
+    it)."""
+    return ["manifest.json", *manifest["files"].values()]
 
 
 def _one(audio: Path, outbox: Path, device: str, py: str) -> str:
@@ -49,15 +60,10 @@ def _one(audio: Path, outbox: Path, device: str, py: str) -> str:
             raise RuntimeError(
                 f"{stable_id} failed: {(proc.stderr or proc.stdout)[-1500:]}"
             )
+        manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
         tar_path = outbox / f"{stable_id}.tar"
         with tarfile.open(tar_path, "w") as tar:
-            for name in (
-                "manifest.json",
-                "vocals.wav",
-                "drums.wav",
-                "bass.wav",
-                "other.wav",
-            ):
+            for name in _bundle_tar_members(manifest):
                 tar.add(bundle / name, arcname=name)
         meta = json.loads([ln for ln in proc.stdout.splitlines() if ln.strip()][-1])
         meta["wall_host_s"] = round(time.time() - t0, 1)
