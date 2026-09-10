@@ -74,6 +74,8 @@ export function contrastRatio(a: string, b: string): number {
 export interface WavePalette {
 	/** Row background (--rb-bg). */
 	bg: string;
+	/** Decks 3/4 row and canvas fill (--rb-waverow-secondary). */
+	secondaryBg: string;
 	/** Lows band - orange (--rb-orange). */
 	low: string;
 	/** Mids band - blue (--rb-wave-mid). */
@@ -107,6 +109,7 @@ export interface WavePalette {
 // below once the loop resolves it the first time.
 const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueLoop' | 'cueOutline'>, string> = {
 	bg: '--rb-bg',
+	secondaryBg: '--rb-waverow-secondary',
 	low: '--rb-orange',
 	mid: '--rb-wave-mid',
 	high: '--rb-wave-high',
@@ -142,6 +145,14 @@ export function readPalette(el: HTMLElement): WavePalette {
 		throw new Error(
 			`wavestack palette: cueOutline (${out.cueOutline}) only clears ` +
 				`${outlineContrast.toFixed(2)}:1 against bg (${out.bg}), below the ` +
+				`${CUE_MIN_CONTRAST}:1 floor cue markers rely on`
+		);
+	}
+	const secondaryOutlineContrast = contrastRatio(out.cueOutline, out.secondaryBg);
+	if (secondaryOutlineContrast < CUE_MIN_CONTRAST) {
+		throw new Error(
+			`wavestack palette: cueOutline (${out.cueOutline}) only clears ` +
+				`${secondaryOutlineContrast.toFixed(2)}:1 against secondaryBg (${out.secondaryBg}), below the ` +
 				`${CUE_MIN_CONTRAST}:1 floor cue markers rely on`
 		);
 	}
