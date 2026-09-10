@@ -21,6 +21,7 @@ from scripts.perf.kpi_scorecard import (
     score_scenarios,
     spec_budget_cells,
     spec_scenario_ids,
+    threshold_drift,
     verdict_for,
 )
 
@@ -206,6 +207,101 @@ def test_shipped_map_has_no_budget_drift_against_the_shipped_spec() -> None:
     spec = (root / "specs" / "perf-latency-program.md").read_text()
     assert spec_budget_cells(spec), "no budget rows parsed, which would make this check vacuous"
     assert budget_drift(kpi_map, spec) == []
+
+
+def test_threshold_drift_is_silent_when_the_map_matches_the_cell() -> None:
+    kpi_map = {
+        "scenarios": {
+            "S1": {
+                "unit": "ms",
+                "budget": 2000,
+                "acceptable": 5000,
+                "breaking": 10000,
+                "spec_cells": {
+                    "target": "<=2s warm",
+                    "acceptable": "<=5s cold",
+                    "breaking": ">10s",
+                },
+            }
+        }
+    }
+    assert threshold_drift(kpi_map) == []
+
+
+def test_threshold_drift_fires_on_a_stale_numeric_budget() -> None:
+    """The reviewer's own reproduction: S5.budget edited 2000 -> 5000 with the
+    spec_cells text left untouched. budget_drift compares that text verbatim
+    and sees no change; this is the gap it cannot close."""
+    kpi_map = {
+        "scenarios": {
+            "S5": {
+                "unit": "ms",
+                "budget": 5000,
+                "acceptable": 5000,
+                "breaking": 10000,
+                "spec_cells": {
+                    "target": "<=2s warm",
+                    "acceptable": "<=5s cold",
+                    "breaking": ">10s",
+                },
+            }
+        }
+    }
+    (finding,) = threshold_drift(kpi_map)
+    assert "S5 target" in finding and "5000" in finding
+
+
+def test_threshold_drift_skips_a_column_with_no_comparable_number() -> None:
+    """S4's real shape: the target cell states a refresh-relative bound with
+    no number at all, and the acceptable cell's first number is a percentage
+    for a different KPI sharing the column. Neither is checkable without
+    inventing a spec figure, so both must be skipped, not flagged."""
+    kpi_map = {
+        "scenarios": {
+            "S4": {
+                "unit": "ms p95 frame delta",
+                "budget": 16.7,
+                "acceptable": 33.3,
+                "breaking": None,
+                "spec_cells": {
+                    "target": "p95 frame delta <= display refresh interval",
+                    "acceptable": "<5% dropped frames per 10s window",
+                    "breaking": "visible stutter / freeze while audible",
+                },
+            }
+        }
+    }
+    assert threshold_drift(kpi_map) == []
+
+
+def test_threshold_drift_skips_self_consistent_bands() -> None:
+    """acceptable/breaking equal to budget is shorthand, not an independent
+    claim against the cell, so it must not be double-counted as a mismatch."""
+    kpi_map = {
+        "scenarios": {
+            "S3": {
+                "unit": "ms",
+                "budget": 16,
+                "acceptable": 16,
+                "breaking": None,
+                "spec_cells": {
+                    "target": "armed feedback <=16ms",
+                    "acceptable": "n/a",
+                    "breaking": "",
+                },
+            }
+        }
+    }
+    assert threshold_drift(kpi_map) == []
+
+
+def test_shipped_map_has_no_threshold_drift_against_its_own_cells() -> None:
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    kpi_map = json.loads((root / "docs" / "perf" / "kpi-map.json").read_text())
+    assert threshold_drift(kpi_map) == []
 
 
 def test_unmeasured_scenario_carries_its_reason() -> None:

@@ -395,6 +395,94 @@ def budget_drift(kpi_map: dict, spec_text: str) -> list[str]:
     return problems
 
 
+_PERCENTILE_LABEL = re.compile(r"p\d{2,3}")
+_CELL_NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)\s*(ms|s|%)?")
+
+
+def _threshold_matches_cell(threshold: float, unit: str, cell: str) -> bool | None:
+    """Does the FIRST number in `cell` assert `threshold` (recorded in `unit`)?
+
+    Returns None when the column asserts nothing checkable: no number is
+    present, or the first number's unit does not convert to `unit`'s family.
+    Only the first number is read, never a later one in the same cell - spec
+    prose routinely names a second, unrelated number afterward (a sampling
+    window, a denominator, e.g. S4's "<5% dropped frames per 10s window"),
+    and matching against whichever number happens to convert would let that
+    window size stand in for a threshold it was never meant to describe.
+
+    A leading percentile label (p95, p50, ...) is stripped first so a KPI's
+    own percentile marker is never read as its threshold value.
+    """
+    stripped = _PERCENTILE_LABEL.sub("", cell)
+    match = _CELL_NUMBER.search(stripped)
+    if match is None:
+        return None
+    value = float(match.group(1))
+    cell_unit = match.group(2)
+    wants_ms = "ms" in unit.lower()
+    wants_pct = "%" in unit or "pct" in unit.lower()
+    if cell_unit == "ms" and not wants_ms:
+        return None
+    if cell_unit == "s":
+        if wants_ms:
+            value *= 1000
+        elif wants_pct:
+            return None
+    if cell_unit == "%" and not wants_pct:
+        return None
+    return math.isclose(value, threshold, rel_tol=1e-9, abs_tol=1e-9)
+
+
+def threshold_drift(kpi_map: dict) -> list[str]:
+    """The map's own scoring thresholds must match the spec cell they claim to
+    score against, not just its prose (budget_drift's job above).
+
+    budget_drift catches the spec's cell TEXT changing under the map. It
+    cannot catch the reverse: a numeric `budget`/`acceptable`/`breaking`
+    edited (typo, stale copy) while the cell text it was derived from stays
+    untouched, which leaves no textual signal for budget_drift to see and
+    still ships a PASS against a threshold the owning spec no longer states.
+
+    Scoped to scenario-level fields only: a per-KPI `required` override
+    (S2/S4/S7's secondary KPI) shares its one spec_cells column with the
+    scenario's own primary threshold, so no per-column text can say which of
+    the two numbers in that cell belongs to it - checking it would mean
+    guessing, not verifying. `acceptable`/`breaking` equal to `budget` is a
+    self-consistency shorthand, not an independent claim, so it is skipped
+    rather than double-counted.
+
+    A column whose cell asserts nothing this map's unit can compare against
+    is skipped, not flagged - S4's own target cell ("p95 frame delta <=
+    display refresh interval") names no number by design, per its
+    `missing_kpi` note: the 16.7/33.3ms bands are provisional stand-ins for a
+    refresh-relative bound that has no fixed figure to check against yet.
+    """
+    problems: list[str] = []
+    for sid, cfg in kpi_map["scenarios"].items():
+        cells = cfg.get("spec_cells")
+        if not cells:
+            continue
+        unit = str(cfg.get("unit", ""))
+        budget = cfg.get("budget")
+        acceptable = cfg.get("acceptable")
+        breaking = cfg.get("breaking")
+        for column, value in (
+            ("target", budget),
+            ("acceptable", acceptable),
+            ("breaking", breaking),
+        ):
+            if value is None:
+                continue
+            if column != "target" and value == budget:
+                continue
+            cell = str(cells.get(column, ""))
+            if _threshold_matches_cell(float(value), unit, cell) is False:
+                problems.append(
+                    f"{sid} {column}: map records {value!r}, not found in spec cell {cell!r}"
+                )
+    return problems
+
+
 # ---------------------------------------------------------------- output
 
 
@@ -464,6 +552,13 @@ def main(argv: list[str] | None = None) -> int:
     if budget_problems:
         print("[kpi-scorecard] BUDGET DRIFT, refusing to score:", file=sys.stderr)
         for problem in budget_problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 1
+
+    threshold_problems = threshold_drift(kpi_map)
+    if threshold_problems:
+        print("[kpi-scorecard] THRESHOLD DRIFT, refusing to score:", file=sys.stderr)
+        for problem in threshold_problems:
             print(f"  {problem}", file=sys.stderr)
         return 1
 
