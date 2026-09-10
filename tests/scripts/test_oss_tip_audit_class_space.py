@@ -143,15 +143,18 @@ _EXEMPTION_EDGES = [
     # segment after it is an ordinary path and must still be reported.
     ("a url path with a segment before the home", "https://example.com/x" + _HOME + _L, True),
     # The trailing-delimiter strip covers the punctuation a capture runs into at
-    # a boundary. A JSON list ends a segment at the comma, a plist element at
-    # the angle bracket, and a shell or SQL fragment at the semicolon.
-    ("a json list, trailing comma", "[" + '"' + _USERS + "dev" + '",', False),
+    # a boundary: a comma-separated PATH list ends a segment at the comma, a
+    # plist element at the angle bracket, a shell or SQL fragment at the
+    # semicolon. Each probe is shaped so that the delimiter under test is what
+    # ENDS the capture -- a quoted JSON value would end it at the quote, and the
+    # row would then pass whatever the strip did with a comma.
+    ("a comma-separated path list", "PATH=" + _USERS + "dev" + "," + _USERS + "user", False),
     ("a plist element, trailing angle bracket", "<string>" + _USERS + "dev" + "</string>", False),
     ("a semicolon-terminated segment", "ran on " + _USERS + "dev" + "; then rebuilt", False),
     # The direction that makes it a STRIP rather than a shape rule: the check
     # after the strip is still the exact-match list, so a real login carrying
     # the same punctuation is reported rather than exempted.
-    ("a real login, trailing comma", "ran on " + _USERS + _L + ", then rebuilt", True),
+    ("a real login, trailing comma", "PATH=" + _USERS + _L + "," + _USERS + "dev", True),
     ("a real login, trailing angle bracket", "<string>" + _USERS + _L + "</string>", True),
 ]
 
