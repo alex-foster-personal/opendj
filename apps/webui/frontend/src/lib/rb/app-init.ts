@@ -41,8 +41,10 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	const stopReloadCountdown = installReloadCountdown();
 	// PERF-CONTEXT: keep the machine's load/memory pressure in memory so a deck
 	// load can stamp the conditions it was measured under without the load path
-	// itself awaiting anything. Polls only while the page is visible.
-	const stopMachinePressurePolling = startMachinePressurePolling();
+	// itself awaiting anything. Polls only while the page is visible. The first
+	// poll goes through the same boot scheduler as the heartbeat above, so it
+	// does not compete with a boot-time deck load either (#1658 review).
+	const stopMachinePressurePolling = startMachinePressurePolling(scheduler);
 
 	return () => {
 		stopMachinePressurePolling();

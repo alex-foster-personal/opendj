@@ -12,10 +12,17 @@
  * 2. THE POLLER STOPS. A hidden tab loads no decks, and a timer the browser
  *    silently throttles to a minute would turn a documented 10 s cadence into
  *    an undocumented one.
+ *
+ * The FIRST poll is deferred out of the boot request burst (PERF-R6), so
+ * every case below except the deferral one hands startMachinePressurePolling
+ * an immediate scheduler: their subject is the reading and the listener
+ * wiring, not the boot window. The deferral itself gets its own case at the
+ * bottom, and its ordering is proven in boot-scheduler.test.mjs.
  */
 import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, test } from 'node:test';
 
+import { immediateBootScheduler, manualBootScheduler } from './fake-boot-scheduler.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://engine.example.test';
@@ -122,7 +129,7 @@ test('a real reading becomes numeric labels with an honest age', async () => {
 			cache_age_ms: 250
 		})
 	});
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	const snapshot = pressure.readMachinePressure();
 	assert.notEqual(snapshot, null);
@@ -143,7 +150,7 @@ test('an engine that says it cannot measure leaves the cache empty', async () =>
 		ok: true,
 		json: async () => ({ available: false, reason: 'native machine sampler is not importable' })
 	});
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	assert.equal(pressure.readMachinePressure(), null);
 	assert.deepEqual(pressure.pressureLabels(pressure.readMachinePressure(), 0), {
@@ -157,7 +164,7 @@ test('a partial reading stamps only the fields the engine could read', async () 
 		ok: true,
 		json: async () => ({ available: true, load_avg_1m: 12.5, cache_age_ms: 0 })
 	});
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	const snapshot = pressure.readMachinePressure();
 	const labels = pressure.pressureLabels(snapshot, snapshot.requestedAtMs);
@@ -169,14 +176,14 @@ test('a partial reading stamps only the fields the engine could read', async () 
 
 test('an engine that is down leaves the cache empty rather than throwing', async () => {
 	defineGlobal('fetch', () => Promise.reject(new Error('connection refused')));
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	assert.equal(pressure.readMachinePressure(), null);
 	stop();
 });
 
 test('the poll targets the engine base and the documented low-rate cadence', async () => {
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	assert.equal(fetched[0], `${API_BASE}/api/v1/performance/telemetry/pressure`);
 	assert.equal(intervals.length, 1);
@@ -185,7 +192,7 @@ test('the poll targets the engine base and the documented low-rate cadence', asy
 });
 
 test('hiding the page stops the timer; showing it resamples and restarts', async () => {
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	const firstTimer = intervals[0];
 	const pollsWhileVisible = fetched.length;
@@ -203,7 +210,7 @@ test('hiding the page stops the timer; showing it resamples and restarts', async
 });
 
 test('teardown clears the timer and removes the visibility listener', async () => {
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	stop();
 	assert.equal(intervals[0].cleared, true);
@@ -212,9 +219,30 @@ test('teardown clears the timer and removes the visibility listener', async () =
 
 test('a page that starts hidden arms nothing until it is shown', async () => {
 	defineGlobal('document', fakeDocument('hidden'));
-	const stop = pressure.startMachinePressurePolling();
+	const stop = pressure.startMachinePressurePolling(immediateBootScheduler());
 	await settle();
 	assert.equal(fetched.length, 0);
 	assert.equal(intervals.length, 0);
 	stop();
+});
+
+test('the first poll waits for the boot window instead of joining the burst', async () => {
+	// PERF-R6: a deck load at startup competes with this fetch for the
+	// six-connection origin, and the poll invokes the sysctl/vm_stat sampler
+	// on the exact path the boot scheduler exists to keep quiet.
+	// [if the first poll fires at mount then it is back in the burst]
+	const manual = manualBootScheduler();
+	const stop = pressure.startMachinePressurePolling(manual.scheduler);
+	await settle();
+
+	assert.equal(fetched.length, 0, 'no poll may go out during the boot window');
+	assert.equal(manual.pending(), 1, 'and it must be queued, never dropped');
+
+	manual.release();
+	await settle();
+	stop();
+
+	assert.equal(fetched.length, 1);
+	assert.equal(fetched[0], `${API_BASE}/api/v1/performance/telemetry/pressure`);
+	assert.equal(intervals.length, 1, 'the recurring timer starts after release too');
 });

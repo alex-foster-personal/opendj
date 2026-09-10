@@ -26,6 +26,7 @@
  */
 
 import { API_BASE } from '$lib/api/client';
+import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
 /** How often the engine is asked, while the page is visible. Low-rate on
  * purpose: this is a condition that moves over seconds, and the fetch shares
@@ -190,8 +191,17 @@ async function _pollOnce(): Promise<void> {
  * roughly one minute anyway, which would quietly turn a documented 10 s
  * cadence into an undocumented one. Stopping outright and resampling on the
  * way back is the honest version of what the browser would do to us.
+ *
+ * The FIRST poll is deferred out of the boot request burst (PERF-R6), same
+ * convention as usage-heartbeat's first check-in: fired at mount it would
+ * compete with a boot-time deck load's four fetches for the six-connection
+ * origin and invoke the sysctl/vm_stat sampler on the exact path the
+ * scheduler exists to keep quiet (#1658 review). The interval and the
+ * visibility listener are untouched; only the boot-window poll moves.
  */
-export function startMachinePressurePolling(): () => void {
+export function startMachinePressurePolling(
+	scheduler: BootScheduler = bootScheduler
+): () => void {
 	if (typeof window === 'undefined' || typeof document === 'undefined') {
 		return () => {};
 	}
@@ -212,7 +222,9 @@ export function startMachinePressurePolling(): () => void {
 		if (document.visibilityState === 'visible') {
 			// Resample immediately: the snapshot is as old as the hidden stretch
 			// was long, and the first load after a tab comes back is exactly the
-			// one somebody is watching.
+			// one somebody is watching. Not routed through the scheduler: by the
+			// time a tab can go hidden and visible again, the boot window has
+			// long since closed, and defer() would run it immediately anyway.
 			void _pollOnce();
 			startTimer();
 		} else {
@@ -222,8 +234,10 @@ export function startMachinePressurePolling(): () => void {
 
 	document.addEventListener('visibilitychange', onVisibilityChange);
 	if (document.visibilityState === 'visible') {
-		void _pollOnce();
-		startTimer();
+		scheduler.defer('machine-pressure:first', () => {
+			void _pollOnce();
+			startTimer();
+		});
 	}
 
 	return () => {
