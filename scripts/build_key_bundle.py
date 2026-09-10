@@ -96,6 +96,20 @@ class Denominators:
         self.drops[reason] = self.drops.get(reason, 0) + 1
 
 
+@dataclass(frozen=True)
+class BuildSpec:
+    version: str
+    rekordbox: Path
+    mik_windows: Path
+    audio_root: Path
+    copy_manifest: Path
+    out: Path
+    seed: int = DEFAULT_SEED
+    sample_size: int = DEFAULT_SAMPLE_SIZE
+    allow_tiny: bool = False
+    mik_macos: Path | None = None
+
+
 def _nfc(value: str | None) -> str | None:
     if not value:
         return None
@@ -125,8 +139,8 @@ def _is_parseable_mik_key(main_key: str | None) -> bool:
 def load_copy_manifest(path: Path) -> list[CopyRow]:
     rows: list[CopyRow] = []
     with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
+        for raw in fh:
+            line = raw.strip()
             if not line:
                 continue
             data = json.loads(line)
@@ -365,9 +379,10 @@ def _count_rekordbox(db_path: Path) -> dict[str, int]:
                 f"[key-bundle] {db_path} has no djmdContent table"
             )
         total = int(conn.execute("SELECT count(*) FROM djmdContent").fetchone()[0])
-        return {"djmd_content": total}
     except sqlite3.OperationalError as exc:
         raise SystemExit(f"[key-bundle] cannot read {db_path}: {exc}") from exc
+    else:
+        return {"djmd_content": total}
     finally:
         conn.close()
 
@@ -399,19 +414,7 @@ def _macos_mik_side_counts(path: Path | None) -> dict[str, Any]:
     }
 
 
-def build(
-    *,
-    version: str,
-    rekordbox: Path,
-    mik_windows: Path,
-    audio_root: Path,
-    copy_manifest: Path,
-    out: Path,
-    seed: int = DEFAULT_SEED,
-    sample_size: int = DEFAULT_SAMPLE_SIZE,
-    allow_tiny: bool = False,
-    mik_macos: Path | None = None,
-) -> dict[str, Any]:
+def _require_live_rekordbox(rekordbox: Path) -> None:
     if not rekordbox.exists():
         raise SystemExit(
             f"[key-bundle] rekordbox db not found: {rekordbox}. Place a decrypted "
@@ -426,27 +429,18 @@ def build(
             "Need a decrypted live-library master.plain.db."
         )
 
-    den = Denominators()
-    rb_counts = _count_rekordbox(rekordbox)
-    den.counts["djmd_content"] = rb_counts["djmd_content"]
-    _refuse_tiny_rekordbox(rekordbox, rb_counts["djmd_content"], allow_tiny=allow_tiny)
 
-    copy_rows = load_copy_manifest(copy_manifest)
-    den.counts["copy_manifest_lines"] = len(copy_rows)
-    by_orig, by_base, by_rel = _index_copy_manifest(copy_rows)
-
-    audio_files = [p for p in audio_root.rglob("*") if p.is_file()] if audio_root.exists() else []
-    den.counts["audio_root_files"] = len(audio_files)
-    den.counts["audio_root"] = str(audio_root)
-
-    rb_rows = read_rekordbox(rekordbox)
+def _present_from_rekordbox(
+    spec: BuildSpec,
+    by_orig: dict[str, CopyRow],
+    den: Denominators,
+) -> dict[str, Any]:
+    present_by_rel: dict[str, Any] = {}
     n_non_streaming = 0
     n_rb_key = 0
     n_rb_joined = 0
     n_present = 0
-    present_by_rel: dict[str, Any] = {}
-
-    for rb in rb_rows:
+    for rb in read_rekordbox(spec.rekordbox):
         if is_streaming_path(rb.path):
             continue
         n_non_streaming += 1
@@ -459,7 +453,7 @@ def build(
             den.bump_unmatched("rb_not_in_copy_manifest")
             continue
         n_rb_joined += 1
-        src = audio_root / copy.rel
+        src = spec.audio_root / copy.rel
         if not src.is_file():
             den.bump_unmatched("rb_audio_missing")
             continue
@@ -476,27 +470,26 @@ def build(
             "src": src,
             "duration_s": float(duration),
         }
-
     den.counts["djmd_non_streaming"] = n_non_streaming
     den.counts["djmd_parseable_key"] = n_rb_key
     den.counts["rb_joined_copy_manifest"] = n_rb_joined
     den.counts["present"] = n_present
-
-    if n_present == 0 and not allow_tiny:
+    if n_present == 0 and not spec.allow_tiny:
         raise SystemExit(
             f"[key-bundle] 0 FolderPath values resolve to a real file under "
-            f"{audio_root}. Refusing to stage an empty bundle. The pruned "
+            f"{spec.audio_root}. Refusing to stage an empty bundle. The pruned "
             "fixture at /opt/mdt-fixtures/rekordbox/master.plain.db is not a "
             "library."
         )
+    return present_by_rel
 
-    mik_songs = read_mik_windows(mik_windows)
-    den.counts["mik_windows_song"] = len(mik_songs)
-    den.counts["mik_windows_parseable_key"] = sum(
-        1 for s in mik_songs if _is_parseable_mik_key(s.get("main_key"))
-    )
-    mik_winners = _match_mik_to_copy(mik_songs, by_orig, by_base, by_rel, den)
 
+def _population_from_present(
+    spec: BuildSpec,
+    present_by_rel: dict[str, Any],
+    mik_winners: dict[str, dict[str, Any]],
+    den: Denominators,
+) -> list[PopulationRow]:
     population: list[PopulationRow] = []
     for rel, found in present_by_rel.items():
         mik = mik_winners.get(rel)
@@ -507,7 +500,7 @@ def build(
         rb = found["rb"]
         copy = found["copy"]
         duration_s = found["duration_s"]
-        if duration_s < MIN_DURATION_S and not allow_tiny:
+        if duration_s < MIN_DURATION_S and not spec.allow_tiny:
             den.bump_drop("too_short")
             continue
         population.append(
@@ -524,22 +517,29 @@ def build(
                 mik_confidence=mik["confidence"],
             )
         )
-
-    den.counts["population_present_rb_mik"] = len(population)
     population.sort(key=lambda row: row.stable_id)
-    rng = random.Random(seed)
-    if len(population) > sample_size:
-        sampled = rng.sample(population, sample_size)
+    return population
+
+
+def _sample_population(
+    population: list[PopulationRow], spec: BuildSpec, den: Denominators,
+) -> tuple[list[PopulationRow], bool]:
+    den.counts["population_present_rb_mik"] = len(population)
+    if len(population) > spec.sample_size:
+        sampled = random.Random(spec.seed).sample(population, spec.sample_size)
         sampled.sort(key=lambda row: row.stable_id)
         sampled_flag = True
     else:
         sampled = population
         sampled_flag = False
-    den.counts["sample_size_requested"] = sample_size
+    den.counts["sample_size_requested"] = spec.sample_size
     den.counts["n_sampled"] = len(sampled)
     den.counts["sampled"] = sampled_flag
-    den.counts["seed"] = seed
+    den.counts["seed"] = spec.seed
+    return sampled, sampled_flag
 
+
+def _prepare_out(out: Path) -> Path:
     if out.exists():
         for meta in ("SHA256SUMS", "BUNDLE_ID"):
             (out / meta).unlink(missing_ok=True)
@@ -548,67 +548,69 @@ def build(
             shutil.rmtree(wav_dir)
     wav_dir = out / "wav"
     wav_dir.mkdir(parents=True, exist_ok=True)
+    return wav_dir
 
-    fixtures: list[dict[str, Any]] = []
-    truth: dict[str, dict[str, str]] = {}
-    for row in sampled:
-        excerpt_s = EXCERPT_S if row.duration_s >= EXCERPT_S else max(0.1, row.duration_s)
-        if allow_tiny and row.duration_s < EXCERPT_S:
-            excerpt_s = max(0.1, row.duration_s)
-        start = _excerpt_start(row.duration_s, excerpt_s)
-        dest = wav_dir / f"{row.stable_id}.wav"
-        decoded = decode_excerpt(row.src_path, dest, start_s=start, excerpt_s=excerpt_s)
-        if not decoded["ok"]:
-            reason = decoded["reason"]
-            bucket = "silent" if "silent" in reason else "ffmpeg_fail"
-            den.bump_drop(bucket)
-            if dest.exists():
-                dest.unlink()
-            continue
-        payload_hash = sha256_audio_payload(row.src_path)
-        fixtures.append(
-            {
-                "stable_id": row.stable_id,
-                "wav": f"wav/{row.stable_id}.wav",
-                "window_start_s": decoded["window_start_s"],
-                "window_end_s": round(decoded["window_start_s"] + decoded["excerpt_s"], 3),
-                "score_start_s": round(decoded["window_start_s"] + GUARD_S, 3),
-                "score_end_s": round(
-                    decoded["window_start_s"] + decoded["excerpt_s"] - GUARD_S, 3
-                ),
-                "excerpt_s": decoded["excerpt_s"],
-                "source_duration_s": row.duration_s,
-                "audio_payload_sha256": payload_hash,
-                "rekordbox_scale_name": row.rb_scale_name,
-                "mik_camelot": row.mik_camelot,
-                "orig_path": row.orig_path,
-                "rel": row.rel,
-                "mik_tier": row.mik_tier,
-                "peak_dbfs": decoded["max_volume_dbfs"],
-            }
-        )
-        truth[row.stable_id] = {
-            "rekordbox": row.rb_scale_name,
-            "mik_camelot": row.mik_camelot,
-        }
 
+def _stage_excerpt(
+    row: PopulationRow, wav_dir: Path, spec: BuildSpec, den: Denominators,
+) -> tuple[dict[str, Any], dict[str, str]] | None:
+    excerpt_s = EXCERPT_S if row.duration_s >= EXCERPT_S else max(0.1, row.duration_s)
+    if spec.allow_tiny and row.duration_s < EXCERPT_S:
+        excerpt_s = max(0.1, row.duration_s)
+    start = _excerpt_start(row.duration_s, excerpt_s)
+    dest = wav_dir / f"{row.stable_id}.wav"
+    decoded = decode_excerpt(row.src_path, dest, start_s=start, excerpt_s=excerpt_s)
+    if not decoded["ok"]:
+        reason = decoded["reason"]
+        bucket = "silent" if "silent" in reason else "ffmpeg_fail"
+        den.bump_drop(bucket)
+        if dest.exists():
+            dest.unlink()
+        return None
+    fixture = {
+        "stable_id": row.stable_id,
+        "wav": f"wav/{row.stable_id}.wav",
+        "window_start_s": decoded["window_start_s"],
+        "window_end_s": round(decoded["window_start_s"] + decoded["excerpt_s"], 3),
+        "score_start_s": round(decoded["window_start_s"] + GUARD_S, 3),
+        "score_end_s": round(
+            decoded["window_start_s"] + decoded["excerpt_s"] - GUARD_S, 3
+        ),
+        "excerpt_s": decoded["excerpt_s"],
+        "source_duration_s": row.duration_s,
+        "audio_payload_sha256": sha256_audio_payload(row.src_path),
+        "rekordbox_scale_name": row.rb_scale_name,
+        "mik_camelot": row.mik_camelot,
+        "orig_path": row.orig_path,
+        "rel": row.rel,
+        "mik_tier": row.mik_tier,
+        "peak_dbfs": decoded["max_volume_dbfs"],
+    }
+    truth = {"rekordbox": row.rb_scale_name, "mik_camelot": row.mik_camelot}
+    return fixture, truth
+
+
+def _write_staged(
+    spec: BuildSpec,
+    den: Denominators,
+    fixtures: list[dict[str, Any]],
+    truth: dict[str, dict[str, str]],
+    sampled_flag: bool,
+) -> dict[str, Any]:
     den.counts["n_fixtures"] = len(fixtures)
     if not fixtures:
         raise SystemExit(
             "[key-bundle] staged 0 fixtures after decode; refusing an empty bundle. "
             f"drops={den.drops} unmatched={den.unmatched}"
         )
-
-    macos = _macos_mik_side_counts(mik_macos)
-    den.counts["mik_macos"] = macos
-
-    (out / "key-truth.json").write_text(
+    den.counts["mik_macos"] = _macos_mik_side_counts(spec.mik_macos)
+    (spec.out / "key-truth.json").write_text(
         json.dumps({"schema": 1, "keys": truth}, indent=1),
         encoding="utf-8",
     )
     manifest = {
         "lane": LANE,
-        "version": version,
+        "version": spec.version,
         "builder_version": BUILDER_VERSION,
         "paths_relative_to": "manifest",
         "stable_id": "rekordbox djmdContent.ID as string",
@@ -630,23 +632,66 @@ def build(
             "checksums": "SHA256SUMS",
             "scorer": "apps/analysis_bench/scorers/key_lane.py (version stamped in every artifact)",
         },
-        "seed": seed,
-        "sample_size": sample_size,
+        "seed": spec.seed,
+        "sample_size": spec.sample_size,
         "denominators": {**den.counts, "unmatched": den.unmatched, "drops": den.drops},
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "built_from": str(out.resolve()),
+        "built_from": str(spec.out.resolve()),
         "fixtures": fixtures,
     }
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    (spec.out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     print(
-        f"[key-bundle] staged {out}: {len(fixtures)} fixtures, "
+        f"[key-bundle] staged {spec.out}: {len(fixtures)} fixtures, "
         f"population {den.counts['population_present_rb_mik']}, "
         f"sampled={sampled_flag}",
         flush=True,
     )
-    print("[key-bundle] not sealed; run `python -m apps.analysis_bench fixtures seal "
-          f"--lane key --version {version} --dir {out}`", flush=True)
+    print(
+        "[key-bundle] not sealed; run `python -m apps.analysis_bench fixtures seal "
+        f"--lane key --version {spec.version} --dir {spec.out}`",
+        flush=True,
+    )
     return manifest
+
+
+def build(spec: BuildSpec) -> dict[str, Any]:
+    _require_live_rekordbox(spec.rekordbox)
+    den = Denominators()
+    rb_counts = _count_rekordbox(spec.rekordbox)
+    den.counts["djmd_content"] = rb_counts["djmd_content"]
+    _refuse_tiny_rekordbox(
+        spec.rekordbox, rb_counts["djmd_content"], allow_tiny=spec.allow_tiny,
+    )
+
+    copy_rows = load_copy_manifest(spec.copy_manifest)
+    den.counts["copy_manifest_lines"] = len(copy_rows)
+    by_orig, by_base, by_rel = _index_copy_manifest(copy_rows)
+    audio_root = spec.audio_root
+    audio_files = [p for p in audio_root.rglob("*") if p.is_file()] if audio_root.exists() else []
+    den.counts["audio_root_files"] = len(audio_files)
+    den.counts["audio_root"] = str(audio_root)
+
+    present_by_rel = _present_from_rekordbox(spec, by_orig, den)
+    mik_songs = read_mik_windows(spec.mik_windows)
+    den.counts["mik_windows_song"] = len(mik_songs)
+    den.counts["mik_windows_parseable_key"] = sum(
+        1 for s in mik_songs if _is_parseable_mik_key(s.get("main_key"))
+    )
+    mik_winners = _match_mik_to_copy(mik_songs, by_orig, by_base, by_rel, den)
+    population = _population_from_present(spec, present_by_rel, mik_winners, den)
+    sampled, sampled_flag = _sample_population(population, spec, den)
+
+    wav_dir = _prepare_out(spec.out)
+    fixtures: list[dict[str, Any]] = []
+    truth: dict[str, dict[str, str]] = {}
+    for row in sampled:
+        staged = _stage_excerpt(row, wav_dir, spec, den)
+        if staged is None:
+            continue
+        fixture, pair = staged
+        fixtures.append(fixture)
+        truth[row.stable_id] = pair
+    return _write_staged(spec, den, fixtures, truth, sampled_flag)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -675,16 +720,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     out = args.out or (DATA_DIR / "bench" / LANE / args.version)
     build(
-        version=args.version,
-        rekordbox=args.rekordbox,
-        mik_windows=args.mik_windows,
-        audio_root=args.audio_root,
-        copy_manifest=args.copy_manifest,
-        out=out,
-        seed=args.seed,
-        sample_size=args.sample_size,
-        allow_tiny=args.allow_tiny,
-        mik_macos=args.mik_macos,
+        BuildSpec(
+            version=args.version,
+            rekordbox=args.rekordbox,
+            mik_windows=args.mik_windows,
+            audio_root=args.audio_root,
+            copy_manifest=args.copy_manifest,
+            out=out,
+            seed=args.seed,
+            sample_size=args.sample_size,
+            allow_tiny=args.allow_tiny,
+            mik_macos=args.mik_macos,
+        )
     )
     return 0
 

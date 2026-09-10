@@ -142,7 +142,7 @@ def test_builder_stages_seal_and_controls_round_trip(tmp_path: Path) -> None:
     assert (staged / "wav" / "rb-1.wav").is_file()
     sealed = bundles.seal_bundle(staged, lane="key", version="v1")
     assert sealed["bundle_id"]
-    manifest, rekordbox, mik = key_lane.load_bundle(staged)
+    _manifest, rekordbox, mik = key_lane.load_bundle(staged)
     assert list(rekordbox) == ["rb-1"]
     assert rekordbox["rb-1"] == canon_am()
     assert mik["rb-1"] == canon_am()

@@ -8,14 +8,14 @@ import struct
 import wave
 from pathlib import Path
 
-import pytest
-
 import numpy as np
+import pytest
 
 from apps.analysis_key import canon, profiles
 from scripts.keybench import _harness
 from scripts.keybench.run_krumhansl import result_from_estimate
-from scripts.keybench.run_skey import build_arm_from_skey_raw, main as skey_main
+from scripts.keybench.run_skey import build_arm_from_skey_raw
+from scripts.keybench.run_skey import main as skey_main
 
 
 def _write_wav(path: Path, seconds: float = 2.0, freq: float = 261.63) -> None:

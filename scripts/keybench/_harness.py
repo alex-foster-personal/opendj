@@ -103,7 +103,7 @@ def run(
         started = time.time()
         try:
             row = dict(analyzer(fixture["wav"]))
-        except Exception as exc:  # noqa: BLE001 - a per-track failure is a result
+        except Exception as exc:
             row = {
                 "error": f"{type(exc).__name__}: {exc}"[:300],
                 "traceback": traceback.format_exc()[-600:],

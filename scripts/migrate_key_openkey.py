@@ -197,7 +197,8 @@ def apply(db: Path) -> dict[str, dict[str, int]]:
     finally:
         conn.close()
     _print_table(by_backend)
-    print(f"[migrate-key-openkey] applied {sum(s['n_affected'] for s in by_backend.values())} row(s)")
+    n_applied = sum(s["n_affected"] for s in by_backend.values())
+    print(f"[migrate-key-openkey] applied {n_applied} row(s)")
     return by_backend
 
 
