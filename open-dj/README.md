@@ -9,6 +9,7 @@ Vendor-neutral, provenance-aware metadata format for DJ libraries.
 - [`conformance/`](conformance/) -- seed corpus used by round-trip tests.
 - [`CHANGELOG.md`](CHANGELOG.md) -- history of spec bumps.
 - [`LICENSE-SPEC.md`](LICENSE-SPEC.md) -- CC-BY-4.0 licence that covers the spec prose and schemas.
+- [`terminology.md`](terminology.md) and [`synonym-map.json`](synonym-map.json) -- cross-vendor field glossary (code, UI, rekordbox, djay, Serato, Traktor).
 
 ## Reference implementation
 

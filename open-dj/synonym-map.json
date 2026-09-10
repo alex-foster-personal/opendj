@@ -1,0 +1,965 @@
+{
+  "schema_version": 1,
+  "adapters": ["djay", "rekordbox", "serato", "traktor"],
+  "entries": [
+    {
+      "canonical": "track_id",
+      "code": "track_id",
+      "code_aliases": [],
+      "ui": "Track ID",
+      "ui_aliases": [],
+      "description": "Canonical open-dj identity hash for a track.",
+      "vendors": {
+        "rekordbox": {
+          "term": "identity chain",
+          "source": "compute_track_id_with_tier over isrc / fingerprint / duration+size / path+mtime",
+          "notes": "Original rb_id is preserved separately on vendor_ids.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "identity chain",
+          "source": "compute_track_id_with_tier over isrc / fingerprint / duration+size / path+mtime",
+          "notes": "Original uuid is preserved separately on vendor_ids.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "pfil + tsng",
+          "source": "computed from file path + title",
+          "notes": "Lossless for the v0 schema.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "LOCATION path",
+          "source": "computed from LOCATION path",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "file_path",
+      "code": "file_path",
+      "code_aliases": [],
+      "ui": "File Path",
+      "ui_aliases": [],
+      "description": "Absolute path to the audio file on disk.",
+      "vendors": {
+        "rekordbox": {
+          "term": "FolderPath",
+          "source": "djmdContent.FolderPath",
+          "notes": "RBTrack.file_path.",
+          "unsupported": false,
+          "synonyms": ["folder_path", "DjmdContent.FolderPath"]
+        },
+        "djay": {
+          "term": "source_uri",
+          "source": "DjayTrack.file_path",
+          "notes": "Empty string when the track is streaming-only.",
+          "unsupported": false,
+          "synonyms": ["file_path"]
+        },
+        "serato": {
+          "term": "pfil",
+          "source": "_Serato_/database V2 otrk.pfil",
+          "notes": "UTF-16-BE.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "VOLUME + DIR + FILE",
+          "source": "collection.nml LOCATION/@VOLUME + @DIR + @FILE",
+          "notes": "Split across three LOCATION attributes.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "title",
+      "code": "title",
+      "code_aliases": [],
+      "ui": "Track Title",
+      "ui_aliases": [],
+      "description": "Track title.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Title",
+          "source": "djmdContent.Title",
+          "notes": "",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "title",
+          "source": "TSAF title",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "tsng",
+          "source": "_Serato_/database V2 otrk.tsng",
+          "notes": "UTF-16-BE.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "TITLE",
+          "source": "collection.nml ENTRY/@TITLE",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "artists",
+      "code": "artists",
+      "code_aliases": [],
+      "ui": "Artist",
+      "ui_aliases": [],
+      "description": "Ordered list of artist names.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Artist",
+          "source": "djmdContent.ArtistID -> Name",
+          "notes": "Single string, split on comma.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "artist",
+          "source": "TSAF artist",
+          "notes": "Single string, split on comma.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "tart",
+          "source": "_Serato_/database V2 otrk.tart",
+          "notes": "Single string; artists joined on ' & '.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "ARTIST",
+          "source": "collection.nml ENTRY/@ARTIST",
+          "notes": "Single string; artists joined on ' & '.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "album",
+      "code": "album",
+      "code_aliases": [],
+      "ui": "Album",
+      "ui_aliases": [],
+      "description": "Album title.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Album",
+          "source": "djmdContent.AlbumID -> Name",
+          "notes": "",
+          "unsupported": false
+        },
+        "djay": {
+          "term": null,
+          "source": "DjayTrack",
+          "notes": "Unsupported on DjayTrack.",
+          "unsupported": true
+        },
+        "serato": {
+          "term": "talb",
+          "source": "_Serato_/database V2 otrk.talb",
+          "notes": "",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "ALBUM @TITLE",
+          "source": "collection.nml ALBUM/@TITLE",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "bpm",
+      "code": "bpm",
+      "code_aliases": [],
+      "ui": "BPM",
+      "ui_aliases": ["B"],
+      "description": "Tempo in beats per minute.",
+      "vendors": {
+        "rekordbox": {
+          "term": "BPM",
+          "source": "djmdContent.BPM",
+          "notes": "Stored as integer BPM times 100.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "BPM",
+          "source": "MediaLibrary analysis / TSAF",
+          "notes": "Provenance source is djay.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "tbpm",
+          "source": "_Serato_/database V2 otrk.tbpm",
+          "notes": "ASCII decimal string.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "TEMPO @BPM",
+          "source": "collection.nml TEMPO/@BPM",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "key_camelot",
+      "code": "key_camelot",
+      "code_aliases": ["key"],
+      "ui": "Key",
+      "ui_aliases": ["K"],
+      "description": "Musical key in Camelot notation.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Key",
+          "source": "djmdKey.ScaleName",
+          "notes": "Wrapped with rekordbox provenance when present.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "key",
+          "source": "TSAF key",
+          "notes": "Wrapped with djay provenance when present.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "tkey",
+          "source": "_Serato_/database V2 otrk.tkey",
+          "notes": "Round-trips through the Camelot map.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "MUSICAL_KEY @VALUE",
+          "source": "collection.nml MUSICAL_KEY/@VALUE",
+          "notes": "Open-key integer 0..23.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "rating",
+      "code": "rating",
+      "code_aliases": [],
+      "ui": "Rating",
+      "ui_aliases": [],
+      "description": "Star rating on a 0..5 scale; unset is distinct from zero.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Rating",
+          "source": "djmdContent.Rating",
+          "notes": "0..5 scale.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "rating",
+          "source": "MediaLibrary rating",
+          "notes": "0 means unrated and is dropped.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Serato has no native rating field; drop-with-warning.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": "INFO @RANKING",
+          "source": "collection.nml INFO/@RANKING",
+          "notes": "Stored in steps of 51 (0/51/102/153/204/255).",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "duration_ms",
+      "code": "duration_ms",
+      "code_aliases": [],
+      "ui": "Time",
+      "ui_aliases": [],
+      "description": "Track duration in milliseconds.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Length",
+          "source": "djmdContent.Length",
+          "notes": "Stored in seconds; adapter emits duration_s * 1000.",
+          "unsupported": false,
+          "synonyms": ["duration_s"]
+        },
+        "djay": {
+          "term": "duration_s",
+          "source": "DjayTrack.duration_s",
+          "notes": "Adapter emits duration_s * 1000.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Not a native catalog field; duration comes from the audio file.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": "INFO @PLAYTIME",
+          "source": "collection.nml INFO/@PLAYTIME",
+          "notes": "Seconds (float).",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "play_count",
+      "code": "play_count",
+      "code_aliases": [],
+      "ui": "plays",
+      "ui_aliases": ["▶"],
+      "description": "Aggregated play count from DJ history.",
+      "vendors": {
+        "rekordbox": {
+          "term": "history",
+          "source": "rekordbox history",
+          "notes": "Aggregated from rekordbox play history.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "play_count",
+          "source": "MediaLibrary play_count",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "play_count",
+          "source": "Serato play count",
+          "notes": "",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "play_count",
+          "source": "collection.nml play count",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "color_rgb",
+      "code": "color_rgb",
+      "code_aliases": [],
+      "ui": "Color",
+      "ui_aliases": [],
+      "description": "Track color as 24-bit RGB.",
+      "vendors": {
+        "rekordbox": {
+          "term": "track color",
+          "source": "djmdContent color",
+          "notes": "",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "color_index",
+          "source": "DjayTrack.color_index",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "COLOR",
+          "source": "Serato Markers2 COLOR",
+          "notes": "24-bit RGB.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "INFO @COLOR",
+          "source": "collection.nml INFO/@COLOR",
+          "notes": "Palette index 1..16, not 24-bit RGB.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "cue_points",
+      "code": "cue_points",
+      "code_aliases": ["cues"],
+      "ui": "Cue Points",
+      "ui_aliases": [],
+      "description": "Family of hot cues, memory cues, loops, and related markers.",
+      "vendors": {
+        "rekordbox": {
+          "term": "djmdCue",
+          "source": "djmdCue",
+          "notes": "Emitted on read; write-back goes through cautious cue writers.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "TSAF cues",
+          "source": "TSAF cue blobs",
+          "notes": "Tagged with source = djay in provenance.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "Serato Markers2",
+          "source": "GEOB Serato Markers2",
+          "notes": "MP3 GEOB frame; FLAC/AIFF/WAV cue writing is v2 scope.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "CUE_V2",
+          "source": "collection.nml CUE_V2",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "cue_points.hot",
+      "code": "cue_points.hot",
+      "code_aliases": [],
+      "ui": "Hot Cue",
+      "ui_aliases": [],
+      "description": "Hot-cue pad / slot marker.",
+      "vendors": {
+        "rekordbox": {
+          "term": "djmdCue Kind 1..8",
+          "source": "djmdCue Kind 1..8",
+          "notes": "Slots A..H.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "hot cues",
+          "source": "TSAF hot cues",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "Markers2 CUE",
+          "source": "Serato Markers2 CUE sub-tag",
+          "notes": "Written to the MP3 Serato Markers2 GEOB ID3 frame.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "CUE_V2 @TYPE=\"0\"",
+          "source": "collection.nml CUE_V2/@TYPE=0",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "cue_points.memory",
+      "code": "cue_points.memory",
+      "code_aliases": [],
+      "ui": "Memory Cue",
+      "ui_aliases": [],
+      "description": "Memory cue (not a hot-cue pad).",
+      "vendors": {
+        "rekordbox": {
+          "term": "memory cues",
+          "source": "djmdCue memory",
+          "notes": "",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "memory cues",
+          "source": "TSAF memory cues",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Serato has no memory cues; drop-with-warning, opt-in via memory_as_hot.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": "no native memory cue",
+          "source": "CUE_V2",
+          "notes": "No native concept; demoted to hot on write.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "cue_points.loop",
+      "code": "cue_points.loop",
+      "code_aliases": [],
+      "ui": "Loop",
+      "ui_aliases": [],
+      "description": "Saved loop with a start and length.",
+      "vendors": {
+        "rekordbox": {
+          "term": "loops",
+          "source": "djmdCue loops",
+          "notes": "",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "loops",
+          "source": "TSAF loops",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "Markers2 LOOP",
+          "source": "Serato Markers2 LOOP sub-tag",
+          "notes": "",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "CUE_V2 @TYPE=\"5\"",
+          "source": "collection.nml CUE_V2/@TYPE=5 + @LEN",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "cue_points.color",
+      "code": "cue_points.color",
+      "code_aliases": [],
+      "ui": "Cue Color",
+      "ui_aliases": [],
+      "description": "Color of an individual cue or loop marker.",
+      "vendors": {
+        "rekordbox": {
+          "term": "cue color",
+          "source": "djmdCue color",
+          "notes": "16 curated colors.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "cue color",
+          "source": "TSAF cue color",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "CUE RGB",
+          "source": "Serato Markers2 CUE RGB",
+          "notes": "24-bit RGB on the CUE sub-tag.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "per-type palette",
+          "source": "CUE_V2 type-forced color",
+          "notes": "Fixed per-type palette; user colors on write are replaced.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "beats",
+      "code": "beats",
+      "code_aliases": ["beatgrid"],
+      "ui": "Beatgrid",
+      "ui_aliases": [],
+      "description": "Beatgrid anchors (position plus locked BPM).",
+      "vendors": {
+        "rekordbox": {
+          "term": "PQTZ",
+          "source": "ANLZ PQTZ",
+          "notes": "Passed through on read; not yet written back by the adapter.",
+          "unsupported": false,
+          "synonyms": ["ANLZ PQTZ"]
+        },
+        "djay": {
+          "term": "TSAF beatgrid",
+          "source": "TSAF beatgrid",
+          "notes": "",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "Serato BeatGrid",
+          "source": "GEOB Serato BeatGrid",
+          "notes": "",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "tempo grid",
+          "source": "collection.nml TEMPO grid",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "isrc",
+      "code": "isrc",
+      "code_aliases": [],
+      "ui": "ISRC",
+      "ui_aliases": [],
+      "description": "International Standard Recording Code.",
+      "vendors": {
+        "rekordbox": {
+          "term": "ISRC",
+          "source": "djmdContent.ISRC",
+          "notes": "Normalized via normalise_isrc (uppercase, punctuation stripped).",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "isrc",
+          "source": "TSAF isrc",
+          "notes": "Normalized via normalise_isrc.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "x_serato_isrc",
+          "source": "x_serato_isrc extension",
+          "notes": "Lossy; stored in a custom Serato column.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "x_traktor_isrc",
+          "source": "x_traktor_isrc extension",
+          "notes": "No native ISRC field.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "content_hash",
+      "code": "content_hash",
+      "code_aliases": [],
+      "ui": "Content Hash",
+      "ui_aliases": [],
+      "description": "sha256 content hash of the audio file.",
+      "vendors": {
+        "rekordbox": {
+          "term": "content_hash_hex",
+          "source": "RBTrack.content_hash_hex",
+          "notes": "Synthesised from size_bytes, mtime, file_path when missing.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "content_hash_hex",
+          "source": "DjayTrack.content_hash_hex",
+          "notes": "Synthesised from size_bytes, mtime, duration_ms, file_path when missing.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "computed",
+          "source": "computed from audio file",
+          "notes": "",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "computed",
+          "source": "computed from audio file",
+          "notes": "",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "size_bytes",
+      "code": "size_bytes",
+      "code_aliases": [],
+      "ui": "Size",
+      "ui_aliases": [],
+      "description": "Audio file size in bytes.",
+      "vendors": {
+        "rekordbox": {
+          "term": "file_size",
+          "source": "RBTrack.file_size",
+          "notes": "",
+          "unsupported": false
+        },
+        "djay": {
+          "term": "file_size",
+          "source": "DjayTrack.file_size",
+          "notes": "When surfaced by the reader.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Not a native catalog field.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": null,
+          "source": "",
+          "notes": "Not a native NML field.",
+          "unsupported": true
+        }
+      }
+    },
+    {
+      "canonical": "genre",
+      "code": "genre",
+      "code_aliases": [],
+      "ui": "Genre",
+      "ui_aliases": [],
+      "description": "Genre tags. Library UI prioritizes rekordbox.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Genre",
+          "source": "djmdContent.GenreID -> Name",
+          "notes": "Read-only on the rekordbox adapter input dataclass.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": null,
+          "source": "",
+          "notes": "Not mapped on DjayTrack.",
+          "unsupported": true
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Not in the Serato capability table.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": null,
+          "source": "",
+          "notes": "Not in the Traktor capability table.",
+          "unsupported": true
+        }
+      }
+    },
+    {
+      "canonical": "energy",
+      "code": "energy",
+      "code_aliases": [],
+      "ui": "Energy",
+      "ui_aliases": [],
+      "description": "Energy 1-9, imported from Mixed In Key.",
+      "vendors": {
+        "rekordbox": {
+          "term": "Mixed In Key",
+          "source": "Mixed In Key import",
+          "notes": "Empty means no readable Mixed In Key value is available.",
+          "unsupported": false
+        },
+        "djay": {
+          "term": null,
+          "source": "",
+          "notes": "Not a native djay field.",
+          "unsupported": true
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Not a native Serato field.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": null,
+          "source": "",
+          "notes": "Not a native Traktor field.",
+          "unsupported": true
+        }
+      }
+    },
+    {
+      "canonical": "playlists",
+      "code": "playlists",
+      "code_aliases": [],
+      "ui": "Playlists",
+      "ui_aliases": [],
+      "description": "Ordered playlists and crates.",
+      "vendors": {
+        "rekordbox": {
+          "term": "djmdPlaylist",
+          "source": "djmdPlaylist",
+          "notes": "Parent / child edges preserved as rb_pl_<id>.",
+          "unsupported": false,
+          "synonyms": ["rb_pl_<id>"]
+        },
+        "djay": {
+          "term": "djay_pl_<uuid>",
+          "source": "djay playlists",
+          "notes": "Parent / child edges preserved as djay_pl_<uuid>.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": "_Serato_/Subcrates/*.crate",
+          "source": "_Serato_/Subcrates/*.crate",
+          "notes": "",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": "NML playlist NODE",
+          "source": "collection.nml playlist NODE",
+          "notes": "v0 flattens the Traktor playlist tree into top-level items.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "vendor_ids",
+      "code": "vendor_ids",
+      "code_aliases": ["vendor_ids.rekordbox", "vendor_ids.djay"],
+      "ui": "Vendor IDs",
+      "ui_aliases": [],
+      "description": "Original per-vendor identifiers preserved on import.",
+      "vendors": {
+        "rekordbox": {
+          "term": "rb_id",
+          "source": "djmdContent.ID",
+          "notes": "Preserved verbatim as vendor_ids.rekordbox.",
+          "unsupported": false,
+          "synonyms": ["vendor_ids.rekordbox"]
+        },
+        "djay": {
+          "term": "uuid",
+          "source": "DjayTrack.uuid",
+          "notes": "Preserved verbatim as vendor_ids.djay.",
+          "unsupported": false,
+          "synonyms": ["vendor_ids.djay"]
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "No native vendor id field on the Serato adapter.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": null,
+          "source": "",
+          "notes": "No native vendor id field on the Traktor adapter.",
+          "unsupported": true
+        }
+      }
+    },
+    {
+      "canonical": "smart_crates",
+      "code": "smart_crates",
+      "code_aliases": [],
+      "ui": "Smart Crates",
+      "ui_aliases": [],
+      "description": "Serato smart crates, treated as an opaque extension.",
+      "vendors": {
+        "rekordbox": {
+          "term": null,
+          "source": "",
+          "notes": "Rekordbox smart playlists are opaque and do not round-trip.",
+          "unsupported": true
+        },
+        "djay": {
+          "term": null,
+          "source": "",
+          "notes": "Not mapped.",
+          "unsupported": true
+        },
+        "serato": {
+          "term": "x_serato_smart_crate",
+          "source": "x_serato_smart_crate extension",
+          "notes": "Opaque passthrough.",
+          "unsupported": false
+        },
+        "traktor": {
+          "term": null,
+          "source": "",
+          "notes": "Traktor smartlists are a separate field (smart_playlists).",
+          "unsupported": true
+        }
+      }
+    },
+    {
+      "canonical": "smart_playlists",
+      "code": "smart_playlists",
+      "code_aliases": [],
+      "ui": "Smart Playlists",
+      "ui_aliases": [],
+      "description": "Traktor SMARTLIST nodes, treated as an opaque extension.",
+      "vendors": {
+        "rekordbox": {
+          "term": null,
+          "source": "",
+          "notes": "Rekordbox smart playlists are opaque and do not round-trip.",
+          "unsupported": true
+        },
+        "djay": {
+          "term": null,
+          "source": "",
+          "notes": "Not mapped.",
+          "unsupported": true
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Serato smart crates are a separate field (smart_crates).",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": "x_traktor_smartlist",
+          "source": "x_traktor_smartlist extension",
+          "notes": "Opaque SMARTLIST passthrough.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "extended_data",
+      "code": "extended_data",
+      "code_aliases": [],
+      "ui": "Extended Data",
+      "ui_aliases": [],
+      "description": "Traktor EXTENDEDDATA blob preserved as a base64 extension.",
+      "vendors": {
+        "rekordbox": {
+          "term": null,
+          "source": "",
+          "notes": "Rekordbox has no EXTENDEDDATA equivalent.",
+          "unsupported": true
+        },
+        "djay": {
+          "term": null,
+          "source": "",
+          "notes": "djay has no EXTENDEDDATA equivalent.",
+          "unsupported": true
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Serato has no EXTENDEDDATA equivalent.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": "EXTENDEDDATA",
+          "source": "collection.nml EXTENDEDDATA",
+          "notes": "Preserved as base64 when preserve_extended_data=True.",
+          "unsupported": false
+        }
+      }
+    },
+    {
+      "canonical": "x_djay_streaming",
+      "code": "x_djay_streaming",
+      "code_aliases": [],
+      "ui": "Streaming",
+      "ui_aliases": [],
+      "description": "djay streaming-only track flag (SoundCloud / Tidal / Beatport Link).",
+      "vendors": {
+        "rekordbox": {
+          "term": null,
+          "source": "",
+          "notes": "Not a rekordbox field.",
+          "unsupported": true
+        },
+        "djay": {
+          "term": "is_local",
+          "source": "DjayTrack.is_local",
+          "notes": "Emitted as true when is_local is False.",
+          "unsupported": false
+        },
+        "serato": {
+          "term": null,
+          "source": "",
+          "notes": "Streaming-only tracks drop with a warning on Serato import.",
+          "unsupported": true
+        },
+        "traktor": {
+          "term": null,
+          "source": "",
+          "notes": "Streaming-only tracks drop with a warning on Traktor import.",
+          "unsupported": true
+        }
+      }
+    }
+  ]
+}
