@@ -8,6 +8,7 @@ import {
 	FAILURE_CLASSES,
 	SPIKE_CRITERIA,
 	VERDICTS,
+	barSyncVerdict,
 	criterionById,
 	newResultsDocument,
 	recordVerdict,
@@ -244,4 +245,95 @@ test('the harness and the criteria module hold no U+2014 or U+2013 characters an
 			`${file} must not synthesize audio; the spike uses the real library and the real graph`
 		);
 	}
+});
+
+// WKV-10 is an ACCEPTANCE gate, and an acceptance gate that scores the shipped
+// behaviour as a regression is worse than no gate: it tells an operator to hold
+// the door shut on a working build. Pin 9bf12adccb45 made BAR fold to 0.5x/2x
+// and warn in orange rather than refuse, and the harness went on marking any
+// folded ratio FAIL because nothing in CI reads a manual harness. These four
+// tests are what CI now reads.
+
+test('WKV-10 passes a folded BAR lock instead of scoring it as a regression', () => {
+	const outcome = barSyncVerdict({
+		masterPhase: 1,
+		followerPhase: 3,
+		ratio: 0.5,
+		syncError: null,
+		observations: { masterBeat: { n: 1 }, followerBeat: { n: 3 } }
+	});
+	assert.equal(
+		outcome.verdict,
+		'PASS',
+		'a fold that locked is the behaviour pin 9bf12adccb45 asked for, not a failure'
+	);
+	assert.match(
+		outcome.detail,
+		/ORANGE/,
+		'the operator must still confirm the warning colour, which the read model cannot carry'
+	);
+	assert.equal(outcome.observations.sync_error, null);
+});
+
+test('WKV-10 fails a fold that BAR refused, which is the pre-pin behaviour', () => {
+	const outcome = barSyncVerdict({
+		masterPhase: 1,
+		followerPhase: 1,
+		ratio: 2,
+		syncError: 'no phase-capable bar anchor',
+		observations: {}
+	});
+	assert.equal(outcome.verdict, 'FAIL', 'a fold owes exactly one thing: that it locked');
+	assert.match(outcome.detail, /9bf12adccb45/);
+});
+
+test('WKV-10 still demands 1-2-3-4 alignment of an EXACT lock', () => {
+	const aligned = barSyncVerdict({
+		masterPhase: 2,
+		followerPhase: 2,
+		ratio: 1,
+		syncError: null,
+		observations: {}
+	});
+	assert.equal(aligned.verdict, 'PASS');
+	const misaligned = barSyncVerdict({
+		masterPhase: 2,
+		followerPhase: 3,
+		ratio: 1,
+		syncError: null,
+		observations: {}
+	});
+	assert.equal(
+		misaligned.verdict,
+		'FAIL',
+		'relaxing the fold must not relax the exact case, or WKV-10 stops gating anything'
+	);
+});
+
+test('WKV-10 treats a ratio it could not read as an exact lock, never as a fold', () => {
+	// `effective_bpm` is nullable on the read model. A null ratio must not fall
+	// through the `Math.abs(null - 0.5)` coercion into looking like a fold and
+	// collecting a free PASS; it stays on the strict path.
+	const outcome = barSyncVerdict({
+		masterPhase: 1,
+		followerPhase: 4,
+		ratio: null,
+		syncError: null,
+		observations: {}
+	});
+	assert.equal(outcome.verdict, 'FAIL');
+});
+
+test("WKV-10's criterion text says what the harness now measures", () => {
+	const criterion = criterionById('WKV-10');
+	assert.doesNotMatch(
+		criterion.pass_criterion,
+		/rejected in BAR/,
+		'the criterion must not still assert the rule the pin reversed'
+	);
+	assert.match(criterion.pass_criterion, /9bf12adccb45/);
+	assert.ok(
+		criterion.human_step !== null,
+		'the harness cannot see toast colour, so WKV-10 owes the operator a step'
+	);
 });

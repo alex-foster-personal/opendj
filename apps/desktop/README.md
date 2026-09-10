@@ -39,9 +39,13 @@ maintenance trap this thin-shell rule exists to avoid.
 - The window no longer points straight at the engine. It loads the bundled
   bootstrap page in `setup/`, which probes the engine and either navigates
   to it or renders the setup screen (see "The engine gap" below).
-- `bundle.active` is `true` with a `dmg` target. `just dmg` builds and then
-  proves the artifact by mounting it, and is the only supported way to
-  produce one.
+- `bundle.active` is `true` with an `app` target ONLY. Tauri's own dmg
+  bundler lays the image's window out by driving Finder over AppleScript,
+  which times out (AppleEvent -1712) on any machine nobody is interactively
+  logged into, so `just dmg` builds the app and then creates the image
+  itself with `hdiutil create -format UDZO` -- a plain file operation that
+  needs no Finder and no logged-in user (#1711). It proves the artifact by
+  mounting it, and is the only supported way to produce one.
 - Icons under `src-tauri/icons/` are generated from the existing open-dj
   brand mark (`apps/webui/frontend/static/icon-512.png`), converted to RGBA
   (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
@@ -320,9 +324,12 @@ holds each stage and `just dmg` calls it at three points:
 2. `verify-dmg-app` -- mounts the built image and asserts the `.app` really
    carries a `Developer ID Application` authority, the hardened runtime flag
    and a secure timestamp. These are checked here because the notary service
-   reports them slowly and confusingly, and because `cargo tauri build`
-   deletes the staged `.app` once the image exists, making the image the only
-   surviving copy.
+   reports them slowly and confusingly, and because the image is the copy a
+   tester actually receives.
+   The staged `.app` in `bundle/macos` survives the build. Tauri no longer
+   creates an image, so it no longer deletes the app it bundled: `just dmg`
+   picks that app up and runs `hdiutil create` on it itself, on the signed
+   and the unsigned path alike (#1711).
 3. `dmg` then `notarize` -- signs the image itself (Gatekeeper assesses the
    dmg a tester double-clicks, not only the app inside it), submits, staples,
    and runs `spctl -a` to confirm the ticket takes.

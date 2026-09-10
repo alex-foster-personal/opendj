@@ -91,7 +91,7 @@ def _write_three_band_clip(path: Path, *, seed: int) -> None:
 def _encode_mp3(wav_path: Path, mp3_path: Path) -> None:
     subprocess.run(
         [
-            decode._resolve_ffmpeg(),
+            decode.resolve_ffmpeg(),
             "-y",
             "-loglevel",
             "error",

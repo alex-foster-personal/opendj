@@ -38,25 +38,28 @@ def _workflow(name: str) -> str:
 
 def test_dependency_jobs_provision_venvs_with_uv() -> None:
     """Dependency installs are targeted at a venv, never runner Python."""
+    # Self-hosted jobs reuse a persistent .venv through scripts/ci_venv.sh and
+    # install it exactly (tests/scripts/test_ci_workspace_reuse.py); the
+    # hosted macOS job starts clean and keeps the plain form.
+    reused_venv = "scripts/ci_venv.sh 3.11"
+    exact = "uv pip install --exact --upgrade --python .venv/bin/python"
     requirements_jobs = {
-        "ci.yml": ("uv pip install --python .venv/bin/python -r requirements.txt modal",),
-        "full-ci.yml": ("uv pip install --python .venv/bin/python -r requirements.txt modal",),
-        "release-check.yml": (
-            "uv pip install --python .venv/bin/python -r requirements.txt build maturin",
-        ),
+        "ci.yml": (reused_venv, f"{exact} -r requirements.txt modal"),
+        "full-ci.yml": (reused_venv, f"{exact} -r requirements.txt modal"),
+        "release-check.yml": (reused_venv, f"{exact} -r requirements.txt build maturin"),
         # The macOS pytest job moved out of release-check.yml into its own
         # workflow (#924). The contract follows the job, not the file it used
         # to live in - otherwise relocating a job silently drops its cover.
         "macos-native-companion.yml": (
+            "uv venv --python 3.11 .venv",
             "uv pip install --python .venv/bin/python -r requirements.txt pytest",
         ),
     }
 
-    for workflow, install_commands in requirements_jobs.items():
+    for workflow, (venv_command, install_command) in requirements_jobs.items():
         contents = _workflow(workflow)
-        assert "uv venv --python 3.11 .venv" in contents
-        for install_command in install_commands:
-            assert install_command in contents
+        assert venv_command in contents, workflow
+        assert install_command in contents, workflow
 
     forbidden_installs = ("pip install", "python -m pip install", ".venv/bin/pip install")
     for workflow_path in WORKFLOWS.glob("*.yml"):
@@ -104,8 +107,9 @@ def test_docs_build_uses_uv_provisioned_venv() -> None:
     workflow = _workflow("docs.yml")
 
     assert "astral-sh/setup-uv" in workflow
-    assert "uv venv --python 3.11 .venv" in workflow
-    assert "uv pip install --python .venv/bin/python -r requirements-docs.txt" in workflow
+    assert "scripts/ci_venv.sh 3.11" in workflow
+    exact = "uv pip install --exact --upgrade --python .venv/bin/python"
+    assert f"{exact} -r requirements-docs.txt" in workflow
     assert "run: .venv/bin/mkdocs build --strict" in workflow
 
 
@@ -120,7 +124,7 @@ def test_pytest_jobs_forbid_child_uv_runs_from_resyncing_the_venv() -> None:
     """
     for name in ("ci.yml", "full-ci.yml"):
         workflow = _workflow(name)
-        assert "uv venv --python 3.11 .venv" in workflow, name
+        assert "scripts/ci_venv.sh 3.11" in workflow, name
         assert 'UV_NO_SYNC: "1"' in workflow, (
             f"{name}: the pytest job must set UV_NO_SYNC so a child `uv run` "
             "cannot resync `.venv` out from under the running suite"

@@ -215,7 +215,11 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        run: scripts/ci_clean_untracked.sh
 
       - name: Derive the worktree-port lane from the runner identity
         # This job is the only one that claims a dynamic pair from the pool
@@ -329,7 +333,7 @@ jobs:
 
       - name: Keep the numba JIT cache across jobs on this runner
         # librosa's numba artifacts live beside its source by default, and this
-        # job recreates `.venv` every run, so every job paid a 25-45 s cold
+        # job recreated `.venv` every run, so every job paid a 25-45 s cold
         # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
         # every shard, 0.3 s once the cache survives venv recreation). One
         # directory per RUNNER: a runner runs one job at a time, so the
@@ -793,7 +797,11 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        run: scripts/ci_clean_untracked.sh
 
       - name: Derive the worktree-port lane from the runner identity
         run: |

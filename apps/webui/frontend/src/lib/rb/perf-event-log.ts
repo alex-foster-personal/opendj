@@ -40,16 +40,14 @@ export type { PerfEvent } from './perf-event-buckets';
  *
  * These are the audio-liveness kinds: each one means "the operator may be
  * hearing nothing, or seeing nothing move", and each is worth a round trip.
- * `audio-output-rebind-failed` joined them Wed 9 Sep 2026: the output-rebind
- * path was wired at `info` severity, so a failed re-bind - the operator
- * hearing nothing, recovery failed - stayed inside the browser.
- *
- * `audio-output-dead` and `audio-output-dead-persistent` joined them Thu 10
- * Sep 2026 (issue #1641): the app's only device-level "no sound is leaving
- * this machine" verdict, recorded at ERROR by audio-output-liveness.ts.
- * `escalated-kinds-superset.test.mjs` reds if any module records a kind at
- * `error` severity that is absent from this set, so this drift is CHECKED,
- * not just corrected.
+ * `audio-output-rebind-failed` (Wed 9 Sep 2026) is a failed re-bind that was
+ * wired at `info` severity and stayed inside the browser.
+ * `audio-output-dead`/`audio-output-dead-persistent` (#1641,
+ * `outputLatency === 0`) and `output-device-unreachable` (#1642,
+ * `output-device-watchdog.ts`'s `getOutputTimestamp()` stall), both Thu 10
+ * Sep 2026, are device-level "no sound is leaving this machine" verdicts.
+ * `escalated-kinds-superset.test.mjs` reds on any `error`-severity kind
+ * absent from this set, so drift is CHECKED, not just corrected.
  */
 // ESCALATED_KINDS was here until Thu 10 Sep 2026, an eight-name allowlist that
 // _escalate consulted AFTER recordPerfEvent had already gated on
@@ -511,15 +509,17 @@ function _stemLoadTelemetry(stems: StemLoadFacts): _StemLoadTelemetry {
  * `stages` is copied, never mutated: the engine snapshots it into DeckState
  * BEFORE the ring write, and a mutating recorder would make those two disagree
  * depending on statement order.
+ *
+ * `extraLabels` merges in facts this module has no business deriving; omitted, the row is unchanged from before this parameter existed.
  */
 export function recordDeckLoadTiming(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
-	stems: StemLoadFacts
+	stems: StemLoadFacts, extraLabels?: Record<string, string>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
-	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, labels);
+	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, extraLabels === undefined ? labels : { ...labels, ...extraLabels });
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {
