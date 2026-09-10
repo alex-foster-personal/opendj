@@ -137,12 +137,15 @@ export function retireAutoPlayStallIfAudible(sourceStableId: string, audible: bo
 	const stall = autoPlayStall.current;
 	if (stall === null) return;
 	if (!audible) return;
-	// A refused master handover is over the moment ANY deck is audible AS
-	// master, including the very deck that was refused: what was missing there
-	// was the master flag, not the audio, so `pickSourceDeck` returning that
-	// same track is the recovery rather than a continuation of the fault.
+	// A refused master handover INVERTS the rule below, and only for that
+	// reason (Codex r3974981489). What was missing there was the master flag,
+	// not the audio, so the recovery is the REFUSED deck itself becoming the
+	// audible master. Any OTHER audible master - typically the outgoing one,
+	// which a rejected `setDeckMaster` leaves in place and still playing -
+	// means the follower is still unmastered and AutoPlay will still queue
+	// nothing after it, so the banner has to stay up.
 	if (stall.reason === 'master-handover-refused') {
-		clearAutoPlayStall();
+		if (sourceStableId === stall.source_stable_id) clearAutoPlayStall();
 		return;
 	}
 	if (sourceStableId === stall.source_stable_id) return;

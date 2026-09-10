@@ -40,10 +40,10 @@
  *   [then] that rejection still raises nothing [⛔️ if a dead handoff restores
  *   its stale stall into the REPLACEMENT session, which "is AutoPlay on right
  *   now" cannot tell apart].
- * [if] a refused MASTER handover is recorded [then] it is retired as soon as
- *   any deck is audible as master, including the very deck that was refused
- *   [⛔️ if a stall about a missing master flag outlives the master flag
- *   arriving, which the same-track rule would otherwise cause].
+ * [if] a refused MASTER handover is recorded [then] it is retired only when the
+ *   REFUSED deck is itself the audible master [⛔️ if any audible master clears
+ *   it: a rejected setDeckMaster leaves the OUTGOING deck master and playing,
+ *   so the very next poll would erase a banner whose fault is still true].
  * [if] the stall is raised [then] the condition reaches `/api/v1/client-errors`
  *   through the REAL reporter, not a stubbed one [⛔️ if the only server-side
  *   trace of a stopped set is a POST nobody checked was sent].
@@ -559,9 +559,9 @@ test('a refused master handover is retired once a master is actually audible', a
 		mod.noteAutoPlayHandoffStall('master-handover-refused', 'next-1', 'refused', true);
 		assert.equal(mod.readAutoPlayStall()?.reason, 'master-handover-refused');
 
-		// Same track, now audible AS master: what was missing was the flag, not
-		// the audio, so this is the recovery. The same-track rule that protects
-		// every other reason would wrongly hold this one open.
+		// The REFUSED track, now audible AS master: what was missing was the
+		// flag, not the audio, so this is the recovery. This reason inverts the
+		// rule every other one uses, which is why it is special-cased at all.
 		const one = mod.deckStates[1];
 		one.stable_id = 'next-1';
 		one.playing = true;
@@ -596,6 +596,32 @@ test('CONTROL: a refused master handover is NOT retired while nothing is audible
 			mod.readAutoPlayStall(),
 			null,
 			'the reason-specific retire must still require real, presented audio'
+		);
+	});
+});
+
+test('CONTROL: a refused master handover survives the OUTGOING master still playing', async () => {
+	await withController(async (mod) => {
+		mod.noteAutoPlayHandoffStall('master-handover-refused', 'next-1', 'refused', true);
+		assert.equal(mod.readAutoPlayStall()?.reason, 'master-handover-refused');
+
+		// A rejected setDeckMaster leaves the OUTGOING deck master and audible,
+		// so a rule that retires on "any audible master" erases this banner on
+		// the very next poll while the follower is still unmastered and nothing
+		// will queue after it.
+		const one = mod.deckStates[1];
+		one.stable_id = 'outgoing-1';
+		one.playing = true;
+		one.audible = true;
+		one.is_master = true;
+		one.duration_ms = 100_000;
+		one.position_ms = 1_000;
+		await settle();
+
+		assert.notEqual(
+			mod.readAutoPlayStall(),
+			null,
+			'the outgoing master being audible is the FAULT state, not the recovery'
 		);
 	});
 });
