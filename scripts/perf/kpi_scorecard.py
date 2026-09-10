@@ -210,7 +210,14 @@ def verdict_for(value: float, cfg: dict) -> str:
 
 
 def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
-    if not date_str:
+    """`date_str` comes straight from a JSON ledger row, so its runtime type
+    is whatever a contributor typed, not what the `str | None` hint promises;
+    a bare int (20260909) or an array survives to here and
+    `date.fromisoformat` raises TypeError, not ValueError, for a non-str
+    argument. Reject those up front so a malformed row makes one reading
+    UNMEASURED instead of crashing the whole scorecard.
+    """
+    if not isinstance(date_str, str) or not date_str:
         return None
     try:
         measured = _dt.date.fromisoformat(date_str)
@@ -460,9 +467,10 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
         lines.append(f"{s.scenario:4} {s.ux_class:5} {s.verdict:11} {age:>5}  {s.title}{stale}")
         for r in s.readings:
             if r.measured:
+                cohort = f", capture={r.capture_id}" if r.capture_id else ""
                 lines.append(
                     f"       {r.kpi} = {r.value} {r.unit}  "
-                    f"({r.date}, {r.machine}, {r.source})"
+                    f"({r.date}, {r.machine}, {r.source}{cohort})"
                 )
                 if r.note:
                     lines.append(f"         note: {r.note}")
@@ -483,6 +491,36 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
         "An UNMEASURED scenario is not a passing one."
     )
     return lines
+
+
+def _score_to_json(s: Score) -> dict:
+    """One `Score`'s `--json` shape, including the per-reading provenance
+    (source, machine, note, capture_id) the text renderer also prints -
+    split out so a test can assert on this shape directly rather than only
+    through a subprocess against the live ledger.
+    """
+    return {
+        "scenario": s.scenario,
+        "class": s.ux_class,
+        "verdict": s.verdict,
+        "age_days": s.age_days,
+        "title": s.title,
+        "note": s.note,
+        "readings": [
+            {
+                "kpi": r.kpi,
+                "value": r.value,
+                "unit": r.unit,
+                "date": r.date,
+                "source": r.source,
+                "machine": r.machine,
+                "note": r.note,
+                "superseded": r.superseded,
+                "capture_id": r.capture_id,
+            }
+            for r in s.readings
+        ],
+    }
 
 
 def _report_drift(label: str, problems: list[str]) -> None:
@@ -535,35 +573,7 @@ def main(argv: list[str] | None = None) -> int:
 
     scores = score_scenarios(kpi_map, ledger["entries"], today)
     if args.json:
-        print(
-            json.dumps(
-                [
-                    {
-                        "scenario": s.scenario,
-                        "class": s.ux_class,
-                        "verdict": s.verdict,
-                        "age_days": s.age_days,
-                        "title": s.title,
-                        "note": s.note,
-                        "readings": [
-                            {
-                                "kpi": r.kpi,
-                                "value": r.value,
-                                "unit": r.unit,
-                                "date": r.date,
-                                "source": r.source,
-                                "machine": r.machine,
-                                "note": r.note,
-                                "superseded": r.superseded,
-                            }
-                            for r in s.readings
-                        ],
-                    }
-                    for s in scores
-                ],
-                indent=2,
-            )
-        )
+        print(json.dumps([_score_to_json(s) for s in scores], indent=2))
     else:
         print("\n".join(render(scores, args.max_stale_days)))
 

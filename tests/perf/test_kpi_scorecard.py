@@ -14,8 +14,12 @@ import pytest
 
 from scripts.perf.kpi_scorecard import (
     UNMEASURED,
+    Reading,
+    Score,
+    _score_to_json,
     age_in_days,
     newest_reading,
+    render,
     score_scenarios,
     verdict_for,
 )
@@ -725,3 +729,63 @@ def test_json_output_preserves_reading_source_and_score_note() -> None:
     assert all(r["machine"] for r in measured_readings), (
         "measured readings must carry the machine tier that supports the verdict"
     )
+
+
+def test_a_non_string_date_does_not_crash_the_scorecard() -> None:
+    """A fresh reviewer finding: a ledger row can carry a truthy non-string
+    JSON date (a bare int like 20260909, or an array) since nothing in the
+    ledger schema enforces the `str | None` type hint at runtime.
+    `date.fromisoformat` raises TypeError for a non-str argument, which the
+    existing ValueError handler does not catch, so this used to kill the
+    whole scorecard rather than rejecting just this one reading."""
+    assert age_in_days(20260909, _dt.date(2026, 9, 9)) is None
+    assert age_in_days(["2026-09-09"], _dt.date(2026, 9, 9)) is None
+
+    kpi_map = {
+        "scenarios": {
+            "S1": {
+                "title": "t",
+                "class": "P0",
+                "kpis": ["k"],
+                "required": ["k"],
+                "missing_kpi": "placeholder",
+                **LOWER,
+            }
+        }
+    }
+    entries = [{"kpi": "k", "value": 10, "unit": "ms", "date": 20260909}]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == UNMEASURED
+
+
+def test_capture_id_appears_in_json_and_text_output() -> None:
+    """The other fresh reviewer finding: `capture_id` is threaded through
+    `Reading` so the cohort-binding check can compare it, but neither output
+    format echoed it, so a reader could see a combined multi-KPI verdict
+    with no way to verify its readings actually shared one evidence
+    cohort."""
+    reading = Reading(
+        kpi="k",
+        value=12.0,
+        unit="ms",
+        date="2026-09-09",
+        source="manual capture",
+        superseded=False,
+        machine="silver",
+        capture_id="session-42",
+    )
+    score = Score(
+        scenario="S1",
+        title="t",
+        ux_class="P0",
+        verdict="PASS",
+        readings=(reading,),
+        age_days=0,
+        note="",
+    )
+
+    payload = _score_to_json(score)
+    assert payload["readings"][0]["capture_id"] == "session-42"
+
+    text = "\n".join(render([score], None))
+    assert "session-42" in text
