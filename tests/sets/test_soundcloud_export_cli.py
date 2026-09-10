@@ -24,6 +24,7 @@ def seeded_cli(sets_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.requirement("SET-06a")
 def test_soundcloud_export_subcommand_is_registered() -> None:
+    """[if] the sets CLI builds its parser [then] soundcloud-export is a subcommand, [else stop]."""
     parser = cli._build_parser()
     sub_actions = [a for a in parser._actions if hasattr(a, "choices") and a.choices]
     choices = sub_actions[0].choices
@@ -35,6 +36,7 @@ def test_soundcloud_export_subcommand_is_registered() -> None:
 def test_without_acknowledge_prints_reminder_not_comment(
     seeded_cli: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] the CLI omits --acknowledge-rights [then] it exits 2 without a comment, [else stop]."""
     out_path = seeded_cli / "comment.txt"
     rc = cli.main(["soundcloud-export", "s1", "--out", str(out_path)])
     captured = capsys.readouterr()
@@ -50,6 +52,7 @@ def test_without_acknowledge_prints_reminder_not_comment(
 def test_with_acknowledge_prints_reminder_before_comment(
     seeded_cli: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] the CLI acknowledges rights [then] the reminder precedes the tracklist, [else stop]."""
     rc = cli.main(["soundcloud-export", "s1", "--acknowledge-rights"])
     captured = capsys.readouterr()
     assert rc == 0
@@ -67,6 +70,7 @@ def test_with_acknowledge_prints_reminder_before_comment(
 def test_json_with_ack_includes_sentinels_and_library_comment(
     seeded_cli: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] --json joins --acknowledge-rights [then] the payload keeps sentinels, [else stop]."""
     rc = cli.main(["soundcloud-export", "s1", "--acknowledge-rights", "--json"])
     assert rc == 0
     raw = capsys.readouterr().out
@@ -87,6 +91,7 @@ def test_json_with_ack_includes_sentinels_and_library_comment(
 def test_out_writes_comment_only_after_ack(
     seeded_cli: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] --out is given with the ack [then] the file receives the comment, [else stop]."""
     out_path = seeded_cli.parent / "pasted-comment.txt"
     rc = cli.main(
         [
@@ -108,6 +113,7 @@ def test_out_writes_comment_only_after_ack(
 def test_missing_session_exits_2_without_fake_tracklist(
     sets_root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """[if] the session is unknown [then] the CLI exits 2 printing no tracklist, [else stop]."""
     monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
     rc = cli.main(["soundcloud-export", "nope", "--acknowledge-rights"])
     captured = capsys.readouterr()
