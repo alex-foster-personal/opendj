@@ -18,11 +18,18 @@ after the alarms, or make the alarm steps unconditional. What it rejects is the
 sentinel sitting above an alarm step in the same job with a conditional `if`,
 which is exactly the arrangement that held the spend alarm down.
 
+The mirror of that coupling is pinned too, because the obvious fix creates it:
+once the sentinel is last, the STOP step above it can exit 1 over the threshold
+and GitHub's implicit success guard skips the sentinel in turn, so every
+over-threshold run would publish no coverage status. The sentinel has to survive
+an earlier step's failure.
+
 Equally pinned, because the cheap wrong fix is to silence the sentinel instead:
 the sentinel must still be able to fail the run.
 
 Regression lines:
   - if a failing coverage sentinel can make a spend alarm step be skipped then broken
+  - if a failing step above the sentinel can make the sentinel be skipped then broken
   - if moving the sentinel above the alarm steps stops being rejected then broken
   - if the coverage sentinel can no longer fail the run then broken
   - if either alarm step disappears from the budget workflow then broken
@@ -45,10 +52,11 @@ ALARM_STEPS = (
     "Fail the job when month-to-date is over the stop threshold",
 )
 
-# A step condition that runs regardless of earlier steps' outcomes. `always()`
-# is the documented form; anything else is evaluated only after a clean run so
-# far, which is the property under test.
-ALWAYS = "always()"
+# Step conditions that survive an earlier step's failure. `always()` also runs
+# on a concurrency-superseded run; `!cancelled()` is the narrower form used by
+# the sentinel. Anything else is evaluated only after a clean run so far, which
+# is the property under test.
+SURVIVES_FAILURE = ("always()", "!cancelled()")
 
 
 def _workflow() -> dict:
@@ -84,9 +92,31 @@ def alarm_steps_the_sentinel_can_suppress(workflow: dict) -> list[str]:
             if alarm not in names or names.index(alarm) < sentinel_index:
                 continue
             condition = steps[names.index(alarm)].get("if") or ""
-            if ALWAYS not in condition:
+            if not any(survives in condition for survives in SURVIVES_FAILURE):
                 suppressed.append(alarm)
     return suppressed
+
+
+def the_sentinel_itself_can_be_suppressed(workflow: dict) -> bool:
+    """Return whether a failing step above the sentinel would skip the sentinel.
+
+    The mirror of ``alarm_steps_the_sentinel_can_suppress``. Once the sentinel
+    is the last step, the STOP step above it exits 1 over the threshold, and
+    GitHub's implicit success guard skips the sentinel unless its own condition
+    survives an earlier failure.
+    """
+    for job in workflow.get("jobs", {}).values():
+        steps = job.get("steps") or []
+        names = [step.get("name") for step in steps]
+        if SENTINEL_STEP not in names:
+            continue
+        index = names.index(SENTINEL_STEP)
+        condition = steps[index].get("if") or ""
+        if any(survives in condition for survives in SURVIVES_FAILURE):
+            return False
+        # Nothing above it means nothing above it can fail into it.
+        return index > 0
+    return False
 
 
 # ----- the workflow as shipped -----------------------------------------------------
@@ -99,6 +129,15 @@ def test_the_coverage_sentinel_cannot_suppress_the_spend_alarm() -> None:
         f"the coverage sentinel can suppress {suppressed}: GitHub skips every later "
         "step of a job once a step fails, so one open PR head with no Actions run "
         "silences the month-to-date spend alarm and the over-threshold stop"
+    )
+
+
+def test_the_over_threshold_stop_cannot_suppress_the_coverage_sentinel() -> None:
+    """The STOP step failing must not skip the sentinel that now sits below it."""
+    assert the_sentinel_itself_can_be_suppressed(_workflow()) is False, (
+        "the sentinel sits below the STOP step with no condition surviving an "
+        "earlier failure, so every run at or above 90% of the allowance would "
+        "publish no coverage status at all"
     )
 
 
@@ -160,4 +199,18 @@ def test_restoring_the_sentinel_above_the_alarm_steps_is_rejected() -> None:
     assert set(suppressed) == set(ALARM_STEPS), (
         "planting the sentinel above both alarm steps must be caught; "
         f"the check reported {suppressed}"
+    )
+
+
+def test_dropping_the_sentinels_own_guard_is_rejected() -> None:
+    """The sentinel last, but back on the implicit success guard, is the mirror bug."""
+    mutated = deepcopy(_workflow())
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if step.get("name") == SENTINEL_STEP:
+                step.pop("if", None)
+
+    assert the_sentinel_itself_can_be_suppressed(mutated) is True, (
+        "removing the sentinel's guard must be caught: without it the STOP step "
+        "skips the sentinel on every over-threshold run"
     )
