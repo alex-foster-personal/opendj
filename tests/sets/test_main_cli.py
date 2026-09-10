@@ -20,6 +20,7 @@ def test_parser_exposes_expected_subcommands():
     assert {
         "start", "stop", "resume", "status", "list",
         "prune", "classify", "label", "train", "replay",
+        "soundcloud-export",
     } <= choices
 
 
