@@ -794,7 +794,7 @@ test('revalidateAnlz notifies the authoritative-error sink for an explicit RbApi
 	}
 });
 
-test('a settled own answer of missing reaches the engine, an empty rekordbox grid does not', async () => {
+test('a settled own answer of missing reaches the engine, an empty rekordbox grid does not unless it is a source transition', async () => {
 	// The gate used to be "does this payload carry beats", which is right for
 	// a retryable payload (it must not wipe a deck's working grid) and wrong
 	// for a settled own answer of missing/failed: the effective source has no
@@ -835,6 +835,55 @@ test('a settled own answer of missing reaches the engine, an empty rekordbox gri
 			'a settled own missing answer must reach the engine so it can drop the stale grid'
 		);
 		assert.equal(adopted[0][1].beats.length, 0);
+
+		// Codex P1 BLOCKING, PR #1587, a further round: when a loaded deck holds
+		// a successful own grid and the effective source switches back to
+		// Rekordbox for a track with no PQTZ, revalidation returns a terminal
+		// {source: 'rekordbox', beats: []}. The gate above treats that as
+		// non-authoritative unconditionally, so only the shared cache changed and
+		// `resolveDisplayedAnlz` kept preferring the terminal deck payload - the
+		// engine went on running quantize/Beat Sync on the now-superseded own
+		// beats. An unconditional "empty means authoritative" is not the fix
+		// either, or the "unanalyzed-track" case above would have failed - this
+		// widens the gate to a genuine SOURCE TRANSITION only.
+		const ownBeats = [
+			{ bpm: 128, n: 1, t: 0 },
+			{ bpm: 128, n: 2, t: 0.46875 }
+		];
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'own', status: 'ok', reason: null, beat_count: ownBeats.length, beats: ownBeats }
+			});
+		cache.ensureAnlz('demoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			adopted.map(([id]) => id),
+			['own-missing-track', 'demoted-track'],
+			'the initial own grid must itself reach the engine'
+		);
+
+		// The source demotes: revalidation now returns an empty rekordbox answer
+		// for the SAME track. This IS a transition and must reach the engine.
+		globalThis.fetch = async () =>
+			jsonResponse({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid: { source: 'rekordbox', beat_count: 0, beats: [] }
+			});
+		cache.revalidateAnlz('demoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(
+			adopted.map(([id]) => id),
+			['own-missing-track', 'demoted-track', 'demoted-track'],
+			'an empty rekordbox answer replacing a real own grid is a source transition and must reach the engine'
+		);
+		assert.equal(adopted[2][1].source, 'rekordbox');
+
+		// A SECOND revalidation returning the same empty rekordbox answer is an
+		// ordinary same-source retry, not a transition, and must not re-fire.
+		cache.revalidateAnlz('demoted-track');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(adopted.length, 3, 'a same-source rekordbox retry must not re-trigger adoption');
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

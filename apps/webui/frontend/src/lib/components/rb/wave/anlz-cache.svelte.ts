@@ -209,12 +209,34 @@ function _hasActiveConsumer(stable_id: string): boolean {
  *
  * The distinction is TERMINAL-AND-OWN, not empty: a rekordbox payload with no
  * beats is the ordinary un-analyzed state and says nothing authoritative, and
- * a retryable payload is not an answer at all. */
-function _isAuthoritativeGridAnswer(data: AnlzData): boolean {
+ * a retryable payload is not an answer at all - checked FIRST, so a decoder
+ * momentarily saturated never reads as an authoritative absence and wipes a
+ * deck's working grid mid-retry.
+ *
+ * `previous` is the cache's OWN prior entry for this stable_id (read by the
+ * caller before this write lands), used ONLY to widen the empty-rekordbox
+ * case to a genuine SOURCE TRANSITION: a loaded deck holding a successful own
+ * grid, revalidated after a `PUT /analysis/source` demotion, gets back a
+ * terminal `{source: 'rekordbox', beats: []}` for a track with no PQTZ - that
+ * answer must reach the engine too, or it keeps running quantize/Beat Sync on
+ * the now-superseded own beats (Codex P1 BLOCKING, PR #1587, a further
+ * round). An ORDINARY same-source retry (no previous entry, i.e. the common
+ * never-analyzed baseline, or a previous entry that was itself already this
+ * un-analyzed rekordbox state) must NOT re-trigger adoption - an
+ * unconditional "empty means authoritative" would fire the sink for every
+ * ordinary never-analyzed fetch, reintroducing the retry-storm bug the
+ * retryable check above exists to avoid. */
+function _isAuthoritativeGridAnswer(data: AnlzData, previous: AnlzData | null = null): boolean {
 	if (hasAnlzBeatgrid(data)) return true;
 	if (isRetryableAnlzData(data)) return false;
 	const grid = data.beatgrid;
-	return grid.source === 'own' && (grid.status === 'missing' || grid.status === 'failed');
+	if (grid.source === 'own' && (grid.status === 'missing' || grid.status === 'failed')) return true;
+	return (
+		grid.source === 'rekordbox' &&
+		previous !== null &&
+		previous.beatgrid.source !== grid.source &&
+		_isAuthoritativeGridAnswer(previous)
+	);
 }
 
 function _publishAnlzResult(stable_id: string, data: AnlzData): void {
@@ -223,6 +245,14 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 		clearTimeout(existingTimer);
 		_retryTimers.delete(stable_id);
 	}
+	// Read BEFORE this write lands, so `_isAuthoritativeGridAnswer` can tell a
+	// genuine source transition from an ordinary same-source retry. Callers
+	// that blank the entry to `{status: 'loading'}` first (`_fetchAndPublish`)
+	// read `previous` as null here by construction - `revalidateAnlz` is the
+	// one caller that keeps the prior entry intact, which is exactly the path
+	// this distinction exists for.
+	const previousEntry = _cache[stable_id];
+	const previous = previousEntry !== undefined && previousEntry.status === 'ready' ? previousEntry.data : null;
 	// `resolveDisplayedAnlz` below already prefers a cache-entry grid over the
 	// deck's own, but that is only the DISPLAY projection: quantize, beat
 	// loops, _synchronizeFollowers and the master-grid read all take the
@@ -234,7 +264,7 @@ function _publishAnlzResult(stable_id: string, data: AnlzData): void {
 	// that gap; it fires for every real grid this cache learns about,
 	// including the very first, and the engine decides whether any loaded deck
 	// is actually holding a different one.
-	if (_authoritativeGridSink !== null && _isAuthoritativeGridAnswer(data))
+	if (_authoritativeGridSink !== null && _isAuthoritativeGridAnswer(data, previous))
 		_authoritativeGridSink(stable_id, data);
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data };
