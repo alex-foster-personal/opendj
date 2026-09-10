@@ -1,0 +1,25 @@
+{
+  "check_runs": [
+    {
+      "name": "payload provenance",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-09-09T13:00:20Z",
+      "completed_at": "2026-09-09T13:00:30Z"
+    },
+    {
+      "name": "quality ratchet",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-09T13:01:00Z",
+      "completed_at": "2026-09-09T13:05:00Z"
+    },
+    {
+      "name": "E2E",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-09T13:01:00Z",
+      "completed_at": "2026-09-09T13:40:00Z"
+    }
+  ]
+}

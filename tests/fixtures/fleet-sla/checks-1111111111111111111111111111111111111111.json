@@ -1,0 +1,18 @@
+{
+  "check_runs": [
+    {
+      "name": "macOS Packaging",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-09-09T10:00:40Z",
+      "completed_at": "2026-09-09T10:01:00Z"
+    },
+    {
+      "name": "pytest fast lane (shard 1 of 5)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-09T10:02:00Z",
+      "completed_at": "2026-09-09T10:20:00Z"
+    }
+  ]
+}
