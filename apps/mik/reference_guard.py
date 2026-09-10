@@ -23,10 +23,11 @@ Two halves, and neither works alone:
   decision holder nor a declared definition site. Without it the refusal is
   only ever called by modules that already chose to be honest.
 
-This module deliberately does not offer a path under the corpus to read with.
-:func:`corpus_root` exists so a sweep can tell "holds the corpus path" from
-"walked up to it by chance", and both accessors raise if called without the
-decision in place.
+This module hands out no path to read from. :func:`corpus_segments` states
+where the corpus is so the sweep can classify a module that holds it, and the
+sweep treats importing this module at all -- under any name, alias included --
+as holding it. There is deliberately no accessor that returns the root: a
+function that returned it would be the same unguarded door, one call deeper.
 
 Regression lines:
   - if a caller can obtain the corpus root without a recorded decision then broken
@@ -86,13 +87,15 @@ def corpus_segments(registry_path: Path = DECISION_REGISTRY) -> tuple[str, ...]:
     return tuple(_load_registry(registry_path).corpus_path.split("/"))
 
 
-def corpus_root(registry_path: Path = DECISION_REGISTRY) -> Path:
-    """Absolute path of the corpus root. Compare a module against it; never read it here."""
-    return REPO_ROOT / Path(*corpus_segments(registry_path))
-
-
-def load_import_decisions(registry_path: Path = DECISION_REGISTRY) -> tuple[MikImportDecision, ...]:
+def load_import_decisions(
+    registry_path: Path = DECISION_REGISTRY, record_root: Path = REPO_ROOT
+) -> tuple[MikImportDecision, ...]:
     """Every recorded import decision, validated against its record document.
+
+    ``record_root`` is where an entry's ``record`` document is resolved from.
+    Production always passes the default; it is an argument rather than a
+    module constant so a test can aim the check at a temporary tree without
+    replacing production state.
 
     Raises :class:`FileNotFoundError` if the registry is absent and
     :class:`MikImportDecisionUnrecorded` if an entry's document is missing or
@@ -118,23 +121,27 @@ def load_import_decisions(registry_path: Path = DECISION_REGISTRY) -> tuple[MikI
             decision=entry["decision"],
             record=entry["record"],
         )
-        decision_document_states_the_decision(decision)
+        decision_document_states_the_decision(decision, record_root)
         decisions.append(decision)
     return tuple(decisions)
 
 
 def find_import_decision(
-    module: str, registry_path: Path = DECISION_REGISTRY
+    module: str, registry_path: Path = DECISION_REGISTRY, record_root: Path = REPO_ROOT
 ) -> MikImportDecision | None:
     """The decision recorded for ``module``, or None if it has none."""
-    for decision in load_import_decisions(registry_path):
+    for decision in load_import_decisions(registry_path, record_root):
         if decision.module == module:
             return decision
     return None
 
 
 def require_mik_import_decision(
-    module: str, *, action: str, registry_path: Path = DECISION_REGISTRY
+    module: str,
+    *,
+    action: str,
+    registry_path: Path = DECISION_REGISTRY,
+    record_root: Path = REPO_ROOT,
 ) -> MikImportDecision:
     """Refuse unless ``module`` holds a recorded decision for exactly ``action``.
 
@@ -146,7 +153,7 @@ def require_mik_import_decision(
         raise MikReferenceImportRefused(
             f"unknown action {action!r}; NATIVE-12 separates {sorted(ALLOWED_ACTIONS)}"
         )
-    decision = find_import_decision(module, registry_path)
+    decision = find_import_decision(module, registry_path, record_root)
     if decision is None:
         raise MikReferenceImportRefused(
             f"{module} may not {action} from the Mixed In Key reference corpus: it has no "
@@ -162,9 +169,11 @@ def require_mik_import_decision(
     return decision
 
 
-def decision_document_states_the_decision(decision: MikImportDecision) -> Path:
+def decision_document_states_the_decision(
+    decision: MikImportDecision, record_root: Path = REPO_ROOT
+) -> Path:
     """The record document behind ``decision``, proven to name the decision id."""
-    document = REPO_ROOT / decision.record
+    document = record_root / decision.record
     if not document.is_file():
         raise MikImportDecisionUnrecorded(
             f"{decision.module}: decision {decision.decision} names {decision.record}, "
