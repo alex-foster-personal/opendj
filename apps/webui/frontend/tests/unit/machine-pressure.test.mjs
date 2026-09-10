@@ -246,3 +246,46 @@ test('the first poll waits for the boot window instead of joining the burst', as
 	assert.equal(fetched[0], `${API_BASE}/api/v1/performance/telemetry/pressure`);
 	assert.equal(intervals.length, 1, 'the recurring timer starts after release too');
 });
+
+test('a page that starts hidden and is shown before the boot window closes still waits', async () => {
+	// A background tab (or one switched away from right after open) still owns
+	// the same boot window as a foreground one. The visibility handler must
+	// not bypass the scheduler just because the deferral began on a different
+	// entrance than the mount-time one above (#1658 review).
+	defineGlobal('document', fakeDocument('hidden'));
+	const manual = manualBootScheduler();
+	const stop = pressure.startMachinePressurePolling(manual.scheduler);
+	await settle();
+	assert.equal(manual.pending(), 0, 'nothing to queue while still hidden');
+
+	setVisibility('visible');
+	await settle();
+	assert.equal(fetched.length, 0, 'no poll may go out during the boot window');
+	assert.equal(manual.pending(), 1, 'becoming visible queues it, rather than firing it directly');
+
+	manual.release();
+	await settle();
+	stop();
+
+	assert.equal(fetched.length, 1);
+	assert.equal(intervals.length, 1);
+});
+
+test('toggling visibility while still queued does not fire the poll twice', async () => {
+	const manual = manualBootScheduler();
+	const stop = pressure.startMachinePressurePolling(manual.scheduler);
+	await settle();
+	assert.equal(manual.pending(), 1);
+
+	setVisibility('hidden');
+	setVisibility('visible');
+	await settle();
+	assert.equal(manual.pending(), 1, 'still one queued task, not a second one');
+	assert.equal(fetched.length, 0, 'the bypass this guards against would have fired here');
+
+	manual.release();
+	await settle();
+	stop();
+
+	assert.equal(fetched.length, 1, 'exactly one poll, not two');
+});

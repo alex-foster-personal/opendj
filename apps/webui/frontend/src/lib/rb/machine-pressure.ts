@@ -196,8 +196,16 @@ async function _pollOnce(): Promise<void> {
  * convention as usage-heartbeat's first check-in: fired at mount it would
  * compete with a boot-time deck load's four fetches for the six-connection
  * origin and invoke the sysctl/vm_stat sampler on the exact path the
- * scheduler exists to keep quiet (#1658 review). The interval and the
- * visibility listener are untouched; only the boot-window poll moves.
+ * scheduler exists to keep quiet (#1658 review). That deferral has exactly
+ * one entrance regardless of which event triggers it (mount visible, or a
+ * page that starts hidden and is later shown): a page that opens in a
+ * background tab and is switched to before the boot window closes owns the
+ * same window as one that opened in the foreground, so the visibility
+ * handler queues through the scheduler too until that first poll has
+ * actually released, not just been requested -- otherwise a hide/show while
+ * still queued would fire it a second time (#1658 review). Once released,
+ * the interval and the visibility listener behave exactly as before: a
+ * hidden tab stops the timer, a visible one resamples immediately.
  */
 export function startMachinePressurePolling(
 	scheduler: BootScheduler = bootScheduler
@@ -206,6 +214,8 @@ export function startMachinePressurePolling(
 		return () => {};
 	}
 	let timer: ReturnType<typeof setInterval> | null = null;
+	let firstPollScheduled = false;
+	let firstPollReleased = false;
 
 	const stopTimer = (): void => {
 		if (timer === null) return;
@@ -218,15 +228,27 @@ export function startMachinePressurePolling(
 		timer = setInterval(() => void _pollOnce(), PRESSURE_POLL_INTERVAL_MS);
 	};
 
+	const runFirstPoll = (): void => {
+		firstPollReleased = true;
+		void _pollOnce();
+		startTimer();
+	};
+
 	const onVisibilityChange = (): void => {
 		if (document.visibilityState === 'visible') {
-			// Resample immediately: the snapshot is as old as the hidden stretch
-			// was long, and the first load after a tab comes back is exactly the
-			// one somebody is watching. Not routed through the scheduler: by the
-			// time a tab can go hidden and visible again, the boot window has
-			// long since closed, and defer() would run it immediately anyway.
-			void _pollOnce();
-			startTimer();
+			if (firstPollReleased) {
+				// The boot window has actually closed (not just "probably has"):
+				// resample immediately, same as any later hide/show.
+				void _pollOnce();
+				startTimer();
+			} else if (!firstPollScheduled) {
+				// Either this page's first-ever visible moment, or it started
+				// hidden and this is the first time it has been shown.
+				firstPollScheduled = true;
+				scheduler.defer('machine-pressure:first', runFirstPoll);
+			}
+			// else: already queued and still waiting on the boot window: leave
+			// it queued rather than firing a second poll here.
 		} else {
 			stopTimer();
 		}
@@ -234,10 +256,8 @@ export function startMachinePressurePolling(
 
 	document.addEventListener('visibilitychange', onVisibilityChange);
 	if (document.visibilityState === 'visible') {
-		scheduler.defer('machine-pressure:first', () => {
-			void _pollOnce();
-			startTimer();
-		});
+		firstPollScheduled = true;
+		scheduler.defer('machine-pressure:first', runFirstPoll);
 	}
 
 	return () => {
