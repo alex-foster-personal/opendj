@@ -223,6 +223,59 @@ def test_an_empty_segments_array_on_an_ok_lane_is_refused() -> None:
         )
 
 
+def test_an_ok_segments_block_with_no_depends_on_is_refused() -> None:
+    """The mutation this guards: an ok key-change segmentation published
+    without naming the own beatgrid record it was computed against."""
+    with pytest.raises(ValueError, match="depends_on"):
+        record_from_columns(
+            stable_id="sid", key=C_MAJOR, confidence=0.9, duration_s=32.0,
+            sample_rate=44100, decode_fingerprint=FINGERPRINT_HEX,
+            segments_block={
+                "status": "ok", "reason": None,
+                "segments": [{
+                    "start_bar": 0, "end_bar": 16, "start_s": 0.0, "end_s": 32.0,
+                    "key_camelot": "8B", "key_openkey": "3d", "confidence": 0.8,
+                }],
+            },
+        )
+
+
+def test_a_malformed_depends_on_block_fails_the_record_contract() -> None:
+    """`build_key_lane` only checks presence; the STORE boundary checks shape.
+
+    A dict that is not None but missing one of the five fields must still be
+    caught, at `validate_record_contract`, before it ever reaches a reader.
+    """
+    record = record_from_columns(
+        stable_id="sid", key=C_MAJOR, confidence=0.9, duration_s=32.0,
+        sample_rate=44100, decode_fingerprint=FINGERPRINT_HEX,
+        segments_block={
+            "status": "ok", "reason": None,
+            "segments": [{
+                "start_bar": 0, "end_bar": 16, "start_s": 0.0, "end_s": 32.0,
+                "key_camelot": "8B", "key_openkey": "3d", "confidence": 0.8,
+            }],
+        },
+        depends_on_beatgrid={
+            "backend": "own_beatgrid.backfill", "producer_version": "1.1.0",
+            # model_sha256 omitted on purpose.
+            "decode_fingerprint": CANONICAL_FINGERPRINT, "record_digest": "sha256:" + "bb" * 32,
+        },
+    )
+    with pytest.raises(Exception, match="depends_on"):
+        validate_record_contract(record)
+
+
+def test_a_missing_segments_block_needs_no_depends_on() -> None:
+    """A `missing`/`failed` block names no beatgrid record, so it carries none."""
+    record = record_from_columns(
+        stable_id="sid", key=C_MAJOR, confidence=0.9, duration_s=32.0,
+        sample_rate=44100, decode_fingerprint=FINGERPRINT_HEX,
+        segments_block=segments.missing_block(segments.REASON_NO_DOWNBEATS).to_payload(),
+    )
+    assert "depends_on" not in record.lanes["key"].payload
+
+
 def test_a_low_confidence_estimate_is_failed_not_published() -> None:
     """`no_tonal_center` maps to `LaneResult.status='failed'` with the reason,
     never to a best-of-24 guess published as a finding."""
@@ -310,6 +363,21 @@ def test_two_segments_reach_the_projection_as_key_change_count(
     block = record.lanes["key"].payload["segments"]
     assert block["status"] == "ok", block["reason"]
     assert len(block["segments"]) >= 1
+
+    # depends_on.beatgrid: all five identity fields, matching the beatgrid
+    # record this segmentation was actually computed against (section 5).
+    depends_on = record.lanes["key"].payload["depends_on"]["beatgrid"]
+    assert set(depends_on) == {
+        "backend", "producer_version", "model_sha256",
+        "decode_fingerprint", "record_digest",
+    }
+    assert depends_on["backend"] == "own_beatgrid.backfill"
+    assert depends_on["producer_version"] == "1.1.0"
+    assert depends_on["model_sha256"] is None
+    assert depends_on["decode_fingerprint"] == CANONICAL_FINGERPRINT
+    assert depends_on["record_digest"].startswith("sha256:")
+    validate_record_contract(record)
+
     upsert_record(record, db_path=state_db)
 
     conn = open_conn(state_db)

@@ -31,14 +31,28 @@ Camelot/Open Key conversion is the one the bench scorer canonicalizes with, so
 a payload that disagrees with a scored round is impossible by construction
 (A minor = 8A = 1m; unit-tested in both directions in both modules).
 
+**`depends_on.beatgrid` is the dependency identity, not a second staleness
+check.** Spec section 5: a key record whose segments are `ok` was computed on
+a SPECIFIC own beatgrid record, and the five fields here
+(`backend`/`producer_version`/`model_sha256`/`decode_fingerprint`/
+`record_digest`) are what let a later reader tell whether that beatgrid is
+still the canonical one. This module only BUILDS and SHAPE-VALIDATES the
+block; comparing it against the CURRENT canonical beatgrid (the staleness
+enforcement, canonical-pointer exclusion and re-queue) is the canonical
+rebuild / queue's own job, in files this lane does not own -- see the PR body
+for the named overlap with the in-flight queue lane.
+
 -Claude
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from apps.analysis.lane_enums import LaneContractError
 from apps.analysis_key import canon
 from apps.analysis_key.flags import TonalCenterFlag
 from apps.analysis_key.profiles import KeyEstimate
@@ -47,6 +61,99 @@ from apps.analysis_key.profiles import KeyEstimate
 #: center (spec section 3's own example list; `ProvenanceOut.reason` carries it
 #: to the track row, which renders the cell inert with the tooltip).
 REASON_NO_TONAL_CENTER = "no_tonal_center"
+
+#: The exact five-field dependency-identity schema (spec section 5). Compared
+#: field for field by whichever reader checks staleness; a block missing any
+#: of them is not a weaker match, it is not a block.
+DEPENDS_ON_FIELDS: tuple[str, ...] = (
+    "backend",
+    "producer_version",
+    "model_sha256",
+    "decode_fingerprint",
+    "record_digest",
+)
+
+#: The beatgrid lane payload fields the content digest is taken over, IN THIS
+#: ORDER (spec section 5). Only these fields: a beatgrid record carries other
+#: top-level columns (analyzed_at, ...) that move for reasons a key lane does
+#: not depend on.
+_BEATGRID_DIGEST_FIELDS: tuple[str, ...] = (
+    "beats", "bpm", "octave_reason", "tempo_changes", "static_grid_untrusted",
+)
+
+
+def beatgrid_record_digest(beatgrid_payload: Mapping[str, Any]) -> str:
+    """``sha256:<hex>`` over the canonical JSON of a beatgrid lane payload.
+
+    Content identity for the beatgrid record itself, independent of a
+    producer ever bumping its version number (spec section 5): two beatgrid
+    payloads that agree on every digested field produce the same digest
+    regardless of key ordering or float formatting in the source dict, since
+    ``json.dumps(..., sort_keys=True)`` normalizes both.
+    """
+    canonical = {
+        field_name: beatgrid_payload[field_name] for field_name in _BEATGRID_DIGEST_FIELDS
+    }
+    blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def depends_on_identity(
+    *,
+    backend: str,
+    producer_version: str,
+    model_sha256: str | None,
+    decode_fingerprint: str,
+    beatgrid_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """The five-field block naming one beatgrid record as a dependency."""
+    return {
+        "backend": backend,
+        "producer_version": producer_version,
+        "model_sha256": model_sha256,
+        "decode_fingerprint": decode_fingerprint,
+        "record_digest": beatgrid_record_digest(beatgrid_payload),
+    }
+
+
+def validate_key_depends_on(payload: Mapping[str, Any]) -> None:
+    """Shape-only check: an `ok` segments block carries a complete block.
+
+    Called from :mod:`apps.analysis.lane_payloads`'s key validator. This is
+    the write-boundary contract (a missing or malformed block on an `ok`
+    segments block is a contract error, per spec section 5) -- it does not
+    compare the block against any OTHER record, which is the staleness
+    enforcement the canonical rebuild owns.
+    """
+    segments_block = payload.get("segments")
+    if not isinstance(segments_block, Mapping) or segments_block.get("status") != "ok":
+        return
+    depends_on = payload.get("depends_on")
+    if not isinstance(depends_on, Mapping):
+        raise LaneContractError(
+            "key.depends_on is missing; an ok segments block was computed on "
+            "an own beatgrid record and must name it"
+        )
+    beatgrid = depends_on.get("beatgrid")
+    if not isinstance(beatgrid, Mapping):
+        raise LaneContractError(
+            "key.depends_on.beatgrid is missing; an ok segments block was "
+            "computed on an own beatgrid record and must name it"
+        )
+    missing = [name for name in DEPENDS_ON_FIELDS if name not in beatgrid]
+    if missing:
+        raise LaneContractError(
+            f"key.depends_on.beatgrid is missing field(s) {missing}; all of "
+            f"{DEPENDS_ON_FIELDS} are required on an ok segments block"
+        )
+    if not isinstance(beatgrid["decode_fingerprint"], str) or not beatgrid["decode_fingerprint"]:
+        raise LaneContractError(
+            "key.depends_on.beatgrid.decode_fingerprint must be a non-empty string"
+        )
+    if not isinstance(beatgrid["record_digest"], str) or not beatgrid["record_digest"]:
+        raise LaneContractError(
+            "key.depends_on.beatgrid.record_digest must be a non-empty string"
+        )
 
 
 @dataclass(frozen=True)
@@ -72,8 +179,15 @@ def build_key_lane(
     estimate: KeyEstimate,
     flag: TonalCenterFlag,
     segments_block: Mapping[str, Any],
+    depends_on_beatgrid: Mapping[str, Any] | None = None,
 ) -> KeyLane:
-    """One estimate (plus its flag and segment block) into one lane block."""
+    """One estimate (plus its flag and segment block) into one lane block.
+
+    `depends_on_beatgrid` is the five-field block from :func:`depends_on_identity`.
+    Required exactly when `segments_block["status"] == "ok"` (an own beatgrid
+    record was necessarily read to produce those segments); omitted otherwise,
+    since `missing`/`failed` segments name no beatgrid record to depend on.
+    """
     if flag.no_tonal_center:
         if flag.reason is None:
             # evaluate_tonal_center names every failure; a flag that says
@@ -91,6 +205,12 @@ def build_key_lane(
         )
 
     _check_segments_block(segments_block)
+    if segments_block.get("status") == "ok" and depends_on_beatgrid is None:
+        raise ValueError(
+            "segments block is status ok with no depends_on_beatgrid; an ok "
+            "key-change segmentation was computed on an own beatgrid record "
+            "and must name it"
+        )
     key = estimate.key
     payload: dict[str, Any] = {
         "camelot": canon.to_camelot(key),
@@ -100,6 +220,8 @@ def build_key_lane(
         "confidence": float(estimate.confidence),
         "segments": dict(segments_block),
     }
+    if depends_on_beatgrid is not None:
+        payload["depends_on"] = {"beatgrid": dict(depends_on_beatgrid)}
     return KeyLane(
         status="ok", reason=None, confidence=float(estimate.confidence), payload=payload
     )
@@ -123,4 +245,12 @@ def _check_segments_block(segments_block: Mapping[str, Any]) -> None:
         )
 
 
-__all__ = ["REASON_NO_TONAL_CENTER", "KeyLane", "build_key_lane"]
+__all__ = [
+    "DEPENDS_ON_FIELDS",
+    "REASON_NO_TONAL_CENTER",
+    "KeyLane",
+    "beatgrid_record_digest",
+    "build_key_lane",
+    "depends_on_identity",
+    "validate_key_depends_on",
+]

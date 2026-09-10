@@ -464,6 +464,13 @@ def _validate_key(payload: Mapping[str, Any]) -> None:
     _require_camelot("key", payload, "camelot")
     _require_confidence("key", payload, "confidence")
     _validate_key_segments(payload["segments"])
+    # Lazy: apps.analysis_key pulls numpy (KeyEstimate/TonalCenterFlag type
+    # hints in that module), and this file is imported by tooling that runs
+    # in a numpy-less isolated env (scripts/sync_drift_lint.py via
+    # apps.analysis.store). Keep this file's own import surface light.
+    from apps.analysis_key.lane_payload import validate_key_depends_on
+
+    validate_key_depends_on(payload)
 
 
 def _validate_band_block(where: str, block: Any) -> None:

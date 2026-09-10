@@ -67,7 +67,11 @@ from apps.analysis.pcm_fingerprint import (
     require_resampler,
 )
 from apps.analysis_key import canon, flags, profiles, segments
-from apps.analysis_key.lane_payload import REASON_NO_TONAL_CENTER, build_key_lane
+from apps.analysis_key.lane_payload import (
+    REASON_NO_TONAL_CENTER,
+    build_key_lane,
+    depends_on_identity,
+)
 from apps.analysis_key.version import LANE, PRODUCER, PRODUCER_VERSION
 
 from ..lanes import LaneResult, own_backend
@@ -154,6 +158,7 @@ def record_from_columns(
     sample_rate: int,
     decode_fingerprint: str,
     segments_block: dict[str, Any],
+    depends_on_beatgrid: dict[str, Any] | None = None,
 ) -> AnalysisRecord:
     """An `ok` record from an already-known key. Not the producer's own path.
 
@@ -170,6 +175,7 @@ def record_from_columns(
             confidence=confidence, margin=confidence,
         ),
         segments_block,
+        depends_on_beatgrid,
     )
     return _record(
         stable_id=stable_id, lane=lane, duration_s=duration_s,
@@ -186,6 +192,7 @@ def record_from_estimate(
     sample_rate: int,
     decode_fingerprint: str,
     segments_block: dict[str, Any],
+    depends_on_beatgrid: dict[str, Any] | None = None,
 ) -> AnalysisRecord:
     """The producer's own path: one estimate, its flag, one lane block.
 
@@ -194,7 +201,7 @@ def record_from_estimate(
     all (the contract refuses one), and publishing segments beside a key the
     analyzer declined to name would attach a timeline to a guess.
     """
-    lane = build_key_lane(estimate, flag, segments_block)
+    lane = build_key_lane(estimate, flag, segments_block, depends_on_beatgrid)
     return _record(
         stable_id=stable_id, lane=lane, duration_s=duration_s,
         sample_rate=sample_rate, decode_fingerprint=decode_fingerprint,
@@ -226,8 +233,8 @@ def _table_present(conn: Any, name: str) -> bool:
     ).fetchone() is not None
 
 
-def own_downbeat_beats(stable_id: str, *, db_path: Path | None = None) -> list[dict[str, Any]] | None:
-    """The canonical own beatgrid record's beats, or None when there are none.
+def canonical_beatgrid_record(stable_id: str, *, db_path: Path | None = None) -> AnalysisRecord | None:
+    """The canonical own beatgrid record, or None when there is none YET.
 
     None covers every way this track has no own grid YET (no state DB, no
     analysis schema, no canonical pointer, a lane that failed): all four mean
@@ -235,6 +242,11 @@ def own_downbeat_beats(stable_id: str, *, db_path: Path | None = None) -> list[d
     `missing` with one reason. A pointer that names a row that is not there, or
     a row carrying no `beatgrid` lane, is corruption rather than an ordinary
     state and raises -- the same distinction `own_beatgrid_overlay` draws.
+
+    Returns the WHOLE record, not just its beats, so a caller can also build
+    the `depends_on.beatgrid` identity block (backend, producer_version,
+    model_sha256, decode_fingerprint) from the SAME read the beats came from,
+    rather than a second query that could race a concurrent re-analysis.
     """
     conn = _read_only_state_conn(db_path)
     if conn is None:
@@ -257,7 +269,8 @@ def own_downbeat_beats(stable_id: str, *, db_path: Path | None = None) -> list[d
                 f"canonical beatgrid pointer for {stable_id} names {pointer[0]}@"
                 f"{pointer[1]} but no such analysis row exists"
             )
-        result = AnalysisRecord.from_json(row[0]).lanes.get("beatgrid")
+        record = AnalysisRecord.from_json(row[0])
+        result = record.lanes.get("beatgrid")
         if result is None:
             raise RuntimeError(
                 f"canonical beatgrid record {pointer[0]}@{pointer[1]} for "
@@ -268,7 +281,7 @@ def own_downbeat_beats(stable_id: str, *, db_path: Path | None = None) -> list[d
             # to segment over, and the key lane says `missing` for that rather
             # than inheriting another lane's failure reason.
             return None
-        return list(result.payload["beats"])
+        return record
     finally:
         conn.close()
 
@@ -328,13 +341,23 @@ def analyze_audio(
     estimate = profiles.estimate_key_krumhansl(chroma)
     flag = flags.evaluate_tonal_center(estimate)
 
-    beats = own_downbeat_beats(stable_id, db_path=db_path)
-    if beats is None:
+    beatgrid_record = canonical_beatgrid_record(stable_id, db_path=db_path)
+    depends_on_beatgrid: dict[str, Any] | None = None
+    if beatgrid_record is None:
         block = segments.missing_block(segments.REASON_NO_DOWNBEATS)
     else:
+        beatgrid_lane = beatgrid_record.lanes["beatgrid"]
         block = segments.segment_audio(
-            chroma, times, beats, duration_s=duration_s
+            chroma, times, beatgrid_lane.payload["beats"], duration_s=duration_s
         )
+        if block.status == "ok":
+            depends_on_beatgrid = depends_on_identity(
+                backend=beatgrid_record.backend,
+                producer_version=beatgrid_record.producer_version,
+                model_sha256=beatgrid_record.model_sha256,
+                decode_fingerprint=beatgrid_record.decode_fingerprint,
+                beatgrid_payload=beatgrid_lane.payload,
+            )
     return record_from_estimate(
         stable_id=stable_id,
         estimate=estimate,
@@ -343,6 +366,7 @@ def analyze_audio(
         sample_rate=sample_rate,
         decode_fingerprint=decode_fingerprint,
         segments_block=block.to_payload(),
+        depends_on_beatgrid=depends_on_beatgrid,
     )
 
 
@@ -400,7 +424,7 @@ __all__ = [
     "REQUIRED_MODULES",
     "OwnKeyBackfillBackend",
     "analyze_audio",
-    "own_downbeat_beats",
+    "canonical_beatgrid_record",
     "record_from_columns",
     "record_from_estimate",
 ]

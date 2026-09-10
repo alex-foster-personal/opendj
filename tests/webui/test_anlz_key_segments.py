@@ -88,6 +88,17 @@ def _bar_chroma(keys: list[canon.Key]) -> Any:
     return np.stack(columns, axis=1)
 
 
+#: A fixture five-field dependency identity, standing in for a canonical own
+#: beatgrid record's fields, matching the shape `depends_on_identity` builds.
+_DEPENDS_ON_BEATGRID = {
+    "backend": "own_beatgrid.backfill",
+    "producer_version": "1.0.0",
+    "model_sha256": None,
+    "decode_fingerprint": FINGERPRINT,
+    "record_digest": "sha256:" + "aa" * 32,
+}
+
+
 def _own_key_record(
     stable_id: str, *, block: dict[str, Any], key: canon.Key = C_MAJOR
 ) -> Any:
@@ -100,6 +111,7 @@ def _own_key_record(
         sample_rate=44100,
         decode_fingerprint=FINGERPRINT_HEX,
         segments_block=block,
+        depends_on_beatgrid=_DEPENDS_ON_BEATGRID if block.get("status") == "ok" else None,
     )
 
 
