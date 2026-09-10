@@ -46,6 +46,7 @@ on:
         E2E,
         macOS Native Companion,
         macOS Packaging,
+        Periodic checks,
         Windows Parity (on-demand),
       ]
     types: [completed]
