@@ -49,11 +49,13 @@ def drift(kpi_map: dict, spec_ids: list[str]) -> tuple[list[str], list[str]]:
 
 
 def spec_budget_cells(spec_text: str) -> dict[str, dict[str, str]]:
-    """The Target, Acceptable and Breaking cells of each scenario row, verbatim.
+    """The Class, Target, Acceptable and Breaking cells of each scenario row, verbatim.
 
     Splitting a markdown row on the pipe is robust enough while the table keeps
     its shape, and a row whose shape changed is skipped rather than guessed at,
-    which surfaces as a drift finding because its cells will not match.
+    which surfaces as a drift finding because its cells will not match. The
+    table's own header is "# | Scenario | Class | Target | Acceptable |
+    Breaking | Instrumented today?", so `parts[2]` is Class.
     """
     cells: dict[str, dict[str, str]] = {}
     for line in spec_text.splitlines():
@@ -63,9 +65,38 @@ def spec_budget_cells(spec_text: str) -> dict[str, dict[str, str]]:
         if len(parts) < 6:
             continue
         cells.setdefault(
-            parts[0], {"target": parts[3], "acceptable": parts[4], "breaking": parts[5]}
+            parts[0],
+            {
+                "class": parts[2],
+                "target": parts[3],
+                "acceptable": parts[4],
+                "breaking": parts[5],
+            },
         )
     return cells
+
+
+def class_drift(kpi_map: dict, spec_text: str) -> list[str]:
+    """A scenario's Class column reclassified in the spec without its id
+    changing, which nothing else here catches: budget_drift compares Target/
+    Acceptable/Breaking prose only, and a class change alone can leave every
+    one of those cells, and the scenario id, untouched - the stable id is
+    exactly what let a P0 reclassified to P2 keep scoring against its old,
+    now-wrong severity with no other signal that anything moved.
+    """
+    found = spec_budget_cells(spec_text)
+    problems: list[str] = []
+    for sid, cfg in kpi_map["scenarios"].items():
+        current = found.get(sid)
+        if current is None:
+            continue
+        recorded = str(cfg.get("class", ""))
+        if recorded != current["class"]:
+            problems.append(
+                f"{sid} class: spec now reads {current['class']!r}, "
+                f"the map records {recorded!r}"
+            )
+    return problems
 
 
 def budget_drift(kpi_map: dict, spec_text: str) -> list[str]:
@@ -411,6 +442,15 @@ def threshold_drift(kpi_map: dict) -> list[str]:
     checked once per scenario against the target cell's own comparator - the
     cell most reliably stating one - rather than per required KPI, since
     direction is a scenario-level scoring choice, not a per-KPI one.
+
+    A scenario-level column with no comparable number in its cell now FAILS
+    CLOSED too, mirroring `_per_kpi_drift`'s own opt-out below: an uncheckable
+    scalar threshold is a value nothing can catch drifting, exactly the same
+    defect as an uncheckable per-KPI one. The scenario's own top-level
+    `unverifiable_columns` list is the explicit, reviewed opt-out for a
+    genuinely qualitative cell (S1's "any audible glitch during a set", S3's
+    "wrong-phase start, or no armed feedback") - distinct from a per-KPI
+    entry's own list, which opts out that entry's column, not the scenario's.
     """
     problems: list[str] = []
     for sid, cfg in kpi_map["scenarios"].items():
@@ -425,6 +465,7 @@ def threshold_drift(kpi_map: dict) -> list[str]:
                 f"{sid} lower_is_better: map records {lower_is_better!r}, which "
                 f"disagrees with the comparator in spec cell {target_cell!r}"
             )
+        unverifiable = set(cfg.get("unverifiable_columns", []))
         for column, value in (
             ("target", cfg.get("budget")),
             ("acceptable", cfg.get("acceptable")),
@@ -433,9 +474,15 @@ def threshold_drift(kpi_map: dict) -> list[str]:
             if value is None:
                 continue
             cell = str(cells.get(column, ""))
-            if _threshold_matches_cell(float(value), unit, cell) is False:
+            matches = _threshold_matches_cell(float(value), unit, cell)
+            if matches is False:
                 problems.append(
                     f"{sid} {column}: map records {value!r}, not found in spec cell {cell!r}"
+                )
+            elif matches is None and column not in unverifiable:
+                problems.append(
+                    f"{sid} {column}: map records {value!r}, but spec cell {cell!r} "
+                    f"states no comparable number to check it against"
                 )
         problems.extend(_per_kpi_drift(sid, cfg, cells))
     return problems
