@@ -103,6 +103,7 @@ jobs:
       base: ${{ steps.compute.outputs.base }}
       base_at: ${{ steps.compute.outputs.base_at }}
       head: ${{ steps.compute.outputs.head }}
+      head_at: ${{ steps.compute.outputs.head_at }}
       threshold: ${{ steps.compute.outputs.threshold }}
       elapsed_days: ${{ steps.compute.outputs.elapsed_days }}
       reason: ${{ steps.compute.outputs.reason }}
@@ -261,12 +262,22 @@ jobs:
             fi
           fi
 
+          # The recorded window is an INTERVAL, not a merge count: base_at is
+          # when the previous ledger comment was posted and head_at is when the
+          # head commit was made, so a report can name exactly which merges it
+          # measured. Row 11 bounds its `gh pr list` with these rather than a
+          # rolling week (issue #1605 review). `%cI` is strict ISO-8601 with the
+          # offset, which the Python side parses; never a hand-typed `Z`.
+          head_at="$(git log -1 --format=%cI "$head")"
+          [ -n "$head_at" ] || { echo "::error::could not date head ${head}"; exit 1; }
+
           {
             echo "run=${run}"
             echo "count=${count}"
             echo "base=${base}"
             echo "base_at=${base_at}"
             echo "head=${head}"
+            echo "head_at=${head_at}"
             echo "threshold=${threshold}"
             echo "elapsed_days=${elapsed_days}"
             echo "reason=${reason}"
@@ -667,12 +678,27 @@ jobs:
         id: drift
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WINDOW_SINCE: ${{ needs.window.outputs.base_at }}
+          WINDOW_UNTIL: ${{ needs.window.outputs.head_at }}
         run: |
           set -uo pipefail
+          # Measure the window this run RECORDED, not a rolling week: the window
+          # is an interval between two ledger comments, and 50 merges or 7
+          # elapsed days (whichever comes first) makes it shorter or longer than
+          # seven days often enough that a fixed week either misses the first day
+          # of a long window or re-reports merges an earlier window already
+          # covered. Both bounds are the ones `window` published above.
+          # Bootstrap has no previous comment, so there is no interval to
+          # measure and the ad-hoc 7-day slice is the fallback.
+          if [ -n "$WINDOW_SINCE" ] && [ -n "$WINDOW_UNTIL" ]; then
+            window_args=(--since "$WINDOW_SINCE" --until "$WINDOW_UNTIL")
+          else
+            window_args=(--days 7)
+          fi
           # NOT `... || true` followed by `$?`: after either, `$?` reads 0 and
           # the verdict is lost. scripts/shell_construct_lint.py bans that
           # construct for exactly this reason. if/else captures the real code.
-          if python -m scripts.reqs_cited_unflipped --days 7 > drift.out 2> drift.err; then
+          if python -m scripts.reqs_cited_unflipped "${window_args[@]}" > drift.out 2> drift.err; then
             code=0
           else
             code=$?
@@ -714,8 +740,17 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           # A finding is not a failure: this row reports, a person judges each
-          # id against its own acceptance lines. An unreadable source IS.
-          if [ "$code" -eq 0 ]; then exit 0; else exit 1; fi
+          # id against its own acceptance lines. An unreadable source IS, and
+          # so is a run that exited 0 with a summary this job could not read:
+          # `verdict` above already reads UNKNOWN - NOT MEASURED in that case,
+          # and exiting 0 on `code` alone would publish that UNKNOWN into the
+          # ledger as a PASS. The exit predicate is therefore the SAME one the
+          # verdict branch uses, so the job's status and its verdict can never
+          # disagree (issue #1605 review).
+          if [ "$code" -eq 0 ] && [ -n "$declared" ] && [ "$declared" = "$id_total" ]; then
+            exit 0
+          fi
+          exit 1
 
   # ---------------------------------------------------------------------------
   # One comment per window on the ledger issue (DEVOPS-03). This is the whole
