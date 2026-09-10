@@ -17,6 +17,7 @@
       "acceptable": 0,
       "breaking": 0,
       "unit": "events per playing hour",
+      "unverifiable_columns": ["breaking"],
       "spec_cells": {
         "target": "0 xruns",
         "acceptable": "0 xruns",
@@ -83,6 +84,7 @@
       "acceptable": 16,
       "breaking": 16,
       "unit": "ms to armed feedback",
+      "unverifiable_columns": ["acceptable", "breaking"],
       "spec_cells": {
         "target": "phase-locked start on the next quantum; armed feedback <=16ms",
         "acceptable": "same",
@@ -104,6 +106,7 @@
       "acceptable": 33.3,
       "breaking": null,
       "unit": "ms p95 frame delta",
+      "unverifiable_columns": ["target", "acceptable"],
       "spec_cells": {
         "target": "p95 frame delta <= display refresh interval",
         "acceptable": "<5% dropped frames per 10s window",
@@ -189,10 +192,11 @@
           "lower_is_better": true,
           "budget": 0,
           "acceptable": 0,
-          "breaking": null,
+          "breaking": 0,
           "unverifiable_columns": [
             "target",
-            "acceptable"
+            "acceptable",
+            "breaking"
           ]
         }
       ],
