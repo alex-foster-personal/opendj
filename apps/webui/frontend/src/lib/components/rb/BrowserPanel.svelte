@@ -577,7 +577,7 @@
 			? pane.search_result_query === pane.search.trim() &&
 				pane.search_total === pane.search_results.length
 			: !pane.truncated;
-		// Only Next-only is bypassed. The user-selected Broken filter stays intact.
+		// Only the compatible filter is bypassed. The user-selected Broken filter stays intact.
 		return selectSearchFilterFallback(
 			pane.search,
 			visibleRows,
@@ -595,7 +595,7 @@
 	const filterBypassNote = $derived(
 		searchFilterFallback === null
 			? null
-			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with Next-only filter bypassed.`
+			: `Showing ${searchFilterFallback.length} search match${searchFilterFallback.length === 1 ? '' : 'es'} with the compatible filter bypassed.`
 	);
 	// Read contract handed to TrackTable (getters stay reactive through
 	// renderedRows/pane). The virtualization lane replaces THIS provider,
@@ -2525,6 +2525,25 @@
 					</svg>
 					<span>Broken</span>
 				</label>
+				<!--
+					pin 5e3ed689ad3a: this control used to live in `.search-options`,
+					which only renders while the search box is focused or non-empty, so
+					it vanished the moment you clicked away and the feature looked
+					deleted. It belongs in the header row next to Broken, where it is
+					always reachable. The persisted pref id stays `next_only_filter`:
+					renaming the storage key would silently drop every stored
+					preference (prefs.svelte.ts validates that exact key). Only the
+					user-facing label changes, to the one the maintainer asked for.
+				-->
+				<label class="next-only" title="Show only tracks compatible with the master deck: Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
+					<input
+						type="checkbox"
+						aria-label="Show only tracks compatible with the master deck"
+						checked={uiPrefs.next_only_filter}
+						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+					/>
+					<span>compatible</span>
+				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -2540,17 +2559,6 @@
 				<div class="search-stack">
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
-							<label
-								class="next-only"
-								title="Filter visible candidates by Camelot and BPM. Shortcut: Tab"
-							>
-								<input
-									type="checkbox"
-									checked={uiPrefs.next_only_filter}
-									onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
-								/>
-								<span>Next-only</span>
-							</label>
 							<label
 								class="whole-collection"
 								title="Search all playlists uses server FTS across the collection. Unchecked filters only the current pane."
@@ -2585,8 +2593,11 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
+		{#snippet libraryLoadOverlay()}
+			<LibraryLoadIndicator loading={pane.loading} progress={pane.load_progress} />
+		{/snippet}
 		<TrackTable
+			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
 			{loadedIds}

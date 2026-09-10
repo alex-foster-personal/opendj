@@ -84,6 +84,54 @@ test('LibraryLoadIndicator keeps an honest visible track for determinate and ind
 	assert.match(src, /#4fb2ff/, 'the bar must use the vocal-bar blue');
 });
 
+// pin 02717d4ea496: "loading bug - appears above col titles". The indicator
+// was a plain sibling rendered immediately before <TrackTable>, so it sat
+// above the column-header row and pushed it down the page while a load was in
+// flight. It is now handed to TrackTable's `bodyOverlay` slot, which pins it
+// inside the table region below the sticky headers.
+//
+// - if BrowserPanel renders <LibraryLoadIndicator> as a bare sibling of
+//   <TrackTable> again then the headers move on every load -> broken.
+// - if TrackTable positions the overlay with a hardcoded offset instead of the
+//   measured header height then a density change drifts it into or away from
+//   the headers -> broken.
+// - if the overlay is not pointer-events: none then it swallows clicks meant
+//   for the rows underneath it -> broken.
+test('the library load indicator is pinned inside the table, below the column headers', () => {
+	const panel = stripComments(readFileSync(browserPanelPath, 'utf8'));
+	const table = stripComments(readFileSync(path.join(componentsDir, 'TrackTable.svelte'), 'utf8'));
+
+	assert.match(
+		panel,
+		/\{#snippet\s+libraryLoadOverlay\(\)\}[\s\S]*?<LibraryLoadIndicator[\s\S]*?\{\/snippet\}/,
+		'the indicator must be rendered through a snippet, not as a sibling above the table'
+	);
+	assert.match(
+		panel,
+		/<TrackTable\s+bodyOverlay=\{libraryLoadOverlay\}/,
+		'that snippet must be handed to TrackTable as its bodyOverlay'
+	);
+	assert.ok(
+		!/<LibraryLoadIndicator[^>]*\/>\s*<TrackTable/.test(panel),
+		'the indicator must no longer render immediately before <TrackTable>'
+	);
+	assert.match(
+		table,
+		/<thead bind:clientHeight=\{theadHeightPx\}>/,
+		'the overlay offset must be the MEASURED header height, not a constant'
+	);
+	assert.match(
+		table,
+		/class="tt-body-overlay" style=\{`top:\$\{theadHeightPx\}px`\}/,
+		'the overlay must be positioned at the measured header height'
+	);
+	assert.match(
+		table,
+		/\.tt-body-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\}/,
+		'the overlay must not swallow clicks meant for the rows underneath'
+	);
+});
+
 test('LibraryLoadIndicator uses a delayed monochrome oDj mark so fast loads do not flash it', () => {
 	const src = stripComments(
 		readFileSync(path.join(componentsDir, 'LibraryLoadIndicator.svelte'), 'utf8')
