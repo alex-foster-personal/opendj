@@ -1,255 +1,168 @@
 /**
- * AUDIOLIVE-07 / issue #1641: the escalation set must not drift below the
- * severity the audio-output modules chose.
+ * INVARIANT: a perf event recorded at `error` severity leaves the browser.
  *
- * `audio-output-dead` is the app's ONLY device-level "no sound is leaving this
- * machine" verdict. It was recorded at `error` and absent from
- * `ESCALATED_KINDS`, so it never reached `/api/v1/client-errors`: during the
- * Wed 9 Sep 2026 cutout the browser's own ring could not be read either (13 of
- * 14 WebKit localStorage stores were empty), and every `audio-output-*` row
- * from that session is simply gone.
+ * WHAT THIS REPLACED, and why. Until Thu 10 Sep 2026 this file compared an
+ * eight-name `ESCALATED_KINDS` allowlist in perf-event-log.ts against the kinds
+ * recorded by TWO named modules. Its own docstring claimed it "reds if any
+ * module records a kind at error severity that is absent from this set". It
+ * read `audio-output-liveness.ts` and `audio-output-rebind.ts` and nothing
+ * else.
  *
- * Adding the two names fixes the instance. This checks the CLASS.
+ * A guard whose docstring says "any module" and whose code says "these two"
+ * cannot fail for the case it claims to cover, and there was a live escapee:
+ * `presentation-tick-failed`, recorded at `error` by
+ * presentation-clock-report.ts with a message saying the waveform would have
+ * frozen over live audio, was silently dropped before it ever reached the
+ * server log. The set also contained `presentation-stalled`, emitted by
+ * nothing, and the one-directional comparison could not see that either.
  *
- * HOW IT AVOIDS BEING A REGEX THAT LOOKS AWAY. Every `recordPerfEvent(` call
- * in the scanned modules is located by a balanced-paren scan and split into
- * top-level arguments, and each call must resolve to a quoted-literal kind AND
- * a decidable severity. A call this cannot read - a double-quoted kind, a kind
- * held in a constant, a severity built by an expression - is UNCLASSIFIED and
- * FAILS, rather than being silently omitted from the superset. A measurement
- * that could not be taken must not render as a clean result
- * (.claude/rules/verification.md).
+ * A rule that pins VALUES must be maintained forever and rots between
+ * maintenances. A rule that pins an INVARIANT cannot go stale. The allowlist
+ * is gone, so this file now tests the behaviour directly: record a kind that
+ * has never existed, at error severity, and require that it escalates. No list
+ * can drift out of step with that, because there is no list.
  *
- * [if] an audio-output module records a new kind at `error` without adding it
- *   to ESCALATED_KINDS [then] this reds ⛔️
- * [if] a call is written in a form the scanner cannot decide [then] it reds
- *   naming that call, instead of reporting a pass over a shrunken set ⛔️
- * [if] the scanner stops matching real emit sites [then] the instrument control
- *   reds ⛔️
- * [if] a kind is escalated that no module records at error [then] that is
- *   allowed: the set is a SUPERSET, not an equality.
+ * Regression lines:
+ *   - if a NOVEL kind recorded at error severity does not escalate then broken
+ *     (that is the allowlist coming back)
+ *   - if a warn-severity row escalates then broken (the severity gate is the
+ *     only gate, and it must still gate)
+ *   - if an escalator that throws loses the local ring row then broken
+ *   - if perf-event-log.ts regains a kind-keyed VALUE allowlist in the escalate
+ *     path then broken
+ *   - if a `toast-*` row escalates then broken (pushToast already sends a
+ *     richer report for it; two reports of one failure cannot merge and the
+ *     in-flight queue write can erase the better one)
+ *   - if a NON-toast row stops escalating then broken (that is the overshoot
+ *     of the line above, and nothing in the report that produced it objects)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { before, describe, it } from 'node:test';
 
-/** Modules whose perf rows mean "the operator may be hearing nothing". */
-const AUDIO_OUTPUT_MODULES = [
-	'../../src/lib/rb/audio-output-liveness.ts',
-	'../../src/lib/rb/audio-output-rebind.ts',
-	'../../src/lib/rb/master-silence-report.ts'
-];
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const PERF_EVENT_LOG = fileURLToPath(
 	new URL('../../src/lib/rb/perf-event-log.ts', import.meta.url)
 );
 
-const CALL = 'recordPerfEvent(';
+describe('error-severity perf events escalate', () => {
+	let mod;
+	before(async () => {
+		mod = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts');
+	});
 
-/** Index just past the `)` that closes the call opening at `open`. */
-function endOfCall(source, open) {
-	let depth = 0;
-	let quote = null;
-	for (let i = open; i < source.length; i += 1) {
-		const char = source[i];
-		if (quote !== null) {
-			if (char === '\\') i += 1;
-			else if (char === quote) quote = null;
-			continue;
+	it('escalates a kind that has never existed before', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		// Deliberately absurd: no allowlist could ever contain this, so if it
+		// escalates, escalation is not allowlist-gated.
+		mod.recordPerfEvent('a-kind-invented-by-this-test', 'novel failure', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.equal(seen.length, 1, 'an error-severity row must leave the browser regardless of its kind');
+		assert.equal(seen[0].kind, 'a-kind-invented-by-this-test');
+	});
+
+	it('escalates the kind that was silently dropped by the old allowlist', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('presentation-tick-failed', 'waveform would have frozen', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(seen.map((e) => e.kind), ['presentation-tick-failed']);
+	});
+
+	it('does NOT escalate warn severity', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('some-warning', 'not worth the round trip', null, 'warn');
+		mod.setPerfEventEscalator(null);
+		assert.equal(seen.length, 0, 'the severity gate must still be a gate');
+	});
+
+	it('keeps the local ring row when the escalator throws', () => {
+		mod.setPerfEventEscalator(() => {
+			throw new Error('network is the thing that is broken');
+		});
+		let threw = false;
+		try {
+			mod.recordPerfEvent('escalator-throws', 'local record must survive', null, 'error');
+		} catch {
+			threw = true;
 		}
-		if (char === "'" || char === '"' || char === '`') quote = char;
-		else if (char === '(') depth += 1;
-		else if (char === ')') {
-			depth -= 1;
-			if (depth === 0) return i;
-		}
-	}
-	return -1;
-}
+		mod.setPerfEventEscalator(null);
+		assert.equal(threw, false, 'a failing escalator must not propagate');
+		const kinds = mod.readPerfEvents().map((row) => row.kind);
+		assert.ok(
+			kinds.includes('escalator-throws'),
+			'the ring is the last resort when the network is broken; it must hold the row'
+		);
+	});
 
-/** Top-level comma-separated arguments, quotes and nesting respected. */
-function splitArgs(inner) {
-	const args = [];
-	let depth = 0;
-	let quote = null;
-	let start = 0;
-	for (let i = 0; i < inner.length; i += 1) {
-		const char = inner[i];
-		if (quote !== null) {
-			if (char === '\\') i += 1;
-			else if (char === quote) quote = null;
-			continue;
-		}
-		if (char === "'" || char === '"' || char === '`') quote = char;
-		else if (char === '(' || char === '[' || char === '{') depth += 1;
-		else if (char === ')' || char === ']' || char === '}') depth -= 1;
-		else if (char === ',' && depth === 0) {
-			args.push(inner.slice(start, i).trim());
-			start = i + 1;
-		}
-	}
-	args.push(inner.slice(start).trim());
-	return args.filter((arg) => arg.length > 0);
-}
+	it('has no kind-keyed VALUE allowlist left in the escalate path', () => {
+		const body = readFileSync(PERF_EVENT_LOG, 'utf8');
+		const escalate = body.slice(body.indexOf('function _escalate('));
+		const fnEnd = escalate.indexOf('\n}\n');
+		const source = escalate.slice(0, fnEnd);
+		assert.ok(
+			!/ESCALATED_KINDS|\.has\(entry\.kind\)/.test(source),
+			`_escalate must not consult a set of kind VALUES; such a list can only ever ` +
+				`drop error-severity rows before they leave the browser:\n${source}`
+		);
+	});
 
-const QUOTED = /^'([^']*)'$|^"([^"]*)"$/;
+	// ---- exactly once, not zero and not twice ---------------------------
+	//
+	// `pushToast(msg, 'error')` writes the `toast-error` ring row AND sends its
+	// own reportClientError carrying the real cause, the toast id and any
+	// context the caller measured. Escalating the ring row too produces two
+	// reports of one failure that cannot merge (reportClientError fingerprints
+	// on kind:source:message and both halves differ), and the second write can
+	// be erased by the first flush writing back its pre-await snapshot.
+	//
+	// Both directions are asserted, because the overshoot -- suppressing rows
+	// generally -- satisfies the finding perfectly and would silence every
+	// audio fault again.
 
-function literal(arg) {
-	const match = QUOTED.exec(arg);
-	if (match === null) return null;
-	return match[1] ?? match[2];
-}
+	it('does NOT escalate a toast row: pushToast already reports it', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('toast-error', 'deck 1 failed to load', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(
+			seen.map((e) => e.kind),
+			[],
+			'an error toast must take ONE trip to the server, the context-rich one pushToast sends'
+		);
+	});
 
-/**
- * Classify every recordPerfEvent call in one module.
- *
- * Returns { error, other, unclassified }. `unclassified` is the honest bucket:
- * a call whose kind or severity cannot be READ from the source, which the
- * caller must treat as a failure rather than as nothing to report.
- */
-export function classifyCalls(source, label = 'source') {
-	const error = new Set();
-	const other = new Set();
-	const unclassified = [];
-	let from = 0;
-	for (;;) {
-		const at = source.indexOf(CALL, from);
-		if (at === -1) break;
-		const open = at + CALL.length - 1;
-		from = at + CALL.length;
-		const close = endOfCall(source, open);
-		if (close === -1) {
-			unclassified.push(`${label}: unterminated call at offset ${at}`);
-			continue;
-		}
-		const inner = source.slice(open + 1, close);
-		// An interface member declares `recordPerfEvent(kind: string, ...)`.
-		// That is a type, not an emit site, and it is the one shape allowed to
-		// carry a non-literal first argument.
-		if (/^\s*\w+\s*:/.test(inner)) continue;
-		const args = splitArgs(inner);
-		const kind = args.length === 0 ? null : literal(args[0]);
-		if (kind === null) {
-			unclassified.push(`${label}: kind is not a quoted literal in ${CALL}${inner.slice(0, 60)}`);
-			continue;
-		}
-		// Severity is the last argument when it is a quoted literal; a call with
-		// only kind+message defaults to a non-error severity at the call site's
-		// own signature. Anything else is undecidable from here.
-		const last = args.length > 2 ? literal(args[args.length - 1]) : null;
-		if (args.length > 2 && last === null) {
-			unclassified.push(`${label}: severity is not a quoted literal for kind ${kind}`);
-			continue;
-		}
-		if (last === 'error') error.add(kind);
-		else other.add(kind);
-	}
-	return { error, other, unclassified };
-}
+	it('still keeps the toast row in the local ring', () => {
+		mod.recordPerfEvent('toast-error', 'the ring is not the thing being skipped', null, 'error');
+		const kinds = mod.readPerfEvents().map((row) => row.kind);
+		assert.ok(kinds.includes('toast-error'), 'not escalating a row must not stop recording it');
+	});
 
-function moduleSource(relative) {
-	const source = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
-	assert.ok(source.length > 0, `${relative} is empty: this guard would assert nothing`);
-	return source;
-}
+	it('escalates an audio fault, which has no other reporter', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('audio-output-dead', 'rendering into a dead output', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(
+			seen.map((e) => e.kind),
+			['audio-output-dead'],
+			'suppressing rows generally is the overshoot of the toast rule and re-hides the outage'
+		);
+	});
 
-function escalatedKinds() {
-	const source = readFileSync(PERF_EVENT_LOG, 'utf8');
-	const start = source.indexOf('const ESCALATED_KINDS');
-	assert.notEqual(start, -1, 'ESCALATED_KINDS could not be located: this guard asserts nothing');
-	const end = source.indexOf(']);', start);
-	assert.notEqual(end, -1, 'ESCALATED_KINDS is not a closed literal: this guard asserts nothing');
-	const kinds = new Set(
-		[...source.slice(start, end).matchAll(/'([a-z0-9-]+)'/g)].map((match) => match[1])
-	);
-	assert.ok(kinds.size > 0, 'parsed an EMPTY escalation set, which would pass any superset check');
-	return kinds;
-}
-
-test('the scanner actually finds emit sites (instrument control)', () => {
-	const error = new Set();
-	for (const path of AUDIO_OUTPUT_MODULES) {
-		for (const kind of classifyCalls(moduleSource(path), path).error) error.add(kind);
-	}
-	// Derived from the claim under test, not from unrelated material: the
-	// hypothesis is "these modules record device-death rows at error", so these
-	// are the rows it predicts. A zero here would otherwise render as a pass.
-	assert.ok(error.has('audio-output-dead'), `scanner found ${[...error].join(', ') || 'nothing'}`);
-	assert.ok(error.has('audio-output-dead-persistent'));
-	assert.ok(error.has('audio-output-rebind-failed'));
-});
-
-test('the scanner reads forms a line regex would miss', () => {
-	const doubleQuoted = classifyCalls(
-		'effects.recordPerfEvent("audio-output-invented", "a new kind", "error");'
-	);
-	assert.deepEqual([...doubleQuoted.error], ['audio-output-invented'], 'double quotes are read');
-
-	const spreadOverLines = classifyCalls(
-		[
-			'effects.recordPerfEvent(',
-			"\t'audio-output-verbose',",
-			'\t`a message so long that a bounded lookahead gives up: ' + 'x'.repeat(600) + '`,',
-			"\t'error'",
-			');'
-		].join('\n')
-	);
-	assert.deepEqual(
-		[...spreadOverLines.error],
-		['audio-output-verbose'],
-		'a long message argument must not hide the severity'
-	);
-
-	const nestedCommas = classifyCalls(
-		"effects.recordPerfEvent('audio-output-nested', fmt(a, b), 'error');"
-	);
-	assert.deepEqual([...nestedCommas.error], ['audio-output-nested'], 'nested commas are not splits');
-});
-
-test('a call the scanner cannot decide is UNCLASSIFIED, not skipped', () => {
-	const constantKind = classifyCalls("effects.recordPerfEvent(KIND, 'msg', 'error');", 'synthetic');
-	assert.equal(constantKind.error.size, 0);
-	assert.equal(constantKind.other.size, 0);
-	assert.equal(constantKind.unclassified.length, 1, 'a constant kind must be reported, not dropped');
-
-	const computedSeverity = classifyCalls(
-		"effects.recordPerfEvent('audio-output-x', 'msg', bad ? 'error' : 'info');",
-		'synthetic'
-	);
-	assert.equal(computedSeverity.unclassified.length, 1, 'a computed severity is undecidable here');
-});
-
-test('the scanner ignores rows recorded below error, and interface declarations', () => {
-	const info = classifyCalls(
-		"effects.recordPerfEvent('audio-output-rebound', `output re-bound after ${reason}`, 'info');"
-	);
-	assert.equal(info.error.size, 0, 'escalating info rows would flood the wire during a set');
-	assert.deepEqual([...info.other], ['audio-output-rebound']);
-
-	const declaration = classifyCalls(
-		"recordPerfEvent(kind: string, message: string, severity: 'info' | 'error'): void;"
-	);
-	assert.equal(declaration.unclassified.length, 0, 'a type signature is not an emit site');
-	assert.equal(declaration.error.size + declaration.other.size, 0);
-});
-
-test('every audio-output call is readable, and none is unescalated', () => {
-	const escalated = escalatedKinds();
-	const unreadable = [];
-	const missing = [];
-	let calls = 0;
-	for (const path of AUDIO_OUTPUT_MODULES) {
-		const found = classifyCalls(moduleSource(path), path);
-		unreadable.push(...found.unclassified);
-		calls += found.error.size + found.other.size;
-		for (const kind of found.error) if (!escalated.has(kind)) missing.push(`${path}: ${kind}`);
-	}
-	assert.deepEqual(unreadable, [], 'an undecidable emit site makes this whole check unsound');
-	assert.ok(calls >= 4, `only ${calls} emit sites read: the scanner is looking at the wrong thing`);
-	assert.deepEqual(
-		missing,
-		[],
-		'these kinds mean the operator is hearing nothing and never leave the browser'
-	);
+	it('escalates a kind that merely CONTAINS toast, rather than being one', () => {
+		const seen = [];
+		mod.setPerfEventEscalator((event) => seen.push(event));
+		mod.recordPerfEvent('deck-toast-bridge-failed', 'not a toast row', null, 'error');
+		mod.setPerfEventEscalator(null);
+		assert.deepEqual(
+			seen.map((e) => e.kind),
+			['deck-toast-bridge-failed'],
+			'the rule is a kind PREFIX naming who writes the row, not a substring'
+		);
+	});
 });
