@@ -10,7 +10,7 @@ from .base import BackendNonshippable
 if TYPE_CHECKING:
     from .base import AnalyzerBackend
 
-BACKENDS: dict[str, "type[AnalyzerBackend]"] = {}
+BACKENDS: dict[str, type[AnalyzerBackend]] = {}
 # Portable default: librosa + scipy install from PyPI wheels (`analysis`
 # extra), unlike the git-HEAD-only madmom dev backend.
 DEFAULT_BACKEND: str = "librosa"
@@ -37,6 +37,13 @@ NONSHIPPABLE_BACKENDS: dict[str, str] = {
     ),
 }
 
+#: The own beatgrid backfill producer. Spelled out here rather than imported
+#: from :mod:`apps.analysis.backends.own_beatgrid`, because this branch decides
+#: whether to import that module: importing it to learn its name would defeat
+#: the laziness the whole function exists for. The two are held equal by
+#: ``tests/analysis_beatgrid/test_backfill_write.py``.
+OWN_BEATGRID_BACKEND: str = "own_beatgrid.backfill"
+
 #: What ``DEFAULT_BACKEND`` needs importable at runtime. Kept in step with
 #: ``LibrosaBackend._require_deps``, which raises BackendNotAvailable on the
 #: same names; a test asserts the two agree.
@@ -58,12 +65,12 @@ def default_backend_installed() -> bool:
     )
 
 
-def register(name: str, cls: "type[AnalyzerBackend]") -> None:
+def register(name: str, cls: type[AnalyzerBackend]) -> None:
     """Idempotent registration."""
     BACKENDS[name] = cls
 
 
-def get_backend(name: str) -> "type[AnalyzerBackend]":
+def get_backend(name: str) -> type[AnalyzerBackend]:
     """Lazy lookup.  Imports the named backend module if not yet loaded.
 
     NATIVE-08: checked before the import, on the requested name alone, so a
@@ -82,11 +89,14 @@ def get_backend(name: str) -> "type[AnalyzerBackend]":
             from . import librosa_madmom
         elif name == "mik":
             from . import mik
+        elif name == OWN_BEATGRID_BACKEND:
+            from . import own_beatgrid
         else:
             from . import (
                 librosa,  # noqa: F401
                 librosa_madmom,  # noqa: F401
                 mik,  # noqa: F401
+                own_beatgrid,  # noqa: F401
             )
     try:
         return BACKENDS[name]
@@ -103,6 +113,7 @@ __all__ = [
     "DEFAULT_BACKEND_MODULES",
     "NONSHIPPABLE_BACKENDS",
     "NONSHIPPABLE_ENV",
+    "OWN_BEATGRID_BACKEND",
     "default_backend_installed",
     "get_backend",
     "register",
