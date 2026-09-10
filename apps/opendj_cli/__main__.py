@@ -293,6 +293,20 @@ class _Run:
         """
         return self.failed or bool(self.failures)
 
+    @property
+    def halt_reason(self) -> str:
+        """Why the rest of the script was skipped, in the caller's terms.
+
+        The two halts read identically from the outside and do not mean the
+        same thing: one is the page reporting an error, the other is a page
+        reporting success the mirror will not corroborate. An agent deciding
+        what to do next needs to know which it got.
+        """
+        return (
+            "an earlier step failed" if self.failed
+            else "an earlier group was not confirmed"
+        )
+
     def verdict(self) -> str:
         if not self.verdicts:
             return "accepted"
@@ -325,7 +339,13 @@ def _post_all(
     run = _Run()
     for group, order in orders:
         if run.halted:
-            run.results.append({"kind": group.kind, "skipped": group.label()})
+            run.results.append(
+                {
+                    "kind": group.kind,
+                    "skipped": group.label(),
+                    "because": run.halt_reason,
+                }
+            )
             continue
         result = client.post_order(order)
         run.results.append(
@@ -424,7 +444,7 @@ def _settle(
 
 def _group_text(entry: Mapping[str, Any]) -> list[str]:
     if "skipped" in entry:
-        return [f"skipped: {entry['skipped']} (an earlier step failed)"]
+        return [f"skipped: {entry['skipped']} ({entry['because']})"]
     changed = entry.get("mirror_delta", {}).get("changed")
     lines = [
         f"{entry['kind']}: {entry['commands']}",

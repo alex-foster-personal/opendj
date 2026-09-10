@@ -356,6 +356,12 @@ def test_do_then_and_runs_a_sequence_of_groups(
 def test_a_script_that_stops_on_an_error_skips_the_rest(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A REPORTED failure, and the skip must say that is what happened.
+
+    The other halt, a group the mirror would not confirm, prints its own
+    reason: an agent choosing what to do next needs to know whether the page
+    errored or merely failed to corroborate itself.
+    """
     page = engine.page()
     page.fail_every_order = True
     page.start()
@@ -366,7 +372,9 @@ def test_a_script_that_stops_on_an_error_skips_the_rest(
         page.stop()
 
     assert len(page.orders) == 1, "the second group must not be dispatched"
-    assert "skipped" in capsys.readouterr().out
+    captured = capsys.readouterr().out
+    assert "skipped: play 2" in captured
+    assert "an earlier step failed" in captured
 
 
 def test_a_separator_with_nothing_between_it_is_refused(
@@ -1161,7 +1169,10 @@ def test_a_script_stops_after_a_group_the_mirror_will_not_confirm(
     assert claimed == ["load"], "the page was handed play after the load never landed"
     captured = capsys.readouterr().out
     assert "skipped: play 1" in captured
-    assert "an earlier step failed" in captured
+    # The two halts must not read alike: the page reported this step
+    # SUCCEEDED, and only the mirror refused it.
+    assert "an earlier group was not confirmed" in captured
+    assert "an earlier step failed" not in captured
 
 
 def test_a_script_whose_groups_confirm_runs_all_of_them(
