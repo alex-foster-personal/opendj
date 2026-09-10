@@ -153,14 +153,13 @@ def _health(out: str) -> dict[str, str]:
     return verdicts
 
 
-def _fatal_label(untimestamped: int) -> str:
+def _fatal_label(untimestamped: int | str) -> str:
     """The FATAL health label, which names how many lines the window filter had
     to exclude for carrying no timestamp to window on."""
     return (
         f"no timestamped FATAL in logs last {HOURS}h "
         f"(+{untimestamped} untimestamped, excluded: no time to window on)"
     )
-
 
 GREEN_LABELS = [
     "queue-watchdog unit active",
