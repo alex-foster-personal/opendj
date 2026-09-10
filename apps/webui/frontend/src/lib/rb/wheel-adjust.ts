@@ -45,6 +45,16 @@
  *       is still in force ⛔️
  *     [if] a stored blob is malformed [then] it throws loudly rather than
  *       silently resetting to the default ⛔️
+ *   ✔︎ A user can retune both factors from the settings panel, no devtools.
+ *     [if] the wheel sensitivity row's slider moves [then] the factor for that
+ *       input kind changes and persists, and every wheel-adjustable control
+ *       obeys it on the next scroll ⛔️
+ *     [if] the same factor is written through window.__mdtWheelSensitivity
+ *       instead [then] the slider readout and the runtime agree, one store ⛔️
+ *   ✔︎ WHEEL_TRACKPAD_EVENTS_PER_DETENT stays the one place the ratio is
+ *     stated, so the default 3x survives being made user-editable.
+ *     [if] the trackpad factor is reset [then] it is again the reciprocal of
+ *       the events-per-detent constant ⛔️
  */
 
 //-----------------------------------------------------------------------------
@@ -95,9 +105,25 @@ export const WHEEL_SENSITIVITY: Readonly<Record<WheelInputKind, number>> = {
 	trackpad: 1 / WHEEL_TRACKPAD_EVENTS_PER_DETENT
 };
 
-/** Upper sanity bound for a configured factor. A typo like 300 would make
- * every control unusable in one scroll, so it throws instead. */
+/**
+ * Upper sanity bound for a configured factor. A typo like 300 would make
+ * every control unusable in one scroll, so it throws instead.
+ *
+ * MIN and MAX are the single source for the settings panel's slider range
+ * (lib/settings/catalog.ts builds the control's min/max/step from them), so a
+ * slider position can never be a value the validator refuses, and widening the
+ * validator widens the slider in the same edit.
+ */
 export const WHEEL_SENSITIVITY_MAX = 4;
+
+/** Lower sanity bound for a configured factor. Zero is refused outright (a
+ * factor of 0 makes every wheel-adjustable control inert while looking live),
+ * and 0.05 is the smallest factor that still reads as movement rather than a
+ * dead dial. */
+export const WHEEL_SENSITIVITY_MIN = 0.05;
+
+/** Slider granularity for the settings control, in factor units. */
+export const WHEEL_SENSITIVITY_STEP = 0.05;
 
 /**
  * Legacy WHEEL_DELTA quantum. Quantized ("notched") wheel devices report
@@ -178,6 +204,11 @@ function _assertFactor(kind: WheelInputKind, factor: number): void {
 	if (factor > WHEEL_SENSITIVITY_MAX) {
 		throw new RangeError(
 			`wheel sensitivity for '${kind}' must be <= ${WHEEL_SENSITIVITY_MAX}, got ${factor}`
+		);
+	}
+	if (factor < WHEEL_SENSITIVITY_MIN) {
+		throw new RangeError(
+			`wheel sensitivity for '${kind}' must be >= ${WHEEL_SENSITIVITY_MIN}, got ${factor}`
 		);
 	}
 }

@@ -61,6 +61,14 @@
 		rationale: string;
 	} | null>(null);
 
+	/** Local mirror of the number-kind rows (today: the two wheel-sensitivity
+	 * factors). Their store lives in `lib/rb/wheel-adjust.ts`, which is a plain
+	 * .ts file and therefore carries no runes - Svelte cannot track a plain
+	 * module variable, so without this mirror the readout would go stale after
+	 * a Reset or an agent-bridge write while the panel is open. Seeded on open,
+	 * updated on every change that goes through the same allowlisted mutator. */
+	let numberDraft = $state<Record<string, number>>({});
+
 	const hideTodo = $derived(uiPrefs.hide_todo_settings);
 	const filterOpts = $derived({
 		hideTodo,
@@ -82,6 +90,7 @@
 		applyMsg = null;
 		applyOk = null;
 		pendingProposal = null;
+		numberDraft = _seedNumbers();
 		void tick().then(() => searchEl?.focus());
 	});
 
@@ -192,6 +201,57 @@
 
 	function boolValue(def: SettingDef): boolean {
 		return Boolean(readSettingValue(def.id as AllowedSettingKey));
+	}
+
+	/** Number-kind rows only. A boolean or a non-numeric string coming back
+	 * here means the catalog and the mutator disagreed; that throws rather
+	 * than rendering "NaN" into a live control. */
+	function _readNumber(id: string): number {
+		const raw = readSettingValue(id as AllowedSettingKey);
+		if (typeof raw !== 'string') {
+			throw new Error(`${id} is a number setting but read back a ${typeof raw}`);
+		}
+		const parsed = Number(raw);
+		if (!Number.isFinite(parsed)) {
+			throw new Error(`${id} is a number setting but read back ${JSON.stringify(raw)}`);
+		}
+		return parsed;
+	}
+
+	function _seedNumbers(): Record<string, number> {
+		const seeded: Record<string, number> = {};
+		for (const def of SETTINGS_CATALOG) {
+			if (def.control.kind !== 'number') continue;
+			seeded[def.id] = _readNumber(def.id);
+		}
+		return seeded;
+	}
+
+	function numberValue(def: SettingDef): number {
+		return numberDraft[def.id] ?? _readNumber(def.id);
+	}
+
+	/** Two decimals: the sliders step in 0.05, and the shipped trackpad default
+	 * is 1/3, which no step lands on exactly but which still has to read as a
+	 * believable number rather than 0.3333333333333333. */
+	function formatNumber(value: number): string {
+		return value.toFixed(2);
+	}
+
+	/** One writer for both the drag and the Reset button, so the persisted
+	 * factor and the on-screen readout cannot diverge. */
+	function writeNumber(def: SettingDef, value: number): void {
+		applySettingChange(def.id, String(value));
+		numberDraft = { ...numberDraft, [def.id]: value };
+	}
+
+	function onNumberInput(def: SettingDef, e: Event): void {
+		writeNumber(def, Number((e.currentTarget as HTMLInputElement).value));
+	}
+
+	function resetNumber(def: SettingDef): void {
+		if (def.control.kind !== 'number') return;
+		writeNumber(def, def.control.defaultValue);
 	}
 
 	async function askAiApply(): Promise<void> {
@@ -454,6 +514,29 @@
 														</label>
 													{/each}
 												</div>
+											{:else if def.control.kind === 'number'}
+												<div class="so-number" title={def.title}>
+													<input
+														type="range"
+														aria-label={def.label}
+														min={def.control.min}
+														max={def.control.max}
+														step={def.control.step}
+														value={numberValue(def)}
+														oninput={(e) => onNumberInput(def, e)}
+													/>
+													<span class="so-number-out">
+														{formatNumber(numberValue(def))}{def.control.unit}
+													</span>
+													<button
+														type="button"
+														class="so-number-reset"
+														title={`Back to the default ${formatNumber(def.control.defaultValue)}${def.control.unit}`}
+														onclick={() => resetNumber(def)}
+													>
+														Reset
+													</button>
+												</div>
 											{/if}
 										</div>
 									</div>
@@ -712,6 +795,29 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
+	}
+	.so-number {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.so-number input[type='range'] {
+		width: 130px;
+		accent-color: var(--accent, #ffb43a);
+	}
+	.so-number-out {
+		min-width: 3.4rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--fg, #e6e9ef);
+	}
+	.so-number-reset {
+		padding: 3px 8px;
+		border-radius: 8px;
+		border: 1px solid var(--border, #1c222c);
+		background: var(--surface, #121720);
+		color: var(--muted, #9aa4b2);
+		cursor: pointer;
+		font-size: 0.75rem;
 	}
 	.so-inert {
 		font-size: 0.75rem;
