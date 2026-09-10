@@ -619,7 +619,13 @@
 		// surfaces on the same pixels, so the empty state yields: the
 		// indicator is the richer of the two (progress, count, rows/s) and
 		// it is the one this pane deliberately renders. Bot review, PR #1672.
-		if (pane.loading) return null;
+		//
+		// NOT while a whole-collection search is in flight. The overlay
+		// reports load_progress, so it says nothing at all about the search;
+		// "searching whole collection..." is that state's only signal, and a
+		// background rescan raising pane.loading mid-search would otherwise
+		// silence it (blinded review, PR #1672).
+		if (pane.loading && !pane.searching) return null;
 		if (searchMode === 'find') {
 			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
@@ -2824,12 +2830,20 @@
 	.unload-offer:hover {
 		background: rgba(232, 161, 58, 0.18);
 	}
+	/* min-height, not height: the control row below is allowed to wrap onto a
+	   second line when it cannot fit, and this header grows with it. Measured
+	   at 1280x800: `.list-panel` is 944px there, and an editable playlist's
+	   header-right is 808px + the 190px AddTrackSearch = 998px, so something
+	   HAD to give. A fixed height gave `.list-panel`'s `overflow: hidden` the
+	   rightmost controls (Bulk Edit, MyTags) silently; growing instead costs
+	   one row of library, which is this panel's documented degradation.
+	   `library-min-5-rows.test.mjs` reads this number as the header's floor. */
 	.pane-header {
 		flex: none;
 		display: flex;
 		align-items: stretch;
 		justify-content: space-between;
-		height: 24px;
+		min-height: 24px;
 		border-bottom: 1px solid var(--rb-border);
 		background: var(--rb-panel);
 		min-width: 0;
@@ -2841,12 +2855,16 @@
 		   the 190px AddTrackSearch alongside these controls, and .list-panel
 		   is overflow: hidden, so a non-wrapping row silently clipped its
 		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
-		   running past the edge visibly. Bot review, PR #1672. */
+		   running past the edge visibly. Bot review, PR #1672.
+		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
+		   `flex: none` this box sized to max-content, so `flex-wrap` had no
+		   narrower width to wrap INTO and did nothing at all. */
 		flex-wrap: wrap;
 		row-gap: 3px;
 		gap: 4px;
 		padding: 0 6px;
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
