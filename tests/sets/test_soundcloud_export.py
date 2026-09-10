@@ -120,6 +120,7 @@ THREE_TRACK_TIMELINE = [
 
 @pytest.mark.requirement("SET-06a")
 def test_timestamp_labels_match_soundcloud_clickable_format() -> None:
+    """[if] a position is labeled [then] it reads m:ss or h:mm:ss, [else stop]."""
     assert format_soundcloud_timestamp(0) == "0:00"
     assert format_soundcloud_timestamp(185) == "3:05"
     assert format_soundcloud_timestamp(3599) == "59:59"
@@ -129,6 +130,7 @@ def test_timestamp_labels_match_soundcloud_clickable_format() -> None:
 
 @pytest.mark.requirement("SET-06a")
 def test_three_track_loaded_rows_become_timestamped_comment(sets_root: Path) -> None:
+    """[if] three loaded plays export [then] each row keeps its timestamp, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     export = build_soundcloud_export("s1", sets_root=sets_root)
 
@@ -150,6 +152,7 @@ def test_three_track_loaded_rows_become_timestamped_comment(sets_root: Path) -> 
 
 @pytest.mark.requirement("SET-06a")
 def test_consecutive_duplicate_stable_id_collapses_to_first_timestamp(sets_root: Path) -> None:
+    """[if] one stable id plays twice [then] it keeps its first timestamp, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     export = build_soundcloud_export("s1", sets_root=sets_root)
     assert [row.track_stable_id for row in export.tracklist] == ["uuid-1", "uuid-2", "uuid-3"]
@@ -158,6 +161,7 @@ def test_consecutive_duplicate_stable_id_collapses_to_first_timestamp(sets_root:
 
 @pytest.mark.requirement("SET-06a")
 def test_heartbeat_track_change_session_start_are_not_rows(sets_root: Path) -> None:
+    """[if] heartbeat and session-start events arrive [then] they are not rows, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     export = build_soundcloud_export("s1", sets_root=sets_root)
     assert len(export.tracklist) == 3
@@ -166,6 +170,7 @@ def test_heartbeat_track_change_session_start_are_not_rows(sets_root: Path) -> N
 
 @pytest.mark.requirement("SET-06a")
 def test_rekordbox_row_without_title_is_unresolved_not_invented(sets_root: Path) -> None:
+    """[if] a rekordbox row has no title [then] it exports as unresolved, [else stop]."""
     timeline = [
         _play(
             "s1",
@@ -193,6 +198,7 @@ def test_rekordbox_row_without_title_is_unresolved_not_invented(sets_root: Path)
 
 @pytest.mark.requirement("SET-06a")
 def test_null_id_with_title_is_kept(sets_root: Path) -> None:
+    """[if] a play has a title but no stable id [then] its row is kept, [else stop]."""
     timeline = [
         _play(
             "s1",
@@ -212,6 +218,7 @@ def test_null_id_with_title_is_kept(sets_root: Path) -> None:
 
 @pytest.mark.requirement("SET-06a")
 def test_empty_timeline_is_empty_export(sets_root: Path) -> None:
+    """[if] the timeline holds no plays [then] the export is empty, [else stop]."""
     _seed_session(sets_root, timeline=[])
     export = build_soundcloud_export("s1", sets_root=sets_root)
     assert export.tracklist == []
@@ -220,6 +227,7 @@ def test_empty_timeline_is_empty_export(sets_root: Path) -> None:
 
 @pytest.mark.requirement("SET-06a")
 def test_missing_timeline_file_is_empty_export(sets_root: Path) -> None:
+    """[if] the timeline file is absent [then] the export is empty, [else stop]."""
     _seed_session(sets_root, timeline=None)
     export = build_soundcloud_export("s1", sets_root=sets_root)
     assert export.tracklist == []
@@ -228,18 +236,21 @@ def test_missing_timeline_file_is_empty_export(sets_root: Path) -> None:
 
 @pytest.mark.requirement("SET-06a")
 def test_missing_session_raises_named_error(sets_root: Path) -> None:
+    """[if] the session does not exist [then] SessionNotFound is raised, [else stop]."""
     with pytest.raises(SessionNotFound):
         build_soundcloud_export("nope", sets_root=sets_root)
 
 
 @pytest.mark.requirement("SET-06a")
 def test_path_traversal_session_id_raises_session_path_error(sets_root: Path) -> None:
+    """[if] the session id escapes the sets root [then] SessionPathError is raised, [else stop]."""
     with pytest.raises(SessionPathError):
         build_soundcloud_export("..\\outside", sets_root=sets_root)
 
 
 @pytest.mark.requirement("SET-06a")
 def test_payload_sentinels_lock_the_rights_gate(sets_root: Path) -> None:
+    """[if] the export serializes [then] it declares metadata-only and no upload, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     export = build_soundcloud_export("s1", sets_root=sets_root)
     payload = export.to_dict()

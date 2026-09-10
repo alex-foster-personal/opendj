@@ -13,6 +13,7 @@ Regression lines:
     a track with no stems directory then broken
   - if sync_compatible is absent on a validateBeatGrid-passing stored grid
     then broken
+  - [if] readiness counts include broken-link or streaming tracks [then] fail, [else stop]
 """
 from __future__ import annotations
 

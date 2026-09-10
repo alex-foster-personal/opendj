@@ -8,6 +8,7 @@ Regression one-liners:
   - if a shipped adapter or a Track/capability field has no glossary entry
     then broken
   - if markdown and JSON canonical sets drift then broken
+  - [if] a term is missing from the glossary or its adapters [then] fail, [else stop]
 """
 
 from __future__ import annotations

@@ -30,6 +30,7 @@ def api_test_client(
 def test_get_returns_json_tracklist_not_audio(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the export is fetched [then] it answers JSON with the tracklist, [else stop]."""
     client, sets_root = api_test_client
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     resp = client.get("/api/sets/s1/soundcloud-export")
@@ -54,6 +55,7 @@ def test_get_returns_json_tracklist_not_audio(
 def test_post_without_ack_is_400_and_omits_comment(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the POST omits the ack [then] it is 400 and withholds the comment, [else stop]."""
     client, sets_root = api_test_client
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     resp = client.post("/api/sets/s1/soundcloud-export", json={})
@@ -70,6 +72,7 @@ def test_post_without_ack_is_400_and_omits_comment(
 def test_post_false_ack_is_400_and_omits_comment(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the POST sends a false ack [then] it is 400 and withholds the comment, [else stop]."""
     client, sets_root = api_test_client
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     resp = client.post(
@@ -84,6 +87,7 @@ def test_post_false_ack_is_400_and_omits_comment(
 def test_post_with_ack_returns_library_comment(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the POST acknowledges the rights [then] it returns the library comment, [else stop]."""
     client, sets_root = api_test_client
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
     resp = client.post(
@@ -102,6 +106,7 @@ def test_post_with_ack_returns_library_comment(
 def test_get_404_for_missing_session(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the session is unknown [then] the export route answers 404, [else stop]."""
     client, _ = api_test_client
     resp = client.get("/api/sets/nope/soundcloud-export")
     assert resp.status_code == 404
@@ -117,6 +122,7 @@ def test_get_rejects_encoded_session_path_traversal(
     encoded_session_id: str,
     expected_status: int,
 ) -> None:
+    """[if] the session id is encoded traversal [then] the route answers 400 or 404, [else stop]."""
     client, sets_root = api_test_client
     outside = sets_root.parent / "outside"
     outside.mkdir()
@@ -133,6 +139,7 @@ def test_get_rejects_encoded_session_path_traversal(
 def test_get_rejects_encoded_nul_as_client_error(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the session id carries an encoded NUL [then] the route answers 400, [else stop]."""
     client, _ = api_test_client
     response = client.get("/api/sets/bad%00id/soundcloud-export")
     assert response.status_code == 400
@@ -143,6 +150,7 @@ def test_get_rejects_encoded_nul_as_client_error(
 def test_openapi_has_export_paths_and_no_upload(
     api_test_client: tuple[TestClient, Path],
 ) -> None:
+    """[if] the OpenAPI schema is read [then] it exposes the export paths only, [else stop]."""
     client, _ = api_test_client
     app = client.app
     assert isinstance(app, FastAPI)
