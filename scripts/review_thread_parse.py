@@ -35,12 +35,31 @@ BOT_LOGINS = frozenset(
 # ![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)
 _SEVERITY_BADGE = re.compile(r"badge/(P[0-9])-")
 _SEVERITY_BARE = re.compile(r"\b(P[0-3])\b")
-# The verdict is a LEADING token on the headline, which is how reviewers
-# actually emit it ("BLOCKING Validate ...", "NON-BLOCKING: Restrict ...").
+# The verdict is the FIRST TOKEN on the headline, which is how reviewers
+# actually emit it ("BLOCKING Validate ...", "[NON-BLOCKING] Restrict ...").
 # Anchoring matters: a headline may legitimately describe the problem using
 # the word, as in "Move blocking upload analysis off the event loop", and
 # reading that as an explicit verdict mis-tiers an ordinary P2.
-_BLOCKING = re.compile(r"^\s*(NON[-\s]?)?BLOCKING\b\s*[:.-]?\s", re.IGNORECASE)
+#
+# What is pinned here is POSITION, not punctuation. Codex changed its own
+# markup between PR #1600 and PR #1658 -- a bare "BLOCKING Close ..." became a
+# bracketed "[BLOCKING] Close ..." -- and an anchor requiring the marker at
+# literal offset zero read every bracketed verdict as `unmarked`. An unmarked
+# P2 is eligible for the debt-log path under MERGE WITH P2s OPEN, so a thread
+# the reviewer had explicitly marked BLOCKING could be waved through a merge:
+# exactly the one shortcut the tiering exists to refuse. Pinning the new markup
+# would rot the same way on the bot's next rendering change, so leading
+# decoration is STRIPPED and the anchor then re-applied to what is left.
+_LEADING_DECORATION = re.compile(r"^[^0-9A-Za-z]+")
+# NON- is matched inside the SAME anchored alternation and is never tested as a
+# separate substring. "BLOCKING" occurs inside "NON-BLOCKING" at offset 4, so an
+# unanchored search reads every non-blocking nit as a merge blocker -- the
+# opposite error, and one this gate has already made once. Anchoring is what
+# keeps both directions correct at the same time: at offset zero the optional
+# NON- group consumes the prefix before BLOCKING is ever reached.
+# The trailing class is the marker's CLOSING punctuation, whatever it is: a
+# bracket or paren the wrapper opened, a colon or dash, or plain whitespace.
+_BLOCKING = re.compile(r"^(NON[-\s]?)?BLOCKING\b[\]\)}>:.,\-\s]", re.IGNORECASE)
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
@@ -397,8 +416,14 @@ def _blocking(body: str) -> str:
     on the finding's first line; scanning the whole body would read a P2 whose
     prose happens to mention "blocking I/O" as an explicit BLOCKING verdict and
     strand it outside the debt-log path.
+
+    Leading decoration is stripped before the anchor is applied, so the verdict
+    is recognized bare, bracketed, parenthesized, bolded or otherwise wrapped.
+    Stripping does NOT weaken the anchor: the marker still has to be the
+    headline's first token, so "Move blocking upload analysis off the event
+    loop" stays unmarked.
     """
-    match = _BLOCKING.match(_headline(body))
+    match = _BLOCKING.match(_LEADING_DECORATION.sub("", _headline(body)))
     if not match:
         return "unmarked"
     return "NON-BLOCKING" if match.group(1) else "BLOCKING"
