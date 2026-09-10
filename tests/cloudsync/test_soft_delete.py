@@ -370,6 +370,10 @@ _SYNCED_TABLES: frozenset[str] = frozenset({
     "track_locations",
     "sync_policies",
     "playlist_pins",
+    # Schema v10. The licensing purge is the ONLY thing that removes a verdict,
+    # and it is a tombstone: a hard DELETE would leave every peer still
+    # holding the licensed text this repo just promised to drop.
+    "lyric_verdict",
 })
 
 # Captures the DELETE target either as an f-string interpolation

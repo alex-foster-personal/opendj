@@ -22,7 +22,14 @@ import { api, unwrap } from './api/client';
 
 // ----------------------------------------------------------- types
 
-export const ASSET_KINDS = ['audio', 'stem_bundle', 'anlz_cache', 'vocal_cache'] as const;
+export const ASSET_KINDS = [
+	'audio',
+	'stem_bundle',
+	'anlz_cache',
+	'vocal_cache',
+	'lyrics_cache',
+	'karaoke_words'
+] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export const SYNC_MODES = ['pinned', 'cached', 'stream', 'excluded'] as const;

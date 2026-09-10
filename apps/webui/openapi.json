@@ -10137,7 +10137,9 @@
               "audio",
               "stem_bundle",
               "anlz_cache",
-              "vocal_cache"
+              "vocal_cache",
+              "lyrics_cache",
+              "karaoke_words"
             ],
             "title": "Asset Kind",
             "type": "string"
@@ -10205,7 +10207,9 @@
               "audio",
               "stem_bundle",
               "anlz_cache",
-              "vocal_cache"
+              "vocal_cache",
+              "lyrics_cache",
+              "karaoke_words"
             ],
             "title": "Asset Kind",
             "type": "string"

@@ -6,10 +6,11 @@ a ``schema_meta`` table to skip already-applied versions.
 
 Versioning: ``SCHEMA_VERSION`` is the target version. ``MIGRATIONS`` is a
 list where index ``i`` is the SQL to take the schema from version ``i`` to
-``i+1``. A fresh DB runs the full list. The ladder itself (``_V1``..``_V9``)
+``i+1``. A fresh DB runs the full list. The ladder itself (``_V1``..``_V10``)
 lives in :mod:`apps.shared.state.migrations` (v1-v5) and
 :mod:`apps.shared.state.migrations_v6_v8` (v6-v8) and
-:mod:`apps.shared.state.migrations_v9` (v9) -- split across sibling modules
+:mod:`apps.shared.state.migrations_v9` (v9) and
+:mod:`apps.shared.state.migrations_v10` (v10) -- split across sibling modules
 (issue #1583) because the combined ladder alone exceeds the 600-line
 file-size gate. This module keeps the runner and the
 drift-tripwire table/view tuples below.
@@ -22,13 +23,14 @@ from datetime import UTC, datetime
 from .migrations import _V1, _V2, _V3, _V4, _V5
 from .migrations_v6_v8 import _V6, _V7, _V8
 from .migrations_v9 import _V9
+from .migrations_v10 import _V10
 
-SCHEMA_VERSION: int = 9
+SCHEMA_VERSION: int = 10
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -109,10 +111,12 @@ TABLES: tuple[str, ...] = (
     # and OUTSIDE the sync set, so neither appears in protocol.SYNC_TABLES
     "machine_owners",
     "enrollment_grants",
+    # v10 (karaoke lyrics verdict, specs/karaoke-lyrics-operational-plan.md D13.1)
+    "lyric_verdict",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of
-them arrived in v8 and the last two in v9."""
+them arrived in v8, two in v9 and ``lyric_verdict`` in v10."""
 
 VIEWS: tuple[str, ...] = (
     "tracks_available",
@@ -130,6 +134,29 @@ AVAILABILITY_STATES: tuple[str, ...] = (
 )
 """Mirror of the ``track_availability.state`` CHECK constraint. Kept in sync
 by ``tests/shared/state/test_schema.py``."""
+
+LYRIC_VERDICTS: tuple[str, ...] = (
+    "vocal",
+    "sparse",
+    "no-lyrics",
+    "unknown",
+)
+"""Mirror of the ``lyric_verdict.verdict`` CHECK constraint (v10). Kept in
+sync by ``tests/shared/state/test_schema_v10.py``, which inserts every member.
+
+Deliberately NOT in a module named ``verdict.py``: ``apps/lyrics/verdict.py``
+is an unrelated classifier with its own vocabulary, and two same-named
+vocabularies one import apart is how a wrong enum ends up in a CHECK."""
+
+LYRIC_OVERRIDES: tuple[str, ...] = (
+    "vocal",
+    "sparse",
+    "no-lyrics",
+)
+"""Mirror of the ``lyric_verdict.override`` CHECK constraint (v10): the human
+verdicts a person can force. ``'unknown'`` is absent on purpose -- overriding
+a computed verdict back to "we do not know" is not a judgment, it is a
+delete, and a delete of an override is spelled NULL."""
 
 
 FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (

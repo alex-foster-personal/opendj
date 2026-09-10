@@ -86,8 +86,8 @@ TABLES: dict[str, str] = {
     "sync_policies": (
         "One machine's sync mode (pinned, cached, stream, or excluded) and "
         "optional cache budget for one asset kind (audio, stem_bundle, "
-        "anlz_cache, vocal_cache). The CloudSync config UI's per-machine "
-        "toggles write here."
+        "anlz_cache, vocal_cache, lyrics_cache, karaoke_words). The "
+        "CloudSync config UI's per-machine toggles write here."
     ),
     "playlist_pins": (
         "One machine's sync-mode override for one playlist, taking "
@@ -183,6 +183,17 @@ TABLES: dict[str, str] = {
         "can be trusted, and on what basis (cross_source, single_source or "
         "unverified). What the equivalence gate consults before letting that "
         "source's analysis be promoted onto a track."
+    ),
+    # ----- lyrics --------------------------------------------------------
+    "lyric_verdict": (
+        "One track's karaoke lyrics standing: whether it has vocals worth "
+        "aligning (vocal, sparse, no-lyrics, unknown), where the text came "
+        "from, how much of it aligned, how suspect the alignment looked, and "
+        "the sha256 of the word-timing artifact that carries the timings "
+        "themselves. `override` is the human's answer and beats the computed "
+        "`verdict` -- read the two together, never `verdict` alone. Synced, "
+        "and deleted only by tombstone: the licensing purge stamps "
+        "`deleted_at` so peers stop hydrating the words too."
     ),
     # ----- curation ------------------------------------------------------
     "pairings": (

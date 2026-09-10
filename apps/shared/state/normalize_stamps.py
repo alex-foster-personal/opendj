@@ -74,6 +74,8 @@ FLOOR_STAMP: str = sync_stamp.FLOOR_STAMP
 #: on ``apps.sync_hub``); pinned by
 #: ``tests/shared/state/test_normalize_stamps.py``.
 STAMP_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("lyric_verdict", "updated_at"),
+    ("lyric_verdict", "deleted_at"),
     ("playlist_memberships", "updated_at"),
     ("playlist_memberships", "deleted_at"),
     ("playlist_pins", "updated_at"),
@@ -109,6 +111,7 @@ STAMP_COLUMNS: tuple[tuple[str, str], ...] = (
 #: two changelogs) is repaired without a changelog entry, which is right: they
 #: are machine-local bookkeeping and never sync.
 SYNCED_PKS: dict[str, tuple[str, ...]] = {
+    "lyric_verdict": ("stable_id",),
     "playlist_memberships": ("playlist_id", "position"),
     "playlist_pins": ("machine_id", "playlist_id"),
     "playlists": ("playlist_id",),

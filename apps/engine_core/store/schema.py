@@ -86,7 +86,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 3
+SCHEMA_VERSION: int = 4
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -277,13 +277,18 @@ _SYNC_INFRA: tuple[str, ...] = (
     "name TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK (platform IN "
     "('macos','windows','linux')), is_hub INTEGER NOT NULL DEFAULT 0, "
     "data_root TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL )",
+    # The asset_kind CHECK carries the SIX kinds legacy _V10 rebuilds the
+    # table to, not the four v7 created it with: the legacy side of the parity
+    # gate runs the whole ladder, so this text is compared against the rebuilt
+    # shape. Character-for-character with
+    # apps/shared/state/migrations_v10.ASSET_KIND_CHECK_VALUES.
     "CREATE TABLE IF NOT EXISTS sync_policies ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, asset_kind TEXT NOT "
     "NULL CHECK (asset_kind IN ('audio','stem_bundle','anlz_cache',"
-    "'vocal_cache')), mode TEXT NOT NULL CHECK (mode IN ('pinned','cached',"
-    "'stream','excluded')), cache_budget_mb INTEGER, updated_at TEXT, "
-    "origin_device_id TEXT, deleted_at TEXT, PRIMARY KEY (machine_id, "
-    "asset_kind) )",
+    "'vocal_cache','lyrics_cache','karaoke_words')), mode TEXT NOT NULL CHECK "
+    "(mode IN ('pinned','cached','stream','excluded')), cache_budget_mb "
+    "INTEGER, updated_at TEXT, origin_device_id TEXT, deleted_at TEXT, "
+    "PRIMARY KEY (machine_id, asset_kind) )",
     "CREATE TABLE IF NOT EXISTS playlist_pins ( machine_id TEXT NOT NULL "
     "REFERENCES machines(machine_id) ON DELETE CASCADE, playlist_id TEXT "
     "NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE, mode "
@@ -577,6 +582,54 @@ _ANALYSIS_RETENTION: tuple[str, ...] = (
     """,
 )
 
+
+
+# ==========================================================================
+# DOMAIN: karaoke lyrics -- one verdict row per track
+# Legacy source: apps/shared/state/migrations_v10.py (_V10, specs/
+# karaoke-lyrics-operational-plan.md D13.1). Same consolidation rule as
+# everywhere else in this file: the shapes below are the legacy ladder's
+# output, reproduced verbatim.
+#
+# ONE deliberate divergence from the legacy text, and it is a creation-time
+# flag rather than a shape: the legacy ladder writes a BARE ``CREATE TABLE``
+# and a BARE ``CREATE INDEX`` so a stale ``idx_lyric_verdict_red`` left on a
+# renamed-aside branch table fails the migration loudly (migrations_v10.py
+# reading 2). This module cannot do that: every statement here is replayed
+# against ALREADY-provisioned databases by the adoption path, so it must be
+# ``IF NOT EXISTS`` or adoption breaks on every real file. ``normalize_object_
+# sql`` strips the flag before comparing, so the parity gate is unaffected.
+# ==========================================================================
+
+_LYRICS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS lyric_verdict (
+        stable_id          TEXT PRIMARY KEY REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        verdict            TEXT NOT NULL CHECK (verdict IN
+                             ('vocal','sparse','no-lyrics','unknown')),
+        coverage_pct       REAL,
+        source             TEXT,
+        language_iso3      TEXT,
+        n_words            INTEGER,
+        n_lines            INTEGER,
+        pct_witness_red    REAL,
+        override           TEXT CHECK (override IS NULL OR override IN
+                             ('vocal','sparse','no-lyrics')),
+        override_note      TEXT,
+        pipeline_version   TEXT NOT NULL,
+        words_content_hash TEXT CHECK (words_content_hash IS NULL OR
+                             length(words_content_hash) = 64),
+        computed_at        TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        origin_device_id   TEXT,
+        deleted_at         TEXT
+    )
+    """,
+    (
+        "CREATE INDEX IF NOT EXISTS idx_lyric_verdict_red "
+        "ON lyric_verdict(pct_witness_red DESC)"
+    ),
+)
 
 
 # ==========================================================================
@@ -925,6 +978,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "enrollment": _ENROLLMENT,
     "analysis": _ANALYSIS,
     "analysis_retention": _ANALYSIS_RETENTION,
+    "lyrics": _LYRICS,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -954,6 +1008,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "analysis": "apps/analysis/store.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
+    "lyrics": "apps/shared/state/migrations_v10.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -1006,6 +1061,7 @@ TABLES: dict[str, tuple[str, ...]] = {
         "track_energy_segments",
         "analysis_field_verification",
     ),
+    "lyrics": ("lyric_verdict",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (
@@ -1041,7 +1097,9 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 #: Domains that are NOT part of rung 1 because they arrived later, each as
 #: its own rung. Named here rather than inline so the exclusion and the rung
 #: that compensates for it cannot drift apart silently.
-_POST_V1_DOMAINS: frozenset[str] = frozenset({"native_analysis_v1", "enrollment"})
+_POST_V1_DOMAINS: frozenset[str] = frozenset(
+    {"native_analysis_v1", "enrollment", "lyrics"}
+)
 
 _V1: list[str] = [
     stmt for name, domain in DOMAINS.items()
@@ -1069,7 +1127,18 @@ never re-runs _V1, so an enrollment table appended there would exist only on
 databases born after this commit -- and the fresh-DB tests would have passed
 anyway. The legacy ladder makes the same move at its own v9."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3]
+_V4: list[str] = list(_LYRICS)
+"""3 -> 4: the karaoke lyrics verdict row and its triage index.
+
+Its own rung for the reason _V2 and _V3 spell out. Mirrors legacy ``_V10``
+(apps/shared/state/migrations_v10.py); the legacy sync_policies rebuild that
+ships in the same legacy step is NOT mirrored as a rebuild, because this
+module declares the END shape directly -- its widened ``asset_kind`` CHECK is
+already in ``_SYNC_INFRA``. ``LEGACY_SHARED_STATE_VERSION`` deliberately stays
+where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it; REPORT.md O-16
+records what that costs."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
