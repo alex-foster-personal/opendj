@@ -350,7 +350,11 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
         )
 
 
-@router.post("/enroll", response_model=service_enroll.EnrollResponse)
+@router.post(
+    "/enroll",
+    response_model=service_enroll.EnrollResponse,
+    responses=service_enroll.ENROLL_RESPONSES,
+)
 def enroll(
     request: Request, payload: EnrollRequest
 ) -> service_enroll.EnrollResponse:

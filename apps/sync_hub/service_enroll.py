@@ -49,6 +49,60 @@ class EnrollCredentialModel(BaseModel):
     value: str = Field(min_length=1)
 
 
+class EnrollErrorBody(BaseModel):
+    """The ``detail`` object every refusal below carries.
+
+    Declared as a model rather than left implicit so the generated client can
+    branch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds
+    exactly this shape; the codes are enumerated per status in
+    :data:`ENROLL_RESPONSES`."""
+
+    code: str
+    message: str
+
+
+class EnrollErrorResponse(BaseModel):
+    """FastAPI wraps an ``HTTPException`` detail under ``detail``."""
+
+    detail: EnrollErrorBody
+
+
+#: What the route can answer with besides 200, for the OpenAPI document and
+#: everything generated from it.
+#:
+#: Sol review, PR #1648 (P1 BLOCKING): the endpoint returned 401, 409 and 501
+#: in production while the contract advertised only 200 and 422, so a
+#: generated client could not tell a bad grant from an ownership conflict
+#: from a kind that is reserved but unbuilt -- the three cases whose remedies
+#: differ most. An undeclared status is a status callers have to discover by
+#: hitting it.
+ENROLL_RESPONSES: dict[int | str, dict[str, object]] = {
+    401: {
+        "model": EnrollErrorResponse,
+        "description": (
+            "The credential did not establish an owner. code: "
+            "SYNC_ENROLL_CREDENTIAL."
+        ),
+    },
+    409: {
+        "model": EnrollErrorResponse,
+        "description": (
+            "The machine is already owned by somebody else "
+            "(SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked "
+            "(SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused "
+            "(SYNC_ENROLL)."
+        ),
+    },
+    501: {
+        "model": EnrollErrorResponse,
+        "description": (
+            "The credential KIND is real and reserved but not built yet. "
+            "code: SYNC_ENROLL_KIND_UNAVAILABLE."
+        ),
+    },
+}
+
+
 class EnrollResponse(BaseModel):
     machine_id: str
     owner_google_sub: str

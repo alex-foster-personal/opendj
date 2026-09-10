@@ -4235,6 +4235,28 @@ export interface components {
             value: string;
         };
         /**
+         * EnrollErrorBody
+         * @description The ``detail`` object every refusal below carries.
+         *
+         *     Declared as a model rather than left implicit so the generated client can
+         *     branch on ``code``. Every raise in :func:`enroll_machine_or_raise` builds
+         *     exactly this shape; the codes are enumerated per status in
+         *     :data:`ENROLL_RESPONSES`.
+         */
+        EnrollErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * EnrollErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        EnrollErrorResponse: {
+            detail: components["schemas"]["EnrollErrorBody"];
+        };
+        /**
          * EnrollRequest
          * @description No owner field, by construction: a request cannot name whose machine
          *     it is becoming. The owner is read from the credential's own record.
@@ -4667,7 +4689,6 @@ export interface components {
             machines: components["schemas"]["MachineModel"][];
             /**
              * Ownership
-             * @default unowned
              * @enum {string}
              */
             ownership: "owned" | "unowned" | "foreign";
@@ -12150,6 +12171,24 @@ export interface operations {
                     "application/json": components["schemas"]["EnrollResponse"];
                 };
             };
+            /** @description The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
+            /** @description The machine is already owned by somebody else (SYNC_ENROLL_OWNER_CONFLICT), its owner row is revoked (SYNC_ENROLL_REVOKED), or the enrollment was otherwise refused (SYNC_ENROLL). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12157,6 +12196,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The credential KIND is real and reserved but not built yet. code: SYNC_ENROLL_KIND_UNAVAILABLE. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollErrorResponse"];
                 };
             };
         };

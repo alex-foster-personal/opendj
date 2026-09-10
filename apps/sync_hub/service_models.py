@@ -84,7 +84,16 @@ class HelloResponse(BaseModel):
     #: PII disclosure rather than a continuation of the existing tailnet
     #: exposure. ``python -m apps.sync_hub fleet`` answers it where the answer
     #: belongs, behind hub-local access.
-    ownership: enrollment.OwnershipState = "unowned"
+    #:
+    #: REQUIRED, with no default. Sol review, PR #1648 (P1 BLOCKING): a
+    #: default of ``"unowned"`` makes a response this hub failed to compute
+    #: indistinguishable from a machine it measured as unowned, at an
+    #: identity boundary, and the only construction site (``service.hello``)
+    #: passes it explicitly anyway -- so the default could never do anything
+    #: except mask a construction bug. Nothing parses this model on the wire
+    #: (the spoke reads the raw JSON), so requiring it costs no mixed-version
+    #: compatibility.
+    ownership: enrollment.OwnershipState
 
 
 class EnrollRequest(BaseModel):

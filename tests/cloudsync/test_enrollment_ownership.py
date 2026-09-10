@@ -376,3 +376,94 @@ def test_the_same_spent_grant_still_works_before_it_expires(
     http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=token)
     body = http_enroll(enroll_hub, enroll_spoke_dir, name="nucbox-wsl", token=token)
     assert body["created"] is False
+
+
+# ----- the contract says what the endpoint actually answers with -------------
+
+
+def test_an_omitted_ownership_fails_loudly_instead_of_reading_as_unowned() -> None:
+    """[if] HelloResponse can be built without an ownership state then the
+    hub can report a value it never measured, [else stop].
+
+    Sol review, PR #1648, P1 BLOCKING. The field carried a ``"unowned"``
+    default, which is a real measured state -- so a response the hub failed
+    to compute would have been indistinguishable from a machine it looked at
+    and found unowned, at an identity boundary.
+
+    Asserted through a CONSTRUCTION that omits the field rather than by
+    reading ``model_fields[...].is_required()``: the second passes on a model
+    whose validation is switched off, and it is validation, not the metadata,
+    that has to refuse.
+    """
+    import pydantic
+
+    common = {
+        "hub_machine_id": "hub-1",
+        "schema_version": state_schema.SCHEMA_VERSION,
+        "seq": 0,
+        "machines": [],
+        "hub_generation": "gen-1",
+        "capabilities": [],
+    }
+    with pytest.raises(pydantic.ValidationError, match="ownership"):
+        service.HelloResponse(**common)
+
+    covered = service.HelloResponse(**common, ownership="unowned")
+    assert covered.ownership == "unowned", (
+        "control: the same construction WITH the state is accepted, so the "
+        "refusal above is about the missing field and not about the rest of "
+        "this payload being wrong"
+    )
+
+
+def test_the_enroll_route_declares_the_statuses_it_really_returns() -> None:
+    """[if] the OpenAPI document omits a status the enroll route raises then
+    a generated client cannot branch on it, [else stop].
+
+    Sol review, PR #1648, P1 BLOCKING. Derived from the source rather than
+    from a copied list: the expectation is every ``status_code=`` the
+    enrollment mapping raises, read out of the module, so a fourth refusal
+    added later fails here instead of silently going undeclared.
+    """
+    import ast
+    import inspect
+
+    from apps.engine_core.app import create_app
+    from apps.engine_core.config import EngineConfig
+    from apps.sync_hub import service_enroll
+
+    tree = ast.parse(inspect.getsource(service_enroll))
+    raised: set[int] = {
+        kw.value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "HTTPException"
+        for kw in node.keywords
+        if kw.arg == "status_code"
+        and isinstance(kw.value, ast.Constant)
+        # ``ast.Constant.value`` is any literal, so narrow to the ints here
+        # rather than sorting a union later: a non-int status_code is not a
+        # thing this scan should quietly carry into the comparison.
+        and isinstance(kw.value.value, int)
+    }
+    assert raised, (
+        "control: the scan found no HTTPException status codes at all in "
+        "the enrollment mapping, which would make the comparison below "
+        "vacuously true"
+    )
+
+    declared = {code for code in service_enroll.ENROLL_RESPONSES if isinstance(code, int)}
+    assert raised <= declared, (
+        f"the enroll mapping raises {sorted(raised - declared)} that "
+        "ENROLL_RESPONSES does not declare"
+    )
+
+    import tempfile
+
+    cfg = EngineConfig(data_dir=Path(tempfile.mkdtemp(prefix="enroll-oapi-")))
+    spec = create_app(cfg).openapi()
+    responses = spec["paths"]["/api/v1/sync/enroll"]["post"]["responses"]
+    assert raised <= {int(code) for code in responses}, (
+        "the generated document is missing statuses the route raises: "
+        f"{sorted(raised - {int(code) for code in responses})}"
+    )
