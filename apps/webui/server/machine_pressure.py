@@ -35,8 +35,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 # One sample is worth sharing for about this long. Comfortably under the
 # client's 10 s poll, so a polling client gets a fresh sample each time while

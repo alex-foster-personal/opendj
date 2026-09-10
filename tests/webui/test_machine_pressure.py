@@ -11,7 +11,6 @@ exact defect .claude/rules/verification.md forbids.
 from __future__ import annotations
 
 import math
-
 from typing import Any
 
 import pytest

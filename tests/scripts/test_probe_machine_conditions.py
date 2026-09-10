@@ -14,7 +14,6 @@ must yield NO key. A zero would read as a machine about to die.
 from __future__ import annotations
 
 import math
-
 from typing import Any
 
 import pytest
