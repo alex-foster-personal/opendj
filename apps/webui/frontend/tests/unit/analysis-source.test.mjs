@@ -529,15 +529,17 @@ test('an EARLIER refresh completing must not clear a mark a LATER change set whi
 
 	try {
 		_deliverTracksChanged(socket); // refresh A starts, ~150ms in flight
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		assert.deepEqual(runnerLog, ['enter'], 'refresh A must still be in flight');
+		await _waitForRunnerLog(['enter'], 'refresh A in flight');
 
 		// A second, NEWER change arrives while A is still running. Its own
 		// refresh (B) fails immediately, so the only thing that could satisfy
 		// it is a refresh that actually started after this point.
 		runnerFailures = 1;
 		_deliverTracksChanged(socket);
-		await new Promise((resolve) => setTimeout(resolve, 0));
+		await _waitForRunnerLog(
+			['enter', 'enter', 'threw'],
+			'refresh B opened and failed while A still in flight'
+		);
 		assert.deepEqual(
 			runnerLog,
 			['enter', 'enter', 'threw'],
