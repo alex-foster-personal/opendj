@@ -95,7 +95,17 @@ test('ChannelStrip.svelte keeps FILTER in both modes and shrinks every dial in L
 	assert.match(src, /size=\{trimSize\}/, 'TRIM must be driven by the derived trimSize');
 	assert.match(src, /size=\{eqSize\}/, 'HI/MID/LOW must be driven by the derived eqSize');
 	assert.match(src, /size=\{filterSize\}/, 'FILTER must be driven by the derived filterSize');
+	// EVERY child, not the four the first draft covered. CSS grid auto-places
+	// an unplaced item into the first open cell in DOM order, so with only ONE
+	// `grid-area` missing the layout still looks right by elimination - but
+	// drop two and the earlier child takes the earlier hole. `trim-slot`
+	// precedes `cue-btn` in the markup, so losing both areas silently SWAPS
+	// TRIM and CUE with nothing to catch it. Blinded review, Thu 10 Sep 2026.
 	for (const [name, area] of [
+		['strip-head', 'head'],
+		['cue-btn', 'cue'],
+		['trim-slot', 'trim'],
+		['stem-label', 'stemlabel'],
 		['fader-slot', 'fader'],
 		['eq-stack', 'eq'],
 		['stem-slot', 'stem'],
@@ -112,10 +122,24 @@ test('ChannelStrip.svelte keeps FILTER in both modes and shrinks every dial in L
 	// pins the intent so the areas cannot be silently reordered into a stack.
 	const areas = firstMatch(src, /grid-template-areas:\s*([^;]*);/, 'the LESS grid-template-areas');
 	const rows = areas[1].trim().split('\n').map((row) => row.trim().replace(/'/g, '').split(/\s+/));
+	assert.deepEqual(
+		rows,
+		[
+			['head', 'head', 'head'],
+			['cue', 'trim', 'stemlabel'],
+			['fader', 'eq', 'stem'],
+			['fader', 'filter', 'stem']
+		],
+		'the whole LESS grid is the contract, not just the row the EQs sit in'
+	);
 	const dialRow = rows.find((row) => row.includes('eq'));
 	assert.ok(dialRow, 'one grid row must hold the EQ stack');
 	assert.equal(dialRow[0], 'fader', 'the channel fader belongs LEFT of the EQs');
 	assert.equal(dialRow[2], 'stem', 'the STEM buttons belong RIGHT of the EQs');
+	// Every named area is used by exactly one child, so no child can be left
+	// to auto-place into an implicit row.
+	const areaNames = new Set(rows.flat());
+	assert.equal(areaNames.size, 8, 'the LESS grid names exactly eight areas');
 });
 
 test('.strip fixes every non-fader child so a too-short strip overflows visibly instead of squeezing', () => {

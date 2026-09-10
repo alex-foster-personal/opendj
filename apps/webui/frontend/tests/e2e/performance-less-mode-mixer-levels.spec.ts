@@ -21,9 +21,21 @@ import { expect, test } from '@playwright/test';
 // longer visible even though decks 1/2 themselves are supposed to stay the
 // unclipped, always-visible half of LESS mode.
 const STANDARD_VIEWPORT = { width: 1280, height: 800 };
+// Short enough that `.perf-root.deck-layout-less`'s
+// `minmax(276px, min(404px, calc(100vh - ...)))` resolves its CALC BELOW the
+// floor, so the floor is what sizes the row. At STANDARD_VIEWPORT the cap
+// governs instead, which is why every existing assertion here has only ever
+// measured a mixer with slack. Blinded review, Thu 10 Sep 2026.
+const SHORT_VIEWPORT = { width: 1280, height: 560 };
+/** `.perf-root.deck-layout-less`'s deck-area floor, derived in
+ *  channel-strip-less-floor.test.mjs and written into +page.svelte. */
+const LESS_DECK_AREA_FLOOR_PX = 276;
 
-async function enterLessMode(page: import('@playwright/test').Page): Promise<void> {
-	await page.setViewportSize(STANDARD_VIEWPORT);
+async function enterLessMode(
+	page: import('@playwright/test').Page,
+	viewport: { width: number; height: number } = STANDARD_VIEWPORT
+): Promise<void> {
+	await page.setViewportSize(viewport);
 	await page.goto('/performance');
 	await page.getByRole('button', { name: 'LESS' }).click();
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
@@ -203,4 +215,149 @@ test('performance LESS mode: FILTER is visible, with the fader left of the EQs a
 				`of the EQ stack (right edge ${boxes.eq!.right})`
 		).toBeGreaterThanOrEqual(boxes.eq!.right);
 	}
+});
+
+// The floor is an EXACT-FIT number (strip 171 == the four LESS grid rows' sum,
+// deck area 276 == toggle 17 + strip 171 + lower 76 + chrome 12), so it has
+// zero slack by construction and a 1px Chromium rounding or font-metric
+// difference breaks it - which is precisely how #1578 bit. Every other test in
+// this file runs at STANDARD_VIEWPORT, where `min(404px, calc(...))` governs
+// and the mixer carries ~128px of slack, so none of them has ever rendered the
+// floor at all. This one does. Blinded review, Thu 10 Sep 2026.
+//
+// It asserts against the STRIP's own box, not the mixer's, and that choice is
+// the whole test. Measured at this viewport with the shipped sizes: mixer
+// 114-390, strip 138-309, so a strip whose content outgrows its 171px grid row
+// does NOT get clipped by anything and does NOT make the mixer grow - the row
+// stays 171px and the children simply spill out of it and lie on top of the
+// headphone/crossfader row 80px below. Verified by raising LESS_EQ_SIZE from
+// 18 to 30: the mixer box, the deck-area box and the lower row are all
+// unchanged and still fully inside their parents (EQ 185-308, FILTER 311-338,
+// fader to 337, stem to 341, against a strip bottom of 309). Any assertion
+// phrased against `.rb-mixer`'s bounds is therefore blind to it.
+test('performance LESS mode: at the deck-area FLOOR no strip control spills out of its grid row', async ({
+	page
+}) => {
+	await enterLessMode(page, SHORT_VIEWPORT);
+
+	const deckArea = page.locator('.deck-area');
+	await expect(deckArea).toBeVisible();
+	const deckAreaBox = await deckArea.boundingBox();
+	expect(deckAreaBox, 'the deck area must have a real box').not.toBeNull();
+	// Precondition, asserted rather than assumed: this viewport must really
+	// have driven the row onto its floor. If a later change raises the cap or
+	// the chrome, this fails HERE rather than silently re-testing the slack
+	// case that every other test in this file already covers.
+	expect(
+		deckAreaBox!.height,
+		`this viewport must put the deck area ON its ${LESS_DECK_AREA_FLOOR_PX}px floor, ` +
+			`not above it (measured ${deckAreaBox!.height})`
+	).toBeLessThanOrEqual(LESS_DECK_AREA_FLOOR_PX + 1);
+	expect(
+		deckAreaBox!.height,
+		`the floor must hold the deck area open at ${LESS_DECK_AREA_FLOOR_PX}px ` +
+			`(measured ${deckAreaBox!.height})`
+	).toBeGreaterThanOrEqual(LESS_DECK_AREA_FLOOR_PX - 1);
+
+	for (const deck of [1, 2]) {
+		const strip = page.locator(`[data-mixer-channel="${deck}"]`);
+		await expect(strip, `channel ${deck} strip must be present at the floor`).toBeVisible();
+		const stripBox = await strip.boundingBox();
+		expect(stripBox, `channel ${deck} strip must have a real box`).not.toBeNull();
+		const stripBottom = stripBox!.y + stripBox!.height;
+
+		// Every control the LESS grid places, top row to bottom row - including
+		// the four (`strip-head`, `cue-btn`, `trim-slot`, `stem-label`) whose
+		// placement no rendered test used to observe at all. CSS grid
+		// auto-places an unplaced child into the first free cell in DOM order,
+		// so losing two `grid-area` declarations at once SWAPS two controls,
+		// and the ordering assertions further down are what catch that.
+		const controls: Array<[string, string]> = [
+			['head', `[data-mixer-channel="${deck}"] .strip-head`],
+			['CUE', `[data-mixer-channel="${deck}"] .cue-btn`],
+			['TRIM', `[data-knob-id="${deck}:trim"]`],
+			['STEM label', `[data-mixer-channel="${deck}"] .stem-label`],
+			['HI', `[data-knob-id="${deck}:high"]`],
+			['MID', `[data-knob-id="${deck}:mid"]`],
+			['LOW', `[data-knob-id="${deck}:low"]`],
+			['FILTER', `[data-knob-id="${deck}:filter"]`],
+			['fader', `[data-testid="channel-${deck}-fader"]`]
+		];
+		for (const [name, selector] of controls) {
+			const control = page.locator(selector).first();
+			await expect(control, `channel ${deck} ${name} must exist at the floor`).toBeAttached();
+			const box = await control.boundingBox();
+			expect(box, `channel ${deck} ${name} must have a real box at the floor`).not.toBeNull();
+			expect(
+				box!.height,
+				`channel ${deck} ${name} must not be squashed to nothing at the floor`
+			).toBeGreaterThan(0);
+			expect(
+				box!.y + box!.height,
+				`channel ${deck} ${name} (bottom edge ${box!.y + box!.height}) has spilled out of ` +
+					`its strip (bottom edge ${stripBottom}) at the ${LESS_DECK_AREA_FLOOR_PX}px ` +
+					'floor, so it now lies on top of the headphone/crossfader row below'
+			).toBeLessThanOrEqual(stripBottom + 1);
+		}
+
+		// The grid's own geometry, re-read at the floor: a row that has just
+		// run out of height is exactly where a mis-placed child stops being a
+		// cosmetic problem and starts overlapping its neighbour.
+		const cells = await strip.evaluate((node) => {
+			const pick = (selector: string) => {
+				const el = node.querySelector(selector);
+				if (el === null) return null;
+				const r = el.getBoundingClientRect();
+				return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+			};
+			return {
+				cue: pick('.cue-btn'),
+				trim: pick('.trim-slot'),
+				stemLabel: pick('.stem-label'),
+				fader: pick('.fader-slot'),
+				eq: pick('.eq-stack'),
+				stem: pick('.stem-slot'),
+				filter: pick('.filter-slot')
+			};
+		});
+		for (const [name, cell] of Object.entries(cells)) {
+			expect(cell, `channel ${deck} ${name} must be present at the floor`).not.toBeNull();
+		}
+		// Row 2, left to right: cue | trim | stemlabel. This is the row whose
+		// placement nothing rendered used to check, and the one where two
+		// dropped `grid-area`s would swap TRIM and CUE.
+		expect(
+			cells.cue!.right,
+			`channel ${deck} CUE (right ${cells.cue!.right}) must sit LEFT of TRIM ` +
+				`(left ${cells.trim!.left}) - a swap here means a lost grid-area`
+		).toBeLessThanOrEqual(cells.trim!.left);
+		expect(
+			cells.stemLabel!.left,
+			`channel ${deck} STEM label (left ${cells.stemLabel!.left}) must sit RIGHT of TRIM ` +
+				`(right ${cells.trim!.right})`
+		).toBeGreaterThanOrEqual(cells.trim!.right);
+		// Rows 3 and 4: fader | eq | stem, then fader | filter | stem.
+		expect(cells.fader!.right).toBeLessThanOrEqual(cells.eq!.left);
+		expect(cells.stem!.left).toBeGreaterThanOrEqual(cells.eq!.right);
+		expect(
+			cells.filter!.top,
+			`channel ${deck} FILTER (top ${cells.filter!.top}) belongs in the row BELOW the EQ ` +
+				`stack (bottom ${cells.eq!.bottom})`
+		).toBeGreaterThanOrEqual(cells.eq!.bottom);
+		expect(cells.fader!.right).toBeLessThanOrEqual(cells.filter!.left);
+		expect(cells.stem!.left).toBeGreaterThanOrEqual(cells.filter!.right);
+	}
+
+	// Second line of defence, cheap: the headphone/crossfader row the strips
+	// sit above must still be there and unsquashed at the floor. It does NOT
+	// bite on the overflow case above (nothing clips), so it is stated as the
+	// separate, weaker check it is rather than being relied on.
+	const lower = page.locator('.rb-mixer .lower');
+	await expect(lower, 'the mixer lower section must exist at the floor').toBeVisible();
+	const lowerBox = await lower.boundingBox();
+	expect(lowerBox, 'the mixer lower section must have a real box').not.toBeNull();
+	expect(
+		lowerBox!.height,
+		'the mixer lower section must not be squashed to nothing at the floor'
+	).toBeGreaterThan(20);
 });

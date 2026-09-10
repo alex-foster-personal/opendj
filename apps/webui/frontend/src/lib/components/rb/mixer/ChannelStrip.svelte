@@ -29,11 +29,13 @@
 		 * MORE (the mixer shares `.deck-area`'s single grid row with the
 		 * decks, and that row's floor shrinks in LESS - see +page.svelte's
 		 * `.perf-root.deck-layout-less` comment), so the strip compacts:
-		 * smaller TRIM/EQ knobs, tighter margins, and the FILTER dial drops
-		 * out entirely. It is a live dial since issue #990, but it is the one
-		 * control with a neutral resting value (0.5 = bypass) and a state
-		 * that survives the strip not drawing it, so LESS still sheds it
-		 * first. TRIM/EQ/CUE/the fader+level-meter/STEM stay. */
+		 * smaller TRIM/EQ/FILTER knobs, tighter margins, and a three-column
+		 * grid that puts the fader left of the EQs and STEM right of them.
+		 * LESS used to SHED the FILTER dial instead of shrinking it, on the
+		 * grounds that its resting value is neutral (0.5 = bypass) and its
+		 * state survives not being drawn. Pin 2917b0eca218 reversed that: an
+		 * unmounted dial is a dial the DJ cannot reach mid-mix, and the grid
+		 * makes room for every control. Nothing is unmounted by LESS now. */
 		less: boolean;
 		/** TRIM knob 0..1; 0.5 = unity. */
 		trim: number;
