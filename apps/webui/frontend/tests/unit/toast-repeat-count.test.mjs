@@ -107,7 +107,22 @@ test('if the toast count is absent from UI or IPC then the repeat signal is brok
 });
 
 test('if follower sync skips repeat while dragging then they use the same counted-toast path', () => {
+	// Pin 9bf12adccb45 moved the decision out of the engine: what a completed
+	// sync says is now beatSyncOutcomeNotices in beat-sync-math.ts, returning
+	// the message and its grouping key as data. Both ends are checked, because
+	// a key that is set but never passed to pushToast groups nothing.
+	const math = readFileSync(`${root}/src/lib/rb/beat-sync-math.ts`, 'utf8');
+	const skippedNotice = math.slice(
+		math.indexOf('`Beat Sync skipped deck(s)'),
+		math.indexOf('events: planFailed.map')
+	);
+	assert.ok(skippedNotice.length > 0, 'the skipped-follower notice must still exist');
+	assert.match(skippedNotice, /`beat-sync-followers:\$\{master\}`/);
+
 	const engine = readFileSync(`${root}/src/lib/rb/audio-engine.svelte.ts`, 'utf8');
-	const skippedToast = engine.slice(engine.indexOf('`Beat Sync skipped deck(s)'), engine.indexOf('for (const f of planFailed)'));
-	assert.match(skippedToast, /`beat-sync-followers:\$\{master\}`/);
+	assert.match(
+		engine,
+		/pushToast\(\s*notice\.message,\s*notice\.kind,[^)]*notice\.groupKey\s*\)/,
+		"the engine must hand the notice's groupKey to pushToast, or nothing coalesces"
+	);
 });

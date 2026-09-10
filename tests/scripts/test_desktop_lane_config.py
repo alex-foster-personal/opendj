@@ -10,12 +10,10 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
   under an unintended name or escape its directory -> broken.
 - if the dmg filename carries a space or a parenthesis, every downstream
   shell command needs quoting -> broken.
-- if the architecture is guessed rather than read from the built
-  executable, an arm64/aarch64 mismatch ships in the filename -> broken.
-- if tauri.conf.json asks for Tauri's own dmg target, bundle_dmg.sh drives
-  Finder and every headless build dies at AppleEvent timeout -1712 -> broken.
-- if the image is created only on the signed path, an MDT_SHIP_UNSIGNED=1
-  build produces no artifact at all -> broken.
+- if the architecture is defaulted rather than passed in, an arm64/aarch64
+  mismatch ships in the filename -> broken.
+- if the recipe creates its image only inside the signing branch, an unsigned
+  build finishes having produced no artifact at all -> broken.
 """
 
 from __future__ import annotations
@@ -32,7 +30,6 @@ import pytest
 
 from scripts.desktop_lane_config import (
     LaneLabelError,
-    arch_from_lipo,
     dmg_filename,
     lane_identifier,
     lane_product_name,
@@ -47,6 +44,7 @@ BASE_IDENTIFIER: str = "com.opendj.desktop"
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 TAURI_CONF: Path = REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json"
+JUSTFILE: Path = REPO_ROOT / "justfile"
 
 
 # ----- label validation --------------------------------------------------
@@ -145,56 +143,117 @@ def test_dmg_name_is_shell_safe(label: str | None) -> None:
 
 
 @pytest.mark.requirement("INSTALL-05")
-@pytest.mark.parametrize(("lipo", "arch"), [("arm64", "aarch64"), ("x86_64\n", "x86_64")])
-def test_arch_is_read_from_the_built_executable(lipo: str, arch: str) -> None:
-    """``lipo -archs`` says arm64; the artifact name keeps Rust's aarch64."""
-    assert arch_from_lipo(lipo) == arch
+def test_arch_is_refused_rather_than_defaulted() -> None:
+    """An unstated architecture is refused, never assumed.
 
-
-@pytest.mark.requirement("INSTALL-05")
-@pytest.mark.parametrize("lipo", ["", "   ", "x86_64 arm64", "arm64e", "ppc"])
-def test_arch_refuses_what_it_cannot_name_exactly(lipo: str) -> None:
-    """A universal or unknown binary must not be named as a single arch."""
+    The architecture used to be read off the filename of the dmg Tauri
+    bundled. That artifact is gone (#1711), so the caller states the value
+    instead -- and a caller that forgets gets an error rather than a
+    plausible-looking name for a machine that cannot run it.
+    """
     with pytest.raises(LaneLabelError):
-        arch_from_lipo(lipo)
+        dmg_filename(BASE_PRODUCT, "B", "0.1.0", "")
 
 
 # ----- the real config ---------------------------------------------------
-def test_shipped_config_bundles_the_app_without_tauris_dmg() -> None:
-    """Tauri's dmg target runs bundle_dmg.sh, which drives Finder (#1711).
+def test_shipped_config_does_not_ask_tauri_for_a_dmg() -> None:
+    """#1711: Tauri's dmg target cannot be built where nobody is logged in.
 
-    Finder does not answer Apple events from a non-interactive session, so
-    that target made every headless build fail, and its image was deleted
-    and rebuilt with hdiutil anyway. The recipe makes the image itself.
+    ``bundle_dmg.sh`` drives Finder over AppleScript to lay the image's
+    window out. Finder does not answer Apple events from a non-interactive
+    context on silver, so the four measured runs of Thu 10 Sep 2026 all
+    ended in that script with
+
+        execution error: Finder got an error: AppleEvent timed out. (-1712)
+
+    and it fails identically inside the console Aqua session, with Finder
+    running and a console user logged in. The target is therefore gone and
+    the image is produced by ``hdiutil create`` in the ``dmg`` recipe
+    instead, which is a plain file operation and needs no logged-in user.
+
+    Bundling itself must stay ON: with ``active`` false there is no .app at
+    all and the recipe has nothing to package.
     """
     conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
     assert conf["bundle"]["active"] is True
     assert conf["bundle"]["targets"] == ["app"]
-    assert conf["bundle"]["createUpdaterArtifacts"] is True
 
 
-def _dmg_recipe() -> str:
-    recipe = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
-    start = recipe.index("\ndmg lane='':\n")
-    end = recipe.index("\n\n", recipe.index("[TIMING] recipe_end", start))
-    return recipe[start:end]
+# ----- the real recipe ---------------------------------------------------
+DMG_RECIPE_HEADER: str = "dmg lane='':"
 
 
-def test_the_dmg_recipe_creates_the_image_on_both_paths() -> None:
-    """ONE hdiutil create, at recipe level, never inside the signing branch.
+def _dmg_recipe_body() -> list[str]:
+    """The ``dmg`` recipe's shell lines, comments and blanks stripped out."""
+    lines = JUSTFILE.read_text(encoding="utf-8").splitlines()
+    body: list[str] = []
+    for line in lines[lines.index(DMG_RECIPE_HEADER) + 1 :]:
+        if line and not line.startswith(("    ", "\t")):
+            break  # the next top-level item: a recipe or a variable
+        if line.strip() and not line.strip().startswith("#"):
+            body.append(line)
+    return body
 
-    Before #1711 the unsigned path shipped Tauri's image and only the signed
-    path ran hdiutil. With Tauri's dmg target gone, an hdiutil call nested
-    under ``if [ -n "$identity" ]`` would leave MDT_SHIP_UNSIGNED=1 builds
-    with nothing to ship.
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def test_the_image_is_created_outside_the_signing_branch() -> None:
+    """An unsigned run must still produce the artifact.
+
+    Dropping the Tauri ``dmg`` target removes the file the recipe used to
+    pick up with ``ls -t .../bundle/dmg/*.dmg``. On the SIGNED path the
+    recipe already replaced it with ``hdiutil create``; on the UNSIGNED
+    path (``MDT_SHIP_UNSIGNED=1``, so ``identity`` is empty) that bundled
+    image WAS the deliverable and was never recreated. Leaving the
+    ``hdiutil create`` inside ``if [ -n "$identity" ]`` would therefore
+    make an unsigned run finish having built no artifact at all.
+
+    Nesting is what this asserts: the create must sit at the same indent
+    as the signing branch, so it belongs to neither arm of it.
     """
-    recipe = _dmg_recipe()
-    creates = re.findall(r"^( *)hdiutil create .*-format UDZO", recipe, re.M)
-    assert creates == ["    "], creates
-    # Nothing reads a Tauri-produced image back any more.
-    assert "ls -t apps/desktop/src-tauri/target/release/bundle/dmg" not in recipe
-    assert "--built" not in recipe
-    assert 'dmg-name --config "$conf" --label "$label" --lipo-archs' in recipe
+    body = _dmg_recipe_body()
+    creates = [line for line in body if line.strip().startswith("hdiutil create")]
+    assert len(creates) == 1, creates
+    guards = [line for line in body if line.strip() == 'if [ -n "$identity" ]; then']
+    assert guards, "the signing branch vanished from the dmg recipe"
+    assert _indent(creates[0]) == min(_indent(line) for line in guards)
+
+
+def test_the_recipe_clears_the_app_bundle_before_building() -> None:
+    """A stale app from another lane must not be the one packaged.
+
+    ``source_app`` is chosen with ``find ... -print -quit``, the first match
+    win. A lane overlay renames the .app, so a bundle left behind by a
+    differently labelled build sits beside this run's and can win that race.
+    Tauri's own output is only ever identified by the path it was just
+    written to, so the fix is to clear the directory first -- which has to
+    happen BEFORE the bundler runs, or it deletes this run's own app.
+    """
+    body = _dmg_recipe_body()
+    clears = [
+        index
+        for index, line in enumerate(body)
+        if "bundle/macos" in line and line.strip().startswith("rm ")
+    ]
+    builds = [
+        index for index, line in enumerate(body) if "cargo tauri build" in line
+    ]
+    assert len(clears) == 1, [body[index] for index in clears]
+    assert builds, "the bundler invocation vanished from the dmg recipe"
+    assert clears[0] < builds[0]
+
+
+def test_the_recipe_derives_nothing_from_a_directory_listing() -> None:
+    """The discarded artifact's filename was the only reason to list.
+
+    ``arch_from_built_name`` parsed ``<productName>_<version>_<arch>.dmg``
+    out of the newest file in ``bundle/dmg/``. With no bundled dmg there is
+    nothing to list, so a surviving ``ls -t`` there would be reading a
+    directory nothing writes to.
+    """
+    assert "ls -t" not in "".join(_dmg_recipe_body())
 
 
 def test_shipped_config_is_the_unlabelled_product() -> None:
@@ -365,32 +424,17 @@ def test_cli_names_the_labelled_artifact() -> None:
         str(TAURI_CONF),
         "--label",
         "B",
-        "--lipo-archs",
-        "arm64",
+        "--arch",
+        "aarch64",
     )
-    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
-    assert name == f"OpenDJ-B-{conf['version']}-aarch64.dmg"
+    assert name == "OpenDJ-B-0.1.1-aarch64.dmg"
 
 
-def test_cli_refuses_to_name_the_artifact_without_an_architecture() -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "scripts.desktop_lane_config",
-            "dmg-name",
-            "--config",
-            str(TAURI_CONF),
-            "--label",
-            "",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode != 0
-    assert "--lipo-archs" in result.stderr
+def test_cli_refuses_dmg_name_without_an_arch() -> None:
+    """No --arch means no name, not a guessed one."""
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_cli("dmg-name", "--config", str(TAURI_CONF), "--label", "B")
+    assert "needs --arch" in refused.value.stderr
 
 
 @pytest.mark.requirement("INSTALL-04")

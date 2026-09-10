@@ -32,7 +32,14 @@ export type Toast = {
 	id: number;
 	logId: string;
 	message: string;
-	kind: 'info' | 'error';
+	/**
+	 * `warn` is the middle rung, added for pin 9bf12adccb45: a BAR beat sync
+	 * that had to fold to half/double tempo now HAPPENS and says so in orange,
+	 * where it used to be refused in red. An outcome the DJ should see but that
+	 * did not fail has no honest home in a two-value scale - it either
+	 * overstates as an error or disappears as info.
+	 */
+	kind: 'info' | 'warn' | 'error';
 	createdAt: string;
 	count: number;
 	groupKey: string | undefined;
@@ -115,7 +122,7 @@ export const TOAST_DEFAULT_MS = 5000;
  */
 export function pushToast(
 	message: string,
-	kind: 'info' | 'error' = 'info',
+	kind: 'info' | 'warn' | 'error' = 'info',
 	dismissMs: number = TOAST_DEFAULT_MS,
 	cause?: unknown,
 	context: ClientErrorContext = {},
@@ -147,7 +154,9 @@ export function pushToast(
 		`toast-${kind}`,
 		message,
 		null,
-		kind === 'error' ? 'error' : 'info',
+		// recordPerfEvent's severity scale is already info/warn/error, so the
+		// toast kind maps straight onto it rather than being flattened.
+		kind,
 		logId
 	);
 	// Group only when a caller names the same control. Every occurrence still

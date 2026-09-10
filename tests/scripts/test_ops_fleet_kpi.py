@@ -46,9 +46,13 @@ Regression lines:
     broken (off at 5, on at 15, and the matching health line flips with it)
   - if a health line that cannot measure reports PASS or a silent zero instead
     of FAIL then broken (missing probe fixture and missing gh fixture controls)
-  - if the 8 data health lines cannot be flipped by their own fixture inputs
+  - if the 9 data health lines cannot be flipped by their own fixture inputs
     then broken (the red-fixture run proves each verdict is driven by the
     input it names, not by ambient machine state)
+  - if a launcher refusal or a provisioning fault counts on the FLEET FATAL line then
+    broken (issue #1670: they have lines of their own, and the fleet line had no
+    reachable green while they shared it). The split's own cases live in
+    tests/scripts/test_ops_fleet_kpi_fatal_classes.py
   - if an untimestamped FATAL line flips the window health check then broken:
     a bare "FATAL: ..." has awk $1 = "FATAL:", and a string compare puts "F"
     above any "2026-..." bound, so the pre-fix filter admitted it forever and
@@ -154,12 +158,32 @@ def _health(out: str) -> dict[str, str]:
 
 
 def _fatal_label(untimestamped: int | str) -> str:
-    """The FATAL health label, which names how many lines the window filter had
-    to exclude for carrying no timestamp to window on."""
+    """The FLEET FATAL health label, which names how many lines the window filter
+    had to exclude for carrying no timestamp to window on. Since issue #1670 this
+    line counts only records that are neither a launcher refusal nor a
+    provisioning fault; those two have lines of their own."""
     return (
-        f"no timestamped FATAL in logs last {HOURS}h "
-        f"(+{untimestamped} untimestamped, excluded: no time to window on)"
+        f"no timestamped fleet FATAL in logs last {HOURS}h "
+        f"(+{untimestamped} untimestamped, excluded: no time to window on; "
+        f"launcher refusals and provisioning faults have their own lines below)"
     )
+
+
+PROVISIONING_LABEL = (
+    f"no timestamped provisioning fault in logs last {HOURS}h "
+    f"(a lane with no usable account or credential: the box is not set up, "
+    f"the fleet is not broken)"
+)
+
+
+def _refusals(out: str) -> str:
+    """The launcher-refusal count off the `refusals` line, as written. A count,
+    never a verdict: see issue #1670."""
+    for line in out.splitlines():
+        if line.startswith("refusals "):
+            return line.split(" ", 2)[1].removeprefix("launcher=")
+    raise AssertionError(f"no refusals line in output:\n{out}")
+
 
 GREEN_LABELS = [
     "queue-watchdog unit active",
@@ -170,6 +194,7 @@ GREEN_LABELS = [
     "workers within cap (4)",
     "actionable PR backlog under builder-freeze threshold 15",
     _fatal_label(0),
+    PROVISIONING_LABEL,
     "token present for launchers",
 ]
 
@@ -338,42 +363,6 @@ def test_untimestamped_fatal_is_counted_but_never_windowed(tmp_path):
     assert verdicts[_fatal_label(1)] == "PASS", out
     # And the excluded line is named rather than swallowed.
     assert _fatal_label(0) not in verdicts, out
-
-
-def test_prose_that_merely_mentions_fatal_is_not_a_fatal_record(tmp_path):
-    """If a log line that only CONTAINS the word FATAL counts as a FATAL then broken.
-
-    These logs are not all structured. `resident-*.log`, `issue-*.log` and
-    `dispatcher.log` are agent transcripts, and agents quote source lines, paste
-    diffs containing `+ log "FATAL: ..."`, and echo this script's own health
-    output back into themselves. Measured on nucbox Wed 9 Sep 2026, the
-    contains-anywhere rule reported 889 untimestamped FATALs of which 862 were
-    prose, so the excluded count carried no information, and a quoted line that
-    happens to lead with its own UTC stamp could redden the window check for a
-    fault that never happened.
-
-    Both directions are pinned here: prose must not count, and a real record must
-    still count, in the same fixture, so a rule that simply stopped matching
-    anything would fail this test rather than pass it.
-    """
-    fixture = _copy_fixture(tmp_path)
-    (fixture / "jobs" / "logs" / "resident-prose.log").write_text(
-        # An agent quoting a source line, with its own stamp at the front.
-        f'{_iso(NOW - 60)} the fixer patch adds: + log "FATAL: redteam trigger failed"\n'
-        # An agent echoing this script's own output back into its transcript.
-        f"{_iso(NOW - 50)} health FAIL no timestamped FATAL in logs last 6h\n"
-        # Prose with no stamp at all, mentioning the word mid-sentence.
-        "I refused to ship that because a FATAL there would be silent\n"
-    )
-
-    home = _home(tmp_path, token_profile=True)
-    assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "PASS"
-
-    # Same fixture, plus one genuine record: stamp, then FATAL as the next field.
-    (fixture / "jobs" / "logs" / "real-fatal.log").write_text(
-        f"{_iso(NOW - 40)} FATAL: no brief at /home/dev/jobs/briefs/issue-1.md\n"
-    )
-    assert _health(_run(_env(fixture, home)).stdout)[_fatal_label(0)] == "FAIL"
 
 
 def test_an_unstamped_fatal_record_is_counted_but_prose_is_not(tmp_path):

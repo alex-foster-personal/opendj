@@ -13,6 +13,8 @@ satisfy (which tables, why the fts5 shadow tables are excluded).
 
 from __future__ import annotations
 
+from apps.database.enrollment_table_docs import ENROLLMENT_TABLE_DOCS
+
 TABLE_DOCS: dict[str, str] = {
     # ----- apps.shared.state.schema.TABLES (the schema authority) --------
     "tracks": (
@@ -324,6 +326,9 @@ TABLE_DOCS: dict[str, str] = {
         "Machine-local bookkeeping: it carries no origin_device_id and is "
         "not in SYNC_TABLES, so it does not ride hub sync."
     ),
+    # Migration v9 enrollment tables (ADR 12), in their own module for the
+    # same 600-line reason this file was split out of column_docs.py.
+    **ENROLLMENT_TABLE_DOCS,
 }
 
 __all__ = ["TABLE_DOCS"]

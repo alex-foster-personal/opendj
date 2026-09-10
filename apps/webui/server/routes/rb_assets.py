@@ -10,6 +10,8 @@ The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 from __future__ import annotations
 
 import hashlib
+import json
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -20,12 +22,24 @@ from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import QualityOut
+from ..rb_vendor_pkg import own_beatgrid_overlay
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
 _CACHE_AUDIO = "no-store"  # files can move (apps/reconcile repairs)
 _CACHE_ARTWORK = "public, max-age=86400"
-_CACHE_ANLZ = "public, max-age=3600"
+# REVALIDATE, never serve from cache blind. This payload varies with two
+# things the URL does not name: whether an own record has landed for the track
+# (a background backfill can promote one at any moment) and the PARITY-02
+# source selection, a process-local toggle. Under the previous
+# `public, max-age=3600` a browser replayed the old grid for up to an hour
+# after either changed, and the earlier fix only sent `no-store` once the
+# response had ALREADY resolved to `own`, so a response cached before the
+# promotion never reached the server to be corrected (Codex P1 BLOCKING,
+# PR #1587). `no-cache` still lets the browser HOLD the body; it just has to
+# ask first, and the ETag below turns that ask into a 304 for the common
+# unchanged case rather than 1.2 MB on every deck load.
+_CACHE_ANLZ = "private, no-cache"
 _CACHE_ANLZ_RETRYABLE = "no-store"  # transient decoder saturation, not a fact about the track
 _CACHE_RB_META = "no-store"  # file_exists must reflect disk truth
 
@@ -159,6 +173,21 @@ def _etag_matches(if_none_match: str | None, etag: str) -> bool:
     )
 
 
+def _state_db_override(request: Request) -> Path | None:
+    """The app-configured analysis DB path, or None to take the callee's own default.
+
+    Unlike `apps.webui.server.routes.analysis._analysis_db_path`, this never
+    substitutes `apps.shared.paths.STATE_DB` for an absent override: the
+    own-beatgrid overlay's default is the DISTINCT
+    `apps.adapters.rekordbox.config.STATE_DB` constant (the two normally point
+    at the same file, but tests monkeypatch them independently), so forcing
+    the wrong one here would fix the app-configured-DB case while breaking the
+    ordinary default case (Codex P2 BLOCKING, PR #1587).
+    """
+    override = getattr(request.app.state, "analysis_db_path", None)
+    return Path(override) if override is not None else None
+
+
 @router.get("/{stable_id}/anlz")
 def get_track_anlz(
     request: Request,
@@ -178,27 +207,100 @@ def get_track_anlz(
     from data/state/vocal-cache, merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
+    state_db_path = _state_db_override(request)
     try:
         content = rb_vendor.resolve_content(stable_id)
-        payload = rb_vendor.build_anlz_payload(content, points)
+        payload = rb_vendor.build_anlz_payload(content, points, state_db_path)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+        code = detail.get("code")
+        if code == "VENDOR_MAPPING_NOT_FOUND":
+            # Locally imported track (no rekordbox analysis). Everything rekordbox
+            # owns stays empty, but the waveform is decodable from the audio
+            # itself, so serve OUR peaks (ffmpeg, cached under
+            # data/state/local-waveform-cache) and say so in ``local_waveform``.
+            # A decode that has not and cannot run yields empty bands plus the
+            # reason - never a synthesised shape.
+            # Same audience GET /audio resolves for this request, so a Share
+            # listener's lane is drawn from the rung they actually hear.
+            share = getattr(request.state, "share_audience", "local") == "share"
+            payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
+            # The own-beatgrid overlay again, on THIS branch too. `build_anlz_payload`
+            # applies it on the mapped branch, but a locally imported file never goes
+            # through that function, so a track with a canonical own record was still
+            # served an empty rekordbox-labelled grid under `beatgrid=own` - and a
+            # local import is exactly the track most likely to have no rekordbox
+            # analysis and most likely to depend on ours (Codex P1 BLOCKING,
+            # PR #1587). Applied here rather than inside `local_anlz_payload`, which
+            # belongs to the waveform lane; this route already owns choosing between
+            # the two branches.
+            payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
+        elif code == "ANALYSIS_NOT_FOUND":
+            # A MAPPED track whose vendor ANLZ files are missing, unsafe, or
+            # wholly unparseable. `build_anlz_payload` raised before the own
+            # overlay ever ran, so a track with the beatgrid lane promoted to
+            # own and a valid canonical own record could not be served at all
+            # (Codex P1 BLOCKING, PR #1587) even though the own lane has a
+            # real, honest answer independent of the vendor's broken file.
+            #
+            # Cues live in djmdCue, not the ANLZ files, so they are still real
+            # data for this track and are fetched for real rather than reused
+            # from `empty_anlz_payload`'s local-import stub.
+            payload = rb_vendor.empty_anlz_payload(stable_id, points)
+            payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
+            payload = own_beatgrid_overlay.apply_own_beatgrid(payload, stable_id, state_db_path)
+            if payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN:
+                # The beatgrid lane is not on own, so there is nothing real to
+                # show: the rekordbox stub in `payload` would be
+                # indistinguishable from a genuinely silent, healthy track
+                # (GUARD-01 H10). Keep failing loud rather than paint over a
+                # dead vendor source.
+                raise
+        else:
             raise
-        # Locally imported track (no rekordbox analysis). Everything rekordbox
-        # owns stays empty, but the waveform is decodable from the audio
-        # itself, so serve OUR peaks (ffmpeg, cached under
-        # data/state/local-waveform-cache) and say so in ``local_waveform``.
-        # A decode that has not and cannot run yields empty bands plus the
-        # reason - never a synthesised shape.
-        # Same audience GET /audio resolves for this request, so a Share
-        # listener's lane is drawn from the rung they actually hear.
-        share = getattr(request.state, "share_audience", "local") == "share"
-        payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
-    cache_control = _CACHE_ANLZ_RETRYABLE if retryable else _CACHE_ANLZ
-    return JSONResponse(payload, headers={"Cache-Control": cache_control})
+    # An own-sourced beatgrid is NOT publicly cacheable for an hour. This
+    # response varies with two things the URL does not name: whether an own
+    # record has landed for the track, and the PARITY-02 source selection, which
+    # is a process-local toggle that can flip mid-session. With `max-age=3600` a
+    # browser keeps replaying the old grid for up to an hour after either
+    # changes, and no ETag exists on this endpoint to revalidate against
+    # (Codex P1 BLOCKING, PR #1587). The rekordbox-sourced path is unchanged: it
+    # varies only with the ANLZ files, which the file cache already keys on.
+    if retryable:
+        # A retryable miss is a statement about this MOMENT, not about the
+        # track, so it is not held at all, with or without revalidation.
+        return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ_RETRYABLE})
+
+    # The ETag is the digest of the response itself, so it cannot disagree
+    # with what it labels: any change to the grid, its source, or the waveform
+    # changes the body and therefore the tag. Deriving it from inputs instead
+    # (ANLZ mtimes plus the record digest plus the selection) would be faster
+    # and would be one more thing to keep in sync with the payload.
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str)
+    etag = f'"{hashlib.sha256(body.encode("utf-8")).hexdigest()}"'
+    headers = {"Cache-Control": _CACHE_ANLZ, "ETag": etag}
+    if _if_none_match_hits(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+
+
+def _if_none_match_hits(header: str | None, etag: str) -> bool:
+    """True when the client already holds this exact representation.
+
+    RFC 9110: the header is a comma-separated LIST, may be `*`, and each member
+    may carry the `W/` weak prefix. A bare `header == etag` comparison misses
+    every one of those, and a miss here is not a visible failure - it just
+    quietly sends 1.2 MB that did not need sending, which is why it would
+    never be noticed.
+    """
+    if not header:
+        return False
+    candidates = [part.strip() for part in header.split(",")]
+    if "*" in candidates:
+        return True
+    return any(part.removeprefix("W/") == etag for part in candidates)
 
 
 def _local_rb_meta(stable_id: str) -> RbMetaOut:

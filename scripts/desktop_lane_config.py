@@ -49,10 +49,6 @@ LABEL_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9]+$")
 
 LANE_SEGMENT_PREFIX: str = "lane-"
 
-# Apple's lipo spelling -> the Rust target spelling Tauri used in its own
-# artifact names, which every shipped filename has carried since.
-LIPO_TO_ARTIFACT_ARCH: dict[str, str] = {"arm64": "aarch64", "x86_64": "x86_64"}
-
 
 class LaneLabelError(ValueError):
     """The lane label cannot be turned into a safe bundle name."""
@@ -120,31 +116,23 @@ def dmg_filename(
     """Name the artifact ``OpenDJ-B-0.1.0-aarch64.dmg``.
 
     Tauri names its own output from productName, which yields spaces and
-    parentheses once a label is applied. Renaming to this form keeps every
-    downstream command (scp, curl, shell loops) free of quoting traps.
+    parentheses once a label is applied. This form keeps every downstream
+    command (scp, curl, shell loops) free of quoting traps.
+
+    ``arch`` is passed in by the caller. It used to be parsed out of the
+    filename of the dmg Tauri bundled, but that bundle target is gone
+    (#1711), so an empty value is refused rather than joined into a name
+    like ``OpenDJ-B-0.1.0-.dmg`` that no machine can be told from.
     """
+    if not arch:
+        raise LaneLabelError(
+            "an artifact name needs an architecture; the recipe declares "
+            "arm64 only (justfile, ARM64 ONLY v1 decision)"
+        )
     stem = product_slug(base_product_name)
     parts = [stem] if label is None else [stem, label]
     parts.extend([version, arch])
     return f"{'-'.join(parts)}.dmg"
-
-
-def arch_from_lipo(lipo_archs: str) -> str:
-    """Name the architecture of the executable that was actually built.
-
-    Takes ``lipo -archs`` output for the app's main binary. Reading
-    ``uname -m`` would be a guess about the host, not a fact about the
-    artifact. Apple says ``arm64`` where Rust and Tauri say ``aarch64``, and
-    the artifact name keeps Tauri's spelling. A universal binary is refused:
-    one arch in the filename would understate it.
-    """
-    archs = lipo_archs.split()
-    if len(archs) != 1 or archs[0] not in LIPO_TO_ARTIFACT_ARCH:
-        raise LaneLabelError(
-            f"lipo reported {lipo_archs.strip()!r}; expected exactly one of "
-            f"{', '.join(sorted(LIPO_TO_ARTIFACT_ARCH))}"
-        )
-    return LIPO_TO_ARTIFACT_ARCH[archs[0]]
 
 
 # ----- CLI ---------------------------------------------------------------
@@ -192,9 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=None, type=Path)
     parser.add_argument("--label", default=None)
     parser.add_argument(
-        "--lipo-archs",
+        "--arch",
         default=None,
-        help="`lipo -archs` of the built executable; required for dmg-name",
+        help="artifact architecture, e.g. aarch64; required for dmg-name",
     )
     parser.add_argument(
         "--manifest", default=None, type=Path, help="payload manifest; required for stamp"
@@ -216,9 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.emit == "overlay":
         print(json.dumps(overlay(product_name, identifier, label), sort_keys=True))
     elif args.emit == "dmg-name":
-        if args.lipo_archs is None:
-            raise LaneLabelError("dmg-name needs --lipo-archs to name the architecture")
-        print(dmg_filename(product_name, label, version, arch_from_lipo(args.lipo_archs)))
+        if args.arch is None:
+            raise LaneLabelError("dmg-name needs --arch to name the artifact")
+        print(dmg_filename(product_name, label, version, args.arch))
     return 0
 
 

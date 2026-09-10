@@ -46,12 +46,57 @@ export interface AnlzBeat {
 	t: number;
 }
 
-/** Beatgrid payload from ANLZ PQTZ. */
+/** Which producer this beatgrid block came from. REQUIRED on every payload.
+ *
+ * The wire discriminator `hasTrustedBeatGrid` keys off. It is stated by BOTH
+ * branches of the server's `build_anlz_payload`, never inferred from which
+ * other fields happen to be present: a required field going missing or being
+ * renamed must not be able to relabel an own payload as rekordbox and hand it
+ * quantize, Beat Sync and beat loops by default. Consumers treat any value
+ * other than these two as its own explicit untrusted branch. */
+export type AnlzBeatgridSource = 'own' | 'rekordbox';
+
+/** Lane status for an OWN beatgrid block (NATIVE-01). `missing` means no own
+ * record has been written for this track yet (the backfill queue is the fix);
+ * `failed` means the analyzer ran and could not measure, and carries the
+ * lane's named reason. `ok` with an empty `beats` array is a contract
+ * violation, not a state: the server refuses to serve one. */
+export type AnlzBeatgridStatus = 'ok' | 'failed' | 'missing';
+
+/** Beatgrid payload: ANLZ PQTZ when `source` is 'rekordbox', the own analysis
+ * record when it is 'own'. */
 export interface AnlzBeatgrid {
-	/** Total beats; 0 with empty beats[] is a real no-grid state. */
+	/** Which producer served this block. Required; see AnlzBeatgridSource. */
+	source: AnlzBeatgridSource;
+	/** Total beats; always equal to beats.length. 0 with empty beats[] is a
+	 * real no-grid state on a rekordbox payload. */
 	beat_count: number;
 	/** Ordered beats. */
 	beats: AnlzBeat[];
+	/** Own payloads only. A rekordbox-sourced block never carries it. */
+	status?: AnlzBeatgridStatus;
+	/** Own payloads only; the lane's named failure reason, null when ok. */
+	reason?: string | null;
+	/** Own payloads with `status: ok` only: the published ordinary-unit BPM
+	 * this grid's beats project from, so the deck's public BPM cannot disagree
+	 * with the grid it plays against. */
+	bpm?: number;
+	/** Own payloads with `status: ok` only. True when the analyzer detected a
+	 * tempo change, so a single static grid is not trustworthy. ABSENT on a
+	 * rekordbox payload, where absence means trusted. */
+	static_grid_untrusted?: boolean;
+}
+
+/** One tempo change detected by the own beatgrid analyzer (NATIVE-03). */
+export interface AnlzTempoChange {
+	/** Time of the change in SECONDS from track start. */
+	at_s: number;
+	/** Mean BPM of the section before the change, in the published octave. */
+	bpm_before: number;
+	/** Mean BPM of the section after it, in the published octave. */
+	bpm_after: number;
+	/** Rank score for the changepoint, 0..1. Not a probability. */
+	confidence: number;
 }
 
 /** One cue/loop row sourced from djmdCue (ANLZ PCOB is empty in rb6/7). */
@@ -136,6 +181,10 @@ export interface AnlzData {
 	cues: AnlzCue[];
 	/** Phrases; empty array when PSSI absent. */
 	phrases: AnlzPhrase[];
+	/** Own beatgrid payloads only: time-stamped tempo-change markers, empty
+	 * when the analyzer found none. A rekordbox-sourced payload has no such
+	 * key at all. */
+	tempo_changes?: AnlzTempoChange[];
 	/** Optional, real analyzer-only detail. Absence means not analyzed. */
 	performance_hints?: AnlzPerformanceHints;
 	/** See AnlzLocalWaveform; absent for a rekordbox-mapped track. */

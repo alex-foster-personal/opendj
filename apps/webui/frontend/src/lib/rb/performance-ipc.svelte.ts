@@ -441,7 +441,7 @@ export interface PerformanceBrowserIpc {
  * screen, copied to the clipboard and written into the perf-event ring row. */
 export interface ToastIpcRow {
 	id: string;
-	kind: 'info' | 'error';
+	kind: 'info' | 'warn' | 'error';
 	message: string;
 	count: number;
 	created_at: string;
