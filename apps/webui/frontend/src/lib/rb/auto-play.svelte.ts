@@ -60,6 +60,7 @@ import {
 	clearAutoPlayQueue,
 	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
+import { autoPlayExhaustionToast, autoPlayStallReason } from '$lib/rb/autoplay-stall';
 import { phaseLockOk } from '$lib/rb/auto-play-phase-lock';
 import { clearAutoPlayStall, noteAutoPlayExhaustion, noteAutoPlayHandoffStall, retireAutoPlayStallIfAudible } from '$lib/rb/autoplay-stall.svelte';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
@@ -414,20 +415,17 @@ async function _tick(): Promise<void> {
 			return;
 		}
 		_waitingEmptyFeedEpoch = null;
-		pushToast(
-			allMissing
-					? 'auto-play: remaining playlist tracks are missing/stub audio'
-					: uiPrefs.auto_play_enforce_order
-						? 'auto-play: no next unplayed track in playlist order'
-						: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
-			'error'
-		);
-		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
-		noteAutoPlayExhaustion({
-			source_stable_id: source.stable_id, remaining, all_missing: allMissing,
-			enforce_order: uiPrefs.auto_play_enforce_order,
-			load_failures: _attemptsFor.source === source.stable_id && _attemptsFor.count > 0
+		// ONE derivation for the toast and the durable state: the toast is what
+		// reaches webui-client-errors-*.log, so two derivations means the
+		// incident row and the screen can name different causes (r3974518065).
+		const reason = autoPlayStallReason({
+			all_missing: allMissing,
+			load_failures: _attemptsFor.source === source.stable_id && _attemptsFor.count > 0,
+			enforce_order: uiPrefs.auto_play_enforce_order
 		});
+		pushToast(autoPlayExhaustionToast(reason), 'error');
+		// PLAY-08: the toast above expires. Issue #1640 is that nothing outlived it.
+		noteAutoPlayExhaustion({ source_stable_id: source.stable_id, reason, remaining });
 		_triggeredFor = source.stable_id;
 		_exhaustedFeedEpoch = _playedFeedEpoch;
 		return;

@@ -24,6 +24,9 @@
  *   total [⛔️ if a capped list reads as the whole remainder].
  * [if] a dismiss control is added [then] this reds - an acknowledgement that
  *   leaves the room quiet and the screen blank is the failure being removed ⛔️
+ * [if] the banner wraps to more than one row [then] the list still sits under
+ *   it [⛔️ if a hard-coded offset covers the wrapped instructions and the
+ *   toggle needed to close the list].
  * [if] a repeated missing file reaches the descriptor [then] the rendered list
  *   carries no duplicate key [⛔️ if svelte throws and the banner never draws].
  * [if] a LATER stall arrives [then] its list starts collapsed [⛔️ if a previous
@@ -182,4 +185,27 @@ test('the expanded-list choice is scoped to the stall it was made about', () => 
 		false,
 		'a content key reads a second, unrelated stop with the same shape as a continuation'
 	);
+});
+
+test('the list sits under the banner by flow, not by a hard-coded offset', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/AutoPlayStallBanner.svelte', import.meta.url)),
+		'utf8'
+	);
+	// The banner sets `flex-wrap: wrap`, so its height is not knowable in CSS.
+	assert.match(source, /flex-wrap: wrap;/, 'precondition: the banner really can wrap');
+	assert.equal(
+		/top: calc\(var\(--rb-topbar-h\)/.test(source),
+		false,
+		'an offset computed from a one-row assumption breaks the moment it wraps'
+	);
+	// Exactly one fixed ancestor; the banner and the list are in normal flow
+	// inside it, so the list lands under whatever height the banner took.
+	assert.equal(
+		(source.match(/position: fixed;/g) ?? []).length,
+		1,
+		'a second fixed element would be positioning itself independently again'
+	);
+	const html = renderFor(stallWith(3));
+	assert.match(html, /class="ap-stall-root/, 'the fixed root is what renders');
 });

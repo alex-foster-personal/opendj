@@ -44,48 +44,57 @@
 </script>
 
 {#if stall !== null}
-	<div class="ap-stall" role="alert" data-testid="autoplay-stall-banner">
-		<span class="ap-stall-head">{stall.headline}</span>
-		<span class="ap-stall-resume">{stall.resume}</span>
-		{#if stall.detail !== null}
-			<span class="ap-stall-detail" title="The error the handoff reported">{stall.detail}</span>
-		{/if}
-		{#if stall.blocked.length > 0}
-			<button
-				type="button"
-				class="ap-stall-toggle"
-				aria-expanded={listOpen}
-				title={`${stall.blocked_total} playlist track(s) AutoPlay could not use; the list names the first ${STALL_TRACK_LIMIT}`}
-				onclick={() => {
-					expandedFor = stall.revision;
-					showTracks = !listOpen;
-				}}
-			>
-				{listOpen ? 'Hide' : 'Show'} the {stall.blocked_total} track{stall.blocked_total === 1 ? '' : 's'}
-			</button>
+	<!-- One fixed ROOT, banner and list in normal flow inside it, so the list
+	     sits under whatever height the banner actually took (r3974518073). A
+	     hard-coded offset assumed one unwrapped row, and covered the wrapped
+	     instructions - and the toggle needed to close it - at narrow widths. -->
+	<div class="ap-stall-root">
+		<div class="ap-stall" role="alert" data-testid="autoplay-stall-banner">
+			<span class="ap-stall-head">{stall.headline}</span>
+			<span class="ap-stall-resume">{stall.resume}</span>
+			{#if stall.detail !== null}
+				<span class="ap-stall-detail" title="The error the handoff reported">{stall.detail}</span>
+			{/if}
+			{#if stall.blocked.length > 0}
+				<button
+					type="button"
+					class="ap-stall-toggle"
+					aria-expanded={listOpen}
+					title={`${stall.blocked_total} playlist track(s) AutoPlay could not use; the list names the first ${STALL_TRACK_LIMIT}`}
+					onclick={() => {
+						expandedFor = stall.revision;
+						showTracks = !listOpen;
+					}}
+				>
+					{listOpen ? 'Hide' : 'Show'} the {stall.blocked_total} track{stall.blocked_total === 1 ? '' : 's'}
+				</button>
+			{/if}
+		</div>
+		{#if listOpen && stall.blocked.length > 0}
+			<ul class="ap-stall-list" data-testid="autoplay-stall-tracks">
+				{#each stall.blocked as track (track.stable_id)}
+					<li title={track.stable_id}>{describeStallTrack(track)}</li>
+				{/each}
+				{#if hidden > 0}
+					<li class="ap-stall-more" title="Total minus the names shown above">
+						and {hidden} more
+					</li>
+				{/if}
+			</ul>
 		{/if}
 	</div>
-	{#if listOpen && stall.blocked.length > 0}
-		<ul class="ap-stall-list" data-testid="autoplay-stall-tracks">
-			{#each stall.blocked as track (track.stable_id)}
-				<li title={track.stable_id}>{describeStallTrack(track)}</li>
-			{/each}
-			{#if hidden > 0}
-				<li class="ap-stall-more" title="Total minus the names shown above">
-					and {hidden} more
-				</li>
-			{/if}
-		</ul>
-	{/if}
 {/if}
 
 <style>
-	.ap-stall {
+	.ap-stall-root {
 		position: fixed;
 		top: var(--rb-topbar-h);
 		left: 0;
 		right: 0;
 		z-index: 40;
+	}
+
+	.ap-stall {
 		display: flex;
 		align-items: baseline;
 		justify-content: center;
@@ -121,11 +130,6 @@
 	}
 
 	.ap-stall-list {
-		position: fixed;
-		top: calc(var(--rb-topbar-h) + 25px);
-		left: 0;
-		right: 0;
-		z-index: 40;
 		max-height: 30vh;
 		overflow-y: auto;
 		margin: 0;

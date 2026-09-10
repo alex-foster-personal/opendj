@@ -61,27 +61,11 @@ export function readAutoPlayStall(): AutoPlayStall | null {
  */
 export function noteAutoPlayExhaustion(input: {
 	source_stable_id: string;
-	all_missing: boolean;
-	enforce_order: boolean;
-	/**
-	 * Whether a compatible candidate for THIS source already failed to load.
-	 *
-	 * Checked before key and tempo (Codex r3973995265). A candidate that fails
-	 * to load is quarantined in `_unplayableIds` and then excluded from
-	 * `remaining`, so the very next poll dead-ends and, without this, reported
-	 * `no-compatible-track` - sending the operator to widen a pitch range when
-	 * compatible tracks existed and the FILES would not open.
-	 */
-	load_failures: boolean;
+	/** From `autoPlayStallReason`, the SAME derivation the toast used. */
+	reason: AutoPlayStallReason;
 	remaining: readonly AutoPlayTrackRow[];
 }): void {
-	const reason: AutoPlayStallReason = input.all_missing
-		? 'missing-audio'
-		: input.load_failures
-			? 'candidates-failed-to-load'
-			: input.enforce_order
-				? 'no-next-in-order'
-				: 'no-compatible-track';
+	const { reason } = input;
 	raiseAutoPlayStall(
 		describeAutoPlayStall({
 			reason,

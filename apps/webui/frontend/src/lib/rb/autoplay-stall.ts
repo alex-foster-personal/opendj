@@ -183,6 +183,57 @@ export function describeAutoPlayStall(input: {
 	};
 }
 
+/**
+ * The single reason both the toast and the durable state are built from.
+ *
+ * ONE derivation, deliberately (Codex r3974518065). While the toast picked its
+ * own words the server-side incident row in `webui-client-errors-*.log` could
+ * name a different cause from the banner on screen - and the log is what an
+ * audit reads months later, so a PR about diagnosability must not ship two
+ * answers to "why did it stop".
+ *
+ * Order matters: a candidate that failed to LOAD is checked before key and
+ * tempo, because it is quarantined out of `remaining` and what is left then
+ * merely looks incompatible.
+ */
+export function autoPlayStallReason(input: {
+	all_missing: boolean;
+	load_failures: boolean;
+	enforce_order: boolean;
+}): AutoPlayStallReason {
+	if (input.all_missing) return 'missing-audio';
+	if (input.load_failures) return 'candidates-failed-to-load';
+	return input.enforce_order ? 'no-next-in-order' : 'no-compatible-track';
+}
+
+/**
+ * The toast for an exhaustion reason.
+ *
+ * The first three strings are byte-identical to the ones this branch has
+ * emitted since PLAY-06, so a log grep that already matches them keeps
+ * matching: `webui-client-errors-2026-09-09.log` holds the middle one at
+ * 18:23:39.614Z and that line is the incident's anchor.
+ */
+export function autoPlayExhaustionToast(reason: AutoPlayStallReason): string {
+	switch (reason) {
+		case 'missing-audio':
+			return 'auto-play: remaining playlist tracks are missing/stub audio';
+		case 'no-next-in-order':
+			return 'auto-play: no next unplayed track in playlist order';
+		case 'no-compatible-track':
+			return 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range';
+		case 'candidates-failed-to-load':
+			return 'auto-play: every compatible track it tried failed to load';
+		case 'handoff-attempts-exhausted':
+		case 'handoff-incomplete':
+			throw new Error(`${reason} is a handoff failure, not an exhaustion toast`);
+		default: {
+			const _exhaustive: never = reason;
+			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
+		}
+	}
+}
+
 /** One-line label for a blocked row, for the banner and the ui-mirror. */
 export function describeStallTrack(track: AutoPlayStallTrack): string {
 	if (track.title === null && track.artist === null) return track.stable_id;

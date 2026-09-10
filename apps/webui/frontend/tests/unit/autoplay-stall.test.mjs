@@ -16,6 +16,10 @@
  *   as an empty banner].
  * [if] a caller omits the stalled source track [then] describe throws [⛔️ if a
  *   stall is recorded that the clear rule can never retire].
+ * [if] the toast and the durable state describe the same stop [then] they name
+ *   the SAME cause [⛔️ if the incident row in webui-client-errors-*.log names a
+ *   different cause from the banner on screen - the log is what an audit reads
+ *   months later].
  * [if] the same missing file occupies several playlist positions [then] it is
  *   named ONCE and counted once [⛔️ if the keyed render hits duplicate keys and
  *   the banner fails to draw the one thing it exists to show].
@@ -176,6 +180,62 @@ describe('describeStallTrack', () => {
 			mod.describeStallTrack({ stable_id: 'x', title: null, artist: 'Ann' }),
 			'Ann - x',
 			'an artist with no title still beats an anonymous row'
+		);
+	});
+});
+
+describe('autoPlayStallReason / autoPlayExhaustionToast', () => {
+	it('checks load failures before key and tempo', () => {
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: false, load_failures: true, enforce_order: false }),
+			'candidates-failed-to-load'
+		);
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: false, load_failures: true, enforce_order: true }),
+			'candidates-failed-to-load',
+			'a load failure is the cause whichever ordering mode is on'
+		);
+	});
+
+	it('CONTROL: without load failures the pre-existing reasons are unchanged', () => {
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: true, load_failures: false, enforce_order: false }),
+			'missing-audio'
+		);
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: false, load_failures: false, enforce_order: true }),
+			'no-next-in-order'
+		);
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: false, load_failures: false, enforce_order: false }),
+			'no-compatible-track'
+		);
+	});
+
+	it('keeps the three shipped toast strings byte-identical', () => {
+		// webui-client-errors-2026-09-09.log holds the first of these at
+		// 18:23:39.614Z. That line is the incident anchor and a log grep that
+		// matches it today must keep matching.
+		assert.equal(
+			mod.autoPlayExhaustionToast('missing-audio'),
+			'auto-play: remaining playlist tracks are missing/stub audio'
+		);
+		assert.equal(
+			mod.autoPlayExhaustionToast('no-next-in-order'),
+			'auto-play: no next unplayed track in playlist order'
+		);
+		assert.equal(
+			mod.autoPlayExhaustionToast('no-compatible-track'),
+			'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range'
+		);
+	});
+
+	it('has its own string for the new reason, and refuses the handoff reasons', () => {
+		assert.match(mod.autoPlayExhaustionToast('candidates-failed-to-load'), /failed to load/);
+		assert.throws(
+			() => mod.autoPlayExhaustionToast('handoff-incomplete'),
+			/not an exhaustion toast/,
+			'a handoff failure has no exhaustion toast; silently returning one would be a mis-report'
 		);
 	});
 });
