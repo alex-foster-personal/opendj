@@ -69,6 +69,30 @@ test('BrowserPanel passes pane.loading through to LibraryLoadIndicator', () => {
 	);
 });
 
+test('BrowserPanel passes pane.searching through to LibraryLoadIndicator', () => {
+	const src = stripComments(readFileSync(browserPanelPath, 'utf8'));
+	assert.match(
+		src,
+		/<LibraryLoadIndicator[^>]*\bsearching=\{[^}]*pane\.searching[^}]*\}/,
+		'BrowserPanel must wire pane.searching into LibraryLoadIndicator so a whole-collection ' +
+			'search shares the overlay with load, instead of painting a second empty-state string'
+	);
+});
+
+test('emptyMessage yields on any in-flight overlay state and never owns the search string', () => {
+	const src = stripComments(readFileSync(browserPanelPath, 'utf8'));
+	assert.match(
+		src,
+		/if\s*\(\s*pane\.loading\s*\|\|\s*pane\.searching\s*\)\s*return\s*null/,
+		'empty-state must yield while loading OR searching so the overlay is the only in-flight surface'
+	);
+	assert.equal(
+		/return\s+['"]searching whole collection\.\.\.['"]/.test(src),
+		false,
+		'empty-state must not return the search string; the overlay owns that copy'
+	);
+});
+
 test('LibraryLoadIndicator keeps an honest visible track for determinate and indeterminate loads', () => {
 	const src = stripComments(
 		readFileSync(path.join(componentsDir, 'LibraryLoadIndicator.svelte'), 'utf8')
