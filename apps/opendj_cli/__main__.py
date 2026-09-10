@@ -76,6 +76,7 @@ _REFUSALS = (NoPerformancePage, OrderTimedOut, OrderRejected, MalformedResult)
 
 _STATE_COMMAND = "state"
 _SCRIPT_COMMAND = "do"
+_TRACK_COMMAND = "track"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -610,6 +611,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         head, rest = _head(args.invocation)
         if head == _STATE_COMMAND:
             return _run_state(args, resolve_origin(args.lock))
+        if head == _TRACK_COMMAND:
+            from apps.opendj_cli import track_cli
+
+            return track_cli.run(rest, as_json=args.json)
         orders, over = _plan(args, head, rest)
         return _dispatch(args, resolve_origin(args.lock), orders, over)
     except InvocationError as error:
