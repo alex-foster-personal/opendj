@@ -35,35 +35,33 @@
  *   UNAVAILABLE to this suite and is reported as unavailable, never as green.
  *
  *   REAL, NOT MODELLED (#1642, corrected after a P1 BLOCKING review on PR
- *   #1693): `getOutputTimestamp()` is read through the shipped
- *   `readOutputTimestamp` - the exact call `audio-engine.svelte.ts` makes -
- *   fed through the real, unmodified `observePresentedTransportTimeline`.
- *   An earlier version of this harness fabricated `contextTime` by freezing
- *   it from the SAME `deviceGate`/`stranded`/`deviceGone` variables that
- *   model the output device, so its assertions could only prove the
- *   fabricated clock agreed with the fabricated gate - never that a real
- *   stall correlates with a real device loss, which is the whole
- *   uncertainty #1642 exists to resolve (`.claude/rules/verification.md`:
- *   a control that shares the defect under test is not a control; AGENTS.md
- *   "No mocks and locked real fixtures" bans fabricated application state
- *   in tests outright).
+ *   #1693): `foldDeviceLivenessSample`'s sole device-loss input,
+ *   `outputLatencyDead`, is read through the same `ctx.outputLatency === 0`
+ *   check `audio-output-liveness.ts` makes. An earlier version of this
+ *   harness fed the fold a `deviceClockStalled` signal too, fabricated by
+ *   freezing `getOutputTimestamp()` from the SAME `deviceGate`/`stranded`/
+ *   `deviceGone` variables that model the output device, so its assertions
+ *   could only prove the fabricated clock agreed with the fabricated gate -
+ *   never that a real stall correlates with a real device loss. The shipped
+ *   fold no longer takes that input at all (`output-device-watchdog.ts`'s
+ *   docstring: the clock-stall requirement was found to miss the real
+ *   Wed 2 Sep 2026 incident, where the HAL clock kept advancing while
+ *   `outputLatency` read dead), so this harness no longer computes it either
+ *   (`.claude/rules/verification.md`: a control that shares the defect
+ *   under test is not a control; AGENTS.md "No mocks and locked real
+ *   fixtures" bans fabricated application state in tests outright).
  *
- *   THE CONSEQUENCE, same shape as the paragraph above: this harness's real
- *   `AudioContext` never actually loses ITS device - Playwright cannot
- *   unpair a Bluetooth headset here any more than it can for `deviceGate` -
- *   so `ctx.getOutputTimestamp()` never stalls no matter what `deviceGate`
- *   does, and `ctx.outputLatency` never reads 0 either. Both
- *   `foldDeviceLivenessSample` inputs - `deviceClockStalled` AND
- *   `outputLatencyDead`, the P1-review corroborator that a clock stall alone
- *   cannot distinguish a dead device from a benign timestamp glitch (PR
- *   #1693) - are therefore UNAVAILABLE in this environment:
- *   `deviceUnreachableVerdicts` and `longestDeviceUnreachableMs` stay at 0
- *   for the whole run, asserted as such rather than left to look like an
- *   unexercised gap. The fold's DECISION logic is proven in
+ *   THE CONSEQUENCE: this harness's real `AudioContext` never actually loses
+ *   ITS device - Playwright cannot unpair a Bluetooth headset here any more
+ *   than it can for `deviceGate` - so `ctx.outputLatency` never reads 0
+ *   either. `outputLatencyDead` is therefore UNAVAILABLE in this
+ *   environment: `deviceUnreachableVerdicts` and `longestDeviceUnreachableMs`
+ *   stay at 0 for the whole run, asserted as such rather than left to look
+ *   like an unexercised gap. The fold's DECISION logic is proven in
  *   `output-device-watchdog.test.mjs` against real inputs a live browser
  *   cannot supply here. What THIS harness proves instead: real telemetry
  *   reaches the shipped fold end-to-end, and it never false-positives
- *   `device-unreachable` while a genuinely advancing presentation clock runs
+ *   `device-unreachable` while a genuinely healthy `outputLatency` runs
  *   through the same hostile schedule that flaps `deviceGate`.
  *
  * WHY THE PROBE IS DOWNSTREAM OF THE GATE, which is a finding in itself. The
@@ -92,7 +90,6 @@ import {
 } from '$lib/rb/audio-output-rebind';
 import { SILENCE_RMS_FLOOR } from '$lib/rb/silence-watchdog';
 import { foldDeviceLivenessSample } from '$lib/rb/output-device-watchdog';
-import { readOutputTimestamp } from '$lib/rb/presentation-clock-report';
 import {
 	attachMeterTaps,
 	createMasterMeterSource,
@@ -100,11 +97,6 @@ import {
 	releaseMasterMeterTap,
 	teardownMeterTaps
 } from '$lib/rb/meter-tap';
-import {
-	createPresentedTransportTimeline,
-	observePresentedTransportTimeline
-} from '$lib/player/transport/presentation';
-
 
 export interface SoakProgress {
 	elapsedMs: number;
@@ -316,12 +308,6 @@ function install(): void {
 		};
 		applyGate();
 
-		// No schedule is ever pushed onto this timeline: the soak harness does no
-		// deck scheduling, and the stall detection this file needs runs before
-		// `observePresentedTransportTimeline` ever looks at `schedules`. The
-		// duration argument is therefore inert; kept positive-and-large only to
-		// satisfy the shipped function's own validation.
-		const presentationTimeline = createPresentedTransportTimeline(0);
 		let deviceLivenessState: ReturnType<typeof foldDeviceLivenessSample> | undefined;
 
 		let playing = true;
@@ -639,33 +625,19 @@ function install(): void {
 			const masterRmsRaw = Math.sqrt(masterSum / masterScratch.length);
 			const masterRms = Number.isFinite(masterRmsRaw) ? masterRmsRaw : 0;
 			if (masterRms > progress.peakUpstreamRms) progress.peakUpstreamRms = masterRms;
-			// REAL, not modelled (see module docstring): the shipped call this
-			// harness's `deviceGate` cannot make stall, because Playwright cannot
-			// take away the browser's actual output device.
-			const outputTimestamp = readOutputTimestamp(ctx);
-			const observation = observePresentedTransportTimeline(
-				presentationTimeline,
-				outputTimestamp,
-				600,
-				ctx.currentTime
-			);
-			const deviceClockStalled = observation.clock_stalled === true;
-			// Also REAL, not modelled: the same `outputLatency` figure
-			// `audio-output-liveness.ts` reads. Playwright cannot make the
-			// browser's actual output device report 0 any more than it can make
-			// the presentation clock stall, so this stays a live, non-triggering
-			// reading for the same reason `deviceClockStalled` does.
+			// REAL, not modelled (see module docstring): the same `outputLatency`
+			// figure `audio-output-liveness.ts` reads. Playwright cannot make the
+			// browser's actual output device report 0, so this stays a live,
+			// non-triggering reading for the whole run.
 			const outputLatencyDead = ctx.outputLatency === 0;
 			deviceLivenessState = foldDeviceLivenessSample(deviceLivenessState, {
 				playing,
 				masterRms,
-				deviceClockStalled,
 				outputLatencyDead,
 				tMs
 			});
 			if (deviceLivenessState.verdict === 'device-unreachable') progress.deviceUnreachableVerdicts += 1;
-			const deviceUnreachableNow =
-				playing && deviceClockStalled && outputLatencyDead && masterRms >= SILENCE_RMS_FLOOR;
+			const deviceUnreachableNow = playing && outputLatencyDead && masterRms >= SILENCE_RMS_FLOOR;
 			if (!deviceUnreachableNow) {
 				progress.deviceUnreachableSinceMs = null;
 				return;
