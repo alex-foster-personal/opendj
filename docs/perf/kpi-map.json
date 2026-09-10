@@ -38,9 +38,10 @@
       "kpis": [
         "input_to_audible_ms_p99",
         "press_to_schedule_ms_p95",
-        "visual_feedback_ms_p95"
+        "visual_feedback_ms_p95",
+        "visual_feedback_ms_max"
       ],
-      "missing_kpi": "The audible instrument SHIPPED in PR #1657; what is missing is a capture, not a capability. Until a real p99 lands this scenario stays UNMEASURED, and transport_scheduled_offset_ms must NOT be read as a proxy: it starts counting after the press has already been handled, so it cannot see the input queueing the user feels. Note also that ~18.9ms of the 30ms target is the WebKit device floor (audio_output_device_floor_ms, measured Wed 9 Sep 2026), so about 63% of the target budget is spent before any app code runs; and a row whose floor reads zero is refusing the total rather than understating it, so an UNMEASURED here may mean the context had not rendered yet. The 16ms visual-feedback half of this P0 scenario has no instrument at all yet: visual_feedback_ms_p95 is required alongside the audible KPI so the full scenario cannot PASS on audible alone.",
+      "missing_kpi": "The audible instrument SHIPPED in PR #1657; what is missing is a capture, not a capability. Until a real p99 lands this scenario stays UNMEASURED, and transport_scheduled_offset_ms must NOT be read as a proxy: it starts counting after the press has already been handled, so it cannot see the input queueing the user feels. Note also that ~18.9ms of the 30ms target is the WebKit device floor (audio_output_device_floor_ms, measured Wed 9 Sep 2026), so about 63% of the target budget is spent before any app code runs; and a row whose floor reads zero is refusing the total rather than understating it, so an UNMEASURED here may mean the context had not rendered yet. The 16ms visual-feedback half of this P0 scenario has no instrument at all yet: visual_feedback_ms_p95 is required alongside the audible KPI so the full scenario cannot PASS on audible alone. A reviewer correctly flagged that p95 alone lets PASS overstate what was proven: the spec's <=16ms visual bound is a hard ceiling on every press, not a 95th-percentile one, so up to 5% of presses could clear 16ms and still report PASS off the p95 alone. visual_feedback_ms_max (the single worst press in the capture) is required alongside it for exactly the same reason waveform_frame_delta_ms_max exists on S4: a percentile-based statistic dilutes away a single outlier press, a max cannot.",
       "lower_is_better": true,
       "budget": 30,
       "acceptable": 60,
@@ -68,6 +69,15 @@
           "acceptable": 16,
           "breaking": null,
           "unverifiable_columns": ["acceptable"]
+        },
+        {
+          "kpi": "visual_feedback_ms_max",
+          "unit": "ms",
+          "lower_is_better": true,
+          "budget": 16,
+          "acceptable": 16,
+          "breaking": null,
+          "unverifiable_columns": ["target", "acceptable"]
         }
       ],
       "context_kpis": [
@@ -98,9 +108,10 @@
       "class": "P1",
       "kpis": [
         "waveform_frame_delta_ms_p95",
-        "waveform_dropped_frame_pct_10s"
+        "waveform_dropped_frame_pct_10s",
+        "waveform_frame_delta_ms_max"
       ],
-      "missing_kpi": "p95 rAF frame delta and dropped-frame percentage per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames. A fresh reviewer round found neither required KPI could ever report BREAKING, so a real freeze scored no worse than OVER: the spec's own breaking cell ('visible stutter / freeze while audible') names no duration, but a freeze is specifically a STOPPED canvas, which waveform_frame_delta_ms_p95's own p95 gap already measures directly - a dropped-frame percentage alone cannot tell a genuine multi-second stall apart from many small, evenly-scattered stutters that sum to the same percentage. waveform_frame_delta_ms_p95's breaking is set to 1000ms: a p95 gap that large means at least 5% of the frame-to-frame intervals in the sample were a full second or longer, which is a stop, not a slowdown, on any display - no realistic refresh interval is within two orders of magnitude of 1000ms, so unlike the provisional budget/acceptable bands this figure needs no re-derivation once the true refresh interval is captured.",
+      "missing_kpi": "p95 rAF frame delta, dropped-frame percentage per 10s window, and max frame delta per 10s window. PR #1126 added a visual-stutter KPI and PR #1176 cut per-frame rescans, but neither reports a p95 frame delta, and the audio-health Hz meter measures engine presentation ticks, not canvas paint, so a stuttering canvas still reads green. The 16.7/33.3ms bands below assume a 60Hz display; they are provisional until frame delta is captured relative to the ACTUAL measured refresh interval, at which point they must be replaced rather than trusted at face value on a 120Hz+ panel. waveform_dropped_frame_pct_10s is required alongside the frame-delta p95 so a distribution that clears the ms band on a fast display cannot PASS while still dropping frames. A fresh reviewer round found neither required KPI could ever report BREAKING, so a real freeze scored no worse than OVER: the spec's own breaking cell ('visible stutter / freeze while audible') names no duration, but a freeze is specifically a STOPPED canvas. A first attempt put a 1000ms breaking bound on the p95 KPI, and a second reviewer round correctly rejected it: p95 is the WRONG statistic for a single-event signal - one full-second freeze in a 10-second 60Hz capture is one slow sample among roughly 600, far below the ~30th-worst-sample rank p95 actually reads, so hundreds of healthy frames dilute it back near budget and the freeze vanishes from the number entirely. waveform_frame_delta_ms_max, the single worst gap in the window, cannot be diluted the same way: one freeze IS the max, regardless of how many healthy frames surround it. Its band is deliberately zero-width (budget = acceptable = breaking = 1000ms): an occasional single slow frame up to a second is ordinary OS/GC jitter, not a freeze, so there is no meaningful ACCEPTABLE/OVER middle state here the way there is for the p95 or dropped-frame distributions - a max gap past 1000ms reports BREAKING outright, nothing gentler.",
       "lower_is_better": true,
       "budget": 16.7,
       "acceptable": 33.3,
@@ -119,8 +130,8 @@
           "lower_is_better": true,
           "budget": 16.7,
           "acceptable": 16.7,
-          "breaking": 1000,
-          "unverifiable_columns": ["target", "acceptable", "breaking"]
+          "breaking": null,
+          "unverifiable_columns": ["target", "acceptable"]
         },
         {
           "kpi": "waveform_dropped_frame_pct_10s",
@@ -131,6 +142,15 @@
           "acceptable_strict": true,
           "breaking": null,
           "unverifiable_columns": ["target"]
+        },
+        {
+          "kpi": "waveform_frame_delta_ms_max",
+          "unit": "ms max frame delta per 10s window",
+          "lower_is_better": true,
+          "budget": 1000,
+          "acceptable": 1000,
+          "breaking": 1000,
+          "unverifiable_columns": ["target", "acceptable", "breaking"]
         }
       ],
       "context_kpis": []

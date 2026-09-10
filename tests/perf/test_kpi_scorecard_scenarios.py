@@ -74,46 +74,57 @@ def test_s4_stays_unmeasured_on_frame_delta_alone() -> None:
     assert _score_one("S4", entries).verdict == UNMEASURED
 
 
-def test_s4_second_long_frame_gap_is_breaking() -> None:
-    """A fresh reviewer round's own reproduction: neither required KPI used to
-    carry a `breaking` bound, so a p95 frame delta of a full second with 100%
-    of frames dropped still read OVER, not BREAKING, even though that is
-    unmistakably the spec's own 'visible stutter / freeze while audible'
-    condition. `waveform_frame_delta_ms_p95` breaking at 1000ms is the
-    conclusive-BREAKING carve-out (score_scenarios docstring), so this does
-    not need a shared capture_id with the dropped-frame reading."""
+def test_s4_single_freeze_hidden_in_p95_is_still_breaking_via_max() -> None:
+    """A second reviewer round's own reproduction: a lone one-second freeze in
+    a 10s@60Hz capture is one slow sample among ~600, far below the rank p95
+    actually reads, so a `breaking` bound on the p95 KPI (the first attempt at
+    this fix) never fires - hundreds of healthy frames dilute the freeze away.
+    `waveform_frame_delta_ms_max` cannot be diluted the same way: one freeze
+    IS the max regardless of how many healthy frames surround it. p95 itself
+    stays near budget here, proving this is not just a bigger-number version
+    of the earlier (wrong) fix."""
     entries = [
         {
             "kpi": "waveform_frame_delta_ms_p95",
-            "value": 1500,
+            "value": 16.7,
             "unit": "ms p95 frame delta",
             "date": "2026-09-09",
             "machine": "silver",
-            "note": "n=10s capture window",
+            "note": "n=10s capture window, 1 of 600 frames stalled",
             "source": "manual capture",
         },
         {
             "kpi": "waveform_dropped_frame_pct_10s",
-            "value": 100,
+            "value": 0.17,
             "unit": "% dropped frames per 10s window",
             "date": "2026-09-09",
             "machine": "silver",
-            "note": "n=10s capture window",
+            "note": "n=10s capture window, 1 of 600 frames stalled",
+            "source": "manual capture",
+        },
+        {
+            "kpi": "waveform_frame_delta_ms_max",
+            "value": 1500,
+            "unit": "ms max frame delta per 10s window",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=10s capture window, 1 of 600 frames stalled",
             "source": "manual capture",
         },
     ]
     assert _score_one("S4", entries).verdict == "BREAKING"
 
 
-def test_s4_frame_gap_at_the_breaking_boundary_is_over_not_breaking() -> None:
+def test_s4_max_frame_gap_at_the_breaking_boundary_is_pass_not_breaking() -> None:
     """The boundary control for the fix above: exactly 1000ms is not yet
     'greater than' the breaking bound (verdict_for's own strict `>` for a
-    lower-is-better KPI), so this must still read OVER - proving the bound
-    lands where intended rather than one tick permissive."""
+    lower-is-better KPI), and max's zero-width band (budget = acceptable =
+    breaking = 1000) means anything at or below it is PASS outright - proving
+    the bound lands where intended rather than one tick permissive."""
     entries = [
         {
             "kpi": "waveform_frame_delta_ms_p95",
-            "value": 1000,
+            "value": 10,
             "unit": "ms p95 frame delta",
             "date": "2026-09-09",
             "machine": "silver",
@@ -123,7 +134,7 @@ def test_s4_frame_gap_at_the_breaking_boundary_is_over_not_breaking() -> None:
         },
         {
             "kpi": "waveform_dropped_frame_pct_10s",
-            "value": 100,
+            "value": 0,
             "unit": "% dropped frames per 10s window",
             "date": "2026-09-09",
             "machine": "silver",
@@ -131,17 +142,28 @@ def test_s4_frame_gap_at_the_breaking_boundary_is_over_not_breaking() -> None:
             "source": "manual capture",
             "capture_id": "s4-sess-1",
         },
+        {
+            "kpi": "waveform_frame_delta_ms_max",
+            "value": 1000,
+            "unit": "ms max frame delta per 10s window",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=10s capture window",
+            "source": "manual capture",
+            "capture_id": "s4-sess-1",
+        },
     ]
-    assert _score_one("S4", entries).verdict == "OVER"
+    assert _score_one("S4", entries).verdict == "PASS"
 
 
 def test_s4_high_dropped_frame_pct_alone_is_over_not_breaking() -> None:
     """A high dropped-frame percentage by itself must not read BREAKING: a
     10-second aggregate percentage cannot tell a genuine multi-second stall
     apart from many small, evenly-scattered stutters that sum to the same
-    figure, which is exactly why breaking was derived onto the frame-delta
-    p95 (the direct measure of a single gap's length) rather than onto this
-    KPI - see the kpi-map.json missing_kpi note for S4."""
+    figure, which is exactly why breaking was derived onto
+    waveform_frame_delta_ms_max (the single worst gap, not an aggregate)
+    rather than onto this KPI - see the kpi-map.json missing_kpi note for
+    S4."""
     entries = [
         {
             "kpi": "waveform_frame_delta_ms_p95",
@@ -157,6 +179,16 @@ def test_s4_high_dropped_frame_pct_alone_is_over_not_breaking() -> None:
             "kpi": "waveform_dropped_frame_pct_10s",
             "value": 80,
             "unit": "% dropped frames per 10s window",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=10s capture window",
+            "source": "manual capture",
+            "capture_id": "s4-sess-2",
+        },
+        {
+            "kpi": "waveform_frame_delta_ms_max",
+            "value": 50,
+            "unit": "ms max frame delta per 10s window",
             "date": "2026-09-09",
             "machine": "silver",
             "note": "n=10s capture window",
@@ -297,8 +329,8 @@ def test_s7_conclusive_breaking_keystroke_drop_survives_missing_latency() -> Non
 
 
 def test_s2_combines_when_both_required_readings_share_one_capture() -> None:
-    """The positive control: two required KPIs whose readings name the SAME
-    `capture_id` are evidence of one real press being measured on both axes
+    """The positive control: three required KPIs whose readings name the SAME
+    `capture_id` are evidence of one real press being measured on every axis
     at once, so they combine into a real verdict rather than UNMEASURED."""
     entries = [
         {
@@ -321,8 +353,59 @@ def test_s2_combines_when_both_required_readings_share_one_capture() -> None:
             "source": "manual capture",
             "capture_id": "sess-1",
         },
+        {
+            "kpi": "visual_feedback_ms_max",
+            "value": 16,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-1",
+        },
     ]
     assert _score_one("S2", entries).verdict == "PASS"
+
+
+def test_s2_max_visual_feedback_past_the_hard_ceiling_is_over_not_pass() -> None:
+    """A fresh reviewer round's own reproduction: p95 alone let PASS overstate
+    what was proven, since up to 5% of presses could clear 16ms and still
+    report a passing p95. Even with a fast p95, a single press whose OWN
+    feedback lands past the 16ms hard ceiling must keep the scenario off
+    PASS."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 25,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-2",
+        },
+        {
+            "kpi": "visual_feedback_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses, 1 press over ceiling",
+            "source": "manual capture",
+            "capture_id": "sess-2",
+        },
+        {
+            "kpi": "visual_feedback_ms_max",
+            "value": 40,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses, 1 press over ceiling",
+            "source": "manual capture",
+            "capture_id": "sess-2",
+        },
+    ]
+    assert _score_one("S2", entries).verdict == "OVER"
 
 
 def test_s2_cohort_mismatch_between_required_readings_stays_unmeasured() -> None:
@@ -420,3 +503,69 @@ def test_s2_stays_unmeasured_when_neither_required_reading_names_a_capture() -> 
     assert score.verdict == UNMEASURED
     assert "evidence cohort" in score.note
 
+
+
+def test_s2_stays_unmeasured_when_every_capture_id_is_blank() -> None:
+    """A fresh reviewer round's own reproduction: `"capture_id": ""` on every
+    required reading used to count as one NAMED cohort (the set held one
+    member and it was not None), combining unrelated sessions the same way
+    an absent field would - an empty string names no session any more than
+    a missing key does."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 25,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "",
+        },
+        {
+            "kpi": "visual_feedback_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "",
+        },
+    ]
+    score = _score_one("S2", entries)
+    assert score.verdict == UNMEASURED
+    assert "evidence cohort" in score.note
+
+
+def test_s2_non_scalar_capture_id_does_not_crash_the_scorecard() -> None:
+    """A fresh reviewer round's own reproduction: a ledger row recording
+    `capture_id` as a JSON array or object used to reach a bare `{...}` set
+    literal in `_cohort_mismatch_reason` and crash with `TypeError:
+    unhashable type`, taking down the whole scorecard for one malformed
+    row."""
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 25,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": ["sess-1", "sess-2"],
+        },
+        {
+            "kpi": "visual_feedback_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+            "capture_id": "sess-1",
+        },
+    ]
+    score = _score_one("S2", entries)
+    assert score.verdict == UNMEASURED
+    assert "evidence cohort" in score.note
