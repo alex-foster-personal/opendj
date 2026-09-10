@@ -18,6 +18,12 @@ of the same routes the browser polls.
 [if] the mirror names no control this command moves [then ⛔] the verdict is
      accepted, never confirmed - a settled clock rules a fault out, it does not
      rule the effect in.
+[if] a load reports succeeded without the requested track landing [then ⛔] the
+     CLI exits 4, even when the deck already held some other track.
+[if] a ramp lasts longer than the request deadline [then ⛔] the deadline grows
+     to outlast it, so a working ramp is never reported as a timeout.
+[if] argparse itself refuses the invocation under --json [then ⛔] the refusal
+     is a JSON document, not plain usage text.
 """
 from __future__ import annotations
 
@@ -39,6 +45,8 @@ from apps.opendj_cli import (
     EXIT_UNCONFIRMED,
 )
 from apps.opendj_cli.__main__ import main
+from apps.opendj_cli.orders import ramp_deadline_s
+from apps.opendj_cli.verbs import InvocationError
 from tests.opendj_cli.conftest import Engine, PerformancePage
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -306,7 +314,7 @@ def test_do_then_and_runs_a_sequence_of_groups(
     try:
         code = main(_argv(engine, "do", "load 1 warehouse", "then", "play 1", "and", "play 2"))
         assert code == EXIT_CONFIRMED
-        assert page.mirror["decks"]["1"]["title"] == "warehouse"
+        assert page.mirror["decks"]["1"]["stable_id"] == "warehouse"
         assert page.mirror["decks"]["1"]["playing"] is True
         assert page.mirror["decks"]["2"]["playing"] is True
     finally:
@@ -414,10 +422,11 @@ def test_unload_is_confirmed_when_the_deck_title_goes_null(
     page.start()
     try:
         assert main(_argv(engine, "load", "1", "track-a")) == EXIT_CONFIRMED
-        assert page.mirror["decks"]["1"]["title"] == "track-a"
+        assert page.mirror["decks"]["1"]["stable_id"] == "track-a"
 
         assert main(_argv(engine, "--settle", "0.3", "unload", "1")) == EXIT_CONFIRMED
         assert page.mirror["decks"]["1"]["title"] is None
+        assert page.mirror["decks"]["1"]["stable_id"] is None
     finally:
         page.stop()
 
@@ -447,7 +456,7 @@ def test_unload_is_unconfirmed_when_the_title_never_clears(
         assert main(_argv(engine, "load", "1", "track-a")) == EXIT_CONFIRMED
         page.apply_commands = False
         assert main(_argv(engine, "--settle", "0.3", "unload", "1")) == EXIT_UNCONFIRMED
-        assert page.mirror["decks"]["1"]["title"] == "track-a"
+        assert page.mirror["decks"]["1"]["stable_id"] == "track-a"
     finally:
         page.stop()
 
@@ -599,3 +608,193 @@ def test_a_knob_does_not_advance_the_decks_presentation_clock(
     clock = page.mirror["decks"]["1"]["presentation_clock"]
     assert clock == {"source": "audio_output", "desired_revision": 0, "presented_revision": 0}
     assert "confirmed" in capsys.readouterr().out
+
+
+# ----- which track landed, not merely that one did -------------------------
+
+def test_a_load_onto_a_loaded_deck_is_unconfirmed_when_the_track_never_lands(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A deck that already holds a track has a title either way.
+
+    Confirming a load off title presence therefore confirmed the PREVIOUS
+    track: the check passed on state that predated the order, and an
+    already-settled clock let it through as exit 0.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "load", "1", "first-track")) == EXIT_CONFIRMED
+        capsys.readouterr()
+        page.apply_commands = False
+        exit_code = main(_argv(engine, "--settle", "0.3", "load", "1", "second-track"))
+        assert exit_code == EXIT_UNCONFIRMED
+        assert page.mirror["decks"]["1"]["stable_id"] == "first-track"
+        assert page.mirror["decks"]["1"]["title"] is not None
+    finally:
+        page.stop()
+
+    captured = capsys.readouterr()
+    assert "unconfirmed" in captured.out
+    assert "decks.1.stable_id" in captured.out
+    assert "second-track" in captured.out
+
+
+def test_a_load_onto_a_loaded_deck_confirms_when_the_track_does_land(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: replacing a track must still be confirmable.
+
+    An over-correction that refused any load onto a non-empty deck would pass
+    the test above just as happily.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        assert main(_argv(engine, "load", "1", "first-track")) == EXIT_CONFIRMED
+        capsys.readouterr()
+        assert main(_argv(engine, "load", "1", "second-track")) == EXIT_CONFIRMED
+        assert page.mirror["decks"]["1"]["stable_id"] == "second-track"
+    finally:
+        page.stop()
+
+    assert "decks.1.stable_id == 'second-track'" in capsys.readouterr().out
+
+
+# ----- a ramp outlives the deadline that guards a wedged page --------------
+
+def test_a_ramp_longer_than_the_deadline_is_not_reported_as_a_timeout(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The page holds a ramp order open for the ramp's whole duration.
+
+    A fixed request deadline therefore fired during a perfectly healthy ramp
+    and reported exit 5. The deadline now grows to outlast the ramp the CLI
+    itself asked for; `--timeout` still sets the floor for a wedged page.
+    """
+
+    page = engine.page()
+    page.start()
+    try:
+        exit_code = main(
+            _argv(engine, "--timeout", "0.2", "eq", "1", "low", "0.2", "--over", "400ms")
+        )
+        assert exit_code == EXIT_CONFIRMED
+        assert page.mirror["mixer"]["channels"]["1"]["eq_low"] == pytest.approx(0.2)
+    finally:
+        page.stop()
+
+    assert "confirmed" in capsys.readouterr().out
+
+
+def test_the_deadline_still_fires_when_no_ramp_justifies_waiting(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: growing the deadline for ramps must not disarm it.
+
+    Same wedged page and same short --timeout, with no --over to extend it.
+    """
+
+    page = engine.page()
+    page.start()
+    page._running = False
+    page._thread.join(timeout=5) if page._thread else None
+    try:
+        assert main(_argv(engine, "--timeout", "0.5", "eq", "1", "low", "0.2")) == EXIT_TIMEOUT
+    finally:
+        page.stop()
+
+    assert "did not answer within" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("over", "floor", "expected"),
+    [
+        ({"unit": "ms", "n": 400.0}, 60.0, 60.0),        # short ramp: floor wins
+        ({"unit": "ms", "n": 120000.0}, 60.0, 130.0),    # Codex's --over 120000ms
+        ({"unit": "bars", "n": 32}, 60.0, 138.0),        # Codex's 32 bars
+        ({"unit": "beats", "n": 4}, 60.0, 60.0),
+    ],
+)
+def test_the_request_deadline_never_undercuts_the_ramp_it_asked_for(
+    over: dict, floor: float, expected: float
+) -> None:
+    """Over-estimating costs nothing here; under-estimating is a false timeout."""
+    assert ramp_deadline_s(over, floor) == pytest.approx(expected)
+
+
+def test_a_ramp_hands_the_client_the_deadline_its_duration_requires(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deadline must be DERIVED from the ramp, not merely large.
+
+    Found by mutation: replacing the computed deadline with a big constant
+    kept every other test green, because nothing asserted where the number
+    came from. Waiting one out in real time would cost the suite ten seconds
+    per case, so the wiring is read off the client instead.
+    """
+    import apps.opendj_cli.__main__ as cli
+
+    seen: list[float] = []
+    real = cli.EngineClient
+
+    class Recorder:
+        def __init__(self, **kwargs: object) -> None:
+            seen.append(float(kwargs["timeout_s"]))  # type: ignore[arg-type]
+            self._inner = real(**kwargs)  # type: ignore[arg-type]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(cli, "EngineClient", Recorder)
+
+    page = engine.page()
+    page.start()
+    try:
+        argv = _argv(engine, "--timeout", "0.2", "eq", "1", "low", "0.2", "--over", "400ms")
+        assert main(argv) == EXIT_CONFIRMED
+    finally:
+        page.stop()
+
+    assert seen == [pytest.approx(ramp_deadline_s({"unit": "ms", "n": 400.0}, 0.2))]
+    assert seen[0] == pytest.approx(10.4)
+
+
+def test_a_duration_unit_with_no_wall_clock_bound_is_refused_not_guessed() -> None:
+    """Fail loud rather than size a deadline off a unit nobody has mapped."""
+    with pytest.raises(InvocationError):
+        ramp_deadline_s({"unit": "fortnights", "n": 2}, 60.0)
+
+
+# ----- --json means --json, including before there is a namespace ----------
+
+def test_an_argparse_refusal_under_json_is_a_json_document(
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+    """argparse calls error() while PARSING, so --json had to be read off argv."""
+
+    with pytest.raises(SystemExit) as refusal:
+        main(["--json", "--anchor", "bogus", "deck", "1", "play"])
+
+    assert refusal.value.code == EXIT_FAILED
+    captured = capsys.readouterr()
+    document = json.loads(captured.out)
+    assert document["error"]["code"] == "usage"
+    assert document["exit_code"] == EXIT_FAILED
+    assert captured.err == ""
+
+
+def test_an_argparse_refusal_without_json_stays_plain_text(
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: JSON mode must not become the only mode."""
+
+    with pytest.raises(SystemExit) as refusal:
+        main(["--anchor", "bogus", "deck", "1", "play"])
+
+    assert refusal.value.code == EXIT_FAILED
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "opendj:" in captured.err

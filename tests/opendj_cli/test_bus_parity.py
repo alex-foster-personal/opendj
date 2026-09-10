@@ -11,6 +11,9 @@
 [if] a verb observes the mirror [then ⛔] its expectation is either a sentinel
      or a field the verb's own command carries, so an observation cannot name a
      field that will never be built.
+[if] a verb observes a deck path [then ⛔] ``buildUiMirror`` publishes that key,
+     read from the live source, so an observation cannot read a field the
+     mirror does not carry.
 """
 from __future__ import annotations
 
@@ -190,3 +193,43 @@ def test_every_observation_expects_a_sentinel_or_a_field_the_command_carries(
             f"{verb_name} observes {'.'.join(observe.path)} expecting "
             f"{observe.expect!r}, which its command never carries"
         )
+
+
+# ----- the mirror must carry what the verbs read ---------------------------
+
+def test_the_mirror_publishes_every_deck_key_a_verb_observes() -> None:
+    """An observation of a path the mirror omits can never affirm anything.
+
+    `load` shipped observing `title` alone because `buildUiMirror` did not
+    publish `stable_id`, so a load onto an already-loaded deck confirmed off
+    the PREVIOUS track's title. Adding the field fixed that instance; this
+    reads the live `ui-mirror.ts` so the FIXTURE cannot be the only thing
+    holding the two in agreement.
+    """
+    published = ts_contract.mirror_deck_keys()
+    observed = {
+        observe.path[2]
+        for verb in VERBS.values()
+        for observe in verb.observes
+        if observe.path[:2] == ("decks", "{deck}")
+    }
+    assert observed, "no deck observations found; this check would pass vacuously"
+    missing = sorted(observed - published)
+    assert not missing, (
+        f"verbs observe deck keys buildUiMirror does not publish: {missing}. "
+        "Publish them in ui-mirror.ts or stop observing them."
+    )
+
+
+def test_a_deck_field_the_mirror_withholds_is_reported_absent() -> None:
+    """The negative control for the check above.
+
+    A reader that returned everything, or that silently returned an empty set
+    on a parse failure, would pass the containment test no matter what. So
+    name a field the deck state really has and the mirror really withholds -
+    `is_master` is in `_deckSnapshot` and deliberately not in `buildUiMirror` -
+    and require the reader to say it is absent.
+    """
+    published = ts_contract.mirror_deck_keys()
+    assert "stable_id" in published, "the reader cannot see a key that is there"
+    assert "is_master" not in published, "the reader cannot say a key is absent"

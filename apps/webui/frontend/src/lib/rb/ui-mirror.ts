@@ -55,6 +55,11 @@ export function buildUiMirror(): Record<string, unknown> {
 		mixer: state.mixer,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {
+				// stable_id rides with title because title alone cannot answer WHICH
+				// track landed: a load onto an already-loaded deck leaves a title
+				// present either way, so an agent confirming a load off title
+				// confirms the PREVIOUS track (#1739).
+				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
 				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
 				audible: deck.audible && silence.verdict !== 'silent-while-playing',

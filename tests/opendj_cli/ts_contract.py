@@ -16,6 +16,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IPC_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
 QUICK_DRAW_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/quick-draw-catalog.ts"
+MIRROR_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/ui-mirror.ts"
+
+_MIRROR_DECK_OPEN = "Object.entries(state.decks).map(([id, deck]) => [id, {"
 
 _COMMAND_UNION = "export type PerformanceCommand ="
 _QUICK_DRAW_UNION = "export type QuickDrawActionId ="
@@ -112,3 +115,44 @@ def quick_draw_ids() -> tuple[str, ...]:
             raise AssertionError(f"quick-draw member carries no id: {line}")
         found.append(member.group(1))
     return tuple(found)
+
+
+def mirror_deck_keys() -> frozenset[str]:
+    """Every key ``buildUiMirror`` publishes per deck.
+
+    A verb's observation is worthless if the mirror does not carry the path it
+    reads, and the CLI cannot tell the difference between "the control did not
+    move" and "this field was never published" without saying so. `load`
+    shipped observing only `title` because the mirror omitted `stable_id`
+    entirely, so a load onto an already-loaded deck confirmed the PREVIOUS
+    track (#1739). Read from the live source rather than a checked-in copy,
+    for the same reason the command union is.
+
+    Scope is the DECK projection only: mixer and master are assembled from
+    `state.mixer` / `state.master` elsewhere and are not a literal here.
+    """
+    lines = MIRROR_SOURCE.read_text(encoding="utf-8").splitlines()
+    start = next(
+        (index for index, line in enumerate(lines) if _MIRROR_DECK_OPEN in line),
+        None,
+    )
+    if start is None:
+        raise AssertionError(
+            f"the deck projection opener is not in {MIRROR_SOURCE}; this reader "
+            "is pinned to a shape that has changed and must be updated, not skipped"
+        )
+    keys: set[str] = set()
+    depth = 0
+    for line in lines[start:]:
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        if depth == 1:
+            for match in re.finditer(r"(?:^|[{,]|\s)([a-z_][a-z0-9_]*)\s*:", stripped):
+                keys.add(match.group(1))
+        depth += line.count("{") - line.count("}")
+        if depth <= 0 and keys:
+            break
+    if not keys:
+        raise AssertionError(f"no deck keys parsed out of {MIRROR_SOURCE}")
+    return frozenset(keys)

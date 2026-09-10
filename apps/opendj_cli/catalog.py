@@ -136,14 +136,17 @@ _VERBS: tuple[Verb, ...] = (
     # ----- transport ----------------------------------------------------
     Verb("load", "load", (_DECK, arg("stable_id", "text", text_value)),
          quick_draws=("load",),
-         observes=(Observe(("decks", "{deck}", "title"), PRESENT),)),
+         observes=(Observe(("decks", "{deck}", "stable_id"), "stable_id"),)),
     Verb("load_play_intent", "load_play_intent", (
         _DECK,
         arg("generation", "int", positive_int_value),
         arg("desired_play", "bool", bool_value, "true|false"),
     )),
     Verb("unload", "unload", (_DECK,), quick_draws=("unload",),
-         observes=(Observe(("decks", "{deck}", "title"), NULL),)),
+         observes=(
+             Observe(("decks", "{deck}", "title"), NULL),
+             Observe(("decks", "{deck}", "stable_id"), NULL),
+         )),
     Verb("play", "play", (_DECK,), fixed=(("playing", True),),
          quick_draws=("play.toggle",), observes=_deck_playing()),
     Verb("pause", "play", (_DECK,), fixed=(("playing", False),), observes=_deck_playing()),

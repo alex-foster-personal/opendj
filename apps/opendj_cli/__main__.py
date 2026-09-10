@@ -50,7 +50,14 @@ from apps.opendj_cli.confirm import (
     final_checks,
     verdict,
 )
-from apps.opendj_cli.orders import SINGLE, Group, parse_script, ramp, single
+from apps.opendj_cli.orders import (
+    SINGLE,
+    Group,
+    parse_script,
+    ramp,
+    ramp_deadline_s,
+    single,
+)
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
@@ -69,16 +76,40 @@ _SCRIPT_COMMAND = "do"
 
 
 class _Parser(argparse.ArgumentParser):
-    """An argparse that exits 1, because 2 is the engine-not-running code."""
+    """An argparse that exits 1, because 2 is the engine-not-running code.
+
+    ``--json`` has to be read off the raw argv rather than the namespace:
+    argparse calls ``error`` while PARSING, so on ``--json --anchor bogus``
+    there is no namespace yet and the flag the caller passed would otherwise be
+    ignored. A machine caller that asked for JSON gets JSON for every refusal,
+    including the ones raised before the namespace exists.
+    """
+
+    def __init__(self, *args: Any, as_json: bool = False, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.as_json = as_json
 
     def error(self, message: str) -> NoReturn:
-        self.print_usage(sys.stderr)
-        print(f"opendj: {message}", file=sys.stderr)
+        if self.as_json:
+            print(
+                json.dumps(
+                    {
+                        "error": {"code": "usage", "message": message},
+                        "exit_code": EXIT_FAILED,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            self.print_usage(sys.stderr)
+            print(f"opendj: {message}", file=sys.stderr)
         raise SystemExit(EXIT_FAILED)
 
 
-def _parser() -> _Parser:
+def _parser(as_json: bool = False) -> _Parser:
     parser = _Parser(
+        as_json=as_json,
         prog="opendj",
         description="Drive the running Open DJ performance surface over the AGENT-03 bus.",
     )
@@ -179,15 +210,18 @@ def _run_invocation(args: argparse.Namespace, origin: EngineOrigin, tokens: Sequ
     invocation = parse_invocation(tokens)
     if args.over is None and (args.anchor is not None or args.clock is not None):
         raise InvocationError("--anchor and --clock only mean something with --over")
+    timeout_s = args.timeout
     if args.over is None:
         order = single(invocation)
     else:
-        order = ramp(
-            invocation,
-            parse_duration(args.over, anchor=args.anchor, clock=_clock(args.clock)),
-        )
+        over = parse_duration(args.over, anchor=args.anchor, clock=_clock(args.clock))
+        order = ramp(invocation, over)
+        # The page holds a ramp order open for the ramp's whole duration, so
+        # the deadline that guards against a WEDGED page must not fire during a
+        # working one.
+        timeout_s = ramp_deadline_s(over, args.timeout)
     group = Group(kind=SINGLE, invocations=(invocation,))
-    return _dispatch(args, origin, [(group, order)], [invocation])
+    return _dispatch(args, origin, [(group, order)], [invocation], timeout_s=timeout_s)
 
 
 def _clock(raw: str | None) -> int | str | None:
@@ -252,8 +286,11 @@ def _dispatch(
     origin: EngineOrigin,
     orders: Sequence[tuple[Group, dict[str, Any]]],
     invocations: Sequence[Invocation],
+    timeout_s: float | None = None,
 ) -> int:
-    client = EngineClient(origin=origin, timeout_s=args.timeout)
+    client = EngineClient(
+        origin=origin, timeout_s=args.timeout if timeout_s is None else timeout_s
+    )
     checks = final_checks(
         [
             check
@@ -417,7 +454,8 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(sys.argv[1:] if argv is None else list(argv))
+    tokens = sys.argv[1:] if argv is None else list(argv)
+    args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
         _print_verbs(args.json)
         return EXIT_CONFIRMED

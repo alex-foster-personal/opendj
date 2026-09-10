@@ -27,6 +27,44 @@ SEQUENCE_WORD = "then"
 PARALLEL_WORD = "and"
 _SEPARATORS = (SEQUENCE_WORD, PARALLEL_WORD)
 
+# A ramp is the ONE order the page deliberately holds open: `_ramp` in
+# agent-orders.ts loops on a 16ms tick until the plan completes, and
+# `executeAgentOrder` awaits it before posting a result. So the request
+# deadline has to outlast the ramp the CLI itself asked for, or a perfectly
+# healthy 32-bar move exits 5 (#1739).
+#
+# The bound below deliberately OVER-estimates. This deadline is a hang guard,
+# not a correctness gate, so being generous costs nothing while being tight
+# costs a false timeout: 60 BPM is slower than any real deck, and 32 bars is
+# the longest phrase Rekordbox emits, so both floors are picked to be safely
+# past reality rather than accurate to it.
+SLOWEST_BEAT_S = 1.0
+_BEATS_PER: dict[str, float] = {"beats": 1.0, "bars": 4.0, "phrases": 128.0}
+RAMP_MARGIN_S = 10.0
+
+
+def ramp_hold_s(over: dict[str, Any]) -> float:
+    """How long the page may hold a ramp order open, over-estimated on purpose.
+
+    Beat-relative units cannot be resolved exactly here - the CLI cannot see
+    which deck is master, because the mirror publishes no `is_master` - so
+    rather than guess a tempo this converts at a floor slower than any real
+    one. An over-estimate only delays the hang guard; an under-estimate
+    reports a working ramp as a timeout.
+    """
+    unit = over["unit"]
+    n = float(over["n"])
+    if unit == "ms":
+        return n / 1000.0
+    if unit in _BEATS_PER:
+        return n * _BEATS_PER[unit] * SLOWEST_BEAT_S
+    raise InvocationError(f"cannot size a request deadline for duration unit {unit!r}")
+
+
+def ramp_deadline_s(over: dict[str, Any], floor_s: float) -> float:
+    """``floor_s`` unless the ramp we asked for needs longer than that."""
+    return max(floor_s, ramp_hold_s(over) + RAMP_MARGIN_S)
+
 
 def single(invocation: Invocation) -> dict[str, Any]:
     return {SINGLE: invocation.command}
