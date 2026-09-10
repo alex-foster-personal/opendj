@@ -44,8 +44,8 @@ from __future__ import annotations
 from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
-from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
 from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
+from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
 __all__ = ["COLUMN_DOCS", "TABLE_DOCS"]

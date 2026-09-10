@@ -24,8 +24,8 @@ import pytest
 from apps.database.column_docs import COLUMN_DOCS, TABLE_DOCS
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
-from apps.shared.state.migrations_v9 import _V9
 from apps.shared.state import sync_stamp
+from apps.shared.state.migrations_v9 import _V9
 from apps.sync_hub import protocol
 
 NEW_TABLES: tuple[str, ...] = ("machine_owners", "enrollment_grants")
@@ -88,7 +88,7 @@ def test_the_enrollment_step_is_the_top_of_the_ladder():
     rungs, and neither can go stale.
     """
     assert state_schema.MIGRATIONS[-1] is _V9
-    assert state_schema.SCHEMA_VERSION == len(state_schema.MIGRATIONS)
+    assert len(state_schema.MIGRATIONS) == state_schema.SCHEMA_VERSION
 
 
 def test_a_v8_database_migrates_to_nine_with_both_tables(tmp_path: Path):

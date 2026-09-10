@@ -53,6 +53,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from apps.shared.state import db as state_db
@@ -69,8 +70,8 @@ from apps.sync_hub import (
 )
 from apps.sync_hub.service_models import (
     DigestResponse,
-    HelloRequest,
     EnrollRequest,
+    HelloRequest,
     HelloResponse,
     MachineModel,
     PullResponse,
