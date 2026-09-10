@@ -5,123 +5,34 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const summaryPath = path.join(
-	__dirname,
-	'../../src/lib/components/rb/wave/WaveTrackSummary.svelte'
-);
 const themePath = path.join(__dirname, '../../src/lib/rb/theme.css');
 const waveRowPath = path.join(__dirname, '../../src/lib/components/rb/wave/WaveRow.svelte');
 
-// pin e585d3b67f4d: "the title below it is too loud (full white font) and too
-// wide. Empty and no track loaded for state there is too loud".
-//
-// These tests RESOLVE THE CASCADE rather than grepping the file. A blinded
-// reviewer of PR #1681 showed why: a test that slices out `.wave-track-name {`
-// and reads only that rule still passes when a later, MORE SPECIFIC selector
-// (`.wave-track-summary .wave-track-name { color: var(--rb-text) }`, 0-2-0
-// against 0-1-0) wins in the browser and puts the title back to full
-// brightness. That is the exact regression the pin was filed for, so the guard
-// has to answer "what actually wins", not "does this substring still exist".
-
-//----- cascade ---------------------------------------------------------------
-
-/** Cut every at-rule and its whole (possibly nested) body out of `css`. */
-function _dropAtRuleBlocks(css) {
-	let out = '';
-	let index = 0;
-	while (index < css.length) {
-		const at = css.indexOf('@', index);
-		if (at === -1) return out + css.slice(index);
-		out += css.slice(index, at);
-		const open = css.indexOf('{', at);
-		const semicolon = css.indexOf(';', at);
-		if (open === -1 || (semicolon !== -1 && semicolon < open)) {
-			// A statement at-rule (@import, @charset): no body to skip.
-			index = semicolon === -1 ? css.length : semicolon + 1;
-			continue;
-		}
-		let depth = 0;
-		let cursor = open;
-		for (; cursor < css.length; cursor += 1) {
-			if (css[cursor] === '{') depth += 1;
-			else if (css[cursor] === '}' && (depth -= 1) === 0) break;
-		}
-		index = cursor + 1;
-	}
-	return out;
-}
-
-/** Every declaration block in the component's scoped <style>, in source order. */
-function styleRules(source) {
-	const open = source.indexOf('<style>');
-	const close = source.lastIndexOf('</style>');
-	assert.ok(open !== -1 && close > open, 'the component must have a <style> block');
-	const withComments = source.slice(open + '<style>'.length, close);
-	// Nested at-rule bodies (@keyframes here) are cut out whole, braces and
-	// all, before the flat scan below - left in, their inner blocks would be
-	// read as ordinary rules and their declarations attributed to the wrong
-	// selector. A conditional at-rule (@media, @container, @supports) DOES
-	// hold real rules and cannot simply be dropped, so this refuses instead.
-	const css = _dropAtRuleBlocks(withComments.replace(/\/\*[\s\S]*?\*\//g, ''));
-	assert.ok(
-		!/@[a-z-]+/.test(css),
-		'this resolver drops @keyframes-style blocks only; teach it conditional at-rules first'
-	);
-	const rules = [];
-	for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-		for (const selector of match[1].split(',')) {
-			rules.push({ selector: selector.trim(), declarations: match[2], order: rules.length });
-		}
-	}
-	assert.ok(rules.length > 0, 'no rules parsed out of the style block');
-	return rules;
-}
-
-/** CSS specificity as a sortable number: ids, then classes, then elements. */
-function specificity(selector) {
-	const subject = selector.split(/[\s>+~]+/).filter(Boolean).pop() ?? '';
-	const ids = (selector.match(/#[\w-]+/g) ?? []).length;
-	const classes = (selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) ?? []).length;
-	const elements = (selector.match(/(^|[\s>+~])[a-z][\w-]*/g) ?? []).length;
-	return { score: ids * 10000 + classes * 100 + elements, subject };
-}
-
 /**
- * The value that actually wins for `property` on an element carrying
- * `classes`. Ancestor parts of a selector are treated as satisfiable, which is
- * the conservative direction: a rule that MIGHT apply is counted, so a
- * competing override can never be missed.
+ * pin e585d3b67f4d: "the title below it is too loud (full white font) and too
+ * wide. Empty and no track loaded for state there is too loud".
+ *
+ * This file owns exactly ONE half of that guard: the palette arithmetic. Is
+ * `--rb-text-dim` legible on every surface this title can land on, in every
+ * theme? That is a property of the token values, needs no browser, and covers
+ * surfaces a running app cannot easily be driven to (the light theme, the deck
+ * 3/4 row fill).
+ *
+ * The OTHER half - which colour, width and background actually win the cascade
+ * - lives in `tests/e2e/performance-wave-title-emphasis.spec.ts` and is read
+ * out of `getComputedStyle` in a real browser. It used to live here, as a
+ * hand-written cascade resolver over the component's `<style>` block. A
+ * blinded reviewer of PR #1723 defeated that resolver five different ways
+ * while every test stayed green - a `@media` wrapper, an `!important` at lower
+ * specificity, a `:where()` (zero specificity per spec, counted as 100 here),
+ * a `background-color` longhand beating a `background` shorthand, and a comma
+ * inside `:not()` breaking a naive selector-list split - each verified by
+ * injecting real CSS into the real component and running the real test.
+ *
+ * The lesson is not "patch those five". It is that re-implementing the cascade
+ * is the wrong tool for a question the browser already answers exactly, so the
+ * resolver was deleted rather than hardened.
  */
-function winningValue(rules, classes, property) {
-	let best = null;
-	for (const rule of rules) {
-		const { score, subject } = specificity(rule.selector);
-		const subjectClasses = (subject.match(/\.[\w-]+/g) ?? []).map((c) => c.slice(1));
-		if (subjectClasses.length === 0) continue;
-		if (!subjectClasses.every((c) => classes.includes(c))) continue;
-		const declared = rule.declarations.match(
-			new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i')
-		);
-		if (declared === null) continue;
-		if (best === null || score > best.score || (score === best.score && rule.order > best.order)) {
-			best = { score, order: rule.order, value: declared[1].trim(), selector: rule.selector };
-		}
-	}
-	return best;
-}
-
-//----- contrast --------------------------------------------------------------
-
-function relativeLuminance(hex) {
-	const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-	const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrastRatio(fg, bg) {
-	const [light, dark] = [relativeLuminance(fg), relativeLuminance(bg)].sort((a, b) => b - a);
-	return (light + 0.05) / (dark + 0.05);
-}
 
 /** Token -> hex, read out of one selector block of the real theme file. */
 function paletteFor(themeCss, selector) {
@@ -135,19 +46,16 @@ function paletteFor(themeCss, selector) {
 	return palette;
 }
 
-//----- the guards ------------------------------------------------------------
+function relativeLuminance(hex) {
+	const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+	const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
-test('the winning colour for the waveform track name is the dim token, not the primary one', () => {
-	const rules = styleRules(readFileSync(summaryPath, 'utf8'));
-	const won = winningValue(rules, ['wave-track-name'], 'color');
-	assert.ok(won !== null, 'some rule must set the track name colour');
-	assert.equal(
-		won.value,
-		'var(--rb-text-dim)',
-		`the cascade winner is "${won.selector} { color: ${won.value} }" - a title at primary ` +
-			'weight is exactly what pin e585d3b67f4d called too loud'
-	);
-});
+function contrastRatio(fg, bg) {
+	const [light, dark] = [relativeLuminance(fg), relativeLuminance(bg)].sort((a, b) => b - a);
+	return (light + 0.05) / (dark + 0.05);
+}
 
 test('the dim token clears the 4.5:1 AA floor on every surface this title renders on', () => {
 	const themeCss = readFileSync(themePath, 'utf8');
@@ -186,47 +94,4 @@ test('the dim token clears the 4.5:1 AA floor on every surface this title render
 			`${name}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1, under the 4.5:1 AA body floor`
 		);
 	}
-});
-
-test('the winning width for the waveform track name shrinks it to its own content', () => {
-	const rules = styleRules(readFileSync(summaryPath, 'utf8'));
-	for (const [property, expected] of [
-		['width', 'fit-content'],
-		['max-width', '100%'],
-		['overflow', 'hidden']
-	]) {
-		const won = winningValue(rules, ['wave-track-name'], property);
-		assert.ok(won !== null, `some rule must set the track name ${property}`);
-		assert.equal(
-			won.value,
-			expected,
-			`the cascade winner is "${won.selector} { ${property}: ${won.value} }"; a title at ` +
-				'width 100% fills the whole gutter and the hover scrub means nothing'
-		);
-	}
-});
-
-test('the no-track and no-artwork slates give up the raised fill', () => {
-	const source = readFileSync(summaryPath, 'utf8');
-	// By class TOKEN, not by a byte-exact attribute string: reordering classes
-	// or attributes renders identically, so it must not fail this guard.
-	for (const title of ['No track loaded', 'Artwork unavailable']) {
-		const tag = source.match(new RegExp(`<span[^>]*title="${title}[^"]*"[^>]*>`));
-		assert.ok(tag !== null, `the ${title} slate must still exist`);
-		const classes = (tag[0].match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/);
-		for (const required of ['wave-art-slate', 'visible', 'standalone']) {
-			assert.ok(classes.includes(required), `the ${title} slate must carry .${required}`);
-		}
-	}
-	const rules = styleRules(source);
-	const background = winningValue(rules, ['wave-art-slate', 'visible', 'standalone'], 'background');
-	assert.ok(background !== null, 'some rule must set the standalone slate background');
-	assert.equal(
-		background.value,
-		'transparent',
-		`the cascade winner is "${background.selector} { background: ${background.value} }"; a ` +
-			'standalone slate painting the raised chrome fill is the loud empty state the pin names'
-	);
-	const emptyColour = winningValue(rules, ['wave-track-name', 'empty'], 'font-style');
-	assert.ok(emptyColour !== null, 'the empty-state name needs its own quieter treatment');
 });
