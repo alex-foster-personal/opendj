@@ -68,12 +68,32 @@ event, so the commit immediately before the new head can belong to the SAME
 push and carry no check-run history of its own. `expected_from_previous_head`
 tries each earlier commit, nearest first, until one has a non-empty
 check-run set.
+
+The head SHA itself is read from `git ls-remote` against the live branch
+ref, never `gh pr view --json headRefOid` (found in review, PR #1685 thread
+r3976173905): `headRefOid` is a cached field on the PR object and is
+documented to lag the real branch ref right after a push
+(docs/ops/nucbox-fleet.md:200-202). Resolving a stale head would let a
+worker calling this right after its own push observe the PREVIOUS head's
+already-complete checks and report SUCCESS while the real new head has
+nothing registered yet -- reproducing this issue's own defect through head
+resolution instead of the poll loop.
+
+A check-run's `status == "completed"` is not "passed": the conclusion can be
+`failure`, `timed_out`, `cancelled`, `action_required`, or `stale`, and
+treating any of those as SUCCESS would be the same defect this module exists
+to close, just moved one field over (found in review, PR #1685 thread
+r3976173912). `poll_until_terminal` only returns SUCCESS when every present
+run's conclusion is in `scripts.trunk_job_verdict_core.PASSING_JOB_
+CONCLUSIONS`; a stable, fully terminal snapshot with any other conclusion
+returns FAILURE, a distinct, equally definite result -- never a false green.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterable
@@ -81,6 +101,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from scripts.review_gh import TriageError, _gh
+from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
 REPO = "maintainer/music-dj-tools"
 DEFAULT_TIMEOUT_S = 1800.0
@@ -89,6 +110,7 @@ DEFAULT_POLL_INTERVAL_S = 20.0
 
 class WaitStatus(StrEnum):
     SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
     TIMEOUT = "TIMEOUT"
     NO_BASELINE = "NO_BASELINE"
 
@@ -143,6 +165,23 @@ def _all_terminal(latest: dict[str, dict]) -> bool:
     return all(run["status"] == "completed" for run in latest.values())
 
 
+def _all_passing(latest: dict[str, dict]) -> bool:
+    """True only when every terminal run's conclusion carries no bad news.
+
+    `status == "completed"` alone is not "passed": a check-run can complete
+    with conclusion `failure`, `timed_out`, `cancelled`, `action_required`,
+    or `stale`, and treating any of those as success would recreate this
+    primitive's own defect in a new place -- exactly the illustration named
+    in `.claude/rules/verification.md`, "a run conclusion tested for
+    not-failure ... cancelled, skipped, timed_out, neutral and stale all
+    count as passes" (found in review, PR #1685 thread r3976173912). Reuses
+    `scripts.trunk_job_verdict_core`'s PASSING/FAILING conclusion vocabulary
+    rather than redefining it, since GitHub check-runs and workflow jobs
+    share the same conclusion values.
+    """
+    return all(run["conclusion"] in PASSING_JOB_CONCLUSIONS for run in latest.values())
+
+
 def _previous_shas(commits: list[dict], head_sha: str) -> list[str]:
     """Every earlier commit on this PR, NEAREST FIRST, given `gh pr view
     --json commits` (oldest first, per gh's own ordering, verified live).
@@ -194,7 +233,11 @@ def poll_until_terminal(
     terminal, or `timeout_s` elapses. Never returns SUCCESS for a snapshot
     missing an expected name, however quickly that snapshot arrived -- the
     exact defect this primitive replaces let a same-second read of zero
-    runs satisfy it.
+    runs satisfy it. Never returns SUCCESS for a snapshot that is complete
+    and stable but did not actually pass, either: `status == "completed"`
+    is not "passed" (found in review, PR #1685 thread r3976173912), so a
+    fully terminal, stable snapshot with any non-passing conclusion returns
+    FAILURE, not SUCCESS -- see `_all_passing`.
 
     `expected` is a LOWER BOUND read from a prior push, not a guarantee of
     completeness: a head whose changed paths trigger MORE workflows than the
@@ -218,11 +261,22 @@ def poll_until_terminal(
         observed_names = frozenset(latest.keys())
         stable = observed_names == previous_names
         if not missing and _all_terminal(latest) and stable:
+            if _all_passing(latest):
+                return (
+                    WaitStatus.SUCCESS,
+                    latest,
+                    f"all {len(expected)} expected check(s) present and terminal, "
+                    "and no new check appeared on the following poll",
+                )
+            failing = sorted(
+                f"{name} ({run['conclusion']})"
+                for name, run in latest.items()
+                if run["conclusion"] not in PASSING_JOB_CONCLUSIONS
+            )
             return (
-                WaitStatus.SUCCESS,
+                WaitStatus.FAILURE,
                 latest,
-                f"all {len(expected)} expected check(s) present and terminal, "
-                "and no new check appeared on the following poll",
+                f"all check(s) present and terminal, but {len(failing)} did not pass: {failing}",
             )
         previous_names = observed_names
         elapsed = clock() - start
@@ -287,19 +341,51 @@ def _check_runs_at_sha(sha: str, repo: str = REPO) -> list[dict]:
     return _merge_check_run_pages(json.loads(raw))
 
 
-def _head_sha(pr: str, repo: str = REPO) -> str:
-    """The PR's CURRENT head SHA, in the EXPLICITLY named `repo` -- never the
+def _pr_branch(pr: str, repo: str = REPO) -> str:
+    """The PR's head BRANCH NAME, in the EXPLICITLY named `repo` -- never the
     cwd-inferred repo `scripts.review_gh._head_sha` uses, so a caller naming
     a non-default `--repo` cannot have this half silently look at the wrong
     repository while `_check_runs_at_sha` correctly looks at the named one
     (found in review, PR #1685 thread r3975870266).
     """
     raw = _gh(
-        ["pr", "view", pr, "--repo", repo, "--json", "headRefOid", "-q", ".headRefOid"]
+        ["pr", "view", pr, "--repo", repo, "--json", "headRefName", "-q", ".headRefName"]
     ).strip()
     if not raw:
-        raise TriageError(f"gh returned no headRefOid for PR {pr} in {repo}")
+        raise TriageError(f"gh returned no headRefName for PR {pr} in {repo}")
     return raw
+
+
+def _head_sha(pr: str, repo: str = REPO) -> str:
+    """The PR's CURRENT head SHA, read from the LIVE branch ref via `git
+    ls-remote` rather than `gh pr view --json headRefOid`.
+
+    `headRefOid` is a cached field on the PR object, documented to lag the
+    real branch ref right after a push (docs/ops/nucbox-fleet.md:200-202;
+    the same convention `scripts.review_lane._ref_sha` already follows for
+    exactly this reason; found in review, PR #1685 thread r3976173905): a
+    worker calling this right after its own push could otherwise resolve the
+    PREVIOUS head, whose checks are already complete, and report SUCCESS
+    while the real new head has nothing registered yet -- reproducing this
+    primitive's own defect through the head-resolution step rather than the
+    poll loop. The branch NAME has no such lag (only the OID field does), so
+    it is read once via `gh pr view` and the live tip is read from the
+    remote ref directly. The remote URL is spelled out (not `origin`) so the
+    answer does not depend on which checkout this happens to run from.
+    """
+    branch = _pr_branch(pr, repo)
+    proc = subprocess.run(
+        ["git", "ls-remote", f"https://github.com/{repo}.git", f"refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise TriageError(
+            f"git ls-remote found no refs/heads/{branch} in {repo}: "
+            f"{proc.stderr.strip() or '<empty>'}"
+        )
+    return proc.stdout.split()[0]
 
 
 def _pr_commits(pr: str, repo: str = REPO) -> list[dict]:
@@ -332,9 +418,10 @@ def wait_for_checks(
     timeout_s: float = DEFAULT_TIMEOUT_S,
     poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
 ) -> WaitResult:
-    """Resolve PR#`pr`'s CURRENT head once, bind everything below to it, and
+    """Resolve PR#`pr`'s CURRENT head once (from the live branch ref, not the
+    PR object's lagging `headRefOid`), bind everything below to it, and
     refuse SUCCESS until every expected Actions check-run at that exact SHA
-    exists and is completed."""
+    exists, is completed, and passed."""
     head_sha = _head_sha(pr, repo)
     expected = expected_from_previous_head(pr, head_sha, repo)
     if expected is None:
@@ -391,6 +478,7 @@ def main(argv: list[str]) -> int:
         WaitStatus.SUCCESS: 0,
         WaitStatus.TIMEOUT: 1,
         WaitStatus.NO_BASELINE: 2,
+        WaitStatus.FAILURE: 4,
     }[result.status]
 
 
