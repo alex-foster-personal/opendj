@@ -23,6 +23,8 @@ Regression lines:
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from tests.scripts.test_ops_fleet_kpi import (
@@ -33,6 +35,13 @@ from tests.scripts.test_ops_fleet_kpi import (
     _home,
     _run,
 )
+from tests.platform_capabilities import posix_permission_denial_supported
+
+#: chmod cannot create an unreadable file for UID 0, which is how CI runs here: root
+#: still satisfies -r, so the test would assert against a fixture whose stated
+#: precondition never held. The dangling-symlink case below needs no such gate,
+#: because a broken link is unreadable to root as well.
+_CAN_DENY_PERMISSION = posix_permission_denial_supported(os.name, getattr(os, "geteuid", None))
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -93,6 +102,7 @@ def test_a_readable_log_tree_with_no_fatal_still_passes(tmp_path):
     out = _run(_env(fixture, _home(tmp_path, token_profile=True))).stdout
     assert _health(out)[_fatal_label(0)] == "PASS", out
 
+@pytest.mark.skipif(not _CAN_DENY_PERMISSION, reason="chmod cannot deny root; see the dangling-symlink case")
 def test_a_partially_readable_log_set_is_unmeasurable(tmp_path):
     """[if] one unreadable log among readable ones still yields a verdict [then] fail, [else stop].
 
@@ -112,3 +122,23 @@ def test_a_partially_readable_log_set_is_unmeasurable(tmp_path):
         assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
     finally:
         blinded.chmod(0o644)
+
+
+def test_a_dangling_symlink_in_the_log_glob_is_unmeasurable(tmp_path):
+    """[if] a dangling symlink among the logs still yields a verdict [then] fail, [else stop].
+
+    Raised as a second P1 on PR #1662, after the first readability fix. The glob matches a
+    symlink by NAME, so awk is handed the path, but `-e` follows the link and reports false
+    because the target is gone. The guard therefore skipped it as though the glob had not
+    matched, while awk failed on it into the suppressed stderr and the line still read PASS.
+
+    This case also carries the root problem the chmod test cannot: a broken link is
+    unreadable to UID 0 too, so this assertion holds wherever the suite runs.
+    """
+    fixture = _copy_fixture(tmp_path)
+    dangling = fixture / "jobs" / "logs" / "resident-gone.log"
+    dangling.symlink_to(fixture / "jobs" / "logs" / "no-such-target.log")
+    assert dangling.is_symlink() and not dangling.exists(), "fixture is not actually dangling"
+
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+    assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
