@@ -69,6 +69,8 @@ function makeLocalStorage() {
 let store;
 let clipboardWrites;
 let consoleLines;
+/** Index-aligned with consoleLines: which console method emitted each row. */
+let consoleLevels;
 let reportedBodies;
 let originalFetch;
 let originalConsole;
@@ -77,6 +79,7 @@ function install({ clipboard = 'ok', secure = true } = {}) {
 	store = makeLocalStorage();
 	clipboardWrites = [];
 	consoleLines = [];
+	consoleLevels = [];
 	reportedBodies = [];
 
 	const clipboardImpl =
@@ -113,7 +116,10 @@ function install({ clipboard = 'ok', secure = true } = {}) {
 
 	originalConsole = { info: console.info, warn: console.warn, error: console.error };
 	for (const level of ['info', 'warn', 'error']) {
-		console[level] = (...args) => void consoleLines.push(args.join(' '));
+		console[level] = (...args) => {
+			consoleLevels.push(level);
+			consoleLines.push(args.join(' '));
+		};
 	}
 
 	originalFetch = globalThis.fetch;
@@ -461,5 +467,38 @@ test('the id is minted before either log write, not at render or copy time', () 
 		/formatToastId\(/g.test(source) && (source.match(/formatToastId\(/g) || []).length,
 		1,
 		'exactly one mint site; a second one is how the screen and the log drift apart'
+	);
+});
+
+// pin 9bf12adccb45: the toast kind now maps STRAIGHT onto recordPerfEvent's
+// info/warn/error severity instead of being flattened into two values, so a
+// folded beat-sync lock is a `warn` row rather than an `error` row claiming a
+// successful lock failed, or an `info` row hiding it among neutral notes.
+//
+// - if 'warn' logs as toast-error then a lock that worked reads as a failure
+//   wherever the ring is grepped -> broken.
+// - if 'warn' logs at info severity then console.warn never fires and the row
+//   is indistinguishable from a neutral note -> broken.
+test('a warn toast records at warn severity, not flattened to info or error', async () => {
+	const stores = await loadStores();
+	stores.pushToast('BAR sync locked with a tempo fold', 'warn', 5000);
+	const { logId } = stores.toasts[0];
+
+	const index = consoleLines.findIndex((l) => l.includes('[perf-event] toast-warn'));
+	assert.ok(
+		index !== -1,
+		`expected a toast-warn ring row, saw: ${consoleLines.join(' | ') || '(nothing)'}`
+	);
+	assert.match(consoleLines[index], new RegExp(`id=${logId}(\\s|:)`));
+	assert.equal(
+		consoleLevels[index],
+		'warn',
+		'the row must be emitted through console.warn, which is what makes it visible ' +
+			'as a warning in a devtools filter rather than as another info line'
+	);
+	assert.equal(
+		consoleLines.filter((l) => l.includes('[perf-event] toast-error')).length,
+		0,
+		'a fold that locked must never be logged as an error'
 	);
 });

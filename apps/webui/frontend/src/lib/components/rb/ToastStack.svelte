@@ -50,6 +50,7 @@
 	{#each items as toast (toast.id)}
 		<div
 			class="toast"
+			class:warn={toast.kind === 'warn'}
 			class:error={toast.kind === 'error'}
 			role="status"
 			data-toast-id={toast.logId}

@@ -138,6 +138,7 @@ import {
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import { deckHasRealBeatGrid, effectiveBeatSync, effectiveQuantize, GRID_FEATURE_TIP, gridFeaturesInert, hasRealBeatGrid } from '$lib/player/grid-features';
 import {
 	beatFourLeadInSec,
@@ -2483,15 +2484,11 @@ async function _synchronizeFollowers(
 			});
 		}
 		for (const item of planned) item.st.sync_error = null;
-		if (planFailed.length > 0) {
-			const skipped = planFailed.map((f) => f.deck).join(',');
-			pushToast(
-				`Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
-				'error', undefined, undefined, {}, `beat-sync-followers:${master}`
-			);
-			for (const f of planFailed) {
-				recordPerfEvent('beat-sync-skip', f.message, f.deck);
-			}
+		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
+		// a pure function; the engine only performs the effects it returns.
+		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
+			pushToast(notice.message, notice.kind, undefined, undefined, {}, notice.groupKey);
+			for (const event of notice.events) recordPerfEvent(event.kind, event.detail, event.deck);
 		}
 	} catch (error) {
 		// Same session gate as the awaits above: a rejection that surfaces only

@@ -244,7 +244,14 @@ function _bestFollowerAnchor(
 ): _FollowerAnchorPlan {
 	let best: _FollowerAnchorPlan | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
-	const rejectedBarNormalizations = new Set<TempoNormalization>();
+	// BAR's half/double anchors are held BESIDE the exact ones, not instead of
+	// them (pin 9bf12adccb45). Strict BAR used to refuse them outright, which
+	// made "sync these two decks" fail on a pair a DJ would happily mix; now
+	// they are the fallback, chosen only when no tempoNormalization=1 anchor
+	// exists at all. Preference, not permission: a pair that could always lock
+	// exactly still locks exactly, so nothing that worked before changes.
+	let folded: _FollowerAnchorPlan | null = null;
+	let foldedDistance = Number.POSITIVE_INFINITY;
 	for (let index = 0; index < beats.length - 1; index++) {
 		const beat = beats[index];
 		if (mode === 'bar' && beat.n !== masterBeatNumber) continue;
@@ -252,10 +259,7 @@ function _bestFollowerAnchor(
 		const rawRatio = (masterBpm * masterTempoRatio) / followerBpm;
 		const tempo = _tempoRatioWithinRangeOrNull(rawRatio, minRatio, maxRatio);
 		if (tempo === null) continue;
-		if (mode === 'bar' && tempo.normalization !== 1) {
-			rejectedBarNormalizations.add(tempo.normalization);
-			continue;
-		}
+		const foldedBar = mode === 'bar' && tempo.normalization !== 1;
 		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex % 2 : 0;
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
@@ -267,34 +271,32 @@ function _bestFollowerAnchor(
 		);
 		if (targetPositionSec === null || nextBoundarySec === null) continue;
 		const distance = Math.abs(targetPositionSec - positionSec);
-		if (distance < bestDistance) {
+		const candidate: _FollowerAnchorPlan = {
+			index,
+			positionSec: targetPositionSec,
+			tempoRatio: tempo.ratio,
+			normalization: tempo.normalization
+		};
+		if (foldedBar) {
+			if (distance < foldedDistance) {
+				foldedDistance = distance;
+				folded = candidate;
+			}
+		} else if (distance < bestDistance) {
 			bestDistance = distance;
-			best = {
-				index,
-				positionSec: targetPositionSec,
-				tempoRatio: tempo.ratio,
-				normalization: tempo.normalization
-			};
+			best = candidate;
 		}
 	}
-	if (best === null) {
-		if (mode === 'bar' && rejectedBarNormalizations.size > 0) {
-			const requiredNormalizations = [...rejectedBarNormalizations]
-				.sort((left, right) => left - right)
-				.map((normalization) => `tempoNormalization=${normalization}`)
-				.join(' or ');
-			throw new RangeError(
-				`strict BAR sync requires tempoNormalization=1 to preserve raw PQTZ cadence; ` +
-				`the available anchor requires ${requiredNormalizations}. ` +
-				`Select BEAT mode for half/double tempo matching or widen the follower tempo range.`
-			);
-		}
-		throw new RangeError(
-			`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
-				`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
-		);
-	}
-	return best;
+	if (best !== null) return best;
+	if (folded !== null) return folded;
+	// The one limit that stays hard: a ratio outside the pitch range is not a
+	// policy this code may relax, it is a speed the fader cannot reach. Letting
+	// it through would mean playing at a tempo that never lines up - drift, not
+	// funk.
+	throw new RangeError(
+		`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
+			`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
+	);
 }
 
 // --------------------------------------------------------------- public API
@@ -846,4 +848,101 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		followerTempoRatio: followerAnchor.tempoRatio,
 		tempoNormalization: followerAnchor.normalization
 	};
+}
+
+
+// ----------------------------------------------- what the sync tells the DJ
+
+/**
+ * A completed Beat Sync has two things it may need to say, and both are pure
+ * functions of the plan it produced, so they are decided here rather than in
+ * the engine: the engine keeps the effects (`pushToast`, `recordPerfEvent`)
+ * and this returns the DATA describing them. That split is what lets the
+ * wording, the severity and the grouping key be asserted with no audio graph,
+ * no browser and no fixture library - see beat-sync-notices.test.mjs.
+ *
+ * Deck ids are a type parameter rather than an import: nothing here inspects
+ * a deck id beyond printing it, so `DeckId` flows through from the caller and
+ * this module keeps its existing dependency set.
+ */
+
+/** One perf-event row a notice wants written. */
+export interface BeatSyncNoticeEvent<D extends number> {
+	kind: 'beat-sync-fold' | 'beat-sync-skip';
+	detail: string;
+	deck: D;
+}
+
+/** One toast a notice wants raised, plus the rows that accompany it. */
+export interface BeatSyncNotice<D extends number> {
+	message: string;
+	kind: 'warn' | 'error';
+	/** Repeat presses against the same master coalesce onto one toast. */
+	groupKey: string;
+	events: BeatSyncNoticeEvent<D>[];
+}
+
+/** The slice of a planned follower these notices read. */
+export interface PlannedFollower<D extends number> {
+	deck: D;
+	plan: Pick<FollowerSyncPlan, 'mode' | 'tempoNormalization'>;
+}
+
+/** A follower that could not be planned at all, with the refusal's reason. */
+export interface FailedFollower<D extends number> {
+	deck: D;
+	message: string;
+}
+
+/**
+ * Pin 9bf12adccb45: BAR folding to half/double is now allowed, so the DJ is
+ * TOLD rather than blocked. Orange, not red, and not silent: the decks really
+ * are phase-locked, but one is counting bars at twice or half the other's
+ * rate, which is audible and deliberate.
+ *
+ * A follower planned in BEAT mode is never a fold notice however its tempo
+ * was normalized - BEAT never promised a bar count in the first place, so
+ * there is nothing there for the DJ to be surprised by.
+ */
+export function beatSyncOutcomeNotices<D extends number>(
+	planned: readonly PlannedFollower<D>[],
+	planFailed: readonly FailedFollower<D>[],
+	master: D
+): BeatSyncNotice<D>[] {
+	const notices: BeatSyncNotice<D>[] = [];
+	const folded = planned.filter(
+		(item) => item.plan.mode === 'bar' && item.plan.tempoNormalization !== 1
+	);
+	if (folded.length > 0) {
+		const detail = folded
+			.map(
+				(item) =>
+					`deck ${item.deck} at ${item.plan.tempoNormalization === 0.5 ? 'half' : 'double'} tempo`
+			)
+			.join(', ');
+		notices.push({
+			message: `BAR sync locked with a tempo fold (${detail}) - phase holds, the bar count does not`,
+			kind: 'warn',
+			groupKey: `beat-sync-fold:${master}`,
+			events: folded.map((item) => ({
+				kind: 'beat-sync-fold' as const,
+				detail: `tempoNormalization=${item.plan.tempoNormalization}`,
+				deck: item.deck
+			}))
+		});
+	}
+	if (planFailed.length > 0) {
+		const skipped = planFailed.map((f) => f.deck).join(',');
+		notices.push({
+			message: `Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
+			kind: 'error',
+			groupKey: `beat-sync-followers:${master}`,
+			events: planFailed.map((f) => ({
+				kind: 'beat-sync-skip' as const,
+				detail: f.message,
+				deck: f.deck
+			}))
+		});
+	}
+	return notices;
 }
