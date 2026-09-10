@@ -30,6 +30,20 @@
    "source_pr": 525,
    "threads": 1,
    "note": "Captured Wed 2 Sep 2026, separately from the Mon 31 Aug 2026 batch above -- the one real, RESOLVED, non-blocking DEBT-LOGGED thread (discussion_r3897291255) needed as the #792/#805 render-level control, replacing a synthetic _thread_node() (#805 round 10-continued-2, Codex, discussion_r3919026031)."
+  },
+  "pr-1658.json": {
+   "sha256": "46f0625ab45cb582e151cd4a53b446a21c653fd5c4ecf9ac6dc3c5bf39b4c01a",
+   "bytes": 13454,
+   "source_pr": 1658,
+   "threads": 5,
+   "note": "Captured Thu 10 Sep 2026. Codex's BRACKETED marker shape -- '[BLOCKING] Close every started load span' -- which the offset-zero anchor read as 'unmarked'. Two of the five are P2 [BLOCKING], i.e. a reviewer-declared blocker that the MERGE WITH P2s OPEN rule would have let a merge debt-log away."
+  },
+  "pr-1600.json": {
+   "sha256": "6e903a9c1816243117de7af954976a9d54d1f266bd335da57c4c5a5441ce237a",
+   "bytes": 4142,
+   "source_pr": 1600,
+   "threads": 2,
+   "note": "Captured Thu 10 Sep 2026. The CONTROL for the opposite error: real BRACKETED '[NON-BLOCKING]' headlines that must keep reading NON-BLOCKING. A substring test for BLOCKING finds it inside NON-BLOCKING at offset 4 and turns both of these into merge blockers."
   }
  }
 }
