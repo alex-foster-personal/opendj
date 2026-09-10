@@ -361,3 +361,67 @@ test('performance LESS mode: at the deck-area FLOOR no strip control spills out 
 		'the mixer lower section must not be squashed to nothing at the floor'
 	).toBeGreaterThan(20);
 });
+
+// LESS mounts all four channel strips and hides 3/4 with `opacity: 0` plus
+// `pointer-events: none`. Neither removes a descendant from SEQUENTIAL KEYBOARD
+// FOCUS, so every control in a collapsed strip was tabbable and arrow-key
+// operable while completely invisible - a keyboard user could ride the fader of
+// a channel that is not on screen. Mounting FILTER in LESS added two more of
+// them, but the hole predates that and covers TRIM, the EQs, CUE, the fader and
+// STEM as well; `inert` on the collapsed slot closes all of them at once.
+//
+// Asserted by actually TRYING to focus each control rather than by reading the
+// attribute: `inert` is a thing the browser has to honour, and an attribute
+// assertion would stay green on an engine that ignored it.
+test('performance LESS mode: no control in a collapsed strip can take focus', async ({ page }) => {
+	await enterLessMode(page);
+
+	for (const deck of [3, 4]) {
+		const escaped = await page.evaluate((deckId) => {
+			const strip = document.querySelector(`[data-mixer-channel="${deckId}"]`);
+			if (strip === null) throw new Error(`channel ${deckId} strip is not mounted at all`);
+			const slot = strip.closest('.strip-slot');
+			if (slot === null) throw new Error(`channel ${deckId} strip has no .strip-slot ancestor`);
+			if (!slot.classList.contains('collapsed')) {
+				throw new Error(`channel ${deckId} must be COLLAPSED in LESS, or this proves nothing`);
+			}
+			const focusable = [...slot.querySelectorAll<HTMLElement>('button, input, [tabindex]')];
+			if (focusable.length === 0) {
+				throw new Error(`channel ${deckId} collapsed slot has no controls - fixture is wrong`);
+			}
+			const stolen: string[] = [];
+			for (const element of focusable) {
+				element.focus();
+				if (document.activeElement === element) {
+					stolen.push(element.getAttribute('data-knob-id') ?? (element.className || element.tagName));
+				}
+			}
+			(document.activeElement as HTMLElement | null)?.blur();
+			return { count: focusable.length, stolen };
+		}, deck);
+		expect(
+			escaped.count,
+			`channel ${deck} must really mount its controls while collapsed, or this test is vacuous`
+		).toBeGreaterThan(3);
+		expect(
+			escaped.stolen,
+			`channel ${deck} is collapsed and invisible, but these controls still took keyboard ` +
+				'focus, so a keyboard user can drive an off-screen channel'
+		).toEqual([]);
+	}
+
+	// Control: the VISIBLE strips must still be fully reachable, so the fix
+	// cannot pass by making everything inert.
+	for (const deck of [1, 2]) {
+		const reachable = await page.evaluate((deckId) => {
+			const strip = document.querySelector(`[data-mixer-channel="${deckId}"]`);
+			if (strip === null) throw new Error(`channel ${deckId} strip is not mounted`);
+			const knob = strip.querySelector<HTMLElement>(`[data-knob-id="${deckId}:filter"]`);
+			if (knob === null) throw new Error(`channel ${deckId} has no FILTER knob`);
+			knob.focus();
+			return document.activeElement === knob || knob.contains(document.activeElement);
+		}, deck);
+		expect(reachable, `channel ${deck} FILTER must still be keyboard reachable in LESS`).toBe(true);
+	}
+});
+
