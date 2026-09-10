@@ -65,6 +65,17 @@ async function _deckOneLoaded(page: Page, request: APIRequestContext): Promise<v
 	await expect(page.locator('.wave-track-name').first()).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * `.wave-track-name` is a wrapper; the characters live in its inner `<span>`,
+ * which already carries rules of its own (`.wave-track-name > span`). `color`
+ * inherits, so the two agree today - but a blinded reviewer of this PR pointed
+ * out that a single `.wave-track-name > span { color: var(--rb-text); }` would
+ * repaint the visible text loud while leaving the WRAPPER's computed colour
+ * untouched, which is exactly the regression this pin describes. So every
+ * colour reading below resolves the leaf first, with `paintedTextEl` declared
+ * inside each `page.evaluate` because that body runs in the browser and cannot
+ * see anything from this module's scope.
+ */
 test('the waveform track title paints the secondary text token, not the primary one', async ({
 	page,
 	request
@@ -74,6 +85,7 @@ test('the waveform track title paints the secondary text token, not the primary 
 	// -compared against theme.css, so this asserts on the same rgb() values the
 	// compositor uses and cannot drift from the theme's own units.
 	const measured = await page.locator('.wave-track-name').first().evaluate((node) => {
+		const paintedTextEl = (el: Element): Element => el.querySelector(':scope > span') ?? el;
 		const scope = node.closest('.perf-root') ?? document.body;
 		const probe = document.createElement('span');
 		scope.appendChild(probe);
@@ -84,7 +96,7 @@ test('the waveform track title paints the secondary text token, not the primary 
 		const dim = resolve('--rb-text-dim');
 		const primary = resolve('--rb-text');
 		probe.remove();
-		return { painted: getComputedStyle(node).color, dim, primary };
+		return { painted: getComputedStyle(paintedTextEl(node)).color, dim, primary };
 	});
 	expect(measured.dim, 'the dim and primary tokens must differ, or this proves nothing').not.toBe(
 		measured.primary
@@ -105,17 +117,35 @@ test('the painted title clears the 4.5:1 AA floor against what is actually behin
 	// background is transparent, so the token it sits on is a fact about the
 	// rendered tree rather than about the stylesheet.
 	const measured = await page.locator('.wave-track-name').first().evaluate((node) => {
-		const rgb = (value: string): [number, number, number] | null => {
+		const paintedTextEl = (el: Element): Element => el.querySelector(':scope > span') ?? el;
+		const channels = (value: string): number[] | null => {
 			const parts = value.match(/[\d.]+/g);
 			if (parts === null || parts.length < 3) return null;
-			if (parts.length >= 4 && Number(parts[3]) === 0) return null;
-			return [Number(parts[0]), Number(parts[1]), Number(parts[2])];
+			return parts.map(Number);
 		};
-		const painted = rgb(getComputedStyle(node).color);
+		/** Any alpha at all - text is painted at its own colour regardless. */
+		const rgb = (value: string): [number, number, number] | null => {
+			const parsed = channels(value);
+			if (parsed === null || (parsed.length >= 4 && parsed[3] === 0)) return null;
+			return [parsed[0], parsed[1], parsed[2]];
+		};
+		/** Alpha 1 only - anything less lets the surface behind it through. */
+		const opaqueRgb = (value: string): [number, number, number] | null => {
+			const parsed = channels(value);
+			if (parsed === null) return null;
+			if (parsed.length >= 4 && parsed[3] < 1) return null;
+			return [parsed[0], parsed[1], parsed[2]];
+		};
+		const painted = rgb(getComputedStyle(paintedTextEl(node)).color);
+		// Walk to the first FULLY OPAQUE background. A semi-transparent
+		// surface (`.rb-waverow.deck-focus` paints a color-mix whose alpha is
+		// below 1) is not the backdrop - the thing behind it still shows
+		// through - so treating it as one would report a ratio against a
+		// colour nothing is ever painted in.
 		let backdrop: [number, number, number] | null = null;
 		let element: Element | null = node;
 		while (element !== null && backdrop === null) {
-			backdrop = rgb(getComputedStyle(element).backgroundColor);
+			backdrop = opaqueRgb(getComputedStyle(element).backgroundColor);
 			element = element.parentElement;
 		}
 		return { painted, backdrop };
@@ -219,4 +249,41 @@ test('the no-track slate gives up the raised fill and the empty title is italic'
 	expect(measured.emptyFontStyle, 'the empty-state name needs its own quieter treatment').toBe(
 		'italic'
 	);
+});
+
+test('the artwork-failure slate is standalone too, not just the no-track one', async ({
+	page,
+	request
+}) => {
+	// `artworkSrc` is non-null for every loaded deck, so the "NO ART" branch is
+	// reachable ONLY through the <img>'s onerror. Aborting the artwork request
+	// is the real mechanism, not a fabricated flag: the deleted unit test
+	// asserted this branch's markup, and without this case a refactor that
+	// drops `standalone` from the {:else} arm alone regains the raised fill
+	// with every test in the repo still green.
+	await page.route('**/api/v1/tracks/*/artwork*', (route) => route.abort());
+	const stableId = await _anyOnDiskTrack(request);
+	await _performanceReady(page);
+	await page.evaluate(async (sid) => {
+		await window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: 1, stable_id: sid });
+	}, stableId);
+
+	const slate = page.locator('.wave-art-slate.standalone[title^="Artwork unavailable"]').first();
+	await expect(slate, 'a deck whose artwork request fails must show the NO ART slate').toBeVisible({
+		timeout: 30_000
+	});
+	await expect(slate).toHaveText('NO ART');
+	const measured = await slate.evaluate((node) => {
+		const raisedProbe = document.createElement('span');
+		(node.closest('.perf-root') ?? document.body).appendChild(raisedProbe);
+		raisedProbe.style.backgroundColor = 'var(--rb-panel-raised)';
+		const raised = getComputedStyle(raisedProbe).backgroundColor;
+		raisedProbe.remove();
+		return { slateBackground: getComputedStyle(node).backgroundColor, raised };
+	});
+	expect(
+		measured.slateBackground,
+		'the artwork-failure slate must not paint the raised chrome fill either'
+	).not.toBe(measured.raised);
+	expect(measured.slateBackground.replace(/\s/g, '')).toMatch(/^rgba\(\d+,\d+,\d+,0\)$/);
 });

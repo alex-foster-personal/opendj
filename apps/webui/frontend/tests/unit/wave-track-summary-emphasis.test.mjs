@@ -36,8 +36,15 @@ const waveRowPath = path.join(__dirname, '../../src/lib/components/rb/wave/WaveR
 
 /** Token -> hex, read out of one selector block of the real theme file. */
 function paletteFor(themeCss, selector) {
-	const start = themeCss.indexOf(selector);
-	assert.ok(start !== -1, `theme.css must still define ${selector}`);
+	// ANCHORED, not indexOf: '.perf-root {' is a trailing substring of
+	// "html[data-theme='light'] .perf-root {", so a bare search would resolve
+	// the dark block only for as long as theme.css keeps the dark section
+	// first. Reordering the file would then check dark-labelled surfaces
+	// against light-theme hex - a silently wrong test rather than a red one.
+	const anchored = new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
+	const match = anchored.exec(themeCss);
+	assert.ok(match, `theme.css must still define ${selector} at the start of a line`);
+	const start = match.index;
 	const block = themeCss.slice(start, themeCss.indexOf('}', start));
 	const palette = {};
 	for (const match of block.matchAll(/(--rb-[\w-]+):\s*(#[0-9a-fA-F]{6})/g)) {
