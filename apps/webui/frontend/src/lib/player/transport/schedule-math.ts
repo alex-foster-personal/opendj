@@ -22,6 +22,7 @@ import {
 	SYNC_SCHEDULE_SAFETY_S,
 	TRANSPORT_IMMEDIATE_SAFETY_S
 } from '$lib/player/constants';
+import { inputToOutputMs, isMeasuredLatencyFloor } from '$lib/player/transport/press-audible';
 import type { LoopState } from '$lib/rb/deck-state-types';
 
 export function supersedingScheduleTime(
@@ -234,6 +235,17 @@ export function safeTransportScheduleTime(
  * one: it stops at the scheduled context time and deliberately excludes
  * `base_latency_ms` and `output_latency_ms`, which travel with the sample so a
  * consumer can add the device floor back when comparing across machines.
+ *
+ * `input_to_output_ms` is that same press with the floor ADDED, i.e. the press
+ * carried to sound leaving the device, and it is the figure closest to what an
+ * operator's ears measure. It appears only when every term of the floor was
+ * really measured. "Add the device floor back" turned out to be advice a
+ * consumer could not safely follow: `outputLatency` is a present, finite,
+ * `number`-typed ZERO until the AudioContext has rendered, so the addition
+ * silently contributed nothing on exactly the schedule that matters most, the
+ * first play of a session. The floor terms are therefore omitted rather than
+ * zeroed, this sum is withheld rather than partial, and the row's
+ * `latency_floor` label states which of the two happened.
  */
 export function scheduleOffsetStages(input: {
 	contextTimeSec: number;
@@ -241,14 +253,24 @@ export function scheduleOffsetStages(input: {
 	effectiveWhenSec: number;
 	processorLeadSec: number;
 	processorLatencySec: number;
-	baseLatencySec: number;
-	outputLatencySec: number;
+	/**
+	 * Q1: the device floor, where the platform actually knows it.
+	 *
+	 * OPTIONAL because unavailability is a real state here, not a fault. An
+	 * unmeasured term is OMITTED from the stages rather than emitted as a zero
+	 * that reads exactly like a measurement of zero - see `press-audible.ts`
+	 * for the engine numbers, and for why the observed failure is a
+	 * present-but-zero property rather than an absent one.
+	 */
+	baseLatencySec: number | undefined;
+	outputLatencySec: number | undefined;
 	active: boolean;
 	/** Q1: ms from the input stamp to the `contextTimeSec` read. */
 	pressToScheduleMs?: number;
 }): Record<string, number> {
 	for (const [name, value] of Object.entries(input)) {
 		if (name === 'active' || name === 'pressToScheduleMs') continue;
+		if (name === 'baseLatencySec' || name === 'outputLatencySec') continue;
 		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
 	}
 	const pressToScheduleMs = input.pressToScheduleMs;
@@ -288,6 +310,12 @@ export function scheduleOffsetStages(input: {
 	const round = (value: number): number => Math.round(value * 1000) / 1000;
 	const scheduledOffsetMs = (input.effectiveWhenSec - input.contextTimeSec) * 1000;
 	const processorLeadMs = input.processorLeadSec * 1000;
+	const inputToOutput = inputToOutputMs({
+		pressToScheduleMs,
+		scheduledOffsetMs,
+		baseLatencySec: input.baseLatencySec,
+		outputLatencySec: input.outputLatencySec
+	});
 	return {
 		// The Class A budget turns on this one, post-clamp.
 		scheduled_offset_ms: round(scheduledOffsetMs),
@@ -300,8 +328,17 @@ export function scheduleOffsetStages(input: {
 		// What the processor says about ITSELF. Round 2 stopped spending this;
 		// it stays logged so the gap to processor_lead_ms is visible.
 		processor_latency_ms: round(input.processorLatencySec * 1000),
-		base_latency_ms: round(input.baseLatencySec * 1000),
-		output_latency_ms: round(input.outputLatencySec * 1000),
+		// Q1: present only when actually measured. A term the platform has not
+		// filled in yet is absent, and the row's `latency_floor` label says so,
+		// because an `output_latency_ms: 0` is indistinguishable from a real
+		// reading of zero and understates the floor by ~16ms on the shipped
+		// engine. Absent is honest; zero is a lie with a number on it.
+		...(isMeasuredLatencyFloor(input.baseLatencySec)
+			? { base_latency_ms: round((input.baseLatencySec as number) * 1000) }
+			: {}),
+		...(isMeasuredLatencyFloor(input.outputLatencySec)
+			? { output_latency_ms: round((input.outputLatencySec as number) * 1000) }
+			: {}),
 		active: input.active ? 1 : 0,
 		// Q1, appended so the ratchet keys keep their place in the `[perf]` line.
 		...(pressToScheduleMs === undefined
@@ -310,8 +347,16 @@ export function scheduleOffsetStages(input: {
 					// The invisible half: input stamp -> the currentTime read above.
 					press_to_schedule_ms: round(pressToScheduleMs),
 					// The S2 number. Both halves or it measures the wrong thing.
+					// Models the SCHEDULED START, so it stops short of the device
+					// floor; `input_to_output_ms` below is the same press carried
+					// all the way to sound leaving the output.
 					input_to_audible_ms: round(pressToScheduleMs + scheduledOffsetMs)
-				})
+				}),
+		// Q1: press -> sound out of the device, floor included. Emitted only when
+		// EVERY term is a measurement, never as a partial sum: a press-to-output
+		// figure missing its output stage is not a smaller number, it is a wrong
+		// one, and wrong in the flattering direction.
+		...(inputToOutput === undefined ? {} : { input_to_output_ms: round(inputToOutput) })
 	};
 }
 

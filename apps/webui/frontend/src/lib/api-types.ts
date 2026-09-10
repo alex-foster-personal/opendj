@@ -1574,6 +1574,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/telemetry/pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Machine Pressure
+         * @description What the machine is under right now, cheap enough to poll.
+         *
+         *     THE conditions half of a trustworthy timing row. The browser stamps this
+         *     onto every deck-load row (see the frontend's machine-pressure.ts) so a
+         *     latency number carries the machine state it was measured under instead of
+         *     leaving a later reader to guess, which is how the register ended up with a
+         *     waveform decode recorded at both 0.73 s and 7.53 s for the same work.
+         *
+         *     Read-only, and deliberately NOT a process walk: this is sysctl, getloadavg
+         *     and vm_stat, never the `ps` table that `/processes` reads out of the
+         *     probe's log. It is served from a short shared cache and every response
+         *     states the age of the sample it is handing back, so a caller can tell a
+         *     fresh reading from a five-second-old one rather than assuming.
+         *
+         *     Agent-native: `curl $ENGINE/api/v1/performance/telemetry/pressure`.
+         *
+         *     Fields, all optional and all absent rather than zero when unreadable:
+         *     `load_avg_1m` (1-minute kernel load average), `mem_free_mb` (free physical
+         *     memory, `vm_stat` Pages free only, not the wider reclaimable figure),
+         *     `swap_used_mb` (swap in use), `cache_age_ms` (age of this sample).
+         *     `available` is false, with a `reason`, when nothing could be measured --
+         *     notably inside the packaged app, whose payload stages `apps` and not
+         *     `scripts`.
+         */
+        get: operations["machine_pressure_api_v1_performance_telemetry_pressure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/telemetry/processes": {
         parameters: {
             query?: never;
@@ -10547,6 +10589,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    machine_pressure_api_v1_performance_telemetry_pressure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

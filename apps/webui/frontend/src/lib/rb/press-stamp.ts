@@ -10,6 +10,12 @@
  * control never gains a wait by being measured.
  */
 
+import {
+	latencyFloorLabels,
+	scheduleRowKind,
+	unavailableLatencyTerms
+} from '$lib/player/transport/press-audible';
+import { claimArmedHotCuePress, claimLoadSpanningPress } from '$lib/rb/deck-slots';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 
 /**
@@ -53,4 +59,58 @@ export function measurePressToScheduleMs(
 		return undefined;
 	}
 	return elapsedMs;
+}
+
+/**
+ * Everything the ring needs to file one schedule row: its kind and its
+ * device-floor labels, DERIVED FROM THE ROW'S OWN STAGES.
+ *
+ * Taking the stages rather than re-reading the context is what makes the
+ * labels honest. `scheduleOffsetStages` already omits `base_latency_ms` and
+ * `output_latency_ms` when the device floor is not a real measurement, and
+ * omits `press_to_schedule_ms` when no press is behind the schedule, so the
+ * absences this reads are the SAME absences the row reports. A second read of
+ * the context could disagree with the row beside it - the context can move
+ * from `suspended` to `running` while the worklet acknowledgement is in
+ * flight - and a row whose labels describe a later state than its own timing
+ * is worse than one with no labels at all.
+ *
+ * `contextState` is the one fact the stages cannot carry, so it is passed and
+ * must be read at the same point the stages were built.
+ *
+ * Composed HERE rather than at the call site because
+ * `audio-engine.svelte.ts` sits at the quality ratchet's
+ * `frontend.max_fan_out` ceiling (36 of 36 on main, Wed 9 Sep 2026) as well
+ * as its `file_size.max_frontend` ceiling (4069 of 4069), so it can afford
+ * neither a fourth import for these three functions nor the lines of
+ * composition. This module is already one of its imports and is already the
+ * press instrument.
+ *
+ * `pressT0Ms` rides along for two more lookups, `claimLoadSpanningPress` and
+ * `claimArmedHotCuePress` (deck-slots.ts): each answers whether THIS stamp
+ * was marked - by a deferred load-play, or by an armed hot-cue trigger -
+ * before it reached here. That import is the one exception to this module's
+ * usual deck-slots avoidance (see `PerfDeck` above) - this is real
+ * correlation data the ring needs, not a type this module could derive some
+ * cheaper way.
+ */
+export function scheduleRowFacts(
+	stages: Readonly<Record<string, number>>,
+	contextState: string,
+	pressT0Ms?: number
+): { kind: string; labels: Record<string, string> } {
+	return {
+		kind: scheduleRowKind(
+			stages.press_to_schedule_ms,
+			claimLoadSpanningPress(pressT0Ms),
+			claimArmedHotCuePress(pressT0Ms)
+		),
+		labels: latencyFloorLabels({
+			unavailable: unavailableLatencyTerms({
+				base: stages.base_latency_ms,
+				output: stages.output_latency_ms
+			}),
+			contextState
+		})
+	};
 }
