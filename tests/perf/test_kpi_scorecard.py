@@ -271,7 +271,9 @@ def test_s4_stays_unmeasured_on_frame_delta_alone() -> None:
 def test_s6_slow_but_playable_load_is_over_not_breaking() -> None:
     """The invented-threshold escape this closes: a 26s load past the old 25s
     'breaking' ceiling must read OVER, because the spec's own breaking
-    condition is blocked playability, not a duration."""
+    condition is blocked playability, not a duration. Both required KPIs
+    present (the duration, and a confirmed-zero playability-blocked reading)
+    so the scenario actually reaches a verdict rather than UNMEASURED."""
     entries = [
         {
             "kpi": "deck_load_to_stems_ready_s",
@@ -279,9 +281,36 @@ def test_s6_slow_but_playable_load_is_over_not_breaking() -> None:
             "unit": "s",
             "date": "2026-09-09",
             "source": "manual capture",
-        }
+        },
+        {
+            "kpi": "deck_load_blocks_playback_ms",
+            "value": 0,
+            "unit": "ms blocked while stems load",
+            "date": "2026-09-09",
+            "source": "manual capture",
+        },
     ]
     assert _score_one("S6", entries).verdict == "OVER"
+
+
+def test_s6_stays_unmeasured_on_duration_alone() -> None:
+    """The reviewer's reproduction this closes: a duration reading alone used
+    to PASS or OVER the whole scenario even though it cannot establish the
+    spec's own prerequisite that the deck was already playable while stems
+    loaded - a 10s load could equally mean stems never blocked playback, or
+    blocked it for all 10 of those seconds. Neither is distinguishable from
+    the duration alone, so the scenario must stay UNMEASURED until the
+    playability-blocked companion KPI is also recorded."""
+    entries = [
+        {
+            "kpi": "deck_load_to_stems_ready_s",
+            "value": 10,
+            "unit": "s",
+            "date": "2026-09-09",
+            "source": "manual capture",
+        }
+    ]
+    assert _score_one("S6", entries).verdict == UNMEASURED
 
 
 def test_s7_stays_unmeasured_on_latency_alone() -> None:

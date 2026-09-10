@@ -243,6 +243,28 @@ def _strict_family_candidates(cell: str, family: str) -> list[float]:
     ]
 
 
+_CELL_NUMBER_OP = re.compile(r"(<=|>=|<|>)?\s*(-?\d+(?:\.\d+)?)\s*(ms|s|%)?")
+
+
+def _strict_family_operators(cell: str, family: str) -> list[str | None]:
+    """The same rank-by-family walk as `_strict_family_candidates`, returning
+    each matched number's OWN leading comparator (or None when it has none)
+    instead of its value.
+
+    The comparator immediately in front of a candidate is that candidate's
+    own direction, not the cell's first comparator overall - S2's target cell
+    states "<=30ms audible, <=16ms visual", and the second KPI's comparator
+    must come from beside ITS OWN number, not be borrowed from the first.
+    """
+    stripped = _PERCENTILE_LABEL.sub("", cell)
+    wants_tag = _FAMILY_TAG[family]
+    return [
+        (op or None)
+        for op, raw, cell_unit in _CELL_NUMBER_OP.findall(stripped)
+        if (cell_unit or None) == wants_tag
+    ]
+
+
 def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
     """Each required KPI's OWN resolved budget/acceptable/breaking - the
     numbers `_resolve_required` hands to `verdict_for` - must match the spec
@@ -271,6 +293,20 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
     explicit, reviewed opt-out beside the entry it applies to, rather than an
     absence of candidates the code cannot tell apart from a stale number
     nobody meant to leave unchecked.
+
+    A DICT entry also carries its OWN `lower_is_better` and `acceptable_strict`,
+    each of which can diverge from the scenario headline `threshold_drift`
+    already checks once, scenario-wide, against the target cell. Once a
+    column's number is confirmed present at the right rank, this also checks
+    that number's own leading comparator: for `target`, does it agree with
+    this entry's `lower_is_better` (mirroring the scenario-level check, but
+    keyed to the entry's own value and its own number's comparator rather
+    than the cell's first one); for `acceptable`, does its comparator's
+    strictness (no `=` means exclusive) agree with this entry's
+    `acceptable_strict`. Both are skipped, like the numeric check above, when
+    the column opted out via `unverifiable_columns` or has no comparable
+    number at its rank - a column already flagged uncheckable gains nothing
+    from a second, redundant finding about its direction.
     """
     problems: list[str] = []
     family_rank: dict[str, int] = {}
@@ -304,7 +340,46 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
                     f"{sid} {req['kpi']} {column}: map records {value!r}, "
                     f"not found in spec cell {cell!r}"
                 )
+                continue
+            operator = _strict_family_operators(cell, family)[rank - 1]
+            problem = _per_kpi_operator_problem(sid, cfg, req, column, operator, cell)
+            if problem is not None:
+                problems.append(problem)
     return problems
+
+
+def _per_kpi_operator_problem(
+    sid: str, cfg: dict, req: dict, column: str, operator: str | None, cell: str
+) -> str | None:
+    """One required entry's own direction (`target`) or strictness
+    (`acceptable`) against the comparator beside its own confirmed number.
+
+    Split out of `_per_kpi_drift`'s loop to keep that function's own branch
+    count under the file's complexity ceiling; the two checks share nothing
+    but the "no comparator, nothing to compare" early-out.
+    """
+    if operator is None:
+        return None
+    if column == "target":
+        lower_is_better = bool(req.get("lower_is_better", cfg.get("lower_is_better", True)))
+        cell_is_upper_bound = operator.startswith("<")
+        if cell_is_upper_bound != lower_is_better:
+            return (
+                f"{sid} {req['kpi']} lower_is_better: map records "
+                f"{lower_is_better!r}, which disagrees with the comparator "
+                f"beside its own number in spec cell {cell!r}"
+            )
+        return None
+    if column == "acceptable":
+        acceptable_strict = bool(req.get("acceptable_strict", False))
+        cell_is_strict = operator in ("<", ">")
+        if cell_is_strict != acceptable_strict:
+            return (
+                f"{sid} {req['kpi']} acceptable_strict: map records "
+                f"{acceptable_strict!r}, which disagrees with the comparator "
+                f"beside its own number in spec cell {cell!r}"
+            )
+    return None
 
 
 def threshold_drift(kpi_map: dict) -> list[str]:

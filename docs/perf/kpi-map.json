@@ -167,9 +167,10 @@
       "class": "P1",
       "kpis": [
         "deck_load_to_stems_ready_s",
+        "deck_load_blocks_playback_ms",
         "stemmed_deck_load_total_s"
       ],
-      "missing_kpi": "The measured 14.8s figure is a load where stems sit ON the critical path, so it scores the CURRENT design, not this scenario. This scenario only becomes scoreable once mix-first loading lands and playability is separable from stems-ready. Breaking has no numeric threshold here: the spec's own breaking cell is 'blocks playability at all', not a duration, so a slow-but-still-playable load past 25s reads OVER, never an invented BREAKING.",
+      "missing_kpi": "The measured 14.8s figure is a load where stems sit ON the critical path, so it scores the CURRENT design, not this scenario. This scenario only becomes scoreable once mix-first loading lands and playability is separable from stems-ready. Breaking has no numeric threshold here: the spec's own breaking cell is 'blocks playability at all', not a duration, so a slow-but-still-playable load past 25s reads OVER, never an invented BREAKING. A duration alone cannot prove the spec's own prerequisite that the deck was ALREADY PLAYABLE while stems loaded: deck_load_blocks_playback_ms, milliseconds the deck was blocked from playback during the load, is required alongside the duration so a fast or slow load with stems still on the critical path cannot PASS or OVER on duration alone. No instrument records it yet, so this scenario stays UNMEASURED until one does.",
       "lower_is_better": true,
       "budget": 15,
       "acceptable": 25,
@@ -181,7 +182,19 @@
         "breaking": "blocks playability at all"
       },
       "required": [
-        "deck_load_to_stems_ready_s"
+        "deck_load_to_stems_ready_s",
+        {
+          "kpi": "deck_load_blocks_playback_ms",
+          "unit": "ms blocked while stems load",
+          "lower_is_better": true,
+          "budget": 0,
+          "acceptable": 0,
+          "breaking": null,
+          "unverifiable_columns": [
+            "target",
+            "acceptable"
+          ]
+        }
       ],
       "context_kpis": [
         "stemmed_deck_load_total_s"
