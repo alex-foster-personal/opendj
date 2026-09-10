@@ -393,8 +393,8 @@
 		class:on={uiPrefs.beat_sync_max}
 		aria-pressed={uiPrefs.beat_sync_max}
 		title={uiPrefs.beat_sync_max
-			? 'BeatSyncMax ON - every seek (incl. master) keeps BAR phase lock'
-			: 'BeatSyncMax OFF - followers sync on seek; master free-seeks'}
+			? 'BeatSyncMax ON - downbeats stay aligned; every seek (incl. master) keeps BAR phase lock'
+			: 'BeatSyncMax OFF - followers sync on seek using their own BEAT/BAR mode; master free-seeks'}
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax

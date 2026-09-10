@@ -20,7 +20,9 @@ import {
 	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap
 } from '$lib/rb/auto-play';
+import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	computeFollowerSyncPlan,
 	quantizeToNearestBeat,
@@ -59,7 +61,7 @@ export function phaseLockOk(sourceId: DeckId, follower: DeckId): PhaseLockProbe 
 	const rawFollowerSec = Math.max(0, deckStates[follower].position_ms / 1000);
 	const followerPositionSec = quantizeToNearestBeat(followerGrid, rawFollowerSec);
 	const masterTempoRatio = deckStates[sourceId].pitch;
-	const mode = deckStates[follower].sync_mode;
+	const mode = syncModeForBeatSyncMax(uiPrefs.beat_sync_max, deckStates[follower].sync_mode);
 	try {
 		computeFollowerSyncPlan({
 			masterGrid,
