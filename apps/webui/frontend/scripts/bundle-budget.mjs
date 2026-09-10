@@ -76,6 +76,30 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              to trip on the next few bytes of ordinary feature work
 //              regardless. With this PR: measured 205,141, +5% ceil-to-KiB
 //              => 216,064 (211 KiB).
+//              RAISED Thu 10 Sep 2026 (PR #1010, pin 593b23ffe): the
+//              discussion_r3975326238 fix threads a new isSuperseded() guard
+//              through refreshAnalysisSourceDecks/_refreshDecks/_adopt in
+//              analysis-source.svelte.ts and analysis-source-refresh.ts,
+//              plus the JSDoc explaining the race it closes. CI measured
+//              216,952 on this head (deterministic across two independent
+//              CI builds); the equivalent local `pnpm build` on the exact
+//              same pinned toolchain (Node 22.14.0, pnpm 11.9.0, svelte
+//              5.56.7, @sveltejs/kit 2.70.1, vite 5.4.21, terser 5.51.2 -
+//              all confirmed byte-for-byte against CI's own install log)
+//              measured only 214,470 for the identical source tree - a
+//              pre-existing local-vs-CI gap (214,450 vs 214,747, ~300
+//              bytes) that grew to ~2,500 bytes specifically on this diff.
+//              Isolated with `pnpm build` chunk tables from both sides: the
+//              entire delta sits in the one large shared chunk carrying
+//              this route's bulk (HUoDj3ab.js on CI / I_4JPHqH.js locally),
+//              which is exactly the chunk these edited files land in -
+//              consistent with terser's frequency-based mangling producing
+//              a slightly different (non-hermetic) minification result
+//              when Rollup's module concatenation order shifts with
+//              filesystem enumeration order between the two build
+//              environments, not with new dead weight. Ratcheting on CI's
+//              own number since that is what the gate actually runs
+//              against: 216,952, +5% ceil-to-KiB => 228,352 (223 KiB).
 // other-lazy   measured 60,160, same +5% ceil-to-KiB rule => 63,488 (62 KiB).
 //              RAISED Mon 1 Sep 2026: the CloudSync config route (/cloudsync
 //              policy matrix, machines, pins, overview + api-cloudsync client)
@@ -95,7 +119,9 @@ const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
-  { name: 'performance', limit: 216064, measured: 205141, note: '/performance and children' },
+  // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
+  // (PR #1010, discussion_r3975326238). CI measured 216,952 on this diff.
+  { name: 'performance', limit: 228352, measured: 216952, note: '/performance and children' },
   { name: 'other-lazy', limit: 67584, measured: 64328, note: 'all other routes plus deferred shell' },
 ];
 
