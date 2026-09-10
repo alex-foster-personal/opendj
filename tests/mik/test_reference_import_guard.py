@@ -25,12 +25,13 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from apps.mik import reference_guard
-from tests.mik.guard_helpers import registry_entry, write_record, write_registry
+from tests.mik.guard_helpers import corpus_path, registry_entry, write_record, write_registry
 
 pytestmark = pytest.mark.requirement("NATIVE-12")
 
@@ -104,3 +105,79 @@ def test_guard_rejects_an_unreadable_registry(tmp_path: Path) -> None:
     """A missing registry must fail loudly, never read as 'nothing is registered, carry on'."""
     with pytest.raises(FileNotFoundError):
         reference_guard.load_import_decisions(tmp_path / "absent.json")
+
+
+def test_a_registry_without_the_decisions_key_is_refused(tmp_path: Path) -> None:
+    """A lost key must not read as the empty registry NATIVE-12 pins."""
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"version": 1, "corpus_path": corpus_path()}), encoding="utf-8")
+    with pytest.raises(reference_guard.MikImportDecisionUnrecorded) as excinfo:
+        reference_guard.load_import_decisions(registry, tmp_path)
+    assert "decisions" in str(excinfo.value)
+
+
+def test_a_decision_for_another_action_does_not_grant_this_one(tmp_path: Path) -> None:
+    """A read grant is refused for import, and the refusal says which grant it found."""
+    write_record(tmp_path, "MIK-IMPORT-05")
+    registry = write_registry(
+        tmp_path / "registry.json",
+        [registry_entry("apps/mik/load.py", "MIK-IMPORT-05", action="read")],
+    )
+    with pytest.raises(reference_guard.MikReferenceImportRefused) as excinfo:
+        reference_guard.require_mik_import_decision(
+            "apps/mik/load.py", action="import", registry_path=registry, record_root=tmp_path
+        )
+    assert "read" in str(excinfo.value)
+
+
+def test_the_lookup_answers_by_module_and_action_not_by_order(tmp_path: Path) -> None:
+    """Both actions resolve to their own decision, whichever order the file lists them in."""
+    write_record(tmp_path, "MIK-IMPORT-06")
+    entries = [
+        registry_entry("apps/mik/load.py", "MIK-IMPORT-06", action="read"),
+        registry_entry("apps/mik/load.py", "MIK-IMPORT-06", action="import"),
+    ]
+    for order, decisions in (("read first", entries), ("import first", list(reversed(entries)))):
+        registry = write_registry(tmp_path / "registry.json", decisions)
+        for action in ("read", "import"):
+            granted = reference_guard.require_mik_import_decision(
+                "apps/mik/load.py", action=action, registry_path=registry, record_root=tmp_path
+            )
+            assert granted.action == action, order
+
+
+def test_two_decisions_for_one_action_are_refused(tmp_path: Path) -> None:
+    """Two entries for one (module, action) leave the grant ambiguous, so refuse."""
+    write_record(tmp_path, "MIK-IMPORT-07")
+    registry = write_registry(
+        tmp_path / "registry.json",
+        [
+            registry_entry("apps/mik/load.py", "MIK-IMPORT-07"),
+            registry_entry("apps/mik/load.py", "MIK-IMPORT-07"),
+        ],
+    )
+    with pytest.raises(reference_guard.MikImportDecisionUnrecorded):
+        reference_guard.load_import_decisions(registry, tmp_path)
+
+
+def test_a_decision_record_outside_the_tree_is_refused(tmp_path: Path) -> None:
+    """An absolute path, or one climbing out with .., is not a document in the repository."""
+    outside = tmp_path / "outside.md"
+    outside.write_text("Decision MIK-IMPORT-08 records nothing reviewable.\n", "utf-8")
+    inside = tmp_path / "tree"
+    inside.mkdir()
+    for record in ("/tmp/decision.md", "../outside.md", str(outside)):
+        registry = write_registry(
+            tmp_path / "registry.json",
+            [
+                {
+                    "module": "apps/mik/load.py",
+                    "action": "import",
+                    "decision": "MIK-IMPORT-08",
+                    "record": record,
+                }
+            ],
+        )
+        with pytest.raises(reference_guard.MikImportDecisionUnrecorded) as excinfo:
+            reference_guard.load_import_decisions(registry, inside)
+        assert "MIK-IMPORT-08" in str(excinfo.value)

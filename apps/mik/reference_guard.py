@@ -123,17 +123,42 @@ def load_import_decisions(
         )
         decision_document_states_the_decision(decision, record_root)
         decisions.append(decision)
+    pairs = [(decision.module, decision.action) for decision in decisions]
+    duplicated = sorted({pair for pair in pairs if pairs.count(pair) > 1})
+    if duplicated:
+        raise MikImportDecisionUnrecorded(
+            f"{registry_path} holds more than one decision for {duplicated}; one action is one "
+            "decision, and two entries leave the grant ambiguous"
+        )
     return tuple(decisions)
 
 
 def find_import_decision(
-    module: str, registry_path: Path = DECISION_REGISTRY, record_root: Path = REPO_ROOT
+    module: str,
+    action: str,
+    registry_path: Path = DECISION_REGISTRY,
+    record_root: Path = REPO_ROOT,
 ) -> MikImportDecision | None:
-    """The decision recorded for ``module``, or None if it has none."""
-    for decision in load_import_decisions(registry_path, record_root):
-        if decision.module == module:
-            return decision
-    return None
+    """The decision recorded for ``module`` and exactly ``action``, or None.
+
+    Keyed on the pair, not on the module: a module decided for ``read`` and
+    later for ``import`` holds two decisions, and a lookup that took the first
+    match would answer whichever one the file happened to list first.
+    """
+    return _lookup(load_import_decisions(registry_path, record_root), module, action)
+
+
+def _lookup(
+    decisions: tuple[MikImportDecision, ...], module: str, action: str
+) -> MikImportDecision | None:
+    """The decision for ``module`` and ``action``, or None. At most one exists.
+
+    ``load_import_decisions`` refuses a registry holding two entries for one
+    pair, so this filter can return the first match without resolving an
+    ambiguity by file order.
+    """
+    matches = [d for d in decisions if d.module == module and d.action == action]
+    return matches[0] if matches else None
 
 
 def require_mik_import_decision(
@@ -153,27 +178,47 @@ def require_mik_import_decision(
         raise MikReferenceImportRefused(
             f"unknown action {action!r}; NATIVE-12 separates {sorted(ALLOWED_ACTIONS)}"
         )
-    decision = find_import_decision(module, registry_path, record_root)
-    if decision is None:
-        raise MikReferenceImportRefused(
-            f"{module} may not {action} from the Mixed In Key reference corpus: it has no "
-            f"recorded decision. The corpus is reference data only (NATIVE-12, D7). To import "
-            f"from it, add a decision for this module to {registry_path.name} naming the "
-            "document that records the decision, then call this guard at the read site."
-        )
-    if decision.action != action:
-        raise MikReferenceImportRefused(
-            f"{module} is decided for {decision.action!r} under {decision.decision}, "
-            f"not for {action!r}; a broader grant than one decision names"
-        )
-    return decision
+    decisions = load_import_decisions(registry_path, record_root)
+    decision = _lookup(decisions, module, action)
+    if decision is not None:
+        return decision
+    held = sorted({d.action for d in decisions if d.module == module})
+    detail = (
+        f"it holds a {held[0]!r} decision, which does not cover {action!r}"
+        if held
+        else "it has no recorded decision"
+    )
+    raise MikReferenceImportRefused(
+        f"{module} may not {action} from the Mixed In Key reference corpus: {detail}. The "
+        f"corpus is reference data only (NATIVE-12, D7). To import from it, add a decision for "
+        f"this module and action to {registry_path.name} naming the document that records it, "
+        "then call this guard at the read site."
+    )
 
 
 def decision_document_states_the_decision(
     decision: MikImportDecision, record_root: Path = REPO_ROOT
 ) -> Path:
-    """The record document behind ``decision``, proven to name the decision id."""
-    document = record_root / decision.record
+    """The record document behind ``decision``, proven to name the decision id.
+
+    The path must be relative and must resolve inside ``record_root``: an
+    absolute path, or one climbing out with ``..``, would let a decision be
+    "recorded" in a file nobody reviews.
+    """
+    declared = Path(decision.record)
+    root = record_root.resolve()
+    if declared.is_absolute():
+        raise MikImportDecisionUnrecorded(
+            f"{decision.module}: decision {decision.decision} names the absolute path "
+            f"{decision.record}. A decision document lives inside the repository, where a "
+            "reviewer can see it."
+        )
+    document = (root / declared).resolve()
+    if not document.is_relative_to(root):
+        raise MikImportDecisionUnrecorded(
+            f"{decision.module}: decision {decision.decision} names {decision.record}, which "
+            f"resolves outside {root}. A decision document lives inside the repository."
+        )
     if not document.is_file():
         raise MikImportDecisionUnrecorded(
             f"{decision.module}: decision {decision.decision} names {decision.record}, "
@@ -199,7 +244,12 @@ def _load_registry(registry_path: Path) -> _Registry:
     corpus_path = payload.get("corpus_path")
     if not isinstance(corpus_path, str) or not corpus_path:
         raise MikImportDecisionUnrecorded(f"{registry_path} states no corpus_path")
-    raw = payload.get("decisions", [])
+    if "decisions" not in payload:
+        raise MikImportDecisionUnrecorded(
+            f"{registry_path} states no decisions list. A registry that lost the key is not the "
+            "empty registry NATIVE-12 pins; reading it as one would turn corruption into a pass."
+        )
+    raw = payload["decisions"]
     if not isinstance(raw, list):
         raise MikImportDecisionUnrecorded(f"{registry_path} decisions is not a list")
     return _Registry(corpus_path=corpus_path, decisions=tuple(_string_fields(raw, registry_path)))
