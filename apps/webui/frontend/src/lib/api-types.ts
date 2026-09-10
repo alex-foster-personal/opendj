@@ -6619,7 +6619,7 @@ export interface components {
              * Asset Kind
              * @enum {string}
              */
-            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache" | "lyrics_cache" | "karaoke_words";
             /** Cache Budget Mb */
             cache_budget_mb?: number | null;
             /** Machine Id */
@@ -6640,7 +6640,7 @@ export interface components {
              * Asset Kind
              * @enum {string}
              */
-            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache";
+            asset_kind: "audio" | "stem_bundle" | "anlz_cache" | "vocal_cache" | "lyrics_cache" | "karaoke_words";
             /** Cache Budget Mb */
             cache_budget_mb?: number | null;
             /** Machine Id */

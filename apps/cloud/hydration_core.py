@@ -63,12 +63,16 @@ MODE_STRENGTH: dict[str, int] = {
     "excluded": 0,
 }
 
-#: ``sync_policies.asset_kind`` CHECK vocabulary (schema v6).
+#: ``sync_policies.asset_kind`` CHECK vocabulary (schema v9). ``lyrics_cache``
+#: and ``karaoke_words`` were admitted when _V9 rebuilt the CHECK; this tuple
+#: and that CHECK are pinned equal by tests/cloud/test_asset_kind_vocabulary.py.
 ASSET_KINDS: tuple[str, ...] = (
     "audio",
     "stem_bundle",
     "anlz_cache",
     "vocal_cache",
+    "lyrics_cache",
+    "karaoke_words",
 )
 
 
