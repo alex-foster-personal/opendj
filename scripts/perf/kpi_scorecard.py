@@ -234,6 +234,21 @@ def _resolve_required(cfg: dict) -> list[dict]:
     return resolved
 
 
+def _needs_provenance(name: str, unit: str) -> bool:
+    """Is `name` a p95 or percentage KPI, which the spec's own denominator-
+    honesty note (specs/perf-latency-program.md, 'Denominator honesty') requires
+    to name its window and machine tier?
+
+    Scoped to p95/percentage KPIs specifically, matching the note's own
+    examples (dropped frames, xruns/hour, p95s) rather than every KPI: a plain
+    duration or count (deck load seconds, dropped-keystroke count) has no
+    window or sample size to misrepresent the same way a percentile or a rate
+    does.
+    """
+    haystack = f"{name} {unit}".lower()
+    return "p95" in haystack or "%" in haystack or "pct" in haystack
+
+
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
     """Score each scenario on its REQUIRED KPIs alone.
 
@@ -277,6 +292,14 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
                 rejected.append(
                     f"{name} has a missing, malformed, or future-dated reading "
                     f"({reading.date!r})"
+                )
+                continue
+            if _needs_provenance(name, req["unit"]) and not (reading.machine and reading.note):
+                rejected.append(
+                    f"{name} is a p95/percentage KPI recorded without a machine tier "
+                    f"and measurement window/denominator (machine={reading.machine!r}, "
+                    f"note={reading.note!r}), required by the denominator-honesty note "
+                    "in specs/perf-latency-program.md"
                 )
                 continue
             scoreable.append((req, reading.value, age))

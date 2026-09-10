@@ -472,6 +472,83 @@ def test_reading_retains_machine_and_measurement_note() -> None:
     assert reading.note == "n=6 uncached tracks"
 
 
+def test_a_p95_reading_without_provenance_is_unmeasured() -> None:
+    """The denominator-honesty note (specs/perf-latency-program.md) requires a
+    p95/percentage KPI to name its machine tier and measurement window. A
+    reading missing either must not reach verdict_for, which would let a
+    number stand in for a distribution with no stated sample or machine."""
+    kpi_map = {
+        "scenarios": {
+            "S2": {
+                "title": "t",
+                "class": "P0",
+                "kpis": ["input_to_audible_ms_p95"],
+                "required": ["input_to_audible_ms_p95"],
+                "missing_kpi": "placeholder",
+                **LOWER,
+            }
+        }
+    }
+    entries = [
+        {"kpi": "input_to_audible_ms_p95", "value": 10, "unit": "ms", "date": "2026-09-09"}
+    ]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == UNMEASURED
+    assert "input_to_audible_ms_p95" in score.note
+
+
+def test_a_p95_reading_with_provenance_still_scores() -> None:
+    """The control for the provenance gate: the same p95 KPI with both a
+    machine tier and a measurement note present must still score."""
+    kpi_map = {
+        "scenarios": {
+            "S2": {
+                "title": "t",
+                "class": "P0",
+                "kpis": ["input_to_audible_ms_p95"],
+                "required": ["input_to_audible_ms_p95"],
+                "missing_kpi": "placeholder",
+                **LOWER,
+            }
+        }
+    }
+    entries = [
+        {
+            "kpi": "input_to_audible_ms_p95",
+            "value": 10,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=20 presses",
+        }
+    ]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == "PASS"
+
+
+def test_a_plain_duration_reading_needs_no_provenance() -> None:
+    """The scope control: a KPI that is neither p95 nor a percentage (a plain
+    load-time duration) must not be rejected for lacking machine/note, since
+    it carries no distribution or denominator to misrepresent."""
+    kpi_map = {
+        "scenarios": {
+            "S5": {
+                "title": "t",
+                "class": "P1",
+                "kpis": ["packaged_deck_load_total_ms"],
+                "required": ["packaged_deck_load_total_ms"],
+                "missing_kpi": "placeholder",
+                **LOWER,
+            }
+        }
+    }
+    entries = [
+        {"kpi": "packaged_deck_load_total_ms", "value": 20, "unit": "ms", "date": "2026-09-09"}
+    ]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == "PASS"
+
+
 def test_json_output_preserves_reading_source_and_score_note() -> None:
     """The `--json` escape: a reader consuming the machine format must see the
     same provenance and caveats the text renderer prints, or a verdict like
