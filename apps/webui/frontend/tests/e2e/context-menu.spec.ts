@@ -53,9 +53,14 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 	await expect(playlist).toBeVisible();
 	await playlist.click({ button: 'right' });
 	await expect(page.locator(MENU)).toContainText('New playlist');
+	await expect(page.getByRole('menuitem', { name: 'Duplicate' })).toBeEnabled();
 	await page.keyboard.press('Escape');
 
 	const folder = page.locator('[data-testid="playlist-folder"]');
 	await folder.click({ button: 'right' });
 	await expect(page.locator(MENU)).toContainText('New folder');
+	const folderDuplicate = page.getByRole('menuitem', { name: 'Duplicate' });
+	if (await folderDuplicate.count()) {
+		await expect(folderDuplicate).toBeDisabled();
+	}
 });

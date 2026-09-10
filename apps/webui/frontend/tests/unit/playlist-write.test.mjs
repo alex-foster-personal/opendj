@@ -172,3 +172,60 @@ test('deletePlaylist sends If-Match and accepts the bodyless 204', async () => {
 	assert.equal(seen.method, 'DELETE');
 	assert.equal(seen.headers.get('if-match'), '"rev-1"');
 });
+
+test('duplicatePlaylist posts with no If-Match and no body on the happy path', async () => {
+	let seen;
+	let bodyText;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		bodyText = await request.clone().text();
+		return jsonResponse(playlistRow({ playlist_id: 'pl-2', name: 'Warmup (copy)' }), { status: 201 });
+	};
+
+	const row = await playlistWrite.duplicatePlaylist('pl-1');
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/playlists/pl-1/duplicate`);
+	assert.equal(seen.method, 'POST');
+	assert.equal(seen.headers.get('if-match'), null);
+	assert.equal(bodyText, '');
+	assert.equal(row.name, 'Warmup (copy)');
+});
+
+test('duplicatePlaylist sends optional If-Match and explicit name', async () => {
+	let seen;
+	let body;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		body = await request.clone().json();
+		return jsonResponse(playlistRow({ playlist_id: 'pl-3', name: 'Fork A' }), { status: 201 });
+	};
+
+	const row = await playlistWrite.duplicatePlaylist('pl-1', '"rev-1"', 'Fork A');
+
+	assert.equal(seen.url, `${API_BASE}/api/v1/playlists/pl-1/duplicate`);
+	assert.equal(seen.method, 'POST');
+	assert.equal(seen.headers.get('if-match'), '"rev-1"');
+	assert.deepEqual(body, { name: 'Fork A' });
+	assert.equal(row.name, 'Fork A');
+});
+
+test('duplicatePlaylist maps a stale If-Match 409 to PlaylistConflictError', async () => {
+	const current = playlistRow();
+	globalThis.fetch = async () =>
+		jsonResponse(
+			{ error: 'conflict', message: 'playlist If-Match mismatch', current, etag: '"rev-9"' },
+			{ status: 409, statusText: 'Conflict' }
+		);
+
+	const caught = await playlistWrite.duplicatePlaylist('pl-1', '"rev-1"').then(
+		() => null,
+		(error) => error
+	);
+
+	assert.ok(
+		caught instanceof playlistWrite.PlaylistConflictError,
+		'expected a PlaylistConflictError'
+	);
+	assert.deepEqual(caught.current, current);
+	assert.equal(caught.etag, '"rev-9"');
+});

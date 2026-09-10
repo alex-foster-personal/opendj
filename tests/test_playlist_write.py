@@ -59,9 +59,6 @@ def client(db_path: Path) -> Iterator[TestClient]:
         bind_host="127.0.0.1", hostname="test-host",
         lock_status_fn=lambda: None, mount_frontend=False,
     )
-    # The integrator wires this into app.py; tests wire it explicitly so the
-    # hotspot file stays untouched.
-    app.include_router(playlist_write.router, prefix="/api/v1")
     with TestClient(app) as c:
         yield c
     playlist_write.close_store(app)

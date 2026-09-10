@@ -70,6 +70,7 @@
 		collectBlankPlaylistDeletes,
 		createPlaylist,
 		deletePlaylist,
+		duplicatePlaylist,
 		getPlaylistTracksEtag,
 		isWithinCreateGrace,
 		markPlaylistCreateGrace,
@@ -1443,6 +1444,18 @@
 		}
 	}
 
+	async function duplicatePlaylistUi(node: PlaylistNode): Promise<void> {
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			const copy = await duplicatePlaylist(node.playlist_id, etag);
+			await _refreshPlaylists();
+			pushToast(`Duplicated as "${copy.name}"`, 'info');
+		} catch (exc) {
+			pushToast(`duplicate failed: ${String(exc)}`, 'error');
+		}
+	}
+
 	async function dropTracksOnPlaylist(playlistId: string, stableIds: string[]): Promise<void> {
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
@@ -2515,6 +2528,7 @@
 				oncreateplaylist={() => createPlaylistUi()}
 				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
+				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
 			/>
 		{/if}
