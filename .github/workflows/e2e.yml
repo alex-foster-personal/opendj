@@ -490,8 +490,8 @@ jobs:
         # throwaway fixture the repo generates from stdlib `wave` and ingests
         # through the real folder adapter, inside a sandboxed HOME.
         #
-        # NAMED QUARANTINE, not a silent skip. This runs 10 of the suite's 23
-        # tests: all of setup-entry-points, and none of webkit-deckload.
+        # NAMED QUARANTINE, not a silent skip. This runs only setup-entry-points
+        # (--grep "setup entry points") and none of webkit-deckload.
         #
         # WHY THE DECK-LOAD TESTS ARE NOT HERE, measured rather than assumed.
         # Across 5 runs on ubuntu-latest AFTER the audio sink landed, 2 had a
@@ -520,10 +520,11 @@ jobs:
         # worklet path. That limit is real and is stated in the PR body rather
         # than papered over.
         #
-        # The FULL 23-test suite runs nightly in the extended job, so every
-        # quarantined test stays visible and red. Quarantined is not unwatched,
-        # and the end state once #637 and #680 are fixed is the whole suite
-        # blocking and this --grep deleted.
+        # The nightly extended job runs the whole config (no grep) with a
+        # presence check so serial skip cannot report as a complete run.
+        # Quarantined tests may still be red; that is the point. Once #637 and
+        # #680 are fixed the end state is the whole suite blocking and this
+        # --grep deleted.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
@@ -940,18 +941,31 @@ jobs:
 
       - name: Extended - FULL webkit artifact suite (no grep)
         working-directory: apps/webui/frontend
-        # All 23 tests, including the four rate-measurement tests the
-        # blocking gate quarantines under issue #637. Nightly is where that
-        # failure stays visible: quarantined is not the same as unwatched.
-        # 1800s, not the 900s default: this is the FULL 23-test suite and a
-        # PR gate waiting behind it needs a bound longer than the suite, or the
-        # wait itself becomes the failure.
+        # Whole webkit-deckload config, no grep. Serial skip is gone (#712);
+        # the next step asserts every listed test executed. Quarantined tests
+        # may still be red; that is the point. 1800s host lock and global
+        # timeout: a PR gate waiting behind this needs a bound longer than the
+        # suite, or the wait itself becomes the failure.
         env:
           MDT_CI_HOST_LOCK_TIMEOUT_S: 1800
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/webkit-full/results.json
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.webkit-deckload.config.ts
+            pnpm exec playwright test \
+            --config tests/e2e/playwright.webkit-deckload.config.ts \
+            --output test-results/webkit-full \
+            --reporter=list --reporter=json \
+            --global-timeout=1800000
+
+      - name: Assert nightly webkit suite executed every listed test
+        if: always() && !cancelled()
+        working-directory: apps/webui/frontend
+        run: |
+          "${GITHUB_WORKSPACE}/.venv/bin/python" \
+            "${GITHUB_WORKSPACE}/scripts/playwright_presence_check.py" \
+            --floor 41 \
+            test-results/webkit-full/results.json
 
       - name: Extended - desktop setup page
         working-directory: apps/webui/frontend
