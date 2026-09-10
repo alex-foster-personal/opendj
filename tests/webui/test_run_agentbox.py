@@ -373,7 +373,7 @@ def test_the_served_origin_is_read_back_from_the_launcher() -> None:
     """The public URL comes from what the box REPORTED, never from local config."""
     reported = (
         "[OK] reserved 8585/5173 hosts=agentbox\n"
-        "[OK] serve agentbox.example-tailnet.ts.net -> https://agentbox.example-tailnet.ts.net/ via 100.90.90.90\n"
+        "[OK] serve agentbox.example-tailnet.ts.net -> https://agentbox.example-tailnet.ts.net/ via 100.64.0.5\n"
     )
     assert serve_url_from_launcher_output(reported) == (
         "https://agentbox.example-tailnet.ts.net/"

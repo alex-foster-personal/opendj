@@ -149,7 +149,12 @@ def findings_in_text(path: str, text: str) -> Iterator[Finding]:
         start = text.find("\n", start + 1)
     for rule, pattern in live:
         for match in pattern.finditer(text):
-            if _rule_accepts(rule, match):
+            # A bounded window of what precedes the match, for the two rules that
+            # need context rather than the token alone (a URL authority before a
+            # home path). 256 characters is far more than any authority needs and
+            # keeps the per-match cost independent of file size.
+            preceding = text[max(0, match.start() - 256) : match.start()]
+            if _rule_accepts(rule, match, preceding):
                 yield Finding(path, bisect_right(line_starts, match.start()), rule, match.group(0))
 
 

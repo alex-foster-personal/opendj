@@ -45,6 +45,11 @@ PLACEHOLDER_USERS = frozenset(
         # the original list, which is why 105 tracked references read as findings
         # (#1808).
         "dev",
+        # The second macOS machine's placeholder login, so the autoreposync
+        # per-machine path table and its profiles can keep three DISTINCT homes
+        # (Air, silver, agentbox) after the real silver login was scrubbed. Keyed
+        # to the fleet's own machine names, not to a shape (#1808).
+        "silver",
         "old",
         "older",
         "oldname",
@@ -149,6 +154,12 @@ ALLOWED_MAILBOXES = frozenset(
         "ghs_redacted@github.com",  # redacted-token fixture
         "noreply@anthropic.com",  # commit trailer constant
         "ci-eval@users.noreply.github.com",  # CI bot commit identity
+        # The repository owner's GitHub noreply alias, used as the reporting
+        # address in SECURITY.md and CODE_OF_CONDUCT.md. GitHub puts this exact
+        # address on every commit, issue and review the account makes, and the
+        # account handle is already in the repository's own URL, so withholding
+        # it in two policy files removes nothing that is not already published.
+        "15217094+owner@example.com",
         "public@o0.ingest.de.sentry.io",  # Sentry DSN public key, not a mailbox
         "support@sourcery.ai",  # vendor support address quoted in a planning doc
         "i@izs.me",  # third-party maintainer metadata inside a pnpm lockfile
@@ -176,12 +187,15 @@ ALLOWED_NON_ADDRESSES = frozenset(
         "signalsmith-stretch@1.3.2.patch",  # pnpm patch spec, package.json
     }
 )
-# The one file whose whole function is holding the addresses attached to this
-# repository's own commit history. Scrubbing it would not remove those addresses
-# from anywhere -- `git log` still shows them -- it would only stop them being
-# mapped to one author. Every other file is scanned, and these matches are still
-# counted and printed as `exempt=` so the exemption cannot hide a new address.
-MAILBOX_EXEMPT_PATHS = frozenset({".mailmap"})
+# The files whose whole function is holding the addresses attached to this
+# repository's own commit history, plus the prose that documents the convention
+# they enforce. Scrubbing them would not remove those addresses from anywhere --
+# `git log` still shows them in 2000+ commits -- it would only stop them being
+# mapped to one author, and the how-to would instruct agents to set an identity
+# that does not match the log. Every other file is scanned, and these matches are
+# still counted and printed as `exempt=` so the exemption cannot hide a new
+# address.
+MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
 
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
 # synthetic label this repo standardized on for MagicDNS fixtures in tests, the
@@ -189,6 +203,17 @@ MAILBOX_EXEMPT_PATHS = frozenset({".mailmap"})
 # not prefix-matched: `example-tailnet-prod` would be a different network and is
 # reported (#1808).
 _ALLOWED_TAILNETS = frozenset({"example", "example-tailnet"})
+
+# A URL AUTHORITY immediately before a match means the `/Users/` (or `/home/`,
+# or `C:\Users\`) segment is a URL ROUTE, not a home directory. The GitHub REST
+# API's shape is `https://api.github.com/users/<login>`, and one recorded
+# check-runs fixture carries 130 of them (#1808). The macOS rule is
+# case-INSENSITIVE precisely so a lowercase spelling of a real home is caught,
+# and case-folding is exactly what makes that URL read as one.
+#
+# Anchored at the end so it only fires when the authority runs straight into the
+# match, which is the only position where the segment after it is a URL path.
+_URL_AUTHORITY_BEFORE = re.compile(r"[a-z][a-z0-9+.\-]*://[^\s/]+$", re.IGNORECASE)
 
 # Write-once session records. Their CONTENT is not scanned, because rewriting a
 # dated record of what was actually run is worse than leaving it: the record is
@@ -423,8 +448,18 @@ def _is_placeholder_home(user: str) -> bool:
     # END keeps `foo=` exempt and reports `the maintainer=DJ` whole. `foo=bar=` strips to
     # `foo=bar`, is not a placeholder, and is reported: one reviewed line in a
     # shape this tree does not use, against a published home directory.
-    if user.endswith("="):
-        return _is_placeholder_home(user.rstrip("="))
+    #
+    # A trailing delimiter the capture ran into is the same case, and #1808 added
+    # the rest of the set: `<string>/Users/dev</string>` in a plist snippet ends
+    # the segment at the `<`, and a JSON list ends it at the `,`. Stripping is
+    # safe in ONE direction only, which is why it is a strip and not a shape
+    # rule: it can turn "placeholder plus punctuation" into "placeholder", and it
+    # can never turn a real login into one, because the check after the strip is
+    # still the exact-match list. `/Users/<real-login>,` strips to the login and
+    # is still reported.
+    stripped = user.rstrip("=,;<>")
+    if stripped != user:
+        return _is_placeholder_home(stripped)
     # Case-insensitively, because the home rules match case-insensitively: an
     # exemption that is case-SENSITIVE would fail to exempt the same placeholder
     # written in another case, which is noise, not safety.
@@ -470,8 +505,10 @@ def _is_reserved_mail_domain(domain: str) -> bool:
     )
 
 
-def _rule_accepts(rule: str, match: re.Match[str]) -> bool:
+def _rule_accepts(rule: str, match: re.Match[str], preceding: str = "") -> bool:
     if rule in {"home-path", "windows-home-path", "linux-home-path"}:
+        if _URL_AUTHORITY_BEFORE.search(preceding):
+            return False
         return not _is_placeholder_home(match.group(1))
     if rule == "consumer-mailbox":
         address = match.group(0)
