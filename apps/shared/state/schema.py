@@ -6,11 +6,12 @@ a ``schema_meta`` table to skip already-applied versions.
 
 Versioning: ``SCHEMA_VERSION`` is the target version. ``MIGRATIONS`` is a
 list where index ``i`` is the SQL to take the schema from version ``i`` to
-``i+1``. A fresh DB runs the full list. The ladder itself (``_V1``..``_V8``)
+``i+1``. A fresh DB runs the full list. The ladder itself (``_V1``..``_V9``)
 lives in :mod:`apps.shared.state.migrations` (v1-v5) and
-:mod:`apps.shared.state.migrations_v6_v8` (v6-v8) -- split across two
-sibling modules (issue #1583) because the combined ladder alone exceeds the
-600-line file-size gate. This module keeps the runner and the
+:mod:`apps.shared.state.migrations_v6_v8` (v6-v8) and
+:mod:`apps.shared.state.migrations_v9` (v9) -- split across sibling modules
+(issue #1583) because the combined ladder alone exceeds the 600-line
+file-size gate. This module keeps the runner and the
 drift-tripwire table/view tuples below.
 """
 from __future__ import annotations
@@ -20,13 +21,14 @@ from datetime import UTC, datetime
 
 from .migrations import _V1, _V2, _V3, _V4, _V5
 from .migrations_v6_v8 import _V6, _V7, _V8
+from .migrations_v9 import _V9
 
-SCHEMA_VERSION: int = 8
+SCHEMA_VERSION: int = 9
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -103,10 +105,14 @@ TABLES: tuple[str, ...] = (
     "unmatched_source_analysis",
     "track_energy_segments",
     "analysis_field_verification",
+    # v9 (MACHINE ENROLLMENT, specs/design_decision_12.md) -- hub-authoritative
+    # and OUTSIDE the sync set, so neither appears in protocol.SYNC_TABLES
+    "machine_owners",
+    "enrollment_grants",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
-intentionally excluded -- it is infrastructure, not domain data. The last
-four arrived in v8."""
+intentionally excluded -- it is infrastructure, not domain data. Four of
+them arrived in v8 and the last two in v9."""
 
 VIEWS: tuple[str, ...] = (
     "tracks_available",
@@ -127,9 +133,21 @@ by ``tests/shared/state/test_schema.py``."""
 
 
 FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
-    # apps/shared/pairings/schema_sql.py
+    # apps/shared/pairings/schema_sql.py :: ensure_phase08_tables
     "pairings",
     "smartlists",
+    # apps/shared/pairings/schema_sql.py :: apply_pairing_capture_migrations
+    # -- the SECOND ladder in that same module, with its own version
+    # counter, applied lazily by apps/webui/server/routes/pairing_capture.py
+    # against the daemon's writable state.db (PairingCaptureRepo defaults to
+    # ensure_schema=True). Undeclared here until Wed 9 Sep 2026, when
+    # scripts/sync_drift_lint.py D-08 named all three at once: the tripwire
+    # in tests/shared/state/test_schema_v6.py hand-copied the authority list
+    # and the copy only ever had the first entry point, so no inventory and
+    # no test had heard of these tables.
+    "pairing_sync_snapshots",
+    "pairing_alignments",
+    "pairing_capture_schema_meta",
     # apps/shared/play_orders/schema.py (private version counter)
     "play_orders",
     "play_order_entries",
@@ -142,6 +160,16 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "tracks_fts_docsize",
     "tracks_fts_idx",
     "tracks_frecency",
+    # apps/launcher/src-tauri/src/state.rs :: ensure_launcher_meta -- the one
+    # authority that is not Python. get_db_path prefers <repo>/data/state/
+    # state.db whenever it exists, and every meta_get/meta_set runs
+    # CREATE TABLE IF NOT EXISTS first, so a single launcher start creates
+    # this table in the live shared file. Undeclared and undocumented until
+    # Wed 9 Sep 2026: every derivation of the authority list had been done by
+    # reading *.py, so no inventory, no test and no docs run had ever heard
+    # of it, and regenerating AGENTS.md against a launcher-touched state.db
+    # raised MissingColumnDocsError.
+    "launcher_meta",
 )
 """Tables this module does NOT create but that legitimately live in the same
 file, written by the other three schema authorities (spec section 1.3 of

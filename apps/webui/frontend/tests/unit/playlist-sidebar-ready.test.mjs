@@ -42,7 +42,7 @@ assert.ok(initStart >= 0 && initEnd > initStart, 'could not isolate _init() in B
 const init = panel.slice(initStart, initEnd);
 
 test('playlist sidebar becomes usable when metadata arrives, before the all-track page walk', () => {
-	const metadata = init.indexOf('playlists = lists;');
+	const metadata = init.indexOf('playlists = reconcileBootSnapshot(');
 	assert.ok(metadata >= 0, 'expected _init() to assign the hydrated playlists');
 	const tracks = init.indexOf('await _restoreBootPane();', metadata);
 	assert.ok(tracks > metadata, 'expected _init() to await the first track pane after the playlists');

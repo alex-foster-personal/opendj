@@ -31,6 +31,7 @@ const API_BASE = 'https://engine.example.test';
 let appInit;
 let originalFetch;
 let posted;
+let fetchedUrls;
 
 function defineGlobal(name, value) {
 	Object.defineProperty(globalThis, name, {
@@ -54,8 +55,12 @@ function installBrowserGlobals() {
 	});
 	defineGlobal('crypto', { randomUUID: () => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' });
 	posted = [];
+	fetchedUrls = [];
 	globalThis.fetch = async (url, init) => {
-		posted.push({ url, body: JSON.parse(init.body) });
+		fetchedUrls.push(url);
+		// The heartbeat POSTs a JSON body; the machine-pressure poll GETs with
+		// none, so only parse when one was actually sent.
+		if (init?.body !== undefined) posted.push({ url, body: JSON.parse(init.body) });
 		return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
 	};
 }
@@ -119,18 +124,23 @@ test('init opens the boot request window and hands its teardown back', () => {
 	assert.equal(stopped.length, 1, 'and closed when the page goes away');
 });
 
-test('the heartbeat goes through the same window, so it is not in the burst', async () => {
+test('the heartbeat and the pressure poll go through the same window, so neither joins the burst', async () => {
 	const manual = manualBootScheduler();
 	const stop = appInit.startAppInstruments(manual.scheduler);
 	await new Promise((resolve) => setImmediate(resolve));
 
 	assert.equal(posted.length, 0, 'nothing may post while the boot window is open');
-	assert.equal(manual.pending(), 1, 'queued, never dropped');
+	assert.equal(fetchedUrls.length, 0, 'nothing may fetch while the boot window is open');
+	assert.equal(manual.pending(), 2, 'the heartbeat and the pressure poll are both queued, never dropped');
 
 	manual.release();
 	await new Promise((resolve) => setImmediate(resolve));
 	stop();
 	assert.equal(posted.length, 1);
+	assert.ok(
+		fetchedUrls.some((url) => url.includes('/telemetry/pressure')),
+		'the pressure poll also waited for the window, not just the heartbeat'
+	);
 });
 
 test('init installs the reload announcer, and its teardown removes it', () => {

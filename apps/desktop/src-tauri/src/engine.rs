@@ -260,6 +260,74 @@ fn health_ok(port: u16) -> bool {
     String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200")
 }
 
+// ----- build profile ------------------------------------------------------
+
+/// The feature-flag profile name a sandboxed build runs under.
+///
+/// Mirrors `apps/feature_flags/profiles.py`. The engine validates the name and
+/// refuses an unknown one with the list of real profiles, so a typo here dies
+/// at boot rather than silently shipping the full build.
+pub const APPSTORE_PROFILE: &str = "appstore";
+
+/// macOS sets this inside an App Sandbox container.
+const SANDBOX_CONTAINER_ENV: &str = "APP_SANDBOX_CONTAINER_ID";
+
+/// Where macOS redirects a sandboxed process's home.
+const SANDBOX_HOME_MARKER: &str = "/Library/Containers/";
+
+/// Which `--build-profile` this boot passes, or None for the full build.
+///
+/// DETECTED AT RUNTIME, NOT COMPILED IN (SAND-04). The obvious alternative is
+/// a cargo feature set by the store lane, but that has to be remembered at
+/// package time and is wrong whenever anyone forgets: a store bundle built
+/// from the dmg lane would offer USB export, which cannot work in a sandbox,
+/// and would fail as an EMPTY DRIVE LIST rather than as a refusal. Being
+/// inside a container is a fact about the process, so the shell asks the
+/// process. That is also self-correcting in both directions -- a store build
+/// is sandboxed by definition and a dmg build never is -- which is why no
+/// store-only build flag is needed anywhere.
+///
+/// Two independent signals, because either alone can be defeated: the env var
+/// is absent on some spawn paths that still inherit the container, and a
+/// developer can point HOME at a container-shaped path without being
+/// sandboxed. A false positive costs an explicit refusal the user can read; a
+/// false negative costs the silent empty list. That asymmetry is why either
+/// signal alone is enough to trip it.
+///
+/// Pure in its inputs so it is testable without mutating process environment,
+/// which is global and would race the other tests in this binary.
+///
+/// `host_is_macos` is passed explicitly rather than read from `cfg!` inside
+/// this function, mirroring `apps/shared/sandbox.py`'s `platform` parameter:
+/// the App Sandbox is macOS-only, so a hardcoded `cfg!(target_os = "macos")`
+/// check here would make every call short-circuit to `None` on the Linux CI
+/// runner that actually runs this test suite, leaving the signal logic
+/// untested where it runs.
+pub fn build_profile_for(
+    container_id: Option<&str>,
+    home: Option<&str>,
+    host_is_macos: bool,
+) -> Option<&'static str> {
+    if !host_is_macos {
+        return None;
+    }
+    let container_set = container_id.is_some_and(|value| !value.trim().is_empty());
+    let home_in_container =
+        home.is_some_and(|value| value.contains(SANDBOX_HOME_MARKER));
+    if container_set || home_in_container {
+        Some(APPSTORE_PROFILE)
+    } else {
+        None
+    }
+}
+
+/// [`build_profile_for`] against this process's real environment.
+fn build_profile() -> Option<&'static str> {
+    let container = std::env::var(SANDBOX_CONTAINER_ENV).ok();
+    let home = std::env::var("HOME").ok();
+    build_profile_for(container.as_deref(), home.as_deref(), cfg!(target_os = "macos"))
+}
+
 // ----- spawn --------------------------------------------------------------
 /// Start the bundled engine on `port`, writing its output to `log_path`.
 ///
@@ -322,6 +390,13 @@ pub fn spawn(
         .env("OPENDJ_ENGINE_WARN_LOG", log_path.with_file_name("engine-warn.log"))
         .env("OPENDJ_ENGINE_LOG_BOOT_ID", log_boot_id())
         .process_group(0);
+    // A sandboxed shell means an App Store build, and the engine must run the
+    // profile that turns off what the sandbox forbids. Passed as an argument
+    // rather than an env var so it survives STRIPPED_ENV below and shows up in
+    // the engine's own boot line, where a wrong profile is visible.
+    if let Some(profile) = build_profile() {
+        command.arg("--build-profile").arg(profile);
+    }
     for name in STRIPPED_ENV {
         command.env_remove(name);
     }
@@ -533,6 +608,78 @@ pub fn log_tail(log_path: &Path, lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ----- build profile ---------------------------------------------------
+    //
+    // Both directions, because a one-directional guard passes its own bug
+    // report perfectly. Under-detecting ships USB export into a sandbox where
+    // it returns an empty drive list; over-detecting turns the feature off in
+    // the dmg, where it works fine. Each has a test.
+
+    #[test]
+    fn a_container_env_var_selects_the_appstore_profile() {
+        assert_eq!(
+            build_profile_for(Some("com.opendj.desktop"), Some("/Users/dj"), true),
+            Some(APPSTORE_PROFILE)
+        );
+    }
+
+    #[test]
+    fn a_container_shaped_home_selects_the_appstore_profile() {
+        // The second signal alone, with the env var absent: some spawn paths
+        // inherit the container without setting it.
+        assert_eq!(
+            build_profile_for(
+                None,
+                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data"),
+                true
+            ),
+            Some(APPSTORE_PROFILE)
+        );
+    }
+
+    #[test]
+    fn an_unsandboxed_shell_passes_no_profile() {
+        // The over-detection control. A dmg build must keep USB export, so
+        // this asserts the ORIGINAL behavior still holds where it should.
+        assert_eq!(build_profile_for(None, Some("/Users/dj"), true), None);
+        assert_eq!(build_profile_for(None, None, true), None);
+    }
+
+    #[test]
+    fn a_blank_container_id_is_not_a_container() {
+        // An exported-but-empty variable is the shell's version of a zero
+        // that is both a value and an error signature. Empty means absent.
+        assert_eq!(build_profile_for(Some(""), Some("/Users/dj"), true), None);
+        assert_eq!(build_profile_for(Some("   "), Some("/Users/dj"), true), None);
+    }
+
+    #[test]
+    fn a_home_merely_containing_library_is_not_a_container() {
+        // Substring matching is the trap here: ~/Library alone is every Mac.
+        // Only the Containers segment means a sandbox.
+        assert_eq!(
+            build_profile_for(None, Some("/Users/dj/Library/Application Support"), true),
+            None
+        );
+    }
+
+    #[test]
+    fn the_sandbox_is_macos_only() {
+        // Mirrors apps/shared/sandbox.py's test_the_sandbox_is_macos_only: a
+        // Linux or Windows host is never sandboxed, whatever the process
+        // signals say. This is the case that a bare `cfg!(target_os =
+        // "macos")` inside the helper made untestable on Linux CI, where it
+        // always returned None before looking at either signal.
+        assert_eq!(
+            build_profile_for(
+                Some("com.opendj.desktop"),
+                Some("/Users/dj/Library/Containers/com.opendj.desktop/Data"),
+                false
+            ),
+            None
+        );
+    }
 
     // - if an interrupted read ends the pump then one signal during a healthy
     //   engine's life silently stops all logging -> broken

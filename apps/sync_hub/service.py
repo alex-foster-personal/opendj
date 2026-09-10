@@ -3,6 +3,7 @@
 Mounted by the webui at ``/api/v1/sync/*``:
 
     POST /api/v1/sync/hello    register a spoke, learn the hub id and seq
+    POST /api/v1/sync/enroll   join the fleet under a proved owner (ADR 12)
     POST /api/v1/sync/push     offer rows; the hub merges them under LWW
     GET  /api/v1/sync/pull     one chunk of the rows accepted after ``since_seq``
     GET  /api/v1/sync/status   hub identity, seq, fleet, row counts
@@ -11,6 +12,13 @@ Mounted by the webui at ``/api/v1/sync/*``:
 Trust in v1 is tailnet membership (ADR 04 c7): any process that can reach the
 daemon can push. That is deliberate for a personal fleet and must be revisited
 before any multi-user deployment.
+
+``/enroll`` (ADR 12) is the first step off that position, and it is an OBSERVE
+step only: it records WHO owns each machine and ``hello`` reports the answer,
+but nothing is refused on it yet. Switching ``hello`` to refuse an unowned
+caller is a separate, separately gated decision, and reading this file as
+"the hub is authenticated now" would be exactly the error
+``.claude/rules/verification.md`` is about.
 
 ``push``, ``pull`` and ``status`` all take a ``machine_id`` and all refuse a
 machine that never said hello (ADR 08 point 6, round 1 finding 7b). That is a
@@ -23,22 +31,55 @@ The hub DB is opened per request from ``app.state.state_db_path`` and closed
 again, so the router holds no connection across requests and needs no lock of
 its own. Every mutating handler runs in one explicit transaction: a push that
 fails halfway leaves the hub exactly as it was.
+
+**Partial answers are gated on one invariant** (round 5 gate B-1): *this hub
+answers a caller that has not advertised ``quarantine/v1`` exactly as
+``origin/main`` would* -- 422 ``SYNC_PROTOCOL``, nothing partial, nothing
+committed. Round 5 turned "the hub cannot order its own copy of this row"
+from a 422 into a 200 reporting a shortfall, which an ``origin/main`` spoke
+cannot see: it stamps ``last_push_seq = ceiling`` regardless, the held row
+falls below a fence that can never select it again, and the hub -- having
+written no ``hub_changelog`` entry -- cannot re-deliver it. Upgrading the hub
+first would therefore delete data on every spoke still on main. The three
+endpoints that can answer partially (``push``, ``pull``, ``digest``) each ask
+:mod:`apps.sync_hub.capabilities` first, and the advertisement is read off
+the REQUEST rather than remembered from ``hello``: a spoke rolled back to an
+older build must stop being capable the moment it rolls back.
 """
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
 
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import engine, generation, protocol
+from apps.sync_hub import (
+    capabilities,
+    engine,
+    enrollment,
+    generation,
+    protocol,
+    service_enroll,
+    service_shortfall,
+)
+from apps.sync_hub.service_models import (
+    DigestResponse,
+    EnrollRequest,
+    HelloRequest,
+    HelloResponse,
+    MachineModel,
+    PullResponse,
+    PushRequest,
+    PushResponse,
+    RowModel,
+    StatusResponse,
+)
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -46,105 +87,18 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 #: asking the hub to hold an unbounded response in memory on its behalf.
 MAX_PULL_LIMIT: int = 5000
 
-
-# ----- request / response models ------------------------------------------
-
-
-class MachineModel(BaseModel):
-    """One ``machines`` row on the wire."""
-
-    machine_id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
-    platform: str = Field(min_length=1)
-    is_hub: bool = False
-    data_root: str | None = None
-    first_seen: str = Field(min_length=1)
-    last_seen: str = Field(min_length=1)
-
-
-class RowModel(BaseModel):
-    """One offered row. ``members`` is set only on a ``playlists`` row."""
-
-    table: str = Field(min_length=1)
-    pk: list[str] = Field(min_length=1)
-    values: dict[str, Any]
-    members: list[dict[str, Any]] | None = None
-
-
-class HelloRequest(BaseModel):
-    machine: MachineModel
-    schema_version: int
-    #: The fleet as the caller knows it (round 2 finding N4). Merged after
-    #: ``machine`` so a hub restored to a point before some peer first said
-    #: hello learns that peer from whoever still remembers it, instead of
-    #: 409ing every row that references it.
-    machines: list[MachineModel] = Field(default_factory=list)
-
-
-class HelloResponse(BaseModel):
-    hub_machine_id: str
-    schema_version: int
-    seq: int
-    machines: list[MachineModel]
-    #: This hub's generation token (round 2 finding N6). It changes when the
-    #: hub's DB moves backwards under a data dir that did not -- a restore --
-    #: and NOT when its changelog is pruned. A spoke that sees a different
-    #: token than the one it stored resets both sync floors.
-    hub_generation: str
-
-
-class PushRequest(BaseModel):
-    machine_id: str = Field(min_length=1)
-    schema_version: int
-    rows: list[RowModel]
-    #: The pusher's ``machines`` snapshot, merged before the rows are applied
-    #: (round 2 finding N4, round 1 A4). ``sync_policies``, ``playlist_pins``
-    #: and ``track_locations`` all carry a ``machine_id`` REFERENCES
-    #: ``machines``, and every spoke holds rows belonging to its peers, so a
-    #: hub that has not met one of them refused the whole push with a
-    #: FOREIGN KEY 409 that re-fired on every retry. Empty means the caller
-    #: offered no snapshot, which is only safe when its rows name machines
-    #: this hub already knows.
-    machines: list[MachineModel] = Field(default_factory=list)
-
-
-class PushResponse(BaseModel):
-    accepted: int
-    rejected: int
-    seq: int
-
-
-class PullResponse(BaseModel):
-    rows: list[RowModel]
-    seq: int
-    machines: list[MachineModel]
-    #: True when the hub still holds changelog entries above ``seq``. The
-    #: client loops on it rather than inferring "done" from an empty page:
-    #: dedup means a chunk can legitimately return fewer rows than entries.
-    has_more: bool = False
-    #: Changelog entries in this chunk whose row is gone from the hub
-    #: (round 2 finding 4a). Non-zero means something hard-deleted a synced
-    #: row on the hub; the pull still serves everything else.
-    skipped: int = 0
-
-
-class StatusResponse(BaseModel):
-    hub_machine_id: str
-    schema_version: int
-    seq: int
-    machines: list[MachineModel]
-    row_counts: dict[str, int]
-    hub_generation: str
-
-
-class DigestResponse(BaseModel):
-    tables: dict[str, str]
-    overall: str
-    #: The ``hub_changelog`` position this digest describes, read in the same
-    #: transaction as the hashes (round 2 finding 6b). A spoke whose pull
-    #: stopped below this seq knows a third machine pushed in the gap, and
-    #: that a difference here is not divergence.
-    seq: int
+#: The ``?capabilities=`` query the two GET endpoints that can answer
+#: partially both declare. A module-level singleton rather than a ``Query()``
+#: call in each signature: ruff B008 flags the call-in-default for a MUTABLE
+#: annotation like ``list[str]``, and one shared declaration is the DRY
+#: answer as well as the lint-clean one. The parameter is spelled
+#: ``capabilities_`` in Python and ``capabilities`` on the wire, so the name
+#: cannot collide with the :mod:`apps.sync_hub.capabilities` module.
+_CAPABILITIES_QUERY: Any = Query(
+    default_factory=list,
+    alias="capabilities",
+    description="protocol features the caller understands",
+)
 
 
 # ----- wiring helpers ------------------------------------------------------
@@ -325,6 +279,35 @@ def _apply_error(exc: engine.SyncApplyError) -> HTTPException:
     )
 
 
+# ----- the partial-answer gate (round 5 gate B-1) --------------------------
+
+
+def _refuse_unless_capable(
+    advertised: Sequence[str], endpoint: str, detail: str | None
+) -> None:
+    """Refuse a partial answer to a caller that cannot read one.
+
+    ``detail`` is ``None`` when this request held nothing back, which is the
+    overwhelmingly common case and the only one that costs nothing: the gate
+    asks about rows the hub ALREADY decided to hold, so it never re-measures
+    anything and never fires on healthy data.
+
+    Raises :class:`apps.sync_hub.protocol.SyncProtocolError` rather than an
+    ``HTTPException`` so that every caller converts it through the existing
+    :func:`_protocol_error` and answers with the SAME 422 ``SYNC_PROTOCOL``
+    body ``origin/main`` answered with -- and, inside ``push``, so the raise
+    lands in the open transaction and rolls the whole batch back exactly as
+    main's mid-apply raise did.
+    """
+    if detail is None:
+        return
+    if capabilities.understands_quarantine(advertised):
+        return
+    raise protocol.SyncProtocolError(
+        capabilities.refusal(endpoint, detail, advertised)
+    )
+
+
 # ----- endpoints -----------------------------------------------------------
 
 
@@ -360,7 +343,46 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
             seq=engine.current_seq(conn),
             machines=_machine_models(conn),
             hub_generation=_generation(request, conn),
+            capabilities=list(capabilities.THIS_BUILD),
+            ownership=enrollment.ownership_state(
+                conn, payload.machine.machine_id, hub_machine_id=hub_machine_id
+            ),
         )
+
+
+@router.post(
+    "/enroll",
+    response_model=service_enroll.EnrollResponse,
+    responses=service_enroll.ENROLL_RESPONSES,
+)
+def enroll(
+    request: Request, payload: EnrollRequest
+) -> service_enroll.EnrollResponse:
+    """Join this hub's fleet under a proved owner. The ONE enrollment door.
+
+    Both ADR 12 paths come through here and neither can reach
+    :func:`apps.sync_hub.enrollment.enroll_machine` any other way: the dev
+    CLI is a thin argparse shell over this exact call, and the user path will
+    be the same call carrying a different credential kind.
+
+    Deliberately NOT behind a router-level dependency. It authenticates by
+    the credential in its BODY, which is what lets a headless machine with no
+    browser and no local Google session enroll at all. One transaction, so a
+    refusal registers nothing. Idempotent: a re-run answers ``created: false``.
+    """
+    _require_schema_version(payload.schema_version)
+    machine = _to_machines([payload.machine])[0]
+    with _hub_conn(request) as conn:
+        try:
+            with _transaction(conn):
+                return service_enroll.perform_enroll(
+                    conn,
+                    machine=machine,
+                    credential=payload.credential,
+                    hub_machine_id=_hub_identity(request, conn),
+                )
+        except engine.SyncApplyError as exc:
+            raise _apply_error(exc) from exc
 
 
 @router.post("/push", response_model=PushResponse)
@@ -371,6 +393,12 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
     transaction (round 2 finding N4): a row this hub has never met is a
     FOREIGN KEY violation, and the recovery push after a hub restore is
     exactly the push most likely to carry one.
+
+    A pusher that did not advertise ``quarantine/v1`` gets ``origin/main``'s
+    answer instead of the partial one: 422, whole batch rolled back (module
+    docstring). That is the staged-rollout price and it is the safe half of
+    it -- an un-upgraded spoke reads ``accepted + rejected < offered`` as
+    nothing at all and steps its push fence over the held row.
     """
     _require_schema_version(payload.schema_version)
     changes = _to_changes(payload.rows)
@@ -381,6 +409,14 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             with _transaction(conn):
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
                 result = engine.hub_apply(conn, changes)
+                # INSIDE the transaction: a refusal must roll the whole batch
+                # back, which is what main's mid-apply raise did and what the
+                # refused caller's retry is entitled to assume.
+                _refuse_unless_capable(
+                    payload.capabilities,
+                    "push",
+                    service_shortfall.push_shortfall(result, len(changes)),
+                )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
@@ -389,7 +425,10 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
         # ever reported, and it must never sit above what the DB holds.
         _generation(request, conn)
         return PushResponse(
-            accepted=result.accepted, rejected=result.rejected, seq=result.seq
+            accepted=result.accepted,
+            rejected=result.rejected,
+            seq=result.seq,
+            quarantined=result.quarantined,
         )
 
 
@@ -404,17 +443,24 @@ def pull(
         le=MAX_PULL_LIMIT,
         description="max changelog entries to consume in this chunk",
     ),
+    capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> PullResponse:
     """One chunk of the rows the hub accepted after ``since_seq``.
 
     Chunked because a first sync of a real library is megabytes of JSON held
     twice in memory on both sides (round 1 finding A2). ``has_more`` tells
     the client to come back with the ``seq`` this response reports.
+
+    A chunk that had to leave a row out is refused outright for a caller that
+    did not advertise ``quarantine/v1`` (module docstring). The shortfall is
+    invisible to such a caller, which records the reported ``seq`` as pulled
+    and can never ask for those entries again -- not even after the repair.
     """
     with _hub_conn(request) as conn:
         _require_registered(conn, machine_id)
         try:
             batch = engine.hub_changes_since(conn, since_seq, limit=limit)
+            _refuse_unless_capable(capabilities_, "pull", service_shortfall.pull_shortfall(batch))
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
@@ -425,6 +471,7 @@ def pull(
             machines=_machine_models(conn),
             has_more=batch.has_more,
             skipped=batch.skipped,
+            quarantined=batch.quarantined,
         )
 
 
@@ -467,6 +514,7 @@ def status(
 def digest(
     request: Request,
     machine_id: str = Query(min_length=1, description="the calling spoke"),
+    capabilities_: list[str] = _CAPABILITIES_QUERY,
 ) -> DigestResponse:
     """Per-table digests over the sync set, tombstones included (ADR 04 c6).
 
@@ -488,17 +536,46 @@ def digest(
     ``/pull``, this answer carries no per-row data, but it does carry the
     hub's live changelog position, which an unregistered caller had no
     business reading either.
+
+    A hub holding one row with an unorderable stored stamp no longer answers
+    422 (round 5). That row is excluded from the hash and counted in
+    ``quarantined``: a legacy row is a fact to report, not a reason to make
+    the endpoint every sync depends on unavailable.
+
+    For a caller that did not advertise ``quarantine/v1`` it still does
+    (module docstring). Such a spoke has no ``quarantined`` map to read, so
+    it compares a hash over the eligible set against its own hash over
+    everything, and the difference reads to it as the ADR 04 c6 CORRUPTION
+    alarm -- a false one, raised on ordinary legacy data.
     """
     with _hub_conn(request) as conn:
         _require_registered(conn, machine_id)
         try:
             with _transaction(conn):
                 computed = protocol.sync_digest(conn, seq=engine.current_seq(conn))
+            _refuse_unless_capable(
+                capabilities_, "digest", service_shortfall.digest_shortfall(computed)
+            )
         except protocol.SyncProtocolError as exc:
             raise _protocol_error(exc) from exc
         return DigestResponse(
-            tables=computed.tables, overall=computed.overall, seq=computed.seq
+            tables=computed.tables,
+            overall=computed.overall,
+            seq=computed.seq,
+            quarantined=dict(computed.quarantined or {}),
         )
 
 
-__all__ = ["router"]
+__all__ = [
+    "DigestResponse",
+    "EnrollRequest",
+    "HelloRequest",
+    "HelloResponse",
+    "MachineModel",
+    "PullResponse",
+    "PushRequest",
+    "PushResponse",
+    "RowModel",
+    "StatusResponse",
+    "router",
+]

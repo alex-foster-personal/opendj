@@ -456,7 +456,12 @@ def empty_anlz_payload(stable_id: str, points: int) -> dict[str, Any]:
             "preview": dict(empty_bands),
             "detail": dict(empty_bands),
         },
-        "beatgrid": {"beat_count": 0, "beats": []},
+        # `source` is REQUIRED on every /anlz beatgrid block, own or rekordbox
+        # (NATIVE-01): a consumer must never have to infer which producer it is
+        # looking at. A locally imported file has no rekordbox grid, but this
+        # IS the rekordbox branch, and "rekordbox with no beats" is what the
+        # empty arrays already say.
+        "beatgrid": {"source": "rekordbox", "beat_count": 0, "beats": []},
         "cues": [],
         "phrases": [],
         "vocals": {"status": "not_analyzed"},

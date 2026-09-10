@@ -46,6 +46,7 @@ on:
         E2E,
         macOS Native Companion,
         macOS Packaging,
+        Periodic checks,
         Windows Parity (on-demand),
       ]
     types: [completed]
@@ -160,7 +161,11 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          clean: true
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        run: scripts/ci_clean_untracked.sh
 
       # #1041: this job calls bare `python` below with no actions/setup-python
       # step (deliberately -- a watcher that costs setup time to price a run

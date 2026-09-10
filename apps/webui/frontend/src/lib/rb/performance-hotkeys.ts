@@ -70,15 +70,34 @@ function _resolveTransportDeck(): DeckId | null {
 	return null;
 }
 
-async function _toggleRecentPlay(): Promise<void> {
+/**
+ * Q1: `pressT0Ms` is the keydown's own `event.timeStamp`, on the
+ * `performance.now()` epoch, threaded from the listener instead of re-read
+ * here.
+ *
+ * Space is the most latency-sensitive press in the app - it is how a DJ starts
+ * a track without looking at the screen - and it is also the path with the most
+ * to hide before the stamp arrives: the browser queues the key, dispatches to
+ * this listener, and only then does anything measurable begin. A
+ * `performance.now()` taken downstream starts the clock after all of that and
+ * reports a number smaller than the wait the operator actually had.
+ *
+ * An EMPTY deck returns before dispatching anything, which is what keeps the
+ * instrument honest: no command means no schedule, so no press row, so silence
+ * can never be quoted as a latency.
+ */
+async function _toggleRecentPlay(pressT0Ms?: number): Promise<void> {
 	const pending = mostRecentPendingLoadPlay();
 	if (pending !== null) {
-		await runPerformanceCommandFromUi({
-			type: 'load_play_intent',
-			deck: pending.deck,
-			generation: pending.generation,
-			desired_play: !pending.desiredPlay
-		});
+		await runPerformanceCommandFromUi(
+			{
+				type: 'load_play_intent',
+				deck: pending.deck,
+				generation: pending.generation,
+				desired_play: !pending.desiredPlay
+			},
+			pressT0Ms
+		);
 		return;
 	}
 	const deck = _resolveTransportDeck();
@@ -86,7 +105,7 @@ async function _toggleRecentPlay(): Promise<void> {
 	const st = getDeckState(deck);
 	if (st.stable_id === null) return;
 	noteRecentDeck(deck);
-	await runPerformanceCommandFromUi({ type: 'play', deck, playing: !st.playing });
+	await runPerformanceCommandFromUi({ type: 'play', deck, playing: !st.playing }, pressT0Ms);
 }
 
 async function _resizeLast(factor: 0.5 | 2): Promise<void> {
@@ -121,7 +140,7 @@ export function installPerformanceHotkeys(): () => void {
 		if (isNativeInteractiveTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.code === 'Space' || e.key === ' ') {
 			e.preventDefault();
-			void _toggleRecentPlay();
+			void _toggleRecentPlay(e.timeStamp);
 		} else if (e.key === 'Tab') {
 			e.preventDefault();
 			toggleNextOnlyFilter();

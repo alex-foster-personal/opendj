@@ -42,6 +42,11 @@ from .test_hub_sync import _T0, _open, _seed_common_track, _sync, _TestClientTra
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
+#: Hex characters in a sha256 digest. ``protocol.sync_digest`` rolls the
+#: per-table hashes up with ``hashlib.sha256``, so a rollup of any other
+#: length is a different algorithm, not a different value.
+SHA256_HEX_LENGTH: int = 64
+
 
 @pytest.fixture(autouse=True)
 def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,16 +56,19 @@ def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def hub_dir(tmp_path: Path) -> Path:
+    """The hub's empty data dir. Guarantees as in ``test_hub_sync.py``."""
     return tmp_path / "hub"
 
 
 @pytest.fixture
 def spoke_a(tmp_path: Path) -> Path:
+    """Spoke A's empty data dir. Guarantees as in ``test_hub_sync.py``."""
     return tmp_path / "spoke-a"
 
 
 @pytest.fixture
 def hub(hub_dir: Path) -> Iterator[_TestClientTransport]:
+    """The real sync router on an empty hub DB. See ``test_hub_sync.hub``."""
     app = FastAPI()
     app.state.state_db_path = str(client.state_db_path(hub_dir))
     app.state.sync_hub_data_dir = str(hub_dir)
@@ -88,7 +96,7 @@ def test_status_and_digest_endpoints_answer(
         hub.get(f"{client.API_PREFIX}/digest", {"machine_id": result.machine_id})
     )
     assert set(digest.tables) == set(protocol.DIGEST_TABLES)
-    assert len(digest.overall) == 64
+    assert len(digest.overall) == SHA256_HEX_LENGTH
 
 
 def test_every_lww_table_carries_the_sync_trio(spoke_a: Path) -> None:
