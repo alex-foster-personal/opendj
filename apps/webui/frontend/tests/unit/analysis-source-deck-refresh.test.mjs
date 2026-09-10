@@ -313,6 +313,45 @@ test(
 	}
 );
 
+test(
+	'a hot-cue write landing on the SECOND holder of a duplicate-holder track is not clobbered by the ' +
+		'first holder\'s stale anlz (thread 2 fix, discussion_r3978049105 P1 BLOCKING)',
+	async () => {
+		const decks = resetCacheDecks();
+		// Same track on TWO decks: `holders.find` used to pick deck 1 (checked
+		// first) as the sole merge base for BOTH holders and the shared cache,
+		// even though the fresher write below lands on deck 3.
+		decks[1].stable_id = SID_SLOW; // real server-side delay, same suspension used above
+		decks[3].stable_id = SID_SLOW;
+		decks[1].anlz = { beatgrid: { beat_count: 1, beats: [] }, cues: [{ id: 'pre-existing' }] };
+		decks[3].anlz = { beatgrid: { beat_count: 1, beats: [] }, cues: [{ id: 'pre-existing' }] };
+
+		const refreshPromise = cache.refreshAnalysisSourceDecks(DECK_KEYS, decks);
+		// Models refreshHotCues (audio-engine.svelte.ts) publishing a newer cue
+		// write for deck 3 - NOT deck 1, the holder `holders.find` would pick -
+		// while the staged /anlz fetch above is still in flight. Unlike the
+		// single-deck case above, refreshHotCues always ALSO calls
+		// refreshAnlzCacheEntry, so the shared cache carries this write too.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const newerCueWrite = { beatgrid: { beat_count: 1, beats: [] }, cues: [{ id: 'freshly-written-on-holder-3' }] };
+		decks[3].anlz = newerCueWrite;
+		cache.refreshAnlzCacheEntry(SID_SLOW, newerCueWrite);
+
+		await refreshPromise;
+
+		assert.equal(
+			decks[3].anlz.cues[0].id,
+			'freshly-written-on-holder-3',
+			'the holder that actually received the fresh write must keep it, not a copy of holder 1\'s stale anlz'
+		);
+		assert.equal(
+			decks[1].anlz.cues[0].id,
+			'freshly-written-on-holder-3',
+			'the OTHER holder must adopt the freshest known payload too, not stay on its own pre-switch cues'
+		);
+	}
+);
+
 // --------------------------------------------------- cache-before-deck order
 
 test('the grid sink is notified while every deck still holds its PRE-switch anlz', async () => {

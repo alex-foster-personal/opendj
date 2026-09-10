@@ -25,14 +25,19 @@
  *   initial /anlz request, or captures it after, then a switch that lands
  *   in the gap between the capture and the request is invisible to the
  *   retry below, same bug as never checking at all
- * - if refreshHotCues stops re-checking the generation and delegating a
- *   mismatch to fetchAnlzUntilCurrentGeneration (anlz-cache.svelte.ts, the
- *   primitive it shares with fetchAnlzForDeckLoad), then a switch mid-flight
- *   repopulates the cache and this deck with pre-switch bytes while
- *   analysisSourceState already recorded the new source
+ * - if refreshHotCues stops re-checking the generation AND the confirmed
+ *   source, delegating a mismatch to fetchAnlzUntilSourceConfirmed
+ *   (anlz-cache.svelte.ts, the primitive it shares with fetchAnlzForDeckLoad),
+ *   then a switch mid-flight repopulates the cache and this deck with
+ *   pre-switch bytes while analysisSourceState already recorded the new source
  * - if fetchAnlzUntilCurrentGeneration itself stops comparing against
  *   currentAnlzFetchGeneration() on every pass, or stops returning its own
  *   re-fetched answer, then both callers' retry silently becomes a no-op
+ * - if fetchAnlzUntilSourceConfirmed stops re-checking the stamped source
+ *   against the confirmed selection on every pass, then a direct-publication
+ *   caller can install a payload from a since-reverted source that an
+ *   EXTERNAL client toggled - a change the generation counter alone never
+ *   sees (discussion_r3978049099 P1 BLOCKING)
  * - if `st.anlz` is set from anything other than refreshHotCues' own
  *   `fresh`, then a resolved retry's answer is discarded and the stale
  *   bytes still land
@@ -75,18 +80,19 @@ test('refreshHotCues captures the fetch generation before its initial /anlz requ
 	);
 });
 
-test('refreshHotCues re-checks the generation and delegates a mismatch to fetchAnlzUntilCurrentGeneration', () => {
+test('refreshHotCues re-checks the generation and the confirmed source, delegating a mismatch to fetchAnlzUntilSourceConfirmed', () => {
 	const body = refreshHotCuesBody();
 
 	const freshMatch = body.match(
-		/const fresh =\s*\n\s*generation === currentAnlzFetchGeneration\(\)\s*\n\s*\?\s*initialFresh\s*\n\s*:\s*await fetchAnlzUntilCurrentGeneration\(\(\) => fetchAnlzBypassingHttpCache\(stableId\)\);/
+		/const fresh =\s*\n\s*generation === currentAnlzFetchGeneration\(\) && anlzMatchesConfirmedSource\(initialFresh\)\s*\n\s*\?\s*initialFresh\s*\n\s*:\s*await fetchAnlzUntilSourceConfirmed\(\(\) => fetchAnlzBypassingHttpCache\(stableId\)\);/
 	);
 	assert.ok(
 		freshMatch,
-		'no `generation === currentAnlzFetchGeneration() ? initialFresh : ' +
-			'await fetchAnlzUntilCurrentGeneration(...)` found - a source switch that lands after the ' +
-			'first /anlz request has nothing forcing a re-fetch, so the stale pre-switch payload gets ' +
-			'adopted and re-published into the shared cache'
+		'no `generation === currentAnlzFetchGeneration() && anlzMatchesConfirmedSource(initialFresh) ? ' +
+			'initialFresh : await fetchAnlzUntilSourceConfirmed(...)` found - a source switch (either this ' +
+			"client's own, or an external client's direct toggle that never bumps this client's generation) " +
+			'that lands after the first /anlz request has nothing forcing a re-fetch, so the stale ' +
+			'pre-switch payload gets adopted and re-published into the shared cache'
 	);
 
 	const assignEnd = body.indexOf(freshMatch[0]) + freshMatch[0].length;
@@ -94,7 +100,7 @@ test('refreshHotCues re-checks the generation and delegates a mismatch to fetchA
 	assert.match(
 		rest,
 		/st\.anlz\s*=\s*fresh/,
-		'st.anlz must be set from `fresh` AFTER the generation check, so a re-fetched answer actually lands'
+		'st.anlz must be set from `fresh` AFTER the generation and source checks, so a re-fetched answer actually lands'
 	);
 	assert.ok(
 		rest.indexOf('st.anlz = fresh') < rest.indexOf('st.hot_cues'),
@@ -125,5 +131,34 @@ test('fetchAnlzUntilCurrentGeneration (anlz-cache.svelte.ts) retries until its o
 		body,
 		/if\s*\(generation !== currentAnlzFetchGeneration\(\)\)\s*continue;/,
 		'a mismatch after the awaited fetch must retry rather than return the stale answer'
+	);
+});
+
+test('fetchAnlzUntilSourceConfirmed (anlz-cache.svelte.ts) retries until the stamped source is confirmed', () => {
+	const text = source(ANLZ_CACHE);
+	const fnStart = text.indexOf('export async function fetchAnlzUntilSourceConfirmed');
+	assert.ok(fnStart >= 0, 'fetchAnlzUntilSourceConfirmed not found in anlz-cache.svelte.ts');
+	const fnEnd = text.indexOf('\n}', fnStart);
+	assert.ok(fnEnd > fnStart, 'fetchAnlzUntilSourceConfirmed body end not found');
+	const body = text.slice(fnStart, fnEnd);
+
+	assert.match(
+		body,
+		/for\s*\(;;\)\s*\{/,
+		'fetchAnlzUntilSourceConfirmed must loop until it settles on a source-confirmed answer, or a ' +
+			"direct-publication caller can install a payload from a since-reverted source that an EXTERNAL " +
+			"client's own toggle never bumped this client's generation counter for (discussion_r3978049099 P1 BLOCKING)"
+	);
+	assert.match(
+		body,
+		/await fetchAnlzUntilCurrentGeneration\(fetch\)/,
+		'each pass must still go through the generation guard - dropping it reopens the mid-flight-switch bug ' +
+			'fetchAnlzUntilCurrentGeneration itself exists to close'
+	);
+	assert.match(
+		body,
+		/if\s*\(anlzMatchesConfirmedSource\(data\)\)\s*return data;/,
+		'an answer must only be returned once its stamped source agrees with the confirmed selection, or a ' +
+			'stale one is returned/installed exactly like never checking at all'
 	);
 });

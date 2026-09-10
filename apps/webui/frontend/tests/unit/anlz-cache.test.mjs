@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { afterEach, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -610,28 +611,74 @@ test('refreshAnlzCacheEntry overwrites a stale published entry without fetching'
 });
 
 test('a wrong-source /anlz response is discarded, not cached, when it disagrees with the confirmed selection (thread 2 fix, discussion_r3975650988\'s cache-side twin)', async () => {
+	// Real node:http server, not a mocked globalThis.fetch: AGENTS.md's
+	// no-mocks contract forbids monkeypatching the module's own request for a
+	// NEW regression (a pre-existing mocked test elsewhere in this file is not
+	// this test's scope to rewrite). A fresh module instance is loaded against
+	// the server's real origin, on a real socket, exercising the real request,
+	// source-selection and parser path end to end - separate from the shared
+	// `cache` singleton the rest of this file mutates via fetch swaps.
+	//
 	// Models an RBX->OWN->RBX round trip: the daemon has confirmed 'rekordbox'
-	// (analysisSourceState.features.beatgrid), but this fetch - an ambient
+	// (analysisSourceState.features.beatgrid), but this request - an ambient
 	// prefetch or ensureAnlz call that raced an in-flight switch and lost -
 	// still resolves with the stale 'own' payload it was issued against.
-	cache.analysisSourceState.features.beatgrid = 'rekordbox';
-	globalThis.fetch = async () =>
-		jsonResponse({
-			...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
-			beatgrid_source: 'own',
-			beatgrid_own_unavailable_reason: null
-		});
+	const server = createServer((req, res) => {
+		res.writeHead(200, { 'content-type': 'application/json' });
+		res.end(
+			JSON.stringify({
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid_source: 'own',
+				beatgrid_own_unavailable_reason: null
+			})
+		);
+	});
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	try {
-		cache.ensureAnlz('mismatched-track');
-		await new Promise((resolve) => setTimeout(resolve, 0));
+		const origin = `http://127.0.0.1:${server.address().port}`;
+		const isolatedCache = await loadTypeScriptModule('src/lib/components/rb/wave/anlz-cache.svelte.ts', {
+			viteApiBase: origin
+		});
+		isolatedCache.analysisSourceState.features.beatgrid = 'rekordbox';
+		isolatedCache.ensureAnlz('mismatched-track');
+		await new Promise((resolve) => setTimeout(resolve, 200));
 		assert.equal(
-			cache.getAnlzEntry('mismatched-track'),
+			isolatedCache.getAnlzEntry('mismatched-track'),
 			undefined,
 			'a payload whose stamped source disagrees with the last CONFIRMED selection must not ' +
 				'reach the shared cache - isAnlzEntryUsable would otherwise serve it to the next deck load'
 		);
 	} finally {
-		globalThis.fetch = originalFetch;
+		await new Promise((resolve) => server.close(resolve));
+	}
+});
+
+test('fetchAnlzUntilSourceConfirmed retries a direct-publication fetch that resolves with a since-reverted source', async () => {
+	// No fetch mock needed: fetchAnlzUntilSourceConfirmed is generic over its
+	// `fetch` callback, so this exercises its real retry contract directly
+	// rather than the HTTP layer. Models an EXTERNAL client's RBX->OWN->RBX
+	// toggle that never bumps THIS client's generation counter (only this
+	// client's own refreshAnalysisSourceDecks does that): the first answer is
+	// stamped 'own' while 'rekordbox' is confirmed, so it must be retried
+	// rather than returned/installed as-is (discussion_r3978049099 P1 BLOCKING).
+	cache.analysisSourceState.features.beatgrid = 'rekordbox';
+	let calls = 0;
+	try {
+		const data = await cache.fetchAnlzUntilSourceConfirmed(async () => {
+			calls += 1;
+			return {
+				...anlzPayload({ status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 }),
+				beatgrid_source: calls === 1 ? 'own' : 'rekordbox',
+				beatgrid_own_unavailable_reason: null
+			};
+		});
+		assert.equal(calls, 2, 'a first answer disagreeing with the confirmed source must be retried once more');
+		assert.equal(
+			data.beatgrid_source,
+			'rekordbox',
+			'the returned answer must agree with the confirmed selection, not the rejected first attempt'
+		);
+	} finally {
 		delete cache.analysisSourceState.features.beatgrid;
 	}
 });

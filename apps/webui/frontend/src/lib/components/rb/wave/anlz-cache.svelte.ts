@@ -93,34 +93,22 @@ export function isRetryableAnlzData(data: AnlzData): boolean {
 }
 
 /** Unconditionally fetches /anlz and writes the outcome into the cache -
- * shared by `ensureAnlz` (which gates this behind `_dueForEnsureRefetch`
- * for a reactive/effect caller) and the ambient retry timer in
- * `_publishAnlzResult` (which must NOT re-apply that gate: it fires exactly
- * at the cooldown it itself scheduled, so it is due by construction, and
- * re-checking `performance.now() >= retryAfter` against a SECOND, separately
- * read clock sample can lose that comparison by a sub-millisecond hair
- * (`setTimeout`'s own firing jitter vs. the `retryAfter` stamp taken a few
- * microseconds earlier) - confirmed live: this silently killed the retry
- * chain outright, not just delayed it, since the fired-early callback both
- * skips the fetch AND schedules no successor (Codex finding, issue #735
- * follow-up, discussion_r3907928251 fix review).
+ * shared by `ensureAnlz` (gated behind `_dueForEnsureRefetch`) and the
+ * ambient retry timer in `_publishAnlzResult`, which must NOT re-apply that
+ * gate: it fires exactly at the cooldown it itself scheduled, so re-checking
+ * `performance.now() >= retryAfter` against a second, separately read clock
+ * sample can lose that comparison by a sub-millisecond hair and silently
+ * kill the retry chain outright (Codex finding, issue #735 follow-up,
+ * discussion_r3907928251 fix review).
  *
- * Captures the analysis-source fetch generation (anlz-fetch-generation.ts)
- * at the moment the fetch is ISSUED, not when it settles: a switch mid-flight
- * (PARITY-02) calls `invalidateAllAnlzCacheEntries` to wipe this cache, but an
- * already-in-flight fetch started under the OLD generation has no way to
- * cancel, and would otherwise resurrect a fresh 'ready' entry carrying the
- * pre-switch source right after the wipe - a later cache hit
- * (`isAnlzEntryUsable`) then serves that stale payload to a load/prefetch
- * that happens entirely after the switch (discussion_r3921839825 follow-up).
- * A mismatch at settle time means a newer switch superseded this request:
- * discard the write outright rather than publish it. The discard clears the
- * placeholder this call itself wrote (see `_discardSuperseded` below) rather
- * than leaving it stuck: without that, a superseded prefetch stranded the
- * entry at `status: 'loading'` forever, since `_dueForEnsureRefetch` refuses
- * to retry a loading entry, and the current-source waveform was never
- * requested again until an unrelated deck load happened to overwrite it
- * (discussion_r3975650980 P2 BLOCKING). */
+ * Captures the fetch generation at the moment the fetch is ISSUED, not when
+ * it settles: a mid-flight switch (PARITY-02) wipes this cache via
+ * `invalidateAllAnlzCacheEntries`, but an already-in-flight fetch under the
+ * OLD generation has no way to cancel, and would otherwise resurrect a
+ * pre-switch 'ready' entry right after the wipe (discussion_r3921839825
+ * follow-up). A mismatch at settle time discards the write outright and
+ * clears its own `loading` placeholder (`_discardSuperseded` below) rather
+ * than leaving it stuck forever (discussion_r3975650980 P2 BLOCKING). */
 function _fetchAndPublish(stable_id: string): void {
 	const generation = currentAnlzFetchGeneration();
 	_cache[stable_id] = { status: 'loading', generation };
@@ -152,21 +140,13 @@ function _fetchAndPublish(stable_id: string): void {
 }
 
 /** Clears a superseded fetch's own `loading` placeholder so the stable_id
- * reads back as never-requested (`ensureAnlz` then treats it as a miss and
- * fetches under the current generation) instead of stuck forever. Only
- * clears the placeholder THIS call wrote: if a newer fetch for the same
- * stable_id already overwrote it - its own later `loading` marker, or an
- * already-settled `ready`/`error` result - that must survive untouched.
- *
- * A discarded fetch is not always a stale one nobody wants: `BrowserPanel`
- * only issues `ensureAnlz` from `selectRow`, and its reactive cache observer
- * merely consumes a ready entry rather than restarting a missing one. A
- * selected-but-unloaded row whose prefetch got superseded by a source switch
- * therefore never got fetched again until the row was reselected or an
- * unrelated deck load happened to request it. Restarting here when the
- * stable_id still has an active consumer closes that gap while the
- * generation check above still guarantees we only ever restart OUR OWN
- * stale placeholder, never a newer fetch that already overwrote it. */
+ * reads back as never-requested instead of stuck forever. Only clears the
+ * placeholder THIS call wrote - a newer fetch's later `loading` marker, or an
+ * already-settled result, must survive untouched. `BrowserPanel`'s reactive
+ * cache observer merely consumes a ready entry rather than restarting a
+ * missing one, so a selected-but-unloaded row whose prefetch got superseded
+ * would otherwise never refetch until reselected; restarting here while the
+ * stable_id still has an active consumer closes that gap. */
 function _discardSuperseded(stable_id: string, generation: number): void {
 	const entry = _cache[stable_id];
 	if (entry === undefined || entry.status !== 'loading' || entry.generation !== generation) return;
@@ -263,31 +243,39 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * due for refetch, so a consumer returning later (`ensureAnlz` via
  * `_dueForEnsureRefetch`) revives it with no special-casing on either
  * side. */
+/** True when `data`'s stamped source disagrees with the last CONFIRMED
+ * rbx-vs-own selection (`analysisSourceState.features.beatgrid`). `undefined`
+ * means no poll has confirmed one yet (cold mount) - nothing to disagree
+ * with. An RBX->OWN->RBX round trip inside one poll interval leaves
+ * `currentAnlzFetchGeneration()` unchanged to a straggler issued and settled
+ * entirely within that window, so a generation guard alone is not enough
+ * (discussion_r3975650988's class). Shared by `_publishAnlzResult`'s
+ * cache-write guard below and `fetchAnlzUntilSourceConfirmed`'s retry, so a
+ * direct-publication caller and the cache agree on one definition of "wrong
+ * source" (discussion_r3978049099 P1 BLOCKING). */
+function _disagreesWithConfirmedSource(data: AnlzData): boolean {
+	const confirmed = analysisSourceState.features.beatgrid;
+	return confirmed !== undefined && confirmed !== data.beatgrid_source;
+}
+
+/** Positive form of `_disagreesWithConfirmedSource`, exported for
+ * `refreshHotCues` (audio-engine.svelte.ts)'s own fast-path check. */
+export function anlzMatchesConfirmedSource(data: AnlzData): boolean {
+	return !_disagreesWithConfirmedSource(data);
+}
+
 /**
- * `alreadyScoped` carries a SECOND meaning here beyond "reconcile inline"
- * (its meaning for the sink call below and for `afterBeatgridUpgrade`):
- * it also means "this payload's source is already trusted". The one `true`
- * caller, `refreshAnalysisSourceDecks`, is itself what is about to advance
- * `analysisSourceState.features.beatgrid` to match `data.beatgrid_source`
- * once it returns - comparing its own payload against the not-yet-updated
- * mirror would reject the very write that is about to make it current. Every
- * other caller (the ambient retry timer, `ensureAnlz`, `refreshHotCues`) can
- * race a source switch that already confirmed a different selection: an
- * RBX->OWN->RBX round trip inside one poll interval leaves
- * `currentAnlzFetchGeneration()` looking unchanged to a straggling fetch
- * issued and settled entirely within that window, so the generation guard
- * alone lets a since-reverted response reach the shared cache and get served
- * to the next deck load via `isAnlzEntryUsable` with no later poll able to
- * detect or undo it (discussion_r3975650988's same class, applied to the
- * cache rather than an already-loaded deck). `undefined` means no poll has
- * confirmed a selection yet (cold mount): nothing to disagree with.
+ * `alreadyScoped` means "this payload's source is already trusted", not just
+ * "reconcile inline". The one `true` caller, `refreshAnalysisSourceDecks`, is
+ * itself about to advance `analysisSourceState.features.beatgrid` to match
+ * `data.beatgrid_source` once it returns - comparing its own payload against
+ * the not-yet-updated mirror would reject the very write that is about to
+ * make it current. Every other caller can race a switch that already
+ * confirmed a different selection and must be rejected via
+ * `_disagreesWithConfirmedSource` above.
  */
 function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = false): void | Promise<void> {
-	if (
-		!alreadyScoped &&
-		analysisSourceState.features.beatgrid !== undefined &&
-		analysisSourceState.features.beatgrid !== data.beatgrid_source
-	) {
+	if (!alreadyScoped && _disagreesWithConfirmedSource(data)) {
 		// Discard, do not restart: `analysisSourceState.features.beatgrid` stays
 		// at the OLD value for the whole switch (advanced only once
 		// `refreshAnalysisSourceDecks` itself returns), so restarting here the
@@ -380,16 +368,13 @@ export function notifyGridlessSettlement(
 }
 
 /** True when a loaded deck's own `$effect` (WaveRow.svelte) should call
- * `ensureAnlz` again for it: no anlz published yet, or the anlz that IS
- * published is still the retryable class. A deck load's own
- * `fetchAnlzForDeckLoad` never blocks the load waiting one out and can
- * publish a retryable payload straight away if the decoder is saturated (up
- * to 180s of admission/slot saturation per the backend's own ceiling, far
- * longer than one 2s cooldown) - `deck.anlz !== null` alone must not read as "done" in
- * that case, or the deck stays blank with no further retry (Codex finding,
- * issue #735 follow-up, discussion_r3907741366). An `anlz_error` IS terminal
- * - it means the fetch itself failed or the backend gave an explicit
- * permanent answer, neither of which this retryable class covers. */
+ * `ensureAnlz` again for it: no anlz published yet, or the published anlz is
+ * still the retryable class (decoder saturated, up to 180s per the backend's
+ * own ceiling, far longer than one 2s cooldown) - `deck.anlz !== null` alone
+ * must not read as "done" then, or the deck stays blank with no further
+ * retry (Codex finding, issue #735 follow-up, discussion_r3907741366). An
+ * `anlz_error` IS terminal: the fetch failed or the backend gave an explicit
+ * permanent answer, neither covered by the retryable class. */
 export function deckAnlzNeedsFetch(anlz: AnlzData | null, anlz_error: string | null): boolean {
 	if (anlz_error !== null) return false;
 	if (anlz === null) return true;
@@ -397,30 +382,22 @@ export function deckAnlzNeedsFetch(anlz: AnlzData | null, anlz_error: string | n
 }
 
 /** Resolves the anlz a loaded deck's row should RENDER: the deck's own
- * published anlz if it is terminal (unchanged fast path for every normal
- * load), else the freshest cache entry for its stable_id if one exists,
- * else whatever the deck currently holds. `ensureAnlz`'s ambient retry
- * (driven by `deckAnlzNeedsFetch`) writes its result to the shared cache,
- * NOT to the deck - without preferring the cache here, a deck published
- * with a still-retryable anlz would keep re-fetching forever yet never
- * actually show the decode once it lands (Codex finding, issue #735
- * follow-up, discussion_r3907741366 - the display half of the same gap).
+ * published anlz if terminal (unchanged fast path), else the freshest cache
+ * entry for its stable_id if one exists, else whatever the deck holds. The
+ * ambient retry (`deckAnlzNeedsFetch`) writes to the shared cache, NOT the
+ * deck, so without preferring the cache here a still-retryable deck would
+ * keep re-fetching forever yet never show the decode once it lands (issue
+ * #735 follow-up, discussion_r3907741366).
  *
  * A real cache-entry beatgrid always wins over the deck's own: the cache's
- * ambient waveform retry hits the same `/anlz` endpoint, so once ITS payload
- * carries a real grid (e.g. a rekordbox mapping landed and the retry raced
- * ahead of the engine's own PARITY-10 upgrade fetch) that grid is at least as
- * fresh as whatever the deck already holds, and must not be discarded in
- * favor of a possibly-stale fallback one (discussion_r3916394792).
- *
- * Only when the cache entry does NOT yet have a real grid does the deck's own
- * beatgrid win: PARITY-10's deferred upgrade merges the analysis-derived grid
- * into `deck.anlz` without touching `local_waveform`, so a track whose
- * waveform decode is still retryable keeps reporting retryable here forever
- * even after its grid has landed. Preferring the cache entry WHOLESALE in
- * that case would silently drop the already-merged grid every waveform
- * refetch - quantize and Beat Sync read the engine's `deck.anlz`, so this
- * row's paint must never disagree with them about whether a grid exists. */
+ * ambient retry hits the same `/anlz` endpoint, so once ITS payload carries a
+ * real grid it is at least as fresh as the deck's and must not be discarded
+ * for a possibly-stale fallback (discussion_r3916394792). Only when the
+ * cache entry has no real grid does the deck's own win: PARITY-10's deferred
+ * upgrade merges the analysis-derived grid into `deck.anlz` without
+ * touching `local_waveform`, so preferring the cache WHOLESALE there would
+ * silently drop an already-merged grid - quantize and Beat Sync read
+ * `deck.anlz`, so this row's paint must never disagree with them. */
 export function resolveDisplayedAnlz(
 	deckAnlz: AnlzData | null,
 	stable_id: string | null
@@ -437,30 +414,21 @@ export function resolveDisplayedAnlz(
 /** Fetches /anlz for a deck load and publishes whatever it settles on into
  * the shared cache. A deck load needs a terminal-ish answer PROMPTLY to
  * publish into `st.anlz` - it cannot block the load out waiting for a
- * decoder to free up (audio-engine's "candidate deck transaction is
- * incomplete" invariant forbids leaving anlz null), so this returns the
- * FIRST fetch's result even if it is still the retryable class (Codex
- * finding, issue #735 follow-up, discussion_r3907610439).
+ * decoder to free up, so this returns the FIRST fetch's result even if it is
+ * still the retryable class (Codex finding, issue #735 follow-up,
+ * discussion_r3907610439). A retryable result is not abandoned there:
+ * `_publishAnlzResult`'s own ambient self-schedule keeps retrying this
+ * stable_id every cooldown until a terminal answer lands (issue #735
+ * follow-up, discussion_r3907741366) - this function must not ALSO hand-roll
+ * a second delayed retry, or the two race the same cooldown and double-fire
+ * (discussion_r3907928251 fix review).
  *
- * A retryable result is not abandoned there: `_publishAnlzResult`'s own
- * ambient self-schedule keeps retrying this stable_id every cooldown until
- * a terminal answer lands, and `deckAnlzNeedsFetch` + `resolveDisplayedAnlz`
- * pick that up for the deck's own render once it does (issue #735
- * follow-up, discussion_r3907741366). This function used to ALSO hand-roll
- * its own single delayed retry here - once the ambient self-schedule was
- * added, that second mechanism raced it for the exact same cooldown from
- * the exact same starting instant and double-fired the retry (Codex
- * finding, issue #735 follow-up, discussion_r3907928251 fix review); one
- * retry mechanism for a given stable_id, not two.
- *
- * Same generation guard as `_fetchAndPublish`, but a deck-load candidate
- * cannot merely discard the cache write: `load()` would still publish its
- * returned payload after audio decoding. Re-fetch until the result belongs to
- * the current generation, so a source switch during a load never publishes a
- * superseded grid onto that deck (discussion_r3923866060). Retries via
- * `fetchAnlzUntilCurrentGeneration` below. */
+ * Retries via `fetchAnlzUntilSourceConfirmed` below rather than a plain
+ * generation check: `load()` cannot merely discard a stale cache write the
+ * way `_fetchAndPublish` does, since it still publishes its returned payload
+ * after audio decoding regardless. */
 export async function fetchAnlzForDeckLoad(stable_id: string): Promise<AnlzData> {
-	const data = await fetchAnlzUntilCurrentGeneration(() => fetchAnlz(stable_id));
+	const data = await fetchAnlzUntilSourceConfirmed(() => fetchAnlz(stable_id));
 	_publishAnlzResult(stable_id, data);
 	return data;
 }
@@ -470,18 +438,34 @@ export async function fetchAnlzForDeckLoad(stable_id: string): Promise<AnlzData>
  * analysis-source switch (PARITY-02) already bumped it and wiped the shared
  * cache (anlz-fetch-generation.ts) - publishing a stale answer over a
  * just-wiped entry would repopulate it with pre-switch bytes even though
- * `analysisSourceState` already recorded the new source, a permanent split
- * invisible to `_decksDisagreeWith`'s own-vs-own comparison
- * (discussion_r3973991964 P1 BLOCKING). Shared by `fetchAnlzForDeckLoad`
- * above and `RbAudioEngine.refreshHotCues` (audio-engine.svelte.ts), which
- * used to hand-roll this loop separately - the audio-engine copy was the one
- * missing the guard until the finding above. */
+ * `analysisSourceState` already recorded the new source
+ * (discussion_r3973991964 P1 BLOCKING). Shared by `fetchAnlzUntilSourceConfirmed`
+ * below. */
 export async function fetchAnlzUntilCurrentGeneration<T>(fetch: () => Promise<T>): Promise<T> {
 	for (;;) {
 		const generation = currentAnlzFetchGeneration();
 		const data = await fetch();
 		if (generation !== currentAnlzFetchGeneration()) continue;
 		return data;
+	}
+}
+
+/** Like `fetchAnlzUntilCurrentGeneration`, but also retries when the answer's
+ * stamped source disagrees with the confirmed selection. The generation guard
+ * alone only catches a switch THIS client itself drove
+ * (`refreshAnalysisSourceDecks` bumps it) - an external client's direct PUT
+ * to /api/v1/analysis/source never touches this client's generation counter,
+ * so a straggling direct-publication fetch (`fetchAnlzForDeckLoad`,
+ * `RbAudioEngine.refreshHotCues`) could settle stamped with a since-reverted
+ * source with the generation guard seeing nothing wrong.
+ * `_publishAnlzResult` already discards such a write from the shared cache,
+ * but both callers used to return/install the rejected payload onto their
+ * own deck regardless of that rejection (discussion_r3978049099 P1
+ * BLOCKING). */
+export async function fetchAnlzUntilSourceConfirmed(fetch: () => Promise<AnlzData>): Promise<AnlzData> {
+	for (;;) {
+		const data = await fetchAnlzUntilCurrentGeneration(fetch);
+		if (anlzMatchesConfirmedSource(data)) return data;
 	}
 }
 
@@ -518,17 +502,11 @@ export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
 
 /** Overwrites the shared cache entry with a known-fresh /anlz payload,
  * without triggering a fetch of its own. `refreshHotCues` (audio-engine)
- * calls this after a hot-cue save/clear/restore: it already fetches a fresh
- * `/anlz` for the deck's OWN state, but that fetch bypassed this module
- * (`fetchAnlz` direct, not `fetchAnlzForDeckLoad`/`ensureAnlz`), so the
- * SHARED cache entry stayed at its pre-mutation value. `load()`'s cache hit
- * (`isAnlzEntryUsable`) has no freshness check beyond "ready", so a later
- * reload of the same track - on this deck or another - would reuse that
- * stale entry: the hot cue bank (always a live fetch) would show the new
- * cue while the waveform (from the stale cached anlz) would not. Same
- * failure shape as issue #877's reported bug, just triggered by a reload
- * instead of the original paint defect. Returns the sink's settlement;
- * only `refreshAnalysisSourceDecks` below awaits it. */
+ * calls this after a hot-cue save/clear/restore: its own fresh `/anlz` fetch
+ * bypasses this module, so without this call the SHARED cache entry stays at
+ * its pre-mutation value and a later reload elsewhere reuses stale bytes -
+ * issue #877's failure shape, triggered by a reload. Returns the sink's
+ * settlement; only `refreshAnalysisSourceDecks` below awaits it. */
 export function refreshAnlzCacheEntry(
 	stable_id: string,
 	data: AnlzData,
@@ -537,42 +515,31 @@ export function refreshAnlzCacheEntry(
 	return _publishAnlzResult(stable_id, data, alreadyScoped);
 }
 
-/** Evicts a cache entry outright, so it reads back as never-requested
- * (`getAnlzEntry` -> undefined, `ensureAnlz` treats it as a miss). Used by
- * `refreshHotCues` (audio-engine) when one of its two post-write GETs fails:
- * `Promise.all` rejects before `refreshAnlzCacheEntry` runs, so without this
- * the pre-mutation entry stays 'ready' and `isAnlzEntryUsable` keeps serving
- * it to a later load() forever, reaching issue #877's same stale-waveform
- * shape from a failed-refresh path instead of the original paint defect
- * (discussion_r3918817422). */
+/** Evicts a cache entry outright, so it reads back as never-requested. Used
+ * by `refreshHotCues` when one of its two post-write GETs fails: without
+ * this the pre-mutation entry stays 'ready' and keeps serving stale bytes to
+ * a later load() forever (discussion_r3918817422). */
 export function invalidateAnlzCacheEntry(stable_id: string): void {
 	delete _cache[stable_id];
 }
 
-/** Evicts every cached entry outright, so each reads back as never-requested
- * exactly like `invalidateAnlzCacheEntry`, all at once. Used when a change
- * invalidates a field embedded in EVERY track's /anlz payload rather than one
- * stable_id's - the PARITY-02 rbx-vs-own analysis source toggle changes which
- * beatgrid a fresh /anlz response carries for every track, not just whichever
- * ones happen to be cached at switch time, so a per-id invalidation loop at
- * the call site would miss any track not already cached and still serve it a
- * stale hit later (discussion_r3921666943). */
+/** Evicts every cached entry outright, all at once. Used when a change
+ * invalidates a field embedded in EVERY track's /anlz payload - the
+ * PARITY-02 rbx-vs-own toggle changes which beatgrid a fresh response
+ * carries for every track, so a per-id invalidation loop would miss any
+ * track not already cached and still serve it a stale hit later
+ * (discussion_r3921666943). */
 export function invalidateAllAnlzCacheEntries(): void {
 	for (const stable_id of Object.keys(_cache)) delete _cache[stable_id];
 }
 
 /** Evicts every READY entry whose stamped `beatgrid_source` disagrees with
- * `wantedSource`, leaving one that already agrees (or is still loading/error)
- * untouched. Returns whether anything was evicted.
- *
- * `refreshAnalysisSourceDecks` only runs when a LOADED deck disagrees with
- * the new source (`_decksDisagreeWith`, analysis-source.svelte.ts) - a track
- * merely prefetched by library browsing (`ensureAnlz`, never loaded onto a
- * deck) is invisible to that check, so a switch with no loaded deck to
- * disagree left such an entry cached under the OLD source indefinitely. The
- * next deck that loads that track then gets an `isAnlzEntryUsable` cache HIT
- * on stale bytes even though the toggle already reports the new source
- * (discussion_r3973991969 P1 BLOCKING). */
+ * `wantedSource`, leaving an agreeing (or still loading/error) entry
+ * untouched. Returns whether anything was evicted. A track merely prefetched
+ * by library browsing is invisible to `refreshAnalysisSourceDecks`'s own
+ * loaded-deck check, so a switch with no loaded deck to disagree left such an
+ * entry cached under the OLD source indefinitely (discussion_r3973991969 P1
+ * BLOCKING). */
 export function evictAnlzCacheEntriesServingOtherSource(
 	wantedSource: 'rekordbox' | 'own'
 ): boolean {
@@ -604,7 +571,11 @@ export function refreshAnalysisSourceDecks(
 			invalidateAllAnlzCacheEntries,
 			refreshAnlzCacheEntry,
 			notifyGridlessSettlement,
-			fetchAnlzBypassingHttpCache
+			fetchAnlzBypassingHttpCache,
+			getReadyAnlz: (stable_id) => {
+				const entry = getAnlzEntry(stable_id);
+				return isAnlzEntryUsable(entry) ? entry.data : null;
+			}
 		},
 		isSuperseded
 	);

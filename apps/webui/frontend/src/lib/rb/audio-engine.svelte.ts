@@ -115,9 +115,10 @@ import {
 } from '$lib/rb/api-rb';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
+	anlzMatchesConfirmedSource,
 	currentAnlzFetchGeneration,
 	fetchAnlzForDeckLoad,
-	fetchAnlzUntilCurrentGeneration,
+	fetchAnlzUntilSourceConfirmed,
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
 	invalidateAnlzCacheEntry,
@@ -3041,14 +3042,17 @@ class RbAudioEngine implements AudioEngine {
 			throw err;
 		});
 		// A source switch (PARITY-02) mid-flight can supersede the fetch above;
-		// re-run it under the shared guard (fetchAnlzUntilCurrentGeneration,
+		// re-run it under the shared guard (fetchAnlzUntilSourceConfirmed,
 		// anlz-cache.svelte.ts) rather than publish a superseded grid
-		// (discussion_r3973991964 P1 BLOCKING). Hot-cue slots are not
+		// (discussion_r3973991964 P1 BLOCKING). Also re-checked here on the fast
+		// path (anlzMatchesConfirmedSource): the generation counter alone misses
+		// an EXTERNAL client's direct source toggle, which never bumps it
+		// (discussion_r3978049099 P1 BLOCKING). Hot-cue slots are not
 		// source-dependent, so the ones already fetched stay valid either way.
 		const fresh =
-			generation === currentAnlzFetchGeneration()
+			generation === currentAnlzFetchGeneration() && anlzMatchesConfirmedSource(initialFresh)
 				? initialFresh
-				: await fetchAnlzUntilCurrentGeneration(() => fetchAnlzBypassingHttpCache(stableId));
+				: await fetchAnlzUntilSourceConfirmed(() => fetchAnlzBypassingHttpCache(stableId));
 		if (st.stable_id !== stableId) return; // deck was swapped mid-request
 		refreshAnlzCacheEntry(stableId, fresh);
 		st.anlz = fresh;

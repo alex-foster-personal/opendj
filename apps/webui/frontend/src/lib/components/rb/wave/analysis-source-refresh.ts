@@ -47,6 +47,17 @@ export interface AnalysisSourceRefreshPorts {
 		data: AnlzData,
 		alreadyScoped?: boolean
 	) => void | Promise<void>;
+	/** Reads the CURRENT shared cache entry for a track, or null if none is
+	 * ready. Preferred over an arbitrary holder's `decks[deck].anlz` when
+	 * merging below: a duplicate-holder track (same track loaded on two
+	 * decks) can have a hot-cue write land on the SECOND holder while this
+	 * refresh's own fetches are still staged, and that write reaches the
+	 * shared cache (refreshHotCues always calls refreshAnlzCacheEntry)
+	 * before it reaches every OTHER holder's own `.anlz`. Picking the first
+	 * holder found by `holders.find` as the sole base would silently copy
+	 * its now-stale cues over both the fresher deck and the cache
+	 * (discussion_r3978049105 P1 BLOCKING). */
+	getReadyAnlz: (stable_id: string) => AnlzData | null;
 	/** Routed through the ports too, not imported straight from
 	 * `$lib/rb/api-rb` here: `anlz-cache.svelte.ts` already imports that
 	 * module for `fetchAnlz`/`RbApiError`, and a second, separate importer
@@ -224,8 +235,12 @@ export async function refreshAnalysisSourceDecks(
 	// instead of letting this call's slower-settling fetch clobber a faster
 	// cue write with `decks[deck].anlz = fresh`.
 	const merged = staged.map(({ stableId, holders, fresh, track }) => {
+		// The shared cache, not an arbitrary holder, is the freshest known base
+		// for a track with more than one loaded deck (see `getReadyAnlz`'s own
+		// docstring above for the race this closes). Only falls back to a
+		// holder's own `.anlz` when the cache has nothing for this track yet.
 		const liveHolder = holders.find((deck) => decks[deck].stable_id === stableId);
-		const base = liveHolder === undefined ? null : decks[liveHolder].anlz;
+		const base = ports.getReadyAnlz(stableId) ?? (liveHolder === undefined ? null : decks[liveHolder].anlz);
 		const anlz: AnlzData =
 			base === null
 				? fresh
