@@ -1,0 +1,808 @@
+name: Periodic checks
+
+# The tier that runs OFF the per-PR path (DEVOPS-01..03).
+#
+# Policy, with one row per check and the reasoning behind each cadence:
+# docs/ops/periodic-checks.md. Ledger issue: #1492.
+#
+# WHY THIS EXISTS. Per-PR CI is deliberately thin (the maintainer, Fri 28 Aug 2026:
+# momentum over ceremony). The full pytest suite moved to full-ci.yml behind
+# workflow_dispatch, the unreliable webkit tests moved to a nightly tier, and
+# docs-only PRs stopped triggering CI at all. Nothing then watched where those
+# checks landed, and it showed. Measured Tue 8 Sep 2026:
+#
+#   full-ci.yml       had NEVER been run, in the 11 days since it was created
+#   e2e extended      had failed eight nights running, always at the same step,
+#                     with the blocking gate job green each of those nights
+#   windows-parity    had NEVER been run
+#
+# So this workflow's job is not only to RUN things. It is to make the result
+# LAND somewhere a human sees without going to look: one comment per window on
+# the ledger issue, pass/fail per row, plus the conclusion of the scheduled
+# workflows that run on their own clock.
+#
+# THE MERGE WINDOW. `merges:50` is derived, never stored as a counter:
+#   last_sha <- newest ledger comment carrying <!-- periodic-checks state sha=... -->
+#   count    <- git rev-list --count --first-parent {last_sha}..{head}
+# FIRST-PARENT, not the compare API's total_commits. total_commits counts every
+# commit reachable from head and not from base, which is not the number of
+# integrations: this repo lands non-squashed merges (5 of the last 30 on main,
+# Tue 8 Sep 2026; PR #1062 brought 18 commits in for ONE merge), so a few such
+# PRs cross a 50 threshold after a few merges and the cadence stops meaning what
+# it says. main's first-parent chain is exactly one entry per integration: one
+# per merge commit, one per squash. No REST endpoint exposes a first-parent
+# count, so this is computed with git, over REAL history -- runner checkouts
+# default to depth 1 and rev-list clamps silently on a shallow clone, so the job
+# checks out with fetch-depth: 0 and FAILS if the repository is still shallow
+# rather than reporting a small wrong number.
+# A missing marker, a base no longer in history, or a base that is not an
+# ancestor of the head being measured reports `bootstrap` and RUNS rather than
+# computing a small wrong number and disabling this workflow forever.
+#
+# THE WEEKLY FLOOR (policy PR #1494). The merge count alone can starve a quiet
+# window forever: a slow week with fewer than 50 merges never runs the full
+# suite, the bundle trend, or the perf bench, and a regression sits unmeasured
+# until merge volume happens to pick back up. `elapsed_days` -- wall-clock days
+# since the SAME state-marker comment's own `created_at`, not a stored counter
+# -- is a second, independent OR arm: the window also runs once 7 days have
+# passed since the last one, regardless of how few merges landed. Recorded
+# alongside the SHA is `threshold=<N>`, the merge threshold that was ACTUALLY
+# in force for that window (default or a workflow_dispatch override), so a
+# later read of the ledger comment never has to assume which value produced
+# a given run.
+
+on:
+  schedule:
+    # 05:40 UTC. Deliberately AFTER e2e.yml's 04:17 nightly so the report step
+    # can read that run's conclusion, and off the hour where GitHub's scheduler
+    # queues are busiest.
+    - cron: "40 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run every row regardless of the merge count"
+        type: boolean
+        default: false
+      threshold:
+        description: "Merges required to trigger a window (default 50)"
+        type: string
+        required: false
+
+concurrency:
+  # One window at a time. Two overlapping windows would both read the same
+  # state SHA and post two comments claiming the same merges.
+  group: periodic-checks
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+env:
+  LEDGER_ISSUE: "1492"
+  DEFAULT_THRESHOLD: "50"
+  # Self-hosted runners persist the workspace between jobs, so a .pyc written
+  # by one job is a file the next one may not own. Repo-wide rule, enforced by
+  # tests/quality/test_workspace_ownership_hygiene.py.
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Decide whether this window runs, and name the merges it covers.
+  # Cheap (three API calls) and always runs, so a skipped window is still
+  # visible as a run with a reason rather than as silence.
+  # ---------------------------------------------------------------------------
+  window:
+    name: merge window
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.compute.outputs.run }}
+      count: ${{ steps.compute.outputs.count }}
+      base: ${{ steps.compute.outputs.base }}
+      base_at: ${{ steps.compute.outputs.base_at }}
+      head: ${{ steps.compute.outputs.head }}
+      threshold: ${{ steps.compute.outputs.threshold }}
+      elapsed_days: ${{ steps.compute.outputs.elapsed_days }}
+      reason: ${{ steps.compute.outputs.reason }}
+    steps:
+      # Real history: the merge count below is a first-parent walk, and
+      # rev-list clamps silently on a shallow clone. `filter: blob:none` keeps
+      # it cheap -- this job reads commit topology only, never file content.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          clean: true
+
+      - name: Compute the window
+        id: compute
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          FORCE: ${{ inputs.force }}
+          THRESHOLD_IN: ${{ inputs.threshold }}
+        run: |
+          set -euo pipefail
+          threshold="${THRESHOLD_IN:-$DEFAULT_THRESHOLD}"
+          head="$(gh api "repos/${REPO}/commits/main" --jq .sha)"
+          [ -n "$head" ] || { echo "::error::could not resolve main"; exit 1; }
+
+          # Every check below is pinned to this head and the report records it
+          # as the next state marker, so it must be present locally before
+          # anything is counted against it.
+          git fetch --no-tags --quiet origin main
+          [ "$(git rev-parse --is-shallow-repository)" = "false" ] || {
+            echo "::error::checkout is shallow; a first-parent count would clamp silently"
+            exit 1
+          }
+          git cat-file -e "${head}^{commit}" 2>/dev/null || {
+            echo "::error::main head ${head} is absent from this checkout after fetch"
+            exit 1
+          }
+
+          # The state marker lives in the newest ledger comment that carries
+          # one. `gh api --jq` renders a string result as line-based plain
+          # text (`gh help formatting`), so a multiline .body prints across
+          # several physical lines rather than one line with escaped
+          # newlines -- a shell-side `grep -F ... | tail -1` on that output
+          # keeps only the physical line the marker sits on, silently
+          # dropping the created_at prefix concatenated onto the FIRST line
+          # of the body, then hands `jq -r '.'` a bare, non-JSON
+          # HTML-comment line, which exits under `set -e` on every run after
+          # the bootstrap comment exists. Do the marker match AND the
+          # newest-wins selection inside jq instead (select() finds every
+          # comment carrying the marker, `.[-1]` takes the newest -- issue
+          # comments come back oldest-first and --paginate preserves that
+          # order), and carry the body out through the pipe as base64 so the
+          # combined created_at+body line can never contain a real newline.
+          # `--paginate` alone applies `--jq` to EACH PAGE separately, so once
+          # the ledger has more than one page of comments this prints one
+          # selected record PER PAGE -- `combined` then holds several lines
+          # and the `base64 -d` below fails under `set -e`, taking out every
+          # later periodic window. `--slurp` collects every page into one
+          # array of arrays first (`gh help api` -> "Combine "paginated
+          # results into a single array"); `.[][]` flattens it back to a
+          # single oldest-first stream before `.[-1]` picks the newest.
+          # This is `gh api` reading the REST endpoint directly, not `gh`'s
+          # own `--json` flag: the response mirrors GitHub's REST schema
+          # verbatim, which is snake_case (`created_at`), not the camelCase
+          # `createdAt` GraphQL and gh's `--json` output use.
+          # Restricted to the workflow's own bot identity: the `contains()`
+          # check alone accepts the marker from ANY account able to comment
+          # on this public issue, and `.[-1]` takes the newest match
+          # regardless of author. Without the author select, a comment
+          # posted by anyone else carrying this HTML marker is picked over
+          # the real state, letting them repeatedly reset both the merge
+          # base and created_at and suppress every periodic window
+          # indefinitely. `report` below always posts via `GH_TOKEN:
+          # secrets.GITHUB_TOKEN`, which authors as exactly this login, so
+          # this never excludes the workflow's own state.
+          combined="$(gh api --paginate --slurp "repos/${REPO}/issues/${LEDGER_ISSUE}/comments" \
+                        --jq '[.[][] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- periodic-checks state sha="))]
+                              | if length > 0 then (.[-1].created_at + " " + (.[-1].body | @base64)) else empty end' \
+                      || true)"
+
+          base=""
+          base_at=""
+          if [ -n "$combined" ]; then
+            # created_at is a fixed-width ISO-8601 timestamp with no space in
+            # it, so splitting on the FIRST space is unambiguous regardless
+            # of what the (base64-encoded) body contains.
+            base_at="${combined%% *}"
+            base_body="$(printf '%s' "${combined#* }" | base64 -d)"
+            # NOT anchored on the trailing ` -->`: the marker now also
+            # carries `threshold=<N>` before the comment closes, and an
+            # anchor requiring "-->" right after the 40 hex chars would stop
+            # matching the instant that field was added.
+            base_hits="$(printf '%s' "$base_body" \
+                      | grep -oE '<!-- periodic-checks state sha=[0-9a-f]{40}' \
+                      | grep -oE '[0-9a-f]{40}' || true)"
+            # Exactly one hit, not zero and not more than one: a reply
+            # quoting the bot's own comment (or any other accidental repeat)
+            # makes the body contain the marker twice, and a multi-line
+            # `base` would corrupt every git command below that treats it as
+            # a single ref, rather than failing loudly into bootstrap the
+            # way a genuinely absent marker already does. `base` stays ""
+            # (set above) for anything but a single hit.
+            base_hit_count="$(printf '%s' "$base_hits" | grep -c . || true)"
+            if [ "$base_hit_count" = "1" ]; then
+              base="$base_hits"
+            fi
+          fi
+
+          # Wall-clock days since that SAME comment was posted, independent of
+          # merge count. base_at is only ever empty together with base
+          # (bootstrap), so elapsed_days=-1 there means "not applicable", the
+          # same convention `count=-1` already uses.
+          elapsed_days="-1"
+          if [ -n "$base_at" ]; then
+            base_epoch="$(date -u -d "$base_at" +%s)"
+            now_epoch="$(date -u +%s)"
+            elapsed_days=$(( (now_epoch - base_epoch) / 86400 ))
+          fi
+
+          if [ -z "$base" ]; then
+            reason="bootstrap: no state marker on issue #${LEDGER_ISSUE}"
+            count="-1"
+            run="true"
+          else
+            # An UNRESOLVABLE base is not a small count. If the recorded SHA
+            # was rewritten out of history, or is no longer an ancestor of the
+            # head being measured, reporting that as "0 merges, skip" would
+            # silently disable this workflow forever. Bootstrap instead,
+            # loudly. Both arms are negative controls: a base that is absent
+            # must report absent, never resolve to a small number.
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              reason="state SHA ${base} is absent from history (history rewrite?); bootstrapping"
+              count="-1"
+              run="true"
+            elif ! git merge-base --is-ancestor "$base" "$head"; then
+              reason="state SHA ${base} is not an ancestor of ${head:0:9} (history rewrite?); bootstrapping"
+              count="-1"
+              run="true"
+            elif ! count="$(git rev-list --count --first-parent "${base}..${head}")"; then
+              reason="could not count integrations ${base:0:9}..${head:0:9}; bootstrapping"
+              count="-1"
+              run="true"
+            elif [ "$FORCE" = "true" ]; then
+              reason="forced by workflow_dispatch (${count} merges since ${base:0:9}, ${elapsed_days}d elapsed)"
+              run="true"
+            elif [ "$count" -ge "$threshold" ]; then
+              reason="${count} merges since ${base:0:9} (>= threshold ${threshold})"
+              run="true"
+            elif [ "$elapsed_days" -ge 7 ]; then
+              reason="${elapsed_days}d elapsed since ${base:0:9} (>= 7d weekly floor); only ${count} merges (threshold ${threshold})"
+              run="true"
+            else
+              reason="only ${count} merges since ${base:0:9} (threshold ${threshold}), ${elapsed_days}d elapsed (< 7d weekly floor)"
+              run="false"
+            fi
+          fi
+
+          {
+            echo "run=${run}"
+            echo "count=${count}"
+            echo "base=${base}"
+            echo "base_at=${base_at}"
+            echo "head=${head}"
+            echo "threshold=${threshold}"
+            echo "elapsed_days=${elapsed_days}"
+            echo "reason=${reason}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "### Periodic checks window" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- run: \`${run}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- reason: ${reason}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- head: \`${head}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Row 1: the full pytest suite, including the slow product-edge suites the
+  # per-PR fast lane deselects with --ignore (tests/analysis, tests/vocals,
+  # tests/sync/usb, tests/sets). Reused from full-ci.yml rather than copied, so
+  # a dispatched full run and a periodic one are provably the same suite.
+  # ---------------------------------------------------------------------------
+  full-suite:
+    name: full pytest suite
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    uses: ./.github/workflows/full-ci.yml
+    # Pinned to the recorded head for the same reason as the checkouts below:
+    # the reusable workflow otherwise checks out the event's ref, which may
+    # already have moved past the SHA this window reports on.
+    with:
+      ref: ${{ needs.window.outputs.head }}
+    permissions:
+      contents: read
+
+  # ---------------------------------------------------------------------------
+  # Row 4 (trend half): the per-surface ceilings are already a per-PR gate. What
+  # per-PR pass/fail does NOT give is the absolute numbers over time, so this
+  # records them. It still fails on a breach: a measurement lane that cannot go
+  # red is not a check.
+  # ---------------------------------------------------------------------------
+  bundle-trend:
+    name: bundle size trend
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 20
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+
+      # The SHA the window RECORDED, not the workflow event's ref: main can
+      # advance between the two, and the report persists the window head as
+      # the next state marker, so an unpinned checkout would mark commits
+      # covered that no check here ever executed.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.window.outputs.head }}
+          clean: true
+
+      # corepack BEFORE setup-node, so a pnpm shim exists when setup-node's
+      # `cache: pnpm` resolves the store. Same order as ci.yml's frontend job.
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          # Hosted-only. Self-hosted hosts share ONE pnpm store across every
+          # runner on the box, and a setup-node cache restore corrupted it
+          # (#1299). Enforced by tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production frontend
+        working-directory: apps/webui/frontend
+        run: pnpm build
+
+      - name: Measure and record
+        working-directory: apps/webui/frontend
+        run: |
+          set -euo pipefail
+          bash scripts/check-bundle-size.sh --json | tee "${RUNNER_TEMP}/bundle.json"
+          {
+            echo "### Bundle size"
+            echo ""
+            echo '```json'
+            cat "${RUNNER_TEMP}/bundle.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the measurement
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bundle-size-${{ needs.window.outputs.head }}
+          path: ${{ runner.temp }}/bundle.json
+          if-no-files-found: warn
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Row 5: the boot-burst perf bench, against docs/perf/performance-register.md.
+  # A MEASUREMENT lane: it prints medians and never fails on a threshold, so a
+  # red here means the harness broke, not that the app got slower. That is
+  # exactly what continue-on-error: false is protecting.
+  #
+  # Its fixture binds :8692, distinct from the e2e gate's fixed ports, so it
+  # does not contend with e2e.yml on a shared host.
+  # ---------------------------------------------------------------------------
+  perf-bench:
+    name: perf bench (boot burst)
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    env:
+      MDT_LIBRARY_MODE: local
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+      # 0 (the fixture default) measures raw loopback: the two-track burst
+      # comes back ~86ms, about 40x too small to resolve the production
+      # regression this bench exists to catch (per the Boot request window
+      # row in docs/perf/performance-register.md). 120 matches the declared
+      # per-request regime the 472->383ms #645 result was measured under, so
+      # a periodic PASS here is a real measurement, not noise dressed as one.
+      BOOT_BURST_LATENCY_MS: "120"
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+
+      # The SHA the window RECORDED, not the workflow event's ref: main can
+      # advance between the two, and the report persists the window head as
+      # the next state marker, so an unpinned checkout would mark commits
+      # covered that no check here ever executed.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.window.outputs.head }}
+          clean: true
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Install Python deps into the project venv
+        run: uv sync --extra dev --extra analysis
+
+      - name: Install frontend dependencies
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: apps/webui/frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Boot-burst bench
+        # The body of `just boot-burst-bench`, inlined: this job does not
+        # install `just`, and a missing `just` would read as a bench failure
+        # rather than as a missing tool. Keep in sync with the recipe.
+        working-directory: apps/webui/frontend
+        run: |
+          set -euo pipefail
+          pnpm exec svelte-kit sync
+          pnpm build
+          pnpm exec playwright test \
+            --config tests/e2e/playwright.boot-burst.config.ts \
+            2>&1 | tee "${RUNNER_TEMP}/boot-burst.log"
+          {
+            echo "### Boot-burst bench"
+            echo ""
+            echo '```'
+            tail -40 "${RUNNER_TEMP}/boot-burst.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench output
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: boot-burst-${{ needs.window.outputs.head }}
+          path: ${{ runner.temp }}/boot-burst.log
+          if-no-files-found: warn
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Row 9 (remote half): preview-branch drift. Cheap, no toolchain, so it runs
+  # every window regardless of the merge count.
+  #
+  # This half reads origin's ref ONLY. The authoritative half runs on the Air
+  # against the live worktree, and the script says so in its own output rather
+  # than letting a green here read as "the preview is fine".
+  # ---------------------------------------------------------------------------
+  preview-drift:
+    name: preview drift (remote refs)
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.drift.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # The SHA the window recorded; see the bundle job for why.
+          ref: ${{ needs.window.outputs.head }}
+          # git cherry compares patch ids across the whole divergence, so this
+          # needs real history, not a depth-1 clone.
+          fetch-depth: 0
+          clean: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Drift check
+        id: drift
+        run: |
+          set -uo pipefail
+          # NOT `... || true` followed by `$?`: after a pipeline or an
+          # `|| true`, `$?` reads 0 and the verdict is lost. scripts/
+          # shell_construct_lint.py bans that construct for exactly this
+          # reason. if/else captures the real code.
+          if python -m scripts.preview_drift_check --remote --fetch --json \
+               > drift.json 2> drift.err; then
+            code=0
+          else
+            code=$?
+          fi
+          cat drift.err >&2 || true
+          cat drift.json || true
+          verdict="$(python -c 'import json,sys; print(json.load(open("drift.json")).get("verdict","UNKNOWN"))' 2>/dev/null || echo UNKNOWN)"
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Preview drift (remote refs only)"
+            echo ""
+            echo "verdict: \`${verdict}\` (exit ${code})"
+            echo ""
+            echo '```json'
+            cat drift.json 2>/dev/null || echo '{}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # FOSSIL (exit 2) is a real finding but not a regression: it means the
+          # ref needs re-pointing, not that anyone shipped ungated code. It is
+          # reported in the ledger comment and does not red the workflow.
+          # DRIFT (1) and UNKNOWN (3) do.
+          case "$code" in
+            0|2) exit 0 ;;
+            *) exit "$code" ;;
+          esac
+
+  # ---------------------------------------------------------------------------
+  # One comment per window on the ledger issue (DEVOPS-03). This is the whole
+  # point: a scheduled run attached to no PR is invisible, which is how eight
+  # consecutive nightly failures went unnoticed.
+  #
+  # if: always() so a window that FAILS still records its state SHA. Without
+  # that, a red window would be re-measured from the same base forever and the
+  # count would grow without bound.
+  # ---------------------------------------------------------------------------
+  report:
+    name: ledger comment
+    needs: [window, full-suite, bundle-trend, perf-bench, preview-drift]
+    if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Post the window result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BASE: ${{ needs.window.outputs.base }}
+          BASE_AT: ${{ needs.window.outputs.base_at }}
+          HEAD: ${{ needs.window.outputs.head }}
+          COUNT: ${{ needs.window.outputs.count }}
+          THRESHOLD: ${{ needs.window.outputs.threshold }}
+          REASON: ${{ needs.window.outputs.reason }}
+          R_FULL: ${{ needs.full-suite.result }}
+          R_BUNDLE: ${{ needs.bundle-trend.result }}
+          R_PERF: ${{ needs.perf-bench.result }}
+          R_DRIFT: ${{ needs.preview-drift.result }}
+          V_DRIFT: ${{ needs.preview-drift.outputs.verdict }}
+        run: |
+          set -euo pipefail
+
+          # A job result is one of success / failure / cancelled / skipped. An
+          # allowlist, not a "not failure" test: cancelled, skipped and
+          # timed_out are NOT passes, and reading them as passes is how a board
+          # ends up green while nothing ran.
+          mark() {
+            case "$1" in
+              success) echo "PASS" ;;
+              failure) echo "FAIL" ;;
+              cancelled) echo "CANCELLED" ;;
+              skipped) echo "SKIPPED" ;;
+              "") echo "NOT RUN" ;;
+              *) echo "UNKNOWN ($1)" ;;
+            esac
+          }
+
+          # Row 2 runs on its own clock in e2e.yml, so its verdict is READ, not
+          # re-run. A workflow with no scheduled run at all reports NO RUNS
+          # rather than passing by absence.
+          #
+          # --repo is REQUIRED here: this job has no checkout, so gh has no
+          # repository to infer and the call dies with "failed to determine
+          # base repo". With stderr dropped and `|| true`, that read as "no
+          # scheduled runs" every window and hid the very nightly failures
+          # this row exists to surface. A FAILED QUERY is not a finding, so
+          # the two outcomes are now distinct and stderr is shown.
+          # `.[]`, not `.[0]`: on an empty array `.[0]` yields null and jq
+          # renders "in progress (null) null", a non-empty line for zero runs.
+          #
+          # `--created` is REQUIRED, not cosmetic: e2e.yml's own nightly clock
+          # is what this row reports on, and without a recency floor
+          # `--limit 1` returns the newest run EVER, scheduled or not skipped
+          # for days. That reads as a fresh PASS indefinitely once the
+          # schedule itself stops firing, which is exactly the silent-failure
+          # shape row 2 exists to catch. e2e.yml runs nightly at 04:17 UTC;
+          # a 48h floor tolerates one missed night without ever accepting a
+          # genuinely stale result as current.
+          #
+          # The cutoff is a full timestamp, not `+%F` (date-only): a
+          # date-only floor is midnight of that calendar date, not "48h ago",
+          # so at this workflow's 05:40 UTC start `+%F` on "2 days ago" is
+          # ~53h40m back and lets a third-night-old run still match. `+%FT%TZ`
+          # pins the floor to exactly 48h before this run started.
+          #
+          # `--status completed` is REQUIRED (r3974766506): without it,
+          # `--limit 1` can select the 04:17 run while it is STILL QUEUED OR
+          # RUNNING at this window's start, whose null conclusion rendered as
+          # "in progress" -- and then the NEXT window's `--limit 1` moves on
+          # to a newer scheduled run and never looks at that one again. A run
+          # that later fails after this window already reported "in
+          # progress" on it was then never revisited by any later window,
+          # exactly the silent-failure shape this row exists to catch.
+          # Restricting to completed runs means this row always reports the
+          # last run that actually FINISHED within the floor, so a run is
+          # only ever reported once it has a real conclusion to show, and
+          # nothing in flight gets silently abandoned.
+          #
+          # `--limit 30`, not `1` (r3974912528): `--status completed` alone
+          # still lets a FAILURE go unreported if two nightly runs complete
+          # between two windows -- night N is still running at this window's
+          # start (so `--status completed --limit 1` returns night N-1's
+          # PASS instead), night N then FAILS, and by the time the NEXT
+          # window runs, night N+1 has ALSO completed, so `--limit 1` returns
+          # N+1 and N's failure is never seen by any window. Fetching every
+          # completed run within the floor below (at most one a night, so
+          # even a month-long gap stays well under 30) and preferring the
+          # newest FAILURE over the newest PASS means a failure inside the
+          # floor is always surfaced, even if a later run already passed
+          # again.
+          #
+          # The floor itself is the PREVIOUS window's own timestamp
+          # (`BASE_AT`, the state marker comment's `created_at`), not a fixed
+          # 48h (r3975092357): this workflow's own cadence can go up to 7
+          # DAYS between windows (the weekly floor OR-arm above, PR #1494),
+          # so a fixed 48h floor left every night before the last 2 silently
+          # uncovered whenever a quiet week pushed windows further apart than
+          # that -- a failure on night 3 of a 7-night gap, later followed by
+          # a pass, aged out unseen by BOTH the window that missed it and
+          # every later one. Anchoring the floor to the actual last report
+          # closes that gap exactly, with no assumption about how far apart
+          # windows can get. `BASE_AT` is only empty together with `BASE` on
+          # a bootstrap window (no prior report to anchor to), where a 48h
+          # floor is a reasonable first measurement with nothing before it to
+          # miss.
+          e2e_created_floor="$(date -u -d '2 days ago' +%FT%TZ)"
+          if [ -n "${BASE_AT:-}" ]; then
+            e2e_created_floor="$(date -u -d "$BASE_AT" +%FT%TZ)"
+          fi
+
+          # r3975509887: `gh run list` only ever exposes the WHOLE RUN's
+          # conclusion, but e2e.yml's `extended` job runs `needs: gate` /
+          # `if: !cancelled()` -- ordered after `gate`, not gated on its
+          # success, specifically so the nightly full suite still runs (and
+          # can PASS) even when `gate` fails. Reading the run-level
+          # conclusion therefore reports `gate`'s pass/fail, not row 2's own
+          # subject, and can print a clean PASS for a night the extended
+          # suite never even completed, or a FAIL for a night it passed fine.
+          # `gh run list --json` has no per-job field at all (its own field
+          # list omits `jobs` entirely), so each candidate run needs a
+          # separate `gh api .../jobs` call to read the `extended` job's OWN
+          # conclusion. A run whose jobs listing has no `extended` job at all
+          # reads as "MISSING", not a pass -- absence is not success.
+          e2e_job_query_failed=""
+          if e2e_runs="$(gh run list --repo "$REPO" --workflow e2e.yml \
+                           --event schedule --status completed --limit 30 \
+                           --created ">=$e2e_created_floor" \
+                           --json databaseId,createdAt,url \
+                         2>e2e.err)"; then
+            e2e_candidates="[]"
+            while IFS=$'\t' read -r run_id created url; do
+              [ -n "$run_id" ] || continue
+              if job_conclusion="$(gh api "repos/$REPO/actions/runs/$run_id/jobs" \
+                                     --jq '.jobs[] | select(.name == "e2e extended (nightly)") | .conclusion' \
+                                   2>e2e_job.err)"; then
+                [ -n "$job_conclusion" ] || job_conclusion="MISSING"
+                e2e_candidates="$(jq -c --arg c "$job_conclusion" --arg t "$created" --arg u "$url" \
+                                    '. + [{"conclusion": $c, "createdAt": $t, "url": $u}]' <<<"$e2e_candidates")"
+              else
+                cat e2e_job.err >&2
+                e2e_job_query_failed=1
+                break
+              fi
+            done < <(jq -r '.[] | [(.databaseId|tostring), .createdAt, .url] | @tsv' <<<"$e2e_runs")
+          else
+            cat e2e.err >&2
+            e2e_job_query_failed=1
+          fi
+
+          if [ -n "$e2e_job_query_failed" ]; then
+            e2e_line="QUERY FAILED - this row was NOT measured (see run log)"
+          else
+            e2e_line="$(jq -r 'def fails: map(select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"));
+                                if length == 0 then empty else
+                                  ((fails | sort_by(.createdAt) | last) // (sort_by(.createdAt) | last))
+                                  | "\(.conclusion) (\(.createdAt)) \(.url)"
+                                end' <<<"$e2e_candidates")"
+            [ -n "$e2e_line" ] || e2e_line="NO COMPLETED SCHEDULED RUNS FOUND (or none within the last 2 days)"
+          fi
+
+          window_desc="${BASE:0:9}..${HEAD:0:9}"
+          [ -n "$BASE" ] || window_desc="bootstrap..${HEAD:0:9}"
+          merges="$COUNT"
+          [ "$COUNT" != "-1" ] || merges="unknown (bootstrap window)"
+
+          cat > comment.md <<EOF
+          ## Periodic check window \`${window_desc}\`
+
+          - merges in window: **${merges}**
+          - trigger: ${REASON}
+          - run: ${RUN_URL}
+
+          | Row | Check | Result |
+          |---|---|---|
+          | 1 | full pytest suite incl. slow markers | $(mark "$R_FULL") |
+          | 2 | e2e extended (own nightly clock) | ${e2e_line} |
+          | 4 | bundle size trend | $(mark "$R_BUNDLE") |
+          | 5 | perf bench (boot burst) | $(mark "$R_PERF") |
+          | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
+
+          Rows 3 and 8 and 10 and the Air-only dmg row: see
+          \`docs/ops/periodic-checks.md\`. A row absent from this table did not
+          run and must not be read as passing.
+
+          <!-- periodic-checks state sha=${HEAD} threshold=${THRESHOLD} -->
+          EOF
+
+          gh issue comment "$LEDGER_ISSUE" --repo "$REPO" --body-file comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"

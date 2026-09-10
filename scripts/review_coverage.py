@@ -252,9 +252,13 @@ def _collect_evidence(
     directly testable against real captured payload shapes, no network call
     or mock required.
 
-    Submitted reviews and inline review comments both carry `commit_id`, the
-    push each was left against, so those filter on plain equality. Issue
-    comments carry no such field, so they fall back to `_body_is_at_head`.
+    A submitted review's `commit_id` is the push it was left against, so it
+    filters on plain equality. An inline comment's `commit_id` is NOT: GitHub
+    carries it forward to every newer push its diff position still applies
+    to, so it filters on `original_commit_id`, and a comment without one
+    counts for nothing (PR #1717, Thu 10 Sep 2026: three older Codex comments
+    certified head f8f0cad79 while Codex's own review of it had failed).
+    Issue comments carry no SHA field, so they fall back to `_body_is_at_head`.
     """
     def wrote(payload: dict) -> bool:
         """Did `name` write this artifact? Codex is known by its bot login;
@@ -275,7 +279,7 @@ def _collect_evidence(
         submitted += 1
         if review.get("body"):
             bodies.append(review["body"])
-    comments = sum(1 for c in inline if wrote(c) and c.get("commit_id") == head_sha)
+    comments = sum(1 for c in inline if wrote(c) and c.get("original_commit_id") == head_sha)
     for comment in issue_comments:
         if not wrote(comment):
             continue

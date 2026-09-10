@@ -11,13 +11,23 @@
  * the STORAGE: this is the WHATWG Storage implementation, with its real
  * string coercion, its real key semantics and its real persistence file, not
  * a Map wrapper that agrees with whatever the test expects.
+ *
+ * The module under test arrives pre-bundled (`bundlePath`, written once by
+ * the caller's `before()`), not as a source path to compile here: three
+ * captures used to mean three identical esbuild recompiles of the same
+ * file, one per process, which is pure waste since none of them vary by
+ * capture - only the seeded storage does.
  */
-import { loadTypeScriptModule } from './load-typescript.mjs';
-
-const [, , storageKey, blobJson] = process.argv;
+const [, , storageKey, blobJson, bundlePath] = process.argv;
 
 localStorage.setItem(storageKey, blobJson);
 globalThis.window = { localStorage };
 
-const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
+// $state is an identity function under test - see load-typescript.mjs's
+// loadTypeScriptModule, which this mirrors for the pre-bundled path.
+globalThis.__musicDjToolsTestState = (value) => value;
+globalThis.__musicDjToolsTestState.snapshot = (value) =>
+	value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+
+const prefs = await import(bundlePath);
 process.stdout.write(JSON.stringify({ ...prefs.uiPrefs, __keys: Object.keys(prefs.uiPrefs) }));
