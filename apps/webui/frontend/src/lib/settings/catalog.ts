@@ -115,9 +115,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Compatible-only library filter',
 		group: 'library',
 		keywords: ['next', 'camelot', 'bpm', 'tab', 'suggest', 'compatible'],
-		title: 'Show only tracks compatible with the master deck',
+		title: 'Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)',
 		detail:
-			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the loaded/master reference (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
+			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the master, else playing, else any loaded with key and BPM (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
