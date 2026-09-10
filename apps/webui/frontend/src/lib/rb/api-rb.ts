@@ -17,6 +17,7 @@ import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
+import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
@@ -580,24 +581,33 @@ export async function listTracksHydrated(params: {
  * a library prefetch and a deck load do not double-hit the backend. */
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
-/** `bypassCache: true` forces a `no-store` network read and skips the
- * in-flight de-dup below: an authoritative recheck (a vendor mapping that
- * may have landed after the deck's own /anlz already served the empty
- * local payload, which the backend caches for an hour) must never be
- * satisfied by either cache. */
+/** The daemon's selected source is authoritative and can outlive this
+ * document, so the ordinary path never permits the browser's shared HTTP
+ * cache to reuse an /anlz payload from another tab or a prior reload, whose
+ * document-local generation might coincidentally be the same
+ * (discussion_r3923593660): `cache: 'no-store'` and the `gen` cache-buster
+ * (anlz-fetch-generation.ts) both apply unconditionally, and `gen` stays
+ * part of the in-flight key so a live source switch still splits concurrent
+ * requests within this document.
+ *
+ * `bypassCache: true` additionally skips the in-flight de-dup below: an
+ * authoritative recheck (a vendor mapping that may have landed after the
+ * deck's own /anlz already served the empty local payload) must never be
+ * handed a promise some unrelated in-flight call is already waiting on. */
 export async function fetchAnlz(
 	stable_id: string,
 	points = 38400,
 	bypassCache = false
 ): Promise<AnlzWithVocals> {
-	const key = `${stable_id}:${points}`;
+	const gen = currentAnlzFetchGeneration();
+	const key = `${stable_id}:${points}:${gen}`;
 	if (!bypassCache) {
 		const existing = _inflightAnlz.get(key);
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
-		bypassCache ? 'no-store' : undefined
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${gen}`,
+		'no-store'
 	).then((data) => {
 		vocalsOf(data);
 		return data;
@@ -612,21 +622,31 @@ export async function fetchAnlz(
 
 /** Like {@link fetchAnlz}, but for the one caller (`refreshHotCues`,
  * audio-engine) that cannot accept a browser-HTTP-cache hit: the backend
- * marks a decoded /anlz response `Cache-Control: public, max-age=3600`
- * (`rb_assets.py` `_CACHE_ANLZ`), so a plain `fetch` of the same URL within
- * that hour can be satisfied straight out of the HTTP cache with no network
- * round trip - "fresh" in name only, right after the mutation it's meant to
- * observe. `cache: 'reload'` forces the round trip and re-primes the HTTP
- * cache with the new response, so ordinary reads right after this one still
- * benefit from it. Deliberately bypasses the in-flight dedupe map above: an
+ * marks a decoded /anlz response `private, no-cache` with an ETag over the
+ * body (`rb_assets.py` `_CACHE_ANLZ`). That was `public, max-age=3600` when
+ * this helper was written, and a plain `fetch` of the same URL inside the
+ * hour could be satisfied from the HTTP cache with no round trip - "fresh" in
+ * name only, right after the mutation it is meant to observe. `no-cache` now
+ * forces a revalidation on every read, so the unconditional replay is gone;
+ * `cache: 'reload'` additionally skips the conditional request, which keeps
+ * this caller's guarantee independent of the server's cache-control policy
+ * rather than resting on it. It re-primes the HTTP cache with the new
+ * response, so ordinary reads right after this one still benefit from it. Deliberately bypasses the in-flight dedupe map above: an
  * ordinary in-flight `fetchAnlz` for the same key must not be handed this
- * stale-cache-tolerant promise, and vice versa. */
+ * stale-cache-tolerant promise, and vice versa.
+ *
+ * Includes the same `gen` cache-buster `fetchAnlz` reads (anlz-fetch-
+ * generation.ts) so the URL it re-primes is the EXACT one an ordinary
+ * `fetchAnlz` call issued after the same switch will request - without it,
+ * this would prime a `gen`-less URL nothing else ever asks for, and every
+ * subsequent read would still take a real round trip instead of benefiting
+ * from this one. */
 export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
 	points = 38400
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`,
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}&gen=${currentAnlzFetchGeneration()}`,
 		'reload'
 	);
 	vocalsOf(data);
