@@ -392,6 +392,25 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
             "sides_with_rekordbox": len(related_rb),
             "sides_with_mik": len(related_mik),
             "sides_with_neither": len(related_neither),
+            # Rates, not just raw counts: the research doc's own worked
+            # phrasing is "sides with MIK on X percent, with rekordbox on Y
+            # percent, with neither on Z percent" (docs/research/beatgrid-
+            # and-segmentation-sota-20260906-d-key-detection.md:702-705),
+            # and its own verification discipline asks to "measure the size
+            # of every bucket and report it every time" (:713-716). Named
+            # denominator is `len(related_ids)`, the bucket's own `n` --
+            # NOT `sides_with_rekordbox + sides_with_mik + sides_with_
+            # neither`, which excludes `disagree_no_answer` fixtures, so
+            # these three percentages can legitimately sum to less than
+            # 100 rather than silently hiding that a fourth, separately
+            # reported category exists (Codex P2 BLOCKING, PR #1620: the
+            # raw counts alone rendered no visible denominator at all).
+            "pct_sides_with_rekordbox": round(100.0 * len(related_rb) / len(related_ids), 2)
+            if related_ids else None,
+            "pct_sides_with_mik": round(100.0 * len(related_mik) / len(related_ids), 2)
+            if related_ids else None,
+            "pct_sides_with_neither": round(100.0 * len(related_neither) / len(related_ids), 2)
+            if related_ids else None,
         },
         "disagree_unrelated": {"n": len(unrelated_ids), "stable_ids": sorted(unrelated_ids)},
         "disagree_no_answer": {"n": len(no_answer_ids), "stable_ids": sorted(no_answer_ids)},
@@ -484,7 +503,7 @@ def render_table(report: dict[str, Any]) -> str:
         "n_failed (of attempted) / producer-reported | "
         "vs rekordbox (n) | MIREX% (all/successful-only) | KSEA% | mode% | "
         "vs MIK (n) | MIREX% (all/successful-only) | KSEA% | mode% | AGREE (n, MIREX%) | "
-        "DISAGREE-RELATED (rb/mik/neither) | DISAGREE-UNRELATED (n: stable_ids) | "
+        "DISAGREE-RELATED (n, rb%/mik%/neither%) | DISAGREE-UNRELATED (n: stable_ids) | "
         "DISAGREE-NO-ANSWER (n: stable_ids) | NO-REFERENCE-PAIR (n) |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
@@ -536,8 +555,8 @@ def render_table(report: dict[str, Any]) -> str:
             f"{mikr['n']} | {mikr['mirex_mean_pct']}/{mikr_succ['mirex_mean_pct']} | "
             f"{mikr['ksea_pct']} | {mikr['mode_accuracy_pct']} | "
             f"{agree['n']}, {agree['mirex_mean_pct']} | "
-            f"{related['sides_with_rekordbox']}/{related['sides_with_mik']}/"
-            f"{related['sides_with_neither']} | "
+            f"{related['n']}, {related['pct_sides_with_rekordbox']}/"
+            f"{related['pct_sides_with_mik']}/{related['pct_sides_with_neither']} | "
             f"{unrelated['n']}: {unrelated_ids} | "
             f"{no_answer['n']}: {no_answer_ids} | "
             f"{buckets['n_no_reference_pair']} |"
