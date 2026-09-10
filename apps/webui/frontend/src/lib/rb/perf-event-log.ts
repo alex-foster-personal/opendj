@@ -26,7 +26,7 @@
 
 import { withinBudgets, type PerfEvent } from './perf-event-buckets';
 
-export { audioHealthFaultSeverity, isAudioHealthKind } from './perf-event-buckets';
+export { audioHealthFaultSeverity } from './perf-event-buckets';
 export type { PerfEvent } from './perf-event-buckets';
 
 /**

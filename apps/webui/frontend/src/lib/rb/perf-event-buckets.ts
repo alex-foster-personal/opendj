@@ -122,7 +122,9 @@ const BUDGETS: Record<PerfBucket, number> = {
  *
  * Domain only. It says a row is about audio output, never that anything is
  * wrong: `audio-output-alive` and `audio-context` are audio-domain rows that
- * report health. `audioHealthFaultSeverity` below is what separates the two.
+ * report health. `audioHealthFaultSeverity` below is what separates the two, and it is the
+ * only export: a second predicate answering a DIFFERENT question is exactly
+ * how the ring's retention and the mirror's selection drift apart.
  *
  * `xrun` is deliberately excluded despite being audio: it fires continuously
  * (34 times in one morning) and would crowd out the rare rows that matter. It
@@ -135,7 +137,7 @@ const AUDIO_HEALTH_EXTRA_KINDS: ReadonlySet<string> = new Set([
 	'presentation-tick-failed'
 ]);
 
-export function isAudioHealthKind(kind: string): boolean {
+function _isAudioHealthKind(kind: string): boolean {
 	return kind.startsWith('audio-') || AUDIO_HEALTH_EXTRA_KINDS.has(kind);
 }
 
@@ -161,7 +163,7 @@ export function isAudioHealthKind(kind: string): boolean {
  * mirror so a reader can tell a diagnosed fault from a legacy row.
  */
 export function audioHealthFaultSeverity(event: PerfEvent): 'warn' | 'error' | 'unknown' | null {
-	if (!isAudioHealthKind(event.kind)) return null;
+	if (!_isAudioHealthKind(event.kind)) return null;
 	if (event.severity === 'info') return null;
 	// Anything that is not one of the three recorded levels came out of
 	// localStorage, which this module does not control; it is UNKNOWN, and it
