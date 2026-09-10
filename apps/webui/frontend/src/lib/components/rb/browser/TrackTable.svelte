@@ -397,6 +397,55 @@
 		);
 	}
 
+	/** Pin 27f889893790's hide corridor: keep deck buttons hittable for
+	 * 100ms after the pointer leaves .c-art / .c-title, so travelling the
+	 * gap over the hanging box's dead area can still land on a button.
+	 * Same JS-timer + class shape as `_armDblclickGuard` - a CSS
+	 * `transition-delay` on `pointer-events` is discrete and only runs with
+	 * `transition-behavior: allow-discrete` (Chrome 117+/Safari 17.4+),
+	 * which this app's packaged WKWebView floor (macOS 11) does not have.
+	 * That is why the #1558 reveal guard was ported off CSS on PR #1570;
+	 * the hide twin was the same inert rule. Issue #1588. */
+	const CORRIDOR_GRACE_MS = 100;
+	let corridorGraceRowIds = $state(new Set<string>());
+	const _corridorGraceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function _armCorridorGrace(rowId: string): void {
+		const existing = _corridorGraceTimers.get(rowId);
+		if (existing !== undefined) clearTimeout(existing);
+		corridorGraceRowIds = new Set(corridorGraceRowIds).add(rowId);
+		_corridorGraceTimers.set(
+			rowId,
+			setTimeout(() => {
+				_corridorGraceTimers.delete(rowId);
+				const next = new Set(corridorGraceRowIds);
+				next.delete(rowId);
+				corridorGraceRowIds = next;
+			}, CORRIDOR_GRACE_MS)
+		);
+	}
+
+	function _onDeckTriggerPointerLeave(event: PointerEvent, row: BrowserRow): void {
+		const related = event.relatedTarget;
+		const trigger = event.currentTarget;
+		if (related instanceof Node && trigger instanceof HTMLElement) {
+			const triggerRow = trigger.closest('tr');
+			if (triggerRow !== null) {
+				const art = triggerRow.querySelector('.c-art');
+				const title = triggerRow.querySelector('.c-title');
+				if (
+					(art !== null && art.contains(related)) ||
+					(title !== null && title.contains(related))
+				) {
+					return;
+				}
+			}
+		}
+		if (!selectedIdSet.has(row.stable_id)) return;
+		if (dblclickGuardRowIds.has(row.stable_id)) return;
+		_armCorridorGrace(row.stable_id);
+	}
+
 	function genreWindowOpen(): boolean {
 		return genreFilterUntil > 0 && Date.now() < genreFilterUntil;
 	}
@@ -1218,6 +1267,7 @@
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
+						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
@@ -1343,6 +1393,7 @@
 									: (artworkStatusLabel(row.artwork_status) ??
 										'artwork unavailable')
 								: undefined}
+							onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}
 						>
 							<span class="art-slate" aria-hidden="true"></span>
 							{#if row.artwork_available === true}
@@ -1354,7 +1405,7 @@
 								/>
 							{/if}
 						</td>
-						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''}>
+						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
 							<!-- Pin 27f889893790: the quick-load box is anchored here (not
 							     .c-preview) so its hitbox can never sit over the mini preview
 							     strip (.preview-hit) - hovering it must never block the
@@ -2267,14 +2318,21 @@
 	 * receive the very focus that would reveal it. opacity+pointer-events
 	 * do the hiding instead, and :focus-within always wins so Tab landing
 	 * on any of these buttons reveals the whole group before the very next
-	 * Tab press. Hiding pointer-events lags 100ms behind losing hover (pin
-	 * 27f889893790's corridor): the pointer can leave .c-art/.c-title,
-	 * cross the short gap, and still land on a deck button before the
-	 * group goes fully inert. Showing has no such delay for the corridor-
-	 * travel and keyboard-focus paths - but the row-selection-driven reveal
-	 * DOES delay showing (DBLCLICK_GUARD_MS, issue #1558): that trigger can
-	 * fire on the first click of a double-click aimed at the row, and an
-	 * instantly-clickable box there hijacked the gesture's second click. */
+	 * Tab press. Hiding pointer-events lags 100ms behind leaving .c-art/
+	 * .c-title (pin 27f889893790's corridor, now a JS timer flipping
+	 * `.corridor-grace-active` - CORRIDOR_GRACE_MS): the pointer can leave
+	 * those cells, cross the short gap, and still land on a deck button
+	 * before the group goes fully inert. The delay is not a CSS
+	 * `transition-delay` on `pointer-events`: that property is discrete
+	 * and only honours a delay with `transition-behavior: allow-discrete`
+	 * (Chrome 117+/Safari 17.4+), which this app's packaged WKWebView
+	 * floor (macOS 11) does not have - the same floor that made the #1558
+	 * CSS reveal guard inert (PR #1570, issue #1588). Showing has no such
+	 * delay for the corridor-travel and keyboard-focus paths - but the
+	 * row-selection-driven reveal DOES delay showing (DBLCLICK_GUARD_MS,
+	 * issue #1558): that trigger can fire on the first click of a
+	 * double-click aimed at the row, and an instantly-clickable box there
+	 * hijacked the gesture's second click. */
 	.c-title {
 		position: relative;
 		/* The deck box escapes this cell upwards (pin fce26c7493b0), so the
@@ -2318,8 +2376,10 @@
 	}
 	/* The buttons carry BOTH the interactivity and the footprint, because over
 	 * the row above those are the same thing.
-	 * Hitbox: hiding pointer-events lags 100ms behind losing hover (pin
-	 * 27f889893790's corridor); showing has no such delay.
+	 * Hitbox: hiding pointer-events lags 100ms behind leaving the trigger
+	 * cells via `.corridor-grace-active` (pin 27f889893790's corridor, JS
+	 * timer - same allow-discrete floor as #1570 / issue #1588); showing
+	 * has no such delay.
 	 * Size: the global `button` rule (padding 0.4rem 0.9rem) made a
 	 * single-digit target 37px wide - measured, the whole box came to 220px,
 	 * the ENTIRE width of the title column, and 32px tall against a 22px row,
@@ -2330,7 +2390,6 @@
 	 * into the header. */
 	.deck-btns button {
 		pointer-events: none;
-		transition: pointer-events 0s 100ms;
 		padding: 0 4px;
 		min-width: 16px;
 		height: 16px;
@@ -2339,10 +2398,10 @@
 		border-radius: 2px;
 	}
 	tr.rb-row-selected:has(.c-art:hover, .c-title:hover) .deck-btns,
+	tr.corridor-grace-active .deck-btns,
 	.deck-btns:hover,
 	.deck-btns:focus-within {
 		opacity: 1;
-		transition-delay: 0s;
 	}
 	/* Issue #1602 round 2 (Sol P1 on pin 8f064eafc, review thread
 	 * PRRT_kwDOSEvNd86gwaHm): a runway spacer row gave row 0's box somewhere
@@ -2370,6 +2429,7 @@
 	 * computeVirtualWindow needs no change and no coupling to the runway's
 	 * failure mode is possible. */
 	tr.rb-row-first.rb-row-selected:has(.c-art:hover, .c-title:hover),
+	tr.rb-row-first.corridor-grace-active,
 	tr.rb-row-first:has(.deck-btns:hover),
 	tr.rb-row-first:has(.deck-btns:focus-within) {
 		z-index: 2;
@@ -2397,24 +2457,21 @@
 	 * only the SELECT-driven reveal needs the guard. */
 	tr.rb-row-selected:not(.dblclick-guard-active):has(.c-art:hover, .c-title:hover) .deck-btns button {
 		pointer-events: auto;
-		transition-delay: 0s;
+	}
+	tr.corridor-grace-active:not(.dblclick-guard-active) .deck-btns button {
+		pointer-events: auto;
 	}
 	.deck-btns:hover button,
 	.deck-btns:focus-within button {
 		pointer-events: auto;
-		transition-delay: 0s;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		/* Pin 27f889893790's corridor grace (pointer-events lagging 100ms
-		 * behind hover) must survive reduced motion - it is not decorative,
-		 * it is what lets the mouse travel .c-art/.c-title -> deck button
-		 * without the box going inert underfoot. Only the opacity fade is a
-		 * pure animation; disable that alone, never the whole transition. */
+		/* Pin 27f889893790's corridor grace is a JS timer (CORRIDOR_GRACE_MS
+		 * / `.corridor-grace-active`), not a CSS transition, so reduced
+		 * motion cannot collapse it. Only the opacity fade is decorative;
+		 * disable that alone. */
 		.deck-btns {
 			transition: opacity 0s;
-		}
-		.deck-btns button {
-			transition: pointer-events 0s 100ms;
 		}
 	}
 	.deck-btns-title {
