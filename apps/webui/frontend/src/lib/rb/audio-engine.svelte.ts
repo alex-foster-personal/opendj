@@ -103,7 +103,7 @@ import {
 	disarmContextInstrumentation,
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
-import { measurePressToScheduleMs } from '$lib/rb/press-stamp';
+import { measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -154,10 +154,7 @@ import {
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
-import {
-	StretchDeckProcessor,
-	type StretchScheduleChange
-} from '$lib/rb/stretch-adapter';
+import { StretchDeckProcessor, type StretchScheduleChange } from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
 	decodeStemBuffers,
@@ -207,11 +204,7 @@ import {
 	mixerState,
 	pitchRanges
 } from '$lib/player/state.svelte';
-import {
-	attachMasterMuteNode,
-	isMasterMuted,
-	setMasterMuted
-} from '$lib/player/master-mute.svelte';
+import { attachMasterMuteNode, isMasterMuted, setMasterMuted } from '$lib/player/master-mute.svelte';
 import {
 	acquireHeadphoneOutput as acquireMonitorOutput,
 	applyHeadphoneMix,
@@ -1324,6 +1317,7 @@ async function _scheduleDeckSerial(
 		active,
 		...(pressToScheduleMs === undefined ? {} : { pressToScheduleMs })
 	});
+	const row = scheduleRowFacts(scheduleStages, _ctx.state, pressT0Ms);
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =
 		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;
@@ -1360,7 +1354,7 @@ async function _scheduleDeckSerial(
 	if (rt.processor !== processor) {
 		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
-	recordPerfTiming('transport-schedule', scheduleStages, deck);
+	recordPerfTiming(row.kind, scheduleStages, deck, row.labels);
 	// LATENCY-03: rt.latencySec is a snapshot taken once at load, but Signalsmith
 	// re-reads both latency terms from WASM at the end of every configure() and
 	// latency() returns their live sum - so the library self-tracks and our copy
@@ -2032,6 +2026,10 @@ interface _SyncOptions {
 	 * `_scheduleReanchoredFollower` instead of stepping - see that function.
 	 */
 	reanchorDecks?: ReadonlySet<DeckId>;
+	/** Q1: the press behind this sync, when one deck's start caused it. Set
+	 * ONLY by `play`, whose followers are the single pressed deck; the resync
+	 * callers leave it unset so a background re-anchor never files a press row. */
+	pressT0Ms?: number;
 }
 
 /**
@@ -2039,6 +2037,11 @@ interface _SyncOptions {
  * into beat 4 of the target bar so `landingSec` lands softer. Falls back to a
  * plain schedule with no buffer/lead-in, or where the mix buffer bypasses stems/pitch under Master Tempo.
  */
+// `_scheduleDeck` for a sync path: explicit tempo/masterTempo (not `_schedulePress`'s "keep"), no loop/key, active always true.
+function _scheduleSyncDeck(deck: DeckId, when: number, inputSec: number, tempoRatio: number, masterTempoEnabled: boolean, pressT0Ms?: number): Promise<number> {
+	return _scheduleDeck(deck, when, inputSec, true, tempoRatio, masterTempoEnabled, undefined, undefined, pressT0Ms);
+}
+
 async function _scheduleFollowerBackwardBlend(
 	deck: DeckId,
 	syncAt: number,
@@ -2046,7 +2049,8 @@ async function _scheduleFollowerBackwardBlend(
 	tempoRatio: number,
 	masterTempoEnabled: boolean,
 	currentSec: number,
-	isScheduleCurrent?: () => boolean
+	isScheduleCurrent?: () => boolean,
+	pressT0Ms?: number
 ): Promise<number> {
 	if (isScheduleCurrent !== undefined && !isScheduleCurrent()) {
 		throw new Error(`sync seek blend: engine session changed before deck ${deck} scheduled`);
@@ -2064,7 +2068,7 @@ async function _scheduleFollowerBackwardBlend(
 		processor instanceof AlignedStemDeckProcessor || masterTempoEnabled ||
 		landingSec >= currentSec - 0.08
 	) {
-		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
+		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
 	}
 
 	const beats = st.anlz?.beatgrid.beats ?? null;
@@ -2110,17 +2114,10 @@ async function _scheduleFollowerBackwardBlend(
 		} catch {
 			/* ignore */
 		}
-		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
+		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
 	}
 
-	const scheduled = await _scheduleDeck(
-		deck,
-		t0,
-		incomingSec,
-		true,
-		tempoRatio,
-		masterTempoEnabled
-	);
+	const scheduled = await _scheduleSyncDeck(deck, t0, incomingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
 
 	const token = rt.loadToken;
 	const delayMs = Math.max(0, (tEnd - ctx.currentTime) * 1000) + 50;
@@ -2176,7 +2173,8 @@ async function _scheduleReanchoredFollower(
 	inputSec: number,
 	toTempoRatio: number,
 	masterTempoEnabled: boolean,
-	isScheduleCurrent?: () => boolean
+	isScheduleCurrent?: () => boolean,
+	pressT0Ms?: number
 ): Promise<number> {
 	if (isScheduleCurrent !== undefined && !isScheduleCurrent()) {
 		throw new Error(`sync re-anchor: engine session changed before deck ${deck} scheduled`);
@@ -2187,14 +2185,7 @@ async function _scheduleReanchoredFollower(
 	rt.reanchorRampActive = true;
 	let scheduledInputSec: number;
 	try {
-		scheduledInputSec = await _scheduleDeck(
-			deck,
-			syncAt,
-			inputSec,
-			true,
-			ramp[0].tempoRatio,
-			masterTempoEnabled
-		);
+		scheduledInputSec = await _scheduleSyncDeck(deck, syncAt, inputSec, ramp[0].tempoRatio, masterTempoEnabled, pressT0Ms);
 	} catch (error) {
 		rt.reanchorRampActive = false;
 		throw error;
@@ -2447,17 +2438,21 @@ async function _synchronizeFollowers(
 						item.tempoRatio,
 						item.masterTempoEnabled,
 						item.blendFromSec,
-						scheduleSessionIsCurrent
+						scheduleSessionIsCurrent,
+						options.pressT0Ms
 					);
 				}
 				if (options.reanchorDecks?.has(item.deck) === true) {
+					// 'master-max' fills reanchorDecks with the OTHER followers, never
+					// the pressed master, so withhold whenever masterSchedule is set.
 					return _scheduleReanchoredFollower(
 						item.deck,
 						scheduleTimes[index],
 						item.inputSec,
 						item.tempoRatio,
 						item.masterTempoEnabled,
-						scheduleSessionIsCurrent
+						scheduleSessionIsCurrent,
+						options.masterSchedule === undefined ? options.pressT0Ms : undefined
 					);
 				}
 				if (!scheduleSessionIsCurrent()) {
@@ -2472,7 +2467,7 @@ async function _synchronizeFollowers(
 					item.masterTempoEnabled,
 					undefined,
 					undefined,
-					undefined
+					options.pressT0Ms
 				);
 			});
 		const outcomes = await Promise.allSettled(scheduleOperations);
@@ -3125,7 +3120,9 @@ class RbAudioEngine implements AudioEngine {
 			// This deck is joining from silence (guarded by the desiredActive
 			// check above) - no audible tempo to protect yet, so no
 			// reanchorDecks here; the initial lock applies immediately.
-			await _synchronizeFollowers(activeMaster, [deck]);
+			await _synchronizeFollowers(activeMaster, [deck], {
+				...(pressT0Ms === undefined ? {} : { pressT0Ms })
+			});
 		}
 	}
 
@@ -3160,7 +3157,7 @@ class RbAudioEngine implements AudioEngine {
 		await this.quantizedSeek(deck, ms);
 	}
 
-	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false): Promise<void> {
+	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
@@ -3209,7 +3206,8 @@ class RbAudioEngine implements AudioEngine {
 				// playing and already beat-synced - a re-anchor, not a join.
 				await _synchronizeFollowers(syncPlan.master, [deck], {
 					followerAnchorSec: { [deck]: targetMs / 1000 },
-					reanchorDecks: new Set([deck])
+					reanchorDecks: new Set([deck]),
+					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
 			} else if (syncPlan.kind === 'master-max') {
 				// beatSyncMaxFollowers only returns already playing,
@@ -3220,7 +3218,8 @@ class RbAudioEngine implements AudioEngine {
 						masterTempoEnabled: st.master_tempo_enabled,
 						positionSec: targetMs / 1000
 					},
-					reanchorDecks: new Set(syncPlan.followers)
+					reanchorDecks: new Set(syncPlan.followers),
+					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
 			} else {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
@@ -3231,7 +3230,9 @@ class RbAudioEngine implements AudioEngine {
 					rt.desiredActive,
 					undefined,
 					undefined,
-					scheduleLoop
+					scheduleLoop,
+					undefined,
+					pressT0Ms
 				);
 			}
 		} else {
@@ -3241,10 +3242,8 @@ class RbAudioEngine implements AudioEngine {
 
 	/** The physical CUE button. Playing: return to the cue point and pause.
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
-	 * set the cue at the current position.
-	 *
-	 * Q1: see `play` for the stamp. Only the playing branch schedules; the paused
-	 * branches are pure state writes, and the seek branch is Q1's follow-up. */
+	 * set the cue at the current position. Q1: see `play` for the stamp; the
+	 * seek branch also carries it through `quantizedSeek`. */
 	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pressCue');
 		if (st.playing) {
@@ -3260,7 +3259,7 @@ class RbAudioEngine implements AudioEngine {
 					? quantizedPositionMs(cueBeats, st.position_ms, true, _quantizeGridBeats(st))
 					: st.position_ms;
 		} else {
-			await this.quantizedSeek(deck, st.cue_ms);
+			await this.quantizedSeek(deck, st.cue_ms, undefined, pressT0Ms);
 		}
 	}
 
@@ -3276,7 +3275,7 @@ class RbAudioEngine implements AudioEngine {
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
 	 */
-	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number): Promise<number> {
+	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
@@ -3287,7 +3286,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
-		await _scheduleDeck(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive);
+		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
 		return targetContextTime;
 	}
 

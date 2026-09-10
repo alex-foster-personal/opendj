@@ -439,7 +439,13 @@ def _write_ring_at(home: Path, bundle_id: str, events: list[dict[str, object]]) 
     return _write_storage_value(home, bundle_id, "mdt.perfEventLog", events)
 
 
-_PERF_BUCKET_BUDGETS = {"deck-load": 16, "transport-schedule": 16, "deck-state": 8, "other": 8}
+_PERF_BUCKET_BUDGETS = {
+    "deck-load": 16,
+    "transport-schedule": 16,
+    "transport-schedule-press": 8,
+    "deck-state": 8,
+    "other": 8,
+}
 """Test-side mirror of perf-event-log.ts BUDGETS, so a fixture can be built by
 running candidate rows through the SAME per-bucket FIFO the browser actually
 enforces, instead of writing every candidate row straight into the fixture's
@@ -451,6 +457,11 @@ def _perf_bucket_of_kind(kind: str) -> str:
 
     if kind.startswith("deck-load"):
         return "deck-load"
+    # ORDER IS LOAD-BEARING, same as the TypeScript: the press kind is a SUFFIX
+    # of the plain one, so testing "transport-schedule" first would fold press
+    # rows back into the pitch-fader-flooded bucket the split took them out of.
+    if kind.startswith("transport-schedule-press"):
+        return "transport-schedule-press"
     if kind.startswith("transport-schedule"):
         return "transport-schedule"
     if kind.startswith("deck-state") or kind == "deck-unload":
