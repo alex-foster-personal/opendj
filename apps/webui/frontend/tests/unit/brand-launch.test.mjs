@@ -38,6 +38,20 @@ test('only the exact completion marker suppresses the launch', () => {
 	assert.equal(brand.shouldPlayBrandLaunch(storage), true);
 });
 
+test('the launch wordmark is Anybody 800 wdth 150 in caps, shipped offline with its licence', () => {
+	const root = fileURLToPath(new URL('../..', import.meta.url));
+	const launch = readFileSync(`${root}/src/lib/components/BrandLaunch.svelte`, 'utf8');
+	const woff2 = readFileSync(`${root}/static/fonts/anybody-800-w150-wordmark.woff2`);
+
+	// if the face, file or caps treatment drifts then the maintainer's Thu 10 Sep 2026 pick is gone
+	assert.match(launch, /url\('\/fonts\/anybody-800-w150-wordmark\.woff2'\)/);
+	assert.match(launch, /\.brand-name \{[^}]*font-family: 'Anybody Wordmark'/);
+	assert.match(launch, /\.brand-name \{[^}]*text-transform: uppercase/);
+	assert.equal(woff2.subarray(0, 4).toString('latin1'), 'wOF2');
+	// if the licence stops shipping beside the font then the OFL terms are broken
+	assert.match(readFileSync(`${root}/static/fonts/Anybody-OFL.txt`, 'utf8'), /SIL Open Font License, Version 1\.1/);
+});
+
 test('the app shell mounts a non-blocking launch and the Open DJ wordmark', () => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const layout = readFileSync(`${root}/src/routes/+layout.svelte`, 'utf8');
