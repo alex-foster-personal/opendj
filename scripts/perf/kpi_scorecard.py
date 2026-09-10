@@ -35,6 +35,7 @@ import argparse
 import datetime as _dt
 import json
 import math
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +55,8 @@ _LEDGER = _REPO_ROOT / "docs" / "perf" / "kpi-ledger.json"
 
 UNMEASURED = "UNMEASURED"
 SUPERSEDED = "SUPERSEDED"
+
+_PERCENTILE = re.compile(r"p\d{2,3}")
 
 
 @dataclass(frozen=True)
@@ -197,20 +200,28 @@ def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
 
 
 def _needs_provenance(name: str, unit: str) -> bool:
-    """Is `name` a p95, percentage, or rate KPI, which the spec's own
+    """Is `name` a percentile, percentage, or rate KPI, which the spec's own
     denominator-honesty note (specs/perf-latency-program.md, 'Denominator
     honesty') requires to name its window and machine tier?
 
-    Scoped to p95/percentage/rate KPIs specifically, matching the note's own
-    examples (dropped frames, xruns/hour, p95s) rather than every KPI: a plain
-    duration or count (deck load seconds, dropped-keystroke count) has no
-    window or sample size to misrepresent the same way a percentile, a rate,
-    or a percentage does. "hour" catches S1's xruns/hour and silent-while-
-    playing rate KPIs, the note's own rate example, without matching a plain
-    duration.
+    Scoped to percentile/percentage/rate KPIs specifically, matching the
+    note's own examples (dropped frames, xruns/hour, p95s) rather than every
+    KPI: a plain duration or count (deck load seconds, dropped-keystroke
+    count) has no window or sample size to misrepresent the same way a
+    percentile, a rate, or a percentage does. "hour" catches S1's xruns/hour
+    and silent-while-playing rate KPIs, the note's own rate example, without
+    matching a plain duration. The percentile match is a pattern
+    (`_PERCENTILE`, mirroring kpi_map_drift.py's `_PERCENTILE_LABEL`) rather
+    than a literal "p95", so renaming a KPI to p99 or any other percentile
+    cannot silently walk it out from under this gate.
     """
     haystack = f"{name} {unit}".lower()
-    return "p95" in haystack or "%" in haystack or "pct" in haystack or "hour" in haystack
+    return (
+        bool(_PERCENTILE.search(haystack))
+        or "%" in haystack
+        or "pct" in haystack
+        or "hour" in haystack
+    )
 
 
 def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list[Score]:
@@ -274,6 +285,12 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
                     f"and measurement window/denominator (machine={reading.machine!r}, "
                     f"note={reading.note!r}), required by the denominator-honesty note "
                     "in specs/perf-latency-program.md"
+                )
+                continue
+            if not reading.source:
+                rejected.append(
+                    f"{name} has no recorded source, so its measurement cannot be "
+                    "traced back to evidence"
                 )
                 continue
             scoreable.append((req, reading.value, age))

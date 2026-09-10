@@ -114,7 +114,9 @@ def test_scenario_with_a_live_reading_scores() -> None:
             "S1": {"title": "t", "class": "P0", "kpis": ["k"], "required": ["k"], **LOWER}
         }
     }
-    entries = [{"kpi": "k", "value": 12, "unit": "ms", "date": "2026-09-01"}]
+    entries = [
+        {"kpi": "k", "value": 12, "unit": "ms", "date": "2026-09-01", "source": "manual capture"}
+    ]
     (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
     assert score.verdict == "PASS"
     assert score.age_days == 8
@@ -217,10 +219,18 @@ def test_s1_stays_unmeasured_on_xruns_alone() -> None:
 
 
 def test_s2_stays_unmeasured_on_audible_alone() -> None:
-    """The escape this closes: a fast audible p95 used to PASS the whole P0
+    """The escape this closes: a fast audible p99 used to PASS the whole P0
     scenario with the 16ms visual half never measured."""
     entries = [
-        {"kpi": "input_to_audible_ms_p95", "value": 25, "unit": "ms", "date": "2026-09-09"}
+        {
+            "kpi": "input_to_audible_ms_p99",
+            "value": 25,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "machine": "silver",
+            "note": "n=200 presses",
+            "source": "manual capture",
+        }
     ]
     assert _score_one("S2", entries).verdict == UNMEASURED
 
@@ -244,7 +254,13 @@ def test_s6_slow_but_playable_load_is_over_not_breaking() -> None:
     'breaking' ceiling must read OVER, because the spec's own breaking
     condition is blocked playability, not a duration."""
     entries = [
-        {"kpi": "deck_load_to_stems_ready_s", "value": 26, "unit": "s", "date": "2026-09-09"}
+        {
+            "kpi": "deck_load_to_stems_ready_s",
+            "value": 26,
+            "unit": "s",
+            "date": "2026-09-09",
+            "source": "manual capture",
+        }
     ]
     assert _score_one("S6", entries).verdict == "OVER"
 
@@ -265,19 +281,20 @@ def test_s7_stays_unmeasured_on_latency_alone() -> None:
 
 
 def test_s2_conclusive_breaking_audible_survives_missing_visual() -> None:
-    """The reviewer's own reproduction: a 100ms audible p95 is unambiguously
+    """The reviewer's own reproduction: a 100ms audible p99 is unambiguously
     BREAKING against the 60ms ceiling, and must report BREAKING even though
     the paired visual_feedback_ms_p95 was never recorded. Missing evidence
     about the visual half cannot un-break an audible reading that already,
     conclusively, broke."""
     entries = [
         {
-            "kpi": "input_to_audible_ms_p95",
+            "kpi": "input_to_audible_ms_p99",
             "value": 100,
             "unit": "ms",
             "date": "2026-09-09",
             "machine": "silver",
             "note": "n=200 presses",
+            "source": "manual capture",
         }
     ]
     score = _score_one("S2", entries)
@@ -295,6 +312,7 @@ def test_s7_conclusive_breaking_keystroke_drop_survives_missing_latency() -> Non
             "value": 1,
             "unit": "dropped keystrokes per session",
             "date": "2026-09-09",
+            "source": "manual capture",
         }
     ]
     score = _score_one("S7", entries)
@@ -340,10 +358,42 @@ def test_a_reading_in_the_declared_unit_still_scores() -> None:
         }
     }
     entries = [
-        {"kpi": "packaged_deck_load_total_ms", "value": 20, "unit": "ms", "date": "2026-09-09"}
+        {
+            "kpi": "packaged_deck_load_total_ms",
+            "value": 20,
+            "unit": "ms",
+            "date": "2026-09-09",
+            "source": "manual capture",
+        }
     ]
     (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
     assert score.verdict == "PASS"
+
+
+def test_a_reading_with_no_source_does_not_score() -> None:
+    """The gate this exists for: a reading complete in every other respect
+    (right unit, parseable date, and machine/note if it needs provenance)
+    but missing `source` must not reach verdict_for - an unsourced number
+    cannot be traced back to evidence, the same defect class a superseded or
+    wrong-unit row already fails closed on."""
+    kpi_map = {
+        "scenarios": {
+            "S5": {
+                "title": "t",
+                "class": "P1",
+                "kpis": ["packaged_deck_load_total_ms"],
+                "required": ["packaged_deck_load_total_ms"],
+                "missing_kpi": "placeholder",
+                **LOWER,
+            }
+        }
+    }
+    entries = [
+        {"kpi": "packaged_deck_load_total_ms", "value": 20, "unit": "ms", "date": "2026-09-09"}
+    ]
+    (score,) = score_scenarios(kpi_map, entries, _dt.date(2026, 9, 9))
+    assert score.verdict == UNMEASURED
+    assert "packaged_deck_load_total_ms" in score.note
 
 
 def test_a_missing_or_malformed_date_fails_closed_not_ageless() -> None:
