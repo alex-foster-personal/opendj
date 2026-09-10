@@ -835,3 +835,77 @@ test('a non-FLAC bundle never even claims the trial slot', async () => {
 	releaseFlac();
 	await flac;
 });
+
+/**
+ * A fallback that DETACHES its input, exactly as `decodeAudioData` does.
+ *
+ * `countingFallback` does not, and that difference hid a real defect: a byte
+ * read placed after the fallback saw a zero-length buffer and answered a
+ * question about nothing. Every unit case passed; the live browser run is what
+ * failed. So the honest fallback is this one, and it exists to make that class
+ * of defect reachable from the unit suite.
+ */
+function detachingFallback() {
+	const calls = [];
+	return {
+		calls,
+		fn: async (bytes) => {
+			calls.push(bytes.byteLength);
+			// structuredClone with a transfer list detaches the source, which
+			// is the same observable effect decodeAudioData has on its input.
+			structuredClone(bytes, { transfer: [bytes] });
+			return { numberOfChannels: 2, length: 99, sampleRate: 44100 };
+		}
+	};
+}
+
+test('a calibration load still settles the lane when the fallback detaches its input', async () => {
+	// THE regression this pins: `decodeAudioData` detaches the ArrayBuffer it
+	// is handed. Any byte read placed after it sees byteLength 0, so a sniff
+	// written inline where its answer is used reported `not-flac` for real FLAC,
+	// which made every main-thread trial UNCLEAN, which stopped the session
+	// ever settling a lane at all. Both trials then ran the main thread and the
+	// rung silently bought nothing.
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext();
+
+	const firstFallback = detachingFallback();
+	const one = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: firstFallback.fn,
+		now: stepClock(400)
+	});
+	assert.equal(firstFallback.calls.length, 4, 'the trial ran on the main thread');
+	assert.ok(
+		one.reports.every((r) => r.refusal === 'calibrating'),
+		`a detached buffer must not read as another codec: ${JSON.stringify(one.reports.map((r) => r.refusal))}`
+	);
+	assert.ok(
+		one.reports.every((r) => r.bytes > 0),
+		'and the encoded size must be captured before the detach, or the trial has no denominator'
+	);
+
+	// The main-thread lane is now MEASURED, so the next load is the worker
+	// trial rather than a second main-thread one.
+	decode.stemDecodeSession.resetPool();
+	const second = fakeDecoderFactory();
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: second.factory,
+		decodeFallback: detachingFallback().fn,
+		now: stepClock(100)
+	});
+	assert.equal(second.state.made, 4, 'the second trial must run the OTHER lane');
+	assert.equal(decode.stemDecodeSession.lane(), 'workers', 'and the session settles a lane');
+
+	// NEGATIVE CONTROL: a genuinely non-FLAC bundle must still be caught, so
+	// the fix is not "stop sniffing on this lane".
+	decode.stemDecodeSession.resetLane();
+	decode.stemDecodeSession.forceLane('main-thread');
+	const ogg = await decode.decodeStemParts(
+		ctx,
+		Object.fromEntries(PARTS.map((part) => [part, OGG()])),
+		PARTS,
+		{ makeDecoder: fakeDecoderFactory().factory, decodeFallback: detachingFallback().fn }
+	);
+	assert.ok(ogg.reports.every((r) => r.refusal === 'not-flac'), 'real non-FLAC is still named');
+});

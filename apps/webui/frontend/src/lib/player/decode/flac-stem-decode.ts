@@ -232,21 +232,36 @@ export async function decodeStemParts<P extends string>(
 		}
 
 		const loadStarted = now();
+		// Snapshotted at load start, not read per part after the decode: the
+		// session verdict can settle while this load is decoding, and a load
+		// that ran before any comparison existed must not report the verdict
+		// that arrived after it.
+		const mainThreadRefusal = _mainThreadRefusal(claim);
 		const reports: StemPartDecodeReport[] = [];
 		const decoded = await Promise.all(
 			parts.map(async (part) => {
 				const started = now();
 				const bytes = encoded[part] as ArrayBuffer;
+				// BOTH read before any decode touches the buffer.
+				// `decodeAudioData` DETACHES the ArrayBuffer it is given, so a
+				// byte read afterwards sees a zero-length buffer and answers a
+				// question about nothing. That is why the sniff below is
+				// hoisted rather than written inline where it is used: the
+				// inline version made every calibration load report `not-flac`,
+				// which made the trial unclean, which stopped the session ever
+				// settling a lane. Unit tests could not see it, because their
+				// fallback does not detach; the live browser run did.
 				const byteLength = bytes === undefined ? 0 : bytes.byteLength;
+				const isFlac = _flacBytes(bytes);
 				const outcome =
 					claim.lane === 'main-thread'
 						? {
-								buffer: await fallback(bytes),
 								// Sniffed on this lane too. A part that is not FLAC could
 								// never have taken the worker path, and reporting the lane
 								// reason instead would hide the permanent cause behind a
 								// per-session one.
-								refusal: _flacBytes(bytes) ? _mainThreadRefusal(claim) : 'not-flac'
+								buffer: await fallback(bytes),
+								refusal: isFlac ? mainThreadRefusal : 'not-flac'
 							}
 						: await _decodeOnePart(ctx, bytes, makeDecoder, fallback);
 				reports.push({
