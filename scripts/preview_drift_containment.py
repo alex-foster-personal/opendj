@@ -292,25 +292,83 @@ def _commit_owns_a_surviving_line(cwd: Path, sha: str, preview_ref: str, path: s
     return any(line.startswith(prefix) for line in proc.stdout.splitlines())
 
 
+def _commit_deletion_still_absent(cwd: Path, sha: str, preview_ref: str, path: str) -> bool:
+    """True if ``sha`` removed line(s) from ``path``, relative to at least one
+    parent, that remain absent from ``path`` as currently served on
+    ``preview_ref`` -- the deletion has not been undone by a later commit.
+
+    Neither of the two checks above can see a surviving DELETION (r3975194227):
+    ``_trees_identical`` needs the WHOLE path to still match this commit's
+    post-state, which a later, unrelated edit to the same path breaks, and
+    ``_commit_owns_a_surviving_line`` can only credit a commit for a line
+    that still EXISTS to be blamed -- a removed line exists nowhere for
+    ``git blame`` to attribute. A deletion whose removed content has not been
+    reintroduced is still this commit's own un-landed effect and must not be
+    waved through as superseded just because the file around it kept moving.
+
+    Content-based, not line-position-based: a later edit shifts every line
+    number below it, so a removed line counts as "restored" only if its
+    exact text reappears ANYWHERE in the path's current content, never by
+    comparing line N of the diff to line N of the current file.
+
+    A merge can remove different content relative to each parent, so both
+    are checked, matching ``_touched_paths``'s own union-not-intersection
+    treatment of merges.
+    """
+    parents = _git(cwd, "rev-parse", f"{sha}^@").split()
+    candidates = parents if len(parents) == 2 else [f"{sha}~1"]
+    current = subprocess.run(
+        ["git", "show", f"{preview_ref}:{path}"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    current_lines = set(current.stdout.splitlines()) if current.returncode == 0 else set()
+    for parent in candidates:
+        diff = subprocess.run(
+            ["git", "diff", parent, sha, "--", path],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if diff.returncode != 0:
+            continue
+        removed = [
+            line[1:]
+            for line in diff.stdout.splitlines()
+            if line.startswith("-") and not line.startswith("---")
+        ]
+        if any(line not in current_lines for line in removed):
+            return True
+    return False
+
+
 def _mark_superseded_commits(
     cwd: Path, preview_ref: str, commits: list[PreviewOnlyCommit]
 ) -> None:
     """Flag a preview-only commit as ``superseded`` when none of its own
-    content survives anywhere in the served tree (r3975092354, generalizing
-    r3974912531 and r3975002596): not reverted to its pre-state, not
-    overwritten wholesale by something else, and not even partially
+    content survives anywhere in the served tree (r3975194227, generalizing
+    r3975092354, r3974912531 and r3975002596): not reverted to its
+    pre-state, not overwritten wholesale by something else, not partially
     overwritten while a sibling line or sibling path it also touched still
-    serves exactly what it produced.
+    serves exactly what it produced, and not a still-in-effect DELETION
+    whose removed content has not been reintroduced.
 
-    A path survives, for this commit, when EITHER the whole path still
-    matches the commit's post-state (``_trees_identical``, needed for a pure
-    rename -- see ``_commit_owns_a_surviving_line``'s docstring) OR ``git
-    blame`` still attributes at least one of the path's CURRENT lines to
-    this commit (needed for a partial, same-file overwrite neither check
-    alone catches on its own). A commit touching multiple lines or multiple
-    paths is superseded only when EVERY one of them fails BOTH checks --
-    never when just one line or one path of several still traces back to it
-    by either measure.
+    A path survives, for this commit, when ANY of three checks holds: the
+    whole path still matches the commit's post-state (``_trees_identical``,
+    needed for a pure rename -- see ``_commit_owns_a_surviving_line``'s
+    docstring), ``git blame`` still attributes at least one of the path's
+    CURRENT lines to this commit (needed for a partial, same-file overwrite
+    the whole-path check alone cannot see), or the commit removed line(s)
+    that remain absent from the path's current content (needed for a
+    deletion, which leaves nothing for either of the first two checks to
+    find -- see ``_commit_deletion_still_absent``'s docstring). A commit
+    touching multiple lines or multiple paths is superseded only when EVERY
+    one of them fails ALL THREE checks -- never when just one line, one
+    deletion, or one path of several still traces back to it by any one
+    measure.
 
     An EMPTY diff (an ``--allow-empty`` commit, or any commit whose net
     effect is a no-op) is the degenerate case of "nothing of it remains": it
@@ -324,6 +382,7 @@ def _mark_superseded_commits(
         if not paths or not any(
             _trees_identical(cwd, commit.sha, preview_ref, path)
             or _commit_owns_a_surviving_line(cwd, commit.sha, preview_ref, path)
+            or _commit_deletion_still_absent(cwd, commit.sha, preview_ref, path)
             for path in paths
         ):
             commit.superseded = True
