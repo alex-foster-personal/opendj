@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import platform
 import shutil
+import stat
 
 import pytest
 
@@ -233,3 +234,38 @@ def test_a_clean_watchdog_log_alone_still_passes(tmp_path):
 
     verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
     assert verdicts[_fatal_label(0)] == "PASS"
+
+
+def test_a_directory_named_like_a_log_is_unmeasurable(tmp_path):
+    """[if] a directory matching logs/*.log yields a verdict [then] fail, [else stop].
+
+    Fifth P1 on PR #1662. `-r` succeeds on a directory, so it entered the input list; gawk
+    warns that it skipped it and carries on, leaving +0 and PASS. A skipped input is an
+    unread input, and the warning went to a stderr nobody reads.
+    """
+    fixture = _copy_fixture(tmp_path)
+    (fixture / "jobs" / "logs" / "adirectory.log").mkdir()
+    verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+    assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
+
+
+def test_a_fifo_named_like_a_log_does_not_hang_the_board(tmp_path):
+    """[if] a FIFO matching logs/*.log is opened by the probe [then] fail, [else stop].
+
+    The other half of the same P1, and the more dangerous half. A readable FIFO passes `-r`,
+    and awk opening it blocks until a writer appears, which for an unattended KPI run means
+    forever: no health line, no failure, no board at all.
+
+    The assertion is deliberately reached through a real run rather than a mocked one. If
+    the guard regresses, this test does not fail, it HANGS, and pytest's own timeout is what
+    reports it. That is the honest shape here, because the defect IS a hang.
+    """
+    fixture = _copy_fixture(tmp_path)
+    fifo = fixture / "jobs" / "logs" / "afifo.log"
+    os.mkfifo(fifo)
+    try:
+        assert stat.S_ISFIFO(fifo.stat().st_mode), "fixture is not actually a FIFO"
+        verdicts = _health(_run(_env(fixture, _home(tmp_path, token_profile=True))).stdout)
+        assert verdicts[_fatal_label("UNKNOWN")] == "UNMEASURABLE"
+    finally:
+        fifo.unlink()
