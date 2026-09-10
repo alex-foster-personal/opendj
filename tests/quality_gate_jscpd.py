@@ -1,8 +1,10 @@
 """Real jscpd regression for lockfile exclusion in scripts/quality_gate.py.
 
-Kept in a sibling of tests/test_quality_gate.py because that file is already
-at 596 lines, and one more acceptance test would cross the 600-line size
-gate. The production helper is still the one under test.
+Imported by tests/test_quality_gate.py so the plan-mandated commands
+`pytest tests/test_quality_gate.py` and
+`pytest -m slow tests/test_quality_gate.py -k 'jscpd or lockfile'`
+collect this case. The body lives here because tests/test_quality_gate.py
+is already 596 lines, and inlining it would cross the 600-line size gate.
 """
 
 from __future__ import annotations
