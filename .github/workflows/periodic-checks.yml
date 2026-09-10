@@ -615,6 +615,109 @@ jobs:
           esac
 
   # ---------------------------------------------------------------------------
+  # Row 11: requirement status drift (DEVOPS-07, issue #1605). The instrument
+  # is `scripts/reqs_cited_unflipped.py` (#1618): it lists every v1 id a merged
+  # PR names while the id still reads `pending` in `reqs.json`, which is the
+  # visible half of "shipped work whose checkbox never flipped". REQHYG-02
+  # makes a behaviour PR carry its ids; nothing makes the `- [ ]` become
+  # `- [x]`, and its own text says the markdown half stays agent discipline.
+  #
+  # WHAT WAS MISSING WAS THE CADENCE, and that is what this job is. Row 11 of
+  # docs/ops/periodic-checks.md recorded this report as pasted into a burn-down
+  # comment by hand, which is the shape that file itself calls a P0: a cadence
+  # with no runs is indistinguishable from a check that does not exist. The
+  # report is a REPORT, never a gate -- a docs PR naming an id is a legitimate
+  # false positive, which is why the per-PR hard gate is a separate script
+  # (`scripts/reqs_flip_gate.py`) with a different rule.
+  #
+  # UNKNOWN is not zero. The tool exits 2 when `gh` cannot list merged PRs,
+  # precisely so an unreadable source is never rendered as "no drift"; a failed
+  # read fails this job, and the ledger row then reads FAIL rather than a clean
+  # count, because a green over an unmeasured row is the failure the periodic
+  # tier exists to prevent.
+  # ---------------------------------------------------------------------------
+  reqs-drift:
+    name: requirement status drift
+    needs: window
+    if: needs.window.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.drift.outputs.verdict }}
+    # Declaring a block REPLACES the workflow default, so `contents: read` is
+    # restated for actions/checkout. `pull-requests: read` is what lets
+    # `gh pr list` read the merged PRs this row measures (#1709 hit
+    # "Resource not accessible by integration" without it).
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # The SHA the window recorded; see the bundle job for why.
+          ref: ${{ needs.window.outputs.head }}
+          clean: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Requirement status drift
+        id: drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # NOT `... || true` followed by `$?`: after either, `$?` reads 0 and
+          # the verdict is lost. scripts/shell_construct_lint.py bans that
+          # construct for exactly this reason. if/else captures the real code.
+          if python -m scripts.reqs_cited_unflipped --days 7 > drift.out 2> drift.err; then
+            code=0
+          else
+            code=$?
+          fi
+          cat drift.err >&2
+          cat drift.out
+
+          # The tool's OWN summary line is the measurement, not our grep of its
+          # detail lines. A traceback, a partial write or a changed format
+          # leaves `declared` empty, and an empty parse falls through to
+          # UNKNOWN rather than to a zero -- a clean count rendered from a
+          # failed parse is the silent zero this row exists to avoid.
+          declared="$(sed -n 's/^\[reqs-cited-unflipped\].*cited pending ids=\([0-9][0-9]*\)$/\1/p' drift.out)"
+          ids="$(grep -oE '^  [A-Z][A-Z0-9]*(-[A-Z0-9]+)*-[0-9]+[a-z]?' drift.out | sed 's/^  //' | sort -u)"
+          id_total="$(printf '%s\n' "$ids" | grep -c .)"
+
+          if [ "$code" -eq 0 ] && [ -n "$declared" ] && [ "$declared" = "$id_total" ]; then
+            if [ "$id_total" = "0" ]; then
+              id_list="none"
+            elif [ "$id_total" -gt 15 ]; then
+              # Truncation is NAMED, never silent: the count above the list is
+              # the whole measurement, and the run log carries every line.
+              id_list="$(printf '%s\n' "$ids" | head -n 15 | paste -sd', ' -), +$(( id_total - 15 )) more (full list in the run log)"
+            else
+              id_list="$(printf '%s\n' "$ids" | paste -sd', ' -)"
+            fi
+            verdict="${id_total} cited pending id(s): ${id_list}"
+          else
+            verdict="UNKNOWN - NOT MEASURED (exit ${code})"
+          fi
+          echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Requirement status drift (row 11)"
+            echo ""
+            echo "verdict: \`${verdict}\`"
+            echo ""
+            echo '```'
+            cat drift.out 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # A finding is not a failure: this row reports, a person judges each
+          # id against its own acceptance lines. An unreadable source IS.
+          if [ "$code" -eq 0 ]; then exit 0; else exit 1; fi
+
+  # ---------------------------------------------------------------------------
   # One comment per window on the ledger issue (DEVOPS-03). This is the whole
   # point: a scheduled run attached to no PR is invisible, which is how eight
   # consecutive nightly failures went unnoticed.
@@ -625,7 +728,7 @@ jobs:
   # ---------------------------------------------------------------------------
   report:
     name: ledger comment
-    needs: [window, full-suite, bundle-trend, perf-bench, preview-drift]
+    needs: [window, full-suite, bundle-trend, perf-bench, preview-drift, reqs-drift]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -646,6 +749,8 @@ jobs:
           R_PERF: ${{ needs.perf-bench.result }}
           R_DRIFT: ${{ needs.preview-drift.result }}
           V_DRIFT: ${{ needs.preview-drift.outputs.verdict }}
+          R_REQS: ${{ needs.reqs-drift.result }}
+          V_REQS: ${{ needs.reqs-drift.outputs.verdict }}
         run: |
           set -euo pipefail
 
@@ -806,6 +911,7 @@ jobs:
           | 4 | bundle size trend | $(mark "$R_BUNDLE") |
           | 5 | perf bench (boot burst) | $(mark "$R_PERF") |
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
+          | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
 
           Rows 3 and 8 and 10 and the Air-only dmg row: see
           \`docs/ops/periodic-checks.md\`. A row absent from this table did not
