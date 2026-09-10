@@ -8,6 +8,8 @@
  * as its sibling.
  */
 
+import { isMissingTracksId } from './missing-tracks';
+
 // Deliberately no import of PaneStore from ./pane-contract.svelte: that
 // module re-exports this one (see the bottom of pane-contract.svelte.ts),
 // so importing its PaneStore type back here would recreate the same
@@ -41,28 +43,28 @@ export function playlistTintOf(args: {
 	return 'none';
 }
 
-/** Playlists (excluding All Tracks / blank panes) holding at least one row
- * whose stable_id is currently loaded into a deck. */
+/** Playlists (excluding All Tracks / blank panes / Missing Tracks) holding
+ * at least one row whose stable_id is currently loaded into a deck. */
 export function derivePlaylistDeckMembership(
 	panes: readonly { playlist_id: string | null; rows: readonly { stable_id: string }[] }[],
 	deckLoadedStableIds: ReadonlySet<string>
 ): Set<string> {
 	const out = new Set<string>();
 	for (const pane of panes) {
-		if (pane.playlist_id === null || pane.playlist_id === 'all') continue;
+		if (pane.playlist_id === null || pane.playlist_id === 'all' || isMissingTracksId(pane.playlist_id)) continue;
 		if (pane.rows.some((r) => deckLoadedStableIds.has(r.stable_id))) out.add(pane.playlist_id);
 	}
 	return out;
 }
 
 /** How many open pane tabs currently show each playlist (excluding All
- * Tracks / blank panes). */
+ * Tracks / blank panes / Missing Tracks). */
 export function derivePlaylistPaneOpenCounts(
 	panes: readonly { playlist_id: string | null }[]
 ): Map<string, number> {
 	const out = new Map<string, number>();
 	for (const pane of panes) {
-		if (pane.playlist_id === null || pane.playlist_id === 'all') continue;
+		if (pane.playlist_id === null || pane.playlist_id === 'all' || isMissingTracksId(pane.playlist_id)) continue;
 		out.set(pane.playlist_id, (out.get(pane.playlist_id) ?? 0) + 1);
 	}
 	return out;

@@ -27,7 +27,7 @@ export class TreePlaylistRename {
 
 	async begin(node: PlaylistNode): Promise<void> {
 		if (this.renameOf() === undefined) return;
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		if (node.kind === 'all_tracks' || node.kind === 'missing_tracks' || node.playlist_id === 'all') return;
 		this.editingId = node.playlist_id;
 		this.editDraft = node.name;
 		await tick();

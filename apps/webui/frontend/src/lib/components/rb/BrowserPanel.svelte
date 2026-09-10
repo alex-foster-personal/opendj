@@ -150,6 +150,12 @@
 		SortKey
 	} from './browser/pane-contract.svelte';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
+	import {
+		fetchMissingTrackRows,
+		isMissingTracksId,
+		MISSING_TRACKS_ID,
+		missingTracksNode
+	} from './browser/missing-tracks';
 	import LibraryLoadIndicator from './browser/LibraryLoadIndicator.svelte';
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
@@ -510,9 +516,13 @@
 		ignoredFilters: string[];
 	}
 
+	const hideBrokenForActivePane = $derived(
+		uiPrefs.hide_broken_links && !isMissingTracksId(pane.playlist_id)
+	);
+
 	function _searchFilterNames(includeBrokenFilter: boolean): string[] {
 		const names: string[] = [];
-		if (includeBrokenFilter && uiPrefs.hide_broken_links) names.push('Hide broken links');
+		if (includeBrokenFilter && hideBrokenForActivePane) names.push('Hide broken links');
 		if (uiPrefs.next_only_filter && nextOnlyRef !== null) names.push('next-only');
 		return names;
 	}
@@ -524,7 +534,7 @@
 			return {
 				rows: _applyNextOnly(
 					sortRows(
-						filterRows(pane.rows, '', uiPrefs.hide_broken_links),
+						filterRows(pane.rows, '', hideBrokenForActivePane),
 						pane.sort_key,
 						pane.sort_dir,
 						autoPlayRankOf
@@ -549,7 +559,7 @@
 		}
 		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
 		const fallback = resolveSearchFilterFallback(
-			_applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links, autoPlayRankOf)),
+			_applyNextOnly(visibleRowsOf(pane, hideBrokenForActivePane, autoPlayRankOf)),
 			unfilteredRows,
 			pane.search.trim() === '' ? [] : _searchFilterNames(true)
 		);
@@ -603,11 +613,11 @@
 			visibleRows,
 			wholeCollectionActive
 				? sortRows(
-						filterRows(pane.search_results, '', uiPrefs.hide_broken_links),
+						filterRows(pane.search_results, '', hideBrokenForActivePane),
 						pane.sort_key,
 						pane.sort_dir
 					)
-				: visibleRowsOf(pane, uiPrefs.hide_broken_links),
+				: visibleRowsOf(pane, hideBrokenForActivePane),
 			complete
 		);
 	});
@@ -641,6 +651,7 @@
 		if (searchMode === 'find') {
 			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
+			else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
 		}
@@ -650,7 +661,8 @@
 		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
-		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
+		else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
+		else if (visibleRows.length === 0 && pane.rows.length > 0 && hideBrokenForActivePane)
 			return 'all tracks in this list are broken links (hidden by Broken filter)';
 		else if (
 			visibleRows.length === 0 &&
@@ -1095,6 +1107,9 @@
 				children: []
 			};
 		}
+		if (snap.playlist_id === MISSING_TRACKS_ID) {
+			return missingTracksNode(allTracksBrokenCount ?? 0);
+		}
 		const found = treeNodes.find((n) => n.playlist_id === snap.playlist_id);
 		if (found !== undefined) return found;
 		return {
@@ -1279,7 +1294,9 @@
 				const result =
 					requestedPlaylistId === 'all'
 						? await _fetchAllRows()
-						: await _fetchPlaylistRows(requestedPlaylistId);
+						: isMissingTracksId(requestedPlaylistId)
+							? await fetchMissingTrackRows()
+							: await _fetchPlaylistRows(requestedPlaylistId);
 				if (p.playlist_id !== requestedPlaylistId) continue;
 				p.rows = result.rows;
 				p.truncated = result.truncated;
@@ -1408,7 +1425,7 @@
 	}
 
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
 		const next = name.trim();
 		if (next === '' || next === node.name) return;
 		try {
@@ -1423,7 +1440,7 @@
 	}
 
 	async function deletePlaylistUi(node: PlaylistNode): Promise<void> {
-		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all' || isMissingTracksId(node.playlist_id)) return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
 		if (!skip) {
 			const every = window.confirm(`Delete playlist "${node.name}"?`);
@@ -1484,7 +1501,7 @@
 		// back-stack, post-mutation refresh), so this is the one place that
 		// needs to remember the selection for the next boot. Folders are not
 		// loadable panes, so only the two real kinds are recorded.
-		if (p === panes[0] && node.kind !== 'folder') {
+		if (p === panes[0] && node.kind !== 'folder' && node.kind !== 'missing_tracks') {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
 				name: node.name,
@@ -1500,7 +1517,9 @@
 					? await _fetchAllRows((info) =>
 							p.updateLoadProgress(seq, info.loaded, allTracksNonBrokenCount)
 						)
-					: await _fetchPlaylistRows(node.playlist_id);
+					: node.kind === 'missing_tracks'
+						? await fetchMissingTrackRows()
+						: await _fetchPlaylistRows(node.playlist_id);
 			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
@@ -1512,7 +1531,7 @@
 	/** Reconstructs the minimal PlaylistNode _loadPane needs to refresh the
 	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
 	function _currentNode(p: PaneStore): PlaylistNode | null {
-		if (p.playlist_id === null || p.playlist_id === 'all') return null;
+		if (p.playlist_id === null || p.playlist_id === 'all' || isMissingTracksId(p.playlist_id)) return null;
 		return {
 			playlist_id: p.playlist_id,
 			name: p.title,
@@ -2353,7 +2372,9 @@
 		openModal = null;
 		const node = pane.playlist_id === 'all'
 			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, broken_count: 0, kind: 'all_tracks' as const, children: [] }
-			: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
+			: isMissingTracksId(pane.playlist_id)
+				? missingTracksNode(allTracksBrokenCount ?? 0)
+				: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
 		if (node !== undefined) void _loadPane(pane, node);
 	}
 
@@ -2424,7 +2445,7 @@
 	async function _mutateActivePane(computeNext: (items: string[]) => string[]): Promise<void> {
 		const p = pane;
 		const id = p.playlist_id;
-		if (id === null || id === 'all') return;
+		if (id === null || id === 'all' || isMissingTracksId(id)) return;
 		if (source !== 'collection' || p.whole_collection) {
 			pushToast('membership editing is disabled outside the complete playlist view', 'error');
 			return;

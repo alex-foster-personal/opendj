@@ -293,6 +293,13 @@ test('All Tracks and blank panes never count toward playlist deck membership or 
 	assert.equal(contract.derivePlaylistPaneOpenCounts(panes).size, 0);
 });
 
+test('Missing Tracks never counts toward playlist deck membership or open counts', async () => {
+	const contract = await _loadContract();
+	const panes = [_pane({ playlist_id: 'missing', rows: [{ stable_id: 'a' }] })];
+	assert.equal(contract.derivePlaylistDeckMembership(panes, new Set(['a'])).size, 0);
+	assert.equal(contract.derivePlaylistPaneOpenCounts(panes).size, 0);
+});
+
 // --------------------------------------------------- CURRENT fold (2ac3a0)
 
 test('computeTreeCurrentFold: selected row above the viewport folds "above"', async () => {
