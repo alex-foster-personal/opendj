@@ -3,7 +3,7 @@
  * and prefs-fields.ts (its nested-object parsers), split into their own
  * dependency-free leaf module so the two do not import each other.
  *
- * Plain module (no runes, no other imports): just the two nested-object
+ * Plain module (no runes, no other imports): just the nested-object
  * shapes that prefs-fields.ts validates.
  */
 
@@ -35,4 +35,10 @@ export interface LevelCalibrationPrefs {
 	red_enabled: boolean;
 	ceiling_dbfs: number | null;
 	ceiling_enabled: boolean;
+}
+
+/** Spotify source-panel pin + recent memory (#315). localStorage only. */
+export interface SpotifyLibraryPref {
+	pinned_ids: string[];
+	recent_ids: string[];
 }
