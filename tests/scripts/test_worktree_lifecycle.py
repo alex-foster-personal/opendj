@@ -576,6 +576,7 @@ def _guard(primary: Path, **kwargs: object) -> int:
     return mod.main(argv)
 
 
+@pytest.mark.requirement("OPS-22")
 def test_guard_refuses_loudly_at_the_cap(primary: Path, tmp_path: Path,
                                          capsys: pytest.CaptureFixture[str]) -> None:
     """[if] live worktrees reach the cap [then] guard exits nonzero naming reap, [else stop]."""
@@ -588,6 +589,7 @@ def test_guard_refuses_loudly_at_the_cap(primary: Path, tmp_path: Path,
     assert mod.REAP_COMMAND in err
 
 
+@pytest.mark.requirement("OPS-22")
 def test_guard_refuses_loudly_below_the_disk_floor(primary: Path, tmp_path: Path,
                                                    monkeypatch: pytest.MonkeyPatch,
                                                    capsys: pytest.CaptureFixture[str]) -> None:
@@ -601,6 +603,7 @@ def test_guard_refuses_loudly_below_the_disk_floor(primary: Path, tmp_path: Path
     assert mod.REAP_COMMAND in err
 
 
+@pytest.mark.requirement("OPS-22")
 def test_guard_passes_under_the_cap_and_over_the_floor(
     primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str]

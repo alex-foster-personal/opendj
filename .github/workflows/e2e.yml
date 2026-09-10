@@ -219,6 +219,7 @@ jobs:
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
       - name: Derive the worktree-port lane from the runner identity
@@ -801,6 +802,7 @@ jobs:
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
       - name: Derive the worktree-port lane from the runner identity
