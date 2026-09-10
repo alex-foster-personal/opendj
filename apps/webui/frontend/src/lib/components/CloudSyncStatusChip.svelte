@@ -34,7 +34,28 @@
 			return `sync: inconclusive ${relativeTime(status?.last_push_at ?? null)}`;
 		return `sync: ${state}`;
 	});
-	const title = $derived(status === null ? (loadError ?? 'Loading CloudSync status.') : JSON.stringify(status));
+	const title = $derived.by(() => {
+		if (status === null) {
+			return loadError === null
+				? 'CloudSync status - still loading from the daemon. Click after it loads to see details.'
+				: `CloudSync status unavailable: ${loadError}. Click to retry details.`;
+		}
+		const state = chipState();
+		const next = 'Click to open recent results.';
+		if (state === 'off') {
+			return `CloudSync is off${status.reason ? ` (${status.reason})` : ''}. ${next}`;
+		}
+		if (state === 'error') {
+			return `CloudSync error: ${status.last_result?.message ?? 'last sync failed'}. ${next}`;
+		}
+		if (state === 'inconclusive') {
+			return `CloudSync last run was inconclusive - agreement was not verified. ${next}`;
+		}
+		if (state === 'ok') {
+			return `CloudSync last succeeded ${relativeTime(status.last_push_at)}. ${next}`;
+		}
+		return `CloudSync is syncing${status.rows_pending !== null ? ` (${status.rows_pending} rows pending)` : ''}. ${next}`;
+	});
 
 	onMount(() => {
 		void getStatus()

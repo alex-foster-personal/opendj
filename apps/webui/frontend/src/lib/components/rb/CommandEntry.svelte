@@ -71,7 +71,7 @@
 
 	const statusText = $derived(errorMessage ?? (result ? summarize(result) : ''));
 	const statusTitle = $derived(
-		errorMessage ?? (result ? JSON.stringify(result) : '')
+		errorMessage ?? (result ? summarize(result) : 'Voice command result')
 	);
 </script>
 

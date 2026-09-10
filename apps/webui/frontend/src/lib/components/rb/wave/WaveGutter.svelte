@@ -13,12 +13,16 @@
 		deckId: DeckState['deck_id'];
 		barsLabel: string | null;
 	} = $props();
+
+	const deckNumTitle = `Waveform row for deck ${deckId}`;
+	const barsTitle =
+		'Whole bars until the next memory cue, hot cue, phrase, or end of the beatgrid';
 </script>
 
 <div class="gutter">
 	<div class="deck-indicators">
-		<span class="deck-num">{deckId}</span>
-		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
+		<span class="deck-num" title={deckNumTitle}>{deckId}</span>
+		{#if barsLabel !== null}<span class="bars" title={barsTitle}>{barsLabel}</span>{/if}
 	</div>
 	<WaveTrackSummary {deck} />
 </div>

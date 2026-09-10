@@ -153,7 +153,7 @@
 		<canvas bind:this={canvas} width={W} height={H}></canvas>
 
 		{#if deck.anlz_error !== null}
-			<span class="no-anlz">NO ANALYSIS</span>
+			<span class="no-anlz" title="No rekordbox ANLZ for this track - the strip has no waveform, beatgrid, or cue overlay">NO ANALYSIS</span>
 		{/if}
 
 		{#each memoryCuesMs as ms, i (i)}
@@ -165,10 +165,10 @@
 		{/each}
 
 		{#if loopCue !== null}
-			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`}>
+			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`} title={`Loop in at ${_fmtMmSs(loopCue.in_ms)} (hot cue ${loopCue.slot})`}>
 				{loopCue.slot} {_fmtMmSs(loopCue.in_ms)}
 			</span>
-			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`}>
+			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`} title={`Loop out at ${_fmtMmSs(loopCue.out_ms)}`}>
 				{_fmtMmSs(loopCue.out_ms)}
 			</span>
 		{/if}

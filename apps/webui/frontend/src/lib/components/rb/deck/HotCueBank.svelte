@@ -25,6 +25,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
@@ -36,8 +37,7 @@
 		onSave,
 		onRename,
 		onDelete,
-		onRestore,
-		inertTip
+		onRestore
 	}: {
 		deck: DeckState;
 		pending: boolean;
@@ -50,7 +50,6 @@
 		onRename: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
 		onRestore: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
-		inertTip: string;
 	} = $props();
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -366,7 +365,7 @@
 			</div>
 		{/each}
 	</div>
-	<button class="rb-lit-button rb-inert dropdown" disabled title={inertTip} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
+	<button class="rb-lit-button rb-inert dropdown" disabled title={plannedTitle('hot-cue-menu')} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
 		HOT CUE <span class="caret">&#9662;</span>
 	</button>
 	{#if undo !== null}
@@ -377,7 +376,7 @@
 		the very click that started the write and make the operator press UNDO
 		twice. Repeat presses are safe without it: undoLastMutation serializes
 		on the same busy-slot tail and the second one finds its token spent. -->
-		<button class="rb-lit-button undo" aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
+		<button class="rb-lit-button undo" aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} title={`Undo last hot-cue change on slot ${undo.slot}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
 			UNDO {undo.slot}
 		</button>
 	{/if}
