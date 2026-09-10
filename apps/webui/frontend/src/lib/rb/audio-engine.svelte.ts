@@ -88,14 +88,10 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
-import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
-import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { beginDeckLoad, recordDeckLoad, reportDeckLoadFailure } from '$lib/rb/deck-load-context';
+import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
-import {
-	notePresentationClock,
-	notePresentationTickFailure,
-	readOutputTimestamp as _readOutputTimestamp
-} from '$lib/rb/presentation-clock-report';
+import { notePresentationClock, notePresentationTickFailure, readOutputTimestamp as _readOutputTimestamp } from '$lib/rb/presentation-clock-report';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -2834,9 +2830,8 @@ class RbAudioEngine implements AudioEngine {
 		// mix decoded into; re-resolving it after the swap could hand the stems a
 		// rebuilt graph and a silent sample-rate mismatch.
 		let loadCtx: AudioContext | null = null;
-		// Always-on stage timings -> recordPerfTiming / DevTools filter `[perf]`.
-		const perfT0 = performance.now();
-		const perfMs = (): number => Math.round(performance.now() - perfT0);
+		// Stage timings + load conditions for DevTools `[perf]`; spanId binds every recordDeckLoad below to THIS load's own span (#1658).
+		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
 		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
 			const t0 = performance.now();
@@ -2913,7 +2908,7 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
+			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState, spanId);
 			if (processor !== null) {
 				try {
 					await processor.dispose();
@@ -3026,12 +3021,18 @@ class RbAudioEngine implements AudioEngine {
 					pushToast(`Deck ${deck} retired processor cleanup failed - ${message}`, 'error');
 				}
 			}
+		}).catch((exc: unknown) => {
+			// A swap failure is still a load that STARTED; without this the span
+			// beginDeckLoad opened never closes and later rows report stale solo=0 (#1658 review).
+			stages.total = perfMs();
+			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
+			throw exc;
 		});
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.load_generation += 1;
 		st.last_load_stages = { ...stages };
-		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
+		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
 		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
 		// deck can play; the stem bundle lands afterwards and moves st.stems off
 		// `loading` on its own. Errors are handled inside, so no rejection can
