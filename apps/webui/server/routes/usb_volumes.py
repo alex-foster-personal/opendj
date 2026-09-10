@@ -47,7 +47,7 @@ from apps.webui.server.routes.usb_classify import (
     classify_role,
     hide_reason_for,
 )
-from apps.webui.server.routes.usb_gate import usb_export_enabled
+from apps.webui.server.routes.usb_gate import UsbExportGate, usb_export_gate
 
 log = logging.getLogger(__name__)
 
@@ -133,17 +133,24 @@ def _resolve_discovery(
     volumes_root: Path,
     diskutil_command: str | None,
     sandboxed: bool | None = None,
-    usb_export_flag_enabled: bool = True,
+    usb_export_gate: UsbExportGate,
 ) -> UsbDiscovery:
     # SAND-01. Checked before even the platform, because a build that
     # declared usb.export off (the shipped appstore profile) is not
     # available regardless of what host it happens to run on -- a developer
     # testing that profile on Linux must see the same refusal a real store
-    # build would, not "unsupported platform".
-    if not usb_export_flag_enabled:
+    # build would, not "unsupported platform". The ui_title comes from the
+    # gate's own refusal, which is None (a neutral disablement, not blamed on
+    # Apple) unless the store profile itself is the reason (SAND-01 review
+    # round 2, PR #1668).
+    if not usb_export_gate.flag_enabled:
         raise UsbDiscoveryUnavailable(
             "usb_export_disabled_in_this_build",
-            ui_title=STORE_BUILD_REFUSAL_TITLE,
+            ui_title=(
+                usb_export_gate.refusal.ui_title
+                if usb_export_gate.refusal is not None
+                else None
+            ),
         )
     if platform_name != "darwin":
         raise UsbDiscoveryUnavailable(f"unsupported_platform:{platform_name}")
@@ -168,12 +175,12 @@ def _resolve_discovery(
     )
 
 
-def _system_discovery(*, usb_export_flag_enabled: bool = True) -> UsbDiscovery:
+def _system_discovery(*, usb_export_gate: UsbExportGate) -> UsbDiscovery:
     return _resolve_discovery(
         platform_name=sys.platform,
         volumes_root=_VOLUMES_ROOT,
         diskutil_command=shutil.which("diskutil"),
-        usb_export_flag_enabled=usb_export_flag_enabled,
+        usb_export_gate=usb_export_gate,
     )
 
 
@@ -453,9 +460,7 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
 def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
     _touch_client()
     try:
-        discovery = _system_discovery(
-            usb_export_flag_enabled=usb_export_enabled(request)
-        )
+        discovery = _system_discovery(usb_export_gate=usb_export_gate(request))
         vols = _scan_volumes(
             discovery=discovery,
             include_simulated=request.app.state.usb_simulation_enabled,
@@ -487,9 +492,7 @@ async def usb_volume_events(request: Request) -> StreamingResponse | JSONRespons
     """SSE: keep the scanner warm while a client is subscribed."""
 
     try:
-        discovery = _system_discovery(
-            usb_export_flag_enabled=usb_export_enabled(request)
-        )
+        discovery = _system_discovery(usb_export_gate=usb_export_gate(request))
         include_simulated = request.app.state.usb_simulation_enabled
         initial_volumes = _scan_volumes(
             discovery=discovery,

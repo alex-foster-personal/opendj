@@ -198,7 +198,9 @@ def test_sandboxed_usb_discovery_blames_the_sandbox_not_the_host(
     an agent.
     """
     from apps.webui.server.routes import usb_volumes
+    from apps.webui.server.routes.usb_gate import UsbExportGate
 
+    enabled_gate = UsbExportGate(flag_enabled=True, refusal=None)
     missing_root = tmp_path / "no-such-volumes"
     with pytest.raises(usb_volumes.UsbDiscoveryUnavailable) as blocked:
         usb_volumes._resolve_discovery(
@@ -206,6 +208,7 @@ def test_sandboxed_usb_discovery_blames_the_sandbox_not_the_host(
             volumes_root=missing_root,
             diskutil_command="/usr/sbin/diskutil",
             sandboxed=True,
+            usb_export_gate=enabled_gate,
         )
     assert blocked.value.reason == "app_sandbox_forbids_volume_listing"
     assert blocked.value.ui_title == sandbox.STORE_BUILD_REFUSAL_TITLE
@@ -220,6 +223,7 @@ def test_sandboxed_usb_discovery_blames_the_sandbox_not_the_host(
             volumes_root=missing_root,
             diskutil_command="/usr/sbin/diskutil",
             sandboxed=False,
+            usb_export_gate=enabled_gate,
         )
     assert host_fault.value.reason == "volumes_root_unavailable"
     assert host_fault.value.ui_title is None

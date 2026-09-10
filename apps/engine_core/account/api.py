@@ -67,14 +67,14 @@ from apps.entitlements import (
     has,
     quota,
 )
-from apps.feature_flags import FlagState, FlagStore, store_profile_is_source
-from apps.feature_flags.profiles import STORE_PROFILE, selected_profile
-from apps.shared.sandbox import (
-    STORE_BUILD_REFUSAL_CODE,
-    STORE_BUILD_REFUSAL_TITLE,
-    is_sandboxed,
-    store_build_refusal_message,
+from apps.feature_flags import (
+    FlagState,
+    FlagStore,
+    store_build_refusal,
+    store_profile_is_source,
 )
+from apps.feature_flags.profiles import selected_profile
+from apps.shared.sandbox import is_sandboxed
 from apps.webui.server.auth import SESSION_COOKIE_NAME, SessionUser
 from apps.webui.server.routes.auth import session_store, signed_in_user
 
@@ -252,42 +252,20 @@ def _flag_store(request: Request) -> FlagStore:
 def _store_build_refusal(
     flag: FlagState, *, from_store_profile: bool, sandboxed: bool
 ) -> RefusalOut | None:
-    """The fourth refusal for a flag the sandbox blocks, else None.
+    """Adapt :func:`apps.feature_flags.store_build_refusal` to the account wire model.
 
-    Two independent paths to the SAME refusal (SAND-04): the shipped App
-    Store profile turned the flag off (a CONFIG fact, checked below), or this
-    process is genuinely inside the sandbox right now regardless of what the
-    flag says (a RUNTIME fact, checked first). The second path exists because
-    a mis-packaged bundle can ship the FULL profile -- so the flag reads
-    "on" -- while still running inside Apple's sandbox, and the capability is
-    exactly as dead either way; deriving the refusal from ``flag.enabled``
-    alone would report the panel as fully available while the daemon's own
-    USB routes 503.
+    The decision itself lives in ``apps.feature_flags`` so the USB gate
+    (``apps.webui.server.routes.usb_gate``) computes the SAME refusal from
+    the SAME inputs this endpoint discloses, rather than each guessing at
+    attribution on its own (SAND-01 review, PR #1668).
     """
-    if flag.sandbox_gated and sandboxed:
-        return RefusalOut(
-            code=STORE_BUILD_REFUSAL_CODE,
-            message=store_build_refusal_message(
-                flag.flag_id,
-                because=(
-                    "this process is running inside the macOS App Sandbox, "
-                    "which does not permit it."
-                ),
-            ),
-            ui_title=STORE_BUILD_REFUSAL_TITLE,
-        )
-    if flag.enabled or not flag.overridden or not from_store_profile:
+    refusal = store_build_refusal(
+        flag, from_store_profile=from_store_profile, sandboxed=sandboxed
+    )
+    if refusal is None:
         return None
     return RefusalOut(
-        code=STORE_BUILD_REFUSAL_CODE,
-        message=store_build_refusal_message(
-            flag.flag_id,
-            because=(
-                "the macOS App Sandbox does not permit it, so the "
-                f"{STORE_PROFILE!r} build profile ships with this flag off."
-            ),
-        ),
-        ui_title=STORE_BUILD_REFUSAL_TITLE,
+        code=refusal.code, message=refusal.message, ui_title=refusal.ui_title
     )
 
 

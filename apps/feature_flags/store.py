@@ -38,6 +38,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.feature_flags.profiles import STORE_PROFILE, profile_path, selected_profile
+from apps.shared.sandbox import (
+    STORE_BUILD_REFUSAL_CODE,
+    STORE_BUILD_REFUSAL_TITLE,
+    store_build_refusal_message,
+)
 
 #: Where the file lives inside the data dir, unless the env var overrides it.
 FLAGS_FILENAME: str = "feature-flags.json"
@@ -102,6 +107,67 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=True,
     ),
 )
+
+
+@dataclass(frozen=True)
+class FlagRefusal:
+    """The fourth refusal shape (SAND-01), independent of any wire model.
+
+    Lives beside :class:`FlagState` rather than in ``apps.engine_core.account.api``
+    so a route enforcing a flag (a USB gate) and a route disclosing it
+    (``/api/v1/flags``) compute the SAME refusal from the SAME inputs instead
+    of each guessing at attribution on its own (SAND-01 review, PR #1668).
+    """
+
+    code: str
+    message: str
+    ui_title: str
+
+
+def store_build_refusal(
+    flag: FlagState, *, from_store_profile: bool, sandboxed: bool
+) -> FlagRefusal | None:
+    """The fourth refusal for a flag the sandbox blocks, else None.
+
+    Two independent paths to the SAME refusal (SAND-04): the shipped App
+    Store profile turned the flag off (a CONFIG fact, checked below), or this
+    process is genuinely inside the sandbox right now regardless of what the
+    flag says (a RUNTIME fact, checked first). The second path exists because
+    a mis-packaged bundle can ship the FULL profile -- so the flag reads
+    "on" -- while still running inside Apple's sandbox, and the capability is
+    exactly as dead either way; deriving the refusal from ``flag.enabled``
+    alone would report the panel as fully available while the daemon's own
+    USB routes 503.
+
+    Returns ``None`` for every other reason a flag can be off (a plain local
+    override, an explicit ``MDT_FEATURE_FLAGS_FILE``): a caller must not
+    blame Apple's sandbox for a decision nobody but this machine made.
+    """
+    if flag.sandbox_gated and sandboxed:
+        return FlagRefusal(
+            code=STORE_BUILD_REFUSAL_CODE,
+            message=store_build_refusal_message(
+                flag.flag_id,
+                because=(
+                    "this process is running inside the macOS App Sandbox, "
+                    "which does not permit it."
+                ),
+            ),
+            ui_title=STORE_BUILD_REFUSAL_TITLE,
+        )
+    if flag.enabled or not flag.overridden or not from_store_profile:
+        return None
+    return FlagRefusal(
+        code=STORE_BUILD_REFUSAL_CODE,
+        message=store_build_refusal_message(
+            flag.flag_id,
+            because=(
+                "the macOS App Sandbox does not permit it, so the "
+                f"{STORE_PROFILE!r} build profile ships with this flag off."
+            ),
+        ),
+        ui_title=STORE_BUILD_REFUSAL_TITLE,
+    )
 
 
 class FlagFileError(RuntimeError):
@@ -175,23 +241,30 @@ class FlagStore:
             )
         return self._overrides.get(flag_id, definition.default)
 
+    def state(self, flag_id: str) -> FlagState:
+        """The resolved state of one declared flag. ``KeyError`` if undeclared."""
+        definition = self._defs.get(flag_id)
+        if definition is None:
+            declared = sorted(self._defs) or ["<none declared>"]
+            raise KeyError(
+                f"undeclared feature flag {flag_id!r}: add a FlagDef to "
+                f"apps/feature_flags/store.FLAGS before reading it. Declared: "
+                f"{declared}"
+            )
+        return FlagState(
+            flag_id=definition.flag_id,
+            enabled=self._overrides.get(definition.flag_id, definition.default),
+            default=definition.default,
+            overridden=definition.flag_id in self._overrides,
+            owner=definition.owner,
+            note=definition.note,
+            retire_by=definition.retire_by,
+            sandbox_gated=definition.sandbox_gated,
+        )
+
     def snapshot(self) -> tuple[FlagState, ...]:
         """Every declared flag and where its value came from."""
-        return tuple(
-            FlagState(
-                flag_id=definition.flag_id,
-                enabled=self._overrides.get(
-                    definition.flag_id, definition.default
-                ),
-                default=definition.default,
-                overridden=definition.flag_id in self._overrides,
-                owner=definition.owner,
-                note=definition.note,
-                retire_by=definition.retire_by,
-                sandbox_gated=definition.sandbox_gated,
-            )
-            for definition in self._defs.values()
-        )
+        return tuple(self.state(flag_id) for flag_id in self._defs)
 
 
 def _read_overrides(path: Path, declared: frozenset[str]) -> dict[str, bool]:
@@ -276,9 +349,11 @@ __all__ = [
     "FLAGS_FILE_ENV",
     "FlagDef",
     "FlagFileError",
+    "FlagRefusal",
     "FlagState",
     "FlagStore",
     "flags_path",
     "load_flags",
+    "store_build_refusal",
     "store_profile_is_source",
 ]

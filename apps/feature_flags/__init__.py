@@ -26,10 +26,12 @@ from apps.feature_flags.store import (
     FLAGS_FILENAME,
     FlagDef,
     FlagFileError,
+    FlagRefusal,
     FlagState,
     FlagStore,
     flags_path,
     load_flags,
+    store_build_refusal,
     store_profile_is_source,
 )
 
@@ -39,9 +41,11 @@ __all__ = [
     "FLAGS_FILE_ENV",
     "FlagDef",
     "FlagFileError",
+    "FlagRefusal",
     "FlagState",
     "FlagStore",
     "flags_path",
     "load_flags",
+    "store_build_refusal",
     "store_profile_is_source",
 ]
