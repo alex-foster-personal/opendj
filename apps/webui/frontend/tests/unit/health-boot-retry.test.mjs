@@ -58,15 +58,14 @@
  *    against hand-fed inputs (above) proves those functions are correct in
  *    isolation. It says nothing about whether BrowserPanel.svelte still
  *    calls them, still assigns their results to the right state, or still
- *    bumps `_libraryWriteEpoch` at both real write sites - node:test cannot
- *    mount a Svelte component to check that directly (same constraint
+ *    bumps its write-epoch counters at both real write sites - node:test
+ *    cannot mount a Svelte component to check that directly (same constraint
  *    `library-refresh-coalesce.test.mjs`'s "BrowserPanel wiring" section and
  *    `browser-panel-boot-pane-stale-health-retry.test.mjs`'s round-7 fix
  *    both document), so this file was silent on it.
  * 2. The two `reconcileBootSnapshot` epoch tests above only exercise the
- *    ternary; deleting either `_libraryWriteEpoch` bump in BrowserPanel.svelte
- *    leaves them green (verification.md: "a mutation that stays green is a
- *    finding").
+ *    ternary; deleting either epoch bump in BrowserPanel.svelte leaves them
+ *    green (verification.md: "a mutation that stays green is a finding").
  *
  * The "BrowserPanel wiring" tests below close both: they assert, against the
  * real unmodified component source (the same technique
@@ -74,6 +73,24 @@
  * real call sites, the state assignments, and both epoch-bump lines are
  * actually present. Sabotage-verified: deleting any one of the asserted
  * lines from BrowserPanel.svelte turns exactly one of these tests red.
+ *
+ * Round 11 (chatgpt-codex-connector, P2 BLOCKING on BrowserPanel.svelte:896)
+ * found that the single shared `_libraryWriteEpoch` above was itself a bug:
+ * `_refreshLibraryRowsOnce()` writes `playlists` (via `_refreshPlaylists()`)
+ * and `allTracksCount` (via its health re-read) at DIFFERENT times within one
+ * call. A playlists-only write landing between _init()'s boot Promise.all
+ * starting and resolving bumped the one shared epoch, which made _init()
+ * discard its own, still-uncontested health snapshot too - not just the
+ * playlists snapshot the write actually raced with. The fix splits the
+ * counter into `_healthWriteEpoch` and `_playlistsWriteEpoch`, each bumped
+ * only by its own field's writer and reconciled independently. The
+ * "independent epochs" test below is the behavioral proof: it exercises
+ * `reconcileBootSnapshot` exactly as each call site now uses it and shows the
+ * two fields no longer cross-contaminate, in both directions (a
+ * playlists-only write must not discard a still-fresh boot health value, and
+ * a health-only write must not discard a still-fresh boot playlists value -
+ * the second direction being the overshoot a fix that merely "always keep
+ * the boot health value" would have introduced).
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -202,7 +219,7 @@ test('a write epoch that advanced during the boot read keeps the fresher value',
 
 // -------------------------------------------------------- BrowserPanel wiring
 
-test('_init calls the real boot health/playlist read and reconciles both through the epoch', () => {
+test('_init calls the real boot health/playlist read and reconciles each field through its own epoch', () => {
 	const source = readFileSync(BROWSER_PANEL, 'utf8');
 
 	assert.match(
@@ -217,8 +234,8 @@ test('_init calls the real boot health/playlist read and reconciles both through
 	);
 	assert.match(
 		source,
-		/const bootEpoch = _libraryWriteEpoch;/,
-		'_init must snapshot the write epoch before starting the boot read'
+		/const bootHealthEpoch = _healthWriteEpoch;\s*const bootPlaylistsEpoch = _playlistsWriteEpoch;/,
+		'_init must snapshot BOTH write epochs, independently, before starting the boot read'
 	);
 	assert.match(
 		source,
@@ -227,22 +244,22 @@ test('_init calls the real boot health/playlist read and reconciles both through
 	);
 	assert.match(
 		source,
-		/allTracksCount = reconcileBootSnapshot\(\{\s*bootEpoch,\s*currentEpoch: _libraryWriteEpoch,\s*bootValue: healthRes\.health\.state_db\.tracks,\s*currentValue: allTracksCount\s*\}\);/,
-		'allTracksCount must be assigned through reconcileBootSnapshot, not overwritten unconditionally'
+		/allTracksCount = reconcileBootSnapshot\(\{\s*bootEpoch: bootHealthEpoch,\s*currentEpoch: _healthWriteEpoch,\s*bootValue: healthRes\.health\.state_db\.tracks,\s*currentValue: allTracksCount\s*\}\);/,
+		'allTracksCount must be reconciled against its OWN health epoch, not the playlists one'
 	);
 	assert.match(
 		source,
-		/playlists = reconcileBootSnapshot\(\{\s*bootEpoch,\s*currentEpoch: _libraryWriteEpoch,\s*bootValue: lists,\s*currentValue: playlists\s*\}\);/,
-		'playlists must be assigned through reconcileBootSnapshot, not overwritten unconditionally'
+		/playlists = reconcileBootSnapshot\(\{\s*bootEpoch: bootPlaylistsEpoch,\s*currentEpoch: _playlistsWriteEpoch,\s*bootValue: lists,\s*currentValue: playlists\s*\}\);/,
+		'playlists must be reconciled against its OWN playlists epoch, not the health one'
 	);
 	assert.match(
 		source,
-		/if \(_libraryWriteEpoch === bootEpoch\) \{\s*await _sweepBlankPlaylists\(lists\);\s*\}/,
-		'the sweep of the boot snapshot must be skipped once something fresher has landed'
+		/if \(_playlistsWriteEpoch === bootPlaylistsEpoch\) \{\s*await _sweepBlankPlaylists\(lists\);\s*\}/,
+		'the sweep of the boot snapshot must be skipped once something fresher has landed in playlists'
 	);
 });
 
-test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps the write epoch', () => {
+test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps only its OWN write epoch', () => {
 	const source = readFileSync(BROWSER_PANEL, 'utf8');
 
 	assert.match(
@@ -252,12 +269,96 @@ test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps the wri
 	);
 	assert.match(
 		source,
-		/const healthRes = await getHealthFreshWithRetry\(getHealth\);\s*allTracksCount = healthRes\.health\.state_db\.tracks;\s*_libraryWriteEpoch \+= 1;/,
-		'the fresh repair read must assign allTracksCount and bump the write epoch in the same block'
+		/const healthRes = await getHealthFreshWithRetry\(getHealth\);\s*allTracksCount = healthRes\.health\.state_db\.tracks;\s*_healthWriteEpoch \+= 1;/,
+		'the fresh repair read must assign allTracksCount and bump the HEALTH epoch, not the playlists one, in the same block'
 	);
 	assert.match(
 		source,
-		/playlists = await listPlaylistsHydrated\(\);\s*_libraryWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,
-		'_refreshPlaylists must bump the write epoch and sweep with its own fresh playlists'
+		/playlists = await listPlaylistsHydrated\(\);\s*_playlistsWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,
+		'_refreshPlaylists must bump the PLAYLISTS epoch, not the health one, and sweep with its own fresh playlists'
+	);
+});
+
+/**
+ * Round 11's actual defect, reproduced at the `reconcileBootSnapshot` level:
+ * a boot read for one field must survive a write to the OTHER field that
+ * lands while it is still in flight. This is what the shared
+ * `_libraryWriteEpoch` broke and the split `_healthWriteEpoch` /
+ * `_playlistsWriteEpoch` fixes; BrowserPanel.svelte's actual counters are not
+ * importable here (a `.svelte` component), so this drives the same
+ * production function, `reconcileBootSnapshot`, with the two-epoch usage the
+ * wiring tests above pin in the real source.
+ */
+test('a playlists-only write during the boot read must not discard the boot health value', async () => {
+	const mod = await _loadHealthBootRetry();
+
+	// _init() snapshots both epochs before its Promise.all starts.
+	const bootHealthEpoch = 0;
+	const bootPlaylistsEpoch = 0;
+
+	// While the boot Promise.all is still in flight, _refreshLibraryRowsOnce
+	// runs _refreshPlaylists() to completion (bumping ONLY the playlists
+	// epoch) but its own health re-read has not resolved yet.
+	const healthWriteEpochAfterRace = bootHealthEpoch; // unchanged: nothing wrote health yet
+	const playlistsWriteEpochAfterRace = bootPlaylistsEpoch + 1; // _refreshPlaylists wrote
+
+	const reconciledAllTracksCount = mod.reconcileBootSnapshot({
+		bootEpoch: bootHealthEpoch,
+		currentEpoch: healthWriteEpochAfterRace,
+		bootValue: 8355, // this boot read's own, real getHealthAtBoot() result
+		currentValue: null // the placeholder allTracksCount started as
+	});
+	const reconciledPlaylists = mod.reconcileBootSnapshot({
+		bootEpoch: bootPlaylistsEpoch,
+		currentEpoch: playlistsWriteEpochAfterRace,
+		bootValue: ['boot-playlist'],
+		currentValue: ['fresher-playlist']
+	});
+
+	assert.equal(
+		reconciledAllTracksCount,
+		8355,
+		'a playlists-only write must not make _init() discard its own uncontested boot health value'
+	);
+	assert.deepEqual(
+		reconciledPlaylists,
+		['fresher-playlist'],
+		'control: the playlists write that DID race must still win for playlists - this is not "always keep the boot value"'
+	);
+});
+
+test('a health-only write during the boot read must not discard the boot playlists value', async () => {
+	const mod = await _loadHealthBootRetry();
+
+	const bootHealthEpoch = 0;
+	const bootPlaylistsEpoch = 0;
+
+	// The reverse race: the health re-read lands first, playlists have not
+	// been touched by anything since boot started.
+	const healthWriteEpochAfterRace = bootHealthEpoch + 1;
+	const playlistsWriteEpochAfterRace = bootPlaylistsEpoch;
+
+	const reconciledAllTracksCount = mod.reconcileBootSnapshot({
+		bootEpoch: bootHealthEpoch,
+		currentEpoch: healthWriteEpochAfterRace,
+		bootValue: 8355,
+		currentValue: 4200 // a background health write that DID race
+	});
+	const reconciledPlaylists = mod.reconcileBootSnapshot({
+		bootEpoch: bootPlaylistsEpoch,
+		currentEpoch: playlistsWriteEpochAfterRace,
+		bootValue: ['boot-playlist'],
+		currentValue: [] // the placeholder playlists started as
+	});
+
+	assert.equal(
+		reconciledAllTracksCount,
+		4200,
+		'control: the health write that DID race must still win for allTracksCount'
+	);
+	assert.deepEqual(
+		reconciledPlaylists,
+		['boot-playlist'],
+		'a health-only write must not make _init() discard its own uncontested boot playlists value'
 	);
 });

@@ -199,11 +199,20 @@
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
-	// Bumped every time something OTHER than _init() writes playlists or
-	// allTracksCount, so _init()'s boot Promise.all can tell whether its own
-	// snapshot is still the freshest once it resolves. See
-	// reconcileBootSnapshot's doc comment for the race this guards.
-	let _libraryWriteEpoch = 0;
+	// Bumped every time something OTHER than _init() writes allTracksCount or
+	// playlists respectively, so _init()'s boot Promise.all can tell whether
+	// its own snapshot of EACH field is still the freshest once it resolves.
+	// Two separate counters, not one shared epoch: _refreshLibraryRowsOnce
+	// writes these two fields at different times within the same call (
+	// _refreshPlaylists() first, the health re-read after), so a single
+	// shared epoch bumped by either write made a playlists-only write during
+	// _init()'s boot read discard _init()'s own, still-uncontested health
+	// snapshot - the boot pane then read a stale/null allTracksCount and
+	// _restoreBootPane() treated a non-empty library as empty (PR #1656
+	// review round 11, P2 BLOCKING). See reconcileBootSnapshot's doc comment
+	// for the race this guards.
+	let _healthWriteEpoch = 0;
+	let _playlistsWriteEpoch = 0;
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
@@ -876,7 +885,8 @@
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
 		playlistsError = null;
-		const bootEpoch = _libraryWriteEpoch;
+		const bootHealthEpoch = _healthWriteEpoch;
+		const bootPlaylistsEpoch = _playlistsWriteEpoch;
 		try {
 			const [healthRes, lists] = await Promise.all([
 				getHealthAtBoot(getHealth),
@@ -888,22 +898,28 @@
 			// playlists while this Promise.all is still in flight. Applying this
 			// boot snapshot unconditionally would clobber that fresher data with
 			// older data (PR #1656 review round 9, P2 BLOCKING) - see
-			// reconcileBootSnapshot's doc comment.
+			// reconcileBootSnapshot's doc comment. Each field is reconciled
+			// against its OWN write epoch: _refreshLibraryRowsOnce writes
+			// playlists (via _refreshPlaylists) and allTracksCount (via the
+			// health re-read) at different times within one call, so a
+			// playlists-only write in between must not discard this boot
+			// read's still-uncontested health value, and vice versa (PR #1656
+			// review round 11, P2 BLOCKING).
 			allTracksCount = reconcileBootSnapshot({
-				bootEpoch,
-				currentEpoch: _libraryWriteEpoch,
+				bootEpoch: bootHealthEpoch,
+				currentEpoch: _healthWriteEpoch,
 				bootValue: healthRes.health.state_db.tracks,
 				currentValue: allTracksCount
 			});
 			playlists = reconcileBootSnapshot({
-				bootEpoch,
-				currentEpoch: _libraryWriteEpoch,
+				bootEpoch: bootPlaylistsEpoch,
+				currentEpoch: _playlistsWriteEpoch,
 				bootValue: lists,
 				currentValue: playlists
 			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
-			if (_libraryWriteEpoch === bootEpoch) {
+			if (_playlistsWriteEpoch === bootPlaylistsEpoch) {
 				await _sweepBlankPlaylists(lists);
 			}
 			if (source === 'spotify' && spotifySelectedId !== null) {
@@ -1207,7 +1223,7 @@
 
 	async function _refreshPlaylists(): Promise<void> {
 		playlists = await listPlaylistsHydrated();
-		_libraryWriteEpoch += 1;
+		_playlistsWriteEpoch += 1;
 		await _sweepBlankPlaylists(playlists);
 	}
 
@@ -1240,7 +1256,7 @@
 			// `_init` above has no such constraint and shares one.
 			const healthRes = await getHealthFreshWithRetry(getHealth);
 			allTracksCount = healthRes.health.state_db.tracks;
-			_libraryWriteEpoch += 1;
+			_healthWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 		}

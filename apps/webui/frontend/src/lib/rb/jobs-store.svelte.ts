@@ -234,6 +234,10 @@ class JobsStore {
 	#detachers: Unsubscribe[] = [];
 	/** How many components currently want the live subscription. See attach. */
 	#holders = 0;
+	/** True from attach() until the deferred initial hydrate it schedules has
+	 * settled. Gates whether an 'initial-connect' resync may skip its own
+	 * refetch - see the comment at that resync subscription. */
+	#initialHydratePending = false;
 
 	/** Replace the list from the server. A failure leaves the previous rows
 	 * on screen: a transient 500 must not look like "all your jobs vanished".
@@ -297,6 +301,7 @@ class JobsStore {
 		}
 		this.#holders += 1;
 		if (this.#detachers.length === 0) {
+			this.#initialHydratePending = true;
 			this.#detachers.push(
 				bus.subscribe(TOPIC_JOBS_UPDATED, (envelope) => {
 					const job = readJobPayload(envelope.payload);
@@ -309,14 +314,21 @@ class JobsStore {
 					// A gap means rows changed in ways no frame described. Refetch
 					// rather than trust what is on screen.
 					//
-					// 'initial-connect' is excluded: the bus's first-ever open now
-					// fires a resync for that too (events-bus.ts, PR #1656 round 5),
-					// but this store already schedules its own deferred initial
-					// hydrate below through `scheduler.defer`, behind the PERF-R6
-					// boot-window quiet period. Hydrating here as well on first open
-					// would duplicate that fetch and bypass the window it exists to
-					// enforce (PR #1656 review round 7, P2 BLOCKING).
-					if (reason === 'initial-connect') return;
+					// 'initial-connect' skips its own refetch ONLY while the
+					// deferred initial hydrate below (through `scheduler.defer`,
+					// behind the PERF-R6 boot-window quiet period) has not yet
+					// settled: that pending hydrate's own GET, whenever it runs,
+					// will already be fresh as of a point after this connection
+					// opened, so nothing between here and there is missed.
+					//
+					// Once that initial hydrate HAS settled, a later
+					// 'initial-connect' must still refetch: a slow first
+					// connection can open well after the deferred hydrate's GET
+					// already landed, and any job change in the gap between that
+					// HTTP snapshot and this socket opening was never delivered
+					// by anything (PR #1656 review round 12, P2 BLOCKING) -
+					// skipping unconditionally left that gap unrepaired.
+					if (reason === 'initial-connect' && this.#initialHydratePending) return;
 					void this.hydrate();
 				})
 			);
@@ -328,7 +340,9 @@ class JobsStore {
 			// after boot (the drawer opening) fetches immediately, because
 			// the scheduler is already released by then.
 			scheduler.defer('jobs-store:hydrate', () => {
-				void this.hydrate();
+				void this.hydrate().finally(() => {
+					this.#initialHydratePending = false;
+				});
 			});
 		}
 		let released = false;

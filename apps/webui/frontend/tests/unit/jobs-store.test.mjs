@@ -267,10 +267,47 @@ test('a resync refetches the whole list', async () => {
  * (reason 'initial-connect') on the bus's first-ever open too, not just a
  * reconnect. This store already schedules its own deferred initial hydrate
  * through `scheduler.defer` below the PERF-R6 boot-window quiet period, so
- * hydrating again here on that same first open would duplicate the fetch and
- * bypass the window it exists to enforce.
+ * hydrating again here on that same first open, WHILE that deferred hydrate
+ * is still pending, would duplicate the fetch and bypass the window it
+ * exists to enforce.
  */
-test('an initial-connect resync does not duplicate the deferred boot hydrate', async () => {
+test('an initial-connect resync does not duplicate a still-pending deferred boot hydrate', async () => {
+	const fake = makeFakeBus();
+	const manual = manualBootScheduler();
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse([job({ id: `after-${calls}` })]);
+	};
+	store.attach(fake.bus, manual.scheduler);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 0, 'the deferred fetch has not run yet');
+
+	// The socket opens before the boot quiet period has released the
+	// deferred hydrate: it is still pending.
+	fake.fireResync('initial-connect');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		calls,
+		0,
+		"the bus's first-ever open must not duplicate a deferred boot hydrate that has not run yet"
+	);
+
+	manual.release();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1, 'the deferred hydrate itself still runs exactly once, once released');
+});
+
+/**
+ * PR #1656 review round 12 (P2 BLOCKING): the round-7 skip above was
+ * unconditional, which left a real gap. If the deferred initial hydrate
+ * settles BEFORE a slow first WebSocket connection opens, any job change
+ * between that HTTP snapshot and the socket's 'initial-connect' was never
+ * delivered by anything - the skip covered a hydrate that had already
+ * happened, not one still in flight. Once the initial hydrate has settled,
+ * a later 'initial-connect' must refetch to close that gap.
+ */
+test('an initial-connect resync AFTER the deferred boot hydrate has settled still refetches', async () => {
 	const fake = makeFakeBus();
 	let calls = 0;
 	globalThis.fetch = async () => {
@@ -279,15 +316,17 @@ test('an initial-connect resync does not duplicate the deferred boot hydrate', a
 	};
 	store.attach(fake.bus, immediateBootScheduler());
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(calls, 1, 'attach does the first, deferred fetch');
+	assert.equal(calls, 1, 'attach does the first, deferred fetch, and it has already settled');
 
+	// A slow first connection opens only now, after the deferred hydrate's
+	// own GET already landed.
 	fake.fireResync('initial-connect');
 	await new Promise((resolve) => setImmediate(resolve));
 
 	assert.equal(
 		calls,
-		1,
-		"the bus's first-ever open must not duplicate the deferred boot hydrate this store already schedules"
+		2,
+		'a first connection opening after the deferred hydrate settled must still catch up on the gap between them'
 	);
 });
 
