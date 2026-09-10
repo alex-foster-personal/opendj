@@ -28,7 +28,8 @@ export type AutoPlayStallReason =
 	| 'no-compatible-track'
 	| 'candidates-failed-to-load'
 	| 'handoff-attempts-exhausted'
-	| 'handoff-incomplete';
+	| 'handoff-incomplete'
+	| 'master-handover-refused';
 
 export interface AutoPlayStallTrack {
 	stable_id: string;
@@ -118,6 +119,11 @@ function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 			return 'AutoPlay stopped: three different candidate tracks failed to load or play in a row';
 		case 'handoff-incomplete':
 			return 'AutoPlay stopped: the next track is on a deck but the handoff did not finish';
+		case 'master-handover-refused':
+			// The follower IS playing. What failed is the master flag, and
+			// pickSourceDeck only ever arms off the master, so AutoPlay will
+			// queue nothing after this track and the set ends when it does.
+			return 'AutoPlay stopped: the next track is playing but could not be made master';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
@@ -142,6 +148,8 @@ function _resume(reason: AutoPlayStallReason): string {
 			return 'Several different files failed in a row, so this is unlikely to be one bad track: load one by hand and press play, and check the toast log for the three errors.';
 		case 'handoff-incomplete':
 			return 'Press play on the deck that was loaded, or load a track by hand.';
+		case 'master-handover-refused':
+			return 'Press MASTER on the deck that is playing: AutoPlay follows the master deck and will queue nothing until one is set.';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
@@ -235,6 +243,7 @@ export function autoPlayExhaustionToast(reason: AutoPlayStallReason): string {
 			return 'auto-play: every compatible track it tried failed to load';
 		case 'handoff-attempts-exhausted':
 		case 'handoff-incomplete':
+		case 'master-handover-refused':
 			throw new Error(`${reason} is a handoff failure, not an exhaustion toast`);
 		default: {
 			const _exhaustive: never = reason;

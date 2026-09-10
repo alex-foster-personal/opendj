@@ -40,6 +40,10 @@
  *   [then] that rejection still raises nothing [⛔️ if a dead handoff restores
  *   its stale stall into the REPLACEMENT session, which "is AutoPlay on right
  *   now" cannot tell apart].
+ * [if] a refused MASTER handover is recorded [then] it is retired as soon as
+ *   any deck is audible as master, including the very deck that was refused
+ *   [⛔️ if a stall about a missing master flag outlives the master flag
+ *   arriving, which the same-track rule would otherwise cause].
  * [if] the stall is raised [then] the condition reaches `/api/v1/client-errors`
  *   through the REAL reporter, not a stubbed one [⛔️ if the only server-side
  *   trace of a stopped set is a POST nobody checked was sent].
@@ -409,6 +413,33 @@ test('a late handoff rejection raises nothing once AutoPlay is off', async () =>
  * is labelled rather than counted as behavioural coverage. It reds on the
  * mutation that the driven tests could not see.
  */
+/**
+ * DECLARED BLIND SPOT, same shape as the arming-generation one below.
+ *
+ * `_promoteMaster`'s failure path cannot be driven from this harness: it fires
+ * only after `_handoff` reaches its commit point, which needs a real
+ * AudioContext and a real engine behind `dispatchPerformanceCommand`. What IS
+ * driven here is everything downstream of the raise - the descriptor, the
+ * store, and the reason-specific retire above - so what this guard adds is
+ * that the controller's catch actually calls it.
+ */
+test('SHAPE GUARD: a refused master promotion records a durable stall', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	const at = source.indexOf("type: 'master', deck: pending.deck");
+	assert.notEqual(at, -1, 'the master dispatch could not be located: this guard asserts nothing');
+	const block = source.slice(at, source.indexOf('} finally {', at));
+	assert.match(block, /pushToast\(/, 'precondition: the toast this replaces is still there');
+	assert.match(
+		block,
+		/noteAutoPlayHandoffStall\(\s*'master-handover-refused'/,
+		'a refused handover leaves the follower playing and unmastered, so nothing ever queues again'
+	);
+	assert.match(block, /if \(!_armedAt\(generation\)\) return;/, 'and not from a dead arming');
+});
+
 test('SHAPE GUARD: nothing in the handoff catch runs for a dead arming', () => {
 	const source = readFileSync(
 		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
@@ -517,5 +548,54 @@ test('a spent attempt budget names the three files that failed', async () => {
 		for (const track of stall.blocked) {
 			assert.match(track.stable_id, /^f-/, 'only failed candidates belong in this list');
 		}
+	});
+});
+
+test('a refused master handover is retired once a master is actually audible', async () => {
+	await withController(async (mod) => {
+		// The follower is PLAYING and is not master. Nothing will queue after
+		// it, so the set ends in silence when it finishes - the class this
+		// whole change is about, reached through a different branch.
+		mod.noteAutoPlayHandoffStall('master-handover-refused', 'next-1', 'refused', true);
+		assert.equal(mod.readAutoPlayStall()?.reason, 'master-handover-refused');
+
+		// Same track, now audible AS master: what was missing was the flag, not
+		// the audio, so this is the recovery. The same-track rule that protects
+		// every other reason would wrongly hold this one open.
+		const one = mod.deckStates[1];
+		one.stable_id = 'next-1';
+		one.playing = true;
+		one.audible = true;
+		one.is_master = true;
+		one.duration_ms = 100_000;
+		one.position_ms = 1_000;
+		await settle();
+
+		assert.equal(
+			mod.readAutoPlayStall(),
+			null,
+			'a stall about a missing master flag must not outlive the flag arriving'
+		);
+	});
+});
+
+test('CONTROL: a refused master handover is NOT retired while nothing is audible', async () => {
+	await withController(async (mod) => {
+		mod.noteAutoPlayHandoffStall('master-handover-refused', 'next-1', 'refused', true);
+		const one = mod.deckStates[1];
+		one.stable_id = 'next-1';
+		one.playing = true;
+		// The optimistic flag without the presented one: the room hears nothing.
+		one.audible = false;
+		one.is_master = true;
+		one.duration_ms = 100_000;
+		one.position_ms = 1_000;
+		await settle();
+
+		assert.notEqual(
+			mod.readAutoPlayStall(),
+			null,
+			'the reason-specific retire must still require real, presented audio'
+		);
 	});
 });

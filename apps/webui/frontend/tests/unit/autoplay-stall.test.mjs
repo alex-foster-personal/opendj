@@ -87,7 +87,8 @@ describe('describeAutoPlayStall', () => {
 			'no-compatible-track',
 			'candidates-failed-to-load',
 			'handoff-attempts-exhausted',
-			'handoff-incomplete'
+			'handoff-incomplete',
+			'master-handover-refused'
 		];
 		const headlines = new Set();
 		const resumes = new Set();
@@ -163,6 +164,22 @@ describe('describeAutoPlayStall', () => {
 			detail: 'play refused'
 		});
 		assert.match(stall.headline, /the next track is on a deck/);
+	});
+
+	it('names the master-handover branch as a stop, and says how to resume it', () => {
+		// The follower IS playing here; what failed is the master flag. Because
+		// pickSourceDeck only ever arms off the master, nothing queues after
+		// this track and the set ends when it does - which is the whole class
+		// this state exists for, and it was only ever an expiring toast.
+		const stall = mod.describeAutoPlayStall({
+			reason: 'master-handover-refused',
+			source_stable_id: 'next-1',
+			blocked: [],
+			detail: 'setDeckMaster refused'
+		});
+		assert.match(stall.headline, /could not be made master/);
+		assert.match(stall.resume, /Press MASTER/);
+		assert.equal(stall.detail, 'setDeckMaster refused');
 	});
 
 	it('refuses a reason it has no words for', () => {

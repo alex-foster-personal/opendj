@@ -28,11 +28,9 @@ import {
 } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
-	decideAutoPlayBeatSync,
 	decideMasterPromotion,
 	effectiveAutoPlayThresholdMs,
 	handoffFailureIsRetryable,
-	formatAutoPlaySyncSkipToast,
 	getAutoPlayFeedEpoch,
 	getAutoPlayPlaylist,
 	getAutoPlayPlaylistRevision,
@@ -61,7 +59,7 @@ import {
 	publishAutoPlayOrder
 } from '$lib/rb/autoplay-queue.svelte';
 import { autoPlayExhaustionToast, autoPlayStallReason } from '$lib/rb/autoplay-stall';
-import { phaseLockOk } from '$lib/rb/auto-play-phase-lock';
+import { applyAutoPlayBeatSyncDecision } from '$lib/rb/auto-play-phase-lock';
 import { clearAutoPlayStall, noteAutoPlayExhaustion, noteAutoPlayHandoffStall, retireAutoPlayStallIfAudible } from '$lib/rb/autoplay-stall.svelte';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
@@ -213,38 +211,6 @@ function _syncPlayedSet(): void {
 	}
 }
 
-async function _applyBeatSyncDecision(
-	source: AutoPlayDeckSnap,
-	follower: DeckId
-): Promise<void> {
-	const probe = source.beat_sync_enabled
-		? phaseLockOk(source.id, follower)
-		: { ok: false as const, error: 'source Beat Sync off' };
-	const decision = decideAutoPlayBeatSync({
-		source_beat_sync_enabled: source.beat_sync_enabled,
-		phase_lock_ok: probe.ok
-	});
-	const currentlyOn = deckStates[follower].beat_sync_enabled;
-	if (decision === 'enable' && !currentlyOn) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true });
-	} else if (decision === 'disable' && currentlyOn) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false });
-	}
-	if (source.beat_sync_enabled && !probe.ok) {
-		const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
-		pushToast(
-			formatAutoPlaySyncSkipToast({
-				follower_deck: follower,
-				mode: deckStates[follower].sync_mode,
-				plan_error: probe.error,
-				min_ratio: bounds.min,
-				max_ratio: bounds.max
-			}),
-			'info'
-		);
-	}
-}
-
 /**
  * Load + start the follower, then hand it the master role.
  *
@@ -267,7 +233,8 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	}
 	// ---- commit point: nextId is on deck `follower` from here down ----
 	try {
-		await _applyBeatSyncDecision(source, follower);
+		const syncSkip = await applyAutoPlayBeatSyncDecision(source, follower);
+		if (syncSkip !== null) pushToast(syncSkip, 'info');
 		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
 	} catch (error: unknown) {
 		throw new AutoPlayHandoffError('commit', error);
@@ -306,11 +273,16 @@ async function _promoteMaster(): Promise<void> {
 	if (decision === 'promote') {
 		_pendingMaster = null;
 		_promoting = true;
+		const generation = _generation;
 		try {
 			await dispatchPerformanceCommand({ type: 'master', deck: pending.deck });
 		} catch (error: unknown) {
+			if (!_armedAt(generation)) return;
 			const message = error instanceof Error ? error.message : String(error);
 			pushToast(`auto-play: deck ${pending.deck} master handover refused: ${message}`, 'error');
+			// PLAY-08 (r3974888765): playing, not master, so nothing queues
+			// after it. Terminal, and it was only ever an expiring toast.
+			noteAutoPlayHandoffStall('master-handover-refused', pending.stable_id, message, true);
 		} finally {
 			_promoting = false;
 		}

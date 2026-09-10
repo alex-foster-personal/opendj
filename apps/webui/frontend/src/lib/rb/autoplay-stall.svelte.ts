@@ -88,7 +88,7 @@ export function noteAutoPlayExhaustion(input: {
  * class as exhaustion, same durable state.
  */
 export function noteAutoPlayHandoffStall(
-	reason: 'handoff-attempts-exhausted' | 'handoff-incomplete',
+	reason: 'handoff-attempts-exhausted' | 'handoff-incomplete' | 'master-handover-refused',
 	sourceStableId: string,
 	detail: string,
 	/**
@@ -136,7 +136,15 @@ export function noteAutoPlayHandoffStall(
 export function retireAutoPlayStallIfAudible(sourceStableId: string, audible: boolean): void {
 	const stall = autoPlayStall.current;
 	if (stall === null) return;
-	if (sourceStableId === stall.source_stable_id) return;
 	if (!audible) return;
+	// A refused master handover is over the moment ANY deck is audible AS
+	// master, including the very deck that was refused: what was missing there
+	// was the master flag, not the audio, so `pickSourceDeck` returning that
+	// same track is the recovery rather than a continuation of the fault.
+	if (stall.reason === 'master-handover-refused') {
+		clearAutoPlayStall();
+		return;
+	}
+	if (sourceStableId === stall.source_stable_id) return;
 	clearAutoPlayStall();
 }

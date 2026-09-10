@@ -7,12 +7,20 @@
  * scheduling. The controller was one line under the 600-line file gate, which
  * is a bad place to leave the module that owns the handoff.
  *
- * Never mutates transport: it builds the SAME plan `_applyBeatSyncDecision`
- * would ask for and reports whether it threw, so a handoff can decline Beat
- * Sync and continue free-tempo instead of failing.
+ * `phaseLockOk` never mutates transport: it builds the SAME plan the decision
+ * below would ask for and reports whether it threw, so a handoff can decline
+ * Beat Sync and continue free-tempo instead of failing. The decision itself
+ * moved here Thu 10 Sep 2026 to sit beside its own probe, which is also what
+ * gave the controller room for PLAY-08's master-handover branch.
  */
 import { deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
-import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
+import {
+	decideAutoPlayBeatSync,
+	formatAutoPlaySyncSkipToast,
+	tempoBoundsFromPitchRange,
+	type AutoPlayDeckSnap
+} from '$lib/rb/auto-play';
+import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	computeFollowerSyncPlan,
 	quantizeToNearestBeat,
@@ -70,4 +78,41 @@ export function phaseLockOk(sourceId: DeckId, follower: DeckId): PhaseLockProbe 
 		const message = error instanceof Error ? error.message : String(error);
 		return { ok: false, error: message };
 	}
+}
+
+/**
+ * Apply the Beat Sync decision; RETURN the skip notice rather than raising it.
+ *
+ * The caller pushes the toast. `$lib/stores.svelte` sits at the frontend's
+ * measured fan-in ceiling with zero headroom, so a new importer of it reds the
+ * quality ratchet for every lane at once - and this module has no other reason
+ * to know what a toast is. Returning the message keeps the notice at the call
+ * site that already had it.
+ */
+export async function applyAutoPlayBeatSyncDecision(
+	source: AutoPlayDeckSnap,
+	follower: DeckId
+): Promise<string | null> {
+	const probe = source.beat_sync_enabled
+		? phaseLockOk(source.id, follower)
+		: { ok: false as const, error: 'source Beat Sync off' };
+	const decision = decideAutoPlayBeatSync({
+		source_beat_sync_enabled: source.beat_sync_enabled,
+		phase_lock_ok: probe.ok
+	});
+	const currentlyOn = deckStates[follower].beat_sync_enabled;
+	if (decision === 'enable' && !currentlyOn) {
+		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true });
+	} else if (decision === 'disable' && currentlyOn) {
+		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false });
+	}
+	if (!source.beat_sync_enabled || probe.ok) return null;
+	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
+	return formatAutoPlaySyncSkipToast({
+		follower_deck: follower,
+		mode: deckStates[follower].sync_mode,
+		plan_error: probe.error,
+		min_ratio: bounds.min,
+		max_ratio: bounds.max
+	});
 }
