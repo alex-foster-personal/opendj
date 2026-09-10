@@ -314,16 +314,29 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 
 	expect(samples.length).toBeGreaterThanOrEqual(5);
 
-	// PR #1656 review thread (src/lib/api/request-coalescer.ts:86): this bench
-	// recorded healthCallsAtBoot/uiPrefsCallsAtBoot without ever asserting on
-	// them, so a coalescing regression here would ship silently. -1 is the
-	// "the app never made one of these requests" sentinel (see inBootWindow
-	// above); a per-sample check that it never appears is what makes the
-	// median below trustworthy rather than an average with an unmeasured run
-	// silently mixed in.
+	// PR #1656 review thread (src/lib/api/request-coalescer.ts:86, follow-up
+	// round): the median assertions below only catch a regression that moves
+	// the MIDDLE sample, so an intermittent regression (e.g. 3,3,3,3,4,4)
+	// would still pass with the median pinned at 3 even though 2 of 6 boots
+	// made a duplicate request. Every sample must hit the exact count, not
+	// just most of them; -1 (see inBootWindow above) is also caught by this,
+	// since it can never equal 4 or 2.
+	//
+	// 4, not 3 (review round 5): fixing round 4's Thread 1 -- a consumer that
+	// already consumed a shared, settled zero-track snapshot must refresh on
+	// the bus's first-ever open, not only a reconnect -- makes
+	// BrowserPanel's resync handler legitimately run its library refresh at
+	// boot, which reads health with `fresh: true` (deliberately uncoalesced,
+	// see api.ts's getHealth doc). That is a genuinely different request
+	// doing different work, not the mount-wave duplicate this module
+	// coalesces (still 4 -> 3, see request-coalescer.ts's "RE-MEASURED"
+	// note). It is pinned at exactly 4 rather than 4-or-5 because
+	// `forceInFlight: false` (api.ts's subscribeResync call, request-
+	// coalescer.ts) stops that same first-open resync from also forcing an
+	// in-flight health entry to re-issue.
 	for (const sample of samples) {
-		expect(sample.healthCallsAtBoot, 'healthCallsAtBoot must be measured, never -1').toBeGreaterThanOrEqual(0);
-		expect(sample.uiPrefsCallsAtBoot, 'uiPrefsCallsAtBoot must be measured, never -1').toBeGreaterThanOrEqual(0);
+		expect(sample.healthCallsAtBoot, 'health@boot must be exactly 4 on every boot: 3 coalesced + 1 uncoalesced fresh refresh from the first-open resync').toBe(4);
+		expect(sample.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline on every boot').toBe(2);
 	}
 
 	const report = {
@@ -346,15 +359,20 @@ test('a deck load fired at boot, measured over repeated cold page loads', async 
 	console.log(`[boot-burst] MEDIANS ${JSON.stringify(report.median)} -> ${OUT_PATH}`);
 
 	// The claim this PR actually ships (title and body, post-scope-reduction):
-	// health 4 -> 3, ui-prefs untouched at 2. Health-only is coalesced; see
-	// request-coalescer.ts's "WHAT SHIPPED IS SMALLER THAN WHAT WAS TRIED" for
-	// why ui-prefs is queued rather than forced. Asserting BOTH numbers means a
-	// health regression is caught AND a future ui-prefs change that forgets to
-	// update this claim is caught, instead of only ever checking one direction.
-	// Exact, not <=: measured deterministically at 3 across every one of 6
-	// boots on the negative and positive control alike (see "Instrument fix" in
-	// the PR body), so <=3 let a silent regression to 0 (or any count under 3)
-	// pass unnoticed -- the exact gap review round 3 (thread on this file) named.
-	expect(report.median.healthCallsAtBoot, 'health@boot must be exactly the coalesced count').toBe(3);
+	// the mount-wave duplication is coalesced 4 -> 3, ui-prefs untouched at 2.
+	// Health-only is coalesced; see request-coalescer.ts's "WHAT SHIPPED IS
+	// SMALLER THAN WHAT WAS TRIED" for why ui-prefs is queued rather than
+	// forced. Asserting BOTH numbers means a health regression is caught AND
+	// a future ui-prefs change that forgets to update this claim is caught,
+	// instead of only ever checking one direction.
+	// health@boot itself reads 4, not 3 (round 5, see the per-sample loop
+	// above for why): the coalescing win is real and unchanged, it is just no
+	// longer the only thing this measurement counts, since round 4's Thread 1
+	// fix legitimately adds one more, uncoalesced, correctness-motivated
+	// request at boot. Exact, not <=: measured deterministically at 4 across
+	// every one of 6 boots, so <=4 would let a silent regression to 0 (or any
+	// count under 4) pass unnoticed -- the exact gap review round 3 (thread on
+	// this file) named, and round 5 does not relax.
+	expect(report.median.healthCallsAtBoot, 'health@boot must be exactly 4: 3 coalesced + 1 uncoalesced fresh refresh').toBe(4);
 	expect(report.median.uiPrefsCallsAtBoot, 'ui-prefs@boot is NOT coalesced by this PR; 2 is the unchanged baseline').toBe(2);
 });

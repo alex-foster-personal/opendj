@@ -270,3 +270,55 @@ test('invalidate() on an already-settled entry is unaffected by the in-flight fi
 	backing.resolveAll();
 	assert.equal(await second, 'settled-body');
 });
+
+/**
+ * PR #1656 review round 5: the bus's first-ever open now fires a resync
+ * (events-bus.ts `'initial-connect'`) precisely so a consumer that already
+ * consumed a settled zero-track snapshot gets refreshed (round 4's fix).
+ * But nothing about SERVER state changed just because the socket opened for
+ * the first time -- unlike a real 'tracks' change or a seq gap, there is no
+ * change for an in-flight request's eventual answer to be stale AGAINST.
+ * Forcing the in-flight branch's recursive re-share anyway (the default
+ * behavior above) bought nothing here and cost a second, redundant request
+ * racing the first -- measured directly in `just boot-burst-bench` as an
+ * intermittent 4-vs-5 health@boot, exactly the per-boot nondeterminism
+ * Thread 2 on this same PR was about. `forceInFlight: false` lets the caller
+ * say "evict a cached answer, but an answer already being fetched is not
+ * stale against this particular reason" -- see src/lib/api.ts's
+ * `subscribeResync` for the one call site that passes it.
+ */
+test('invalidate({ forceInFlight: false }) leaves an in-flight request untouched', async () => {
+	const seq = makeSequencedRequest();
+	const waiter = coalescer.share('health', 1000, seq.request);
+
+	coalescer.invalidate('health', { forceInFlight: false });
+
+	seq.resolve(0, 'in-flight-body');
+	await settle();
+
+	assert.equal(seq.calls, 1, 'a request already in flight must not be forced to re-issue');
+	assert.equal(await waiter, 'in-flight-body', 'the original waiter must receive the request it was already holding');
+
+	// It must also have settled into the cache normally, as if invalidate()
+	// had never been called -- the whole point is that this reason does not
+	// treat the in-flight answer as stale.
+	const cached = coalescer.share('health', 1000, seq.request);
+	assert.equal(seq.calls, 1, 'the now-settled entry must still be joinable, not silently dropped by the invalidate() call');
+	assert.equal(await cached, 'in-flight-body');
+});
+
+test('invalidate({ forceInFlight: false }) still evicts an already-SETTLED entry', async () => {
+	const backing = makeDeferredRequest('settled-body');
+
+	const first = coalescer.share('health', 1000, backing.request);
+	backing.resolveAll();
+	await first;
+	await settle();
+
+	coalescer.invalidate('health', { forceInFlight: false });
+	const second = coalescer.share('health', 1000, backing.request);
+
+	assert.equal(backing.calls, 2, 'forceInFlight only governs the in-flight branch; a settled entry must still be dropped');
+	backing.resolveAll();
+	assert.equal(await second, 'settled-body');
+});

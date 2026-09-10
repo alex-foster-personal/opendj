@@ -21,7 +21,7 @@
  */
 import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
-import { subscribeConnectionState, subscribeKind, subscribeResync } from './api/events-bus';
+import { subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import type { RuleAst } from './smartlists/rule-form';
 
@@ -431,23 +431,25 @@ const HEALTH_KEY = 'GET /api/v1/health';
  * invalidates: a gap means something was missed and health may be one of
  * the things that changed, so serving the pre-gap body is the same bug.
  *
- * A THIRD source, added on the follow-up review round: every transition to
- * `'open'`, not just a reconnect. `subscribeResync` alone misses the bus's
- * very first successful connection on purpose (`_hasConnected` in
- * events-bus.ts: "nothing could have been missed before there was a
- * connection"), which is true of the BUS's own state but not of a health
- * snapshot cached before the bus existed at all. `+layout.svelte` only calls
- * `connect()` after an async capability probe, so a track change landing
- * between module evaluation and that first `open` would otherwise ride
- * through on the cached snapshot for the rest of the TTL. Invalidating on
- * every `'open'` closes that window at the cost of one redundant
- * invalidation on a reconnect, which `subscribeResync` was already doing.
+ * `subscribeResync` alone used to miss the bus's very first successful
+ * connection, which needed a second, explicit `subscribeConnectionState`
+ * invalidation here to cover (PR #1656 review round 4). That gap is now
+ * closed at the source: events-bus.ts fires a resync (reason
+ * `'initial-connect'`) on the first open too, not just a reconnect, so this
+ * one subscription now covers both cases and the extra listener was removed.
+ *
+ * `forceInFlight: false` for that one reason only (review round 5): nothing
+ * about SERVER state changed just because the bus connected for the first
+ * time, unlike a real 'tracks' change or a seq gap, so an entry already in
+ * flight is not stale against it and does not need to be force-reissued --
+ * doing so anyway bought no correctness and cost an intermittent fifth
+ * request racing the one already in flight (`request-coalescer.test.mjs`
+ * covers this directly).
  */
 subscribeKind('tracks', () => requestCoalescer.invalidate(HEALTH_KEY));
-subscribeResync(() => requestCoalescer.invalidate(HEALTH_KEY));
-subscribeConnectionState((state) => {
-	if (state === 'open') requestCoalescer.invalidate(HEALTH_KEY);
-});
+subscribeResync((reason) =>
+	requestCoalescer.invalidate(HEALTH_KEY, { forceInFlight: reason !== 'initial-connect' })
+);
 
 /**
  * How long the coalesced health fetch may run before it is abandoned.

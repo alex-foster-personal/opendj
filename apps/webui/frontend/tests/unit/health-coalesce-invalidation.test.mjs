@@ -33,10 +33,13 @@
  *
  * [if] a tracks change lands before the bus's FIRST-EVER successful
  *   connection [then ⛔] the next getHealth() call still re-fetches --
- *   events-bus.ts's own `_hasConnected` guard means `subscribeResync` never
- *   fires on that first connect (only on a reconnect), so the fix above alone
- *   leaves this window open: a change between module load and the bus's
- *   first `open` would otherwise ride through on the cached snapshot forever
+ *   events-bus.ts's own `_hasConnected` guard used to mean `subscribeResync`
+ *   fired only on a reconnect, never on that first connect, so the fix above
+ *   alone left this window open: a change between module load and the bus's
+ *   first `open` would otherwise ride through on the cached snapshot forever.
+ *   Fixed at the source in events-bus.ts (`_fireResync('initial-connect')` on
+ *   the first open), so the same `subscribeResync(...)` call in api.ts covers
+ *   both cases and needs no extra listener here.
  * [if] the underlying health fetch never settles (a stalled connection)
  *   [then ⛔] it must give up on its own after a bounded timeout, so a
  *   caller who arrives after the stall gets a FRESH request rather than
@@ -184,10 +187,10 @@ test('the FIRST-EVER bus connection also invalidates a cached health snapshot', 
 	assert.equal(first.health.state_db.tracks, 0);
 	assert.equal(calls, 1);
 
-	// The bus has never connected before now, so events-bus.ts's own
-	// `_hasConnected` guard means `subscribeResync` does NOT fire here (that
-	// only fires on a RE-connect) even though a track change could have
-	// landed in the window between the getHealth() above and this connect.
+	// The bus has never connected before now. events-bus.ts fires a resync
+	// (reason 'initial-connect') on this first open, same as it would on a
+	// reconnect, so api.ts's one subscribeResync(...) call invalidates here
+	// too, covering the window between the getHealth() above and this connect.
 	connectAndHello(mod);
 
 	const afterConnect = await mod.getHealth();
