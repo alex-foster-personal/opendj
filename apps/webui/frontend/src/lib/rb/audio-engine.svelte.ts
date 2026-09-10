@@ -87,7 +87,7 @@ import {
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
-import { disposeAudioResources } from '$lib/rb/audio-resource-disposal';
+import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
 import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
@@ -121,6 +121,7 @@ import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$li
 import {
 	currentAnlzFetchGeneration,
 	fetchAnlzForDeckLoad,
+	fetchAnlzUntilCurrentGeneration,
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
 	invalidateAnlzCacheEntry,
@@ -178,16 +179,16 @@ import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$l
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
 	ANALYSER_FFT_SIZE,
+	assertUnitRange,
 	AUDIO_CONTEXT_OPTIONS,
 	CONTEXT_WAIT_POLL_MS,
 	CONTEXT_WAIT_STALL_TIMEOUT_MS,
 	DECK_IDS,
+	eqDbFromKnob,
 	EQ_FREQ_HIGH_HZ,
 	EQ_FREQ_LOW_HZ,
 	EQ_FREQ_MID_HZ,
-	EQ_MAX_DB,
 	EQ_MID_Q,
-	EQ_MIN_DB,
 	FILTER_Q,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
@@ -297,6 +298,7 @@ import type {
 // $lib/rb/audio-engine.svelte keeps working unchanged.
 
 export { DECK_IDS, PITCH_RANGES };
+export { detachProcessorForDisposal };
 export {
 	beatSyncMaxFollowers,
 	planSeekSync,
@@ -623,31 +625,7 @@ export function deckPcmEstimatedBytes(): number {
 	return total;
 }
 
-interface AudioDisconnectable {
-	disconnect(): void;
-}
-
-export function detachProcessorForDisposal<T extends AudioDisconnectable>(owner: {
-	processor: T | null;
-}): T | null {
-	const processor = owner.processor;
-	owner.processor = null;
-	return processor;
-}
-
 // ---------------------------------------------------------------- _helpers
-
-function _assertUnit(name: string, value: number): void {
-	if (!Number.isFinite(value) || value < 0 || value > 1) {
-		throw new RangeError(`${name} must be within 0..1, got ${value}`);
-	}
-}
-
-function _eqDbFromKnob(value: number): number {
-	// 0 -> EQ_MIN_DB, 0.5 -> 0 dB (flat), 1 -> EQ_MAX_DB. Piecewise linear.
-	if (value <= 0.5) return EQ_MIN_DB * (1 - value * 2);
-	return EQ_MAX_DB * (value * 2 - 1);
-}
 
 function _setParam(param: AudioParam, value: number): void {
 	if (_ctx === null) throw new Error('audio graph not initialised');
@@ -738,16 +716,16 @@ function _ensureGraph(): AudioContext {
 		const low = _ctx.createBiquadFilter();
 		low.type = 'lowshelf';
 		low.frequency.value = EQ_FREQ_LOW_HZ;
-		low.gain.value = _eqDbFromKnob(ch.eq_low);
+		low.gain.value = eqDbFromKnob(ch.eq_low);
 		const mid = _ctx.createBiquadFilter();
 		mid.type = 'peaking';
 		mid.frequency.value = EQ_FREQ_MID_HZ;
 		mid.Q.value = EQ_MID_Q;
-		mid.gain.value = _eqDbFromKnob(ch.eq_mid);
+		mid.gain.value = eqDbFromKnob(ch.eq_mid);
 		const high = _ctx.createBiquadFilter();
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
-		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		high.gain.value = eqDbFromKnob(ch.eq_high);
 		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
 		const filterLp = _ctx.createBiquadFilter();
 		filterLp.type = 'lowpass'; filterLp.Q.value = FILTER_Q; filterLp.frequency.value = lpHz;
@@ -3056,7 +3034,7 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'refreshHotCues');
 		const stableId = st.stable_id;
 		if (stableId === null) throw new Error('refreshHotCues: deck has no stable_id');
-		let generation = currentAnlzFetchGeneration();
+		const generation = currentAnlzFetchGeneration();
 		const [initialFresh, slots] = await Promise.all([
 			fetchAnlzBypassingHttpCache(stableId),
 			fetchHotCueSlots(stableId)
@@ -3064,22 +3042,15 @@ class RbAudioEngine implements AudioEngine {
 			invalidateAnlzCacheEntry(stableId);
 			throw err;
 		});
-		let fresh = initialFresh;
-		// A source switch (PARITY-02) mid-flight bumps the generation and wipes
-		// the shared cache (anlz-fetch-generation.ts); every other /anlz
-		// publisher (_fetchAndPublish, fetchAnlzForDeckLoad) already re-checks
-		// this before writing, but this one never did, so it could repopulate
-		// the just-wiped cache entry AND this deck with pre-switch bytes while
-		// analysisSourceState already recorded the new source - a permanent
-		// split invisible to `_decksDisagreeWith`'s own-vs-own comparison
-		// (discussion_r3973991964 P1 BLOCKING). Re-fetch /anlz until the
-		// answer belongs to the CURRENT generation, same retry-until-current
-		// shape as fetchAnlzForDeckLoad; the hot-cue slots are not
-		// source-dependent, so the one already fetched is still good.
-		while (generation !== currentAnlzFetchGeneration()) {
-			generation = currentAnlzFetchGeneration();
-			fresh = await fetchAnlzBypassingHttpCache(stableId);
-		}
+		// A source switch (PARITY-02) mid-flight can supersede the fetch above;
+		// re-run it under the shared guard (fetchAnlzUntilCurrentGeneration,
+		// anlz-cache.svelte.ts) rather than publish a superseded grid
+		// (discussion_r3973991964 P1 BLOCKING). Hot-cue slots are not
+		// source-dependent, so the ones already fetched stay valid either way.
+		const fresh =
+			generation === currentAnlzFetchGeneration()
+				? initialFresh
+				: await fetchAnlzUntilCurrentGeneration(() => fetchAnlzBypassingHttpCache(stableId));
 		if (st.stable_id !== stableId) return; // deck was swapped mid-request
 		refreshAnlzCacheEntry(stableId, fresh);
 		st.anlz = fresh;
@@ -3969,17 +3940,17 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	setTrim(deck: DeckId, value: number): void {
-		_assertUnit('setTrim value', value);
+		assertUnitRange('setTrim value', value);
 		mixerState.channels[deck].trim = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.trim.gain, value * TRIM_MAX_GAIN);
 	}
 
 	setEq(deck: DeckId, band: EqBand, value: number): void {
-		_assertUnit('setEq value', value);
+		assertUnitRange('setEq value', value);
 		const ch = mixerState.channels[deck];
 		const nodes = _rt[deck].nodes;
-		const db = _eqDbFromKnob(value);
+		const db = eqDbFromKnob(value);
 		if (band === 'low') {
 			ch.eq_low = value;
 			if (nodes !== null) _setParam(nodes.low.gain, db);
@@ -3996,7 +3967,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	setFilter(deck: DeckId, value: number): void {
-		_assertUnit('setFilter value', value);
+		assertUnitRange('setFilter value', value);
 		mixerState.channels[deck].filter = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) {
@@ -4008,14 +3979,14 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	setFader(deck: DeckId, value: number): void {
-		_assertUnit('setFader value', value);
+		assertUnitRange('setFader value', value);
 		mixerState.channels[deck].fader = value;
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
 	}
 
 	setCrossfader(value: number): void {
-		_assertUnit('setCrossfader value', value);
+		assertUnitRange('setCrossfader value', value);
 		mixerState.crossfader = value;
 		if (_ctx !== null) _applyCrossfader();
 	}
@@ -4037,13 +4008,13 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	setHeadphoneMix(value: number): void {
-		_assertUnit('setHeadphoneMix value', value);
+		assertUnitRange('setHeadphoneMix value', value);
 		mixerState.headphones.mix = value;
 		applyHeadphoneMix();
 	}
 
 	setHeadphoneLevel(value: number): void {
-		_assertUnit('setHeadphoneLevel value', value);
+		assertUnitRange('setHeadphoneLevel value', value);
 		mixerState.headphones.level = value;
 		applyHeadphoneMix();
 	}
@@ -4064,7 +4035,7 @@ class RbAudioEngine implements AudioEngine {
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {
-		_assertUnit('setMaster value', value);
+		assertUnitRange('setMaster value', value);
 		mixerState.master = value;
 		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
 	}

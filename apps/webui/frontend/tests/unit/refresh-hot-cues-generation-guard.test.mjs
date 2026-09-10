@@ -24,15 +24,18 @@
  * - if refreshHotCues no longer captures the fetch generation BEFORE its
  *   initial /anlz request, or captures it after, then a switch that lands
  *   in the gap between the capture and the request is invisible to the
- *   retry loop below, same bug as never checking at all
- * - if the retry loop is removed, or stops comparing against
- *   currentAnlzFetchGeneration(), then a switch mid-flight repopulates the
- *   cache and this deck with pre-switch bytes while analysisSourceState
- *   already recorded the new source
- * - if the retry loop stops reassigning `fresh` from its own re-fetch, or
- *   `st.anlz` is set from anything other than the loop's final `fresh`,
- *   then the retry runs but its answer is discarded and the stale bytes
- *   still land
+ *   retry below, same bug as never checking at all
+ * - if refreshHotCues stops re-checking the generation and delegating a
+ *   mismatch to fetchAnlzUntilCurrentGeneration (anlz-cache.svelte.ts, the
+ *   primitive it shares with fetchAnlzForDeckLoad), then a switch mid-flight
+ *   repopulates the cache and this deck with pre-switch bytes while
+ *   analysisSourceState already recorded the new source
+ * - if fetchAnlzUntilCurrentGeneration itself stops comparing against
+ *   currentAnlzFetchGeneration() on every pass, or stops returning its own
+ *   re-fetched answer, then both callers' retry silently becomes a no-op
+ * - if `st.anlz` is set from anything other than refreshHotCues' own
+ *   `fresh`, then a resolved retry's answer is discarded and the stale
+ *   bytes still land
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -48,6 +51,7 @@ function source(relativePath) {
 }
 
 const AUDIO_ENGINE = 'lib/rb/audio-engine.svelte.ts';
+const ANLZ_CACHE = 'lib/components/rb/wave/anlz-cache.svelte.ts';
 
 function refreshHotCuesBody() {
 	const text = source(AUDIO_ENGINE);
@@ -71,42 +75,55 @@ test('refreshHotCues captures the fetch generation before its initial /anlz requ
 	);
 });
 
-test('refreshHotCues re-fetches while the generation has moved, and adopts only the re-fetched answer', () => {
+test('refreshHotCues re-checks the generation and delegates a mismatch to fetchAnlzUntilCurrentGeneration', () => {
 	const body = refreshHotCuesBody();
 
-	const loopMatch = body.match(
-		/while\s*\(\s*generation\s*!==\s*currentAnlzFetchGeneration\(\)\s*\)\s*\{([\s\S]*?)\n\t\t\}/
+	const freshMatch = body.match(
+		/const fresh =\s*\n\s*generation === currentAnlzFetchGeneration\(\)\s*\n\s*\?\s*initialFresh\s*\n\s*:\s*await fetchAnlzUntilCurrentGeneration\(\(\) => fetchAnlzBypassingHttpCache\(stableId\)\);/
 	);
 	assert.ok(
-		loopMatch,
-		'no `while (generation !== currentAnlzFetchGeneration())` retry loop found - a source ' +
-			'switch that lands after the first /anlz request has nothing forcing a re-fetch, so the ' +
-			'stale pre-switch payload gets adopted and re-published into the shared cache'
-	);
-	const loopBody = loopMatch[1];
-
-	assert.match(
-		loopBody,
-		/generation\s*=\s*currentAnlzFetchGeneration\(\)/,
-		'the loop must re-capture the generation each pass, or a switch during the retry itself ' +
-			'is missed'
-	);
-	assert.match(
-		loopBody,
-		/fresh\s*=\s*await\s*fetchAnlzBypassingHttpCache\(stableId\)/,
-		'the loop must reassign `fresh` from its own re-fetch, or the retry runs and its answer ' +
-			'is thrown away'
+		freshMatch,
+		'no `generation === currentAnlzFetchGeneration() ? initialFresh : ' +
+			'await fetchAnlzUntilCurrentGeneration(...)` found - a source switch that lands after the ' +
+			'first /anlz request has nothing forcing a re-fetch, so the stale pre-switch payload gets ' +
+			'adopted and re-published into the shared cache'
 	);
 
-	const loopEnd = body.indexOf(loopMatch[0]) + loopMatch[0].length;
-	const rest = body.slice(loopEnd);
+	const assignEnd = body.indexOf(freshMatch[0]) + freshMatch[0].length;
+	const rest = body.slice(assignEnd);
 	assert.match(
 		rest,
 		/st\.anlz\s*=\s*fresh/,
-		'st.anlz must be set from `fresh` AFTER the retry loop, so a re-fetched answer actually lands'
+		'st.anlz must be set from `fresh` AFTER the generation check, so a re-fetched answer actually lands'
 	);
 	assert.ok(
 		rest.indexOf('st.anlz = fresh') < rest.indexOf('st.hot_cues'),
-		'st.anlz must be published from the loop\'s final `fresh` before hot cues are derived from it'
+		'st.anlz must be published from the resolved `fresh` before hot cues are derived from it'
+	);
+});
+
+test('fetchAnlzUntilCurrentGeneration (anlz-cache.svelte.ts) retries until its own re-fetch is current', () => {
+	const text = source(ANLZ_CACHE);
+	const fnStart = text.indexOf('export async function fetchAnlzUntilCurrentGeneration');
+	assert.ok(fnStart >= 0, 'fetchAnlzUntilCurrentGeneration not found in anlz-cache.svelte.ts');
+	const fnEnd = text.indexOf('\n}', fnStart);
+	assert.ok(fnEnd > fnStart, 'fetchAnlzUntilCurrentGeneration body end not found');
+	const body = text.slice(fnStart, fnEnd);
+
+	assert.match(
+		body,
+		/for\s*\(;;\)\s*\{/,
+		'fetchAnlzUntilCurrentGeneration must loop until it settles on a current-generation answer, ' +
+			'or both refreshHotCues and fetchAnlzForDeckLoad silently lose their retry'
+	);
+	assert.match(
+		body,
+		/const generation = currentAnlzFetchGeneration\(\);/,
+		'each pass must re-capture the generation, or a switch during the retry itself is missed'
+	);
+	assert.match(
+		body,
+		/if\s*\(generation !== currentAnlzFetchGeneration\(\)\)\s*continue;/,
+		'a mismatch after the awaited fetch must retry rather than return the stale answer'
 	);
 });
