@@ -21,7 +21,7 @@
  */
 import type { components, paths } from './api-types';
 import { ApiError, api, requireBody, unwrap } from './api/client';
-import { subscribeKind, subscribeResync } from './api/events-bus';
+import { subscribeConnectionState, subscribeKind, subscribeResync } from './api/events-bus';
 import { BOOT_COALESCE_TTL_MS, requestCoalescer } from './api/request-coalescer';
 import type { RuleAst } from './smartlists/rule-form';
 
@@ -430,9 +430,47 @@ const HEALTH_KEY = 'GET /api/v1/health';
  * show (PR #1656 review thread on this line). A resync (seq gap) also
  * invalidates: a gap means something was missed and health may be one of
  * the things that changed, so serving the pre-gap body is the same bug.
+ *
+ * A THIRD source, added on the follow-up review round: every transition to
+ * `'open'`, not just a reconnect. `subscribeResync` alone misses the bus's
+ * very first successful connection on purpose (`_hasConnected` in
+ * events-bus.ts: "nothing could have been missed before there was a
+ * connection"), which is true of the BUS's own state but not of a health
+ * snapshot cached before the bus existed at all. `+layout.svelte` only calls
+ * `connect()` after an async capability probe, so a track change landing
+ * between module evaluation and that first `open` would otherwise ride
+ * through on the cached snapshot for the rest of the TTL. Invalidating on
+ * every `'open'` closes that window at the cost of one redundant
+ * invalidation on a reconnect, which `subscribeResync` was already doing.
  */
 subscribeKind('tracks', () => requestCoalescer.invalidate(HEALTH_KEY));
 subscribeResync(() => requestCoalescer.invalidate(HEALTH_KEY));
+subscribeConnectionState((state) => {
+	if (state === 'open') requestCoalescer.invalidate(HEALTH_KEY);
+});
+
+/**
+ * How long the coalesced health fetch may run before it is abandoned.
+ *
+ * PR #1656 review thread on `request-coalescer.ts:158`: the coalescer joins
+ * an in-flight request for as long as it stays in flight, with no bound, so
+ * a health fetch that never settles (a stalled connection) would otherwise
+ * wedge every caller inside the TTL forever, and the coalescer has no clock
+ * of its own to recover from that -- it only drops an entry on REJECTION.
+ * Bounding the fetch itself, the same way `pingHealth`'s `CONN_PING_TIMEOUT_MS`
+ * already does for the liveness dot, turns a stall into an ordinary rejection
+ * the coalescer already handles correctly (see "a rejected call is dropped"
+ * in request-coalescer.test.mjs). The largest real fetchWall this module's
+ * docstring ever measured, for an 8000-row library, was ~3579ms; this sits
+ * roughly 3x above that, comfortably clear of realistic load while still
+ * bounding how long a genuine stall can hold the boot pane blank.
+ */
+const HEALTH_FETCH_TIMEOUT_MS = 10_000;
+
+function _fetchHealthBody() {
+	const { signal, clear } = timeoutSignal(HEALTH_FETCH_TIMEOUT_MS);
+	return api.GET('/api/v1/health', { signal }).finally(clear);
+}
 
 /**
  * The daemon's health body, shared with any other caller asking inside the
@@ -457,10 +495,8 @@ export async function getHealth(
 	// Joining it was tried and reverted; daemon-capabilities.test.mjs refuses it.
 	const call =
 		options.fresh === true
-			? api.GET('/api/v1/health')
-			: requestCoalescer.share(HEALTH_KEY, BOOT_COALESCE_TTL_MS, () =>
-					api.GET('/api/v1/health')
-				);
+			? _fetchHealthBody()
+			: requestCoalescer.share(HEALTH_KEY, BOOT_COALESCE_TTL_MS, _fetchHealthBody);
 	// A joined caller reads HEADERS off a shared Response whose body stream
 	// the client has already parsed into `data`. Headers are re-readable;
 	// the stream is not, and nothing here touches it.
