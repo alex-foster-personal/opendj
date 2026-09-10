@@ -48,6 +48,8 @@ SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
+ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
+ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 
 # The command types AGENT-03 will ramp. An ordering that carries a target must
 # be one of these, mirroring the guard in the page's own ramp executor
@@ -215,6 +217,10 @@ _VERBS: tuple[Verb, ...] = (
     Verb("headphone_output_acquire", "headphone_output_acquire", ()),
     Verb("headphone_output_select", "headphone_output_select",
          (arg("device_id", "text", text_value),)),
+    Verb("analysis_source", "analysis_source", (
+        arg("feature", "enum", enum_value(ANALYSIS_SOURCE_FEATURES), "beatgrid"),
+        arg("source", "enum", enum_value(ANALYSIS_SOURCE_VALUES), "rekordbox|own"),
+    ), note="PARITY-02: rbx-vs-own analysis source A/B per feature."),
     Verb("auto_play_two_track", "auto_play_two_track", (),
          note="UI contract only: no automatic second-track selection exists yet."),
     Verb("auto_play_next_arm", "auto_play_next_arm", ()),
