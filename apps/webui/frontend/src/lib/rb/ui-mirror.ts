@@ -54,12 +54,21 @@ export function buildUiMirror(): Record<string, unknown> {
 	const deviceLiveness = outputDeviceLivenessState();
 	return {
 		client_open: true,
+		// The elected master, and so the deck a Duration times against when
+		// no clock is named. Without it an agent cannot resolve its own
+		// beat-relative order against the grid the page will use (#1739).
+		master_deck: state.master_deck,
 		context_state: audioContextState(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSessionCounter(),
 		mixer: state.mixer,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {
+				// stable_id rides with title because title alone cannot answer WHICH
+				// track landed: a load onto an already-loaded deck leaves a title
+				// present either way, so an agent confirming a load off title
+				// confirms the PREVIOUS track (#1739).
+				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
 				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
 				audible: deck.audible && silence.verdict !== 'silent-while-playing' && deviceLiveness.verdict !== 'device-unreachable',
