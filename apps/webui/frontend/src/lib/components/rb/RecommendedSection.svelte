@@ -55,7 +55,9 @@
 		/** Deck-1-loaded track, same convention as SuggestNextStrip's `stableId`. */
 		stableId?: string | null;
 		onload?: (stableId: string) => void;
-		onplay?: (stableId: string) => void;
+		/** Load a candidate and start it playing. pressT0Ms is the triggering
+		 * double-click's own event.timeStamp, Q1's operator-felt press stamp. */
+		onplay?: (stableId: string, pressT0Ms: number) => void;
 		onhover?: (stableId: string) => void;
 	};
 
@@ -156,7 +158,7 @@
 					onpointerenter={() => onhover?.(p.partnerId)}
 					onpointerleave={() => onhover?.('')}
 					onclick={() => onload?.(p.partnerId)}
-					ondblclick={() => onplay?.(p.partnerId)}
+					ondblclick={(e) => onplay?.(p.partnerId, e.timeStamp)}
 				>
 					<span class="tag">PAIRED</span>
 					<span class="title">{p.track?.title ?? p.partnerId}</span>

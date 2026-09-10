@@ -114,6 +114,7 @@
 		beginPendingLoadPlay,
 		clearPendingLoadPlay,
 		consumePendingLoadPlay,
+		markLoadSpanningPress,
 		pickDoubleClickDeck,
 		type DeckSlotState
 	} from '$lib/rb/deck-slots';
@@ -1681,19 +1682,23 @@
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): void {
 		void _loadOntoDeck(row, deck, opts);
 	}
 
-	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
+	function loadSuggest(sid: string, opts: { play?: boolean; pressT0Ms?: number } = {}): void {
 		const row = { stable_id: sid, file_exists: true, is_streaming: false };
 		if (opts.play) {
 			const picked = pickDoubleDeck(row);
 			if (picked === null) return;
 			// pickDoubleDeck already reserved this deck - see _loadOntoDeck's
 			// reservation gate.
-			loadRow(row, picked.deck, { play: true, reservation: picked.reservation });
+			loadRow(row, picked.deck, {
+				play: true,
+				reservation: picked.reservation,
+				...(opts.pressT0Ms === undefined ? {} : { pressT0Ms: opts.pressT0Ms })
+			});
 			return;
 		}
 		loadRow(row, null);
@@ -1913,7 +1918,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -1954,12 +1959,15 @@
 			}
 			try {
 				loadIntent = beginPendingLoadPlay(target, opts.play === true);
-				await dispatchPerformanceCommand({
-					type: 'load_play_intent',
-					deck: target,
-					generation: loadIntent.generation,
-					desired_play: loadIntent.desiredPlay
-				});
+				await dispatchPerformanceCommand(
+					{
+						type: 'load_play_intent',
+						deck: target,
+						generation: loadIntent.generation,
+						desired_play: loadIntent.desiredPlay
+					},
+					opts.pressT0Ms
+				);
 				// Explicit CH load (incl. confirmed double-click): replace if occupied.
 				// refuseIfMaster: true on both - this is a destructive REPLACE, not
 				// a standalone eject, so it must stay refused if `target` raced to
@@ -1978,9 +1986,21 @@
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
-				const desiredPlay = consumePendingLoadPlay(target, loadIntent.generation)?.desiredPlay ?? false;
-				if (desiredPlay) {
-					await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
+				const pendingPlay = consumePendingLoadPlay(target, loadIntent.generation);
+				if (pendingPlay?.desiredPlay === true) {
+					// Q1: timed from the operator's ORIGINAL keydown, which is
+					// what they felt, not from this dispatch downstream of the
+					// load they were waiting on.
+					// This dispatch only ever fires after `load` above has
+					// resolved, so a stamp reaching it always spans this
+					// deck's load - mark it before it is spent (r3974057968).
+					if (pendingPlay.pressT0Ms !== undefined) {
+						markLoadSpanningPress(pendingPlay.pressT0Ms);
+					}
+					await dispatchPerformanceCommand(
+						{ type: 'play', deck: target, playing: true },
+						pendingPlay.pressT0Ms
+					);
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2660,7 +2680,7 @@
 						targetLabel={suggestTargetDeck === null ? null : `CH ${suggestTargetDeck}`}
 						playTargetLabel={suggestPlayTargetDeck === null ? null : `CH ${suggestPlayTargetDeck}`}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 						oncandidates={(cands) => (suggestCandidates = cands)}
 					/>
@@ -2674,7 +2694,7 @@
 						referenceKey={masterRef?.key ?? null}
 						stableId={decks[1].stable_id}
 						onload={(sid) => loadSuggest(sid)}
-						onplay={(sid) => loadSuggest(sid, { play: true })}
+						onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 						onhover={(sid) => (suggestHoverId = sid)}
 					/>
 				{/if}

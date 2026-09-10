@@ -109,20 +109,24 @@ function _continuous01(value: MidiInputValue): number {
 // Keep each body a one-liner-per-branch so the rebase diff stays 5 lines.
 
 /** REBASE ADAPTER: play/pause toggle command for one deck. */
-function _cmdPlayToggle(deck: DeckId): void {
-	void dispatchPerformanceCommand({ type: 'play', deck, playing: !deckStates[deck].playing });
+function _cmdPlayToggle(deck: DeckId, pressT0Ms?: number): void {
+	void dispatchPerformanceCommand(
+		{ type: 'play', deck, playing: !deckStates[deck].playing },
+		pressT0Ms
+	);
 }
 
 /** REBASE ADAPTER: physical CUE button command for one deck. */
-function _cmdPressCue(deck: DeckId): void {
-	void dispatchPerformanceCommand({ type: 'cue', deck });
+function _cmdPressCue(deck: DeckId, pressT0Ms?: number): void {
+	void dispatchPerformanceCommand({ type: 'cue', deck }, pressT0Ms);
 }
 
 /** REBASE ADAPTER: hot-cue pad command (jump to slot's in point). Slot-
  * addressed, not a raw ms (#884): hot_cue_trigger, unlike a plain seek, can
- * honour BeatSyncMax and arm for the deck's own next downbeat. */
-function _cmdHotCue(deck: DeckId, slot: HotCueSlot): void {
-	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot });
+ * honour BeatSyncMax and arm for the deck's own next downbeat. pressT0Ms is
+ * the MIDI receipt stamp, same contract as _cmdPlayToggle/_cmdPressCue. */
+function _cmdHotCue(deck: DeckId, slot: HotCueSlot, pressT0Ms?: number): void {
+	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms);
 }
 
 /** REBASE ADAPTER: engage an auto/beat loop from the current position. */
@@ -139,18 +143,23 @@ function _cmdLoopExit(deck: DeckId): void {
 
 /** The action switch. Exported for unit tests; production wiring goes
  * through attachMidiGlue() -> registerActionHandler. */
-export function handleMidiAction(action: MidiAction, value: MidiInputValue): void {
+export function handleMidiAction(
+	action: MidiAction,
+	value: MidiInputValue,
+	_deviceId?: string,
+	pressT0Ms?: number
+): void {
 	switch (action.type) {
 		case 'deck_play_toggle': {
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'play');
-			_cmdPlayToggle(action.deck);
+			_cmdPlayToggle(action.deck, pressT0Ms);
 			return;
 		}
 		case 'deck_cue': {
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'cueing');
-			_cmdPressCue(action.deck);
+			_cmdPressCue(action.deck, pressT0Ms);
 			return;
 		}
 		case 'deck_hot_cue': {
@@ -162,7 +171,7 @@ export function handleMidiAction(action: MidiAction, value: MidiInputValue): voi
 				pushToast(`Deck ${action.deck}: no hot cue in slot ${action.slot}`, 'info');
 				return;
 			}
-			_cmdHotCue(action.deck, action.slot);
+			_cmdHotCue(action.deck, action.slot, pressT0Ms);
 			return;
 		}
 		case 'deck_beat_loop': {

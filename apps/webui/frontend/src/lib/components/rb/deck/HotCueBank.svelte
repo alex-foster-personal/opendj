@@ -43,8 +43,9 @@
 		pending: boolean;
 		/** #884: slot-addressed, not a raw ms - lets the dispatcher honour
 		 * BeatSyncMax (arm for the deck's own next downbeat) instead of a plain
-		 * unconditional seek. */
-		onJump: (slot: HotCueSlot) => Promise<void>;
+		 * unconditional seek. pressT0Ms is the triggering click's own
+		 * event.timeStamp, Q1's operator-felt press stamp. */
+		onJump: (slot: HotCueSlot, pressT0Ms?: number) => Promise<void>;
 		onSave: (slot: HotCueSlot, comment?: string, fixedPositionMs?: number, quantizeFixedPosition?: boolean, expectedStableId?: string) => Promise<HotCueMutation>;
 		onRename: (slot: HotCueSlot, inMs: number, comment: string) => Promise<HotCueMutation>;
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
@@ -98,9 +99,12 @@
 		};
 	}
 
-	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
+	async function onSlotClick(
+		entry: { slot: HotCueSlot; cue: HotCue | null },
+		pressT0Ms?: number
+	): Promise<void> {
 		if (entry.cue !== null) {
-			await onJump(entry.slot);
+			await onJump(entry.slot, pressT0Ms);
 			return;
 		}
 		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping
@@ -257,7 +261,7 @@
 										? 'empty hot cue slot - click to save the current position'
 										: MAPPING_TIP
 								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [])}
-							onclick={() => onSlotClick(entry)}
+							onclick={(e) => onSlotClick(entry, e.timeStamp)}
 						>
 							<span class="letter">{entry.slot}</span>
 							{#if entry.cue !== null}
