@@ -160,12 +160,19 @@ async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
 			if (style.mixBlendMode !== 'normal') {
 				blockers.push(`${name}: mix-blend-mode ${style.mixBlendMode}`);
 			}
-			if (backdrop === null) {
+			// `display: contents` returns a computed background and opacity from
+			// `getComputedStyle` while generating no box and painting nothing.
+			// Treating one as the backdrop would report a colour that is never
+			// on screen, so it is skipped for paint purposes entirely - its
+			// opacity has no effect either. Blinded review.
+			const paints = style.display !== 'contents';
+			if (backdrop === null && paints) {
 				if (style.backgroundImage !== 'none') {
 					blockers.push(`${name}: background-image ${style.backgroundImage}`);
 				}
 				const bg = channels(style.backgroundColor);
-				if (bg !== null && alphaOf(style.backgroundColor) === 1) {
+				const bgAlpha = alphaOf(style.backgroundColor);
+				if (bg !== null && bgAlpha === 1) {
 					backdrop = [bg[0], bg[1], bg[2]];
 					// Opacity at and above the backdrop dims text and surface
 					// alike, so it stops counting here. The BLOCKER scan does
@@ -175,9 +182,24 @@ async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
 					// backdrop against whatever is behind it, so a contrast
 					// ratio measured against this token would again be a
 					// number about nothing. Blinded review, Thu 10 Sep 2026.
+				} else if (bg === null) {
+					// Unparseable and therefore undecidable: an unresolved
+					// color-mix() may well paint. Falling through to the
+					// opacity branch would drop a real layer and report a
+					// ratio that is too FLATTERING, with nothing red to show
+					// for it. Blocking is the honest answer. Blinded review.
+					blockers.push(`${name}: unparseable background ${style.backgroundColor}`);
+				} else if (bgAlpha > 0) {
+					// Translucent: a genuine compositing layer this helper does
+					// not blend. Same reasoning - a silently optimistic ratio is
+					// the failure this file exists to prevent. A hovered
+					// `.rb-waverow.secondary.deck-focus` is exactly this case.
+					blockers.push(`${name}: translucent background ${style.backgroundColor}`);
 				} else {
 					alpha *= Number(style.opacity);
 				}
+			} else if (backdrop === null) {
+				alpha *= Number(style.opacity);
 			}
 			element = element.parentElement;
 		}
