@@ -807,6 +807,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dedup/clusters/{cluster_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Dedup Apply
+         * @description Rewrite OpenDJ playlist memberships so aliases point at the survivor.
+         */
+        post: operations["post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dedup/clusters/{cluster_id}/decision": {
         parameters: {
             query?: never;
@@ -821,6 +841,26 @@ export interface paths {
          * @description Persist a pending review decision without applying a merge.
          */
         post: operations["post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dedup/clusters/{cluster_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Dedup Undo
+         * @description Restore playlist memberships from the apply journal for this cluster.
+         */
+        post: operations["post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3465,6 +3505,35 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** ApplyIn */
+        ApplyIn: {
+            /** Cluster Key */
+            cluster_key: string;
+            /** Survivor */
+            survivor: string;
+        };
+        /** ApplyRecordOut */
+        ApplyRecordOut: {
+            /**
+             * Action
+             * @constant
+             */
+            action: "merge";
+            /** Cluster Id */
+            cluster_id: number;
+            /** Cluster Key */
+            cluster_key: string;
+            /** Decided At */
+            decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
+            /** Playlists */
+            playlists: components["schemas"]["PlaylistRewriteOut"][];
+            /** Revision */
+            revision: string;
+            /** Survivor */
+            survivor: string;
+        };
         /** ApplyRequest */
         ApplyRequest: {
             /** Confirmation */
@@ -4206,6 +4275,8 @@ export interface components {
             cluster_key: string;
             /** Decided At */
             decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
             /** Survivor */
             survivor: string;
         };
@@ -5889,6 +5960,17 @@ export interface components {
              * @description New display name; omit for a no-op that returns the current row + etag
              */
             name?: string | null;
+        };
+        /** PlaylistRewriteOut */
+        PlaylistRewriteOut: {
+            /** After */
+            after: string[];
+            /** Before */
+            before: string[];
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
         };
         /** PlaylistSummary */
         PlaylistSummary: {
@@ -7591,6 +7673,28 @@ export interface components {
             technically_working_animate?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /** UndoRecordOut */
+        UndoRecordOut: {
+            /**
+             * Action
+             * @constant
+             */
+            action: "merge";
+            /** Cluster Id */
+            cluster_id: number;
+            /** Cluster Key */
+            cluster_key: string;
+            /** Decided At */
+            decided_at: string;
+            /** Pending Apply */
+            pending_apply: boolean;
+            /** Playlist Ids */
+            playlist_ids: string[];
+            /** Revision */
+            revision: string;
+            /** Survivor */
+            survivor: string;
         };
         /**
          * UpdateCheckOut
@@ -9527,6 +9631,62 @@ export interface operations {
             };
         };
     };
+    post_dedup_apply_api_v1_dedup_clusters__cluster_id__apply_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Decision-store ETag returned by GET /api/v1/dedup/clusters */
+                "If-Match": string;
+            };
+            path: {
+                cluster_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyRecordOut"];
+                };
+            };
+            /** @description The decision revision or stable cluster identity is stale */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match is required for every decision write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post: {
         parameters: {
             query?: never;
@@ -9554,6 +9714,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DecisionRecordOut"];
+                };
+            };
+            /** @description The decision revision or stable cluster identity is stale */
+            409: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match is required for every decision write */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Decision-store ETag returned by GET /api/v1/dedup/clusters */
+                "If-Match": string;
+            };
+            path: {
+                cluster_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong validator for the exact decision-store bytes */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoRecordOut"];
                 };
             };
             /** @description The decision revision or stable cluster identity is stale */
