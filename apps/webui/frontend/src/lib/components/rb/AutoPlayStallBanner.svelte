@@ -62,8 +62,14 @@
 					aria-expanded={listOpen}
 					title={`${stall.blocked_total} playlist track(s) AutoPlay could not use; the list names the first ${STALL_TRACK_LIMIT}`}
 					onclick={() => {
+						// Read the open state BEFORE re-keying (Codex r3975056080).
+						// `listOpen` is derived from both, so assigning
+						// `expandedFor` first makes it recompute to true for a
+						// carried-over `showTracks`, and `!listOpen` then closes
+						// the list the click was asking to open.
+						const wasOpen = listOpen;
 						expandedFor = stall.revision;
-						showTracks = !listOpen;
+						showTracks = !wasOpen;
 					}}
 				>
 					{listOpen ? 'Hide' : 'Show'} the {stall.blocked_total} track{stall.blocked_total === 1 ? '' : 's'}

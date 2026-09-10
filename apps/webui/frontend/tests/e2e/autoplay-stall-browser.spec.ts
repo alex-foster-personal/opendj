@@ -142,6 +142,24 @@ test('the track list opens on click, and never covers the control that closes it
 	await expect(page.locator(TRACKS)).toHaveCount(0);
 });
 
+test('a LATER stall starts collapsed and opens on the FIRST click', async ({ page }) => {
+	await raiseStall(page, 15);
+	await page.getByRole('button', { name: /Show the 15 tracks/ }).click();
+	await expect(page.locator(TRACKS)).toBeVisible();
+
+	// A second, unrelated stop replaces the first. Its list must start closed -
+	// and must then open on ONE click, not two: `showTracks` is carried over
+	// from the previous stall while the revision key is not, and reading the
+	// derived open-state AFTER re-keying inverts the toggle.
+	await raiseStall(page, 4);
+	await expect(page.locator(TRACKS)).toHaveCount(0);
+	const toggle = page.getByRole('button', { name: /Show the 4 tracks/ });
+	await expect(toggle).toBeVisible();
+	await toggle.click();
+	await expect(page.locator(TRACKS)).toBeVisible();
+	await expect(page.locator(TRACKS)).toContainText('Artist 0 - Missing Track Number 0');
+});
+
 test('the banner does not obscure the deck controls beneath it', async ({ page }) => {
 	const deckControl = page.locator('[data-testid="grid-adjust-deck-1"]').first();
 	const before = await deckControl.boundingBox();
