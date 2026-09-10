@@ -184,6 +184,20 @@ def _encrypt_rekordbox_copy(source: Path, destination: Path) -> None:
         connection.close()
 
 
+def _assert_not_plaintext_sqlite(path: Path) -> None:
+    with sqlite3.connect(path) as locked:
+        with pytest.raises(sqlite3.DatabaseError, match="not a database"):
+            locked.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+
+
+def _sqlcipher_connect(path: Path, key: str):
+    import sqlcipher3
+
+    connection = sqlcipher3.connect(path)
+    connection.execute(f"PRAGMA key = '{key}'")
+    return connection
+
+
 def test_online_backup_preserves_real_sqlcipher_session_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -236,11 +250,15 @@ def test_online_backup_uses_unlocked_sqlcipher_connection(
         _close_sqlcipher_database(database)
 
     backup = writeback_backup.backup_path("rekordbox", backup_id)
-    with sqlite3.connect(backup) as plain:
-        assert plain.execute("PRAGMA quick_check").fetchone() == ("ok",)
-        assert plain.execute("SELECT value FROM marker").fetchone() == (
+    _assert_not_plaintext_sqlite(backup)
+    unlocked = _sqlcipher_connect(backup, _SQLCIPHER_KEY)
+    try:
+        assert unlocked.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert unlocked.execute("SELECT value FROM marker").fetchone() == (
             "encrypted-rekordbox",
         )
+    finally:
+        unlocked.close()
 
 
 def test_online_backup_rejects_unlocked_connection_for_another_target(
@@ -335,8 +353,12 @@ def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
 
         assert writer.read_members_by_id(playlist_id) == desired_members
         backup_path = writeback_backup.backup_path("rekordbox", backup.backup_id)
-        with sqlite3.connect(backup_path) as plain_backup:
-            assert plain_backup.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        _assert_not_plaintext_sqlite(backup_path)
+        unlocked_backup = _sqlcipher_connect(backup_path, _PYREKORDBOX_TEST_KEY)
+        try:
+            assert unlocked_backup.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        finally:
+            unlocked_backup.close()
         assert writer.restore_backup(
             backup.backup_id,
             playlist_id,

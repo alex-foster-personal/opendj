@@ -141,6 +141,11 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         raise RuntimeError(
             "rekordbox: writer has no reusable unlocked SQLCipher engine configuration"
         )
+    source_key = source_url.password
+    if source_key is None or source_key == "":
+        raise RuntimeError(
+            "rekordbox: unlocked SQLCipher engine has no key"
+        )
     backup_engine = create_engine(
         source_url,
         module=source_dbapi,
@@ -165,22 +170,30 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         if destination.exists():
             raise FileExistsError(f"rekordbox: backup already exists: {destination}")
         driver.execute(
-            f"ATTACH DATABASE ? AS {schema_name} KEY ''",
-            (str(destination),),
+            f"ATTACH DATABASE ? AS {schema_name} KEY ?",
+            (str(destination), source_key),
         )
         driver.execute(f"SELECT sqlcipher_export('{schema_name}')").fetchone()
         driver.commit()
+        if driver.execute(f"PRAGMA {schema_name}.quick_check").fetchone() != ("ok",):
+            raise RuntimeError(
+                f"rekordbox: online backup failed integrity check: {destination}"
+            )
         driver.execute(f"DETACH DATABASE {schema_name}")
         connection.close()
         connection = None
 
         if destination.stat().st_size <= 0:
             raise RuntimeError(f"rekordbox: online backup is empty: {destination}")
-        with sqlite3.connect(destination) as backup:
-            if backup.execute("PRAGMA quick_check").fetchone() != ("ok",):
-                raise RuntimeError(
-                    f"rekordbox: online backup failed integrity check: {destination}"
-                )
+        try:
+            with sqlite3.connect(destination) as plaintext:
+                plaintext.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+        except sqlite3.DatabaseError:
+            pass
+        else:
+            raise RuntimeError(
+                f"rekordbox: online backup is not encrypted: {destination}"
+            )
     except Exception:
         if connection is not None:
             connection.invalidate()

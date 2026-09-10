@@ -126,9 +126,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Beat Sync Max',
 		group: 'performance',
 		keywords: ['beatsync', 'bar', 'phase', 'seek', 'sync', 'master'],
-		title: 'Phase-preserving BAR sync on every relocate',
+		title: 'BAR downbeat lock on every relocate, held over playback',
 		detail:
-			'When on, every transport relocate (including master) keeps BAR phase lock across synced decks.',
+			'When on, synced playing decks keep PQTZ n=1 aligned, including after the lock, until Beat Sync Max or Beat Sync is turned off. When off, followers sync on seek using their own BEAT/BAR mode; the master free-seeks.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

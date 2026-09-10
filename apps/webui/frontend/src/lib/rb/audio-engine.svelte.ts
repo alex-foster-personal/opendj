@@ -155,6 +155,7 @@ import {
 	seekSyncMaster,
 	syncChangeRequiresReschedule,
 	syncMayWriteTempo,
+	syncModeForBeatSyncMax,
 	syncSeekBlendDurationSec,
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
@@ -2332,7 +2333,7 @@ async function _synchronizeFollowers(
 					syncAtContextTimeSec: syncAt,
 					minFollowerTempoRatio: bounds.min,
 					maxFollowerTempoRatio: bounds.max,
-					mode: st.sync_mode
+					mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode)
 				});
 				planned.push({ deck, st, plan, rawFollowerPositionSec });
 			} catch (error) {

@@ -339,7 +339,7 @@ def test_a_manifest_cannot_aim_the_ssh_pull_lane_outside_the_crate(
     monkeypatch.setattr(subprocess, "run", _no_subprocess)
     key = tmp_path / "fake_key"
     key.write_text("not a key", encoding="utf-8")
-    monkeypatch.setattr(crate_sync, "OWNER_SSH_KEY", key)
+    monkeypatch.setenv(crate_sync.OWNER_SSH_KEY_ENV, str(key))
     monkeypatch.setenv(crate_sync.OWNER_SSH_TARGETS_ENV, "dev@test-owner-ssh-target")
     crate, outside = _crate_and_outside(tmp_path)
     owner = sorted(crate_sync._owner_ssh_targets())[0]

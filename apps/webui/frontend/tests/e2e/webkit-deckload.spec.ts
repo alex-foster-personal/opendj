@@ -925,7 +925,10 @@ async function _waitForDeckReloaded(
 	);
 }
 
-test.describe.configure({ mode: 'serial' });
+// Sequential execution comes from workers: 1 + fullyParallel: false in the
+// webkit-deckload config, required because tests share the beforeAll page.
+// mode: serial is forbidden here: the first failure would skip the quarantined
+// remainder (#712).
 
 test.describe('webkit performance controls on the engine-served build', () => {
 	let page: Page;

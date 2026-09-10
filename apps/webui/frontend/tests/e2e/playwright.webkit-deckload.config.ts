@@ -153,6 +153,8 @@ export default defineConfig({
 	workers: 1,
 	retries: 0,
 	timeout: 120_000,
+	// Nightly extended job overrides --global-timeout to 1800000; gate grep runs
+	// stay on this 900s default.
 	globalTimeout: 900_000,
 	expect: { timeout: 20_000 },
 	reporter: [['list']],

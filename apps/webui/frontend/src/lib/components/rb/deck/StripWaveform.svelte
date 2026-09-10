@@ -156,7 +156,7 @@
 		onclick={(e) => void handleClick(e)}
 		disabled={deck.stable_id === null || pending}
 		aria-label={`waveform seek deck ${deck.deck_id}`}
-		data-testid={`waveform-seek-deck-${deck.deck_id}`}
+		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
 		title={vocalsTitle ?? undefined}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>

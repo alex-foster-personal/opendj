@@ -14,6 +14,8 @@
  *     [if] a fold is the only lock and BAR refuses it [then ⛔️]
  *   ✔︎ ✅ 🎯 A re-anchor tempo ramp lands phase exactly on the plan (LATENCY-06).
  *     [if] a ramped re-anchor ends off the one-step re-anchor's phase [then ⛔️]
+ *   ✔︎ ✅ 🎯 BSM ON forces BAR so downbeats stay aligned over playback (DECKUX-14).
+ *     [if] BSM is on and a BEAT-mode follower nearest-beat locks [then ⛔️]
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
  * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -

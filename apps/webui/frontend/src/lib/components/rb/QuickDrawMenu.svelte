@@ -19,6 +19,7 @@
 	} from '$lib/rb/api-rb';
 	import { getTrack } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
+	import { vocalFixMenuItem } from './vocal-correction-menu';
 
 	type CtxItem = {
 		id: string;
@@ -30,6 +31,7 @@
 		/** Inert rungs render dimmed and explain themselves on hover. */
 		disabled?: boolean;
 		title?: string;
+		testId?: string;
 	};
 	type Root = 'unload' | 'loop' | 'play';
 	type LoopLeaf = 'loop.start_8' | 'loop.exit';
@@ -133,7 +135,8 @@
 
 	function _contextItems(
 		target: EventTarget | null,
-		knownStableId: string | null = null
+		knownStableId: string | null = null,
+		event: MouseEvent | null = null
 	): CtxItem[] {
 		const stableId = knownStableId ?? _stableIdFromTarget(target);
 		if (stableId !== null) {
@@ -172,6 +175,10 @@
 				run: (pressT0Ms) => _runAction('loop.exit', deck, pressT0Ms)
 			});
 		}
+		if (event !== null) {
+			const vocal = vocalFixMenuItem(event, target);
+			if (vocal !== null) items.unshift(vocal);
+		}
 		return items;
 	}
 
@@ -183,7 +190,7 @@
 		// Room for Unload/Play/Loop + mid tier + CH column.
 		x = Math.min(Math.max(e.clientX, 320), window.innerWidth - 160);
 		y = Math.min(Math.max(e.clientY, 8), window.innerHeight - 200);
-		ctx = _contextItems(t);
+		ctx = _contextItems(t, null, e);
 		root = 'unload';
 		loopLeaf = null;
 		setMenuHighlightStableId(_stableIdFromTarget(t));
@@ -245,6 +252,7 @@
 {#if open}
 	<div
 		class="qd"
+		data-testid="quick-draw-menu"
 		style:left="{x}px"
 		style:top="{y}px"
 		bind:this={menuEl}
@@ -363,6 +371,7 @@
 						class="qd-item"
 						class:qd-inert={item.disabled === true}
 						role="menuitem"
+						data-testid={item.testId}
 						disabled={item.disabled === true}
 						title={item.title ?? null}
 						onclick={(e) => {
