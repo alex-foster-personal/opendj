@@ -166,6 +166,13 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
                 f"{timeout:.0f}s (raise {TIMEOUT_ENV} if this machine is genuinely "
                 "that slow); a runner that hangs will hang on the next file too"
             ) from exc
+        except OSError as exc:
+            raise BackendNotAvailable(
+                f"could not launch {command[0]!r}: {exc}; the configured "
+                f"{RUNNER_PYTHON_ENV} interpreter (or `uv`) is missing or not "
+                "executable, which is a runner-availability fault, not a "
+                f"per-track one, exactly like the {TIMEOUT_ENV} case above"
+            ) from exc
         if completed.returncode != 0:
             raise BackendNotAvailable(
                 f"beat_this_runner.py exited {completed.returncode} for "
