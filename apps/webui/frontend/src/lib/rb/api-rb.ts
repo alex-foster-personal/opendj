@@ -16,7 +16,7 @@
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap, RbApiError } from '$lib/api/client';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import type { AnlzCue, AnlzData } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
@@ -44,24 +44,12 @@ export type {
 
 export const RB_API_BASE: string = API_BASE;
 
-/** Explicit backend error: HTTP status + the contract's detail.code. */
-export class RbApiError extends Error {
-	constructor(
-		public status: number,
-		public code: string,
-		message: string,
-		/** The raw `{detail: {...}}` error body, when a caller chose to keep
-		 * it - most callers only need code/message, so this defaults to null
-		 * rather than forcing every construction site to thread it through.
-		 * beatgrid-upgrade.ts reads `body.detail.anlz_available` off a 404
-		 * here: the same field a 200 response carries, but otherwise lost the
-		 * moment ApiError converts onto this type. */
-		public body: unknown = null
-	) {
-		super(`${code}: ${message}`);
-		this.name = 'RbApiError';
-	}
-}
+// RbApiError lives beside its sibling ApiError in $lib/api/client, which is
+// the transport layer both error types describe. Re-exported here because 40
+// modules already import it from this path; moving the DEFINITION without
+// moving the import surface keeps this file the API client it is meant to be
+// rather than also the place errors are declared.
+export { RbApiError };
 
 export type TrackLyrics = {
 	stable_id: string;

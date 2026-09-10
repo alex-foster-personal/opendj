@@ -15,11 +15,12 @@
  * serves. The panel plans, watches and steers; it does not run the analysis.
  *
  * Kept out of api-rb.ts (fan-out hotspot). Same conventions: relative
- * API_BASE, fail-fast RbApiError on !ok, no invented data.
+ * API_BASE, fail-fast RbApiError on !ok, no invented data. Both come off
+ * the $lib/api barrel, so this module adds no import edge to api-rb.ts,
+ * which is already the tree's fan-in hotspot.
  */
 
-import { API_BASE } from '$lib/api';
-import { RbApiError } from './api-rb';
+import { API_BASE, RbApiError } from '$lib/api';
 
 /** The measured peak-RSS model a batch was budgeted under. Carried on every
  * response because floor and slope are MEASURED numbers for one producer
