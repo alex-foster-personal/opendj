@@ -106,6 +106,22 @@ async function requestLog() {
 	return res.json();
 }
 
+/** Polls `currentAnlzFetchGeneration()` until it has moved past `from`, rather
+ * than sleeping a guessed duration: a fixed sleep either races a slow shared
+ * fixture server under the full suite (too short) or pads every run with
+ * dead time (too long, to stay safe). Used to synchronize on a bump this test
+ * cannot otherwise observe landing (`refreshAnalysisSourceDecks`'s own bump
+ * for a failed switch's deck refresh, before its compensating rollback). */
+async function _waitForGenerationPast(from) {
+	const deadline = Date.now() + 5000;
+	for (;;) {
+		const gen = analysisSource.currentAnlzFetchGeneration();
+		if (gen > from) return gen;
+		if (Date.now() > deadline) throw new Error('fetch generation never advanced past ' + from);
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
 /** Flip the DAEMON's selection without going through the module under test, so
  * the module sees it exactly as it would see an agent's direct PUT. */
 async function daemonSelect(toggle) {
@@ -848,6 +864,79 @@ test(
 				'the rollback must restore what this put actually displaced (unset, the ' +
 					"concurrent agent's write), not this module's stale earlier " +
 					"observation (rbx) from before that write landed"
+			);
+		} finally {
+			analysisSource.deckStates[1].stable_id = null;
+			analysisSource.deckStates[1].anlz = null;
+		}
+	}
+);
+
+test(
+	'a failed switch invalidates a straggling same-generation prefetch again on rollback ' +
+		'(r3975043558 P1 BLOCKING)',
+	async () => {
+		await daemonSelect('rbx');
+		await analysisSource.loadAnalysisSource();
+
+		// Seed a real, valid payload OUTSIDE the failure window below, purely to
+		// borrow its exact shape - this test proves the rollback evicts a
+		// same-generation READY entry, not that a live fetch can win a race
+		// against the fixture server's own ~150ms failure timer. Racing that
+		// timer with a real second fetch flaked under full-suite load: a
+		// straggler that loses the race lands 'loading' forever by design (the
+		// existing generation-mismatch discard never overwrites it), which is
+		// indistinguishable from a hang, not a real assertion failure.
+		analysisSource.invalidateAnlzCacheEntry('real-track-b-own-grid');
+		analysisSource.ensureAnlz('real-track-b-own-grid');
+		const seedDeadline = Date.now() + 5000;
+		while (analysisSource.getAnlzEntry('real-track-b-own-grid')?.status !== 'ready') {
+			if (Date.now() > seedDeadline) throw new Error('seed fetch never became ready');
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		const seedData = analysisSource.getAnlzEntry('real-track-b-own-grid').data;
+		analysisSource.invalidateAnlzCacheEntry('real-track-b-own-grid');
+
+		analysisSource.deckStates[1].stable_id = 'slow-absent-track';
+		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+		try {
+			const genBeforeSwitch = analysisSource.currentAnlzFetchGeneration();
+			const switchOutcome = assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
+
+			// Wait on the GENERATION itself, not a guessed sleep: proceeds the
+			// instant `refreshAnalysisSourceDecks`'s own bump for this failed
+			// switch attempt has landed, however loaded the shared fixture server
+			// is under the full suite - well before the ~150ms slow-absent-track
+			// failure that triggers the compensating rollback.
+			const genDuringFailure = await _waitForGenerationPast(genBeforeSwitch);
+
+			// Deterministically place a READY entry into the cache at exactly this
+			// moment, standing in for ANY same-generation straggler (a retry
+			// timer's self-scheduled publish, a library prefetch) that could
+			// legitimately settle here. `refreshAnlzCacheEntry` writes
+			// synchronously - no network round trip to race against the rollback.
+			analysisSource.refreshAnlzCacheEntry('real-track-b-own-grid', seedData);
+			assert.equal(
+				analysisSource.getAnlzEntry('real-track-b-own-grid')?.status,
+				'ready',
+				'the seeded entry must land before the assertions below mean anything'
+			);
+
+			await switchOutcome; // let the failure AND its compensating rollback finish
+
+			assert.ok(
+				analysisSource.currentAnlzFetchGeneration() > genDuringFailure,
+				'the compensating rollback must bump the fetch generation AGAIN - stopping there ' +
+					'after only the failed switch\'s own bump leaves every straggler issued during ' +
+					'the failure window looking current forever'
+			);
+			assert.equal(
+				analysisSource.getAnlzEntry('real-track-b-own-grid'),
+				undefined,
+				'the rollback must invalidate the failed switch\'s own generation again, or this ' +
+					'straggling prefetch (issued under that same generation, settled before the ' +
+					'rollback) survives as a reusable ready cache hit for whatever deck loads it ' +
+					'next, split from the source rollback just restored'
 			);
 		} finally {
 			analysisSource.deckStates[1].stable_id = null;

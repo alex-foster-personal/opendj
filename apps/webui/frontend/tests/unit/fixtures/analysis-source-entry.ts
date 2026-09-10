@@ -23,7 +23,9 @@ export { connect as connectEventsBus } from '$lib/api/events-bus';
 // drive `ensureAnlz`/`getAnlzEntry` against the exact cache instance
 // analysis-source.svelte.ts's `_adopt` evicts from, not an independent one.
 export {
+	currentAnlzFetchGeneration,
 	ensureAnlz,
 	getAnlzEntry,
-	invalidateAnlzCacheEntry
+	invalidateAnlzCacheEntry,
+	refreshAnlzCacheEntry
 } from '$lib/components/rb/wave/anlz-cache.svelte';

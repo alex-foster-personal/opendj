@@ -25,6 +25,7 @@ import { ApiError } from '../api/client';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import {
 	evictAnlzCacheEntriesServingOtherSource,
+	invalidateAllAnlzCacheEntries,
 	refreshAnalysisSourceDecks
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { bumpAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
@@ -350,6 +351,21 @@ async function _rollBackFailedSwitch(
 		return;
 	}
 	_latestMutation++;
+	// The failed switch's own refresh already bumped the fetch generation and
+	// may have wiped or partially repopulated the shared ANLZ cache before it
+	// failed. A retry timer or an unrelated prefetch (`ensureAnlz`) that
+	// issued its own /anlz request under that same generation can still be in
+	// flight right now, and the server may still answer it with the FAILED
+	// switch's source until this compensating PUT actually lands. Bumping
+	// again here - before that PUT, so it covers every outcome below,
+	// including the 409 stand-down and the swallowed-error path - forces any
+	// such straggler to discard itself at settle
+	// (`_fetchAndPublish`'s existing generation-mismatch check) instead of
+	// publishing onto a deck after the daemon is already back on the old
+	// source, which neither `features` nor `deckFeatures` would ever detect
+	// as a disagreement (discussion_r3975043558 P1 BLOCKING).
+	bumpAnlzFetchGeneration();
+	invalidateAllAnlzCacheEntries();
 	try {
 		// The compensating PUT's own answer needs no further capture: the value
 		// it restores was the server's own `previous_toggle` from the failed
