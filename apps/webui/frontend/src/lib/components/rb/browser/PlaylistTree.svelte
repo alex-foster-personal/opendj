@@ -41,6 +41,7 @@
 		oncreateplaylist,
 		onrenameplaylist,
 		ondeleteplaylist,
+		onduplicateplaylist,
 		ondroptracks
 	}: {
 		nodes: PlaylistNode[];
@@ -83,6 +84,7 @@
 		/** Commit in-place rename; empty/cancelled name leaves server name. */
 		onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
 		ondeleteplaylist?: (node: PlaylistNode) => void;
+		onduplicateplaylist?: (node: PlaylistNode) => void;
 		/**
 		 * Library tracks dropped onto a playlist row. Absent = rows are not
 		 * drop targets, same absent-means-inert convention as above.
@@ -200,7 +202,7 @@
 </script>
 
 <div class="tree-root">
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} {onselect} />
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} {onselect} />
 	<div class="view-tabs">
 		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
 			Tree View

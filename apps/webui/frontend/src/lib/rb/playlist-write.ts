@@ -185,6 +185,37 @@ export async function deletePlaylist(playlistId: string, etag: string): Promise<
 	}
 }
 
+/** POST /playlists/{id}/duplicate - copy playlist with optional name override.
+ * Optional If-Match is CAS on the source row. Omit body to use the server
+ * default "<source name> (copy)". */
+export async function duplicatePlaylist(
+	playlistId: string,
+	etag?: string,
+	name?: string
+): Promise<PlaylistRowWire> {
+	try {
+		const params: {
+			path: { playlist_id: string };
+			header?: { 'If-Match': string };
+		} = { path: { playlist_id: playlistId } };
+		if (etag !== undefined) {
+			params.header = { 'If-Match': etag };
+		}
+		const options: {
+			params: typeof params;
+			body?: { name: string };
+		} = { params };
+		if (name !== undefined) {
+			options.body = { name };
+		}
+		return await unwrap(
+			api.POST('/api/v1/playlists/{playlist_id}/duplicate', options)
+		);
+	} catch (error) {
+		_throwWriteError(error, `duplicate playlist ${playlistId}`);
+	}
+}
+
 // ----------------------------------------------------------------------
 // Blank playlist policy (pure - no I/O, no api client)
 //
