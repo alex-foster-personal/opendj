@@ -48,7 +48,7 @@ describe('the master meter publishes only what it measured', () => {
 		// `audio-engine.svelte.ts` passes `_masterAnalyser` straight through - so
 		// this is the production path, not a stand-in for one.
 		report.resetMasterSilenceWatch();
-		report.noteMasterSilence(null, true, 1_000);
+		report.noteMasterSilence(null, null, true, 1_000);
 		const state = report.masterSilenceState();
 		assert.equal(state.rms, null, 'the no-meter sentinel must never be published as an rms');
 		assert.equal(state.at_ms, null, 'an unmeasured sample must not carry a measurement stamp');
@@ -56,7 +56,7 @@ describe('the master meter publishes only what it measured', () => {
 
 	it('leaves the fold alone: a missing meter is still not a dropout', () => {
 		report.resetMasterSilenceWatch();
-		for (let t = 0; t < 20_000; t += 100) report.noteMasterSilence(null, true, t);
+		for (let t = 0; t < 20_000; t += 100) report.noteMasterSilence(null, null, true, t);
 		assert.equal(
 			report.masterSilenceState().verdict,
 			'ok',
@@ -66,7 +66,7 @@ describe('the master meter publishes only what it measured', () => {
 
 	it('makes the mirror say unknown rather than healthy', () => {
 		report.resetMasterSilenceWatch();
-		report.noteMasterSilence(null, true, 1_000);
+		report.noteMasterSilence(null, null, true, 1_000);
 		const state = report.masterSilenceState();
 		const block = mirror.buildAudioHealthMirror({
 			snapshot: null,
