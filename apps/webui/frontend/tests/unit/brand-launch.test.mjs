@@ -52,6 +52,20 @@ test('the launch wordmark is Anybody 800 wdth 150 in caps, shipped offline with 
 	assert.match(readFileSync(`${root}/static/fonts/Anybody-OFL.txt`, 'utf8'), /SIL Open Font License, Version 1\.1/);
 });
 
+test('the desktop engine-startup headline matches the launch wordmark, from its own directory', () => {
+	const root = fileURLToPath(new URL('../../../../desktop/setup/', import.meta.url));
+	const css = readFileSync(`${root}setup.css`, 'utf8');
+
+	// if the startup page drifts from the launch face then the two first screens disagree
+	assert.match(css, /url\('\.\/anybody-800-w150-headline\.woff2'\)/);
+	assert.match(css, /\nh1 \{[^}]*font-family: 'Anybody Wordmark'[^}]*system-ui/);
+	assert.match(css, /\nh1 \{[^}]*text-transform: uppercase/);
+	// if the font leaves the page's own directory then the offline-first page needs the network
+	assert.equal(readFileSync(`${root}anybody-800-w150-headline.woff2`).subarray(0, 4).toString('latin1'), 'wOF2');
+	assert.match(readFileSync(`${root}Anybody-OFL.txt`, 'utf8'), /SIL Open Font License, Version 1\.1/);
+	assert.doesNotMatch(css, /https?:\/\//);
+});
+
 test('the app shell mounts a non-blocking launch and the Open DJ wordmark', () => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const layout = readFileSync(`${root}/src/routes/+layout.svelte`, 'utf8');
