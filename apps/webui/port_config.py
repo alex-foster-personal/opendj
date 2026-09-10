@@ -42,6 +42,7 @@ import argparse
 import json
 import os
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -302,21 +303,38 @@ def _atomic_write_text(path: Path, content: str) -> None:
         raise
 
 
-def _port_owner_marker_path(port: int) -> Path:
+def _port_owner_marker_path(port: int) -> Path | None:
     # Keyed by uid as well as port: /tmp is sticky, so only a file's owner may
     # rename or delete it there. Keying this way means every uid always writes
     # and removes only its OWN marker and never races another uid's, at the
     # cost of a stale marker (a crashed claimant's) surviving until something
     # reads and discounts it -- which is fine, since a marker is a lead for a
     # human to follow, never a live fact to signal on.
-    return PORT_OWNER_REGISTRY_DIR / f"{port}-{os.getuid()}.owner"
+    #
+    # The whole scheme attributes a cross-uid collision on a Linux CI host
+    # (issue #1613); there is no such collision to attribute on Windows,
+    # which has no os.getuid, so the marker is simply not written there.
+    getuid = getattr(os, "getuid", None)
+    return None if getuid is None else PORT_OWNER_REGISTRY_DIR / f"{port}-{getuid()}.owner"
 
 
 def _write_port_owner_marker(port: int, worktree: str) -> None:
     """Record this worktree as the dynamic claimant of ``port`` (issue #1613)."""
-    PORT_OWNER_REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(PORT_OWNER_REGISTRY_DIR, 0o1777)
     marker_path = _port_owner_marker_path(port)
+    if marker_path is None:
+        return
+    PORT_OWNER_REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(PORT_OWNER_REGISTRY_DIR, 0o1777)
+    except PermissionError:
+        # A different uid created this directory first, which is the normal
+        # shared-host case issue #1613 exists for: mode 1777 is already
+        # sticky and world-writable, chmod is not this uid's to do, and
+        # refusing to claim over a directory we merely cannot chmod would
+        # defeat the whole feature. Re-raise if its mode is not actually
+        # adequate -- then this is a real permission problem, not that case.
+        if stat.S_IMODE(PORT_OWNER_REGISTRY_DIR.stat().st_mode) != 0o1777:
+            raise
     content = (
         f"worktree={worktree}\n"
         f"claimed_at={datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
@@ -327,7 +345,9 @@ def _write_port_owner_marker(port: int, worktree: str) -> None:
 
 
 def _remove_port_owner_marker(port: int) -> None:
-    _port_owner_marker_path(port).unlink(missing_ok=True)
+    marker_path = _port_owner_marker_path(port)
+    if marker_path is not None:
+        marker_path.unlink(missing_ok=True)
 
 
 def describe_port_owner(port: int) -> str | None:
@@ -663,15 +683,23 @@ def claim_ports(
     resolved_common_dir = _common_dir(common_dir)
     effective_environ = os.environ if environ is None else environ
     dotenv_path = resolved_root / ".env"
-    configured = requested or _configured_candidate(dotenv_path, effective_environ)
-    if configured is not None:
-        for reserved_candidate in (configured.backend, configured.frontend):
+    if requested is not None:
+        for reserved_candidate in (requested.backend, requested.frontend):
             if reserved_candidate in RESERVED_FIXED_PORTS:
                 raise PortConfigError(
                     f"port {reserved_candidate} is reserved for a fixed-port CI/desktop "
                     "suite (see RESERVED_FIXED_PORTS in apps/webui/port_config.py); "
                     "choose a different pair"
                 )
+    configured = requested or _configured_candidate(dotenv_path, effective_environ)
+    if configured is not None and (
+        configured.backend in RESERVED_FIXED_PORTS or configured.frontend in RESERVED_FIXED_PORTS
+    ):
+        # An existing checkout's own .env can predate RESERVED_FIXED_PORTS
+        # (issue #1613): that is stale configuration, not an explicit
+        # request, so discard it and fall through to a fresh allocation
+        # instead of hard-failing a worktree that only needs to restart.
+        configured = None
     lane = _port_lane(effective_environ)
     root_key = str(resolved_root)
 
@@ -682,6 +710,12 @@ def claim_ports(
         if current is not None and not _pair_in_lane_window(current, lane):
             # Remembered under another lane (or before this runner had one):
             # not ours to restore. Fall through to allocation inside the lane.
+            current = None
+        if current is not None and (
+            current.backend in RESERVED_FIXED_PORTS or current.frontend in RESERVED_FIXED_PORTS
+        ):
+            # Same staleness as configured above, but recorded in the shared
+            # registry rather than this checkout's own .env (issue #1613).
             current = None
         if (
             current is not None

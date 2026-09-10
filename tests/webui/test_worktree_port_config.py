@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 from collections.abc import Iterable
@@ -761,3 +762,126 @@ def test_release_ports_removes_its_ownership_markers(
     assert released is True
     assert describe_port_owner(claimed.backend) is None
     assert describe_port_owner(claimed.frontend) is None
+
+
+def test_claim_ports_reallocates_a_pre_existing_now_reserved_env_pair(
+    tmp_path: Path,
+) -> None:
+    """if a checkout's own .env already names a now-reserved fixed port, from
+    before RESERVED_FIXED_PORTS existed, and claim_ports raises instead of
+    discarding it and reallocating a safe pair, then broken -- the exact
+    worktree issue #1613 describes could never restart without hand-editing
+    .env, contrary to claim's own safe-to-rerun contract"""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    reserved_backend = next(iter(RESERVED_FIXED_PORTS))
+    other_port = _free_port(exclude=(reserved_backend,))
+    _write_env(repo_root, reserved_backend, other_port)
+
+    claimed = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert claimed.backend not in RESERVED_FIXED_PORTS
+    assert claimed.frontend not in RESERVED_FIXED_PORTS
+
+
+def test_claim_ports_reallocates_a_registry_pair_that_becomes_reserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if the registry's own remembered pair for this worktree is later added
+    to RESERVED_FIXED_PORTS (a suite renumbering onto what used to be free
+    dynamic space) and claim_ports keeps restoring it anyway then broken --
+    the same staleness as a checkout's own .env, recorded in the shared
+    registry instead (issue #1613)"""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    (repo_root / ".env").unlink()  # only the registry remembers it now
+    monkeypatch.setattr(
+        port_config, "RESERVED_FIXED_PORTS", frozenset({first.backend, first.frontend})
+    )
+
+    relaid = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert relaid != first
+    assert relaid.backend not in port_config.RESERVED_FIXED_PORTS
+    assert relaid.frontend not in port_config.RESERVED_FIXED_PORTS
+
+
+def test_write_owner_marker_tolerates_a_directory_it_cannot_chmod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if a second uid's claim fails outright because it cannot chmod a
+    registry directory another uid already created then broken -- on the
+    intended shared host, mode 1777 already lets every uid write there, and
+    only the directory's owner may chmod it (issue #1613)"""
+    registry_dir = tmp_path / "owners"
+    registry_dir.mkdir()
+    os.chmod(registry_dir, 0o1777)  # a real chmod, unlike mkdir(mode=...), ignores umask
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", registry_dir)
+
+    def _fake_chmod(path: object, mode: int) -> None:
+        if path == registry_dir:
+            raise PermissionError("not the owner")
+
+    monkeypatch.setattr(port_config.os, "chmod", _fake_chmod)
+
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    claimed = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert claimed.backend not in RESERVED_FIXED_PORTS  # the claim itself still succeeded
+
+
+def test_write_owner_marker_reraises_a_chmod_failure_on_a_wrong_mode_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL for the test above: a chmod failure on a directory that is NOT
+    already sticky-world-writable is a real permission problem, not the
+    benign second-uid case, and must still surface"""
+    registry_dir = tmp_path / "owners"
+    registry_dir.mkdir(mode=0o700)
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", registry_dir)
+
+    def _fake_chmod(path: object, mode: int) -> None:
+        if path == registry_dir:
+            raise PermissionError("not the owner")
+
+    monkeypatch.setattr(port_config.os, "chmod", _fake_chmod)
+
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    with pytest.raises(PermissionError):
+        claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+
+def test_ownership_marker_functions_are_a_no_op_without_os_getuid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if claim_ports/release_ports crash on a platform with no os.getuid
+    (Windows) then broken -- the cross-uid marker scheme is specific to the
+    Linux CI-host collision issue #1613 describes and must not break the
+    repo's Windows webui dev flow, which previously used only portable
+    Python APIs"""
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", tmp_path / "owners")
+    monkeypatch.delattr(port_config.os, "getuid", raising=False)
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    claimed = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert describe_port_owner(claimed.backend) is None  # no marker written, no crash either
+
+    released = release_ports(repo_root=repo_root, common_dir=common_dir)
+    assert released is True

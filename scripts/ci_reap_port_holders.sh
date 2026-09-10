@@ -223,8 +223,17 @@ for port in "${ports[@]}"; do
     pids=$(_holder_pids "$port")
     if [ -z "$pids" ]; then
         if [ "$(_listener_count "$port")" -gt 0 ]; then
-            echo "[ERROR] port $port is held by a process this user cannot see (another uid); nothing to reap, the suite will collide" >&2
-            status=1
+            # The common shape of the actual #1613 collision: unprivileged
+            # `ss -p` exposes a cross-uid listener but not its pid, so there
+            # is no pid here to run the CI-provenance check on at all. Same
+            # foreign population, same bounded retry and attribution.
+            owner_note=$(_describe_registry_owner "$port")
+            echo "[reap] port $port is held by a process this user cannot see (another uid)${owner_note:+ -- $owner_note}"
+            echo "[reap] waiting up to ${FOREIGN_WAIT_S}s in case this is a foreign population finishing on its own (issue #1613)"
+            if ! _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
+                echo "[ERROR] port $port is held by a process this user cannot see (another uid); nothing to reap, still held after ${FOREIGN_WAIT_S}s${owner_note:+. $owner_note}" >&2
+                status=1
+            fi
         fi
         continue
     fi
@@ -273,8 +282,12 @@ done
 for port in "${ports[@]}"; do
     pids=$(_holder_pids "$port")
     if [ -z "$pids" ] && [ "$(_listener_count "$port")" -gt 0 ]; then
-        echo "[ERROR] port $port is still held by a process this user cannot see" >&2
-        status=1
+        owner_note=$(_describe_registry_owner "$port")
+        echo "[reap] port $port still held by a process this user cannot see${owner_note:+ -- $owner_note}; waiting up to ${FOREIGN_WAIT_S}s more (issue #1613)"
+        if ! _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
+            echo "[ERROR] port $port is still held by a process this user cannot see${owner_note:+. $owner_note}" >&2
+            status=1
+        fi
     fi
     for pid in $pids; do
         identity=$(_identity "$pid")
