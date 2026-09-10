@@ -44,20 +44,28 @@ test. ``FRAMES``/``SAMPLE_RATE``/``CHANNELS`` below are the single source of
 truth for both the tensor fed to the real encoder and the manifest's declared
 ``audio`` block, so the two cannot drift the way the 1000-vs-4410 mismatch
 did. ``ffprobe``'s own decoded duration for each written part, checked
-against ``FRAMES / SAMPLE_RATE``, is the alignment acceptance evidence:
-measured against this exact production path (real ffmpeg VBR mp3 via a
-seekable file, real FLAC via soundfile), the decoded duration matches the
-declared one exactly (see commit body), so a tight tolerance still catches a
-genuinely corrupted or misaligned encode without being loose acceptance
-theater.
+against ``FRAMES / SAMPLE_RATE``, is the alignment acceptance evidence.
+FLAC is lossless (soundfile writes exact PCM): measured exact (0.0000s
+delta) both locally and in CI, so ``FLAC_DURATION_TOLERANCE_S`` stays tight
+(10ms). mp3 is lossy -- LAME's encoder/decoder delay is a real property of
+the ffmpeg/lame build, not a bug: an earlier version of this fixture at the
+original 4410-frame (0.1s) clip measured exact locally (ffmpeg 8.0.1) but a
+real 30.6ms delta against CI's apt-get-installed ffmpeg, still genuinely
+decodable audio, not corruption. ``FRAMES`` is now 1 second (so the same
+absolute padding is a much smaller fraction) and
+``MP3_DURATION_TOLERANCE_S`` (100ms) leaves > 3x margin over that measured
+delta while still failing hard on a real misalignment, which would show up
+as tens-to-hundreds of ms per dropped or duplicated frame at this clip
+length.
 
   - [if] the source extension is .mp3 [then] the stem suffix is .mp3, [else stop]
   - [if] a v3 bundle's mp3 parts are encoded by the real production
     ``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3`` chain [then] each part's
-    ffprobe duration matches ``FRAMES / SAMPLE_RATE`` within 10ms, [else stop]
+    ffprobe duration matches ``FRAMES / SAMPLE_RATE`` within
+    ``MP3_DURATION_TOLERANCE_S``, [else stop]
   - [if] a v3 bundle's flac parts are encoded by the real production
     ``_encode_flac_bytes`` [then] each part's ffprobe duration matches
-    ``FRAMES / SAMPLE_RATE`` within 10ms, [else stop]
+    ``FRAMES / SAMPLE_RATE`` within ``FLAC_DURATION_TOLERANCE_S``, [else stop]
 """
 
 from __future__ import annotations
@@ -82,10 +90,27 @@ FFPROBE = os.environ.get("MDT_FFPROBE", "ffprobe")
 
 # Single source of truth for the codec round-trip tests: fed into the real
 # encoder AND the manifest's declared audio block, so they cannot disagree.
+# 1 second, not the original 4410-frame (0.1s) draft: at 0.1s, LAME frame
+# padding/encoder delay (see _ffmpeg_encode_mp3's own docstring) is a large
+# fraction of the clip, so a genuine encoder/decoder-delay difference across
+# ffmpeg builds and a real corruption become hard to tell apart by duration
+# alone. At 1s both are unambiguous.
 SAMPLE_RATE = 44100
 CHANNELS = 2
-FRAMES = 4410
-DURATION_TOLERANCE_S = 0.01
+FRAMES = SAMPLE_RATE
+# FLAC is lossless (soundfile writes exact PCM): measured exact (0.0000s
+# delta) both locally (ffmpeg 8.0.1) and in CI, so a tight tolerance is real
+# evidence, not acceptance theater.
+FLAC_DURATION_TOLERANCE_S = 0.01
+# mp3 is lossy: LAME's own encoder/decoder delay varies by ffmpeg/lame build.
+# Measured exact locally (ffmpeg 8.0.1) but a 30.6ms delta in CI's
+# apt-get-installed ffmpeg on the original 0.1s clip -- a different LAME
+# version, not corruption (ffprobe decoded real, complete audio; a 3x
+# margin over that measurement, at 1s instead of 0.1s where the same
+# absolute padding is a much smaller fraction, comfortably separates
+# encoder-version noise from a real misalignment, which would come in tens
+# to hundreds of ms per dropped/duplicated frame of a 1s clip).
+MP3_DURATION_TOLERANCE_S = 0.1
 
 
 def test_mp3_source_gets_mp3_stem_suffix() -> None:
@@ -184,7 +209,9 @@ def _write_stub_bundle(
     return tmp_path
 
 
-def _assert_parts_decode_to_declared_duration(root: Path, stable_id: str, ext: str) -> None:
+def _assert_parts_decode_to_declared_duration(
+    root: Path, stable_id: str, ext: str, *, tolerance_s: float
+) -> None:
     """Alignment evidence: what each part file ACTUALLY decodes to (ffprobe,
     reading the real media header/frames) must match what the manifest
     DECLARES (FRAMES / SAMPLE_RATE) -- the cross-check the reader itself
@@ -194,7 +221,7 @@ def _assert_parts_decode_to_declared_duration(root: Path, stable_id: str, ext: s
     expected_duration_s = FRAMES / SAMPLE_RATE
     for name in worker.STEM_PARTS:
         actual_duration_s = _ffprobe_duration_s(root / stable_id / f"{name}{ext}")
-        assert abs(actual_duration_s - expected_duration_s) < DURATION_TOLERANCE_S, (
+        assert abs(actual_duration_s - expected_duration_s) < tolerance_s, (
             f"{name}{ext}: declared {expected_duration_s:.4f}s, ffprobe decoded "
             f"{actual_duration_s:.4f}s"
         )
@@ -214,7 +241,9 @@ def test_mp3_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path) 
     bundle = load_stem_bundle("teststem-mp3", roots=[root])
     assert bundle.media_type == "audio/mpeg"
     assert bundle.layout == "demucs4"
-    _assert_parts_decode_to_declared_duration(root, "teststem-mp3", ".mp3")
+    _assert_parts_decode_to_declared_duration(
+        root, "teststem-mp3", ".mp3", tolerance_s=MP3_DURATION_TOLERANCE_S
+    )
 
 
 @pytest.mark.requires_audio_stack
@@ -231,4 +260,6 @@ def test_flac_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path)
     bundle = load_stem_bundle("teststem-flac", roots=[root])
     assert bundle.media_type == "audio/flac"
     assert bundle.layout == "demucs4"
-    _assert_parts_decode_to_declared_duration(root, "teststem-flac", ".flac")
+    _assert_parts_decode_to_declared_duration(
+        root, "teststem-flac", ".flac", tolerance_s=FLAC_DURATION_TOLERANCE_S
+    )
