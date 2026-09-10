@@ -11,11 +11,17 @@
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
 import { fetchAnlz, fetchAnlzBypassingHttpCache, RbApiError } from '$lib/rb/api-rb';
-import { getTrack } from '$lib/api';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
-import { bumpAnlzFetchGeneration, currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import type { AnlzData } from '$lib/rb/anlz-types';
+import {
+	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
+	type AnalysisSourceRefreshDeck,
+	type DeckId as _RefreshDeckId
+} from './analysis-source-refresh';
+
+export type { AnalysisSourceRefreshDeck };
 
 export { upgradeDeckBeatgrid } from '$lib/player/beatgrid-lazy';
 export {
@@ -32,20 +38,6 @@ export type AnlzEntry =
 	| { status: 'loading' }
 	| { status: 'ready'; data: AnlzData; retryAfter?: number }
 	| { status: 'error'; code: string };
-
-// Mirrors apps/analysis/lane_enums.py OWN_BACKEND_PREFIX and
-// apps/analysis/selection.py OWN_ANALYSIS_SOURCE: `track_fields.source` (and
-// therefore a field's `provenance.<field>.source`) is drawn from the wide
-// Source domain (rekordbox, mik, djay, serato, traktor, open-dj-tool,
-// manual, inferred, webui), not a binary rbx/own one, so "not literally
-// rekordbox" is NOT the same claim as "own" - an RBX-lane field can
-// legitimately be sourced from MIK, djay or another non-rekordbox writer
-// (discussion_r3974235445 P1 BLOCKING).
-const _OWN_BACKEND_PREFIX = 'own_';
-const _OWN_ANALYSIS_SOURCE = 'own-analysis';
-function _isOwnProvenanceSource(source: string): boolean {
-	return source === _OWN_ANALYSIS_SOURCE || source.startsWith(_OWN_BACKEND_PREFIX);
-}
 
 const _cache = $state<Record<string, AnlzEntry>>({});
 
@@ -293,6 +285,21 @@ export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink
 	_authoritativeGridSink = sink;
 }
 
+/** Notifies the installed sink (if any) that `stable_id` settled WITHOUT a
+ * beatgrid, so a deck that was relying on one can be abandoned rather than
+ * left silently scheduled against a grid that no longer exists. Exported so
+ * `refreshAnalysisSourceDecks` (analysis-source-refresh.ts) can reach the
+ * sink without touching `_authoritativeGridSink` directly - that variable
+ * stays private to this module. A no-op before any sink is installed. */
+export function notifyGridlessSettlement(
+	stable_id: string,
+	data: AnlzData,
+	alreadyScoped = false
+): void | Promise<void> {
+	if (_authoritativeGridSink === null) return;
+	return _authoritativeGridSink(stable_id, data, false, alreadyScoped);
+}
+
 /** True when a loaded deck's own `$effect` (WaveRow.svelte) should call
  * `ensureAnlz` again for it: no anlz published yet, or the anlz that IS
  * published is still the retryable class. A deck load's own
@@ -371,13 +378,30 @@ export function resolveDisplayedAnlz(
  * cannot merely discard the cache write: `load()` would still publish its
  * returned payload after audio decoding. Re-fetch until the result belongs to
  * the current generation, so a source switch during a load never publishes a
- * superseded grid onto that deck (discussion_r3923866060). */
+ * superseded grid onto that deck (discussion_r3923866060). Retries via
+ * `fetchAnlzUntilCurrentGeneration` below. */
 export async function fetchAnlzForDeckLoad(stable_id: string): Promise<AnlzData> {
+	const data = await fetchAnlzUntilCurrentGeneration(() => fetchAnlz(stable_id));
+	_publishAnlzResult(stable_id, data);
+	return data;
+}
+
+/** Retries `fetch` until its answer belongs to the CURRENT anlz-fetch
+ * generation, discarding any result that resolved after a mid-flight
+ * analysis-source switch (PARITY-02) already bumped it and wiped the shared
+ * cache (anlz-fetch-generation.ts) - publishing a stale answer over a
+ * just-wiped entry would repopulate it with pre-switch bytes even though
+ * `analysisSourceState` already recorded the new source, a permanent split
+ * invisible to `_decksDisagreeWith`'s own-vs-own comparison
+ * (discussion_r3973991964 P1 BLOCKING). Shared by `fetchAnlzForDeckLoad`
+ * above and `RbAudioEngine.refreshHotCues` (audio-engine.svelte.ts), which
+ * used to hand-roll this loop separately - the audio-engine copy was the one
+ * missing the guard until the finding above. */
+export async function fetchAnlzUntilCurrentGeneration<T>(fetch: () => Promise<T>): Promise<T> {
 	for (;;) {
 		const generation = currentAnlzFetchGeneration();
-		const data = await fetchAnlz(stable_id);
+		const data = await fetch();
 		if (generation !== currentAnlzFetchGeneration()) continue;
-		_publishAnlzResult(stable_id, data);
 		return data;
 	}
 }
@@ -483,147 +507,22 @@ export function evictAnlzCacheEntriesServingOtherSource(
 	return evictedAny;
 }
 
-type DeckId = 1 | 2 | 3 | 4;
-
-export interface AnalysisSourceRefreshDeck {
-	stable_id: string | null;
-	anlz: AnlzData | null;
-	/** The two LANE-OWNED track fields a deck holds. Both are projected per
-	 * lane by the read model (`apps/analysis/canonical.py` PROJECTION_FIELDS
-	 * maps `bpm` to the beatgrid lane and `key` to the key lane), so
-	 * `GET /tracks/{id}` answers with a different value once a lane is on own
-	 * - which makes them as source-dependent as the beatgrid itself. */
-	bpm: number | null;
-	key: string | null;
-}
-
-/** Replaces loaded decks without allowing an in-flight stale response to win.
- * Lives here so it can write straight through this cache's own primitives,
- * paired with `invalidateAllAnlzCacheEntries` above.
- *
- * FETCH EVERY DECK FIRST, PUBLISH NOTHING UNTIL ALL LAND: staging the fetches
- * makes the publish phase below synchronous and total. An earlier shape wrote
- * each deck inside its own `Promise.all` callback, so one rejected track
- * (invalid own record, transient 500) left already-resolved decks swapped to
- * the new source while the rest stayed on the old one, with nothing to roll
- * them back - `_adopt` (analysis-source.svelte.ts) leaves `analysisSourceState`
- * on the OLD value on rejection, so the next poll retried forever against a
- * split fleet (discussion_r3968214019 P1 BLOCKING).
- *
- * CACHE FIRST, DECK SECOND: `refreshAnlzCacheEntry`'s sink routes a grid
- * change through `afterBeatgridUpgrade` -> `reconcileAfterBeatgridSettled`,
- * comparing the new grid against the deck's CURRENT one (`sameBeatgrid`,
- * beatgrid-resync-guards.ts). Writing `decks[deck].anlz` first made every
- * switch look like a no-op: waveform and beat numbers moved to the new grid
- * while the audible transport stayed scheduled against the old one
- * (discussion_r3968213995 P1 BLOCKING).
- *
- * THE TRACK ROW IS SOURCE-DEPENDENT TOO. `bpm`/`key` are lane-owned
- * projection fields (`PROJECTION_FIELDS` in apps/analysis/canonical.py), read
- * once at `load()`. Refreshing only the grid left `st.bpm` reporting the
- * pre-switch tempo while the grid and `effective_bpm` reported the new one -
- * an internally inconsistent read model in the one tool whose purpose is
- * comparing the two (discussion_r3969020988 P2 BLOCKING). Staged in the same
- * `Promise.all` as the grid so the all-or-nothing guarantee above covers both.
- *
- * RETURNS THE SOURCE THE SERVER ACTUALLY SERVED, or null when nothing was
- * fetched: `/anlz` resolves rbx-vs-own SERVER-side at fetch time and stamps
- * it on the payload since the daemon can move under the unbounded awaits
- * here (discussion_r3970117741 P1 BLOCKING); a disagreeing staged payload
- * throws before publishing anything.
- *
- * DOES NOT RESOLVE UNTIL EVERY TRIGGERED GRID RECONCILIATION HAS SETTLED, so
- * a caller holding the scheduler's claim can't release it early
- * (discussion_r3970967293 P1 BLOCKING). */
-export async function refreshAnalysisSourceDecks(
-	deckIds: readonly DeckId[],
-	decks: Record<DeckId, AnalysisSourceRefreshDeck>
+/** Public entry point for the PARITY-02 rbx-vs-own deck refresh. The actual
+ * implementation lives in analysis-source-refresh.ts (kept out of this file
+ * to stay under the repo's 600-line file-size ratchet); this wrapper supplies
+ * that module's ports with this cache's own primitives so it never needs to
+ * import this file back (see analysis-source-refresh.ts's own docstring for
+ * why a reverse import would close a cycle). */
+export function refreshAnalysisSourceDecks(
+	deckIds: readonly _RefreshDeckId[],
+	decks: Record<_RefreshDeckId, AnalysisSourceRefreshDeck>
 ): Promise<'rekordbox' | 'own' | null> {
-	bumpAnlzFetchGeneration();
-	invalidateAllAnlzCacheEntries();
-	const wanted = new Map<string, DeckId[]>();
-	for (const deck of deckIds) {
-		const stableId = decks[deck].stable_id;
-		if (stableId === null) continue;
-		// One fetch per TRACK, not per deck: two decks loaded with the same
-		// track would otherwise pull the same multi-MB payload twice.
-		const holders = wanted.get(stableId);
-		if (holders === undefined) wanted.set(stableId, [deck]);
-		else holders.push(deck);
-	}
-	const staged = await Promise.all(
-		[...wanted].map(async ([stableId, holders]) => {
-			const [fresh, row] = await Promise.all([
-				fetchAnlzBypassingHttpCache(stableId),
-				getTrack(stableId)
-			]);
-			return { stableId, holders, fresh, track: row.track };
-		})
-	);
-	const served = new Set(staged.map(({ fresh }) => fresh.beatgrid_source));
-	if (served.size > 1) {
-		throw new Error(
-			`analysis source changed mid-refresh: /anlz served ${[...served].sort().join(' and ')} ` +
-				'within one batch, so publishing would split the decks across both'
-		);
-	}
-	// Two independent round trips: an external PUT to /api/v1/analysis/source
-	// landing between them can serve each side of a switch even though
-	// `served` agrees across tracks. `bpm` is beatgrid-lane-owned, so its
-	// provenance source is the same selection `/anlz` stamped as
-	// `beatgrid_source` - refuse to pair a grid and tempo that were never
-	// measured together (discussion_r3972264411 P1 BLOCKING).
-	for (const { stableId, fresh, track } of staged) {
-		const bpmProvenance = track.provenance?.bpm;
-		if (bpmProvenance === undefined || bpmProvenance.status !== 'ok') continue;
-		const bpmOnOwn = _isOwnProvenanceSource(bpmProvenance.source);
-		const gridOnOwn = fresh.beatgrid_source !== 'rekordbox';
-		if (bpmOnOwn !== gridOnOwn) {
-			throw new Error(
-				`analysis source changed mid-refresh for ${stableId}: /anlz served beatgrid_source ` +
-					`'${fresh.beatgrid_source}' but /tracks/{id} served bpm from '${bpmProvenance.source}' - ` +
-					'the two parallel fetches landed on different sides of a source switch'
-			);
-		}
-	}
-	// Collected, not awaited per-iteration (would serialize what the cache
-	// write below deliberately doesn't); only this function's RETURN waits.
-	// `alreadyScoped: true` below: this function already holds the claim,
-	// so the sink reconciles inline, not via a deadlocking nested one (r3972154599).
-	const sinkSettlements: Array<void | Promise<void>> = [];
-	for (const { stableId, fresh } of staged) {
-		sinkSettlements.push(refreshAnlzCacheEntry(stableId, fresh, true));
-		// `refreshAnlzCacheEntry` notifies the sink only for a payload that
-		// HAS a grid, because the ambient prefetch it was built for can only
-		// ever discover one. A deliberate switch can also REMOVE one: OWN with
-		// no analysis record for this track serves the real empty grid plus
-		// `beatgrid_own_unavailable_reason` (rb_assets.py). Left unannounced,
-		// a playing Beat-Synced deck would just lose its grid - quantize and
-		// phase-lock going inert mid-set with no `markSettledGridless`, no
-		// follower abandonment and no sync error. `landed: false` is exactly
-		// the settled-gridless case reconcileAfterBeatgridSettled already
-		// handles.
-		if (!hasAnlzBeatgrid(fresh) && _authoritativeGridSink !== null) {
-			sinkSettlements.push(_authoritativeGridSink(stableId, fresh, false, true));
-		}
-	}
-	for (const { stableId, holders, fresh, track } of staged) {
-		for (const deck of holders) {
-			// A load() that landed mid-request owns this deck now; its own
-			// fetch already ran under the post-switch generation.
-			if (decks[deck].stable_id !== stableId) continue;
-			decks[deck].anlz = fresh;
-			// `?? null` for the same reason load() uses it: TrackOut spells
-			// every nullable field optional, so absent and null both mean
-			// "unknown" to a deck.
-			decks[deck].bpm = track.bpm ?? null;
-			decks[deck].key = track.key ?? null;
-		}
-	}
-	await Promise.all(sinkSettlements);
-	// `?? null` rather than a default: no loaded deck means nothing was served,
-	// which is not the same claim as "the server served rekordbox".
-	return [...served][0] ?? null;
+	return _refreshAnalysisSourceDecksImpl(deckIds, decks, {
+		invalidateAllAnlzCacheEntries,
+		refreshAnlzCacheEntry,
+		notifyGridlessSettlement,
+		fetchAnlzBypassingHttpCache
+	});
 }
 
 /** Count of ready ANLZ entries for memory tracking. */
