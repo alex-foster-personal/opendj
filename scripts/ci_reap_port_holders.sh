@@ -101,14 +101,22 @@ readonly PORT_OWNER_REGISTRY_DIR="${MDT_CI_PORT_OWNER_REGISTRY_DIR:-/tmp/music-d
 
 #-----------------------------------------------------------------------------
 
+# The socket probe is overridable for ONE reason: the collision this script
+# exists for (issue #1613) is a listener owned by a DIFFERENT uid, which
+# unprivileged `ss -p` reports without its pid. One uid cannot create that
+# shape, so the test supplies the real `ss` minus the per-socket owner list --
+# exactly the output the kernel/ss already produces cross-uid. Nothing else
+# ever substitutes it, and production leaves it at `ss`.
+readonly SS_BIN="${MDT_CI_REAP_SS:-ss}"
+
 # Both helpers must yield an empty result, not a failed pipeline, on a free
 # port: under `set -eo pipefail` a grep with no match would abort the script.
 _holder_pids() {
-    ss -Hltnp "sport = :$1" | { grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u
+    "$SS_BIN" -Hltnp "sport = :$1" | { grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u
 }
 
 _listener_count() {
-    ss -Hltn "sport = :$1" | { grep -c . || true; }
+    "$SS_BIN" -Hltn "sport = :$1" | { grep -c . || true; }
 }
 
 # Process identity: start time in clock ticks, field 22 of /proc/<pid>/stat

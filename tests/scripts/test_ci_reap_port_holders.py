@@ -20,11 +20,15 @@ Regression lines:
     wait and the step still fails then broken (issue #1613)
   - if a port-ownership registry marker exists but is never surfaced in the
     no-CI-provenance message then broken (issue #1613)
+  - if a cross-uid holder whose pid `ss` cannot report is failed instead of
+    waited for, or fails the step after releasing during that wait, then
+    broken (issue #1613)
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -70,12 +74,33 @@ def _serve(port: int, cwd: Path, *, ignore_term: bool = False) -> subprocess.Pop
     raise AssertionError(f"server never bound {port}")
 
 
+def _invisible_owner_ss(tmp_path: Path) -> Path:
+    """A real ``ss`` with the per-socket owner list removed.
+
+    Unprivileged ``ss -p`` prints a listener owned by ANOTHER uid without its
+    pid, which is the shape of the collision in issue #1613. One uid cannot
+    create that shape, so this wrapper reproduces the visibility restriction
+    over a genuinely held port while leaving everything else (the port, the
+    holder, the wait) real.
+    """
+    real_ss = shutil.which("ss")
+    assert real_ss, "ss is required for this suite"
+    wrapper = tmp_path / "ss-no-owner"
+    wrapper.write_text(
+        f"#!/usr/bin/env bash\nexec {real_ss} \"$@\" | sed 's/ users:(.*//'\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    return wrapper
+
+
 def _run(
     *args: str,
     live_re: str,
     release_wait_s: str = "30",
     foreign_wait_s: str = "1",
     registry_dir: Path | None = None,
+    ss_bin: Path | None = None,
 ) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(SCRIPT), *args],
@@ -85,6 +110,7 @@ def _run(
             "MDT_CI_REAP_RELEASE_WAIT_S": release_wait_s,
             "MDT_CI_REAP_FOREIGN_WAIT_S": foreign_wait_s,
             "MDT_CI_PORT_OWNER_REGISTRY_DIR": str(registry_dir) if registry_dir else "/nonexistent",
+            **({"MDT_CI_REAP_SS": str(ss_bin)} if ss_bin else {}),
         },
         capture_output=True,
         text=True,
@@ -299,6 +325,57 @@ def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
         assert result.returncode == 1
         assert "music-dj-tools-wt-demo-1613" in result.stdout, result.stdout
         assert "music-dj-tools-wt-demo-1613" in result.stderr, result.stderr
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_cross_uid_holder_is_waited_for_before_the_step_fails(tmp_path: Path) -> None:
+    """CONTROL: if a holder whose pid `ss` cannot report fails the step the
+    moment it is seen, instead of after the bounded foreign-holder wait, then
+    the retry path of issue #1613 is unreachable for the collision it exists
+    for."""
+    port = _free_port()
+    proc = _serve(port, tmp_path)  # real holder; only its pid is hidden
+    try:
+        result = _run(
+            str(port),
+            live_re=ORPHAN,
+            foreign_wait_s="1",
+            ss_bin=_invisible_owner_ss(tmp_path),
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "cannot see" in result.stderr, result.stderr
+        assert "waiting up to" in result.stdout, result.stdout
+        assert proc.poll() is None
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_a_cross_uid_holder_that_releases_during_the_wait_runs_the_command(
+    tmp_path: Path,
+) -> None:
+    """if a cross-uid holder whose pid `ss` cannot report releases during the
+    foreign-holder wait and the step still fails then broken (issue #1613)"""
+    port = _free_port()
+    proc = _serve(port, tmp_path)
+    try:
+        import threading
+
+        threading.Timer(1.0, proc.kill).start()
+        result = _run(
+            str(port),
+            "--",
+            "echo",
+            "suite-ran",
+            live_re=ORPHAN,
+            foreign_wait_s="10",
+            ss_bin=_invisible_owner_ss(tmp_path),
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+        assert "[ERROR]" not in result.stderr, result.stderr
     finally:
         proc.kill()
         proc.wait(timeout=10)
