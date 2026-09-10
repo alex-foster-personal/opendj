@@ -129,7 +129,14 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
 # directory, which a different uid's self-hosted CI runner typically cannot
 # even traverse into. /tmp is sticky (mode 1777) on every platform this repo
 # targets, so any uid may create files there and every uid may read them.
-PORT_OWNER_REGISTRY_DIR = Path(tempfile.gettempdir()) / "music-dj-tools-port-owners"
+#
+# The path is PINNED rather than derived from tempfile.gettempdir(), which
+# follows TMPDIR/TEMP/TMP: a claimant under a private TMPDIR would write its
+# markers somewhere scripts/ci_reap_port_holders.sh never reads, and the
+# cross-uid attribution would silently degrade to an unnamed holder. The
+# reaper's own MDT_CI_PORT_OWNER_REGISTRY_DIR default is the same literal, and
+# a test asserts the two agree.
+PORT_OWNER_REGISTRY_DIR = Path("/tmp/music-dj-tools-port-owners")
 
 
 class PortConfigError(ValueError):

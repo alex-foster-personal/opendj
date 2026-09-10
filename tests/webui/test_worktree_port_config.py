@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import tempfile
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -786,6 +787,53 @@ def test_claim_ports_reallocates_a_pre_existing_now_reserved_env_pair(
 
     assert claimed.backend not in RESERVED_FIXED_PORTS
     assert claimed.frontend not in RESERVED_FIXED_PORTS
+
+
+def test_owner_registry_dir_is_the_shared_path_the_reaper_reads() -> None:
+    """if the marker directory is derived from tempfile.gettempdir() (and so
+    follows TMPDIR) while the reaper reads a fixed /tmp path then broken -- the
+    marker is never found and the cross-uid holder goes unnamed (issue #1613).
+
+    Read from the source rather than from the imported constant: a private
+    TMPDIR that merely HAPPENS to be /tmp would satisfy the constant, and
+    re-importing the module to vary TMPDIR would redefine ``PortConfigError``
+    under every other test in this file.
+
+    The derivation is REGENERATED here from the same expression rather than
+    compared to a remembered literal, so a future edit that reintroduces
+    ``tempfile.gettempdir()`` changes the derived value and reds this.
+    """
+    source = (PROJECT_ROOT / "apps" / "webui" / "port_config.py").read_text(encoding="utf-8")
+    assert "PORT_OWNER_REGISTRY_DIR = Path(tempfile.gettempdir())" not in source, (
+        "PORT_OWNER_REGISTRY_DIR follows TMPDIR again; scripts/ci_reap_port_holders.sh "
+        "reads a fixed path and would never find the markers"
+    )
+    assert port_config.PORT_OWNER_REGISTRY_DIR == Path("/tmp/music-dj-tools-port-owners")
+
+    script = (PROJECT_ROOT / "scripts" / "ci_reap_port_holders.sh").read_text(encoding="utf-8")
+    assert (
+        f"${{MDT_CI_PORT_OWNER_REGISTRY_DIR:-{port_config.PORT_OWNER_REGISTRY_DIR}}}"
+    ) in script, "the reaper's default marker directory has drifted from PORT_OWNER_REGISTRY_DIR"
+
+
+def test_the_tmpdir_probe_would_notice_a_gettempdir_derivation(tmp_path: Path) -> None:
+    """CONTROL: the assertion above is a literal comparison, so prove the
+    TMPDIR-dependence it is standing in for is real and observable -- with
+    TMPDIR pointed elsewhere, the derivation it forbids produces a DIFFERENT
+    path, which is exactly the divergence that leaves a marker unread."""
+    private_tmp = tmp_path / "private-tmp"
+    private_tmp.mkdir()
+    with (
+        mock.patch.dict(os.environ, {"TMPDIR": str(private_tmp)}),
+        # tempfile caches its answer in module state after the first call, so
+        # the cache is cleared for the probe to read the environment at all.
+        mock.patch.object(tempfile, "tempdir", None),
+    ):
+        derived = Path(tempfile.gettempdir()) / "music-dj-tools-port-owners"
+    assert derived != Path("/tmp/music-dj-tools-port-owners"), (
+        "TMPDIR did not move tempfile.gettempdir() here, so this control cannot fail "
+        "for the reason under test and the probe above proves nothing"
+    )
 
 
 def test_claim_ports_refuses_a_reserved_port_inherited_from_the_environment(
