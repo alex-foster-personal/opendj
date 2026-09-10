@@ -1,0 +1,114 @@
+"""Read the TypeScript command contract the browser actually enforces.
+
+The AGENT-05 verb table is a second copy of a contract that already exists in
+TypeScript, and a second copy is only safe if something compares them. These
+readers are that comparison: ``test_bus_parity.py`` re-reads
+``performance-ipc.svelte.ts`` and ``quick-draw-catalog.ts`` from the working
+tree rather than from a checked-in copy, so a command type added to the bus
+without a verb is a red test the next time anyone runs the lane.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+IPC_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+QUICK_DRAW_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/quick-draw-catalog.ts"
+
+_COMMAND_UNION = "export type PerformanceCommand ="
+_QUICK_DRAW_UNION = "export type QuickDrawActionId ="
+_FIELD = re.compile(r"^\| \{ (?P<body>.*?) \}$")
+_TYPE_FIELD = re.compile(r"^type: '(?P<type>[a-z_]+)'$")
+
+
+def _union_lines(source: Path, marker: str) -> list[str]:
+    """The union member lines that follow ``marker``.
+
+    Comments, including the block comments that sit between members, are
+    skipped; the union ends at the first line that is neither a member nor a
+    comment, which is the ``export interface`` that follows it.
+    """
+    lines = source.read_text(encoding="utf-8").splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith(marker))
+    members: list[str] = []
+    for line in lines[start + 1:]:
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            members.append(stripped)
+        elif stripped == "" or stripped.startswith(("//", "/*", "*")):
+            continue
+        else:
+            break
+    if not members:
+        raise AssertionError(f"no union members found after {marker!r} in {source}")
+    return members
+
+
+def _command_member(line: str) -> str:
+    """``| { type: 'load'; deck: DeckId };`` -> ``load``."""
+    match = _FIELD.match(line.rstrip(";"))
+    if match is None:
+        raise AssertionError(f"union member does not match the declared shape: {line}")
+    head = match.group("body").split(";")[0].strip()
+    typed = _TYPE_FIELD.match(head)
+    if typed is None:
+        raise AssertionError(f"union member does not open with a type field: {line}")
+    return typed.group("type")
+
+
+def _top_level_parts(body: str) -> list[str]:
+    """Split a member body on ``;`` at brace depth 0.
+
+    The loop command nests ``{ in_ms: number; out_ms: number }``, and a naive
+    split invents two top-level fields that do not exist (``loop`` would look
+    like it were missing ``out_ms``).
+    """
+    parts: list[str] = []
+    current = ""
+    depth = 0
+    for character in body:
+        if character in "{<(":
+            depth += 1
+        elif character in "}>)" or character == ">":
+            depth -= 1
+        if character == ";" and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += character
+    parts.append(current)
+    return parts
+
+
+def command_fields() -> dict[str, dict[str, bool]]:
+    """Every ``PerformanceCommand`` type -> its fields -> is the field optional.
+
+    The wire validator calls ``_exactKeys`` per branch, so this is the set of
+    keys a command of that type may carry. ``type`` is not listed: every
+    command has it.
+    """
+    fields: dict[str, dict[str, bool]] = {}
+    for line in _union_lines(IPC_SOURCE, _COMMAND_UNION):
+        match = _FIELD.match(line.rstrip(";"))
+        assert match is not None, line
+        parts = [part.strip() for part in _top_level_parts(match.group("body"))]
+        command_type = _command_member(line)
+        declared: dict[str, bool] = {}
+        for part in parts[1:]:
+            name = part.split(":")[0].strip()
+            declared[name.rstrip("?")] = name.endswith("?")
+        fields[command_type] = declared
+    return fields
+
+
+def quick_draw_ids() -> tuple[str, ...]:
+    """Every ``QuickDrawActionId`` member, in source order."""
+    found: list[str] = []
+    for line in _union_lines(QUICK_DRAW_SOURCE, _QUICK_DRAW_UNION):
+        member = re.search(r"'([^']+)'", line)
+        if member is None:
+            raise AssertionError(f"quick-draw member carries no id: {line}")
+        found.append(member.group(1))
+    return tuple(found)
