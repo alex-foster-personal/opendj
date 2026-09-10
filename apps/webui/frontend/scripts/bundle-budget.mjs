@@ -95,7 +95,22 @@ const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
-  { name: 'performance', limit: 216064, measured: 205141, note: '/performance and children' },
+  // RAISED Thu 10 Sep 2026 (PR #1691, Q18 rung 1): the stem decode rung reads a part's
+  // sample rate out of the FLAC STREAMINFO header before it takes a worker, because
+  // learning it after the decode meant decoding every part twice on every load of a
+  // bundle the context cannot run. That is flac-header.ts plus the eligibility branch,
+  // 171 gzip bytes measured against f14efef0's 216052 (92 for the header read, the
+  // rest for splitting the decoder pool into its own module so the policy file could
+  // stay under the 600-line ratchet), and it landed on a surface that had TWELVE
+  // bytes of headroom - so this raise is 159 bytes of overage, not a feature asking
+  // for room. New measured 216223, same +5% ceil-to-KiB rule the two ratcheted
+  // budgets use => 227,328 (222 KiB).
+  // WORTH A HUMAN'S EYE: that rule hands this surface ~11 KB of fresh headroom to
+  // cover 80 bytes, on the route the latency program is trying to shrink. Deviating
+  // from the rule invents slack case by case, which the note above forbids, so the
+  // rule is followed here and the size of what it granted is stated rather than
+  // buried. A deliberate tighter ceiling (217,088, the next KiB) is a one-line edit.
+  { name: 'performance', limit: 227328, measured: 216223, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

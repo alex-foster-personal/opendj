@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from '@playwright/test';
 
 import { buildManifest, manifestGate } from './fixture-manifest.mjs';
+import { laneMarginFrom, stopwatchLane } from './lane-oracle.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND = path.resolve(HERE, '../..');
@@ -81,6 +82,28 @@ const MANIFEST_PATH =
 const RECORD_MODE = process.argv.includes('--record') || process.env.Q18_RECORD_FIXTURES === '1';
 /** One least-significant bit of a 16-bit sample, in float. */
 const LSB_16_BIT = 1 / 32768;
+/**
+ * The margin the implementation actually uses, READ from it.
+ *
+ * The oracle below compared the stopwatch against 1.0, so a worker win inside
+ * the margin - which production deliberately declines, because noise must not
+ * flip a session-long choice - was reported as the calibration disagreeing
+ * with the stopwatch and failed the run. Read rather than copied: a duplicated
+ * constant is a value that rots the first time the real one moves, and the
+ * whole point of this check is that the two agree.
+ */
+const LANE_MARGIN = (() => {
+	const margin = laneMarginFrom(
+		readFileSync(path.join(FRONTEND, 'src/lib/player/decode/flac-stem-decode.ts'), 'utf8')
+	);
+	if (margin === null) {
+		// Not defaulted: a margin this could not read is a comparison it cannot
+		// make, and guessing 1.25 would silently pass against a moved constant.
+		console.log('could not read LANE_MARGIN out of flac-stem-decode.ts');
+		process.exit(1);
+	}
+	return margin;
+})();
 
 /** Bundle the module under test the way the app bundles it. */
 async function bundleModule() {
@@ -343,11 +366,15 @@ async function main() {
 		// must be the lane the stopwatch says is faster. A rung that
 		// calibrates to the slower lane is worse than no rung.
 		const faster = result.baselineMs / result.workerMs;
-		const stopwatchSays = faster > 1 ? 'workers' : 'main-thread';
+		// The SAME margin production applies. Anything else makes the oracle
+		// disagree with the implementation about a decision the implementation
+		// took on purpose.
+		const stopwatchSays = stopwatchLane(faster, LANE_MARGIN);
 		const agrees = result.chosenLane === stopwatchSays;
 		console.log(
 			`  calibration chose ${result.chosenLane}; stopwatch says ${stopwatchSays}` +
-				` (workers ${faster.toFixed(2)}x) -> ${agrees ? 'AGREE' : 'DISAGREE'}`
+				` (workers ${faster.toFixed(2)}x vs a ${LANE_MARGIN}x margin)` +
+				` -> ${agrees ? 'AGREE' : 'DISAGREE'}`
 		);
 		if (!agrees) {
 			console.log('  FAIL the runtime calibration picked the slower lane');

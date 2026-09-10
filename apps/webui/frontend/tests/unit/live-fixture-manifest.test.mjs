@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
@@ -210,4 +211,35 @@ test('only an ordinary run against a matching pinned manifest may continue', () 
 		observed: buildManifest(selected())
 	});
 	assert.equal(unreadable.action, 'mismatch');
+});
+
+//-----------------------------------------------------------------------------
+// The live run's lane oracle: the same margin the implementation applies.
+
+test('the margin is read from the implementation, and unreadable means unreadable', async () => {
+	const { laneMarginFrom, stopwatchLane } = await import('../live/lane-oracle.mjs');
+	const real = readFileSync(
+		new URL('../../src/lib/player/decode/flac-stem-decode.ts', import.meta.url),
+		'utf8'
+	);
+	// POSITIVE CONTROL against the LIVE source, not a fixture: the point of
+	// reading rather than copying is that the two cannot drift, and a test
+	// against a hand-written string would drift with the copy.
+	const margin = laneMarginFrom(real);
+	assert.ok(margin !== null, 'the constant must be findable in the module it audits');
+	assert.ok(margin > 1, `a margin of ${margin} would make the workers win by losing`);
+
+	// If the constant is renamed or removed, this must report UNKNOWN rather
+	// than a plausible default that silently audits against a stale number.
+	assert.equal(laneMarginFrom(real.replace(/LANE_MARGIN/g, 'LANE_HEADROOM')), null);
+	assert.equal(laneMarginFrom(''), null);
+	assert.equal(laneMarginFrom('const LANE_MARGIN = 0.5;'), null, 'below 1 is a bad match');
+
+	// The oracle itself: a win INSIDE the margin is a main-thread verdict,
+	// which is the decision production takes on purpose and the live check
+	// used to report as a disagreement and fail the run.
+	assert.equal(stopwatchLane(1.2, margin), 'main-thread');
+	assert.equal(stopwatchLane(margin, margin), 'main-thread', 'exactly the margin is not a win');
+	assert.equal(stopwatchLane(1.71, margin), 'workers');
+	assert.equal(stopwatchLane(0.38, margin), 'main-thread');
 });

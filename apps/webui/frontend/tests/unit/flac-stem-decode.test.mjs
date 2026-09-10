@@ -60,6 +60,24 @@ function bytesWithHeader(header, length = 64) {
 }
 
 const FLAC = () => bytesWithHeader([0x66, 0x4c, 0x61, 0x43]);
+
+/**
+ * FLAC bytes whose STREAMINFO DISCLOSES a rate.
+ *
+ * `FLAC()` above leaves the rate field zero, which the format reads as
+ * unknown, so it exercises the path where only the decoder can say. This one
+ * exercises the path where the bytes say up front.
+ */
+function flacAt(rate) {
+	const out = new Uint8Array(64);
+	out.set([0x66, 0x4c, 0x61, 0x43], 0);
+	out[7] = 34;
+	out[18] = (rate >> 12) & 0xff;
+	out[19] = (rate >> 4) & 0xff;
+	out[20] = ((rate << 4) & 0xf0) | 0x01;
+	return out.buffer;
+}
+const allAt = (rate) => Object.fromEntries(PARTS.map((part) => [part, flacAt(rate)]));
 const OGG = () => bytesWithHeader([0x4f, 0x67, 0x67, 0x53]);
 
 /** An AudioContext stand-in: only the two members the module actually uses. */
@@ -266,7 +284,12 @@ test('a decode at the wrong sample rate is refused, not resampled by hope', asyn
 	// The pool is cleared first because a refused-for-rate decoder is still
 	// HEALTHY and gets parked - the control must exercise its own factory,
 	// not inherit four decoders wired to the previous one's release barrier.
+	// forceLane, not just resetPool: a rate mismatch now SETTLES the session on
+	// the main thread (a rate the header did not disclose costs a discarded
+	// worker decode, and repeating that every load is the defect this settling
+	// closes), so without it the control would run the main-thread lane.
 	decode.stemDecodeSession.resetPool();
+	decode.stemDecodeSession.forceLane('workers');
 	const matching = await decode.decodeStemParts(fakeContext(48000), allFlac(), PARTS, {
 		makeDecoder: fakeDecoderFactory({ sampleRate: 48000 }).factory,
 		decodeFallback: countingFallback().fn
@@ -1004,7 +1027,10 @@ test('a failing native fallback reports its own error, not a detached retry of i
 	// satisfies the report above completely and turns every 48kHz bundle into a
 	// failed deck load. A refusal whose fallback SUCCEEDS still resolves, on the
 	// fallback's buffer, with the refusal recorded.
+	// The refusal above settled the session on the main thread, so the control
+	// re-forces the worker lane to exercise the same path as the case.
 	decode.stemDecodeSession.resetPool();
+	decode.stemDecodeSession.forceLane('workers');
 	const healthy = countingFallback();
 	const ok = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
 		makeDecoder: fakeDecoderFactory({ sampleRate: 48000 }).factory,
@@ -1012,4 +1038,144 @@ test('a failing native fallback reports its own error, not a detached retry of i
 	});
 	assert.equal(healthy.calls.length, PARTS.length, 'the fallback still runs on a refusal');
 	assert.ok(ok.reports.every((r) => r.refusal === 'sample-rate-mismatch' && !r.viaWorker));
+});
+
+test('a bundle at a rate this context cannot run never spends a worker on it', async () => {
+	// THE double decode. decodeAudioData resamples and a WASM decoder does not,
+	// so a 48kHz bundle in a 44.1kHz context can never take the worker path.
+	// Learning that only after the decode meant decoding every part twice -
+	// once in a worker, thrown away, once natively - and the header says it for
+	// free.
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext(44100);
+	const { factory, state } = fakeDecoderFactory({ sampleRate: 48000 });
+	const fallback = countingFallback();
+
+	const result = await decode.decodeStemParts(ctx, allAt(48000), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: fallback.fn
+	});
+
+	assert.equal(state.made, 0, 'not one decoder is taken for a decode that must be discarded');
+	assert.equal(fallback.calls.length, PARTS.length, 'one native decode per part, not two');
+	assert.ok(result.reports.every((r) => r.refusal === 'sample-rate-mismatch' && !r.viaWorker));
+	// And it is not a lane trial: a load that could never run the worker lane
+	// cannot settle a comparison between the lanes.
+	assert.equal(decode.stemDecodeSession.trialing(), false);
+	assert.equal(decode.stemDecodeSession.lane(), null, 'no verdict from an ineligible bundle');
+
+	// CONTROL ON THE OVERSHOOT: "bar anything whose header mentions a rate"
+	// would satisfy the report above and delete the rung. A bundle disclosing
+	// the CONTEXT's rate still takes the workers.
+	decode.stemDecodeSession.forceLane('workers');
+	decode.stemDecodeSession.resetPool();
+	const matching = fakeDecoderFactory({ sampleRate: 44100 });
+	const ok = await decode.decodeStemParts(ctx, allAt(44100), PARTS, {
+		makeDecoder: matching.factory,
+		decodeFallback: countingFallback().fn
+	});
+	assert.equal(matching.state.made, PARTS.length, 'an eligible bundle still runs in workers');
+	assert.ok(ok.reports.every((r) => r.viaWorker && r.refusal === null));
+});
+
+test('a rate the header hid settles the lane, so the waste is paid once not forever', async () => {
+	// The residual case: STREAMINFO said nothing (rate field zero = unknown),
+	// so only the decoder can report the mismatch, and by then its decode is
+	// already wasted. Without settling here that waste repeats on EVERY later
+	// load: the refusal keeps the worker trial unclean, so it is never
+	// recorded, so no verdict ever exists, so the next load tries the workers
+	// again. That is the loop, and it is unbounded.
+	decode.stemDecodeSession.resetLane();
+	const ctx = fakeContext(44100);
+
+	// Trial 1: the main-thread lane, clean, recorded.
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: fakeDecoderFactory().factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(400)
+	});
+	assert.equal(decode.stemDecodeSession.lane(), null, 'one trial is not a comparison');
+
+	// Trial 2: the worker lane, on a bundle whose rate the bytes did not
+	// disclose and whose decode comes back at the wrong rate.
+	const wrongRate = fakeDecoderFactory({ sampleRate: 48000 });
+	const wasted = countingFallback();
+	const second = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: wrongRate.factory,
+		decodeFallback: wasted.fn,
+		now: stepClock(100)
+	});
+	assert.equal(wrongRate.state.made, PARTS.length, 'the worker decode did happen');
+	assert.equal(wasted.calls.length, PARTS.length, 'and was thrown away for a native one');
+	assert.ok(second.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
+	assert.equal(
+		decode.stemDecodeSession.lane(),
+		'main-thread',
+		'so the lane settles rather than leaving the next load to repeat it'
+	);
+
+	// The load after it pays ONE decode per part, not two, and forever after.
+	const third = fakeDecoderFactory({ sampleRate: 48000 });
+	const cheap = countingFallback();
+	const after = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: third.factory,
+		decodeFallback: cheap.fn
+	});
+	assert.equal(third.state.made, 0, 'no worker is spent once the lane has settled');
+	assert.equal(cheap.calls.length, PARTS.length);
+	assert.ok(after.reports.every((r) => r.refusal === 'engine-prefers-main'));
+});
+
+test('the worker trial times steady state, not the wasm compile it pays once', async () => {
+	// The trial's verdict is PERMANENT for the session, and the worker trial is
+	// the load that first builds the pool. Spawn plus wasm compile is a
+	// one-time cost that no later load pays, so charging it to the one load
+	// that decides the lane can settle the session on the slower lane for the
+	// rest of the night. Not hypothetical: this repo's own live run had the
+	// stopwatch at 1.71x for workers while the cold trial chose the main thread.
+	decode.stemDecodeSession.resetLane();
+	decode.stemDecodeSession.resetPool();
+	const ctx = fakeContext();
+	let clockCalls = 0;
+	// 1 load-start + 2 per part + 1 load-end, so the last read is the only one
+	// that reports elapsed time.
+	const now = () => {
+		clockCalls += 1;
+		return clockCalls >= 2 * PARTS.length + 2 ? 100 : 0;
+	};
+	const inner = fakeDecoderFactory();
+	const madeAtClockCall = [];
+	const factory = () => {
+		madeAtClockCall.push(clockCalls);
+		return inner.factory();
+	};
+
+	// Trial one is the main thread, so trial two is the worker lane.
+	await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: countingFallback().fn,
+		now: stepClock(400)
+	});
+	assert.deepEqual(madeAtClockCall, [], 'the main-thread trial constructs no decoder at all');
+
+	clockCalls = 0;
+	const workerTrial = await decode.decodeStemParts(ctx, allFlac(), PARTS, {
+		makeDecoder: factory,
+		decodeFallback: countingFallback().fn,
+		now
+	});
+	assert.ok(
+		workerTrial.reports.every((r) => r.viaWorker),
+		'this load is the worker trial'
+	);
+	assert.equal(madeAtClockCall.length, PARTS.length, 'and it is the load that builds the pool');
+	assert.deepEqual(
+		madeAtClockCall,
+		PARTS.map(() => 0),
+		'every decoder is spawned and compiled BEFORE the load clock is first read'
+	);
+	// CONTROL ON THE OVERSHOOT: warming must PRE-BUILD the pool, not build a
+	// second set beside it. Four decoders exist in total, not eight.
+	assert.equal(inner.state.made, PARTS.length, 'the warmed decoders are the ones used');
+	assert.equal(decode.stemDecodeSession.pooled(), PARTS.length, 'and all four are parked after');
 });

@@ -183,14 +183,17 @@ function _limitOf(name) {
 }
 
 for (const surface of ['library', 'performance', 'other-lazy']) {
-  // library and performance stay literal: their fixtures carry other chunks
-  // that already count toward the surface, so the overflow is not a simple
-  // offset from the limit and deriving it would misstate the margin.
-  const overflow = {
-    library: 260000,
-    performance: 210000,
-    'other-lazy': _limitOf('other-lazy') + 8000
-  }[surface];
+  // EVERY surface derives from the gate, none is a literal. A literal goes
+  // stale the moment a ceiling is raised and then asserts a failure that can
+  // no longer happen: `performance: 210000` sat under the raised 227,328 limit
+  // and this case passed while proving nothing. It was written literal on the
+  // theory that the fixture's other chunks make the margin unpredictable, but
+  // those chunks only ADD to the surface, so limit + 8000 always overflows -
+  // the theory was true about the exact overage and false about the direction,
+  // which is the half that matters. Same defect fixed for `other-lazy` on this
+  // PR one round earlier; this is its sibling, found only because raising the
+  // performance ceiling made this case go red.
+  const overflow = _limitOf(surface) + 8000;
   test(`budget "${surface}" FAILS when its own weight exceeds the limit`, () => {
     const { code, out } = _run(_fixture({ sizes: { [surface]: overflow } }));
     assert.equal(code, 1, `expected a non-zero exit\n${out}`);
